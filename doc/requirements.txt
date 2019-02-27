@@ -1,1 +1,3 @@
-sphinx>=1.6.2
+# Documentation Sphinx
+sphinx>=1.8.2 # BSD
+openstackdocstheme>=1.26.0 # Apache-2.0
