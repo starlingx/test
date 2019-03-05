@@ -14,5 +14,5 @@ For more information about StarlingX, see https://docs.starlingx.io/.
    :maxdepth: 2
 
    heat/index
-   neutron/index
+   networking/index
    gnochi/index
