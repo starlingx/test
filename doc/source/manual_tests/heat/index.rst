@@ -2,7 +2,9 @@
 HEAT
 ====
 
-HEAT is a service to orchestrate composite cloud applications using a declarative template format through an OpenStack-native REST API. This test suite validates the basics of HEAT service by using HOT templates.
+HEAT is a service to orchestrate composite cloud applications using a
+declarative template format through an OpenStack-native REST API. This test
+suite validates the basics of HEAT service by using HOT templates.
 
 -----------------
 Test Requirements

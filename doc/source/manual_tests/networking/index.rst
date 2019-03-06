@@ -2,10 +2,10 @@
 NETWORKING
 ==========
 
-Networking contains all the testcases according with connectivity and addressing
-int the cloud. It handles the creation and management of a virtual networking
-infrastructure, including networks, switches, subnets, and routers for devices
-managed fy the OpenStack Compute service.
+Networking contains all the testcases according with connectivity and
+addressing int the cloud. It handles the creation and management of a virtual
+networking infrastructure, including networks, switches, subnets, and routers
+for devices managed fy the OpenStack Compute service.
 
 -----------------
 Test Requirements
