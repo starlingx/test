@@ -18,3 +18,4 @@ For more information about StarlingX, see https://docs.starlingx.io/.
    networking/index
    storage/index
    security/index
+   maintenance/index
