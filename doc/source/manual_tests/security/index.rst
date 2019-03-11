@@ -16,3 +16,4 @@ Subdomains
    :maxdepth: 2
 
    security_OAM_suite
+   security_VM_password_protection
