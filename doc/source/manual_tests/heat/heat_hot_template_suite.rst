@@ -20,7 +20,8 @@ HEAT_HOT_Template_01
 Testcase Objective
 ~~~~~~~~~~~~~~~~~~
 
-This test case verify that HEAT can create a cinder volume successfully with HOT template.
+This test case verify that HEAT can create a cinder volume successfully with
+HOT template.
 
 ~~~~~~~~~~~~~~~~~~~
 Test Pre-Conditions
@@ -30,17 +31,17 @@ a) An image with the name of cirros available
 
 ::
 
-  Export openstack_helm authentication - go to [0] for details. 
-  
-  $ wget http://download.cirros-cloud.net/0.4.0/cirros-0.4.0-x86_64-disk.img 
-  
+  Export openstack_helm authentication - go to [0] for details.
+
+  $ wget http://download.cirros-cloud.net/0.4.0/cirros-0.4.0-x86_64-disk.img
+
   $ openstack image create --file cirros-0.4.0-x86_64-disk.img --disk-format qcow2 --public cirros
 
 ~~~~~~~~~~
 Test Steps
 ~~~~~~~~~~
 
-1. Create Heat stack using <cinder_volume.yaml> 
+1. Create Heat stack using <cinder_volume.yaml>
 
 ::
 
@@ -48,18 +49,18 @@ Test Steps
 
 ::
 
-  i.e.  
+  i.e.
   +---------------------+--------------------------------------+
-  | Field | Value | 
+  | Field | Value |
   +---------------------+--------------------------------------+
   | id | caa42023-0669-4825-a024-28ebcbf0e3e2 |
   | stack_name | Volumefer | | description | Launch a cinder volume cirros image. |
   | creation_time | 2019-02-22T15:18:23Z |
   | updated_time | None | | stack_status | CREATE_IN_PROGRESS |
-  | stack_status_reason | Stack CREATE started | 
-  +---------------------+--------------------------------------+ 
+  | stack_status_reason | Stack CREATE started |
+  +---------------------+--------------------------------------+
 
-2.Delete the stack 
+2.Delete the stack
 
 ::
 
@@ -69,36 +70,37 @@ Test Steps
 Expected Behavior
 ~~~~~~~~~~~~~~~~~
 
-1. Verify 1GB cinder volume is successfully created. 
+1. Verify 1GB cinder volume is successfully created.
 
 ::
 
-      $ openstack stack show <volume_name> 
+      $ openstack stack show <volume_name>
 
 ::
 
-  i.e. 
+  i.e.
    $ openstack stack show Volumefer
-   +------------------------+-------------------------------------------------------------------------------------------------------------------------------------------+ 
-   | Field                  | Value                                                                                                                                     | 
-   +========================+===========================================================================================================================================+ 
-   | id                     | c0a18394-d5fc-441c-bcd9-2f3bb3fb6592                                                                                                      | 
-   | stack_name             | Volumefer                                                                                                                                 | 
-   | description            | Launch a cinder volume cirros image.                                                                                                      | 
-   +------------------------+-------------------------------------------------------------------------------------------------------------------------------------------+ 
-   | ...                    | ...                                                                                                                                       | 
-   +------------------------+-------------------------------------------------------------------------------------------------------------------------------------------+ 
-   | outputs                | description: Volume                                                                                                                       | 
-   | output_key: volume_size|                                                                                                                                           |  
-   | output_value: '1'      |                                                                                                                                           |  
-   +------------------------+-------------------------------------------------------------------------------------------------------------------------------------------+ 
-   |  ...                    | ...                                                                                                                                       | 
-   +------------------------+-------------------------------------------------------------------------------------------------------------------------------------------+ 
+   +------------------------+-------------------------------------------------------------------------------------------------------------------------------------------+
+   | Field                  | Value                                                                                                                                     |
+   +========================+===========================================================================================================================================+
+   | id                     | c0a18394-d5fc-441c-bcd9-2f3bb3fb6592                                                                                                      |
+   | stack_name             | Volumefer                                                                                                                                 |
+   | description            | Launch a cinder volume cirros image.                                                                                                      |
+   +------------------------+-------------------------------------------------------------------------------------------------------------------------------------------+
+   | ...                    | ...                                                                                                                                       |
+   +------------------------+-------------------------------------------------------------------------------------------------------------------------------------------+
+   | outputs                | description: Volume                                                                                                                       |
+   | output_key: volume_size|                                                                                                                                           |
+   | output_value: '1'      |                                                                                                                                           |
+   +------------------------+-------------------------------------------------------------------------------------------------------------------------------------------+
+   |  ...                    | ...                                                                                                                                       |
+   +------------------------+-------------------------------------------------------------------------------------------------------------------------------------------+
 
-2. Verify the STACK and the resources is deleted Openstack stack list (STACK should not be there in the list) 
+2. Verify the STACK and the resources is deleted Openstack stack list (STACK
+   should not be there in the list)
 
 ~~~~~~~~~~~~~~~~~~~~
-<cinder_volume.yaml> 
+<cinder_volume.yaml>
 ~~~~~~~~~~~~~~~~~~~~
 
 ::
@@ -131,43 +133,44 @@ HEAT_HOT_Template_12
 Testcase Objective
 ~~~~~~~~~~~~~~~~~~
 
-This test case verify that HEAT can create a Nova Server successfully with HOT template.
- 
+This test case verify that HEAT can create a Nova Server successfully with HOT
+template.
+
 ~~~~~~~~~~~~~~~~~~~
 Test Pre-Conditions
 ~~~~~~~~~~~~~~~~~~~
 
-a) An image with the name of cirros available 
+a) An image with the name of cirros available
 
 ::
 
   i.e.
   Export openstack_helm authentication
-     $ export OS_CLOUD=openstack_helm 
-     REMARK: go to [0] for details. 
-  
-  $ wget http://download.cirros-cloud.net/0.4.0/cirros-0.4.0-x86_64-disk.img 
-  
+     $ export OS_CLOUD=openstack_helm
+     REMARK: go to [0] for details.
+
+  $ wget http://download.cirros-cloud.net/0.4.0/cirros-0.4.0-x86_64-disk.img
+
   $ openstack image create --file cirros-0.4.0-x86_64-disk.img --disk-format qcow2 --public cirros
 
-b) A flavor with the name flavor_name.type available. 
+b) A flavor with the name flavor_name.type available.
 
 ::
 
   i.e.
-  $ openstack flavor create --public --id 1 --ram 512 --vcpus 1 --disk 4 flavor_name.type 
+  $ openstack flavor create --public --id 1 --ram 512 --vcpus 1 --disk 4 flavor_name.type
       REMARK: go to [1] for type of flavors.
 
-c) A network available 
+c) A network available
 
 ::
 
   i.e.
-  $ openstack network create net 
+  $ openstack network create net
 
-  $ openstack subnet create --network net --ip-version 4 --subnet-range 192.168.0.0/24 --dhcp net-subnet1 
+  $ openstack subnet create --network net --ip-version 4 --subnet-range 192.168.0.0/24 --dhcp net-subnet1
 
-d) Execute the following command to take the network id 
+d) Execute the following command to take the network id
 
 ::
 
@@ -184,7 +187,7 @@ Test Steps
 
       $ openstack stack create --template nova_server.yaml stack_demo --parameter "NetID=$NET_ID"
 
-2. Delete the stack 
+2. Delete the stack
 
 ::
 
@@ -194,11 +197,11 @@ Test Steps
 Expected Behavior
 ~~~~~~~~~~~~~~~~~
 
-1. Verify Stack is successfully created and new nova instance is created. 
+1. Verify Stack is successfully created and new nova instance is created.
 
 ::
 
-     $ openstack stack list 
+     $ openstack stack list
 
 ::
 
@@ -209,21 +212,21 @@ Expected Behavior
   |380bb224-4c41-4b25-b4e8-7291bb1f3129 | stack_demo | 3cfea8788a9c4323937e730e1a7cbf18 | CREATE_COMPLETE | 2019-02-22T11:36:17Z | 2019-02-22T11:36:25Z |
   +--------------------------------------+------------+----------------------------------+-----------------+----------------------+----------------------+
 
-2. Verify the STACK and the resources is deleted $ openstack stack list 
+2. Verify the STACK and the resources is deleted $ openstack stack list
 
 ~~~~~~~~~~~~~~~~~~
-<nova_server.yaml> 
+<nova_server.yaml>
 ~~~~~~~~~~~~~~~~~~
 
 ::
-  
+
   heat_template_version: 2015-10-15
   description: Launch a basic instance with CirrOS image using the ``demo1.tiny`` flavor, ``mykey`` key,  and one network.
   parameters:
     NetID:
       type: string
       description: Network ID to use for the instance.
-  
+
   resources:
     server:
       type: OS::Nova::Server
@@ -233,7 +236,7 @@ Expected Behavior
         key_name:
         networks:
         - network: { get_param: NetID }
-  
+
   outputs:
     instance_name:
       description: Name of the instance
@@ -242,7 +245,7 @@ Expected Behavior
       description: IP address of the instance.
       value: { get_attr: [ server, first_address ] }
 
-~~~~~~~~~~~ 
+~~~~~~~~~~~
 References:
 ~~~~~~~~~~~
 [0] - [https://wiki.openstack.org/wiki/StarlingX/Containers/Installation]
