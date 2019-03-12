@@ -19,3 +19,4 @@ For more information about StarlingX, see https://docs.starlingx.io/.
    storage/index
    security/index
    maintenance/index
+   backup_restore/index
