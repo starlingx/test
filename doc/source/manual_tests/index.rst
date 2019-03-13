@@ -15,8 +15,9 @@ For more information about StarlingX, see https://docs.starlingx.io/.
 
    gnochi/index
    heat/index
-   networking/index
-   storage/index
-   security/index
+   horizon/index
    maintenance/index
+   networking/index
+   security/index
+   storage/index
    backup_restore/index
