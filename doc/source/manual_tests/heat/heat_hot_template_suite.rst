@@ -310,10 +310,266 @@ nova_server.yaml
       value: { get_attr: [ server, first_address ] }
 
 --------------------
-HEAT_HOT_Template_12
+HEAT_HOT_Template_03
 --------------------
 
-:Test ID: HEAT_HOT_Template_12
+:Test ID: HEAT_HOT_Template_03
+:Test Title: Heat resource creation for a Neutron network with its Sub-net.
+:Tags: HOT
+
+~~~~~~~~~~~~~~~~~~
+Testcase Objective
+~~~~~~~~~~~~~~~~~~
+
+This test case verify that HEAT can manage Neutron network with its subnet
+successfully using HOT template.
+
+~~~~~~~~~~~~~~~~~~~
+Test Pre-Conditions
+~~~~~~~~~~~~~~~~~~~
+
+.. code:: bash
+
+  Export openstack_helm authentication - go to [0] for details.
+
+~~~~~~~~~~
+Test Steps
+~~~~~~~~~~
+
+1. Create a network with its subnet using <neutron_subnet.yaml>
+
+.. code:: bash
+
+  $ openstack stack create <net_subnet_name> -t neutron_subnet.yaml
+
+.. code:: bash
+
+  +---------------------+---------------------------------------+
+  | Field               | Value                                 |
+  +---------------------+---------------------------------------+
+  | id                  | 7d9ac4d3-dccc-4856-a056-feb535a9bd0d  |
+  | stack_name          | publicnet                             |
+  | description         | Manage a Neutron net with its subnet. |
+  | creation_time       | 2019-03-15T14:28:32Z                  |
+  | updated_time        | None                                  |
+  | stack_status        | CREATE_IN_PROGRESS                    |
+  | stack_status_reason | Stack CREATE started                  |
+  +---------------------+---------------------------------------+
+
+2.Delete the stack
+
+.. code:: bash
+
+  $ openstack stack delete <net_subnet_name>
+
+~~~~~~~~~~~~~~~~~
+Expected Behavior
+~~~~~~~~~~~~~~~~~
+
+1. Verify networi with its subne is successfully created.
+
+.. code:: bash
+
+  $ openstack stack show <net_subnet_name>
+
+.. code:: bash
+
+  i.e.
+  +-----------------------+-------------------------------------------------------------------------------------------------------------------------------------------+
+  | Field                 | Value                                                                                                                                     |
+  +-----------------------+-------------------------------------------------------------------------------------------------------------------------------------------+
+  | id                    | 0948eb44-9e6a-46a6-bf42-dce80d730f79                                                                                                      |
+  | stack_name            | publicnet                                                                                                                                 |
+  | description           | Manage a Neutron net with its subnet.                                                                                                     |
+  | creation_time         | 2019-03-15T15:32:20Z                                                                                                                      |
+  | updated_time          | None                                                                                                                                      |
+  | stack_status          | CREATE_COMPLETE                                                                                                                           |
+  | stack_status_reason   | Stack CREATE completed successfully                                                                                                       |
+  | parameters            | OS::project_id: 983e6f5336ab408589d0d1f424634c51                                                                                          |
+  |                       | OS::stack_id: 0948eb44-9e6a-46a6-bf42-dce80d730f79                                                                                        |
+  |                       | OS::stack_name: publicnet                                                                                                                 |
+  |                       |                                                                                                                                           |
+  | outputs               | - description: parent_port_name_output                                                                                                    |
+  |                       |   output_key: parent_port_name                                                                                                            |
+  |                       |   output_value: parent_port_name                                                                                                          |
+  |                       | - description: a_net_name_output                                                                                                          |
+  |                       |   output_key: a_net_name                                                                                                                  |
+  |                       |   output_value: net_demo                                                                                                                  |
+  +-----------------------+-------------------------------------------------------------------------------------------------------------------------------------------+
+
+2. Verify the STACK and the resources is deleted Openstack stack list (STACK
+   should not be there in the list)
+
+~~~~~~~~~~~~~~~~~~~
+neutron_subnet.yaml
+~~~~~~~~~~~~~~~~~~~
+
+.. code:: yaml
+
+  heat_template_version: 2015-04-30
+
+  description: Manage a Neutron net with its subnet.
+
+  resources:
+    a_net:
+      type: OS::Neutron::Net
+      properties:
+        name: net_demo
+        shared: True
+
+    subnet0:
+      type: OS::Neutron::Subnet
+      properties:
+        network: { get_resource: a_net }
+        cidr: 10.0.4.0/24
+
+    parent_port:
+      type: OS::Neutron::Port
+      properties:
+        network: { get_resource: a_net }
+        name: parent_port_name
+
+  outputs:
+    a_net_name:
+      description: a_net_name_output
+      value: { get_attr: [ a_net, name ] }
+    parent_port_name:
+      description: parent_port_name_output
+      value: { get_attr: [ parent_port, name ] }
+
+--------------------
+HEAT_HOT_Template_04
+--------------------
+
+:Test ID: HEAT_HOT_Template_04
+:Test Title: Heat resource creation for Neutron Provider Networks.
+:Tags: HOT
+
+~~~~~~~~~~~~~~~~~~
+Testcase Objective
+~~~~~~~~~~~~~~~~~~
+
+This test case verify that HEAT can manage Neutron provider networks
+successfully with HOT template.
+
+~~~~~~~~~~~~~~~~~~~
+Test Pre-Conditions
+~~~~~~~~~~~~~~~~~~~
+
+.. code:: bash
+
+  Export openstack_helm authentication - go to [0] for details.
+
+~~~~~~~~~~
+Test Steps
+~~~~~~~~~~
+
+1. Create a provider network using <neutron_provider_net.yaml>
+
+.. code:: bash
+
+  $ openstack stack create <provider_net_name> -t neutron_provider_net.yaml
+
+.. code:: bash
+
+  +---------------------+--------------------------------------------+
+  | Field               | Value                                      |
+  +---------------------+--------------------------------------------+
+  | id                  | f2432aca-852a-4d0f-81b0-c466ac86af67       |
+  | stack_name          | a_provider                                 |
+  | description         | Template to test provide network resources |
+  | creation_time       | 2019-03-15T16:05:36Z                       |
+  | updated_time        | None                                       |
+  | stack_status        | CREATE_IN_PROGRESS                         |
+  | stack_status_reason | Stack CREATE started                       |
+  +---------------------+--------------------------------------------+
+
+
+2.Delete the stack
+
+.. code:: bash
+
+  $ openstack stack delete <provider_net_name>
+
+~~~~~~~~~~~~~~~~~
+Expected Behavior
+~~~~~~~~~~~~~~~~~
+
+1. Verify the provider network is successfully created.
+
+.. code:: bash
+
+  $ openstack stack show <provider_net_name>
+
+.. code:: bash
+
+  i.e.
+  controller-0:~$ openstack stack show a_provider
+  +-----------------------+--------------------------------------------------------------------------------------------------------------------------------------------+
+  | Field                 | Value                                                                                                                                      |
+  +-----------------------+--------------------------------------------------------------------------------------------------------------------------------------------+
+  | id                    | f2432aca-852a-4d0f-81b0-c466ac86af67                                                                                                       |
+  | stack_name            | a_provider                                                                                                                                 |
+  | description           | Template to test provide network resources                                                                                                 |
+  | creation_time         | 2019-03-15T16:05:36Z                                                                                                                       |
+  | updated_time          | None                                                                                                                                       |
+  | stack_status          | CREATE_COMPLETE                                                                                                                            |
+  | stack_status_reason   | Stack CREATE completed successfully                                                                                                        |
+  | parameters            | OS::project_id: 983e6f5336ab408589d0d1f424634c51                                                                                           |
+  |                       | OS::stack_id: f2432aca-852a-4d0f-81b0-c466ac86af67                                                                                         |
+  |                       | OS::stack_name: a_provider                                                                                                                 |
+  |                       |                                                                                                                                            |
+  | outputs               | - description: provider_net                                                                                                                |
+  |                       |   output_key: net_name                                                                                                                     |
+  |                       |   output_value:                                                                                                                            |
+  |                       |     admin_state_up: true                                                                                                                   |
+  |                       |     availability_zone_hints: []                                                                                                            |
+  |                       |     availability_zones: []                                                                                                                 |
+  |                       |     created_at: '2019-03-15T16:05:38Z'                                                                                                     |
+  |                       |     description: ''                                                                                                                        |
+  |                       |     id: aeff6fba-606e-4616-a53f-6fdb111687fb                                                                                               |
+  |                       |     ipv4_address_scope: null                                                                                                               |
+  |                       |     ipv6_address_scope: null                                                                                                               |
+  |                       |     mtu: 1500                                                                                                                              |
+  |                       |     name: a_provnet                                                                                                                        |
+  |                       |     port_security_enabled: true                                                                                                            |
+  |                       |     project_id: 983e6f5336ab408589d0d1f424634c51                                                                                           |
+  |                       |     provider:network_type: vlan
+  |                       |     provider:physical_network:physnet1
+  |                       |     provider:segmentation_id:526
+  +-----------------------+--------------------------------------------------------------------------------------------------------------------------------------------+
+
+2. Verify the STACK and the resources is deleted Openstack stack list (STACK
+   should not be there in the list)
+
+~~~~~~~~~~~~~~~~~~~~~~~~~
+neutron_provider_net.yaml
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. code:: bash
+
+  heat_template_version: 2015-10-15
+
+  description: Template to test provide network resources
+
+  resources:
+    a_net:
+      type: OS::Neutron::ProviderNet
+      properties:
+        name: a_provnet
+        network_type: vlan
+        shared: true
+
+  outputs:
+    net_name:
+      description: provider_net
+      value: { get_attr: [ a_net, show] }
+
+--------------------
+HEAT_HOT_Template_11
+--------------------
+
+:Test ID: HEAT_HOT_Template_11
 :Test Title: Heat resource creation for Nova Server.
 :Tags: HOT
 
