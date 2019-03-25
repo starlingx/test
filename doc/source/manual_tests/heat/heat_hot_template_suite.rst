@@ -566,6 +566,131 @@ neutron_provider_net.yaml
       value: { get_attr: [ a_net, show] }
 
 --------------------
+HEAT_HOT_Template_05
+--------------------
+
+:Test ID: HEAT_HOT_Template_05
+:Test Title: Heat resource creation for Router Gateway, Interface.
+:Tags: HOT
+
+~~~~~~~~~~~~~~~~~~
+Testcase Objective
+~~~~~~~~~~~~~~~~~~
+
+This test case verify that HEAT can manage Router Gateway, and interface
+successfully with HOT template.
+
+~~~~~~~~~~~~~~~~~~~
+Test Pre-Conditions
+~~~~~~~~~~~~~~~~~~~
+
+a) An image with the name of cirros available.
+b) A flavor with the name flavor_name.type available.
+c) Your own network available.
+d) Export above values.
+
+i.e.
+.. code:: bash
+
+  $ export image=cirros
+  $ export flavor=m1.medium
+  $ export public_net=external-net0
+  $ export private_net_name=extnetfer
+  $ export private_subnet_name=extsubnetfer
+
+~~~~~~~~~~
+Test Steps
+~~~~~~~~~~
+
+1. Create Heat stack router using neutron_justrouter.yaml by typing:
+
+.. code:: bash
+
+  $ openstack stack create --template neutron_justrouter.yaml Instatt2router --parameter "image=$image" --parameter "flavor=$flavor" --parameter "public_net=$public_net" --parameter "private_net_name=$private_net_name" --parameter "private_subnet_name=$private_subnet_name"
+
+2. Delete the stack Instatt2router
+
+.. code:: bash
+
+      $ openstack stack delete Instatt2router
+
+~~~~~~~~~~~~~~~~~
+Expected Behavior
+~~~~~~~~~~~~~~~~~
+
+1. Verify Stack is successfully created and router gateway/interface is created.
+
+.. code:: bash
+
+       $ openstack stack list
+  i.e.
+  +--------------------------------------+--------------------+----------------------------------+--------------------+----------------------+--------------+
+  | ID                                   | Stack Name         | Project                          | Stack Status       | Creation Time        | Updated Time |
+  +--------------------------------------+--------------------+----------------------------------+--------------------+----------------------+--------------+
+  | ee23b8ae-815c-4608-b5a4-5af7b5bd0d65 | Instatt2router     | 983e6f5336ab408589d0d1f424634c51 | CREATE_IN_PROGRESS | 2019-03-25T10:30:08Z | None         |
+  +--------------------------------------+--------------------+----------------------------------+--------------------+----------------------+--------------+
+
+2. Verify the STACK and the resources is deleted $ openstack stack list.
+
+~~~~~~~~~~~~~~~~~~~~~~~
+neutron_justrouter.yaml
+~~~~~~~~~~~~~~~~~~~~~~~
+
+.. code:: bash
+
+  heat_template_version: 2018-08-31
+
+  description: >
+    This template create a Nova Server Instance attached to a network and attached
+    a private network with a public one.
+
+  parameters:
+    image:
+      type: string
+      description: Name of image to use for servers
+    flavor:
+      type: string
+      description: Flavor to use for servers.
+    public_net:
+      type: string
+      description: >
+      ID or name of public network for which floating IP addresses will be
+      allocated.
+    private_net_name:
+      type: string
+      description: >
+      ID or name of private network where the router will be attached.
+    private_subnet_name:
+      type: string
+      description: >
+      ID or name of private subnet where the router will be attached.
+
+  resources:
+    router:
+      type: OS::Neutron::Router
+      properties:
+        external_gateway_info: { network: { get_param: public_net } }
+
+  router_interface:
+    type: OS::Neutron::RouterInterface
+    properties:
+      router: { get_resource: router }
+      subnet: { get_param: private_subnet_name }
+
+  server1:
+    type: OS::Nova::Server
+    properties:
+      name: Server1
+      image: { get_param: image }
+      flavor: { get_param: flavor }
+      networks: [{ network: { get_param: private_net_name} }]
+
+  outputs:
+    server_private_ip:
+      description: IP address of server1 in private network
+      value: { get_attr: [ server1, addresses ] }
+
+--------------------
 HEAT_HOT_Template_11
 --------------------
 
