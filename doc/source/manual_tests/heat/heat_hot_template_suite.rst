@@ -636,7 +636,7 @@ Expected Behavior
 neutron_justrouter.yaml
 ~~~~~~~~~~~~~~~~~~~~~~~
 
-.. code:: bash
+.. code:: yaml
 
   heat_template_version: 2018-08-31
 
@@ -691,10 +691,162 @@ neutron_justrouter.yaml
       value: { get_attr: [ server1, addresses ] }
 
 --------------------
-HEAT_HOT_Template_11
+HEAT_HOT_Template_06
 --------------------
 
-:Test ID: HEAT_HOT_Template_11
+:Test ID: HEAT_HOT_Template_06
+:Test Title: Heat resource creation for Port and Floating IP with fixed IPs.
+:Tags: HOT
+
+~~~~~~~~~~~~~~~~~~
+Testcase Objective
+~~~~~~~~~~~~~~~~~~
+
+This test case verify that HEAT can manage Ports and Floating IPs with fixed IPS
+successfully using HOT template.
+
+~~~~~~~~~~~~~~~~~~~
+Test Pre-Conditions
+~~~~~~~~~~~~~~~~~~~
+
+a) An image with the name of cirros available.
+b) A flavor with the name flavor_name.type available.
+c) Your own network available.
+d) Export above values.
+
+i.e.
+.. code:: bash
+
+  $ export image=cirros
+  $ export flavor=m1.medium
+  $ export public_net=external-net0
+  $ export private_net_name=extnetfer
+  $ export private_subnet_name=extsubnetfer
+
+~~~~~~~~~~
+Test Steps
+~~~~~~~~~~
+
+1. Create Heat stack router using neutron_floatip.yaml by typing:
+
+.. code:: bash
+
+  $ openstack stack create --template neutron_floatip.yaml Instatt2fltip --parameter "image=$image" --parameter "flavor=$flavor" --parameter "public_net=$public_net" --parameter "private_net_name=$private_net_name" --parameter "private_subnet_name=$private_subnet_name"
+
+  +---------------------+---------------------------------------------------------------------------------------------------------------------+
+  | Field               | Value                                                                                                               |
+  +---------------------+---------------------------------------------------------------------------------------------------------------------+
+  | id                  | 853e4459-d793-4504-9841-3489753644af                                                                                |
+  | stack_name          | Instatt2fltip                                                                                                       |
+  | description         | This template create a Nova Server Instance attached to port and float IP with fixed ips between external and       |
+  |                     | private network.                                                                                                    |
+  |                     |                                                                                                                     |
+  | creation_time       | 2019-03-25T16:00:57Z                                                                                                |
+  | updated_time        | None                                                                                                                |
+  | stack_status        | CREATE_IN_PROGRESS                                                                                                  |
+  | stack_status_reason | Stack CREATE started                                                                                                |
+  +---------------------+---------------------------------------------------------------------------------------------------------------------+
+
+  +--------------------------------------+--------------------+----------------------------------+-----------------+----------------------+--------------+
+  | ID                                   | Stack Name         | Project                          | Stack Status    | Creation Time        | Updated Time |
+  +--------------------------------------+--------------------+----------------------------------+-----------------+----------------------+--------------+
+  | 39e9bfff-dd53-43d2-95a5-8e78c52bf9e0 | Instatt2fltip      | 983e6f5336ab408589d0d1f424634c51 | CREATE_COMPLETE | 2019-03-25T15:12:11Z | None         |
+  +--------------------------------------+--------------------+----------------------------------+-----------------+----------------------+--------------+
+
+2. Delete the stack Instatt2fltip
+
+.. code:: bash
+
+      $ openstack stack delete Instatt2fltip
+
+~~~~~~~~~~~~~~~~~
+Expected Behavior
+~~~~~~~~~~~~~~~~~
+
+1. Verify Stack and make sure Port and Floating IP is created.
+
+.. code:: bash
+
+       $ openstack stack list
+
+2. Verify the STACK and the resources is deleted $ openstack stack list.
+
+~~~~~~~~~~~~~~~~~~~~~~~
+neutron_floatip.yaml
+~~~~~~~~~~~~~~~~~~~~~~~
+
+.. code:: yaml
+
+  heat_template_version: 2018-08-31
+
+  description: >
+    This template create a Nova Server Instance attached to port and float IP
+    with fixed ips between external and private network.
+
+  parameters:
+    image:
+      type: string
+      description: Name of image to use for servers
+    flavor:
+      type: string
+      description: Flavor to use for servers
+    public_net:
+      type: string
+      description: >
+        ID or name of public network for which floating IP addresses will be
+        allocated
+    private_net_name:
+      type: string
+      description: >
+        ID or name of private network where the router will be attached
+    private_subnet_name:
+      type: string
+    description: >
+      ID or name of private subnet where the router will be attached
+
+  resources:
+    router:
+      type: OS::Neutron::Router
+      properties:
+        external_gateway_info: { network: { get_param: public_net } }
+
+    router_interface:
+      type: OS::Neutron::RouterInterface
+      properties:
+        router: { get_resource: router }
+        subnet: { get_param: private_subnet_name }
+
+    server1:
+      type: OS::Nova::Server
+      properties:
+        name: Server1
+        image: { get_param: image }
+        flavor: { get_param: flavor }
+        networks: [{ port: { get_resource: server1_port} }]
+
+    server1_port:
+      type: OS::Neutron::Port
+      properties:
+        network_id: { get_param: private_net_name }
+        fixed_ips: [{ subnet_id: { get_param: private_subnet_name}, ip_address: "192.168.10.79" }]
+
+    server1_floating_ip:
+      type: OS::Neutron::FloatingIP
+      properties:
+        floating_network: { get_param: public_net }
+        fixed_ip_address: "192.168.10.79"
+        port_id: { get_resource: server1_port }
+
+  outputs:
+    server_private_ip:
+      description: IP address of server1 in private network
+      value: { get_attr: [ server1, addresses ] }
+
+--------------------
+HEAT_HOT_Template_07
+--------------------
+
+:Test ID: HEAT_HOT_Template_07
 :Test Title: Heat resource creation for Nova Server.
 :Tags: HOT
 
@@ -820,6 +972,6 @@ References:
 
 [1] - [https://docs.openstack.org/nova/pike/admin/flavors2.html]
 
-[2] - HEAT_HOT_Template_12 Test Case
+[2] - HEAT_HOT_Template_07 Test Case
 
 [3] - HEAT_HOT_Template_01 Test Case
