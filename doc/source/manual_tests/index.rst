@@ -13,8 +13,10 @@ For more information about StarlingX, see https://docs.starlingx.io/.
 .. toctree::
    :maxdepth: 2
 
+   fault_management/index
    gnochi/index
    heat/index
+   high_availability/index
    horizon/index
    maintenance/index
    networking/index
