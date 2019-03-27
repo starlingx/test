@@ -121,7 +121,7 @@ cinder_volume.yaml
       value: { get_attr: [volume, size ] }
 
 --------------------
-HEAT_HOT_template_02
+HEAT_HOT_Template_02
 --------------------
 
 :Test ID: HEAT_HOT_Template_02
@@ -139,28 +139,27 @@ associate an existing volume to an existing instance.
 Test Pre-Conditions
 ~~~~~~~~~~~~~~~~~~~
 
-a) A Nova Server Instance already created. Check [2] for creation.
+1. A Nova Server Instance already created. Check [2] for creation.
 
-b) A volume already created. Check [3] for creation.
+2. A volume already created. Check [3] for creation.
 
-c) Create the "cinder_volume_attachment.yaml" yaml file in your
-controller.
+3. Create the "cinder_volume_attachment.yaml" yaml file in your controller.
 
 .. code:: bash
 
-     controller-0:~$ touch cinder_volume_attachment.yaml
+  controller-0:~$ touch cinder_volume_attachment.yaml
 
-d) Export Instance id in your current session.
+4. Export Instance id in your current session.
 
 .. code:: bash
 
      controller-0:~$ export Instance_ID=$(openstack server list | awk '/stack_demo*/ {print $2}')
 
-e) Export Volume id in your current session.
+5. Export Volume id in your current session.
 
 .. code:: bash
 
-     controller-0:~$ export Volume_ID=$(openstack volume list | awk '/Vol_demo*/ {print $2}')
+  controller-0:~$ export Volume_ID=$(openstack volume list | awk '/Vol_demo*/ {print $2}')
 
 
 ~~~~~~~~~~
@@ -584,12 +583,16 @@ successfully with HOT template.
 Test Pre-Conditions
 ~~~~~~~~~~~~~~~~~~~
 
-a) An image with the name of cirros available.
-b) A flavor with the name flavor_name.type available.
-c) Your own network available.
-d) Export above values.
+1. An image with the name of cirros available.
+
+2. A flavor with the name flavor_name.type available.
+
+3. Your own network available.
+
+4. Export above values.
 
 i.e.
+
 .. code:: bash
 
   $ export image=cirros
@@ -709,12 +712,16 @@ successfully using HOT template.
 Test Pre-Conditions
 ~~~~~~~~~~~~~~~~~~~
 
-a) An image with the name of cirros available.
-b) A flavor with the name flavor_name.type available.
-c) Your own network available.
-d) Export above values.
+1. An image with the name of cirros available.
+
+2. A flavor with the name flavor_name.type available.
+
+3. Your own network available.
+
+4. Export above values.
 
 i.e.
+
 .. code:: bash
 
   $ export image=cirros
@@ -964,6 +971,157 @@ Expected Behavior
     instance_ip:
       description: IP address of the instance.
       value: { get_attr: [ server, first_address ] }
+
+--------------------
+HEAT_HOT_Template_08
+--------------------
+
+:Test ID: HEAT_HOT_Template_08
+:Test Title: Heat resource creation for Nova Server Group.
+:Tags: HOT
+
+~~~~~~~~~~~~~~~~~~
+Testcase Objective
+~~~~~~~~~~~~~~~~~~
+
+This test case verify that HEAT can manage Nova Server Group successfully using
+HOT template.
+
+~~~~~~~~~~~~~~~~~~~
+Test Pre-Conditions
+~~~~~~~~~~~~~~~~~~~
+
+1. An image with the name of cirros available.
+
+2. A flavor with the name flavor_name.type available.
+
+3. Your own network available.
+
+4. Export above values.
+
+i.e.
+
+.. code:: bash
+
+  export image="cirros"
+
+  export flavor="m1.medium"
+
+  export public_net="extnetfer"
+
+~~~~~~~~~~
+Test Steps
+~~~~~~~~~~
+
+1. Create Heat stack Server Group using nova_servergroup.yaml by typing:
+
+.. code:: bash
+
+  $ openstack stack create --template nova_servergroup.yaml servergroupsfer --parameter "image=$image" --parameter "flavor=$flavor" --parameter "public_net=$public_net"
+
+  i.e.
+
+  +--------------------------------------+--------------------+----------------------------------+-----------------+----------------------+--------------+
+  | ID                                   | Stack Name         | Project                          | Stack Status    | Creation Time        | Updated Time |
+  +--------------------------------------+--------------------+----------------------------------+-----------------+----------------------+--------------+
+  | 4541a2e7-db92-439e-8c54-bb597e6b23a5 | servergroupsfer    | 983e6f5336ab408589d0d1f424634c51 | CREATE_COMPLETE | 2019-03-27T13:23:08Z | None         |
+  +--------------------------------------+--------------------+----------------------------------+-----------------+----------------------+--------------+
+
+2. Delete the stack servergroupsfer
+
+.. code:: bash
+
+      $ openstack stack delete servergroupsfer
+
+~~~~~~~~~~~~~~~~~
+Expected Behavior
+~~~~~~~~~~~~~~~~~
+
+1. Verify Stack and make sure Server Group is created.
+
+.. code:: bash
+
+       $ openstack stack show servergroupsfer
+
+  i.e.
+
+  +-----------------------+-------------------------------------------------------------------------------------------------------------------------------------------------+
+  | Field                 | Value                                                                                                                                           |
+  +-----------------------+-------------------------------------------------------------------------------------------------------------------------------------------------+
+  | id                    | 4541a2e7-db92-439e-8c54-bb597e6b23a5                                                                                                            |
+  | stack_name            | servergroupsfer                                                                                                                                 |
+  | creation_time         | 2019-03-27T13:23:08Z                                                                                                                            |
+  | stack_status          | CREATE_IN_PROGRESS                                                                                                                              |
+  | parameters            | OS::project_id: 983e6f5336ab408589d0d1f424634c51                                                                                                |
+  |                       | OS::stack_id: 4541a2e7-db92-439e-8c54-bb597e6b23a5                                                                                              |
+  |                       | OS::stack_name: servergroupsfer                                                                                                                 |
+  |                       | flavor: m1.medium                                                                                                                               |
+  |                       | image: cirros                                                                                                                                   |
+  |                       | public_net: extnetfer                                                                                                                           |
+  | outputs               | - description: Name of the instance                                                                                                             |
+  |                       |   output_key: instance_name                                                                                                                     |
+  |                       |   output_value: servergroupsfer-server-xyynzrxvfxqh                                                                                             |
+  |                       | - description: Srv group name                                                                                                                   |
+  |                       |   output_key: instance_group                                                                                                                    |
+  |                       |   output_value:                                                                                                                                 |
+  |                       |   output_key: instance_group                                                                                                                 [0/1209]
+  |                       |   output_value:                                                                                                                                 |
+  |                       |     id: 74d83ec8-a7a9-436e-9436-f52298414975                                                                                                    |
+  |                       |     name: srv_grp_fer                                                                                                                           |
+  |                       |     policy: anti-affinity                                                                                                                       |
+  |                       |     project_id: 983e6f5336ab408589d0d1f424634c51                                                                                                |
+
+2. Verify the STACK and the resources is deleted $ openstack stack list.
+
+~~~~~~~~~~~~~~~~~~~~~~~
+nova_servergroup.yaml
+~~~~~~~~~~~~~~~~~~~~~~~
+
+.. code:: bash
+
+  heat_template_version: 2018-08-31
+
+  description: Launch a basic instance with CirrOS image attached to a
+                Server Group.
+
+  parameters:
+    image:
+      type: string
+      description: Name of image to use for servers
+    flavor:
+      type: string
+      description: Flavor to use for servers
+    public_net:
+      type: string
+      description: Network ID to use for the instance.
+
+  resources:
+
+    srv_group:
+      type: OS::Nova::ServerGroup
+      properties:
+        name: srv_grp_fer
+        policies: [anti-affinity]
+
+    server:
+      type: OS::Nova::Server
+      properties:
+        image: { get_param: image }
+        flavor: { get_param: flavor }
+        key_name:
+        networks: [{ network: { get_param: public_net } }]
+        scheduler_hints: { group: { get_resource: srv_group } }
+
+  outputs:
+    instance_name:
+      description: Name of the instance
+      value: { get_attr: [ server, name ] }
+    instance_ip:
+      description: IP address of the instance.
+      value: { get_attr: [ server, first_address ] }
+    instance_group:
+      description: Srv group name
+      value: { get_attr: [ srv_group, show ]  }
 
 ~~~~~~~~~~~
 References:
