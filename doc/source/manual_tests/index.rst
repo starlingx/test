@@ -26,3 +26,4 @@ For more information about StarlingX, see https://docs.starlingx.io/.
    installation_and_configuration/index
    distributed_cloud/index
    system_inventory/index
+   AIO_simplex/index
