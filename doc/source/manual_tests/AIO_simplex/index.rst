@@ -47,7 +47,7 @@ Test Steps
 
  ::
 
-  $ source /etc/nova/openrc
+  $ source /etc/platform/openrc
   $ openstack user set --password <new_password> <user>
 
 
@@ -558,7 +558,7 @@ Test Steps
 
  ::
 
-   $ source /etc/nova/openrc
+   $ source /etc/platform/openrc
 
 2. To check all process:
 
@@ -668,65 +668,6 @@ Simplex_12
 ~~~~~~~~~~
 
 :Test ID: Simplex_12
-:Test Title: Validate all host profiles are blocked
-:Tags: Simplex
-
-++++++++++++++
-Test Objective
-++++++++++++++
-
-Validate that profile are blocked and rejected
-
-+++++++++++++++++++
-Test Pre-Conditions
-+++++++++++++++++++
-
-StarlingX Environment setup
-
-++++++++++
-Test Steps
-++++++++++
-
-1. Create interface profile for a node
-
- ::
-
-  by cli: system ifprofile-add
-  by gui: Admin > Platform > Host Inventory > Interfaces > Create Interface Profile
-
-2. Lock the node to test
-
-3. Delete interfaces of the node
-
-4. Apply the interface profile, from Horizon:
-
-  Host Inventory > edit Host > Interface Profile > apply the one that you saved
-
-5. Unlock the node
-
-+++++++++++++++++
-Expected Behavior
-+++++++++++++++++
-
-1. Verify the profile created successfully
-2. Verify the node locked successfully
-3. Verify the interfaces are deleted
-
-Note:
-
-- cannot delete interface of 'ethernet' type, change its type to 'none' instead
-- leave mgmt interface unchanged
-- verify the interfaces are recreated successfully
-
-4. Verify the node can be unlocked and get into unlocked, enabled and available states.
-5. Interfaces are working without any issue
-
-
-~~~~~~~~~~
-Simplex_13
-~~~~~~~~~~
-
-:Test ID: Simplex_13
 :Test Title: Validate service parameters on AIO Simplex
 :Tags: Simplex
 
@@ -761,10 +702,10 @@ Expected Behavior
 1. Verify system service parameters can be applied successfully.
 
 ~~~~~~~~~~
-Simplex_14
+Simplex_13
 ~~~~~~~~~~
 
-:Test ID: Simplex_14
+:Test ID: Simplex_13
 :Test Title: Verify branding on AIO Simplex
 :Tags: Simplex
 
@@ -796,7 +737,7 @@ Test Steps
 
  ::
 
-  $ source /etc/nova/openrc
+  $ source /etc/platform/openrc
   $ system service-list
 
 
@@ -831,10 +772,10 @@ Expected Behavior
 
 
 ~~~~~~~~~~
-Simplex_15
+Simplex_14
 ~~~~~~~~~~
 
-:Test ID: Simplex_15
+:Test ID: Simplex_14
 :Test Title: Verify memory assignment on AIO Simplex
 :Tags: Simplex
 
@@ -874,10 +815,10 @@ System Memory should be able to perform lock using system memory
 - When unlock, a reboot is expected.
 
 ~~~~~~~~~~
-Simplex_16
+Simplex_15
 ~~~~~~~~~~
 
-:Test ID: Simplex_16
+:Test ID: Simplex_15
 :Test Title: Verify mgmt/infra interfaces config
 :Tags: Simplex
 
@@ -910,10 +851,10 @@ Expected Behavior
 
 
 ~~~~~~~~~~
-Simplex_17
+Simplex_16
 ~~~~~~~~~~
 
-:Test ID: Simplex_17
+:Test ID: Simplex_16
 :Test Title: Verify Reconfiguration of mgmt interface on AIO Simplex
 :Tags: Simplex
 
@@ -957,10 +898,10 @@ Expected Behavior
 1. Ensure the active controller is automatically swacted and alarms are generated for MGMT interface is down.
 
 ~~~~~~~~~~
-Simplex_18
+Simplex_17
 ~~~~~~~~~~
 
-:Test ID: Simplex_18
+:Test ID: Simplex_17
 :Test Title: Verify Reconfiguration of OAM port on AIO Simplex
 :Tags: Simplex
 
@@ -1018,10 +959,10 @@ Expected Behavior
 7. Destination host  pingable via OAM interface
 
 ~~~~~~~~~~
-Simplex_19
+Simplex_18
 ~~~~~~~~~~
 
-:Test ID: Simplex_19
+:Test ID: Simplex_18
 :Test Title: Kill an Instance
 :Tags: Simplex
 
@@ -1065,10 +1006,10 @@ Expected Behavior
 
 
 ~~~~~~~~~~
-Simplex_20
+Simplex_19
 ~~~~~~~~~~
 
-:Test ID: Simplex_20
+:Test ID: Simplex_19
 :Test Title: Verify resize and rebuild on AIO
 :Tags: Simplex
 
@@ -1092,7 +1033,7 @@ Test Steps
 
  ::
 
-  $source /etc/nova/openrc
+  $source /etc/platform/openrc
 
 2. Create a new flavor:
 
@@ -1136,10 +1077,10 @@ Expected Behavior
 5. VM should be up and running
 
 ~~~~~~~~~~
-Simplex_21
+Simplex_20
 ~~~~~~~~~~
 
-:Test ID: Simplex_21
+:Test ID: Simplex_20
 :Test Title: Verify that the retention period can be changed on AIO Simplex
 :Tags: Simplex
 
@@ -1179,10 +1120,10 @@ Verify:
 
 
 ~~~~~~~~~~
-Simplex_22
+Simplex_21
 ~~~~~~~~~~
 
-:Test ID: Simplex_22
+:Test ID: Simplex_21
 :Test Title: Reboot system 10 times
 :Tags: Simplex
 
@@ -1214,7 +1155,7 @@ Test Steps
 
  ::
 
-  $source /etc/nova/openrc
+  $source /etc/platform/openrc
 
 3. Show hosts to reboot
 
@@ -1250,10 +1191,10 @@ Expected Behavior
 4. If the active controller is rebooted, the second controller turns ""Active"" and the rebooted turns ""Standby""  when boot."
 
 ~~~~~~~~~~
-Simplex_23
+Simplex_22
 ~~~~~~~~~~
 
-:Test ID: Simplex_23
+:Test ID: Simplex_22
 :Test Title: CLI command system show displays All-in-one instead of CPE
 :Tags: Simplex
 
@@ -1289,10 +1230,10 @@ Expected Behavior
 
 
 ~~~~~~~~~~
-Simplex_24
+Simplex_23
 ~~~~~~~~~~
 
-:Test ID: Simplex_24
+:Test ID: Simplex_23
 :Test Title: Horizon login screen displays StarlingX
 :Tags: Simplex
 
@@ -1321,10 +1262,10 @@ Expected Behavior
 1. StarlingX logo is displayed
 
 ~~~~~~~~~~
-Simplex_25
+Simplex_24
 ~~~~~~~~~~
 
-:Test ID: Simplex_25
+:Test ID: Simplex_24
 :Test Title: Horizon system type shows All-in-one
 :Tags: Simplex
 
@@ -1372,10 +1313,10 @@ system_type refers to configuration and number of additional servers:
         - Standard (services onto additional servers, it means onto computes)"
 
 ~~~~~~~~~~
-Simplex_26
+Simplex_25
 ~~~~~~~~~~
 
-:Test ID: Simplex_26
+:Test ID: Simplex_25
 :Test Title: Installer screens were changed to use All-in-one instead of CPE
 :Tags: Simplex
 
