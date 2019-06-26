@@ -28,38 +28,28 @@ Test Pre-Conditions
 
 a) A bootable USB with Stx...iso file.
 
-b) "config_controller.ini" file created to make it some changes.
+b) To run the playbook, you need to first set up external connectivity [1] 
+and wrong "localhost.yml" file created.
 
 .. code:: bash
 
-  i.e.
-  [SYSTEM]]  "Double "
-  SYSTEM_MODE = simplexx "double x"
-  SYSTEM_TYPE = Alll-in-one "double l"
+  # Mandatory
+  system_mode: duplexx # double 'x'
 
-  [LOGICAL_INTERFACE_1]
-  LAG_INTERFACE = N
-  INTERFACE_MTU = 1500
-  INTERFACE_PORTS = enos1 "interface name typo"
-
-  [OAM_NETWORK]
-  CIDR = 192.168.200.0/24
-  GATEWAY = 192.168.200.1
-  IP_ADDRESS = 192.168.200.1 "IP duplicated"
-  LOGICAL_INTERFACE = LOGICAL_INTERFACE_1
-
-  [AUTHENTICATION]
-  ADMIN_PASSWORD = Madawaska1*
-
-  [VERSION]
-  RELEASE =l 18.03 "wrong version"
+  # Optional
+  external_oam_subnet: 10.10.10.0/260 # Wrong subnet
+  external_oam_gateway_address: 10.10.10.1
+  external_oam_floating_address: 10.10.10.1 # IP duplicated
+  external_oam_node_0_address: 10.10.10.4
+  external_oam_node_1_address: 10.10.10.5
+  management_subnet: 192.168.204.0/24
+  dns_servers:
+    - 8.8.4.4 # wrong DNS server
+  admin_password: St4rlingX*
+  ansible_become_pass: St4rlingX*
 
 c) For Bare Metal, make sure the Management, OAM and data networks are planned
 set up, and connected.
-
-**Remark:** Test steps examples came from a Bare metal Simplex install where
-192.168.200.1 is OAM gateway, 192.168.200.0/24 OAM Mask, 192.168.200.82
-Controller-0 IP Addr. 172.16.100.1 Data default gateway.
 
 ~~~~~~~~~~
 Test Steps
@@ -80,40 +70,30 @@ device.
 
 6. Select "STANDARD Security Boot Profile" Security profile.
 
-7. login into the hsot as wrsroot, with password wrsroot.
+7. login into the hsot as sysadmin, with proper password configured.
 
-**Copying the Configuration Input File to Controller-0**
+**Copying the localhost.yml File to Controller-0**
 
 8. Connected the controller-0 to the OAM network:
 
 .. code:: bash
 
-  $ sudo ip addr add OAM_IP_address/mask dev port
-  i.e. $ sudo ip addr add 192.168.200.82/24 dev eno1 # (Where eno1 is the name of the physical nic)
+  ip address add 10.10.10.3/24 dev <interface_name>
 
-  $ sudo ip link set port up
-  i.e. $ sudo ip link set eno1 up
+  ip link set up dev <interface_name>
 
-  $ sudo ip route add default via gateway_addr
-  i.e. $ sudo ip route add default via 192.168.200.1
+  ip route add default via 10.10.10.1 dev <interface_name>
 
-9. Copy the "config_controller.ini" file from your machine to the controller-0
-by typing:
+9. Copy the "localhost.yml" file from your machine to the controller-0
 
-.. code:: bash
-
-  $ scp username@sourcehost:sourcepath/config_file /home/wrsroot/config_file
-  i.e. scp /home/wrsroot/config_file.ini wrsroot@192.168.200.82:~/config_file.ini
-
-10. Edit the "config_controller.ini" file adding some malformed format.
-
-11. Install the system using that configuration file by typing:
+10. Install the system using that malformed configuration file by applying
+the ansible-playbook bootstrap command.
 
 .. code:: bash
 
-  $ sudo config_controller --config-file config_controller.ini
+  $ ansible-playbook /usr/share/ansible/stx-ansible/playbooks/bootstrap/bootstrap.yml
 
-12. Ensure the user can re-run the install after correcting the errors,
+11. Ensure the user can re-run the install after correcting the errors,
 **i.e.** they should not have to wipedisk and then re-install.
 
 ~~~~~~~~~~~~~~~~~
@@ -138,21 +118,18 @@ initialization until is completed and remove the USB flash drive from the host
 to ensure the host reboots from the hard drive.
 
 7. First time you log in as wrsroot you will be asked to change the password.
-(Standard validation password "Madawa$ka1")
 
 **Copying the Configuration Input File to Controller-0**
 
 8. Controller-0 is connected to the OAM network.
 
-9. "config_controller.ini" file copied successfully on Controller-0.
+9. "localhost.yml" file copied successfully on Controller-0.
 
-10. "config_controller.ini" file edited with malformed format.
-
-11. config_controller command failed. The user is presented with an error
+10. ansible-playbook bootstrap command failed. The user is presented with an error
 message describing the nature of the provisioning failure. (Add several typos
 into the file and solve one by one)
 
-12. After all errors are corrected the user can re-run and installed the
+11. After all errors are corrected the user can re-run and installed the
 product.
 
 This test passes if the formatting issue is detected by the system and an
@@ -579,3 +556,5 @@ References:
 ~~~~~~~~~~~
 
 [0] - https://www.sslshopper.com/what-is-a-csr-certificate-signing-request.html
+
+[1] - https://wiki.openstack.org/wiki/StarlingX/
