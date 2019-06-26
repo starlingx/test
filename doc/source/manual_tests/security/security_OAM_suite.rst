@@ -498,28 +498,22 @@ Netfilter framework installed on Starlingx configuration.
 Test Steps
 ~~~~~~~~~~
 
-1. Go to Virtual Dedicated Storage Installation Guide [1]
+1. Go to Dedicated Storage Installation Guide [1]
 
-2. Go one step before "sudo config_controller" installation step - (one step
-before ""Configuring Controller-0"" section)
+2. Follow the install until one step before "ansible-playbook" bootstrap step.
 
 3. Go to active controller and make sure in remove "iptables",
 "iptables-config", "iptables.save",  "ip6tables", "ip6tables-config",
 "ip6tables.save" from /etc/sysconfig path by typing rm -rf <file>
 
-4. On active controller type:
+4. Execute the "ansible-playbook" bootstrap ste
 
 .. code:: bash
 
-   Controller-0 $ sudo config_controller and accept all default values
+  $ ansible-playbook /usr/share/ansible/stx-ansible/playbooks/bootstrap/bootstrap.yml
 
-   or
-
-   Controller-0 $ sudo config_controller --config-file <cfg_file_name>
-   If you have created a specific configuration file for your cluster.
-
-5. After "config_controller" bootstrap configuration Starlingx firewall is
-enabled, make sure the ipfirewall rules are set by typing:
+5. After bootstrap configuration Starlingx firewall is enabled, make sure the
+ipfirewall rules are set by typing:
 
 .. code:: bash
 
@@ -529,16 +523,16 @@ enabled, make sure the ipfirewall rules are set by typing:
 Expected Behavior
 ~~~~~~~~~~~~~~~~~
 
-1. Steps for Virtual Dedicated Storage Installation Guide should be displayed.
+1. Steps for Dedicated Storage Installation Guide should be displayed.
 
-2. Went one step before "sudo config_controller" installation step
+2. Went one step before "ansible-playbook" bootstrap installation step
 successfully.
 
 3. "iptables", "iptables-config", "iptables.save",  "ip6tables",
 "ip6tables-config", "ip6tables.save" files removed from /etc/sysconfig path
 successfully.
 
-4. "config_controller" bootstrap configuration command executed successfully.
+4. "ansible-playbook" bootstrap configuration command executed successfully.
 
 5. Following rules should be listed:
 
@@ -1239,4 +1233,4 @@ References:
 ~~~~~~~~~~~
 [0] - https://www.sslshopper.com/what-is-a-csr-certificate-signing-request.html"
 
-[1] - https://docs.starlingx.io/installation_guide/dedicated_storage.html#dedicated-storage
+[1] - https://wiki.openstack.org/wiki/StarlingX
