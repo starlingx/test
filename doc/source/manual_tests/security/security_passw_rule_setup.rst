@@ -314,15 +314,15 @@ SECURITY_password_rule_setup_05
 -------------------------------
 
 :Test ID: SECURITY_password_rule_setup_05
-:Test Title: relogin after timed out horizon session.
+:Test Title: Relogin after timed out horizon (port 8080) session.
 :Tags: psswd
 
 ~~~~~~~~~~~~~~~~~~
 Testcase Objective
 ~~~~~~~~~~~~~~~~~~
 
-Verify that you can relogin to a timed out Horizon session with only one
-attempt.
+Verify that you can relogin to a timed out Horizon session (port 8080) with
+only one attempt.
 
 ~~~~~~~~~~~~~~~~~~~
 Test Pre-Conditions
@@ -336,7 +336,7 @@ Test Steps
 
 * From horizon as admin user go to identity tab -> users.
 
-* Wait 'n' minutes until Horizon session expires.
+* Wait 'n' minutes until Horizon session (port 8080) expires.
 
 * Once the Horizon session expires make sure you can re-login using same user/password."
 
@@ -355,14 +355,15 @@ SECURITY_password_rule_setup_06
 -------------------------------
 
 :Test ID: SECURITY_password_rule_setup_06
-:Test Title: login to active controller horizon is blocked for locked account.
+:Test Title: Horizon login web page on active controller is blocked.
 :Tags: psswd
 
 ~~~~~~~~~~~~~~~~~~
 Testcase Objective
 ~~~~~~~~~~~~~~~~~~
 
-Verify login to active controller horizon is blocked for locked account.
+Verify horizon login web page (ports 8080,31000) on active controller is
+blocked after several tries with wrong password. The account should be locked.
 
 ~~~~~~~~~~~~~~~~~~~
 Test Pre-Conditions
@@ -374,7 +375,7 @@ At least 1 Controllers + 1 compute.
 Test Steps
 ~~~~~~~~~~
 
-* Go to Horizon Web page, try to login more than 5 times with same user and wrong password.
+* Go to Horizon Web page (both ports 8080,31000), try to login more than 5 times with same user and wrong password.
 
 * Right after is locked out try to login using same user and correct password on Horizon.
 
