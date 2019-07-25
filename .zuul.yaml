@@ -6,7 +6,9 @@
       jobs:
         - build-openstack-releasenotes
         - openstack-tox-pep8
+        - openstack-tox-pylint
     gate:
       jobs:
         - build-openstack-releasenotes
         - openstack-tox-pep8
+        - openstack-tox-pylint
