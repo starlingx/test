@@ -5,6 +5,8 @@
     check:
       jobs:
         - build-openstack-releasenotes
+        - openstack-tox-pep8
     gate:
       jobs:
         - build-openstack-releasenotes
+        - openstack-tox-pep8
