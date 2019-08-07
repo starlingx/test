@@ -5,17 +5,22 @@
 #
 
 
-class Labs:
+class Labs(object):
     # Place for existing stx systems for convenience.
-    # --lab <short_name> can be used in cmdline specify an existing system
+    # --lab <short_name> can be used in cmdline to specify an existing system
 
-    EXAMPLE = {
-        'short_name': 'my_server',
-        'name': 'my_server.com',
-        'floating ip': '10.10.10.2',
-        'controller-0 ip': '10.10.10.3',
-        'controller-1 ip': '10.10.10.4',
-    }
+    # Each lab should be a dictionary such as following. The short_name and name are free style
+    # strings while the floating IP and controller-0/1 IPs should map to what is shown in system
+    # oam-show
+
+    # STX_SYS1 = {
+    #     'short_name': 'my_server1',
+    #     'name': 'my_server1.com',
+    #     'floating ip': '10.10.10.2',
+    #     'controller-0 ip': '10.10.10.3',
+    #     'controller-1 ip': '10.10.10.4',
+    # }
+    pass
 
 
 def update_lab(lab_dict_name=None, lab_name=None, floating_ip=None, **kwargs):
@@ -128,7 +133,7 @@ def add_lab_entry(floating_ip, dict_name=None, short_name=None, name=None,
     return lab_dict
 
 
-class NatBoxes:
+class NatBoxes(object):
     # Place for existing NatBox that are already configured
     NAT_BOX_HW_EXAMPLE = {
         'name': 'nat_hw',
