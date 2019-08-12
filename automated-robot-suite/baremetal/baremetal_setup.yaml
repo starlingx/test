@@ -1,0 +1,47 @@
+nodes:
+  controller-0:
+    name: controller-0
+    personality: controller
+    bmc_ip:
+    bmc_user: usr
+    bmc_pswd: psw
+    pxe_nic_mac:
+    installation_ip:
+  controller-1:
+    name: controller-1
+    personality: controller
+    bmc_ip:
+    bmc_user: usr
+    bmc_pswd: psw
+    pxe_nic_mac:
+  compute-0:
+    name: compute-0
+    personality: worker
+    bmc_ip:
+    bmc_user: usr
+    bmc_pswd: psw
+    pxe_nic_mac:
+  compute-1:
+    name: compute-1
+    personality: worker
+    bmc_ip:
+    bmc_user: usr
+    bmc_pswd: psw
+    pxe_nic_mac:
+  storage-0:
+    name: storage-0
+    personality: storage
+    bmc_ip:
+    bmc_user: usr
+    bmc_pswd: psw
+    pxe_nic_mac:
+  storage-1:
+    name: storage-1
+    personality: storage
+    bmc_ip:
+    bmc_user: usr
+    bmc_pswd: psw
+    pxe_nic_mac:
+extra_data_if_needed:
+    value1:
+    value2:

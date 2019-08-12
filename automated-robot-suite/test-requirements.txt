@@ -1,0 +1,9 @@
+flake8==2.6.2
+hacking
+flake8-import-order
+mock
+coverage
+pylint
+pep8-naming
+ipdb
+ipython

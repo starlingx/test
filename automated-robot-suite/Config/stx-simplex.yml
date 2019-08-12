@@ -1,0 +1,12 @@
+dns_servers:
+  - 8.8.8.8
+
+docker_http_proxy: http://<url>:<port>
+docker_https_proxy: http://<url>:<port>
+
+external_oam_subnet: 10.10.10.0/24
+external_oam_gateway_address: 10.10.10.1
+external_oam_floating_address: 10.10.10.3
+
+ansible_become_pass: ANSIBLE_PASS
+admin_password: ADMIN_PASS

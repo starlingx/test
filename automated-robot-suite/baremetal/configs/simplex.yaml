@@ -1,0 +1,11 @@
+nodes:
+  controller-0:
+    name: controller-0
+    personality: controller
+    bmc_ip:
+    bmc_user: usr
+    bmc_pswd: pswd
+    pxe_nic_mac:
+    installation_ip:
+    oam_if:
+    mgmt_if:

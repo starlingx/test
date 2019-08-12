@@ -1,0 +1,32 @@
+configuration_0:
+  controller-0:
+    controller_0_partition_a: 200
+    controller_0_partition_b: 200
+    controller_0_memory_size: 10240
+    controller_0_system_cores: 4
+  controller-0-compute-0:
+    controller_0_compute_0_partition_a: 200
+    controller_0_compute_0_partition_b: 200
+    controller_0_compute_0_memory_size: 16384
+    controller_0_compute_0_system_cores: 4
+  controller-0-compute-1:
+    controller_0_compute_1_partition_a: 200
+    controller_0_compute_1_partition_b: 200
+    controller_0_compute_1_memory_size: 16384
+    controller_0_compute_1_system_cores: 4
+configuration_1:
+  controller-1:
+    controller_1_partition_a: 200
+    controller_1_partition_b: 200
+    controller_1_memory_size: 10240
+    controller_1_system_cores: 4
+  controller-1-compute-0:
+    controller_1_compute_0_partition_a: 200
+    controller_1_compute_0_partition_b: 200
+    controller_1_compute_0_memory_size: 3072
+    controller_1_compute_0_system_cores: 2
+general_system_configurations:
+  os_system_memory: 1024
+  disk_space_allocated_to_os: 20
+  os_system_cores: 2
+  default_mount_point: '/'
