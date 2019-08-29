@@ -107,6 +107,17 @@ Configure Ceph
     [Documentation]   Enable CEPH partition on the specified node
     Add ODS To Tier    ${host}
 
+Configure Huge Page Size
+    [Arguments]    ${host}
+    [Documentation]    Configure single huge page size for openstack worker
+    ...    node.
+    Run Command    system host-memory-modify -f vswitch -1G 1 ${host} 0
+    ...    True
+    Run Command    system host-memory-modify -f vswitch -1G 1 ${host} 1
+    ...    True
+    Run Command    system host-memory-modify -1G 10 ${host} 0    True
+    Run Command    system host-memory-modify -1G 10 ${host} 1    True
+
 Unlock Master Controller
     [Arguments]    ${controller}
     [Documentation]    Verify that controller with ACTIVE ssh connection
