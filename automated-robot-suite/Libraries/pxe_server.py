@@ -162,13 +162,13 @@ class PxeServer(object):
         boot_lines = dict()
 
         if configuration_type == 'simplex':
-            boot_lines = grub_dict['aio']['serial']['standard']
+            boot_lines = grub_dict['aio']['serial']
         elif configuration_type == 'duplex':
-            boot_lines = grub_dict['aio']['serial']['standard']
+            boot_lines = grub_dict['aio']['serial']
         elif configuration_type == 'multinode_controller_storage':
-            boot_lines = grub_dict['standard']['serial']['standard']
+            boot_lines = grub_dict['standard']['serial']
         elif configuration_type == 'multinode_dedicated_storage':
-            boot_lines = grub_dict['standard']['serial']['standard']
+            boot_lines = grub_dict['standard']['serial']
 
         prefix = 'uefi/images'
         linuxefi_cmd = boot_lines['linuxefi']
