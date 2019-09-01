@@ -30,8 +30,8 @@ PROMPT = '$'
 # Setup the logger
 LOG_FILENAME = 'iso_setup_baremetal.log'
 LOG_PATH = config.get('general', 'LOG_PATH')
-LOG = logger.setup_logging('iso_setup_baremetal', log_file='{path}/{filename}'
-                           .format(path=LOG_PATH, filename=LOG_FILENAME),
+LOG = logger.setup_logging('iso_setup_baremetal', log_file=('%s/%s', LOG_PATH,
+                                                            LOG_FILENAME),
                            console_log=False)
 
 
@@ -52,15 +52,14 @@ class PxeServer(object):
         tmp_mnt_point = '/tmp'
 
         if os.listdir(mount_point):
-            LOG.info('{} is busy umounting'.format(mount_point))
+            LOG.info('%s is busy umounting', mount_point)
             umounting_attempts = 3
 
             while umounting_attempts > 0:
                 umounting = bash('sudo umount -l {}'.format(mount_point))
 
                 if umounting.stderr and umounting_attempts:
-                    LOG.info('Failed to umount {}, retrying...'.format(
-                        mount_point))
+                    LOG.info('Failed to umount %s, retrying...', mount_point)
                 elif umounting.stderr and not umounting_attempts:
                     LOG.info('Max umounting attempts reached, leaving '
                              'installation')
@@ -71,17 +70,17 @@ class PxeServer(object):
                 umounting_attempts -= 1
 
         bash('sudo mount {0} {1}'.format(self.iso_path, mount_point))
-        LOG.info('Mounting ISO on {}'.format(mount_point))
+        LOG.info('Mounting ISO on %s', mount_point)
 
         if isdir(os.path.join(http_mnt_point, self.iso_name)):
-            LOG.info('Folder {0}/{1} already exists in http server, deleting '
-                     'it.'.format(http_mnt_point, self.iso_name))
+            LOG.info('Folder %s/%s already exists in http server, deleting '
+                     'it.', http_mnt_point, self.iso_name)
             rmtree(os.path.join(http_mnt_point, self.iso_name))
         copytree(mount_point, os.path.join(http_mnt_point, self.iso_name))
 
         if isdir(os.path.join(tmp_mnt_point, self.iso_name)):
-            LOG.info('Folder {0}/{1} already exists in http server, deleting '
-                     'it.'.format(tmp_mnt_point, self.iso_name))
+            LOG.info('Folder %s/%s already exists in http server, deleting '
+                     'it.', tmp_mnt_point, self.iso_name)
             rmtree(os.path.join(tmp_mnt_point, self.iso_name))
 
         # Changing from RPM to CPIO format
@@ -124,8 +123,7 @@ class PxeServer(object):
         images_dir = os.path.join(self.tftp_dir, 'images')
 
         if isdir(images_dir):
-            LOG.info('{} already exists, deleting directory.'.format(
-                images_dir))
+            LOG.info('%s already exists, deleting directory.', images_dir)
             rmtree(images_dir)
 
         LOG.info('Copying vmlinuz and initrd files.')
@@ -145,11 +143,10 @@ class PxeServer(object):
             active_service = bash('sudo systemctl is-active {}'
                                   .format(service))
             if 'active' in active_service.stdout:
-                LOG.info('{} service is active'.format(service))
+                LOG.info('%s service is active', service)
                 continue
             else:
-                LOG.info('{} service is not active, restarting'
-                         .format(service))
+                LOG.info('%s service is not active, restarting', service)
                 bash('sudo systemctl restart {}'.format(service))
 
     def get_efi_boot_line(self, grub_dict):
@@ -247,19 +244,15 @@ class Node(object):
     def boot_server_to_pxe(self):
         """Boot the installation target server using PXE server"""
 
-        LOG.info('Booting {} To PXE'.format(self.name))
-        LOG.info('Node {}: Setting PXE as first boot option'
-                 .format(self.name))
-        set_pxe = bash('ipmitool -I lanplus -H {node_bmc_ip} '
-                       '-U {node_bmc_user} -P {node_bmc_pswd} '
-                       'chassis bootdev pxe'.format(
-                           node_bmc_ip=self.bmc_ip,
-                           node_bmc_user=self.bmc_user,
-                           node_bmc_pswd=self.bmc_pswd))
+        LOG.info('Booting %s To PXE', self.name)
+        LOG.info('Node %s : Setting PXE as first boot option', self.name)
+        set_pxe = bash('ipmitool -I lanplus -H %s -U %s -P %s '
+                       'chassis bootdev pxe', self.bmc_ip, self.bmc_user,
+                       self.bmc_pswd)
         if set_pxe.stderr:
             LOG.info(set_pxe.stderr)
 
-        LOG.info('Node {}: Resetting target.'.format(self.name))
+        LOG.info('Node %s : Resetting target.', self.name)
         power_status = bash('ipmitool -I lanplus -H {node_bmc_ip} '
                             '-U {node_bmc_user} -P {node_bmc_pswd} '
                             'chassis power status'.format(
@@ -286,7 +279,7 @@ class Node(object):
         if power.stderr:
             LOG.info(power.stderr)
 
-        LOG.info('Node {}: Deactivating sol sessions.'.format(self.name))
+        LOG.info('Node %s: Deactivating sol sessions.', self.name)
         kill_sol = bash('ipmitool -I lanplus -H {node_bmc_ip} '
                         '-U {node_bmc_user} -P {node_bmc_pswd} sol '
                         'deactivate'.format(node_bmc_ip=self.bmc_ip,
@@ -301,7 +294,7 @@ class Node(object):
         user_name = config.get('credentials', 'STX_DEPLOY_USER_NAME')
         password = config.get('credentials', 'STX_DEPLOY_USER_PSWD')
 
-        LOG.info('Node {}: Following node installation.'.format(self.name))
+        LOG.info('Node %s: Following node installation.', self.name)
         installation = pexpect.spawn(('ipmitool -I lanplus -H {node_bmc_ip} '
                                       '-U {node_bmc_user} -P {node_bmc_pswd} '
                                       'sol activate')
@@ -312,23 +305,23 @@ class Node(object):
             LOG_PATH), 'wb')
         installation.timeout = int(config.get('iso_installer', 'BOOT_TIMEOUT'))
         installation.expect('Start PXE over IPv4.')
-        LOG.info('Node {}: Trying to boot using PXE'.format(self.name))
+        LOG.info('Node %s: Trying to boot using PXE', self.name)
         installation.expect('Linux version')
-        LOG.info('Node {}: Loading Linux Kernel'.format(self.name))
+        LOG.info('Node %s: Loading Linux Kernel', self.name)
         installation.expect('Welcome to')
-        LOG.info('Node {}: CentOS have been loaded'.format(self.name))
+        LOG.info('Node %s: CentOS have been loaded', self.name)
         installation.expect('Starting installer, one moment...')
-        LOG.info('Node {}: Starting installer ...'.format(self.name))
+        LOG.info('Node %s: Starting installer ...', self.name)
         installation.expect('Performing post-installation setup tasks')
-        LOG.info('Node {}: Performing post-installation setup tasks'
-                 .format(self.name))
+        LOG.info('Node %s: Performing post-installation setup tasks',
+                 self.name)
         installation.expect('login:')
-        LOG.info('Node {}: the system boot up correctly'.format(self.name))
-        LOG.info('Node {}: logging into the system'.format(self.name))
+        LOG.info('Node %s: the system boot up correctly', self.name)
+        LOG.info('Node %s: logging into the system', self.name)
         installation.sendline(user_name)
         installation.expect('Password:')
         installation.sendline(user_name)
-        LOG.info('Node {}: setting a new password'.format(self.name))
+        LOG.info('Node %s: setting a new password', self.name)
         installation.expect('UNIX password:')
         installation.sendline(user_name)
         installation.expect('New password:')
@@ -336,11 +329,10 @@ class Node(object):
         installation.expect('Retype new password:')
         installation.sendline(password)
         installation.expect('$')
-        LOG.info('Node {}: the password was changed successfully'
-                 .format(self.name))
+        LOG.info('Node %s: the password was changed successfully', self.name)
         installation.close()
-        LOG.info('Node {}: Closing SOL session after successfully installation'
-                 .format(self.name))
+        LOG.info('Node %s: Closing SOL session after successfully '
+                 'installation', self.name)
         deactivate_sol = bash(('ipmitool -I lanplus -H {node_bmc_ip} '
                                '-U {node_bmc_user} -P {node_bmc_pswd} '
                                'sol deactivate')
@@ -348,8 +340,7 @@ class Node(object):
                                       node_bmc_user=self.bmc_user,
                                       node_bmc_pswd=self.bmc_pswd))
         if not deactivate_sol.stderr:
-            LOG.info('Node {}: SOL session closed successfully'
-                     .format(self.name))
+            LOG.info('Node %s: SOL session closed successfully', self.name)
 
 
 def analyze_grub(grub_cfg_file):
@@ -458,8 +449,8 @@ def config_controller(config_file):
     configuring_controller.sendline('\r')
     configuring_controller.expect(PROMPT)
     LOG.info('Applying configuration (this will take several minutes)')
-    configuring_controller.sendline('sudo config_controller --force --config-file {}'
-                                    .format(config_file))
+    configuring_controller.sendline(
+        'sudo config_controller --force --config-file {}'.format(config_file))
     configuring_controller.timeout = config_controller_timeout
     configuring_controller.expect('Configuration was applied')
     LOG.info(configuring_controller.before)
@@ -515,7 +506,7 @@ def install_secondary_nodes():
     for nodes_instance in nodes_instances:
         thread = threading.Thread(
             target=nodes_instance.follow_node_installation())
-        LOG.info('Starting installation on {}'.format(nodes_instance.name))
+        LOG.info('Starting installation on %s', nodes_instance.name)
         thread.start()
         node_installation_threads.append(thread)
 

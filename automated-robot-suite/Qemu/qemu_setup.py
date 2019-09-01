@@ -263,8 +263,8 @@ def check_system_resources(configurations):
         # order to avoid the following error:
         # error: XML error: Invalid CPU topology
         if controller_system_cores < 1:
-            LOG.error('{}: must have assigned at least 1 core'.format(
-                current_controller))
+            LOG.error('%s: must have assigned at least 1 core',
+                      current_controller)
             exit_dict_status(1)
 
         # checking how many computes the current controller has
@@ -299,8 +299,8 @@ def check_system_resources(configurations):
             # order to avoid the following error:
             # error: XML error: Invalid CPU topology
             if compute_system_cores < 1:
-                LOG.error('{}: must have assigned at least 1 core'.format(
-                    current_compute))
+                LOG.error('%s: must have assigned at least 1 core',
+                          current_compute)
                 exit_dict_status(1)
 
             # increasing the variables (computes loop)
@@ -324,28 +324,26 @@ def check_system_resources(configurations):
         LOG.error(
             'the memory defined in the yaml is greater than the recommended '
             'free memory')
-        LOG.error('user memory defined            : {}'.format(
-            user_memory_defined))
-        LOG.error('recommended system free memory : {}'.format(
-            recommended_system_free_memory))
+        LOG.error('user memory defined            : %s',
+                  user_memory_defined)
+        LOG.error('recommended system free memory : %s',
+                  recommended_system_free_memory)
         exit_dict_status(1)
     elif user_disk_space_defined > r_system_free_disk_size:
         LOG.error(
             'the disk space defined in the yaml is greater than the '
             'recommended free disk size')
-        LOG.error('user disk space defined            : {}'.format(
-            user_disk_space_defined))
-        LOG.error('recommended system free disk size  : {}'.format(
-            r_system_free_disk_size))
+        LOG.error('user disk space defined            : %s',
+                  user_disk_space_defined)
+        LOG.error('recommended system free disk size  : %s',
+                  r_system_free_disk_size)
         exit_dict_status(1)
     elif user_system_cores_defined > recommended_system_cores:
         LOG.error(
             'the system cores defined in the yaml is greater than the '
             'recommended system cores')
-        LOG.error('user system cores defined  : {}'.format(
-            user_system_cores_defined))
-        LOG.error('recommended  system cores  : {}'.format(
-            recommended_system_cores))
+        LOG.error('user system cores defined  : %s', user_system_cores_defined)
+        LOG.error('recommended  system cores  : %s', recommended_system_cores)
         exit_dict_status(1)
 
 

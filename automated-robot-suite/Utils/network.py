@@ -34,7 +34,7 @@ def delete_network_interfaces():
         bash('sudo virsh net-destroy {}'.format('stx-nat'))
         bash('sudo virsh net-undefine {}'.format('stx-nat'))
     except IOError:
-        LOG.warn('NAT network not found')
+        LOG.warning('NAT network not found')
 
     for interface in range(1, 5):
         current_interface = 'stxbr{}'.format(interface)
@@ -52,8 +52,8 @@ def delete_network_interfaces():
                     ifconfig.Interface(current_interface).down()
                     brctl.Bridge(current_interface).delete()
                 except IOError:
-                    LOG.warn('[Errno 19] No such device: {}'.format(
-                        current_interface))
+                    LOG.warning('[Errno 19] No such device: '
+                                '%s', current_interface)
 
 
 def configure_network_interfaces():
@@ -68,7 +68,7 @@ def configure_network_interfaces():
         try:
             brctl.addbr(current_interface)
         except IOError:
-            LOG.warn('[Errno 17] File exists {}'.format(current_interface))
+            LOG.warning('[Errno 17] File exists %s', current_interface)
 
     networks = ['stxbr1 10.10.10.1/24', 'stxbr2 192.168.204.1/24',
                 'stxbr3', 'stxbr4']

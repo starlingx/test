@@ -66,7 +66,7 @@ class Installer(object):
                     _pid.suspend()
                     _pid.resume()
         except subprocess.CalledProcessError:
-            LOG.info('There is not process for : {}'.format(terminal))
+            LOG.info('There is not process for : %s', terminal)
 
         os.system('{term} -geometry {geo} -T {title} -e {cmd} &'.format(
             term=terminal, geo=geometry, title=terminal_title, cmd=command))
@@ -85,7 +85,7 @@ class Installer(object):
         self.child.expect('boot:')
         cmd_boot_line = common.get_cmd_boot_line()
         self.child.sendline(cmd_boot_line)
-        LOG.info('kernel command line sent: {}'.format(cmd_boot_line))
+        LOG.info('kernel command line sent: %s', cmd_boot_line)
         # send a enter character
         self.child.sendline('\r')
         # setting a boot timeout

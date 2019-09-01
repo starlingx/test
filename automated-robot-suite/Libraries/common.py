@@ -380,9 +380,9 @@ def grub_checker(iso, mode, grub_option, grub_cmd):
             diff = [
                 element for element in iso_boot_line
                 if element not in grub_cmd.split()]
-            LOG.warn('missed params from cmd grub line')
+            LOG.warning('missed params from cmd grub line')
             for element in diff:
-                LOG.warn(element)
+                LOG.warning(element)
 
     elif mode == 'uefi':
         raise NotImplementedError
@@ -394,6 +394,7 @@ def grub_checker(iso, mode, grub_option, grub_cmd):
                      raise_exception=True)
 
     return status
+
 
 def get_controllers_ip(env, config_file, config_type, lab_file):
     """Get IPs of the controllers from the specific stx configuration file
