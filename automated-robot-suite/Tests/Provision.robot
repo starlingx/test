@@ -1,5 +1,4 @@
 *** Settings ***
-
 Documentation   Tests for provisioning and unlocking controllers, computes and
 ...    storage hosts.
 ...    Author(s):
@@ -57,7 +56,8 @@ Provisioning Simplex System
     Setup Partitions    ${master_controller}    ${lgv_name}    ${nova_size}
     ...    ${cgts_part_size}
     Configure Ceph    ${master_controller}    ${backend_type}
-    Configure Huge Page Size    ${master_controller}
+    Run Keyword If   '${ENVIRONMENT}'=='baremetal'
+    ...    Configure Huge Page Size    ${master_controller}
     Unlock Master Controller    ${master_controller}
     Set Ceph Pool Replication
     Wait Until Keyword Succeeds    5 min    5 sec
@@ -95,7 +95,8 @@ Provisioning Duplex System
     Setup Partitions    ${master_controller}    ${lgv_name}    ${nova_size}
     ...    ${cgts_part_size}
     Configure Ceph    ${master_controller}    ${backend_type}
-    Configure Huge Page Size    ${master_controller}
+    Run Keyword If   '${ENVIRONMENT}'=='baremetal'
+    ...    Configure Huge Page Size    ${master_controller}
     Unlock Master Controller    ${master_controller}
     Wait Until Keyword Succeeds    5 min    5 sec
     ...    Check Ceph Status
@@ -110,7 +111,8 @@ Provisioning Duplex System
     Setup Partitions    ${second_controller}    ${lgv_name}    ${nova_size}
     ...    ${cgts_part_size}
     Configure Ceph    ${second_controller}    ${backend_type}
-    Configure Huge Page Size    ${second_controller}
+    Run Keyword If   '${ENVIRONMENT}'=='baremetal'
+    ...    Configure Huge Page Size    ${second_controller}
     Unlock Second Controller    ${second_controller}
     Check Host Readiness    ${second_controller}
     Wait Until Keyword Succeeds    5 min    5 sec
@@ -168,7 +170,8 @@ Provisioning Standard Non-Storage System
     \    Configure Data Interfaces    ${compute}   ${data0if}
     ...    ${data1if}    ${physnet0}    ${physnet1}    ${mtu}
     \    Setup Cluster Host Interfaces    ${compute}
-    \    Configure Huge Page Size    ${compute}
+    \    Run Keyword If   '${ENVIRONMENT}'=='baremetal'
+    ...    Configure Huge Page Size    ${compute}
     \    Unlock Compute    ${compute}
     \    Check Host Readiness    ${compute}    1
     ## TO DO : HERE KEYWORD TO CHECK QUORUM ON CEPH
@@ -240,7 +243,8 @@ Provisioning Standard Storage System
     ...    ${data1if}    ${physnet0}    ${physnet1}    ${mtu}
     \    Setup Partitions    ${compute}    ${lgv_name}    ${nova_size_comp}
     ...    ${cgts_part_size}    True
-    \    Configure Huge Page Size    ${compute}
+    \    Run Keyword If   '${ENVIRONMENT}'=='baremetal'
+    ...    Configure Huge Page Size    ${compute}
     \    Unlock Compute    ${compute}
     \    Check Host Readiness    ${compute}    1
     ## TO DO : HERE KEYWORD TO CHECK QUORUM ON CEPH
