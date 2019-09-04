@@ -315,6 +315,9 @@ Evacuate Instances
     Run OS Command    ${cmd}    True    30 sec
     Wait Until Keyword Succeeds    5 min    10 sec
     ...    Check Compute Service Property    ${host}    disabled
+    ${cmd1}    Catenate    ${openstack_cmd}    --enable
+    ...    ${host}    nova-compute
+    Run OS Command    ${cmd1}    True    30 sec
     Wait Until Keyword Succeeds    5 min    10 sec
     ...    Check Compute Service Property    ${host}    enabled
 
