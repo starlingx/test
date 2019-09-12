@@ -30,9 +30,9 @@ PROMPT = '$'
 # Setup the logger
 LOG_FILENAME = 'iso_setup_baremetal.log'
 LOG_PATH = config.get('general', 'LOG_PATH')
-LOG = logger.setup_logging('iso_setup_baremetal', log_file=('%s/%s', LOG_PATH,
-                                                            LOG_FILENAME),
-                           console_log=False)
+LOG = logger.setup_logging('iso_setup_baremetal',
+                            log_file='%s/%s'.format(LOG_PATH, LOG_FILENAME),
+                            console_log=False)
 
 
 class PxeServer(object):
