@@ -437,7 +437,7 @@ Connect to Controller Node
     [Documentation]    Stablish a SSH connection to the controller and return
     ...    the connection id
     ${controller_connection}    SSHLibrary.Open_Connection
-    ...    ${ip_address} prompt=${prompt}    timeout=${timeout}
+    ...    ${ip_address}    prompt=${prompt}    timeout=${timeout}
     Flexible SSH Login    ${user}    ${password}
     [Return]    ${controller_connection}
 
