@@ -90,7 +90,7 @@ Ansible Bootstrap Configuration
     ...    sed -i 's/ADMIN_PASS/${password}/'    ${destination}
     Run Command    ${sed_cmd}
     ${bootstrap}    Set Variable
-    ...    /usr/share/ansible/stx-ansible/playbooks/bootstrap/bootstrap.yml
+    ...    /usr/share/ansible/stx-ansible/playbooks/bootstrap.yml
     Run Command    ansible-playbook ${bootstrap}    True    3600    ~$
 
 Copy Install Packages
