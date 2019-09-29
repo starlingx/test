@@ -117,21 +117,21 @@ def clean_qemu_environment():
 
     for vm in vms:
         # check if the current image is running to shutting down
-        cmd = ebash('sudo virsh domstate {}'.format(vm))
-        stdout = cmd.stdout.strip()
-        stderr = cmd.stderr.strip()
+        cmd = ebash('sudo virsh domstate {}'.format(vm.decode('utf-8')))
+        stdout = cmd.stdout.strip().decode('utf-8')
+        stderr = cmd.stderr.strip().decode('utf-8')
 
         if stdout == 'running' and 'failed to get domain' not in stderr:
             # the vm is running
-            ebash('sudo virsh destroy {}'.format(vm))
+            ebash('sudo virsh destroy {}'.format(vm.decode('utf-8')))
 
         # removing controller/compute from Virtual Machine Manager
         ebash(
             'sudo virsh undefine {} --remove-all-storage --snapshots-metadata'
-            .format(vm))
+            .format(vm.decode('utf-8')))
 
     for partition in partitions:
-        ebash('sudo rm {}/{}'.format(images_path, partition))
+        ebash('sudo rm {}/{}'.format(images_path, partition.decode('utf-8')))
 
 
 def qemu_configuration_files():

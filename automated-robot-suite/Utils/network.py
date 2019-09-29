@@ -27,7 +27,7 @@ def delete_network_interfaces():
     # becoming in root
     elevate(graphical=False)
 
-    ifdata = Ifcfg(subprocess.check_output(['ifconfig', '-a']))
+    ifdata = Ifcfg(subprocess.check_output(['ifconfig', '-a']).decode('utf-8'))
 
     # Destroy NAT network if exist
     try:
@@ -75,7 +75,7 @@ def configure_network_interfaces():
 
     for net in networks:
         eval_cmd = bash('sudo ifconfig {} up'.format(net))
-        if 'ERROR' in eval_cmd.stderr:
+        if 'ERROR'.encode('utf-8') in eval_cmd.stderr:
             LOG.error(eval_cmd.stderr)
             raise EnvironmentError(eval_cmd.stderr)
 
@@ -84,7 +84,7 @@ def configure_network_interfaces():
                 'MASQUERADE')
 
     eval_cmd = bash(iptables)
-    if 'ERROR' in eval_cmd.stderr:
+    if 'ERROR'.encode('utf-8') in eval_cmd.stderr:
         LOG.error(eval_cmd.stderr)
         raise EnvironmentError(eval_cmd.stderr)
 

@@ -142,7 +142,7 @@ class PxeServer(object):
         for service in services:
             active_service = bash('sudo systemctl is-active {}'
                                   .format(service))
-            if 'active' in active_service.stdout:
+            if 'active'.encode('utf-8') in active_service.stdout:
                 LOG.info('%s service is active', service)
                 continue
             else:
@@ -246,9 +246,12 @@ class Node(object):
 
         LOG.info('Booting %s To PXE', self.name)
         LOG.info('Node %s : Setting PXE as first boot option', self.name)
-        set_pxe = bash('ipmitool -I lanplus -H %s -U %s -P %s '
-                       'chassis bootdev pxe', self.bmc_ip, self.bmc_user,
-                       self.bmc_pswd)
+        set_pxe = bash('ipmitool -I lanplus -H {node_bmc_ip} '
+                       '-U {node_bmc_user} -P {node_bmc_pswd} '
+                       'chassis bootdev pxe'.format(
+                           node_bmc_ip=self.bmc_ip,
+                           node_bmc_user=self.bmc_user,
+                           node_bmc_pswd=self.bmc_pswd))
         if set_pxe.stderr:
             LOG.info(set_pxe.stderr)
 

@@ -157,7 +157,7 @@ def string_to_dict(string_table):
     # in unicode format, so we need the following
     # 1. converting string_table variable from unicode to ascii code
     # 2. split in a list with line breaks
-    line_breaks_list = string_table['stdout'].encode('utf-8').split('\n')
+    line_breaks_list = string_table['stdout'].split('\n')
 
     robot_dictionary = {}
 
@@ -339,7 +339,7 @@ def grub_checker(iso, mode, grub_option, grub_cmd):
         regex = '-e "label [0-9]" -e "label [A-Z][0-9]" -e append'
         grub_extracted_lines = bash.run_command('grep {} {}'.format(
             regex, grub))
-        grub_option_list = grub_extracted_lines[1].split('\n')
+        grub_option_list = grub_extracted_lines[1].decode('utf-8').split('\n')
 
         key_dict = []
         values_dict = []

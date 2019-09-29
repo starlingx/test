@@ -138,7 +138,7 @@ class Installer(object):
 
         try:
             for stdout in self.child:
-                cmd_stdout.append(stdout.strip())
+                cmd_stdout.append(stdout.strip().decode('utf-8'))
         except pexpect.exceptions.TIMEOUT:
             LOG.info('custom timeout reached')
 
