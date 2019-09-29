@@ -25,8 +25,7 @@ be ready soon.
 Suite is based on Robot Framework and Python, please follow below instructions
 to properly use the suite.
 
-***NOTE***:  Currently the suite is designed to run on Pyhton 2.7 environment,
-migration to Python 3.5 is undergoing and will be ready soon.
+Suite should be executed with Python3 (tested with 3.5.2)
 
 __ https://docs.starlingx.io/deploy_install_guides/index.html
 
@@ -168,6 +167,7 @@ Make sure you have python **virtualenv** package installed in your host machine.
 .. code:: bash
 
  $ sudo apt install python-pip
+ $ sudo apt-get install python3-dev
  $ sudo pip install virtualenv
 
 You can manage your virtual environments for the two options explained below:
@@ -227,7 +227,7 @@ you can follow below steps:
 
 .. code:: bash
 
- $ virtualenv my-venv
+ $ virtualenv -p python3 my-venv
  $ source my-venv/bin/activate
 
 Install the project requirements on virtual environment.

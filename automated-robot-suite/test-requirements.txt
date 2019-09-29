@@ -3,7 +3,8 @@ hacking
 flake8-import-order
 mock
 coverage
-pylint
+pylint==2.3.0
 pep8-naming
 ipdb
 ipython
+mccabe==0.5.3
