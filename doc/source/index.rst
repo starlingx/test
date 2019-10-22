@@ -24,6 +24,6 @@ Links
 * Code Review: `Gerrit`_
 * Bugs: `Storyboard`_
 
-.. _stx-test: https://git.starlingx.io/cgit/stx-test/
-.. _Gerrit: https://review.openstack.org/#/q/project:openstack/stx-test
-.. _Storyboard: https://storyboard.openstack.org/#!/project/openstack/stx-test
+.. _stx-test: https://opendev.org/starlingx/test
+.. _Gerrit: https://review.opendev.org/#/q/project:starlingx/test
+.. _Storyboard: https://storyboard.openstack.org/#!/project/starlingx/test
