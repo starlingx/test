@@ -7,7 +7,6 @@ PyYaml
 netifaces
 bash
 elevate
-ifparser
 git+https://github.com/rlisagor/pynetlinux.git@master#egg=pynetlinux
 kmodpy
 psutil

@@ -1,17 +1,52 @@
 """Provides different network functions"""
 
 import logging
+import re
 import subprocess
 from bash import bash
 
 from elevate import elevate
-from ifparser import Ifcfg
 from pynetlinux import ifconfig
 from pynetlinux import brctl
 
 from Libraries.common import update_config_ini
 
 LOG = logging.getLogger(__name__)
+
+class NetInterface:
+    """ Represent the status of a network interface."""
+    def __init__(self, name, flags):
+        self.name = name
+        self.up = False
+        self.running = False
+        self.set_flags(flags)
+
+    def set_flags(self, flags):
+        if "UP" in flags:
+            self.up = True
+        if "RUNNING" in flags:
+            self.running = True
+
+class NetIfs:
+    """ Retrieves the list of network interfaces in the system."""
+    def __init__(self):
+        self.interfaces = []
+        output = subprocess.check_output(['ifconfig', '-a'])
+        # Regex to get the interface line from ifconfig
+        regex = re.compile(r"(\w+?\-*\w+):\sflags=\d+<(.*)>\s+mtu\s\d+")
+        for o in output.decode('utf-8').split('\n'):
+            m = regex.match(o)
+            if m:
+                new_interface = NetInterface(m.group(1), m.group(2))
+                self.interfaces.append(new_interface)
+
+    def is_up(self, if_name):
+        idx = self.interfaces.index(if_name)
+        return self.interfaces[idx].up
+
+    def is_running(self, if_name):
+        idx = self.interfaces.index(if_name)
+        return self.interfaces[idx].running
 
 
 def delete_network_interfaces():
@@ -27,7 +62,7 @@ def delete_network_interfaces():
     # becoming in root
     elevate(graphical=False)
 
-    ifdata = Ifcfg(subprocess.check_output(['ifconfig', '-a']).decode('utf-8'))
+    ifdata = NetIfs()
 
     # Destroy NAT network if exist
     try:
@@ -37,23 +72,20 @@ def delete_network_interfaces():
         LOG.warning('NAT network not found')
 
     for interface in range(1, 5):
-        current_interface = 'stxbr{}'.format(interface)
+        net_if = 'stxbr{}'.format(interface)
 
-        if current_interface in ifdata.interfaces:
-            # the network interface exists
-            net_object = ifdata.get_interface(current_interface)
-            net_up = net_object.get_values().get('UP')
-            net_running = net_object.get_values().get('RUNNING')
+        if net_if in ifdata.interfaces:
 
-            if net_up or net_running:
+            if ifdata.is_up(net_if) or \
+               ifdata.is_running(net_if):
                 # the network interface is up or running
                 try:
                     # down and delete the network interface
-                    ifconfig.Interface(current_interface).down()
-                    brctl.Bridge(current_interface).delete()
+                    ifconfig.Interface(net_if).down()
+                    brctl.Bridge(net_if).delete()
                 except IOError:
                     LOG.warning('[Errno 19] No such device: '
-                                '%s', current_interface)
+                                '%s', net_if)
 
 
 def configure_network_interfaces():

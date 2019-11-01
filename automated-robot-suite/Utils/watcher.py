@@ -37,11 +37,11 @@ class CustomHandler(PatternMatchingEventHandler):
         last_line = bash('tail -2 {}'.format(event.src_path))
 
         if 'LAST_CONSOLE_LINE' not in os.environ:
-            os.environ['LAST_CONSOLE_LINE'] = last_line.stdout
+            os.environ['LAST_CONSOLE_LINE'] = last_line.stdout.decode('utf-8')
             print('{}'.format(last_line.stdout))
 
         elif os.environ.get('LAST_CONSOLE_LINE') != last_line.stdout:
-            os.environ['LAST_CONSOLE_LINE'] = last_line.stdout
+            os.environ['LAST_CONSOLE_LINE'] = last_line.stdout.decode('utf-8')
             print('{}'.format(last_line.stdout))
 
     def on_modified(self, event):
