@@ -94,7 +94,7 @@ Ansible Bootstrap Configuration
     Run Command    ansible-playbook ${bootstrap}    True    3600    ~$
 
 Copy Install Packages
-    [Tags]    Duplex    MN-Local    MN-External    baremetal
+    [Tags]    Simplex    Duplex    MN-Local    MN-External    baremetal
     [Documentation]    Copy packages required to install secondary nodes.
     # -- Copy required packages post install --Workaround for pxe install--
     Wait Until Keyword Succeeds    5 min    5 sec
