@@ -2413,7 +2413,7 @@ def modify_spectre_meltdown_version(version='spectre_meltdown_all',
 
     from keywords import host_helper
     hosts = get_hosts(con_ssh=con_ssh)
-    check_val = 'nopti nospectre_v2'
+    check_val = 'nopti nospectre_v2 nospectre_v1'
     if check_first and version == current_version:
         LOG.info(
             "{} already set in 'system show'. Checking actual cmdline options "
