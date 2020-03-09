@@ -15,10 +15,21 @@ from utils.tis_log import LOG
 
 
 def get_valid_controllers():
-    controllers = system_helper.get_controllers(
-        availability=(HostAvailState.AVAILABLE, HostAvailState.DEGRADED,
-                      HostAvailState.ONLINE))
+    controllers = system_helper.get_controllers(availability=(HostAvailState.AVAILABLE,
+                                                              HostAvailState.DEGRADED,
+                                                              HostAvailState.ONLINE))
     return controllers
+
+
+@fixture(scope='module', autouse=True)
+def check_openstack(stx_openstack_required):
+    pass
+
+
+@fixture(scope='module')
+def check_nodes():
+    if kube_helper.get_nodes(status='Ready', field='NAME', exclude=True, fail_ok=True):
+        skip('Not all nodes are ready. Skip stx-openstack re-apply test.')
 
 
 def check_openstack_pods_healthy(host, timeout):
@@ -63,10 +74,10 @@ def test_openstack_services_healthy():
     'controller-0',
     'controller-1'
 ])
-def test_reapply_stx_openstack_no_change(stx_openstack_required, controller):
+def test_reapply_stx_openstack_no_change(stx_openstack_applied_required, check_nodes, controller):
     """
     Args:
-        stx_openstack_required:
+        stx_openstack_applied_required:
 
     Pre-requisite:
         - stx-openstack application in applied state
@@ -193,7 +204,7 @@ def reset_if_modified(request):
 @mark.sanity
 @mark.sx_sanity
 @mark.cpe_sanity
-def test_stx_openstack_helm_override_update_and_reset(reset_if_modified):
+def test_stx_openstack_helm_override_update_and_reset(check_nodes, reset_if_modified):
     """
     Test helm override for openstack nova chart and reset
     Args:

@@ -1,0 +1,43 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: rc
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: resource-consumer
+  namespace: rc
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: resource-consumer
+  template:
+    metadata:
+      labels:
+        app: resource-consumer
+    spec:
+      containers:
+      - name: resource-consumer
+        image: "gcr.io/kubernetes-e2e-test-images/resource-consumer:1.4"
+        ports:
+        - containerPort: 80
+        resources:
+         requests:
+          cpu: 100m
+          memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rc-service
+  namespace: rc
+spec:
+  selector:
+    app: resource-consumer
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 9376
+  type: LoadBalancer

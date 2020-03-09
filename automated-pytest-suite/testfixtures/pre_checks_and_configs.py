@@ -18,7 +18,7 @@ from utils.tis_log import LOG
 
 
 @fixture(scope='function')
-def stx_openstack_required(request):
+def stx_openstack_applied_required(request):
     app_name = 'stx-openstack'
     if not container_helper.is_stx_openstack_deployed(applied_only=True):
         skip('stx-openstack application is not applied')
@@ -39,6 +39,12 @@ def stx_openstack_required(request):
                                                       fail_ok=False)
 
     request.addfinalizer(wait_for_recover)
+
+
+@fixture(scope='module')
+def stx_openstack_required():
+    if not container_helper.is_stx_openstack_deployed():
+        skip('stx-openstack application is not deployed')
 
 
 @fixture(scope='session')

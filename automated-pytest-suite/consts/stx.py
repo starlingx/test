@@ -659,6 +659,7 @@ class PodStatus:
     POD_INIT = 'PodInitializing'
     INIT = 'Init:0/1'
     PENDING = 'Pending'
+    TERMINATING = 'Terminating'
 
 
 class AppStatus:

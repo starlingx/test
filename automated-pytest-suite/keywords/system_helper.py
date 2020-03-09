@@ -183,6 +183,36 @@ def get_computes(administrative=None, operational=None, availability=None,
                      auth_info=auth_info)
 
 
+def get_hypervisors(administrative=None, operational=None,
+                    availability=None, con_ssh=None,
+                    auth_info=Tenant.get('admin_platform')):
+    """
+    Get nodes that can be used as hypervisor/worker.
+    e.g., in standard config, it will mean worker nodes. In DX+worker config, it will mean worker
+    nodes and controller nodes.
+
+    Args:
+        administrative:
+        operational:
+        availability:
+        con_ssh:
+        auth_info:
+
+    Returns (list):
+
+    """
+    computes = get_computes(administrative=administrative, operational=operational,
+                            availability=availability, con_ssh=con_ssh,
+                            auth_info=auth_info)
+    if is_aio_system(controller_ssh=con_ssh,
+                     auth_info=auth_info):
+        computes += get_controllers(administrative=administrative, operational=operational,
+                                    availability=availability,
+                                    con_ssh=con_ssh, auth_info=auth_info)
+
+    return computes
+
+
 def get_hosts(personality=None, administrative=None, operational=None,
               availability=None, hostname=None, strict=True,
               exclude=False, con_ssh=None,
