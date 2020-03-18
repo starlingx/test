@@ -48,7 +48,8 @@ class Installer(object):
         terminal = 'xterm'
         terminal_title = '"controller-0 boot console"'
         geometry = '-0+0'  # upper right hand corner
-        os.environ['DISPLAY'] = ':0'
+        if 'DISPLAY' not in os.environ:
+            os.environ['DISPLAY'] = ':0'
         command = 'python {suite}/Utils/watcher.py {log_path}'.format(
             suite=suite_path, log_path=LOG_PATH)
 
