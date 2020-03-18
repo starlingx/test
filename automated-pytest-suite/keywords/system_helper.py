@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2019 Wind River Systems, Inc.
+# Copyright (c) 2019, 2020 Wind River Systems, Inc.
 #
 # SPDX-License-Identifier: Apache-2.0
 #
@@ -9,6 +9,7 @@ import ipaddress
 import re
 import os
 import time
+import yaml
 
 from pytest import skip
 
@@ -274,6 +275,44 @@ def get_hosts(personality=None, administrative=None, operational=None,
     LOG.debug("Filtered hosts: {}".format(hostnames))
 
     return hostnames
+
+
+def get_host_list_data(columns=None, con_ssh=None,
+                       auth_info=Tenant.get('admin_platform'), source_rc=False):
+    """
+    Args:
+        columns
+        con_ssh
+        auth_info
+        source_rc
+
+    Returns (list of dict of hosts):
+    e.g.,  [{'administrative': 'unlocked', 'availability': 'available', 'hostname': 'controller-0',
+                'id': 1, 'operational': 'enabled', 'personality': 'controller'},
+            {'administrative': 'unlocked', 'availability': 'available', 'hostname': 'compute-1',
+                'id': 2, 'operational': 'enabled', 'personality': 'worker'},
+            {'administrative': 'unlocked', 'availability': 'available', 'hostname': 'compute-0',
+                'id': 3, 'operational': 'enabled', 'personality': 'worker'},
+            {'administrative': 'unlocked', 'availability': 'available', 'hostname': 'controller-1',
+                'id': 4, 'operational': 'enabled', 'personality': 'controller'},
+            ]
+
+    """
+
+    args = ""
+    if columns:
+        for col in columns:
+            args += ' --column {}'.format(col)
+    args += " --format yaml"
+
+    code, output = cli.system('host-list', args, ssh_client=con_ssh,
+                              auth_info=auth_info, source_openrc=source_rc)
+
+    if code == 0:
+        return yaml.safe_load(output)
+    else:
+        LOG.error("Error with CLI command")
+        return output
 
 
 def get_hosts_per_personality(availability=None, administrative=None,
