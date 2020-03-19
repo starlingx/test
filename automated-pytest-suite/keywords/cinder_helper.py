@@ -751,7 +751,7 @@ def delete_volume_snapshots(snapshots=None, force=False, check_first=True,
 
     args_ = '{}{}'.format('--force ' if force else '',
                           ' '.join(snapshots_to_del))
-    code, output = cli.openstack('snapshot delete', args_, ssh_client=con_ssh,
+    code, output = cli.openstack('volume snapshot delete', args_, ssh_client=con_ssh,
                                  fail_ok=fail_ok, auth_info=auth_info)
 
     if code == 1:
@@ -1254,7 +1254,7 @@ def is_volumes_pool_sufficient(min_size=40):
 
 def create_volume_snapshot(name, volume=None, description=None, force=False,
                            properties=None, remote_sources=None,
-                           fail_ok=False, con_ssh=None, auth_info=None):
+                           fail_ok=False, con_ssh=None, auth_info=None, cleanup=None):
     """
     Create snapshot for an existing volume
     Args:
@@ -1267,10 +1267,16 @@ def create_volume_snapshot(name, volume=None, description=None, force=False,
         fail_ok (bool):
         con_ssh:
         auth_info:
+        cleanup:
 
     Returns (tuple):
 
     """
+    valid_cleanups = ('module', 'session', 'function', 'class', None)
+    if cleanup not in valid_cleanups:
+        raise ValueError(
+            "Invalid scope provided. Choose from: {}".format(valid_cleanups))
+
     arg_dict = {
         'volume': volume,
         'description': description,
@@ -1287,11 +1293,14 @@ def create_volume_snapshot(name, volume=None, description=None, force=False,
     code, output = cli.openstack('volume snapshot create', arg_str,
                                  ssh_client=con_ssh, fail_ok=fail_ok,
                                  auth_info=auth_info)
-    if code > 0:
-        return 1, output
 
     table_ = table_parser.table(output)
     snap_shot_id = table_parser.get_value_two_col_table(table_, 'id')
+    if cleanup and snap_shot_id:
+        ResourceCleanup.add('vol_snapshot', snap_shot_id, scope=cleanup)
+
+    if code > 0:
+        return 1, output
 
     LOG.info(
         "Volume snapshot {} created for volume {}. Wait for it to become "
