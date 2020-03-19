@@ -719,6 +719,309 @@ def _convert_vnics(nics, con_ssh, auth_info, cleanup):
 
     return converted_nics
 
+def boot_vm_openstack(name=None, flavor=None, block_device_mapping=None,
+                      source=None, source_id=None, image_id=None,
+                      image_property=None, security_groups=None, key_name=None,
+                      inject_file=None, user_data=None, avail_zone=None,
+                      nics=None, network=None, port=None, hint=None,
+                      config_drive=False, min_count=None, max_count=None,
+                      reuse_vol=False, guest_os='', wait=True,
+                      fail_ok=False, auth_info=None, con_ssh=None, cleanup=None,
+                      **properties):
+    """
+    Boot a vm with given parameters using opnstack
+    Args:
+        name (str): New server name
+        flavor (str): Create server with this flavor (name or ID)
+        block_device_mapping (str): Create a block device on the server.
+          Block device mapping in the format
+            <dev-name>=<id>:<type>:<size(GB)>:<delete-on-terminate>
+              <dev-name>: block device name, like: vdb, xvdc (required)
+              <id>: Name or ID of the volume, volume snapshot or image (required)
+              <type>: volume, snapshot or image; default: volume (optional)
+              <size(GB)>: volume size if create from image or snapshot (optional)
+              <delete-on-terminate>: true or false; default: false (optional)
+        source (str): 'image', 'volume', 'snapshot'
+        source_id (str): id of the specified source. such as volume_id, image_id, or snapshot_id
+        image_id (str): id of glance image. Will not be used if source is image and source_id is
+          specified
+        image_property (str): <key=value> Image property to be matched
+        security_groups (str|list|tuple): Security group/groups
+          to assign to this server (name or ID)
+        key_name (str): Keypair to inject into this server (optional extension)
+        inject_file (str|list|tuple): File/Files to inject into image before boot
+        user_data (str|list): User data file to serve from the metadata server
+        avail_zone (str): Select an availability zone for the server
+        nics (list|tuple): Create NIC's on the server.
+          each nic:
+            <net-id=net-uuid,v4-fixed-ip=ip-addr,v6-fixed-ip=ip-addr, port-id=port-uuid,auto,none>,
+              <vif-model=model,vif-pci-address=pci-address>
+            Examples: [{'net-id': <net_id1>, 'vif-model': <vif1>},
+                       {'net-id': <net_id2>, 'vif-model': <vif2>}, ...]
+            Notes: valid vif-models:
+              virtio, avp, e1000, pci-passthrough, pci-sriov, rtl8139, ne2k_pci, pcnet
+        network (str|list|tuple): Create a NIC on the server and connect it to network.
+          This is a wrapper for the ‘–nic net-id=<network>’ parameter that provides simple syntax
+          for the standard use case of connecting a new server to a given network.
+          For more advanced use cases, refer to the ‘–nic’ parameter.
+        port (str|list|tuple): Create a NIC on the server and connect it to port.
+          This is a wrapper for the ‘–nic port-id=<port>’ parameter that provides simple syntax
+          for the standard use case of connecting a new server to a given port.
+          For more advanced use cases, refer to the ‘–nic’ parameter.
+        hint (dict): key/value pair(s) sent to scheduler for custom use, such as
+          group=<server_group_id>
+        config_drive (<config-drive-volume>|True): Use specified volume as the config drive,
+          or ‘True’ to use an ephemeral drive
+        min_count (int): Minimum number of servers to launch (default=1)
+        max_count (int): Maximum number of servers to launch (default=1)
+        reuse_vol (bool): whether or not to reuse the existing volume (default False)
+        guest_os (str): Valid values: 'cgcs-guest', 'ubuntu_14', 'centos_6', 'centos_7', etc.
+            This will be overriden by image_id if specified.
+        wait (bool): Wait for build to complete (default True)
+        fail_ok (bool):
+        auth_info:
+        con_ssh:
+        cleanup (str|None): valid values: 'module', 'session', 'function', 'class',
+          vm (and volume) will be deleted as part of teardown
+
+    Returns (tuple): (rtn_code(int), new_vm_id_if_any(str), message(str),
+    new_vol_id_if_any(str))
+        (0, vm_id, 'VM is booted successfully')   # vm is created
+        successfully and in Active state.
+        (1, vm_id, <stderr>)      # boot vm cli command failed, but vm is
+        still booted
+        (2, vm_id, "VM boot started, check skipped (wait={}).")   # boot vm cli
+        accepted, but vm building is not
+            100% completed. Only applicable when wait=False
+        (3, vm_id, "VM <uuid> did not reach ACTIVE state within <seconds>. VM
+        status: <status>")
+            # vm is not in Active state after created.
+        (4, '', <stderr>): create vm cli command failed, vm is not booted
+
+    """
+    # Prechecks
+    valid_cleanups = (None, 'function', 'class', 'module', 'session')
+    if cleanup not in valid_cleanups:
+        raise ValueError(
+            "Invalid scope provided. Choose from: {}".format(valid_cleanups))
+
+    if user_data is None and guest_os and not re.search(
+            GuestImages.TIS_GUEST_PATTERN, guest_os):
+        # create userdata cloud init file to run right after vm
+        # initialization to get ip on interfaces other than eth0.
+        user_data = _create_cloud_init_if_conf(guest_os, nics_num=len(nics))
+
+    if user_data and user_data.startswith('~'):
+        user_data = user_data.replace('~', HostLinuxUser.get_home(), 1)
+
+    if inject_file and inject_file.startswith('~'):
+        inject_file = inject_file.replace('~', HostLinuxUser.get_home(), 1)
+
+    if guest_os == 'vxworks':
+        LOG.tc_step("Add HPET Timer extra spec to flavor")
+        extra_specs = {FlavorSpec.HPET_TIMER: 'True'}
+        properties.update(extra_specs)
+
+    LOG.info("Processing boot_vm_openstack args...")
+    # Handle mandatory arg - name
+    tenant = common.get_tenant_name(auth_info=auth_info)
+    if name is None:
+        name = 'vm'
+    name = "{}-{}".format(tenant, name)
+    name = common.get_unique_name(name, resource_type='vm')
+
+    # Handle mandatory arg - key_name
+    key_name = key_name if key_name is not None else get_default_keypair(
+        auth_info=auth_info, con_ssh=con_ssh)
+
+    # Handle mandatory arg - flavor
+    if flavor is None:
+        flavor = nova_helper.get_basic_flavor(auth_info=auth_info,
+                                              con_ssh=con_ssh,
+                                              guest_os=guest_os)
+
+    # Handle mandatory arg - nics
+    if not nics:
+        mgmt_net_id = network_helper.get_mgmt_net_id(auth_info=auth_info,
+                                                     con_ssh=con_ssh)
+        if not mgmt_net_id:
+            raise exceptions.NeutronError("Cannot find management network")
+        nics = [{'net-id': mgmt_net_id}]
+
+        if 'edge' not in guest_os and 'vxworks' not in guest_os:
+            tenant_net_id = network_helper.get_tenant_net_id(
+                auth_info=auth_info, con_ssh=con_ssh)
+            if tenant_net_id:
+                nics.append({'net-id': tenant_net_id})
+
+    if isinstance(nics, dict):
+        nics = [nics]
+    nics = _convert_vnics(nics, con_ssh=con_ssh, auth_info=auth_info,
+                          cleanup=cleanup)
+
+    # Handle mandatory arg - boot source
+    volume_id = snapshot_id = image = None
+    if source is None:
+        if min_count is None and max_count is None:
+            source = 'volume'
+        else:
+            source = 'image'
+
+    elif source.lower() == 'snapshot' and not block_device_mapping:
+        snapshot_id = source_id
+        if not snapshot_id:
+            snapshot_id = cinder_helper.get_vol_snapshots(
+                auth_info=auth_info, con_ssh=con_ssh)
+            if not snapshot_id:
+                raise ValueError(
+                    "snapshot id is required to boot vm; however no "
+                    "snapshot exists on the system.")
+            snapshot_id = snapshot_id[0]
+        block_device_mapping = {"vdb": "{}:snapshot".format(snapshot_id)}
+        vol_size, vol_id = cinder_helper.get_volume_snapshot_values(snapshot_id, ["size", "volume_id"])
+        img_id = cinder_helper.get_volume_show_values(vol_id, "volume_image_metadata")[0]["image_id"]
+        image = img_id
+        if vol_size:
+            block_device_mapping["vdb"] = "{}:{}".format(block_device_mapping["vdb"], vol_size)
+    elif source.lower() == 'volume':
+        if source_id:
+            volume_id = source_id
+        else:
+            vol_name = 'vol-' + name
+            if reuse_vol:
+                volume_id = cinder_helper.get_any_volume(
+                    new_name=vol_name,
+                    auth_info=auth_info,
+                    con_ssh=con_ssh,
+                    cleanup=cleanup)
+            else:
+                volume_id = cinder_helper.create_volume(
+                    name=vol_name,
+                    source_id=image_id,
+                    auth_info=auth_info,
+                    con_ssh=con_ssh,
+                    guest_image=guest_os,
+                    cleanup=cleanup)[1]
+    elif source.lower() == 'image':
+        # image property is not compatible with image
+        if not image_property:
+            image = source_id if source_id else image_id
+            if not image:
+                img_name = guest_os if guest_os else GuestImages.DEFAULT['guest']
+                image = glance_helper.get_image_id_from_name(img_name,
+                                                             strict=True,
+                                                             fail_ok=False)
+
+    # create cmd
+    non_repeat_args = {'--flavor': flavor,
+                       '--block-device-mapping': block_device_mapping,
+                       '--image': image,
+                       '--image_property': image_property,
+                       '--volume': volume_id,
+                       '--min-count': str(min_count) if min_count is not None else None,
+                       '--max-count': str(max_count) if max_count is not None else None,
+                       '--key-name': key_name,
+                       '--user-data': user_data,
+                       '--availability_zone': avail_zone,
+                       '--config-drive': str(config_drive) if config_drive else None,
+                       '--wait': wait,
+                       }
+    non_repeat_args = common.parse_args(non_repeat_args, repeat_arg=False,
+                                        vals_sep=',')
+
+    repeat_args = {
+        '--nic': nics,
+        '--network': network,
+        '--port': port,
+        '--file': inject_file,
+        '--security-groups': security_groups,
+        '--hint': hint,
+        '--property': properties
+    }
+    repeat_args = common.parse_args(repeat_args, repeat_arg=True, vals_sep=',')
+
+    pre_boot_vms = []
+    if not (min_count is None and max_count is None):
+        name_str = name + '-'
+        pre_boot_vms = get_vms(auth_info=auth_info, con_ssh=con_ssh,
+                               strict=False, name=name_str)
+
+    args_ = ' '.join([non_repeat_args, repeat_args, name])
+    LOG.info("Booting VM {} with args: {}".format(name, args_))
+    exitcode, output = cli.openstack('server create', positional_args=args_,
+                                     ssh_client=con_ssh, fail_ok=True,
+                                     auth_info=auth_info,
+                                     timeout=VMTimeout.BOOT_VM)
+
+    if min_count is None and max_count is None:
+        table_ = table_parser.table(output)
+        vm_id = table_parser.get_value_two_col_table(table_, 'id')
+        if cleanup and vm_id:
+            ResourceCleanup.add('vm', vm_id, scope=cleanup, del_vm_vols=False)
+            # if source="snapshot":
+            #     ResourceCleanup.add('snapshot', snapshot_id, scope=cleanup, del_vm_vols=False)
+
+        if exitcode == 1:
+            if vm_id:
+                # print out vm show for debugging purpose
+                cli.openstack('server show', vm_id, ssh_client=con_ssh,
+                              auth_info=Tenant.get('admin'))
+            if not fail_ok:
+                raise exceptions.VMOperationFailed(output)
+
+            if vm_id:
+                return 1, vm_id, output  # vm_id = '' if cli is rejected
+                # without vm created
+            return 4, '', output
+
+        LOG.info("Post action check...")
+        vm_status = get_vm_values(vm_id, 'status', strict=True, con_ssh=con_ssh,
+                                      auth_info=auth_info)[0]
+        if wait:
+            if vm_status != VMStatus.ACTIVE:
+                message = "VM did not reach {} state: {}".format(VMStatus.ACTIVE, vm_status)
+                if fail_ok:
+                    LOG.warning(message)
+                    return 2, vm_id, message
+                else:
+                    raise exceptions.VMPostCheckFailed(message)
+        else:
+            LOG.info("VM {} started to create, \
+                     check skipped because of wait argument wait={}, \
+                     vm status is: {}".format(vm_id, wait, vm_status))
+            return 2, vm_id, "VM boot started, \
+                              check skipped (wait={}), \
+                              vm status is: {}".format(wait, vm_status)
+        LOG.info("VM {} is booted successfully.".format(vm_id))
+        return 0, vm_id, 'VM is booted successfully'
+    else:
+        name_str = name + '-'
+        post_boot_vms = get_vms(auth_info=auth_info, con_ssh=con_ssh,
+                                strict=False, name=name_str)
+        vm_ids = list(set(post_boot_vms) - set(pre_boot_vms))
+        if cleanup and vm_ids:
+            ResourceCleanup.add('vm', vm_ids, scope=cleanup, del_vm_vols=False)
+
+        if exitcode == 1:
+            return 1, vm_ids, output
+
+
+        for instance_id in vm_ids:
+            vm_status = get_vm_values(instance_id, 'status', strict=True, con_ssh=con_ssh,
+                                      auth_info=auth_info)[0]
+            if wait:
+                if vm_status != VMStatus.ACTIVE:
+                    msg = "VMs failed to reach {} state: {}".format(VMStatus.ACTIVE, vm_status)
+                    if fail_ok:
+                        LOG.warning(msg)
+                        return 3, vm_ids, msg
+            else:
+                LOG.warning("VM {} started to create, \
+                            check skipped because of wait argument wait={}, \
+                            vm status is: {}".format(vm_id, wait, vm_status))
+        LOG.info("VMs booted successfully: {}".format(vm_ids))
+        return 0, vm_ids, "VMs are booted successfully"
+
 
 def boot_vm(name=None, flavor=None, source=None, source_id=None, image_id=None,
             min_count=None, nics=None, hint=None,
@@ -888,6 +1191,7 @@ def boot_vm(name=None, flavor=None, source=None, source_id=None, image_id=None,
                                                              fail_ok=False)
 
         elif source.lower() == 'snapshot':
+            snapshot_id = source_id
             if not snapshot_id:
                 snapshot_id = cinder_helper.get_vol_snapshots(
                     auth_info=auth_info, con_ssh=con_ssh)
@@ -1564,7 +1868,7 @@ def resize_vm(vm_id, flavor_id, revert=False, con_ssh=None, fail_ok=False,
         raise exceptions.VMPostCheckFailed(err_msg)
 
     if not revert and after_flavor != flavor_id:
-        err_msg = "VM flavor is not changed to expected after resizing. " \
+        err_msg = "VM flavor {} is not changed to expected after resizing. " \
                   "Before flavor: {}, after flavor: {}".\
             format(flavor_id, before_flavor, after_flavor)
         if fail_ok:
@@ -4832,8 +5136,8 @@ def launch_vms(vm_type, count=1, nics=None, flavor=None, storage_backing=None,
 
     if not nics:
         if vm_type in ['pci-sriov', 'pci-passthrough']:
-            raise NotImplemented("nics has to be provided for pci-sriov and "
-                                 "pci-passthrough")
+            raise NotImplementedError("nics has to be provided for pci-sriov and "
+                                      "pci-passthrough")
 
         if vm_type in ['vswitch', 'dpdk', 'vhost']:
             vif_model = 'avp'
@@ -5567,7 +5871,7 @@ def launch_vm_pair(vm_type='virtio', primary_kwargs=None, secondary_kwargs=None,
 
     if 'nics' not in primary_kwargs or 'nics' not in secondary_kwargs:
         if vm_type in ['pci-sriov', 'pci-passthrough']:
-            raise NotImplemented(
+            raise NotImplementedError(
                 "nics has to be provided for pci-sriov and pci-passthrough")
 
         if vm_type in ['vswitch', 'dpdk', 'vhost']:
