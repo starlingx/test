@@ -16,6 +16,7 @@ from contextlib import contextmanager
 from datetime import datetime
 
 import pexpect
+import yaml
 from pytest import skip
 
 from consts.auth import Tenant, TestFileServer, HostLinuxUser
@@ -785,3 +786,34 @@ def ssh_to_remote_node(host, username=None, password=None, prompt=None,
     finally:
         if current_host != original_host:
             remote_ssh.close()
+
+
+def get_yaml_data(filepath):
+    """
+    Returns the yaml data in json
+    Args:
+        filepath(str): location of the yaml file to load
+    Return(json):
+        returns the json data
+    """
+    with open(filepath, 'r') as f:
+        data = yaml.safe_load(f)
+    return data
+
+
+def write_yaml_data_to_file(data, filename, directory=None):
+    """
+    Writes data to a file in yaml format
+    Args:
+        data(json): data in json format
+        filename(str): filename
+        directory(boo): directory to save the file
+    Return(str):
+        returns the location of the yaml file
+    """
+    if directory is None:
+        directory = ProjVar.get_var('LOG_DIR')
+    src_path = "{}/{}".format(directory, filename)
+    with open(src_path, 'w') as f:
+        yaml.dump(data, f)
+    return src_path

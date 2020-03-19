@@ -195,3 +195,21 @@ class Rest:
                           headers=headers, data=json_data,
                           verify=verify)
         return r.status_code, r.json()
+
+
+def check_url(url, fail=False, secure=False):
+    """
+    Checks the access to the given url and returns True or False based on fail condition
+    Args:
+        url(str): url to check the access
+        fail(boolean): True or False
+        secure(boolean): default is False for
+                        both http and https protocol
+    Return(boolean):
+        returns True or False based on expected behaviour
+    """
+    try:
+        r = requests.get(url, timeout=10, verify=secure)
+        return True if r.status_code == 200 and fail is False else False
+    except requests.exceptions.Timeout:
+        return True if fail else False

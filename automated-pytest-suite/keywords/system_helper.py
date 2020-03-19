@@ -3687,3 +3687,20 @@ def is_active_controller(host, con_ssh=None,
 def is_lowlatency_host(host):
     subfuncs = get_host_values(host=host, fields='subfunctions')[0]
     return 'lowlatency' in subfuncs
+
+
+def get_system_iplist():
+    """
+     Checks the ipv4 or ipv6 simplex or other and returns the ip list accordingly
+     Return: returns the system ipv4/ipv6 list
+    """
+    ip = []
+    out = get_oam_values()
+    if is_aio_simplex():
+        ip.append(out["oam_ip"])
+    else:
+        ip.extend([out["oam_floating_ip"], out["oam_c0_ip"], out["oam_c1_ip"]])
+    if ProjVar.get_var('IPV6_OAM'):
+        iplist = ["[{}]".format(i) for i in ip]
+        ip = iplist
+    return ip

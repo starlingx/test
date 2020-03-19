@@ -622,6 +622,25 @@ def get_pod_value_jsonpath(type_name, jsonpath, namespace=None, con_ssh=None):
     return value
 
 
+def expose_the_service(deployment_name, type, service_name, namespace=None,  con_ssh=None):
+    """
+    Exposes the service of a deployment
+    Args:
+        deployment_name (str): name of deployment
+        type (str): "LoadBalancer" or "NodePort"
+        service_name(str): service name
+        namespace (str|None): e.g.,  'kube-system'
+        con_ssh:
+
+    Returns (str):
+
+    """
+    args = '{} --type={} --name={}'.format(deployment_name, type, service_name)
+    if namespace:
+        args += ' --namespace {}'.format(namespace)
+    return exec_kube_cmd('expose deployment', args, con_ssh=con_ssh)
+
+
 def get_nodes(hosts=None, status=None, field='STATUS', exclude=False,
               con_ssh=None, fail_ok=False):
     """

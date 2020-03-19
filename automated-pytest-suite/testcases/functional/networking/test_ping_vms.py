@@ -53,7 +53,7 @@ def _compose_nics(vifs, net_ids, image_id, guest_os):
           marks=mark.priorities('cpe_sanity', 'sanity', 'sx_sanity')),
     ('ubuntu_14', 'virtio', 'virtio'),
 ], ids=id_gen)
-def test_ping_between_two_vms(guest_os, vm1_vifs, vm2_vifs):
+def test_ping_between_two_vms(stx_openstack_required, guest_os, vm1_vifs, vm2_vifs):
     """
     Ping between two vms with given vif models
 

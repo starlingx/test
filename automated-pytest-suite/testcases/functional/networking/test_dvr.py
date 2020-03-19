@@ -21,7 +21,7 @@ result_ = None
 
 
 @fixture(scope='module')
-def router_info(request):
+def router_info(request, stx_openstack_required):
     global result_
     result_ = False
 

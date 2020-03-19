@@ -6,7 +6,7 @@ from consts.stx import METADATA_SERVER
 
 
 @mark.sanity
-def test_vm_meta_data_retrieval():
+def test_vm_meta_data_retrieval(stx_openstack_required):
     """
     VM meta-data retrieval
 

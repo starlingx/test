@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: client-pod
+  namespace: default
+  labels:
+    client: pod-to-pod
+spec:
+  containers:
+  - image: mantri425/wind-test:latest
+    command: ["/bin/sh","-c"]
+    args: ["sleep 60m"]
+    imagePullPolicy: IfNotPresent
+    name: client-container
+  restartPolicy: Always

@@ -89,7 +89,7 @@ def _boot_multiports_vm(flavor, mgmt_net_id, vifs, net_id, net_type, base_vm,
 
 class TestMutiPortsBasic:
     @fixture(scope='class')
-    def base_setup(self):
+    def base_setup(self, stx_openstack_required):
 
         flavor_id = nova_helper.create_flavor(name='dedicated')[1]
         ResourceCleanup.add('flavor', flavor_id, scope='class')
@@ -209,7 +209,7 @@ class TestMutiPortsBasic:
 class TestMutiPortsPCI:
 
     @fixture(scope='class')
-    def base_setup_pci(self):
+    def base_setup_pci(self, stx_openstack_required):
         LOG.fixture_step(
             "(class) Get an internal network that supports both pci-sriov and "
             "pcipt vif to boot vm")
