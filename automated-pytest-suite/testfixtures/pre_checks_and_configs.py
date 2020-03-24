@@ -42,6 +42,12 @@ def stx_openstack_applied_required(request):
 
 
 @fixture(scope='module')
+def no_openstack():
+    if container_helper.is_stx_openstack_deployed():
+        skip('stx-openstack is deployed. Skip test.')
+
+
+@fixture(scope='module')
 def stx_openstack_required():
     if not container_helper.is_stx_openstack_deployed():
         skip('stx-openstack application is not deployed')
