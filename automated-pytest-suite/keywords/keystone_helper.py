@@ -77,8 +77,11 @@ def add_or_remove_role(add_=True, role='admin', project=None, user=None,
     tenant_dict = {}
 
     if project is None:
-        tenant_dict = Tenant.get_primary()
-        project = tenant_dict['tenant']
+        if auth_info and auth_info.get('platform'):
+            project = auth_info['tenant']
+        else:
+            tenant_dict = Tenant.get_primary()
+            project = tenant_dict['tenant']
 
     if user is None:
         user = tenant_dict.get('user', project)
@@ -223,6 +226,53 @@ def get_role_assignments(field='Role', names=True, role=None, user=None,
     return table_parser.get_multi_values(role_assignment_tab, field)
 
 
+def set_current_user_password(original_password, new_password, fail_ok=False,
+                              auth_info=None, con_ssh=None):
+    """
+    Set password for current user
+    Args:
+        original_password:
+        new_password:
+        fail_ok:
+        auth_info:
+        con_ssh:
+
+    Returns (tuple):
+
+    """
+    args = "--password '{}' --original-password '{}'".format(new_password, original_password)
+    code, output = cli.openstack('user password set', args, ssh_client=con_ssh,
+                                 auth_info=auth_info, fail_ok=fail_ok)
+    if code > 0:
+        return 1, output
+
+    if not auth_info:
+        auth_info = Tenant.get_primary()
+
+    user = auth_info['user']
+    tenant_dictname = user
+    if auth_info.get('platform'):
+        tenant_dictname += '_platform'
+    Tenant.update(tenant_dictname, password=new_password)
+
+    if user == 'admin':
+        from consts.proj_vars import ProjVar
+        if ProjVar.get_var('REGION') != 'RegionOne':
+            LOG.info(
+                "Run openstack_update_admin_password on secondary region "
+                "after admin password change")
+            if not con_ssh:
+                con_ssh = ControllerClient.get_active_controller()
+            with con_ssh.login_as_root(timeout=30) as con_ssh:
+                con_ssh.exec_cmd(
+                    "echo 'y' | openstack_update_admin_password '{}'".format(new_password))
+
+    msg = 'User {} password successfully updated from {} to {}'.format(user, original_password,
+                                                                       new_password)
+    LOG.info(msg)
+    return 0, output
+
+
 def set_user(user, name=None, project=None, password=None, project_doamin=None,
              email=None, description=None,
              enable=None, fail_ok=False, auth_info=Tenant.get('admin'),
@@ -250,14 +300,16 @@ def set_user(user, name=None, project=None, password=None, project_doamin=None,
 
     arg += user
 
-    code, output = cli.openstack('user set', arg, ssh_client=con_ssh,
+    code, output = cli.openstack('user set', arg, ssh_client=con_ssh, timeout=120,
                                  fail_ok=fail_ok, auth_info=auth_info)
 
     if code > 0:
         return 1, output
 
     if name or project or password:
-        tenant_dictname = user.upper()
+        tenant_dictname = user
+        if auth_info and auth_info.get('platform'):
+            tenant_dictname += '_platform'
         Tenant.update(tenant_dictname, username=name, password=password,
                       tenant=project)
 
@@ -365,7 +417,7 @@ def is_https_enabled(con_ssh=None, source_openrc=True,
                      auth_info=Tenant.get('admin_platform')):
     if not con_ssh:
         con_name = auth_info.get('region') if (
-                    auth_info and ProjVar.get_var('IS_DC')) else None
+                auth_info and ProjVar.get_var('IS_DC')) else None
         con_ssh = ControllerClient.get_active_controller(name=con_name)
 
     table_ = table_parser.table(
@@ -391,6 +443,8 @@ def delete_users(user, fail_ok=False, auth_info=Tenant.get('admin'),
 
     Returns: tuple, (code, msg)
     """
+    LOG.info('Deleting {} keystone user: {}'.format('platform' if auth_info and auth_info.get(
+        'platform') else 'containerized', user))
     return cli.openstack('user delete', user, ssh_client=con_ssh,
                          fail_ok=fail_ok, auth_info=auth_info)
 
@@ -483,7 +537,7 @@ def create_project(name=None, field='ID', domain=None, parent=None,
 
 def create_user(name=None, field='name', domain=None, project=None,
                 project_domain=None, rtn_exist=None,
-                password=HostLinuxUser.get_password(), email=None,
+                password=None, email=None,
                 description=None, enable=None,
                 auth_info=Tenant.get('admin'), fail_ok=False, con_ssh=None):
     """
@@ -508,6 +562,8 @@ def create_user(name=None, field='name', domain=None, project=None,
         (1, <std_err>)
 
     """
+    if not password:
+        password = HostLinuxUser.get_password()
 
     if not name:
         name = 'user'
@@ -533,8 +589,25 @@ def create_user(name=None, field='name', domain=None, project=None,
     if code > 0:
         return 1, output
 
-    user = table_parser.get_value_two_col_table(table_parser.table(output),
-                                                field=field)
-    LOG.info("Openstack user {} successfully created/showed".format(user))
+    table_ = table_parser.table(output)
+    username = table_parser.get_value_two_col_table(table_, field='name')
+    user = username if field == 'name' else table_parser.get_value_two_col_table(table_,
+                                                                                 field=field)
 
+    is_platform = auth_info and auth_info.get('platform')
+    keystone = 'platform' if is_platform else 'containerized'
+    dictname = user + '_platform' if is_platform else user
+    existing_auth = Tenant.get(dictname)
+    if existing_auth:
+        if existing_auth['user'] != username:
+            raise ValueError('Tenant.{} already exists for a different user {}'.format(
+                dictname, existing_auth['user']))
+        Tenant.update(dictname, username=username, password=password, tenant=project,
+                      platform=is_platform)
+    else:
+        Tenant.add(username=username, tenantname=project, dictname=dictname, password=password,
+                   platform=is_platform)
+        LOG.info('Tenant.{} for {} keystone user {} is added'.format(dictname, keystone, user))
+
+    LOG.info("{} keystone user {} successfully created/showed".format(keystone, user))
     return 0, user
