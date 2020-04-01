@@ -83,7 +83,6 @@ def create_flavor(name=None, flavor_id=None, vcpus=1, ram=1024, root_disk=None,
         '--ephemeral': ephemeral,
         '--swap': swap,
         '--rxtx-factor': rxtx_factor,
-        '--is-public': is_public,
         '--disk': root_disk,
         '--ram': ram,
         '--vcpus': vcpus,
@@ -184,7 +183,7 @@ def set_aggregate(aggregate, properties=None, no_property=None, zone=None,
     if code > 0:
         return 1, output
 
-    msg = "Aggregate set successfully with param: {}".format(aggregate, args)
+    msg = "Aggregate {} set successfully with param: {}".format(aggregate, args)
     LOG.info(msg)
     return 0, msg
 
