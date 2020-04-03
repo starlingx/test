@@ -77,7 +77,7 @@ def wait_for_heat_status(stack_name=None,
 
     while time.time() < end_time:
         current_status = get_stack_status(stack=stack_name, auth_info=auth_info,
-                                          con_ssh=con_ssh)[0]
+                                          con_ssh=con_ssh)
         if status == current_status:
             return True, 'Heat stack {} has reached {} status'.format(
                 stack_name, status)
