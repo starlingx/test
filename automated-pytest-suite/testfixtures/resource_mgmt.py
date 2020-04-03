@@ -12,7 +12,7 @@ from utils import exceptions
 
 from consts.auth import Tenant
 from keywords import nova_helper, vm_helper, cinder_helper, glance_helper, \
-    network_helper, system_helper
+    network_helper, system_helper, heat_helper
 from testfixtures.fixture_resources import ResourceCleanup, GuestLogs
 
 
@@ -173,6 +173,7 @@ def _delete_resources(resources, scope):
         ('server_group', nova_helper.delete_server_groups, {}, True),
         ('floating_ip', network_helper.delete_floating_ips, {}, True),
         ('trunk', network_helper.delete_trunks, {}, True),
+        ('heat_stack', heat_helper.delete_stack, {}, False),
         ('port_pair_group', network_helper.delete_sfc_port_pair_group,
          {'check_first': True}, False),
         ('port_pair', network_helper.delete_sfc_port_pairs,
