@@ -83,21 +83,23 @@ class Tenant:
         cls.__REGION = region
 
     @classmethod
-    def add(cls, tenantname, dictname=None, username=None, password=None,
-            region=None, auth_url=None, domain='Default'):
-        tenant_dict = dict(tenant=tenantname)
-        tenant_dict['user'] = username if username else tenantname
-        tenant_dict['password'] = password if password else cls.__PASSWORD
-        tenant_dict['domain'] = domain
+    def add(cls, username, tenantname=None, dictname=None, password=None,
+            region=None, auth_url=None, domain='Default', **kwargs):
+        user_dict = dict(user=username)
+        user_dict['tenant'] = tenantname
+        user_dict['password'] = password if password else cls.__PASSWORD
+        user_dict['domain'] = domain
         if region:
-            tenant_dict['region'] = region
+            user_dict['region'] = region
         if auth_url:
-            tenant_dict['auth_url'] = auth_url
+            user_dict['auth_url'] = auth_url
+        if kwargs:
+            user_dict.update(kwargs)
 
-        dictname = dictname.upper() if dictname else tenantname.upper().\
+        dictname = dictname.upper() if dictname else username.upper(). \
             replace('-', '_')
-        cls.__tenants[dictname] = tenant_dict
-        return tenant_dict
+        cls.__tenants[dictname] = user_dict
+        return user_dict
 
     __primary = 'TENANT1'
 
@@ -115,14 +117,20 @@ class Tenant:
             will update as well.
 
         """
+
         tenant_dictname = tenant_dictname.upper().replace('-', '_')
         tenant_dict = cls.__tenants.get(tenant_dictname)
+        if not tenant_dict:
+            return tenant_dict
+
         if dc_region:
             region_dict = cls.__DC_MAP.get(dc_region, None)
             if not region_dict:
                 raise ValueError(
                     'Distributed cloud region {} is not added to '
                     'DC_MAP yet. DC_MAP: {}'.format(dc_region, cls.__DC_MAP))
+
+            tenant_dict = dict(tenant_dict)
             tenant_dict.update({'region': region_dict['region']})
         else:
             tenant_dict.pop('region', None)
