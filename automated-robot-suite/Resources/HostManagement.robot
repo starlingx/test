@@ -28,6 +28,8 @@ Unlock Controller
 Unlock Compute
     [Arguments]    ${compute}
     [Documentation]  Unlock specified compute.
+    Wait Until Keyword Succeeds    30 min     5 sec
+    ...    Check System Application Status   platform-integ-apps    applied
     Run Command    system host-unlock ${compute}    True    60 sec
     Check Host Readiness    ${compute}
 
