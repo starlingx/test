@@ -15,6 +15,8 @@ Suite TearDown    Run Keywords
 *** Variables ***
 ${controller_0}       controller-0
 ${controller_1}       controller-1
+${compute_1}          compute-1
+${storage_1}          storage-1
 ${add_error_msg}      Host-add Rejected: Adding a host on a simplex system
 ...    is not allowed.
 ${swact_error_msg}    Swact action not allowed for a simplex system.
@@ -62,20 +64,14 @@ Lock Unlock Standby Controller
     Lock Node    ${standby_controller}
     Unlock Controller    ${standby_controller}
 
-Lock Unlock Compute Hosts
+Lock Unlock Compute Host
     [Tags]    MN-Local    MN-External
-    [Documentation]    Perform a lock/unlock to the compute nodes
-    ${computes} =    Get Compute Nodes
-    Sort List    ${computes}
-    : FOR    ${compute}    IN    @{computes}
-    \    Lock Node    ${compute}
-    \    Unlock Compute    ${compute}
+    [Documentation]    Perform a lock/unlock to the compute node
+    Lock Node    ${compute_1}
+    Unlock Compute    ${compute_1}
 
-Lock Unlock Storage Hosts
+Lock Unlock Storage Host
     [Tags]    MN-External
-    [Documentation]    Perform a lock/unlock to the storage nodes
-    ${storages} =    Get Storage Nodes
-    Sort List    ${storages}
-    : FOR    ${storage}    IN    @{storages}
-    \    Lock Node    ${storage}
-    \    Unlock Storage    ${storage}
+    [Documentation]    Perform a lock/unlock to the storage node
+    Lock Node    ${storage_1}
+    Unlock Storage    ${storage_1}
