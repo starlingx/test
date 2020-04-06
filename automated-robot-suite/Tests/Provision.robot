@@ -50,6 +50,7 @@ Provisioning Simplex System
     Configure OAM Interface    ${master_controller}
     Run Keyword If   '${ENVIRONMENT}'=='baremetal'    Run Keywords
     ...    Set NTP Server    AND    Configure Vswitch Type
+    Configure Backend Ceph
     Configure Data Interfaces    ${master_controller}    ${data0if}
     ...    ${data1if}    ${physnet0}    ${physnet1}    ${mtu}
     Enable Containerized Services    ${master_controller}
@@ -89,6 +90,7 @@ Provisioning Duplex System
     Configure MGMT Interface    ${master_controller}
     Run Keyword If   '${ENVIRONMENT}'=='baremetal'    Run Keywords
     ...    Set NTP Server    AND    Configure Vswitch Type
+    Configure Backend Ceph
     Configure Data Interfaces    ${master_controller}    ${data0if}
     ...    ${data1if}    ${physnet0}    ${physnet1}    ${mtu}
     Enable Containerized Services    ${master_controller}
@@ -145,6 +147,7 @@ Provisioning Standard Non-Storage System
     Configure MGMT Interface    ${master_controller}
     Run Keyword If   '${ENVIRONMENT}'=='baremetal'    Run Keywords
     ...    Set NTP Server    AND    Configure Vswitch Type
+    Configure Backend Ceph
     Enable Containerized Services    ${master_controller}
     Unlock Master Controller    ${master_controller}
     # --- Installing Remaining Nodes ---
@@ -208,6 +211,7 @@ Provisioning Standard Storage System
     Configure MGMT Interface    ${master_controller}
     Run Keyword If   '${ENVIRONMENT}'=='baremetal'    Run Keywords
     ...    Set NTP Server    AND    Configure Vswitch Type
+    Configure Backend Ceph
     Enable Containerized Services    ${master_controller}
     Unlock Master Controller    ${master_controller}
     # --- Installing Remaining Nodes ---

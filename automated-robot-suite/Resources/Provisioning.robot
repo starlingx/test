@@ -102,6 +102,10 @@ Setup Partitions
     ...    Add Physical Volume    ${host}    ${lgv_name}
     ...    ${cgts_partition_uuid}
 
+Configure Backend Ceph
+    [Documentation]    Configure Ceph to be used as storage backend
+    Run Command    system storage-backend-add ceph --confirmed    True
+
 Configure Ceph
     [Arguments]    ${host}    ${backend_type}
     [Documentation]   Enable CEPH partition on the specified node
