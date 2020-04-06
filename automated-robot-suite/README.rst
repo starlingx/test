@@ -376,7 +376,7 @@ __ https://cloudbase.it/windows-cloud-images/
    .. code:: bash
 
     [general]
-    CIRROS_FILE = cirros-0.4.0-x86_64-disk.qcow2
+    CIRROS_FILE = cirros-0.4.0-x86_64-disk.img
     CENTOS_FILE = CentOS-7-x86_64-GenericCloud.qcow2
     UBUNTU_FILE = xenial-server-cloudimg-amd64-disk1.qcow2
     WINDOWS_FILE = windows_server_2012_r2.qcow2
