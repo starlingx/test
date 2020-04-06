@@ -173,7 +173,7 @@ Provisioning Standard Non-Storage System
     \    Run Keyword If   '${ENVIRONMENT}'=='baremetal'
     ...    Configure Huge Page Size    ${compute}
     \    Unlock Compute    ${compute}
-    \    Check Host Readiness    ${compute}    1
+    \    Check Host Readiness    ${compute}
     ## TO DO : HERE KEYWORD TO CHECK QUORUM ON CEPH
     # - Enable ODS on Controllers
     ${controllers}    Create List    controller-0    controller-1
@@ -229,6 +229,7 @@ Provisioning Standard Storage System
     \    Setup Cluster Host Interfaces Storage Node    ${storage}
     \    Add Storage OSD    ${storage}    /dev/sdb
     \    Unlock Storage    ${storage}
+    \    Check Host Readiness    ${storage}
     ## TO DO : HERE KEYWORD TO CHECK QUORUM ON CEPH
     # --- Compute Nodes ---
     ${computes} =    Get Compute Nodes
