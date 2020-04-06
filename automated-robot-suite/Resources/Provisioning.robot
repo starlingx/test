@@ -245,7 +245,7 @@ Tenant Networking Setup
     Run OS Command    ${cmd}    True
 
     ${cmd}    Catenate    ${openstack_cmd}    --project ${adminid}
-    ...    ${externalsubnet}    --gateway 192.168.1.1    --no-dhcp
+    ...    ${externalsubnet}    --gateway 192.168.1.1
     ...    --network ${externalnet}    --subnet-range 192.168.1.0/24
     ...    --ip-version 4
     Run OS Command    ${cmd}    True
