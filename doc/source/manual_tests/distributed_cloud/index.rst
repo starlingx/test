@@ -771,9 +771,9 @@ All killed processes will be recovered. Here are observations from testing (for 
 - dcorch-neutron-api-proxy done (kill once and swact. Tried later and saw kill
   once and process cannot recover - eventually we will swact CGTS-9742)
 - dcorch-cinder-api-proxy done (similar behaviour to dcmanager-manager)
-- drbd-patch-vault NOT SURE HOW TO KILL (tried systemctl and service
+- drbd-dc-vault NOT SURE HOW TO KILL (tried systemctl and service
   but there is no process)
-- patch-vault-fs NOT SURE HOW TO KILL (tried systemctl and service
+- dc-vault-fs NOT SURE HOW TO KILL (tried systemctl and service
   but there is no process)
 - dcorch-patch-api-proxy (done, kill once and saw swact, later multiple kills
   and no swact, later two kills and a swact - inconsistent behaviour)
