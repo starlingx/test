@@ -49,21 +49,21 @@ def is_ceph_healthy(con_ssh=None):
     rtn_code, out = con_ssh.exec_cmd('ceph -s')
     if rtn_code > 0:
         LOG.warning('ceph -s failed to execute.')
-        return False
+        return (False, out)
 
     health_state = re.findall('health: (.*)\n', out)
     if not health_state:
         LOG.warning('Unable to determine ceph health state')
-        return False
+        return (False, out)
 
     health_state = health_state[0]
     if health_ok in health_state:
         LOG.info('CEPH cluster is healthy')
-        return True
+        return (True, out)
 
     msg = 'CEPH unhealthy. State: {}'.format(health_state)
     LOG.warning(msg)
-    return False
+    return (False, out)
 
 
 def get_ceph_osd_count(fail_ok=False, con_ssh=None):
