@@ -131,6 +131,7 @@ Unlock Master Controller
     Wait Until Keyword Fails    20 min      20 sec    ${error_expected}
     ...    Run Command    whoami
     Close Connection
+    Sleep    10 min
     Wait Until Keyword Succeeds    15 min      30 sec
     ...    Open Master Controller Connection
     Wait Until Keyword Succeeds    15 min     30 sec
@@ -380,10 +381,10 @@ Install Remaining Nodes Baremetal
     \    ${bmc_ip}    Set Variable    &{node_data}[bmc_ip]
     \    ${bmc_user}    Set Variable     &{node_data}[bmc_user]
     \    ${pswd}    Set Variable     &{node_data}[bmc_pswd]
-    \    ${set_pxe_boot_device}    Catenate    ipmitool -H ${bmc_ip}
+    \    ${set_pxe_boot_device}    Catenate    ipmitool -N 5 -H ${bmc_ip}
     ...    -U ${bmc_user} -P ${pswd}
-    ...    -I lanplus chassis bootparam set bootflag force_pxe
-    \    ${turn_on_node}    Catenate    ipmitool -H ${bmc_ip} -U ${bmc_user}
+    ...    -I lanplus chassis bootparam set bootflag pxe options=no-timeout
+    \    ${turn_on_node}    Catenate    ipmitool -N 5 -H ${bmc_ip} -U ${bmc_user}
     ...    -P ${pswd} -I lanplus chassis power on
     \    Run   ${set_pxe_boot_device}
     \    Run   ${turn_on_node}
@@ -404,7 +405,7 @@ Install Remaining Nodes Baremetal
     : FOR    ${node}   IN    @{nodes_list}
     \    &{node_data}    Set Variable    &{NODES}[${node}]
     \    ${name}    Set Variable    &{node_data}[name]
-    \    Wait Until Keyword Succeeds    20 min    5 sec    Check Property Value
+    \    Wait Until Keyword Succeeds    30 min    5 sec    Check Property Value
     \    ...    ${name}    install_state    completed
 
 Get List Of Installation Nodes
@@ -437,7 +438,7 @@ Turn Off Installation Nodes
     \    ${bmc_ip}    Set Variable    &{node_data}[bmc_ip]
     \    ${bmc_user}    Set Variable     &{node_data}[bmc_user]
     \    ${pswd}    Set Variable     &{node_data}[bmc_pswd]
-    \    ${turn_off_node}    Catenate    ipmitool -H ${bmc_ip} -U ${bmc_user}
+    \    ${turn_off_node}    Catenate    ipmitool -N 5 -H ${bmc_ip} -U ${bmc_user}
     ...    -P ${pswd} -I lanplus chassis power off
     \    Run   ${turn_off_node}
 

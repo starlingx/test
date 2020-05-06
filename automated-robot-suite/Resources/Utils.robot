@@ -69,7 +69,7 @@ Run Command
     ...    will not fail and will return the stderr.
     Set Client Configuration    timeout=${timeout}    prompt=${prompt}
     &{result}    Create Empty Result Dictionary
-    Read
+    Read    delay=0.5s
     Write    ${cmd}
     ${output}    Read Until Prompt
     ${output}    Remove Prompt Line    ${output}
