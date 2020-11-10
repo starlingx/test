@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2019 Wind River Systems, Inc.
+# Copyright (c) 2019, 2020 Wind River Systems, Inc.
 #
 # SPDX-License-Identifier: Apache-2.0
 #
@@ -20,7 +20,7 @@ class HostTimeout:
     REBOOT = 2400
     # Active controller switched and being able to run openstack CLI after
     # system host-swact returned
-    SWACT = 180
+    SWACT = 600
     # Host in locked state after system host-lock cli returned
     LOCK = 900
     # Task clears in system host-show after host reaches enabled/available state
@@ -144,7 +144,7 @@ class OrchestrationPhaseTimeout:
 
 
 class DCTimeout:
-    SYNC = 660  # 10 minutes + 1
+    SYNC = 3600  # 60 minutes
     SUBCLOUD_AUDIT = 600  # 4 minutes + 1
     PATCH_AUDIT = 240  # 3 minutes + 1
 

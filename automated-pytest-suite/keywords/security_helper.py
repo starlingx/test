@@ -1,14 +1,16 @@
 #
-# Copyright (c) 2019 Wind River Systems, Inc.
+# Copyright (c) 2019, 2020 Wind River Systems, Inc.
 #
 # SPDX-License-Identifier: Apache-2.0
 #
 
-
+import json
 import random
 import re
 import os
 import time
+import requests
+
 from pexpect import EOF
 from string import ascii_lowercase, ascii_uppercase, digits
 
@@ -1111,3 +1113,172 @@ def fetch_cert_file(cert_file=None, scp_to_local=True, con_ssh=None):
         LOG.info("Cert file copied to {} on localhost".format(dest_path))
 
     return cert_file
+
+
+def get_auth_token(region=None, auth_info=Tenant.get('admin_platform'), use_dnsname=True):
+    """
+    Get an authentication token from keystone
+    Args:
+        region(str): the cloud region for get the keystone token
+        auth_info:
+        use_dnsname(bool): True if use dns name instead of IP to perform the rest request
+
+    Returns(str|None): Authentication token
+
+    """
+    keystone_endpoint = keystone_helper.get_endpoints(field='URL', service_name='keystone',
+                                                      interface="public", region=region,
+                                                      auth_info=auth_info)[0]
+    keystone_url = '{}/{}'.format(keystone_endpoint, 'auth/tokens')
+    if use_dnsname:
+        lab_ip = common.get_lab_fip(region=region)
+        lab_dns_name = common.get_dnsname(region=region)
+        keystone_url = keystone_url.replace(lab_ip, lab_dns_name)
+    LOG.info('Get authentication token from keystone url {}'.format(keystone_url))
+    headers = {'Content-type': 'application/json'}
+    body = {
+        'auth': {
+            'identity': {
+                'methods': ['password'],
+                'password': {
+                    'user': {
+                        'domain': {
+                            'name': 'Default'
+                        },
+                        'name': 'admin',
+                        'password': 'Li69nux*'
+                    }
+                }
+            },
+            'scope': {
+                'project': {
+                    'name': 'admin',
+                    'domain': {
+                        'name': 'Default'
+                    }
+                }
+            }
+        }
+    }
+    try:
+        req = requests.post(url=keystone_url, headers=headers, data=json.dumps(body), verify=False)
+    except Exception as e:
+        LOG.error('Error trying to get a token')
+        LOG.debug(e)
+        return None
+    LOG.debug('\n{} {}\nHeaders: {}\nBody: {}\nResponse code: {}\nResponse body: {}'.format(
+        req.request.method, req.request.url, req.request.headers,
+        req.request.body, req.status_code, req.text))
+    LOG.info('Status: [{}]'.format(req.status_code))
+    req.raise_for_status()
+    return req.headers.get('X-Subject-Token')
+
+
+def check_url_access(url, headers=None, verify=True, fail_ok=False):
+    """
+    Check the access to a given url
+    Args:
+        url(str): url to check
+        headers(None|dict): request headers of the http request
+        verify(bool|str):
+            True: secure request
+            False: equivalent to --insecure in curl cmd
+            str: applies to https system. CA-Certificate path. e.g., verify=/path/to/cert
+        fail_ok(bool):
+    Returns(tuple): (status_code, response)
+        - (1, <std_err>): An exception has occurred
+        - (status_code, response): status code and response from requests call
+
+    """
+    LOG.info('curl -i {}...'.format(url))
+    try:
+        req = requests.get(url=url, headers=headers, verify=verify)
+    except requests.exceptions.RequestException as e:
+        if fail_ok:
+            message = 'Exception trying to access {}: {}'.format(url, e)
+            LOG.warn(message)
+            return 1, message
+        raise e
+
+    LOG.info('Status: [{}]'.format(req.status_code))
+    LOG.debug('\n{} {}\nHeaders: {}\nResponse code: {}\nResponse body: {}'.format(
+        req.request.method, req.request.url, req.request.headers, req.status_code, req.text))
+    if not fail_ok:
+        req.raise_for_status()
+    return req.status_code, req.text
+
+
+def check_services_access(service_name=None, region=None, auth=True, verify=True,
+                          use_dnsname=True, auth_info=Tenant.get('admin_platform')):
+    """
+    Check public endpoints of services are reachable via get request
+    Args:
+        service_name(str|list|None): filter only certainly services to check
+        region(str|None): filter only the endpoints from a certain region
+        auth(bool): perform the requests with an authentication from keystone
+        verify(bool|str):
+            True: if https is enabled, verify the cert with the default CA
+            False: equivalent to --insecure in curl cmd
+            str: applies to https system. CA-Certificate path. e.g., verify=/path/to/cert
+        use_dnsname(bool): True if use dns name instead of IP to perform the rest request
+        auth_info(dict):
+
+    Returns(None):
+
+    """
+    if not use_dnsname:
+        verify = False
+    LOG.info('Check services access via curl')
+    token = None
+    if auth:
+        token = get_auth_token(region=region, auth_info=auth_info, use_dnsname=use_dnsname)
+    headers = {'X-Auth-Token': token} if token else None
+
+    if service_name:
+        urls_to_check = []
+        if isinstance(service_name, str):
+            service_name = [service_name]
+        for service in service_name:
+            url = keystone_helper.get_endpoints(field='URL', interface='public', region=region,
+                                                enabled='True', service_name=service,
+                                                auth_info=auth_info)
+            if url:
+                urls_to_check.append(url)
+            else:
+                LOG.warn('{} service\'s public endpoint not found or not enabled')
+    else:
+        urls_to_check = keystone_helper.get_endpoints(field='URL', interface='public',
+                                                      region=region, enabled='True',
+                                                      auth_info=auth_info)
+    if use_dnsname:
+        lab_ip = common.get_lab_fip(region=region)
+        lab_dns_name = common.get_dnsname(region=region)
+        urls_to_check = [url.replace(lab_ip, lab_dns_name) for url in urls_to_check]
+
+    for url in urls_to_check:
+        # FIXME skip unreachable port 7777 (sm-api) until CGTS-19988 is resolved
+        # FIXME skip unreachable port 8219 (dcdbsync) until 1892391 is resolved
+        if url.endswith('7777') or url.endswith('8219/v1.0'):
+            continue
+        check_url_access(url=url, headers=headers, verify=verify)
+
+
+def check_platform_horizon_access(verify=True, use_dnsname=True):
+    """
+    Check horizon URL is reachable via get request
+    Args:
+        verify(bool|str):
+            True: if https is enabled, verify the cert with the default CA
+            False: equivalent to --insecure in curl cmd
+            str: applies to https system. CA-Certificate path. e.g., verify=/path/to/cert
+        use_dnsname(bool): True if use dns name instead of IP to perform the rest request
+    Returns(None):
+
+    """
+    from keywords import horizon_helper
+    if not use_dnsname:
+        verify = False
+    LOG.info('Check platform horizon access via curl')
+    horizon_url = horizon_helper.get_url(dnsname=use_dnsname)
+    check_url_access(url=horizon_url, verify=verify)
+

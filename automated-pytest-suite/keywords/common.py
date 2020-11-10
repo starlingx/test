@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2019 Wind River Systems, Inc.
+# Copyright (c) 2019, 2020 Wind River Systems, Inc.
 #
 # SPDX-License-Identifier: Apache-2.0
 #
@@ -9,6 +9,7 @@
 # DO NOT import anything from helper modules to this module #
 #############################################################
 
+import socket
 import os
 import re
 import time
@@ -788,6 +789,21 @@ def ssh_to_remote_node(host, username=None, password=None, prompt=None,
             remote_ssh.close()
 
 
+def ssh_to_stx(lab=None, set_client=False):
+    if not lab:
+        lab = ProjVar.get_var('LAB')
+
+    con_ssh = SSHClient(lab['floating ip'], user=HostLinuxUser.get_user(),
+                        password=HostLinuxUser.get_password(),
+                        initial_prompt=Prompt.CONTROLLER_PROMPT)
+
+    con_ssh.connect(retry=True, retry_timeout=30, use_current=False)
+    if set_client:
+        ControllerClient.set_active_controller(con_ssh)
+
+    return con_ssh
+
+
 def get_yaml_data(filepath):
     """
     Returns the yaml data in json
@@ -817,3 +833,27 @@ def write_yaml_data_to_file(data, filename, directory=None):
     with open(src_path, 'w') as f:
         yaml.dump(data, f)
     return src_path
+
+
+def get_lab_fip(region=None):
+    """
+    Returns system OAM floating ip
+    Args:
+        region (str|None): central_region or subcloud, only applicable to DC
+    Returns (str): floating ip of the lab
+    """
+    if ProjVar.get_var('IS_DC'):
+        if not region:
+            region = ProjVar.get_var('PRIMARY_SUBCLOUD')
+        elif region == 'RegionOne':
+            region = 'central_region'
+        oam_fip = ProjVar.get_var('lab')[region]["floating ip"]
+    else:
+        oam_fip = ProjVar.get_var('lab')["floating ip"]
+
+    return oam_fip
+
+
+def get_dnsname(region='RegionOne'):
+    # means that the dns name is unreachable
+    return None

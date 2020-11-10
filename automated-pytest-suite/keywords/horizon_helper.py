@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2019 Wind River Systems, Inc.
+# Copyright (c) 2019, 2020 Wind River Systems, Inc.
 #
 # SPDX-License-Identifier: Apache-2.0
 #
@@ -7,9 +7,10 @@
 
 import os
 
+from keywords import common
 from utils.tis_log import LOG
 from utils.horizon.helper import HorizonDriver
-from consts.auth import Tenant
+from consts.auth import Tenant, CliAuth
 from consts.proj_vars import ProjVar
 
 
@@ -43,3 +44,19 @@ def download_openrc_files(quit_driver=True):
 
     LOG.info("openrc files are successfully downloaded to: {}".format(local_dir))
     return rc_files
+
+
+def get_url(dnsname=False):
+    """
+    Get the base url of the Horizon application
+    Args:
+        dnsname(bool): True if return the dns name of the host instead of the IP
+
+    Returns(str): the url on the active controller to access Horizon
+
+    """
+    domain = common.get_lab_fip(region='RegionOne') if not dnsname else \
+        common.get_dnsname(region='RegionOne')
+    prefix = 'https' if CliAuth.get_var('https') else 'http'
+    port = 8080 if prefix == 'http' else 8443
+    return '{}://{}:{}'.format(prefix, domain, port)

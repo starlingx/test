@@ -413,8 +413,17 @@ def get_endpoints_values(endpoint_id, fields, con_ssh=None,
     return table_parser.get_multi_values_two_col_table(table_, fields)
 
 
-def is_https_enabled(con_ssh=None, source_openrc=True,
+def is_https_enabled(con_ssh=None, source_openrc=True, interface='public',
                      auth_info=Tenant.get('admin_platform')):
+    """
+    Check whether interface is https
+    Args:
+        con_ssh:
+        source_openrc:
+        interface: default is public
+        auth_info:
+    Returns True or False
+    """
     if not con_ssh:
         con_name = auth_info.get('region') if (
                 auth_info and ProjVar.get_var('IS_DC')) else None
@@ -425,10 +434,11 @@ def is_https_enabled(con_ssh=None, source_openrc=True,
                       source_openrc=source_openrc)[1])
     con_ssh.exec_cmd('unset OS_REGION_NAME')  # Workaround
     filters = {'Service Name': 'keystone', 'Service Type': 'identity',
-               'Interface': 'public'}
-    keystone_pub = table_parser.get_values(table_=table_, target_header='URL',
-                                           **filters)[0]
-    return 'https' in keystone_pub
+               'Interface': interface}
+    keystone_values = table_parser.get_values(table_=table_, target_header='URL',
+                                              **filters)
+    LOG.info('keystone {} URLs: {}'.format(interface, keystone_values))
+    return all('https' in i for i in keystone_values)
 
 
 def delete_users(user, fail_ok=False, auth_info=Tenant.get('admin'),

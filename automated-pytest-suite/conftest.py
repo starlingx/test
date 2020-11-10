@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2019 Wind River Systems, Inc.
+# Copyright (c) 2019, 2020 Wind River Systems, Inc.
 #
 # SPDX-License-Identifier: Apache-2.0
 #
@@ -311,8 +311,16 @@ def pytest_configure(config):
                       horizon_visible=horizon_visible)
 
     if lab.get('central_region'):
-        ProjVar.set_var(IS_DC=True,
-                        PRIMARY_SUBCLOUD=config.getoption('subcloud'))
+        default_subloud = config.getoption('subcloud')
+        subcloud_list = config.getoption('subcloud_list')
+        if subcloud_list:
+            if default_subloud not in subcloud_list:
+                msg = ("default subcloud --subcloud=%s not in --subcloud_list=%s" %
+                       (default_subloud, subcloud_list))
+                LOG.error(msg)
+                pytest.exit(msg)
+
+        ProjVar.set_var(IS_DC=True, PRIMARY_SUBCLOUD=default_subloud, SUBCLOUD_LIST=subcloud_list)
 
     if is_vbox:
         ProjVar.set_var(IS_VBOX=True)
@@ -356,6 +364,14 @@ def pytest_addoption(parser):
     count_help = "Repeat tests x times - NO stop on failure"
     horizon_visible_help = "Display horizon on screen"
     no_console_log = 'Print minimal console logs'
+    region_help = "Multi-region parameter. Use when connected region is " \
+                  "different than region to test. " \
+                  "e.g., creating vm on RegionTwo from RegionOne"
+    subcloud_help = "Default subcloud used for automated test when boot vm, " \
+                    "etc. 'subcloud1' if unspecified."
+    subcloud_list_help = "Specifies subclouds for DC labs, e.g. --subcloud_list=subcloud1," \
+                         "subcloud2. If unspecified the lab's subclouds from lab.py will " \
+                         "be used."
 
     # Test session options on installed and configured STX system:
     parser.addoption('--testcase-config', action='store',
@@ -369,6 +385,14 @@ def pytest_addoption(parser):
                      help=natbox_help)
     parser.addoption('--vm', '--vbox', action='store_true', dest='is_vbox',
                      help=vbox_help)
+
+    # Multi-region or distributed cloud options
+    parser.addoption('--region', action='store', metavar='region',
+                     default=None, help=region_help)
+    parser.addoption('--subcloud', action='store', metavar='subcloud',
+                     default='subcloud1', help=subcloud_help)
+    parser.addoption("--subcloud_list", action="store", default=None,
+                     help=subcloud_list_help)
 
     # Debugging/Log collection options:
     parser.addoption('--sessiondir', '--session_dir', '--session-dir',
