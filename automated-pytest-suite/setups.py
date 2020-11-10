@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2019 Wind River Systems, Inc.
+# Copyright (c) 2019, 2020 Wind River Systems, Inc.
 #
 # SPDX-License-Identifier: Apache-2.0
 #
@@ -16,7 +16,7 @@ from consts.stx import Prompt, SUBCLOUD_PATTERN, SysType, GuestImages, Networks
 from consts.lab import Labs, add_lab_entry, NatBoxes
 from consts.proj_vars import ProjVar
 from keywords import host_helper, nova_helper, system_helper, keystone_helper, \
-    common, container_helper
+    common, container_helper, dc_helper
 from utils import exceptions
 from utils.clients.ssh import SSHClient, CONTROLLER_PROMPT, ControllerClient, \
     NATBoxClient, PASSWORD_PROMPT
@@ -528,8 +528,67 @@ def set_region(region=None):
         Tenant.set_platform_url(urls[0])
 
 
+def set_dc_vars():
+    if not ProjVar.get_var('IS_DC') or ControllerClient.get_active_controller(
+            name='RegionOne', fail_ok=True):
+        return
+
+    central_con_ssh = ControllerClient.get_active_controller()
+    ControllerClient.set_active_controller(central_con_ssh, name='RegionOne')
+    primary_subcloud = ProjVar.get_var('PRIMARY_SUBCLOUD')
+    sub_clouds = dc_helper.get_subclouds(avail='online', mgmt='managed',
+                                         con_ssh=central_con_ssh)
+    LOG.info("Online subclouds: {}".format(sub_clouds))
+
+    lab = ProjVar.get_var('LAB')
+    primary_ssh = None
+    for subcloud in sub_clouds:
+        subcloud_lab = lab.get(subcloud, None)
+        if not subcloud_lab:
+            raise ValueError('Please add {} to {} in consts/lab.py'.format(
+                subcloud, lab['short_name']))
+
+        LOG.info("Create ssh connection to {}, and add to ControllerClient".
+                 format(subcloud))
+        # subcloud_ssh = SSHClient(subcloud_lab['floating ip'],
+        #                          HostLinuxUser.get_user(),
+        #                          HostLinuxUser.get_password(),
+        #                          CONTROLLER_PROMPT)
+
+        subcloud_ssh = common.ssh_to_stx(lab=subcloud_lab)
+
+        try:
+            subcloud_ssh.connect(retry=True, retry_timeout=30)
+            ControllerClient.set_active_controller(subcloud_ssh, name=subcloud)
+        except exceptions.SSHException as e:
+            if subcloud == primary_subcloud:
+                raise
+            LOG.warning('Cannot connect to {} via its floating ip. {}'.
+                        format(subcloud, e.__str__()))
+            continue
+
+        LOG.info("Add {} to DC_MAP".format(subcloud))
+        subcloud_auth = get_auth_via_openrc(subcloud_ssh)
+        auth_url = subcloud_auth['OS_AUTH_URL']
+        region = subcloud_auth['OS_REGION_NAME']
+        Tenant.add_dc_region(region_info={subcloud: {'auth_url': auth_url,
+                                                     'region': region}})
+
+        if subcloud == primary_subcloud:
+            primary_ssh = subcloud_ssh
+            LOG.info("Set default cli auth to use {}".format(subcloud))
+            Tenant.set_region(region=region)
+            Tenant.set_platform_url(url=auth_url)
+
+    LOG.info("Set default controller ssh to {} in ControllerClient".
+             format(primary_subcloud))
+    ControllerClient.set_default_ssh(primary_subcloud)
+    return primary_ssh
+
+
 def set_sys_type(con_ssh):
-    sys_type = system_helper.get_sys_type(con_ssh=con_ssh)
+    primary_ssh = set_dc_vars()
+    sys_type = system_helper.get_sys_type(con_ssh=primary_ssh if primary_ssh else con_ssh)
     ProjVar.set_var(SYS_TYPE=sys_type)
 
 
