@@ -183,7 +183,7 @@ def get_resources(field='NAME', namespace=None, all_namespaces=None,
         all_namespaces (bool|None): used only when namespace is unspecified
         resource_names (str|None|list|tuple): e.g., calico-typha
         resource_type (str): e.g., "deployments.apps", "pod", "service"
-        labels (dict|str\list|tuple): Used only when resource_names are
+        labels (dict|str|list|tuple): Used only when resource_names are
             unspecified
         field_selectors (dict|str|list|tuple): Used only when resource_names
         are unspecified

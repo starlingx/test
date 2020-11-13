@@ -52,6 +52,7 @@ load-plugins=
 # W0702 bare-except
 # W0703 broad except warning
 # W0706 try-except-raise
+# W0707 raise-missing-from
 # W1113 keyword-arg-before-vararg
 # W1302 bad-format-string
 # W1308 duplicate-string-formatting-argument
@@ -71,7 +72,7 @@ disable=C,R,
         W0401,W0402,W0404,
         W0511,
         W0601,W0603,W0611,W0612,W0613,W0621,W0622,W0632,
-        W0702,W0703,W0706,
+        W0702,W0703,W0706,W0707,
         W1113,W1302,W1308,W1401,
         E0102,E0401,E0611,E0711,E1102,E1120,E1136,E1305
 
