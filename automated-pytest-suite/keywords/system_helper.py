@@ -1958,7 +1958,7 @@ def enable_service(service_name, con_ssh=None,
     if res == 1:
         return 1, output
 
-    msg = "Service enabled: {]".format(service_name)
+    msg = "Service enabled: {}".format(service_name)
     LOG.info(msg)
     return 0, msg
 

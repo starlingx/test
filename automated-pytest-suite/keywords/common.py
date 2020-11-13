@@ -744,7 +744,7 @@ def ssh_to_remote_node(host, username=None, password=None, prompt=None,
 
     Examples: with ssh_to_remote_node('128.224.150.92) as remote_ssh:
                   remote_ssh.exec_cmd(cmd)
-\    """
+    """
 
     if not host:
         raise exceptions.SSHException(

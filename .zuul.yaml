@@ -4,12 +4,16 @@
       - build-openstack-docs-pti
     check:
       jobs:
-        - build-openstack-releasenotes
+        - build-openstack-releasenotes:
+            vars:
+              sphinx_python: python3
         - openstack-tox-pep8
         - openstack-tox-pylint
     gate:
       jobs:
-        - build-openstack-releasenotes
+        - build-openstack-releasenotes:
+            vars:
+              sphinx_python: python3
         - openstack-tox-pep8
         - openstack-tox-pylint
     post:
