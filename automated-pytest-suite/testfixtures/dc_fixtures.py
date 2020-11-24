@@ -23,6 +23,17 @@ def check_central_alarms(request):
     __verify_central_alarms(request=request, scope='function')
 
 
+@fixture(scope='module')
+def check_central_alarms_module(request):
+    """
+    Check system alarms before and after test session.
+
+    Args:
+        request: caller of this fixture. i.e., test func.
+    """
+    __verify_central_alarms(request=request, scope='module')
+
+
 def __verify_central_alarms(request, scope):
     region = 'RegionOne'
     auth_info = Tenant.get('admin_platform', dc_region=region)
