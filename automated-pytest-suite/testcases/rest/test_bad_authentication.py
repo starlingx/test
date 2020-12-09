@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2019 Wind River Systems, Inc.
+# Copyright (c) 2019-2020 Wind River Systems, Inc.
 #
 # SPDX-License-Identifier: Apache-2.0
 #
@@ -176,7 +176,6 @@ def put(sysinv_rest, resource):
     'operation,resource', [
         ('DELETE', '/addrpools/__pool_id__'),
         ('DELETE', '/ialarms/__alarm_uuid__'),
-        ('DELETE', '/icommunity/__community_id__'),
         ('DELETE', '/ihosts/__host_id__/addresses/__address_id__'),
         ('DELETE', '/ihosts/__host_id__'),
         ('DELETE', '/ihosts/__host_id__/routes/__route_id__'),
@@ -185,7 +184,6 @@ def put(sysinv_rest, resource):
         ('DELETE', '/iprofiles/__profile_id__'),
         ('DELETE', '/ipvs/__physicalvolume_id__'),
         ('DELETE', '/istors/__stor_id__'),
-        ('DELETE', '/itrapdest/__trapdest_id__'),
         ('DELETE', '/loads/__load_id__'),
         ('DELETE', '/sdn_controller/__controller_id__'),
         ('DELETE', '/service_parameter/__parameter_id__'),
@@ -207,8 +205,6 @@ def put(sysinv_rest, resource):
         ('GET', '/health/upgrade'),
         ('GET', '/ialarms/__alarm_uuid__'),
         ('GET', '/ialarms'),
-        ('GET', '/icommunity'),
-        ('GET', '/icommunity/__community_id__'),
         ('GET', '/icpus/__cpu_id__'),
         ('GET', '/idisks/__disk_id__'),
         ('GET', '/idns'),
@@ -245,8 +241,6 @@ def put(sysinv_rest, resource):
         ('GET', '/istorconfig'),
         ('GET', '/istors/__stor_id__'),
         ('GET', '/isystems'),
-        ('GET', '/itrapdest'),
-        ('GET', '/itrapdest/__trapdest_id__'),
         ('GET', '/lldp_agents'),
         ('GET', '/lldp_agents/__lldp_agent_id__'),
         ('GET', '/lldp_neighbors'),
@@ -279,7 +273,6 @@ def put(sysinv_rest, resource):
         ('PATCH', '/devices/__device_id__'),
         ('PATCH', '/drbdconfig/__drbdconfig_id__'),
         ('PATCH', '/event_suppression/__event_suppression_uuid__'),
-        ('PATCH', '/icommunity/__community_id__'),
         ('PATCH', '/idns/__dns_id__'),
         ('PATCH', '/iextoam/__extoam_id__'),
         ('PATCH', '/ihosts/__host_id__'),
@@ -294,7 +287,6 @@ def put(sysinv_rest, resource):
         ('PATCH', '/isensors/__sensor_id__'),
         ('PATCH', '/istors/__stor_id__'),
         ('PATCH', '/isystems'),
-        ('PATCH', '/itrapdest/__trapdest_id__'),
         ('PATCH', '/remotelogging/__remotelogging_id__'),
         ('PATCH', '/sdn_controller/__controller_id__'),
         ('PATCH', '/service_parameter/__parameter_id__'),
@@ -305,7 +297,6 @@ def put(sysinv_rest, resource):
         ('PATCH', '/upgrade'),
         ('POST', '/addrpools'),
         ('POST', '/firewallrules/import_firewall_rules'),
-        ('POST', '/icommunity'),
         ('POST', '/ihosts'),
         ('POST', '/ihosts/bulk_add'),
         ('POST', '/ihosts/__host_id__/addresses'),
@@ -318,7 +309,6 @@ def put(sysinv_rest, resource):
         ('POST', '/ilvgs'),
         ('POST', '/iprofiles'),
         ('POST', '/ipvs'),
-        ('POST', '/itrapdest'),
         ('POST', '/loads/import_load'),
         ('POST', '/sdn_controller'),
         ('POST', '/service_parameter/apply'),
