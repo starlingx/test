@@ -217,7 +217,7 @@ class LdapUserManager(object, metaclass=Singleton):
             (
                 'yes',
                 # ("{}@{}'s password:".format(user_name, hostname_ip),),
-                (r".*@.*'s password: ".format(hostname_ip),),
+                (r".*@{}'s password: ".format(hostname_ip),),
                 ('Failed to get password prompt',)
             ),
             (

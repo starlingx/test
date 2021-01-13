@@ -184,7 +184,7 @@ class TelnetClient(Telnet):
         if char.isalpha() or char in valid_chars:
             code = chr(ord(char.upper()) - 64)
         else:
-            raise NotImplemented("ctrl+{} is not supported".format(char))
+            raise NotImplementedError("ctrl+{} is not supported".format(char))
         self.logger.info("Send: ctrl+{}".format(char))
         self.write(code.encode())
 
