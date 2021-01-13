@@ -73,6 +73,13 @@ def no_simplex():
 
 
 @fixture(scope='session')
+def no_duplex():
+    LOG.fixture_step("(Session) Skip if Duplex")
+    if system_helper.is_aio_duplex():
+        skip(SkipSysType.DUPLEX_SYSTEM)
+
+
+@fixture(scope='session')
 def simplex_only():
     LOG.fixture_step("(Session) Skip if not Simplex")
     if not system_helper.is_aio_simplex():

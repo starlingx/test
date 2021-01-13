@@ -164,7 +164,7 @@ def parse_test_steps(log_dir, failures_only=True):
                 if "Setup started for:" in line:
                     if failures_only:
                         split_line = line.split('::test_', 1)
-                        if len(split_line) is 2:
+                        if len(split_line) == 2:
                             test_name = 'test_' + split_line[1].replace('\n',
                                                                         '')
                             if test_name in failed_tests:
