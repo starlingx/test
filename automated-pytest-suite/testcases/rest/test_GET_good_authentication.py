@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2019 Wind River Systems, Inc.
+# Copyright (c) 2019-2020 Wind River Systems, Inc.
 #
 # SPDX-License-Identifier: Apache-2.0
 #
@@ -30,7 +30,6 @@ def sysinv_rest():
         ('GET', '/health'),
         ('GET', '/health/upgrade'),
         ('GET', '/ialarms'),
-        ('GET', '/icommunity'),
         ('GET', '/idns'),
         ('GET', '/iextoam'),
         ('GET', '/ihosts'),
@@ -41,7 +40,6 @@ def sysinv_rest():
         ('GET', '/iprofiles'),
         ('GET', '/istorconfig'),
         ('GET', '/isystems'),
-        ('GET', '/itrapdest'),
         ('GET', '/lldp_agents'),
         ('GET', '/lldp_neighbors'),
         ('GET', '/loads'),
