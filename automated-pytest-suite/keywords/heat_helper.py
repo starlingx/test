@@ -248,12 +248,12 @@ def get_heat_params(param_name=None):
     Returns (str): return None if failure or the val for the given param
 
     """
-    if param_name is 'NETWORK':
+    if param_name == 'NETWORK':
         net_id = network_helper.get_mgmt_net_id()
         return network_helper.get_net_name_from_id(net_id=net_id)
-    elif param_name is 'FLAVOR':
+    elif param_name == 'FLAVOR':
         return 'small_ded'
-    elif param_name is 'IMAGE':
+    elif param_name == 'IMAGE':
         return GuestImages.DEFAULT['guest']
     else:
         return None

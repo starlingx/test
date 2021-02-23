@@ -1850,7 +1850,7 @@ def modify_host_memory(host, proc, gib_1g=None, gib_4k_range=None,
     args = ''
     if not actual_mems:
         actual_mems = _get_actual_mems(host=host)
-    mib_avail, page_1g = actual_mems[proc]
+    mib_avail, page_1g = actual_mems[str(proc)]
 
     if gib_1g is not None:
         page_1g = gib_1g
@@ -3930,7 +3930,7 @@ def get_traffic_control_rates(dev, con_ssh=None):
 
         traffic_classes[class_name] = rates
 
-    LOG.info("Traffic classes for {}: ".format(dev, traffic_classes))
+    LOG.info("Traffic classes for {}: {}".format(dev, traffic_classes))
     return traffic_classes
 
 
@@ -4030,8 +4030,7 @@ def get_host_memories(host, headers=('app_hp_avail_2M',), proc_id=None,
         values_all_procs.append(vals)
 
     if rtn_dict:
-        values_all_procs = {procs[i]: values_all_procs[i] for i in
-                            range(len(procs))}
+        values_all_procs = {str(procs[i]): values_all_procs[i] for i in range(len(procs))}
 
     return values_all_procs
 

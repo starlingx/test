@@ -560,7 +560,7 @@ def add_storage_backend(backend='ceph', ceph_mon_gib='20', ceph_mon_dev=None,
 
     """
 
-    if backend is not 'ceph':
+    if backend != 'ceph':
         msg = "Invalid backend {} specified. Valid choices are {}".format(
             backend, ['ceph'])
         if fail_ok:
@@ -742,7 +742,7 @@ def add_ceph_mon(host, con_ssh=None, fail_ok=False):
             else:
                 raise exceptions.HostError(msg)
 
-    cmd = 'ceph-mon-add'.format(host)
+    cmd = 'ceph-mon-add'
 
     rc, output = cli.system(cmd, host, ssh_client=con_ssh, fail_ok=fail_ok)
     if rc != 0:
