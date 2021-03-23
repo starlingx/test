@@ -11,7 +11,7 @@ VALID_SCOPES = ['function', 'class', 'module', 'session']
 _RESOURCE_TYPES = ['vm', 'volume', 'volume_type', 'volume_qos',
                    'flavor', 'image', 'server_group', 'router',
                    'subnet', 'floating_ip', 'heat_stack', 'port',
-                   'trunk', 'network', 'security_group_rule'
+                   'trunk', 'network', 'security_group_rule',
                    'security_group', 'network_qos', 'vol_snapshot', 'aggregate',
                    'port_pair', 'port_pair_group', 'flow_classifier',
                    'port_chain', 'datanetwork', 'providernet']

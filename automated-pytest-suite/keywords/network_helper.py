@@ -871,18 +871,18 @@ def add_icmp_and_tcp_rules(security_group, auth_info=Tenant.get('admin'),
     """
     security_rules = get_security_group_rules(
         con_ssh=con_ssh, auth_info=auth_info, group=security_group,
-        protocol='ingress', **{'IP Protocol': ('tcp', 'icmp')})
-    if len(security_rules) >= 2:
+        **{'IP Protocol': ('tcp', 'icmp')})
+    if len(security_rules) >= 3:
         LOG.info("Security group rules for {} already exist to allow ping and "
                  "ssh".format(security_group))
         return
 
     LOG.info("Create icmp and ssh security group rules for {} with best "
              "effort".format(security_group))
-    for rules in (('icmp', None), ('tcp', 22)):
-        protocol, dst_port = rules
+    for rules in (('icmp', None, None), ('icmp', None, True), ('tcp', 22, None)):
+        protocol, dst_port, egress = rules
         create_security_group_rule(group=security_group, protocol=protocol,
-                                   dst_port=dst_port, fail_ok=True,
+                                   dst_port=dst_port, egress=egress, fail_ok=True,
                                    auth_info=auth_info, cleanup=cleanup)
 
 
@@ -2454,7 +2454,7 @@ def get_eth_for_mac(ssh_client, mac_addr, timeout=VMTimeout.IF_ADD,
     end_time = time.time() + timeout
     while time.time() < end_time:
         if not vshell:
-            if mac_addr in ssh_client.exec_cmd('ip addr'.format(mac_addr))[1]:
+            if mac_addr in ssh_client.exec_cmd('ip addr')[1]:
                 code, output = ssh_client.exec_cmd(
                     'ip addr | grep --color=never -B 1 "{}"'.format(mac_addr))
                 # sample output:
@@ -4770,7 +4770,7 @@ def get_ip_for_eth(ssh_client, eth_name):
     "30.0.0.2"
 
     """
-    if eth_name in ssh_client.exec_cmd('ip addr'.format(eth_name))[1]:
+    if eth_name in ssh_client.exec_cmd('ip addr')[1]:
         output = ssh_client.exec_cmd('ip addr show {}'.format(eth_name),
                                      fail_ok=False)[1]
         if re.search('inet {}'.format(Networks.IPV4_IP), output):
@@ -5597,8 +5597,6 @@ def create_qos(name=None, tenant_name=None, description=None, scheduler=None,
                 check_dict['policies'][key] = value
             else:
                 args += " --{} '{}'".format(key, value)
-                if key is 'tenant-id':
-                    key = 'tenant_id'
                 check_dict[key] = value
 
     LOG.info("Creating QoS with args: {}".format(args))
@@ -5609,7 +5607,7 @@ def create_qos(name=None, tenant_name=None, description=None, scheduler=None,
 
     table_ = table_parser.table(output)
     for key, exp_value in check_dict.items():
-        if key is 'policies':
+        if key == 'policies':
             actual_value = eval(
                 table_parser.get_value_two_col_table(table_, key))
         else:
