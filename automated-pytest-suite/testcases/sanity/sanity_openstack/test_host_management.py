@@ -15,7 +15,7 @@ from keywords import container_helper, host_helper, kube_helper
 from keywords import keystone_helper, network_helper, system_helper
 from testfixtures.pre_checks_and_configs import no_simplex, no_duplex, simplex_only
 from consts.proj_vars import ProjVar
-from consts.stx import EventLogID, SysType
+from consts.stx import AppStatus, EventLogID, SysType
 from utils import cli
 from utils.tis_log import LOG
 from utils.clients.ssh import ControllerClient
@@ -116,6 +116,8 @@ def test_lock_unlock_standby_controller(no_simplex):
     # Lock
     host_helper.lock_host(host=standby_controller_host, fail_ok=False)
 
+    container_helper.wait_for_apps_status(apps="stx-openstack", status=AppStatus.APPLIED,
+                                          timeout=600, check_interval=60)
     # Unlock
     host_helper.unlock_host(host=standby_controller_host, fail_ok=False)
     host_helper.wait_for_hosts_ready(hosts=standby_controller_host)
@@ -136,6 +138,8 @@ def test_lock_unlock_compute_hosts(no_simplex, no_duplex):
         host_helper.lock_host(host=host, fail_ok=False)
         host_helper.wait_for_hosts_ready(hosts=host)
 
+        container_helper.wait_for_apps_status(apps="stx-openstack", status=AppStatus.APPLIED,
+                                              timeout=600, check_interval=60)
         # Unlock
         host_helper.unlock_host(host=host, fail_ok=False)
         host_helper.wait_for_hosts_ready(hosts=host)
@@ -159,6 +163,8 @@ def test_lock_unlock_storage_hosts(no_simplex, no_duplex):
         host_helper.lock_host(host=host, fail_ok=False)
         host_helper.wait_for_hosts_ready(hosts=host)
 
+        container_helper.wait_for_apps_status(apps="stx-openstack", status=AppStatus.APPLIED,
+                                              timeout=600, check_interval=60)
         # Unlock
         host_helper.unlock_host(host=host, fail_ok=False)
         host_helper.wait_for_hosts_ready(hosts=host)
