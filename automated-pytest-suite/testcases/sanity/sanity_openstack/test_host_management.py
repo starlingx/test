@@ -200,6 +200,8 @@ def test_reboot_active_controller(no_simplex):
 
 @mark.robotsanity
 def test_reapply_openstack():
+    container_helper.wait_for_apps_status(apps="stx-openstack", status=AppStatus.APPLIED,
+                                          timeout=600, check_interval=60)
     container_helper.remove_app(app_name="stx-openstack", check_first=True)
     alarm_id = EventLogID.CONFIG_OUT_OF_DATE
     if system_helper.wait_for_alarm(alarm_id=alarm_id,
