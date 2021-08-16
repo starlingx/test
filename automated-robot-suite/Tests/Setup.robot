@@ -108,7 +108,7 @@ Copy Install Packages
     # -- Transfer directories with packages
     ${destination_dir}    Set Variable    /home/${CLI_USER_NAME}/
     ${destination_move}    Set Variable
-    ...    /www/pages/feed/rel-${${current_version.strip('"')}}
+    ...    /var/www/pages/feed/rel-${${current_version.strip('"')}}
     SSHLibrary.Put Directory    ${source_pkg}    ${destination_dir}   mode=0755
     SSHLibrary.Put Directory    ${source_repo}    ${destination_dir}  mode=0755
     Execute Sudo Command

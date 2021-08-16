@@ -292,14 +292,14 @@ def test_upload_charts_via_helm_upload(copy_test_apps):
 
     Test Steps:
         - Upload helm charts from given controller via 'helm-upload <tar_file>'
-        - Verify the charts appear at /www/pages/helm_charts/ on both
+        - Verify the charts appear at /var/www/pages/helm_charts/ on both
             controllers (if applicable)
 
     """
     app_dir = copy_test_apps
 
     LOG.tc_step("Upload helm charts via helm-upload cmd from active controller "
-                "and check charts are in /www/pages/")
+                "and check charts are in /var/www/pages/")
     file_path = container_helper.upload_helm_charts(
         tar_file=os.path.join(app_dir, HELM_TAR), delete_first=True)[1]
 
