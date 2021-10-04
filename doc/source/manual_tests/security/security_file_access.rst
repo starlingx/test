@@ -119,10 +119,10 @@ Use the following command to get all file permissions.
   total 16
   -rw-r--r-- 1 root root 861 Feb  8 16:03 01-52-54-00-c8-5c-10
   -rw-r--r-- 1 root root 939 Feb  8 15:46 01-52-54-00-c8-84-5c
-  lrwxrwxrwx 1 root root  35 Feb  8 15:31 default -> /pxeboot/pxelinux.cfg.files/default
+  lrwxrwxrwx 1 root root  35 Feb  8 15:31 default -> /var/pxeboot/pxelinux.cfg.files/default
   -rw-r--r-- 1 root root 684 Feb  8 16:03 efi-01-52-54-00-c8-5c-10
   -rw-r--r-- 1 root root 762 Feb  8 15:46 efi-01-52-54-00-c8-84-5c
-  lrwxrwxrwx 1 root root  36 Feb  8 15:31 grub.cfg -> /pxeboot/pxelinux.cfg.files/grub.cfg
+  lrwxrwxrwx 1 root root  36 Feb  8 15:31 grub.cfg -> /var/pxeboot/pxelinux.cfg.files/grub.cfg
 
   ./config/18.10/ssh_config:
   total 16
@@ -294,10 +294,10 @@ ok), use following command to get /opt/platform file tree.
   total 16
   -rw-r--r-- 1 root root 861 Feb  8 16:03 01-52-54-00-c8-5c-10
   -rw-r--r-- 1 root root 939 Feb  8 15:46 01-52-54-00-c8-84-5c
-  lrwxrwxrwx 1 root root  35 Feb  8 15:31 default -> /pxeboot/pxelinux.cfg.files/default
+  lrwxrwxrwx 1 root root  35 Feb  8 15:31 default -> /var/pxeboot/pxelinux.cfg.files/default
   -rw-r--r-- 1 root root 684 Feb  8 16:03 efi-01-52-54-00-c8-5c-10
   -rw-r--r-- 1 root root 762 Feb  8 15:46 efi-01-52-54-00-c8-84-5c
-  lrwxrwxrwx 1 root root  36 Feb  8 15:31 grub.cfg -> /pxeboot/pxelinux.cfg.files/grub.cfg
+  lrwxrwxrwx 1 root root  36 Feb  8 15:31 grub.cfg -> /var/pxeboot/pxelinux.cfg.files/grub.cfg
 
   ./config/18.10/ssh_config:
   total 16
