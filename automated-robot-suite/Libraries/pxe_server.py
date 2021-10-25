@@ -31,7 +31,7 @@ PROMPT = '$'
 LOG_FILENAME = 'iso_setup_baremetal.log'
 LOG_PATH = config.get('general', 'LOG_PATH')
 LOG = logger.setup_logging('iso_setup_baremetal',
-                            log_file='%s/%s'.format(LOG_PATH, LOG_FILENAME),
+                            log_file='{}/{}'.format(LOG_PATH, LOG_FILENAME),
                             console_log=False)
 
 
@@ -133,9 +133,9 @@ class PxeServer(object):
     @staticmethod
     def check_pxe_services():
         """This function is intended to restart DHCP service
-
         DHCP service needs to be restarted in order to grab the changes on the
         dhcp config file"""
+
         LOG.info('Checking PXE needed services')
         services = ['dhcpd', 'tftp', 'httpd']
 
@@ -221,7 +221,7 @@ class PxeServer(object):
                               linuxefi=grub_lines['linuxefi'],
                               initrdefi=grub_lines['initrdefi']))
         grub_timeout = 'timeout=5\n'
-        with open(os.path.join(self.tftp_dir, 'grub.cfg'), 'w') as grub_file:
+        with open(os.path.join(self.tftp_dir, 'grub.cfg'), 'w', encoding='utf8') as grub_file:
             grub_file.writelines(grub_timeout)
             grub_file.write(grub_entry)
 
@@ -352,7 +352,7 @@ def analyze_grub(grub_cfg_file):
     Get linuxefi command and initrdefi command from grub_dict according to
     selected option in config file
     """
-    with open(grub_cfg_file, 'r') as grub:
+    with open(grub_cfg_file, 'r', encoding='utf8') as grub:
         lines = grub.readlines()
         cmd_lines = list()
 
@@ -397,7 +397,7 @@ def install_iso_master_controller():
 
     nodes_file = os.path.join(os.environ['PYTHONPATH'], 'baremetal',
                               'baremetal_setup.yaml')
-    nodes = yaml.safe_load(open(nodes_file))
+    nodes = yaml.safe_load(open(nodes_file, encoding='utf8'))
 
     # Update config.ini with OAM and MGMT interfaces
     network_interfaces = []
@@ -423,7 +423,7 @@ def get_controller0_ip():
 
     nodes_file = os.path.join(THIS_PATH, '..', 'BareMetal',
                               'installation_setup.yaml')
-    nodes = yaml.load(open(nodes_file))
+    nodes = yaml.load(open(nodes_file, encoding='utf8'))
     controller_0 = nodes['controller-0']
     master_controller = Node(controller_0)
 
@@ -437,7 +437,7 @@ def config_controller(config_file):
         'iso_installer', 'CONFIG_CONTROLLER_TIMEOUT'))
     nodes_file = os.path.join(os.environ['PYTHONPATH'], 'baremetal',
                               'baremetal_setup.yaml')
-    nodes = yaml.safe_load(open(nodes_file))
+    nodes = yaml.safe_load(open(nodes_file, encoding='utf8'))
     controller_0 = nodes['nodes']['controller-0']
     master_controller = Node(controller_0)
     serial_cmd = ('ipmitool -I lanplus -H {node_bmc_ip} -U {node_bmc_user} '
@@ -475,7 +475,7 @@ def install_secondary_nodes():
 
     nodes_file = os.path.join(THIS_PATH, '..', 'BareMetal',
                               'installation_setup.yml')
-    nodes = yaml.load(open(nodes_file))
+    nodes = yaml.load(open(nodes_file, encoding='utf8'))
 
     # Removing controller-0 from Nodes
     controller_0 = nodes.pop('controller-0')

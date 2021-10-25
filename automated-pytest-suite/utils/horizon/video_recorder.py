@@ -35,7 +35,7 @@ class VideoRecorder(object):
             LOG.warning('Video recording is running already')
             return
 
-        fnull = open(os.devnull, 'w')
+        fnull = open(os.devnull, 'w', encoding='utf8')
         LOG.info('Record video via %s', ' '.join(self._cmd))
         self._popen = subprocess.Popen(self._cmd, stdout=fnull, stderr=fnull)
         self.is_launched = True

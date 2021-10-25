@@ -132,7 +132,7 @@ def update_config_ini(**kwargs):
     # -----------------------------------------------------------------------
 
     if count != 0:
-        with open(config_ini, 'w') as configfile:
+        with open(config_ini, 'w', encoding='utf8') as configfile:
             configurations.write(configfile)
             status = True
         message = '{}: was updated successfully'.format(os.path.basename(
@@ -410,7 +410,7 @@ def get_controllers_ip(env, config_file, config_type, lab_file):
     """
 
     # Read Configurtion File
-    conf = yaml.safe_load(open(config_file))
+    conf = yaml.safe_load(open(config_file, encoding='utf8'))
 
     cont_data = {}
     # Get Controllers IP's
@@ -423,7 +423,7 @@ def get_controllers_ip(env, config_file, config_type, lab_file):
 
     if env == 'baremetal':
         # Get phyisical interfaces
-        conf_lab = yaml.safe_load(open(lab_file))
+        conf_lab = yaml.safe_load(open(lab_file, encoding='utf8'))
 
         cont_data['OAM_IF'] = conf_lab['nodes']['controller-0']['oam_if']
         cont_data['MGMT_IF'] = conf_lab['nodes']['controller-0']['mgmt_if']

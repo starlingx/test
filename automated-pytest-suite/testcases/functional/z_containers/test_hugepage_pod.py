@@ -32,11 +32,11 @@ def modify_yaml(file_dir, file_name, str_to_add, hugepage_value):
     Return(str):
         returns the file_dir and filename with modified values
     """
-    with open("{}/{}".format(file_dir, file_name), 'r') as f:
+    with open("{}/{}".format(file_dir, file_name), 'r', encoding='utf8') as f:
         data = yaml.safe_load(f)
     data['spec']['containers'][0]['resources']['limits'][str_to_add] = hugepage_value
     newfile = "hugepages_pod_{}.yaml".format(hugepage_value)
-    with open("{}/{}".format(ProjVar.get_var('LOG_DIR'), newfile), 'w') as f:
+    with open("{}/{}".format(ProjVar.get_var('LOG_DIR'), newfile), 'w', encoding='utf8') as f:
         yaml.dump(data, f)
     return ProjVar.get_var('LOG_DIR'), newfile
 

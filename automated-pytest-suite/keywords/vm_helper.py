@@ -4180,7 +4180,7 @@ def _create_cloud_init_if_conf(guest_os, nics_num):
     # else:
     #     shell = '/bin/bash'
 
-    with open(tmp_file, mode='a') as f:
+    with open(tmp_file, mode='a', encoding='utf8') as f:
         f.write("#cloud-config\n")
 
         if new_user is not None:
@@ -5279,7 +5279,7 @@ def collect_guest_logs(vm_id):
                 else:
                     output = vm_ssh.exec_cmd('tail -n 200 {}'.format(log_path),
                                              fail_ok=False)[1]
-                    with open(local_log_path, mode='w') as f:
+                    with open(local_log_path, mode='w', encoding='utf8') as f:
                         f.write(output)
                 return
 

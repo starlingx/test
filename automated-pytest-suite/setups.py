@@ -487,7 +487,7 @@ def get_system_mode_from_lab_info(lab, multi_region_lab=False,
 def add_ping_failure(test_name):
     file_path = '{}{}'.format(ProjVar.get_var('PING_FAILURE_DIR'),
                               'ping_failures.txt')
-    with open(file_path, mode='a') as f:
+    with open(file_path, mode='a', encoding='utf8') as f:
         f.write(test_name + '\n')
 
 

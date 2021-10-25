@@ -92,7 +92,7 @@ class LocalHostClient(SSHClient):
 
                 self.logpath = self._get_logpath()
                 if self.logpath:
-                    self.session.logfile = open(self.logpath, 'w+')
+                    self.session.logfile = open(self.logpath, 'w+', encoding='utf8')
 
                 # Set prompt for matching
                 self.set_prompt(prompt)

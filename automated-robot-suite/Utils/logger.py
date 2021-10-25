@@ -17,7 +17,7 @@ def setup_logging_using_config(name, config_file):
         logger
     :return: returns the instance of the logger already configured
     """
-    with open(config_file, 'r') as file_manager:
+    with open(config_file, 'r', encoding='utf8') as file_manager:
         config = yaml.safe_load(file_manager.read())
     logging.config.dictConfig(config)
 

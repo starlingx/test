@@ -577,7 +577,7 @@ def setup_qemu(iso_file, configuration_file):
     check_preconditions()
 
     # loading all the configurations from yaml file
-    configurations = yaml.safe_load(open(configuration_file))
+    configurations = yaml.safe_load(open(configuration_file, encoding='utf8'))
 
     # fixme(Humberto): check_system_resources is commented out due
     # check is giving problems when configuring an instance on qemu virtual

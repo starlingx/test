@@ -129,10 +129,10 @@ class BaseWebObject:
                 elt = element() if hasattr(element, '__call__') else element
             except:
                 return False
-            for text in texts: #
+            for text in texts:
                 if self._is_text_visible(elt, 'Error'): #
-                    s = 'error' #
-                    raise s #
+                    s = 'error'
+                    raise Exception(s)
                 if self._is_text_visible(elt, text):
                     return text
             return False

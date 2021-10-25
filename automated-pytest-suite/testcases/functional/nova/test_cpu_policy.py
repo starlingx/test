@@ -125,7 +125,7 @@ def test_cpu_pol_vm_actions(flv_vcpus, cpu_pol, pol_source, boot_source):
                 **image_meta)[1]
     if boot_source == 'volume':
         LOG.tc_step("Create a volume from image")
-        source_id = cinder_helper.create_volume(name='cpu_pol'.format(cpu_pol),
+        source_id = cinder_helper.create_volume(name='cpu_pol_{}'.format(cpu_pol),
                                                 source_id=image_id)[1]
         ResourceCleanup.add('volume', source_id)
     else:

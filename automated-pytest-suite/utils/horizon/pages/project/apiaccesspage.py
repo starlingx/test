@@ -55,7 +55,7 @@ class ApiAccessPage(basepage.BasePage):
         self._wait_until(
             lambda _: len(self.list_of_files(directory, template)) > 0)
         file_name = self.list_of_files(directory, template)[0]
-        with open(join(directory, file_name)) as cred_file:
+        with open(join(directory, file_name), encoding='utf8') as cred_file:
             content = cred_file.read()
         username_re = r'export OS_USERNAME="([^"]+)"'
         if version == 2:

@@ -66,7 +66,7 @@ class MetadatadefinitionsPage(basepage.BasePage):
         :return = json data container
         """
         try:
-            with open(namespace_template_name, 'r') as template:
+            with open(namespace_template_name, 'r', encoding='utf8') as template:
                 json_template = json.load(template)
         except Exception:
             raise EOFError("Can not read template file: [{0}]".format(

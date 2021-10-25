@@ -330,7 +330,7 @@ def _scp_on_local(cmd, remote_password, logdir=None, timeout=900):
     logdir = logdir or ProjVar.get_var('LOG_DIR')
     logfile = os.path.join(logdir, 'scp_files.log')
 
-    with open(logfile, mode='a') as f:
+    with open(logfile, mode='a', encoding='utf8') as f:
         local_child = pexpect.spawn(command=cmd, encoding='utf-8', logfile=f)
         index = local_child.expect([pexpect.EOF, 'assword:', 'yes/no'],
                                    timeout=timeout)
@@ -571,7 +571,7 @@ def write_to_file(file_path, content, mode='a'):
 
     """
     time_stamp = time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime())
-    with open(file_path, mode=mode) as f:
+    with open(file_path, mode=mode, encoding='utf8') as f:
         f.write(
             '\n-----------------[{}]-----------------\n{}\n'.format(time_stamp,
                                                                     content))
@@ -812,7 +812,7 @@ def get_yaml_data(filepath):
     Return(json):
         returns the json data
     """
-    with open(filepath, 'r') as f:
+    with open(filepath, 'r', encoding='utf8') as f:
         data = yaml.safe_load(f)
     return data
 
@@ -830,7 +830,7 @@ def write_yaml_data_to_file(data, filename, directory=None):
     if directory is None:
         directory = ProjVar.get_var('LOG_DIR')
     src_path = "{}/{}".format(directory, filename)
-    with open(src_path, 'w') as f:
+    with open(src_path, 'w', encoding='utf8') as f:
         yaml.dump(data, f)
     return src_path
 

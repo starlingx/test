@@ -542,7 +542,7 @@ class TelnetClient(Telnet):
     def get_log_file(self, log_dir):
 
         if log_dir:
-            logfile = open(log_dir, 'a')
+            logfile = open(log_dir, 'a', encoding='utf8')
         else:
             logfile = None
 

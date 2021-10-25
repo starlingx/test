@@ -52,7 +52,6 @@ class MakeReport:
             msg = "***Failure at test {}: {}".format(call.when, call.excinfo)
             print(msg)
             LOG.debug(msg + "\n***Details: {}".format(report.longrepr))
-            global tracebacks
             tracebacks.append(str(report.longrepr))
             self.test_results[call.when] = ['Failed', call.excinfo]
         elif report.skipped:
@@ -83,7 +82,7 @@ class TestRes:
 
 def _write_results(res_in_tests, test_name):
     global tc_start_time
-    with open(ProjVar.get_var("TCLIST_PATH"), mode='a') as f:
+    with open(ProjVar.get_var("TCLIST_PATH"), mode='a', encoding='utf8') as f:
         f.write('\n{}\t{}\t{}'.format(res_in_tests, tc_start_time, test_name))
     global test_count
     test_count += 1
@@ -510,7 +509,7 @@ def pytest_unconfigure(config):
                 round(TestRes.PASSNUM * 100 / total_exec, 2))
             fail_rate = "{}%".format(
                 round(TestRes.FAILNUM * 100 / total_exec, 2))
-            with open(tc_res_path, mode='a') as f:
+            with open(tc_res_path, mode='a', encoding='utf8') as f:
                 # Append general info to result log
                 f.write('\n\nLab: {}\n'
                         'Build ID: {}\n'
@@ -534,7 +533,7 @@ def pytest_unconfigure(config):
                     f.write('------------\nSkipped: {}'.format(TestRes.SKIPNUM))
 
             LOG.info("Test Results saved to: {}".format(tc_res_path))
-            with open(tc_res_path, 'r') as fin:
+            with open(tc_res_path, 'r', encoding='utf8') as fin:
                 print(fin.read())
     except Exception as e:
         LOG.exception(

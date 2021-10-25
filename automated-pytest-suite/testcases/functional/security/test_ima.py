@@ -215,8 +215,6 @@ def test_ima_no_event(operation, file_path):
 
     """
 
-
-    global files_to_delete
     start_time = common.get_date_in_format()
     source_file = file_path
     con_ssh = ControllerClient.get_active_controller()
@@ -296,7 +294,6 @@ def test_ima_event_generation(operation, file_path):
     - Check IMA violation event is logged
 
     """
-    global files_to_delete
 
     con_ssh = ControllerClient.get_active_controller()
     start_time = common.get_date_in_format()
@@ -315,8 +312,7 @@ def test_ima_event_generation(operation, file_path):
             execute_cmd = "{} -p".format(dest_file)
         else:
             LOG.tc_step("Append to copy of monitored file")
-            cmd = 'echo "output" | sudo -S tee -a /usr/sbin/TEMP'.format(
-                HostLinuxUser.get_password())
+            cmd = 'echo "output" | sudo -S tee -a /usr/sbin/TEMP'
             con_ssh.exec_cmd(cmd, fail_ok=False)
             LOG.tc_step("Execute modified file")
             con_ssh.exec_sudo_cmd(dest_file)

@@ -87,7 +87,6 @@ def snapshot_from_instance(request, create_flavour_and_image, volume_for_instanc
 
 @fixture(scope="module")
 def launch_instances(create_flavour_and_image, create_network_sanity, snapshot_from_instance):
-    global VM_IDS
     net_id_list = list()
     net_id_list.append({"net-id": create_network_sanity})
     host = system_helper.get_active_controller_name()

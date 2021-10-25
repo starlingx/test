@@ -164,7 +164,7 @@ class SSHClient:
                 self.logpath = self._get_logpath()
 
                 if self.logpath:
-                    self.session.logfile = open(self.logpath, 'a+')
+                    self.session.logfile = open(self.logpath, 'a+', encoding='utf8')
 
                 # Login
                 self.session.login(self.host, self.user, self.password,

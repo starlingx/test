@@ -30,7 +30,7 @@ def _get_failed_test_names(log_dir):
     if not path.exists(test_res_path):
         return []
 
-    with open(test_res_path, 'r') as file:
+    with open(test_res_path, 'r', encoding='utf8') as file:
         failed_tests = []
 
         for line in file:
@@ -68,7 +68,7 @@ def get_tracebacks_from_pytestlog(log_dir, traceback_lines=10,
     current_failure = None
     next_failure = failed_tests.pop(0)
     traceback_for_test = []
-    with open(path.join(log_dir, 'pytestlog.log'), 'r') as file:
+    with open(path.join(log_dir, 'pytestlog.log'), 'r', encoding='utf8') as file:
         for line in file:
             if current_failure is not None:
                 if re.match(new_test_pattern, line):
@@ -151,8 +151,8 @@ def parse_test_steps(log_dir, failures_only=True):
     if failures_only and not failed_tests:
         return
 
-    with open("{}/TIS_AUTOMATION.log".format(log_dir), 'r') as file, \
-            open("{}/test_steps.log".format(log_dir), 'w') as log:
+    with open("{}/TIS_AUTOMATION.log".format(log_dir), 'r', encoding='utf8') as file, \
+            open("{}/test_steps.log".format(log_dir), 'w', encoding='utf8') as log:
         for line in file:
 
             if test_steps_length >= 500:
