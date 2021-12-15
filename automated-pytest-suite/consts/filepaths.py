@@ -13,7 +13,7 @@ class StxPath:
     HEAT = '~/heat/'
     BACKUPS = '/opt/backups'
     CUSTOM_HEAT_TEMPLATES = '~/custom_heat_templates/'
-    HELM_CHARTS_DIR = '/www/pages/helm_charts/'
+    HELM_CHARTS_DIR = '/var/www/pages/helm_charts/'
     DOCKER_CONF = '/etc/docker-distribution/registry/config.yml'
     DOCKER_REPO = '/var/lib/docker-distribution/docker/registry/v2/repositories'
 
