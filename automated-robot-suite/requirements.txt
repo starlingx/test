@@ -3,7 +3,7 @@ robotframework==3.1.1
 robotframework-seleniumlibrary
 robotframework-sshlibrary
 pexpect
-PyYaml
+PyYaml==5.4.1
 netifaces
 bash
 elevate
