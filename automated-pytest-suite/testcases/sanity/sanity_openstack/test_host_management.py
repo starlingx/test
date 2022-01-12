@@ -195,6 +195,8 @@ def test_reboot_active_controller(no_simplex):
                                         availability=['available'])
     kube_helper.wait_for_pods_healthy(check_interval=30,
                                       all_namespaces=True)
+    container_helper.wait_for_apps_status(apps="stx-openstack", status=AppStatus.APPLIED,
+                                              timeout=600, check_interval=60)
     host_helper.swact_host(hostname=standby)
 
 
