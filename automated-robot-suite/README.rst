@@ -287,8 +287,8 @@ Suite needs an **ISO** to be installed and the associated **Helm Chart** to
 deploy OpenStack services sot they should be downloaded and put inside of
 **automated-robot-suite/** path.
 
-There is daily build under **CENGEN** infrastructure so there above items can
-be downloaded form there from:
+There is daily build published under **StarlingX Mirror** so the above items can
+be downloaded form there:
 
 `StarlingX Mirror`__
 
@@ -296,7 +296,7 @@ be downloaded form there from:
 
 **HELM_CHART** = /*<release>*/outputs/helm-charts/stx-openstack-*<VERSION>*-centos-stable-versioned.tgz
 
-__ http://mirror.starlingx.cengn.ca/mirror/starlingx/master/centos/
+__ https://mirror.starlingx.windriver.com/mirror/starlingx/master/centos/
 
 Suite Configuration
 ```````````````````
