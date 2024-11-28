@@ -12,9 +12,7 @@ Sections
 .. toctree::
    :maxdepth: 1
 
-   automated_pytest_suite/index
-   automated_robot_suite/index
-   manual_tests/index
+   testcases/index
 
 -----
 Links

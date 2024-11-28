@@ -21,7 +21,7 @@
 # -- Project information -----------------------------------------------------
 
 project = u'stx-test'
-copyright = u'2019, StarlingX'
+copyright = u'2024, StarlingX'
 author = u'StarlingX'
 
 # The short X.Y version

@@ -1,0 +1,7 @@
+{
+	"log_location": "/home/user/custom_log_location",
+
+	// Acceptable values are: ERROR, WARNING, INFO, or DEBUG
+	"console_log_level": "INFO",		  // Level of Logs displayed in the console.
+	"file_log_level": "WRONG_LEVEL",      // Level of Logs included in log files.
+}

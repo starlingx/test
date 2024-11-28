@@ -1,0 +1,13 @@
+apiVersion: k8s.cni.cncf.io/v1
+kind: NetworkAttachmentDefinition
+metadata:
+  annotations:
+    k8s.v1.cni.cncf.io/resourceName: intel.com/pci_sriov_net_group0_data1
+  name: netdev-sriov
+spec:
+  config: '{"cniVersion": "0.3.0", "type": "sriov", "datastore_type":
+    "kubernetes", "kubernetes": {"kubeconfig": "/etc/cni/net.d/calico-kubeconfig"},
+    "ipam": {"type": "calico-ipam", "subnet": "2626:1::/64", "assign_ipv6":
+    "true", "assign_ipv4": "false", "ipv6_pools": ["sriov-pool-group0-data1-vf1"]},
+    "spoofchk": "off", "trust": "on"}'
+

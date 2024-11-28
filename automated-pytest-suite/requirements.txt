@@ -1,6 +1,0 @@
-pytest==3.6.1
-pexpect
-requests
-selenium
-pyvirtualdisplay
-PyYAML==5.4.1

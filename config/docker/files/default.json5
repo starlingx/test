@@ -1,0 +1,10 @@
+{
+  registries: {
+    "local_registry" : {
+        "registry_name": "local_registry",
+        "registry_url": "registry.local:9001",
+        "user_name": "test_user",
+        "password": "test_password",
+    }
+  }
+}

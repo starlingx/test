@@ -1,0 +1,23 @@
+// Override the Core colors of components.
+:root {
+
+  // Custom Variables
+  --highlight-color: #1358be;
+
+  // Main Background
+  --mat-sidenav-content-background-color: white;
+
+  // Sidenav
+  --mat-sidenav-container-background-color: #ebecf0;
+
+  // Toolbar
+  --mat-toolbar-container-text-color: white;
+  --mat-toolbar-container-background-color: #0045ad;
+
+}
+
+
+html, body { height: 100%; }
+body { margin: 0; font-family: "Roboto Medium"; }
+
+

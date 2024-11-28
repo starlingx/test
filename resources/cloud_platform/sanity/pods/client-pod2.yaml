@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  labels:
+    client: pod-to-pod
+  name: client-pod2
+  namespace: default
+spec:
+  containers:
+  - args:
+    - sleep 60m
+    command:
+    - /bin/sh
+    - -c
+    image: registry.local:9001/pv-test
+    imagePullPolicy: IfNotPresent
+    name: client-container
+  imagePullSecrets:
+        - name: local-secret
+  restartPolicy: Always

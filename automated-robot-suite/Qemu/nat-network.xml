@@ -1,7 +1,0 @@
-<network>
-	<name>stx-nat</name>
-	<bridge name="stxbr1" stp="off"/>
-	<forward mode="nat"/>
-	<ip address="10.10.10.1" netmask="255.255.255.0">
-	</ip>
-</network>

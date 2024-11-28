@@ -1,0 +1,39 @@
+{
+	"floating_ip": "10.2.3.125",
+	"lab_name": "MyDCLab",
+	"lab_type": "Standard",
+	"admin_credentials": {
+		"user_name": "fake_user",
+		"password": "fake_password"
+	},
+	"bm_password": "",
+	"use_jump_server": false,
+	"horizon_url": "https://10.2.3.125:8443/",
+	"lab_capabilities": [],
+	"nodes": {
+		"controller-0": {
+			"ip": "10.2.3.126",
+			"node_type": "Controller",
+			"node_capabilities": []
+		},
+		"controller-1": {
+			"ip": "10.2.3.127",
+			"node_type": "Controller",
+			"node_capabilities": []
+		},
+		"compute-0": {
+			"ip": "10.2.3.128",
+			"node_type": "Compute",
+			"node_capabilities": []
+		},
+		"compute-1": {
+			"ip": "10.2.3.129",
+			"node_type": "Compute",
+			"node_capabilities": []
+		}
+	},
+	"subclouds": {
+		"subcloud1": "config/lab/files/template_subcloud1.json5",
+		"subcloud2": "config/lab/files/template_subcloud2.json5"
+	}
+}

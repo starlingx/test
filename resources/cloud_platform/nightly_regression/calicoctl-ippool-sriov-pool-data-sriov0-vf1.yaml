@@ -1,0 +1,9 @@
+apiVersion: projectcalico.org/v3
+kind: IPPool
+metadata:
+  name: sriov-pool-data-sriov10-vf1
+spec:
+  cidr: 2626:1::/64
+  ipipMode: Never
+  natOutgoing: true
+

@@ -1,0 +1,14 @@
+{
+    keystone_base: "5000/v3",
+    bare_metal_base: "6385/v1",
+    configuration_base: "6385/v1",
+    fm_base: "18002",
+    dc_base: "8119",
+    node_interface_metrics_exporter_base: "9110",
+    nfv_base: "4545",
+    barbican_base: "9311",
+    software_update_base: "15491",
+    usm_base: "15497",
+    vim_base: "4545",
+    high_availability_base: "7777"
+}

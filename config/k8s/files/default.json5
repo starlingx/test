@@ -1,0 +1,4 @@
+{
+	// KUBECONFIG environment variable on the cloud_platform system.
+	"kubeconfig": "/etc/kubernetes/admin.conf",
+}

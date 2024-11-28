@@ -1,0 +1,35 @@
+# To use this yaml file, you must have the following variables defined:
+# - pod_name: The name of the pod
+# - number_of_isolcpus: The number of isolated CPUs.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: "{{ pod_name }}"
+spec:
+  containers:
+  - args:
+    - sleep 60m
+    command:
+    - /bin/sh
+    - -c
+    image: registry.local:9001/pv-test
+    imagePullPolicy: IfNotPresent
+    name: "{{ pod_name }}"
+    resources:
+      limits:
+        memory: 2Gi
+        windriver.com/isolcpus: "{{ number_of_isolcpus }}"
+      requests:
+        memory: 1Gi
+        windriver.com/isolcpus: "{{ number_of_isolcpus }}"
+    securityContext:
+      capabilities:
+        add:
+        - IPC_LOCK
+        - NET_ADMIN
+        - NET_RAW
+  imagePullSecrets:
+    - name: local-secret
+
+  nodeSelector:
+    kubernetes.io/hostname: "{{ host_name }}"

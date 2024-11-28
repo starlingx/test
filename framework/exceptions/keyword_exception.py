@@ -1,0 +1,2 @@
+class KeywordException(Exception):
+    pass

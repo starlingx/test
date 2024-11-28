@@ -1,0 +1,36 @@
+{
+	"floating_ip": "10.2.3.120",
+	"lab_name": "MyLab",
+	"lab_type": "Standard",
+	"admin_credentials": {
+		"user_name": "fake_user",
+		"password": "fake_password"
+	},
+	"bm_password": "",
+	"use_jump_server": true,
+	"horizon_url": "https://10.2.3.120:8443/",
+	"lab_capabilities": [],
+	"jump_server_config": "config/host/files/jump_host.json5",
+	"nodes": {
+		"controller-0": {
+			"ip": "10.2.3.121",
+			"node_type": "Controller",
+			"node_capabilities": []
+		},
+		"controller-1": {
+			"ip": "10.2.3.122",
+			"node_type": "Controller",
+			"node_capabilities": []
+		},
+		"compute-0": {
+			"ip": "10.2.3.123",
+			"node_type": "Compute",
+			"node_capabilities": []
+		},
+		"compute-1": {
+			"ip": "10.2.3.124",
+			"node_type": "Compute",
+			"node_capabilities": []
+		}
+	}
+}

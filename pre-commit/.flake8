@@ -1,0 +1,12 @@
+[flake8]
+max-line-length = 200
+max-doc-length = 200
+ignore = E203, E266, E501, W503, W605
+
+# Error Codes
+# https://pep8.readthedocs.io/en/release-1.7.x/intro.html#error-codes
+# E203 - "space before :" (needed for Black)
+# E266 - too many leading ‘#’ for block comment
+# E501 - line too long
+# W503 - line break before binary operator
+# W605 - invalid escape sequence-- need for regular expression

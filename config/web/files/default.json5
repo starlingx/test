@@ -1,0 +1,5 @@
+{
+	// Set to true if we want to run web tests in headless mode. If set to false, the browser will be launched to run the UI tests.
+	"run_headless": true,
+
+}

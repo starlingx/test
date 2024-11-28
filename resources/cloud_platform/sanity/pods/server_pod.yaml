@@ -1,0 +1,23 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: server-pod-dep
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      server: pod-to-pod
+  template:
+    metadata:
+      labels:
+        server: pod-to-pod
+    spec:
+      containers:
+      - image: registry.local:9001/node-hello
+        name: server-container
+        ports:
+        - containerPort: 8080
+          protocol: TCP
+      imagePullSecrets:
+            - name: local-secret
+

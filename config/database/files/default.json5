@@ -1,0 +1,8 @@
+{
+  use_database: false,
+  host_name: 'fake_host_name',
+  db_name: 'fake_db_name',
+  db_port: 5432,
+  user_name: 'fake_user',
+  password: 'fakePassword$',
+}

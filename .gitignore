@@ -27,38 +27,26 @@ wheels/
 # Log files
 *.log
 
-# Eclipse / PyCharm files
+# Eclipse / PyCharm files / VSCode files
 .project
 .pydevproject
 .settings/
 .idea/
-
-# Installer logs
-pip-log.txt
-pip-delete-this-directory.txt
-
-# Unit test / static analysis / coverage reports
-htmlcov/
-coverage_html_report/
-.tox/
-.coverage
-.coverage.*
-.cache
-nosetests.xml
-coverage.xml
-*.cover
-.hypothesis/
-flake8-output.txt
-shellcheck-output.xml
+.vscode/launch.json
+.vscode/settings.json
 
 # Environments
+.env
+.env.local
+.env.*.local
 .venv
 env/
 venv/
 ENV/
 
-# Configuration files
-# config.ini
+# Dashboard UI Files
+/portal/ui/.angular
+/portal/ui/node_modules
 
 # Mac files
 .DS_Store

@@ -1,0 +1,46 @@
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: resource-consumer
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: resource-consumer
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: resource-consumer
+  template:
+    metadata:
+      labels:
+        app: resource-consumer
+    spec:
+      containers:
+      - name: resource-consumer
+        image: registry.local:9001/resource-consumer
+        ports:
+        - containerPort: 80
+        resources:
+         requests:
+          cpu: 1000m
+          memory: 2048Mi
+      imagePullSecrets:
+        - name: local-secret
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: resource-consumer
+spec:
+  selector:
+    app: resource-consumer
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 9376
+  type: LoadBalancer
+
+

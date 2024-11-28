@@ -1,0 +1,20 @@
+.header-toolbar{
+    height: 75px;
+}
+
+.header-title {
+    padding-left: 20px;
+    font-size: 28px;
+}
+
+#side-nav-trigger-button {
+    border-radius: 50%;
+    background-color:  var(--highlight-color);
+    color: white;
+}
+
+.toolbar-divider {
+    height: 5px;
+    margin-bottom: 10px;
+}
+

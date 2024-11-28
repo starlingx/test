@@ -1,0 +1,8 @@
+{
+  // can be either host name or ip
+  host: "jump_host",
+  "credentials": {
+    "user_name": "",
+    "password": ""
+  }
+}

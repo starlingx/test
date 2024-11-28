@@ -1,0 +1,22 @@
+[[source]]
+name = "pypi"
+url = "https://pypi.org/simple"
+
+[requires]
+python_version = ">=3.11"
+
+[packages]
+# Linting and Static Analysis
+pre-commit = "==3.7.0"
+black = "==24.3.0"
+isort = "==5.13.2"
+flake8 = "==7.0.0"
+# Tools Packages
+pytest = "==8.1.1"
+paramiko = "==3.4.0"
+json5 = "==0.9.24"
+selenium = "==4.20.0"
+django = "==5.0.6"
+psycopg2-binary = "==2.9.9"
+jinja2 = "*"
+requests = "*"

@@ -1,0 +1,14 @@
+mat-sidenav-container {
+    min-height: 100vh;
+}
+
+mat-sidenav {
+    border-color: var(--divider-color);
+    border-width: 5px;
+    width: 150px;
+    border-radius: 0 !important;
+}
+
+.app-content {
+    min-height: 92vh;
+}

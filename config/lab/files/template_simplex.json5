@@ -1,0 +1,20 @@
+{
+	"floating_ip": "3851:dc57:c69a:3c77:5d53:29a1:f39c:3d9f",
+	"lab_name": "MySimplexLab",
+	"lab_type": "Simplex",
+	"admin_credentials": {
+		"user_name": "fake_user",
+		"password": "fake_password"
+	},
+	"bm_password": "",
+	"use_jump_server": false,
+	"horizon_url": "https://[3851:dc57:c69a:3c77:5d53:29a1:f39c:3d9f]:8443/",
+	"lab_capabilities": [],
+	"nodes": {
+		"controller-0": {
+			"ip": "3851:dc57:c69a:3c77:5d53:29a1:f39c:3d9f",
+			"node_type": "Controller",
+			"node_capabilities": []
+		}
+	}
+}

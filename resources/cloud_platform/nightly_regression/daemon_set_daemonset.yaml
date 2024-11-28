@@ -1,0 +1,44 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  labels:
+    app: daemonset_sriov
+  name: daemonset-sriovdp-netdev-single-pod
+  namespace: default
+spec:
+  selector:
+    matchLabels:
+      app: daemonset_sriov
+  template:
+    metadata:
+      annotations:
+        k8s.v1.cni.cncf.io/networks: netdev-sriov
+      labels:
+        app: daemonset_sriov
+        restart-on-reboot: 'true'
+    spec:
+      containers:
+      - args:
+        - while true; do sleep 300000; done;
+        command:
+        - /bin/sh
+        - -c
+        - --
+        image: registry.local:9001/pv-test
+        imagePullPolicy: IfNotPresent
+        name: container-sriovdp-netdev
+        resources:
+          limits:
+            intel.com/pci_sriov_net_group0_data1: 1
+          requests:
+            intel.com/pci_sriov_net_group0_data1: 1
+      nodeSelector:
+        kubernetes.io/hostname: controller-0
+      imagePullSecrets:
+        - name: local-secret
+      restartPolicy: Always
+      securityContext:
+        fsGroup: 2000
+        runAsGroup: 3000
+        runAsUser: 1000
+

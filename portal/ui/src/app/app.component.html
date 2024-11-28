@@ -1,0 +1,14 @@
+<mat-sidenav-container>
+
+    <mat-sidenav #sidenav mode="side" opened="true">
+        <app-sidenav></app-sidenav>
+    </mat-sidenav>
+    
+    <mat-sidenav-content>
+        <div class="app-content">
+            <app-header (sidenavTrigger)="sidenav.toggle()"></app-header>  
+            <router-outlet></router-outlet>
+        </div>
+    </mat-sidenav-content>
+
+</mat-sidenav-container>
