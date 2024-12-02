@@ -1,5 +1,6 @@
 from config.configuration_file_locations_manager import ConfigurationFileLocationsManager
 from config.configuration_manager import ConfigurationManagerClass
+from framework.resources.resource_finder import get_stx_resource_path
 
 
 def test_standard_config_loads_successfully():
@@ -10,7 +11,7 @@ def test_standard_config_loads_successfully():
     """
     configuration_manager = ConfigurationManagerClass()
     config_file_locations = ConfigurationFileLocationsManager()
-    config_file_locations.set_lab_config_file('config/lab/files/template_standard.json5')
+    config_file_locations.set_lab_config_file(get_stx_resource_path('config/lab/files/template_standard.json5'))
     configuration_manager.load_configs(config_file_locations)
     assert configuration_manager.get_lab_config() is not None, 'standard template config did not load successfully'
 
@@ -23,7 +24,7 @@ def test_standard_config_loads_floating_ip():
     """
     configuration_manager = ConfigurationManagerClass()
     config_file_locations = ConfigurationFileLocationsManager()
-    config_file_locations.set_lab_config_file('config/lab/files/template_standard.json5')
+    config_file_locations.set_lab_config_file(get_stx_resource_path('config/lab/files/template_standard.json5'))
     configuration_manager.load_configs(config_file_locations)
     assert configuration_manager.get_lab_config().get_floating_ip() == '10.2.3.120', 'floating ip was incorrect'
 
@@ -36,7 +37,7 @@ def test_standard_config_loads_lab_name():
     """
     configuration_manager = ConfigurationManagerClass()
     config_file_locations = ConfigurationFileLocationsManager()
-    config_file_locations.set_lab_config_file('config/lab/files/template_standard.json5')
+    config_file_locations.set_lab_config_file(get_stx_resource_path('config/lab/files/template_standard.json5'))
     configuration_manager.load_configs(config_file_locations)
     assert configuration_manager.get_lab_config().get_lab_name() == 'MyLab', 'Lab name was incorrect'
 
@@ -49,7 +50,7 @@ def test_standard_config_loads_lab_type():
     """
     configuration_manager = ConfigurationManagerClass()
     config_file_locations = ConfigurationFileLocationsManager()
-    config_file_locations.set_lab_config_file('config/lab/files/template_standard.json5')
+    config_file_locations.set_lab_config_file(get_stx_resource_path('config/lab/files/template_standard.json5'))
     configuration_manager.load_configs(config_file_locations)
     assert configuration_manager.get_lab_config().get_lab_type() == 'Standard', 'lab type was incorrect'
 
@@ -62,7 +63,7 @@ def test_standard_config_loads_admin_credentials():
     """
     configuration_manager = ConfigurationManagerClass()
     config_file_locations = ConfigurationFileLocationsManager()
-    config_file_locations.set_lab_config_file('config/lab/files/template_standard.json5')
+    config_file_locations.set_lab_config_file(get_stx_resource_path('config/lab/files/template_standard.json5'))
     configuration_manager.load_configs(config_file_locations)
     admin_credentials = configuration_manager.get_lab_config().get_admin_credentials()
     assert admin_credentials is not None, 'error loading admin credentials'
@@ -78,7 +79,7 @@ def test_standard_config_loads_nodes():
     """
     configuration_manager = ConfigurationManagerClass()
     config_file_locations = ConfigurationFileLocationsManager()
-    config_file_locations.set_lab_config_file('config/lab/files/template_standard.json5')
+    config_file_locations.set_lab_config_file(get_stx_resource_path('config/lab/files/template_standard.json5'))
     configuration_manager.load_configs(config_file_locations)
     nodes = configuration_manager.get_lab_config().get_nodes()
     assert len(list(filter(lambda node: node.get_name() == 'controller-0', nodes))) == 1, 'controller-0 not in nodes'
@@ -95,7 +96,7 @@ def test_standard_config_controller_0():
     """
     configuration_manager = ConfigurationManagerClass()
     config_file_locations = ConfigurationFileLocationsManager()
-    config_file_locations.set_lab_config_file('config/lab/files/template_standard.json5')
+    config_file_locations.set_lab_config_file(get_stx_resource_path('config/lab/files/template_standard.json5'))
     configuration_manager.load_configs(config_file_locations)
     node = configuration_manager.get_lab_config().get_node('controller-0')
     assert node.get_ip() == '10.2.3.121', 'controller-0 ip is incorrect'
@@ -111,7 +112,7 @@ def test_standard_config_controller_1():
     """
     configuration_manager = ConfigurationManagerClass()
     config_file_locations = ConfigurationFileLocationsManager()
-    config_file_locations.set_lab_config_file('config/lab/files/template_standard.json5')
+    config_file_locations.set_lab_config_file(get_stx_resource_path('config/lab/files/template_standard.json5'))
     configuration_manager.load_configs(config_file_locations)
     node = configuration_manager.get_lab_config().get_node('controller-1')
     assert node.get_ip() == '10.2.3.122', 'controller-1 ip is incorrect'
@@ -127,7 +128,7 @@ def test_standard_config_compute_0():
     """
     configuration_manager = ConfigurationManagerClass()
     config_file_locations = ConfigurationFileLocationsManager()
-    config_file_locations.set_lab_config_file('config/lab/files/template_standard.json5')
+    config_file_locations.set_lab_config_file(get_stx_resource_path('config/lab/files/template_standard.json5'))
     configuration_manager.load_configs(config_file_locations)
     node = configuration_manager.get_lab_config().get_node('compute-0')
     assert node.get_ip() == '10.2.3.123', 'compute-0 ip is incorrect'
@@ -143,7 +144,7 @@ def test_standard_config_compute_1():
     """
     configuration_manager = ConfigurationManagerClass()
     config_file_locations = ConfigurationFileLocationsManager()
-    config_file_locations.set_lab_config_file('config/lab/files/template_standard.json5')
+    config_file_locations.set_lab_config_file(get_stx_resource_path('config/lab/files/template_standard.json5'))
     configuration_manager.load_configs(config_file_locations)
     node = configuration_manager.get_lab_config().get_node('compute-1')
     assert node.get_ip() == '10.2.3.124', 'compute-1 ip is incorrect'
@@ -159,6 +160,6 @@ def test_standard_config_ipv4():
     """
     configuration_manager = ConfigurationManagerClass()
     config_file_locations = ConfigurationFileLocationsManager()
-    config_file_locations.set_lab_config_file('config/lab/files/template_standard.json5')
+    config_file_locations.set_lab_config_file(get_stx_resource_path('config/lab/files/template_standard.json5'))
     configuration_manager.load_configs(config_file_locations)
     assert configuration_manager.get_lab_config().is_ipv6() is False, 'lab is not ipv4'

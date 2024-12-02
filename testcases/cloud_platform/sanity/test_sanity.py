@@ -3,6 +3,7 @@ import time
 import pytest
 from config.configuration_manager import ConfigurationManager
 from framework.logging.automation_logger import get_logger
+from framework.resources.resource_finder import get_stx_resource_path
 from framework.ssh.secure_transfer_file.secure_transfer_file import SecureTransferFile
 from framework.ssh.secure_transfer_file.secure_transfer_file_enum import TransferDirection
 from framework.ssh.secure_transfer_file.secure_transfer_file_input_object import SecureTransferFileInputObject
@@ -320,9 +321,9 @@ def deploy_pods(request, ssh_connection: SSHConnection):
     KubectlDeletePodsKeywords(ssh_connection).cleanup_pod('client-pod1')
     KubectlDeletePodsKeywords(ssh_connection).cleanup_pod('client-pod2')
 
-    file_keywords.upload_file('resources/cloud_platform/sanity/pods/client-pod1.yaml', '/home/sysadmin/client-pod1.yaml')
-    file_keywords.upload_file('resources/cloud_platform/sanity/pods/client-pod2.yaml', '/home/sysadmin/client-pod2.yaml')
-    file_keywords.upload_file('resources/cloud_platform/sanity/pods/server_pod.yaml', '/home/sysadmin/server_pod.yaml')
+    file_keywords.upload_file(get_stx_resource_path('resources/cloud_platform/sanity/pods/client-pod1.yaml'), '/home/sysadmin/client-pod1.yaml')
+    file_keywords.upload_file(get_stx_resource_path('resources/cloud_platform/sanity/pods/client-pod2.yaml'), '/home/sysadmin/client-pod2.yaml')
+    file_keywords.upload_file(get_stx_resource_path('resources/cloud_platform/sanity/pods/server_pod.yaml'), '/home/sysadmin/server_pod.yaml')
     kubectl_create_pods_keyword = KubectlCreatePodsKeywords(ssh_connection)
     kubectl_create_pods_keyword.create_from_yaml('/home/sysadmin/server_pod.yaml')
     kubectl_create_pods_keyword.create_from_yaml('/home/sysadmin/client-pod1.yaml')
@@ -507,7 +508,7 @@ def test_dc_install_custom_app():
     # Defines application name, application file name, source (local) and destination (remote) file paths.
     app_name = 'hello-kitty'
     app_file_name = 'hello-kitty-min-k8s-version.tgz'
-    local_path = f'resources/cloud_platform/containers/{app_file_name}'
+    local_path = get_stx_resource_path(f'resources/cloud_platform/containers/{app_file_name}')
     remote_path = f'/home/{ConfigurationManager.get_lab_config().get_admin_credentials().get_user_name()}/{app_file_name}'
 
     # Opens an SSH session to active controller.

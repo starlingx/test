@@ -3,6 +3,7 @@ import os
 
 from config.configuration_file_locations_manager import ConfigurationFileLocationsManager
 from config.configuration_manager import ConfigurationManagerClass
+from framework.resources.resource_finder import get_stx_resource_path
 
 
 def test_default_logger_config():
@@ -34,7 +35,7 @@ def test_invalid_console_log_level_config():
     """
 
     try:
-        custom_file = 'unit_tests/config/logger/invalid_console_log_level_config.json5'
+        custom_file = get_stx_resource_path('unit_tests/config/logger/invalid_console_log_level_config.json5')
         configuration_manager = ConfigurationManagerClass()
         config_file_locations = ConfigurationFileLocationsManager()
         config_file_locations.set_logger_config_file(custom_file)
@@ -50,7 +51,7 @@ def test_invalid_file_log_level_config():
     """
 
     try:
-        custom_file = 'unit_tests/config/logger/invalid_file_log_level_config.json5'
+        custom_file = get_stx_resource_path('unit_tests/config/logger/invalid_file_log_level_config.json5')
         configuration_manager = ConfigurationManagerClass()
         config_file_locations = ConfigurationFileLocationsManager()
         config_file_locations.set_logger_config_file(custom_file)
@@ -65,7 +66,7 @@ def test_custom_logger_config():
     Tests that we can load a custom logger configuration.
     """
 
-    custom_file = 'unit_tests/config/logger/custom_logger_config.json5'
+    custom_file = get_stx_resource_path('unit_tests/config/logger/custom_logger_config.json5')
     configuration_manager = ConfigurationManagerClass()
     config_file_locations = ConfigurationFileLocationsManager()
     config_file_locations.set_logger_config_file(custom_file)

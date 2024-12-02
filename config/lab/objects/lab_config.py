@@ -4,6 +4,7 @@ import json5
 from config.host.objects.host_configuration import HostConfiguration
 from config.lab.objects.credentials import Credentials
 from config.lab.objects.node import Node
+from framework.resources.resource_finder import get_stx_resource_path
 
 
 class LabConfig:
@@ -27,7 +28,8 @@ class LabConfig:
         self.bm_password = lab_dict['bm_password']
         self.use_jump_server = lab_dict['use_jump_server']
         if 'jump_server_config' in lab_dict:
-            self.jump_server_config = HostConfiguration(lab_dict['jump_server_config'])
+            jump_host_config_location = get_stx_resource_path(lab_dict['jump_server_config'])
+            self.jump_server_config = HostConfiguration(jump_host_config_location)
 
         self.ssh_port: int = 22
         if 'ssh_port' in lab_dict:
@@ -58,7 +60,8 @@ class LabConfig:
         # if subclouds are listed in the config get the list with the subcloud's names.
         if 'subclouds' in lab_dict:
             for subcloud in lab_dict['subclouds']:
-                self.subclouds.append(LabConfig(lab_dict['subclouds'][subcloud]))
+                subcloud_config_location = get_stx_resource_path((lab_dict['subclouds'][subcloud]))
+                self.subclouds.append(LabConfig(subcloud_config_location))
 
         if 'nodes' in lab_dict:
             for node in lab_dict['nodes']:

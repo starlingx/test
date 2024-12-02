@@ -6,6 +6,7 @@ from config.lab.objects.lab_config import LabConfig
 from config.logger.objects.logger_config import LoggerConfig
 from config.rest_api.objects.rest_api_config import RestAPIConfig
 from config.web.objects.web_config import WebConfig
+from framework.resources.resource_finder import get_stx_resource_path
 
 
 class ConfigurationManagerClass:
@@ -39,31 +40,31 @@ class ConfigurationManagerClass:
 
         lab_config_file = config_file_locations.get_lab_config_file()
         if not lab_config_file:
-            lab_config_file = 'config/lab/files/default.json5'
+            lab_config_file = get_stx_resource_path('config/lab/files/default.json5')
 
         k8s_config_file = config_file_locations.get_k8s_config_file()
         if not k8s_config_file:
-            k8s_config_file = 'config/k8s/files/default.json5'
+            k8s_config_file = get_stx_resource_path('config/k8s/files/default.json5')
 
         logger_config_file = config_file_locations.get_logger_config_file()
         if not logger_config_file:
-            logger_config_file = 'config/logger/files/default.json5'
+            logger_config_file = get_stx_resource_path('config/logger/files/default.json5')
 
         docker_config_file = config_file_locations.get_docker_config_file()
         if not docker_config_file:
-            docker_config_file = 'config/docker/files/default.json5'
+            docker_config_file = get_stx_resource_path('config/docker/files/default.json5')
 
         web_config_file = config_file_locations.get_web_config_file()
         if not web_config_file:
-            web_config_file = 'config/web/files/default.json5'
+            web_config_file = get_stx_resource_path('config/web/files/default.json5')
 
         database_config_file = config_file_locations.get_database_config_file()
         if not database_config_file:
-            database_config_file = 'config/database/files/default.json5'
+            database_config_file = get_stx_resource_path('config/database/files/default.json5')
 
         rest_api_config_file = config_file_locations.get_rest_api_config_file()
         if not rest_api_config_file:
-            rest_api_config_file = 'config/rest_api/files/default.json5'
+            rest_api_config_file = get_stx_resource_path('config/rest_api/files/default.json5')
 
         if not self.loaded:
             try:

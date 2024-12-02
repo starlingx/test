@@ -1,5 +1,6 @@
 from config.configuration_file_locations_manager import ConfigurationFileLocationsManager
 from config.configuration_manager import ConfigurationManagerClass
+from framework.resources.resource_finder import get_stx_resource_path
 
 
 def test_default_database_config():
@@ -26,7 +27,7 @@ def test_custom_database_config():
     Tests that we can load a custom database configuration.
     """
 
-    custom_file = 'unit_tests/config/database/custom_database_config.json5'
+    custom_file = get_stx_resource_path('unit_tests/config/database/custom_database_config.json5')
     configuration_manager = ConfigurationManagerClass()
     config_file_locations = ConfigurationFileLocationsManager()
     config_file_locations.set_database_config_file(custom_file)

@@ -2,6 +2,7 @@ import time
 
 from config.configuration_manager import ConfigurationManager
 from framework.logging.automation_logger import get_logger
+from framework.resources.resource_finder import get_stx_resource_path
 from framework.ssh.ssh_connection import SSHConnection
 from keywords.cloud_platform.helm.helm_keywords import HelmKeywords
 from keywords.cloud_platform.networking.sriov.get_sriov_config_keywords import GetSriovConfigKeywords
@@ -69,7 +70,7 @@ def test_push_docker_image_to_local_registry_simplex(request):
 
     local_registry = ConfigurationManager.get_docker_config().get_registry('local_registry')
 
-    FileKeywords(ssh_connection).upload_file("resources/images/busybox.tar", "/home/sysadmin/busybox.tar", overwrite=False)
+    FileKeywords(ssh_connection).upload_file(get_stx_resource_path("resources/images/busybox.tar"), "/home/sysadmin/busybox.tar", overwrite=False)
     KubectlCreateSecretsKeywords(ssh_connection).create_secret_for_registry(local_registry, 'local-secret')
     docker_load_image_keywords = DockerLoadImageKeywords(ssh_connection)
     docker_load_image_keywords.load_docker_image_to_host('busybox.tar')
@@ -121,7 +122,7 @@ def test_push_docker_image_to_local_registry_standby(request):
 
     local_registry = ConfigurationManager.get_docker_config().get_registry('local_registry')
 
-    FileKeywords(ssh_connection).upload_file("resources/images/busybox.tar", "/home/sysadmin/busybox.tar", overwrite=False)
+    FileKeywords(ssh_connection).upload_file(get_stx_resource_path("resources/images/busybox.tar"), "/home/sysadmin/busybox.tar", overwrite=False)
     KubectlCreateSecretsKeywords(ssh_connection).create_secret_for_registry(local_registry, 'local-secret')
     docker_load_image_keywords = DockerLoadImageKeywords(ssh_connection)
     docker_load_image_keywords.load_docker_image_to_host('busybox.tar')
@@ -251,7 +252,7 @@ def test_upload_charts_via_helm_upload_simplex():
         file_keywords.delete_file(f"{helm_chart_location}/{helm_file}")
 
     # upload file to lab
-    file_keywords.upload_file(f"resources/cloud_platform/containers/{helm_file}", f"/home/sysadmin/{helm_file}", overwrite=True)
+    file_keywords.upload_file(get_stx_resource_path(f"resources/cloud_platform/containers/{helm_file}"), f"/home/sysadmin/{helm_file}", overwrite=True)
 
     # run helm-upload command
     HelmKeywords(ssh_connection).helm_upload('starlingx', f'/home/sysadmin/{helm_file}')
@@ -284,7 +285,7 @@ def test_upload_charts_via_helm_upload_standby_controller(request):
         file_keywords.delete_file(f"{helm_chart_location}/{helm_file}")
 
     # upload file to lab
-    file_keywords.upload_file(f"resources/cloud_platform/containers/{helm_file}", f"/home/sysadmin/{helm_file}", overwrite=True)
+    file_keywords.upload_file(get_stx_resource_path(f"resources/cloud_platform/containers/{helm_file}"), f"/home/sysadmin/{helm_file}", overwrite=True)
 
     # run helm-upload command
     HelmKeywords(ssh_connection).helm_upload('starlingx', f'/home/sysadmin/{helm_file}')
@@ -504,7 +505,7 @@ def deploy_images_to_local_registry(ssh_connection: SSHConnection):
     local_registry = ConfigurationManager.get_docker_config().get_registry('local_registry')
 
     docker_load_image_keywords = DockerLoadImageKeywords(ssh_connection)
-    FileKeywords(ssh_connection).upload_file("resources/images/resource-consumer.tar", "/home/sysadmin/resource-consumer.tar", overwrite=False)
+    FileKeywords(ssh_connection).upload_file(get_stx_resource_path("resources/images/resource-consumer.tar"), "/home/sysadmin/resource-consumer.tar", overwrite=False)
     KubectlCreateSecretsKeywords(ssh_connection).create_secret_for_registry(local_registry, 'local-secret')
     docker_load_image_keywords.load_docker_image_to_host('resource-consumer.tar')
     docker_load_image_keywords.tag_docker_image_for_registry('gcr.io/kubernetes-e2e-test-images/resource-consumer:1.4', 'resource-consumer', local_registry)
@@ -537,7 +538,7 @@ def deploy_pods(request, ssh_connection: SSHConnection):
 
     request.addfinalizer(remove_deployments_and_pods)
 
-    FileKeywords(ssh_connection).upload_file('resources/cloud_platform/sanity/pods/consumer_app.yaml', '/home/sysadmin/consumer_app.yaml')
+    FileKeywords(ssh_connection).upload_file(get_stx_resource_path('resources/cloud_platform/sanity/pods/consumer_app.yaml'), '/home/sysadmin/consumer_app.yaml')
     kubectl_create_pods_keyword = KubectlCreatePodsKeywords(ssh_connection)
     kubectl_create_pods_keyword.create_from_yaml('/home/sysadmin/consumer_app.yaml')
 
@@ -699,7 +700,7 @@ def test_isolated_2processors_2big_pods_best_effort_simplex(request):
     KubectlCreateSecretsKeywords(ssh_connection).create_secret_for_registry(local_registry, 'local-secret')
 
     file_keywords = FileKeywords(ssh_connection)
-    file_keywords.upload_file("resources/images/pv-test.tar", "/home/sysadmin/pv-test.tar", overwrite=False)
+    file_keywords.upload_file(get_stx_resource_path("resources/images/pv-test.tar"), "/home/sysadmin/pv-test.tar", overwrite=False)
     docker_load_image_keywords = DockerLoadImageKeywords(ssh_connection)
     docker_load_image_keywords.load_docker_image_to_host('pv-test.tar')
     docker_load_image_keywords.tag_docker_image_for_registry('registry.local:9001/pv-test', 'pv-test', local_registry)
@@ -709,7 +710,7 @@ def test_isolated_2processors_2big_pods_best_effort_simplex(request):
     # Create Pod 0 to fill the isolcpus on one processor
     pod0_name = "test-isolated-2p-2-big-pod-best-effort-ht-aio-pod0"
     isolcpus_on_processor_0 = host_cpu_output_for_validation.get_number_of_logical_cores(processor_id=0, assigned_function='Application-isolated')
-    template_file = "resources/cloud_platform/nightly_regression/isolated_cpu_tools.yaml"
+    template_file = get_stx_resource_path("resources/cloud_platform/nightly_regression/isolated_cpu_tools.yaml")
     replacement_dictionary = {"pod_name": pod0_name, "number_of_isolcpus": isolcpus_on_processor_0, "host_name": active_controller_name}
     pod0_yaml = YamlKeywords(ssh_connection).generate_yaml_file_from_template(template_file, replacement_dictionary, "isolated_cpu_tools.yaml", "/home/sysadmin")
     KubectlApplyPodsKeywords(ssh_connection).apply_from_yaml(pod0_yaml)
@@ -752,7 +753,7 @@ def test_isolated_2processors_2big_pods_best_effort_simplex(request):
     # Create Pod 1 to fill the isolcpus on the second processor
     pod1_name = "test-isolated-2p-2-big-pod-best-effort-ht-aio-pod1"
     isolcpus_on_processor_1 = host_cpu_output_for_validation.get_number_of_logical_cores(processor_id=1, assigned_function='Application-isolated')
-    template_file = "resources/cloud_platform/nightly_regression/isolated_cpu_tools.yaml"
+    template_file = get_stx_resource_path("resources/cloud_platform/nightly_regression/isolated_cpu_tools.yaml")
     replacement_dictionary = {"pod_name": pod1_name, "number_of_isolcpus": isolcpus_on_processor_1, "host_name": active_controller_name}
     pod1_yaml = YamlKeywords(ssh_connection).generate_yaml_file_from_template(template_file, replacement_dictionary, "isolated_cpu_tools.yaml", "/home/sysadmin")
     KubectlApplyPodsKeywords(ssh_connection).apply_from_yaml(pod1_yaml)
@@ -959,7 +960,7 @@ def test_isolated_2processors_2big_pods_best_effort_standby_controller(request):
     KubectlCreateSecretsKeywords(standby_controller_ssh).create_secret_for_registry(local_registry, 'local-secret')
 
     file_keywords = FileKeywords(standby_controller_ssh)
-    file_keywords.upload_file("resources/images/pv-test.tar", "/home/sysadmin/pv-test.tar", overwrite=False)
+    file_keywords.upload_file(get_stx_resource_path("resources/images/pv-test.tar"), "/home/sysadmin/pv-test.tar", overwrite=False)
     docker_load_image_keywords = DockerLoadImageKeywords(standby_controller_ssh)
     docker_load_image_keywords.load_docker_image_to_host('pv-test.tar')
     docker_load_image_keywords.tag_docker_image_for_registry('registry.local:9001/pv-test', 'pv-test', local_registry)
@@ -969,7 +970,7 @@ def test_isolated_2processors_2big_pods_best_effort_standby_controller(request):
     # Create Pod 0 to fill the isolcpus on one processor
     pod0_name = "test-isolated-2p-2-big-pod-best-effort-ht-aio-pod0"
     isolcpus_on_processor_0 = host_cpu_output_for_validation.get_number_of_logical_cores(processor_id=0, assigned_function='Application-isolated')
-    template_file = "resources/cloud_platform/nightly_regression/isolated_cpu_tools.yaml"
+    template_file = get_stx_resource_path("resources/cloud_platform/nightly_regression/isolated_cpu_tools.yaml")
     replacement_dictionary = {"pod_name": pod0_name, "number_of_isolcpus": isolcpus_on_processor_0, "host_name": standby_controller_name}
     pod0_yaml = YamlKeywords(standby_controller_ssh).generate_yaml_file_from_template(template_file, replacement_dictionary, "isolated_cpu_tools.yaml", "/home/sysadmin")
     KubectlApplyPodsKeywords(standby_controller_ssh).apply_from_yaml(pod0_yaml)
@@ -1012,7 +1013,7 @@ def test_isolated_2processors_2big_pods_best_effort_standby_controller(request):
     # Create Pod 1 to fill the isolcpus on the second processor
     pod1_name = "test-isolated-2p-2-big-pod-best-effort-ht-aio-pod1"
     isolcpus_on_processor_1 = host_cpu_output_for_validation.get_number_of_logical_cores(processor_id=1, assigned_function='Application-isolated')
-    template_file = "resources/cloud_platform/nightly_regression/isolated_cpu_tools.yaml"
+    template_file = get_stx_resource_path("resources/cloud_platform/nightly_regression/isolated_cpu_tools.yaml")
     replacement_dictionary = {"pod_name": pod1_name, "number_of_isolcpus": isolcpus_on_processor_1, "host_name": standby_controller_name}
     pod1_yaml = YamlKeywords(standby_controller_ssh).generate_yaml_file_from_template(template_file, replacement_dictionary, "isolated_cpu_tools.yaml", "/home/sysadmin")
     KubectlApplyPodsKeywords(standby_controller_ssh).apply_from_yaml(pod1_yaml)
@@ -1449,19 +1450,16 @@ def sriov_deploy_images_to_local_registry(ssh_connection: SSHConnection):
 
     """
     local_registry = ConfigurationManager.get_docker_config().get_registry('local_registry')
-
-    docker_load_image_keywords = DockerLoadImageKeywords(ssh_connection)
-
     file_keywords = FileKeywords(ssh_connection)
 
-    file_keywords.upload_file("resources/images/pv-test.tar", "/home/sysadmin/pv-test.tar", overwrite=False)
+    file_keywords.upload_file(get_stx_resource_path("resources/images/pv-test.tar"), "/home/sysadmin/pv-test.tar", overwrite=False)
     KubectlCreateSecretsKeywords(ssh_connection).create_secret_for_registry(local_registry, 'local-secret')
     docker_load_image_keywords = DockerLoadImageKeywords(ssh_connection)
     docker_load_image_keywords.load_docker_image_to_host('pv-test.tar')
     docker_load_image_keywords.tag_docker_image_for_registry('registry.local:9001/pv-test', 'pv-test', local_registry)
     docker_load_image_keywords.push_docker_image_to_registry('pv-test', local_registry)
 
-    file_keywords.upload_file("resources/images/calico-ctl.tar", "/home/sysadmin/calico-ctl.tar", overwrite=False)
+    file_keywords.upload_file(get_stx_resource_path("resources/images/calico-ctl.tar"), "/home/sysadmin/calico-ctl.tar", overwrite=False)
     KubectlCreateSecretsKeywords(ssh_connection).create_secret_for_registry(local_registry, 'local-secret')
     docker_load_image_keywords.load_docker_image_to_host('calico-ctl.tar')
     docker_load_image_keywords.tag_docker_image_for_registry('registry.local:9001/calico-ctl', 'calico-ctl', local_registry)
@@ -1496,12 +1494,12 @@ def sriov_deploy_pods(request, net_def_yaml: str, calicoctl_pod_yaml: str, ssh_c
 
     # copy required files to system
     file_keywords = FileKeywords(ssh_connection)
-    file_keywords.upload_file('resources/cloud_platform/nightly_regression/calicoctl_sa.yaml', '/home/sysadmin/calicoctl_sa.yaml')
-    file_keywords.upload_file('resources/cloud_platform/nightly_regression/calicoctl_cr.yaml', '/home/sysadmin/calicoctl_cr.yaml')
-    file_keywords.upload_file('resources/cloud_platform/nightly_regression/calicoctl_crb.yaml', '/home/sysadmin/calicoctl_crb.yaml')
-    file_keywords.upload_file('resources/cloud_platform/nightly_regression/calicoctl_pod.yaml', '/home/sysadmin/calicoctl_pod.yaml')
-    file_keywords.upload_file(f'resources/cloud_platform/nightly_regression/{net_def_yaml}', f'/home/sysadmin/{net_def_yaml}')
-    file_keywords.upload_file(f'resources/cloud_platform/nightly_regression/{calicoctl_pod_yaml}', f'/home/sysadmin/{calicoctl_pod_yaml}')
+    file_keywords.upload_file(get_stx_resource_path('resources/cloud_platform/nightly_regression/calicoctl_sa.yaml'), '/home/sysadmin/calicoctl_sa.yaml')
+    file_keywords.upload_file(get_stx_resource_path('resources/cloud_platform/nightly_regression/calicoctl_cr.yaml'), '/home/sysadmin/calicoctl_cr.yaml')
+    file_keywords.upload_file(get_stx_resource_path('resources/cloud_platform/nightly_regression/calicoctl_crb.yaml'), '/home/sysadmin/calicoctl_crb.yaml')
+    file_keywords.upload_file(get_stx_resource_path('resources/cloud_platform/nightly_regression/calicoctl_pod.yaml'), '/home/sysadmin/calicoctl_pod.yaml')
+    file_keywords.upload_file(get_stx_resource_path(f'resources/cloud_platform/nightly_regression/{net_def_yaml}'), f'/home/sysadmin/{net_def_yaml}')
+    file_keywords.upload_file(get_stx_resource_path(f'resources/cloud_platform/nightly_regression/{calicoctl_pod_yaml}'), f'/home/sysadmin/{calicoctl_pod_yaml}')
 
     # apply config files
     kubectl_apply_pods_keywords = KubectlApplyPodsKeywords(ssh_connection)
@@ -1546,7 +1544,7 @@ def sriov_deploy_pods_ipv4(request, ssh_connection: SSHConnection):
 
     # copy required files to system
     file_keywords = FileKeywords(ssh_connection)
-    file_keywords.upload_file('resources/cloud_platform/nightly_regression/netdef_test-sriovdp_ipv4.yaml', '/home/sysadmin/netdef_test-sriovdp_ipv4.yaml')
+    file_keywords.upload_file(get_stx_resource_path('resources/cloud_platform/nightly_regression/netdef_test-sriovdp_ipv4.yaml'), '/home/sysadmin/netdef_test-sriovdp_ipv4.yaml')
 
     # apply config files
     kubectl_apply_pods_keywords = KubectlApplyPodsKeywords(ssh_connection)
@@ -1564,7 +1562,7 @@ def deploy_daemonset_pod(request, daemonset_pod_yaml: str, ssh_connection: SSHCo
     Returns:
 
     """
-    FileKeywords(ssh_connection).upload_file(f'resources/cloud_platform/nightly_regression/{daemonset_pod_yaml}', f'/home/sysadmin/{daemonset_pod_yaml}')
+    FileKeywords(ssh_connection).upload_file(get_stx_resource_path(f'resources/cloud_platform/nightly_regression/{daemonset_pod_yaml}'), f'/home/sysadmin/{daemonset_pod_yaml}')
 
     KubectlApplyPodsKeywords(ssh_connection).apply_from_yaml(f'/home/sysadmin/{daemonset_pod_yaml}')
 
@@ -1602,8 +1600,8 @@ def deploy_sriovdp_netdev_pods_ipv6(request, ssh_connection: SSHConnection):
 
     """
     file_keywords = FileKeywords(ssh_connection)
-    file_keywords.upload_file('resources/cloud_platform/nightly_regression/pod-test-sriovdp-netdev-connectivity-ipv6-0.yaml', '/home/sysadmin/pod-test-sriovdp-netdev-connectivity-ipv6-0.yaml')
-    file_keywords.upload_file('resources/cloud_platform/nightly_regression/pod-test-sriovdp-netdev-connectivity-ipv6-1.yaml', '/home/sysadmin/pod-test-sriovdp-netdev-connectivity-ipv6-1.yaml')
+    file_keywords.upload_file(get_stx_resource_path('resources/cloud_platform/nightly_regression/pod-test-sriovdp-netdev-connectivity-ipv6-0.yaml'), '/home/sysadmin/pod-test-sriovdp-netdev-connectivity-ipv6-0.yaml')
+    file_keywords.upload_file(get_stx_resource_path('resources/cloud_platform/nightly_regression/pod-test-sriovdp-netdev-connectivity-ipv6-1.yaml'), '/home/sysadmin/pod-test-sriovdp-netdev-connectivity-ipv6-1.yaml')
 
     kubectl_apply_pods_keywords = KubectlApplyPodsKeywords(ssh_connection)
     kubectl_apply_pods_keywords.apply_from_yaml('/home/sysadmin/pod-test-sriovdp-netdev-connectivity-ipv6-0.yaml')
@@ -1651,8 +1649,8 @@ def deploy_sriovdp_netdev_pods_ipv4(request, ssh_connection: SSHConnection):
 
     """
     file_keywords = FileKeywords(ssh_connection)
-    file_keywords.upload_file('resources/cloud_platform/nightly_regression/pod-test-sriovdp-netdev-connectivity-ipv4-0.yaml', '/home/sysadmin/pod-test-sriovdp-netdev-connectivity-ipv4-0.yaml')
-    file_keywords.upload_file('resources/cloud_platform/nightly_regression/pod-test-sriovdp-netdev-connectivity-ipv4-1.yaml', '/home/sysadmin/pod-test-sriovdp-netdev-connectivity-ipv4-1.yaml')
+    file_keywords.upload_file(get_stx_resource_path('resources/cloud_platform/nightly_regression/pod-test-sriovdp-netdev-connectivity-ipv4-0.yaml'), '/home/sysadmin/pod-test-sriovdp-netdev-connectivity-ipv4-0.yaml')
+    file_keywords.upload_file(get_stx_resource_path('resources/cloud_platform/nightly_regression/pod-test-sriovdp-netdev-connectivity-ipv4-1.yaml'), '/home/sysadmin/pod-test-sriovdp-netdev-connectivity-ipv4-1.yaml')
 
     kubectl_apply_pods_keywords = KubectlApplyPodsKeywords(ssh_connection)
     kubectl_apply_pods_keywords.apply_from_yaml('/home/sysadmin/pod-test-sriovdp-netdev-connectivity-ipv4-0.yaml')

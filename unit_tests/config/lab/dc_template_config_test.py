@@ -1,5 +1,6 @@
 from config.configuration_file_locations_manager import ConfigurationFileLocationsManager
 from config.configuration_manager import ConfigurationManagerClass
+from framework.resources.resource_finder import get_stx_resource_path
 
 
 def test_dc_config_loads_successfully():
@@ -10,7 +11,7 @@ def test_dc_config_loads_successfully():
     """
     configuration_manager = ConfigurationManagerClass()
     config_file_locations = ConfigurationFileLocationsManager()
-    config_file_locations.set_lab_config_file('config/lab/files/template_dc.json5')
+    config_file_locations.set_lab_config_file(get_stx_resource_path('config/lab/files/template_dc.json5'))
     configuration_manager.load_configs(config_file_locations)
     assert configuration_manager.get_lab_config() is not None, 'dc template config did not load successfully'
 
@@ -23,7 +24,7 @@ def test_dc_config_loads_floating_ip():
     """
     configuration_manager = ConfigurationManagerClass()
     config_file_locations = ConfigurationFileLocationsManager()
-    config_file_locations.set_lab_config_file('config/lab/files/template_dc.json5')
+    config_file_locations.set_lab_config_file(get_stx_resource_path('config/lab/files/template_dc.json5'))
     configuration_manager.load_configs(config_file_locations)
     assert configuration_manager.get_lab_config().get_floating_ip() == '10.2.3.125', 'floating ip was incorrect'
 
@@ -36,7 +37,7 @@ def test_dc_config_loads_lab_name():
     """
     configuration_manager = ConfigurationManagerClass()
     config_file_locations = ConfigurationFileLocationsManager()
-    config_file_locations.set_lab_config_file('config/lab/files/template_dc.json5')
+    config_file_locations.set_lab_config_file(get_stx_resource_path('config/lab/files/template_dc.json5'))
     configuration_manager.load_configs(config_file_locations)
     assert configuration_manager.get_lab_config().get_lab_name() == 'MyDCLab', 'Lab name was incorrect'
 
@@ -49,7 +50,7 @@ def test_dc_config_loads_lab_type():
     """
     configuration_manager = ConfigurationManagerClass()
     config_file_locations = ConfigurationFileLocationsManager()
-    config_file_locations.set_lab_config_file('config/lab/files/template_dc.json5')
+    config_file_locations.set_lab_config_file(get_stx_resource_path('config/lab/files/template_dc.json5'))
     configuration_manager.load_configs(config_file_locations)
     assert configuration_manager.get_lab_config().get_lab_type() == 'Standard', 'lab type was incorrect'
 
@@ -62,7 +63,7 @@ def test_dc_config_loads_admin_credentials():
     """
     configuration_manager = ConfigurationManagerClass()
     config_file_locations = ConfigurationFileLocationsManager()
-    config_file_locations.set_lab_config_file('config/lab/files/template_dc.json5')
+    config_file_locations.set_lab_config_file(get_stx_resource_path('config/lab/files/template_dc.json5'))
     configuration_manager.load_configs(config_file_locations)
     admin_credentials = configuration_manager.get_lab_config().get_admin_credentials()
     assert admin_credentials is not None, 'error loading admin credentials'
@@ -78,7 +79,7 @@ def test_dc_config_loads_nodes():
     """
     configuration_manager = ConfigurationManagerClass()
     config_file_locations = ConfigurationFileLocationsManager()
-    config_file_locations.set_lab_config_file('config/lab/files/template_dc.json5')
+    config_file_locations.set_lab_config_file(get_stx_resource_path('config/lab/files/template_dc.json5'))
     configuration_manager.load_configs(config_file_locations)
     nodes = configuration_manager.get_lab_config().get_nodes()
     assert len(list(filter(lambda node: node.get_name() == 'controller-0', nodes))) == 1, 'Controller-0 not in nodes'
@@ -95,7 +96,7 @@ def test_dc_config_controller_0():
     """
     configuration_manager = ConfigurationManagerClass()
     config_file_locations = ConfigurationFileLocationsManager()
-    config_file_locations.set_lab_config_file('config/lab/files/template_dc.json5')
+    config_file_locations.set_lab_config_file(get_stx_resource_path('config/lab/files/template_dc.json5'))
     configuration_manager.load_configs(config_file_locations)
     node = configuration_manager.get_lab_config().get_node('controller-0')
     assert node.get_ip() == '10.2.3.126', 'controller-0 ip is incorrect'
@@ -111,7 +112,7 @@ def test_dc_config_controller_1():
     """
     configuration_manager = ConfigurationManagerClass()
     config_file_locations = ConfigurationFileLocationsManager()
-    config_file_locations.set_lab_config_file('config/lab/files/template_dc.json5')
+    config_file_locations.set_lab_config_file(get_stx_resource_path('config/lab/files/template_dc.json5'))
     configuration_manager.load_configs(config_file_locations)
     node = configuration_manager.get_lab_config().get_node('controller-1')
     assert node.get_ip() == '10.2.3.127', 'controller-1 ip is incorrect'
@@ -127,7 +128,7 @@ def test_dc_config_compute_0():
     """
     configuration_manager = ConfigurationManagerClass()
     config_file_locations = ConfigurationFileLocationsManager()
-    config_file_locations.set_lab_config_file('config/lab/files/template_dc.json5')
+    config_file_locations.set_lab_config_file(get_stx_resource_path('config/lab/files/template_dc.json5'))
     configuration_manager.load_configs(config_file_locations)
     node = configuration_manager.get_lab_config().get_node('compute-0')
     assert node.get_ip() == '10.2.3.128', 'compute-0 ip is incorrect'
@@ -143,7 +144,7 @@ def test_dc_config_compute_1():
     """
     configuration_manager = ConfigurationManagerClass()
     config_file_locations = ConfigurationFileLocationsManager()
-    config_file_locations.set_lab_config_file('config/lab/files/template_dc.json5')
+    config_file_locations.set_lab_config_file(get_stx_resource_path('config/lab/files/template_dc.json5'))
     configuration_manager.load_configs(config_file_locations)
     node = configuration_manager.get_lab_config().get_node('compute-1')
     assert node.get_ip() == '10.2.3.129', 'compute-1 ip is incorrect'
@@ -159,7 +160,7 @@ def test_dc_config_ipv4():
     """
     configuration_manager = ConfigurationManagerClass()
     config_file_locations = ConfigurationFileLocationsManager()
-    config_file_locations.set_lab_config_file('config/lab/files/template_dc.json5')
+    config_file_locations.set_lab_config_file(get_stx_resource_path('config/lab/files/template_dc.json5'))
     configuration_manager.load_configs(config_file_locations)
     assert configuration_manager.get_lab_config().is_ipv6() is False, 'lab is not ipv4'
 
@@ -172,7 +173,7 @@ def test_dc_subclouds_loaded():
     """
     configuration_manager = ConfigurationManagerClass()
     config_file_locations = ConfigurationFileLocationsManager()
-    config_file_locations.set_lab_config_file('config/lab/files/template_dc.json5')
+    config_file_locations.set_lab_config_file(get_stx_resource_path('config/lab/files/template_dc.json5'))
     configuration_manager.load_configs(config_file_locations)
     subclouds = configuration_manager.get_lab_config().get_subclouds()
     assert len(list(filter(lambda subcloud: subcloud.get_lab_name() == 'Subcloud1', subclouds))) == 1, 'Subcloud1 not in nodes'
@@ -187,7 +188,7 @@ def test_dc_subcloud1_config_loads_floating_ip():
     """
     configuration_manager = ConfigurationManagerClass()
     config_file_locations = ConfigurationFileLocationsManager()
-    config_file_locations.set_lab_config_file('config/lab/files/template_dc.json5')
+    config_file_locations.set_lab_config_file(get_stx_resource_path('config/lab/files/template_dc.json5'))
     configuration_manager.load_configs(config_file_locations)
     subcloud1 = configuration_manager.get_lab_config().get_subcloud('Subcloud1')
     assert subcloud1.get_floating_ip() == '10.2.3.130', 'floating ip was incorrect'
@@ -201,7 +202,7 @@ def test_dc_subcloud1_config_loads_lab_name():
     """
     configuration_manager = ConfigurationManagerClass()
     config_file_locations = ConfigurationFileLocationsManager()
-    config_file_locations.set_lab_config_file('config/lab/files/template_dc.json5')
+    config_file_locations.set_lab_config_file(get_stx_resource_path('config/lab/files/template_dc.json5'))
     configuration_manager.load_configs(config_file_locations)
     subcloud1 = configuration_manager.get_lab_config().get_subcloud('Subcloud1')
     assert subcloud1.get_lab_name() == 'Subcloud1', 'Sublcloud name was incorrect'
@@ -215,7 +216,7 @@ def test_dc_subcloud1_config_loads_lab_type():
     """
     configuration_manager = ConfigurationManagerClass()
     config_file_locations = ConfigurationFileLocationsManager()
-    config_file_locations.set_lab_config_file('config/lab/files/template_dc.json5')
+    config_file_locations.set_lab_config_file(get_stx_resource_path('config/lab/files/template_dc.json5'))
     configuration_manager.load_configs(config_file_locations)
     subcloud1 = configuration_manager.get_lab_config().get_subcloud('Subcloud1')
     assert subcloud1.get_lab_type() == 'Standard', 'subcloud type was incorrect'
@@ -229,7 +230,7 @@ def test_dc_subcloud1_config_loads_admin_credentials():
     """
     configuration_manager = ConfigurationManagerClass()
     config_file_locations = ConfigurationFileLocationsManager()
-    config_file_locations.set_lab_config_file('config/lab/files/template_dc.json5')
+    config_file_locations.set_lab_config_file(get_stx_resource_path('config/lab/files/template_dc.json5'))
     configuration_manager.load_configs(config_file_locations)
     subcloud1 = configuration_manager.get_lab_config().get_subcloud('Subcloud1')
     admin_credentials = subcloud1.get_admin_credentials()
@@ -246,7 +247,7 @@ def test_dc_subcloud1_config_loads_nodes():
     """
     configuration_manager = ConfigurationManagerClass()
     config_file_locations = ConfigurationFileLocationsManager()
-    config_file_locations.set_lab_config_file('config/lab/files/template_dc.json5')
+    config_file_locations.set_lab_config_file(get_stx_resource_path('config/lab/files/template_dc.json5'))
     configuration_manager.load_configs(config_file_locations)
     subcloud1 = configuration_manager.get_lab_config().get_subcloud('Subcloud1')
     nodes = subcloud1.get_nodes()
@@ -264,7 +265,7 @@ def test_dc_subcloud1_config_controller_0():
     """
     configuration_manager = ConfigurationManagerClass()
     config_file_locations = ConfigurationFileLocationsManager()
-    config_file_locations.set_lab_config_file('config/lab/files/template_dc.json5')
+    config_file_locations.set_lab_config_file(get_stx_resource_path('config/lab/files/template_dc.json5'))
     configuration_manager.load_configs(config_file_locations)
     subcloud1 = configuration_manager.get_lab_config().get_subcloud('Subcloud1')
     node = subcloud1.get_node('controller-0')
@@ -281,7 +282,7 @@ def test_dc_subcloud1_config_controller_1():
     """
     configuration_manager = ConfigurationManagerClass()
     config_file_locations = ConfigurationFileLocationsManager()
-    config_file_locations.set_lab_config_file('config/lab/files/template_dc.json5')
+    config_file_locations.set_lab_config_file(get_stx_resource_path('config/lab/files/template_dc.json5'))
     configuration_manager.load_configs(config_file_locations)
     subcloud1 = configuration_manager.get_lab_config().get_subcloud('Subcloud1')
     node = subcloud1.get_node('controller-1')
@@ -298,7 +299,7 @@ def test_dc_subcloud1_config_compute_0():
     """
     configuration_manager = ConfigurationManagerClass()
     config_file_locations = ConfigurationFileLocationsManager()
-    config_file_locations.set_lab_config_file('config/lab/files/template_dc.json5')
+    config_file_locations.set_lab_config_file(get_stx_resource_path('config/lab/files/template_dc.json5'))
     configuration_manager.load_configs(config_file_locations)
     subcloud1 = configuration_manager.get_lab_config().get_subcloud('Subcloud1')
     node = subcloud1.get_node('compute-0')
@@ -315,7 +316,7 @@ def test_dc_subcloud1_config_compute_1():
     """
     configuration_manager = ConfigurationManagerClass()
     config_file_locations = ConfigurationFileLocationsManager()
-    config_file_locations.set_lab_config_file('config/lab/files/template_dc.json5')
+    config_file_locations.set_lab_config_file(get_stx_resource_path('config/lab/files/template_dc.json5'))
     configuration_manager.load_configs(config_file_locations)
     subcloud1 = configuration_manager.get_lab_config().get_subcloud('Subcloud1')
     node = subcloud1.get_node('compute-1')
@@ -332,7 +333,7 @@ def test_dc_subcloud1_config_ipv4():
     """
     configuration_manager = ConfigurationManagerClass()
     config_file_locations = ConfigurationFileLocationsManager()
-    config_file_locations.set_lab_config_file('config/lab/files/template_dc.json5')
+    config_file_locations.set_lab_config_file(get_stx_resource_path('config/lab/files/template_dc.json5'))
     configuration_manager.load_configs(config_file_locations)
     subcloud1 = configuration_manager.get_lab_config().get_subcloud('Subcloud1')
 
@@ -347,7 +348,7 @@ def test_dc_subcloud2_config_loads_floating_ip():
     """
     configuration_manager = ConfigurationManagerClass()
     config_file_locations = ConfigurationFileLocationsManager()
-    config_file_locations.set_lab_config_file('config/lab/files/template_dc.json5')
+    config_file_locations.set_lab_config_file(get_stx_resource_path('config/lab/files/template_dc.json5'))
     configuration_manager.load_configs(config_file_locations)
     subcloud2 = configuration_manager.get_lab_config().get_subcloud('Subcloud2')
     assert subcloud2.get_floating_ip() == '10.2.3.135', 'floating ip was incorrect'
@@ -361,7 +362,7 @@ def test_dc_subcloud2_config_loads_lab_name():
     """
     configuration_manager = ConfigurationManagerClass()
     config_file_locations = ConfigurationFileLocationsManager()
-    config_file_locations.set_lab_config_file('config/lab/files/template_dc.json5')
+    config_file_locations.set_lab_config_file(get_stx_resource_path('config/lab/files/template_dc.json5'))
     configuration_manager.load_configs(config_file_locations)
     subcloud2 = configuration_manager.get_lab_config().get_subcloud('Subcloud2')
     assert subcloud2.get_lab_name() == 'Subcloud2', 'Sublcloud name was incorrect'
@@ -375,7 +376,7 @@ def test_dc_subcloud2_config_loads_lab_type():
     """
     configuration_manager = ConfigurationManagerClass()
     config_file_locations = ConfigurationFileLocationsManager()
-    config_file_locations.set_lab_config_file('config/lab/files/template_dc.json5')
+    config_file_locations.set_lab_config_file(get_stx_resource_path('config/lab/files/template_dc.json5'))
     configuration_manager.load_configs(config_file_locations)
     subcloud2 = configuration_manager.get_lab_config().get_subcloud('Subcloud2')
     assert subcloud2.get_lab_type() == 'Simplex', 'subcloud type was incorrect'
@@ -389,7 +390,7 @@ def test_dc_subcloud2_config_loads_admin_credentials():
     """
     configuration_manager = ConfigurationManagerClass()
     config_file_locations = ConfigurationFileLocationsManager()
-    config_file_locations.set_lab_config_file('config/lab/files/template_dc.json5')
+    config_file_locations.set_lab_config_file(get_stx_resource_path('config/lab/files/template_dc.json5'))
     configuration_manager.load_configs(config_file_locations)
     subcloud2 = configuration_manager.get_lab_config().get_subcloud('Subcloud2')
     admin_credentials = subcloud2.get_admin_credentials()
@@ -406,7 +407,7 @@ def test_dc_subcloud2_config_loads_nodes():
     """
     configuration_manager = ConfigurationManagerClass()
     config_file_locations = ConfigurationFileLocationsManager()
-    config_file_locations.set_lab_config_file('config/lab/files/template_dc.json5')
+    config_file_locations.set_lab_config_file(get_stx_resource_path('config/lab/files/template_dc.json5'))
     configuration_manager.load_configs(config_file_locations)
     subcloud2 = configuration_manager.get_lab_config().get_subcloud('Subcloud2')
     nodes = subcloud2.get_nodes()
@@ -421,7 +422,7 @@ def test_dc_subcloud2_config_controller_0():
     """
     configuration_manager = ConfigurationManagerClass()
     config_file_locations = ConfigurationFileLocationsManager()
-    config_file_locations.set_lab_config_file('config/lab/files/template_dc.json5')
+    config_file_locations.set_lab_config_file(get_stx_resource_path('config/lab/files/template_dc.json5'))
     configuration_manager.load_configs(config_file_locations)
     subcloud2 = configuration_manager.get_lab_config().get_subcloud('Subcloud2')
     node = subcloud2.get_node('controller-0')
@@ -438,7 +439,7 @@ def test_dc_subcloud2_config_ipv4():
     """
     configuration_manager = ConfigurationManagerClass()
     config_file_locations = ConfigurationFileLocationsManager()
-    config_file_locations.set_lab_config_file('config/lab/files/template_dc.json5')
+    config_file_locations.set_lab_config_file(get_stx_resource_path('config/lab/files/template_dc.json5'))
     configuration_manager.load_configs(config_file_locations)
     subcloud2 = configuration_manager.get_lab_config().get_subcloud('Subcloud2')
 
@@ -453,7 +454,7 @@ def test_dc_is_dc_true():
     """
     configuration_manager = ConfigurationManagerClass()
     config_file_locations = ConfigurationFileLocationsManager()
-    config_file_locations.set_lab_config_file('config/lab/files/template_dc.json5')
+    config_file_locations.set_lab_config_file(get_stx_resource_path('config/lab/files/template_dc.json5'))
     configuration_manager.load_configs(config_file_locations)
 
     assert configuration_manager.get_lab_config().is_dc(), 'Lab was not marked as dc'
