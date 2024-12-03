@@ -9,6 +9,7 @@ from framework.database.operations.run_operation import RunOperation
 from framework.database.operations.test_plan_operation import TestPlanOperation
 from framework.logging.automation_logger import get_logger
 from framework.pytest_plugins.result_collector import ResultCollector
+from framework.resources.resource_finder import get_stx_resource_path
 from framework.runner.objects.test_capability_matcher import TestCapabilityMatcher
 from framework.runner.objects.test_executor_summary import TestExecutorSummary
 from testcases.conftest import log_configuration
@@ -29,7 +30,7 @@ def execute_test(test: TestCase, test_executor_summary: TestExecutorSummary, tes
     result_collector = ResultCollector(test_executor_summary, test, test_case_result_id)
 
     pytest_args = ConfigurationManager.get_config_pytest_args()
-    pytest_args.append(f'testcases/{test.get_pytest_node_id()}')
+    pytest_args.append(get_stx_resource_path(f'testcases/{test.get_pytest_node_id()}'))
 
     pytest.main(pytest_args, plugins=[result_collector])
 
