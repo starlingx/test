@@ -31,6 +31,7 @@ from keywords.cloud_platform.system.host.system_host_list_keywords import System
 from keywords.cloud_platform.system.host.system_host_lock_keywords import SystemHostLockKeywords
 from keywords.cloud_platform.system.host.system_host_reboot_keywords import SystemHostRebootKeywords
 from keywords.cloud_platform.system.host.system_host_swact_keywords import SystemHostSwactKeywords
+from keywords.cloud_platform.system.storage.system_storage_backend_keywords import SystemStorageBackendKeywords
 from keywords.files.file_keywords import FileKeywords
 from keywords.k8s.deployments.kubectl_delete_deployments_keywords import KubectlDeleteDeploymentsKeywords
 from keywords.k8s.pods.kubectl_create_pods_keywords import KubectlCreatePodsKeywords
@@ -829,3 +830,68 @@ def test_dc_swact_host(request):
         )
 
     get_logger().log_info("Completed the 'test_dc_swact_host' test case.")
+
+
+@mark.p0
+@mark.lab_has_subcloud
+def test_dc_system_health_pre_session():
+    """
+    Test the health of the DC System to guarantee the following requirements in the central cloud and in the subclouds:
+        _ Application 'platform-integ-apps' is in 'applied' status.
+        _ No alarms are present.
+        _ The health of Kubernetes pods.
+
+    Setup:
+        _ Defines a reference to 'platform-integ-apps' app name.
+        _ Defines a list of opened SSH connections to the central cloud and to the subclouds.
+
+    Test:
+        _ For each SSH connection to a subcloud or to the central cloud in the list:
+            _ Asserts the status of the 'platform-integ-apps' application is 'applied'
+            _ Asserts that no alarms are present.
+            _ Assert the Kubernetes pods are healthy.
+
+    Teardown:
+        _ Not required.
+
+    """
+    # The application 'platform-integ-apps' is responsible for the installation, management, and integration
+    # of essential platform applications running on the underlying infrastructure. It must be in 'applied' status.
+    platform_app = 'platform-integ-apps'
+
+    # List of DC system SSH connections.
+    ssh_connections = []
+
+    # Opens an SSH session to the active controller.
+    ssh_connection_active_controller = LabConnectionKeywords().get_active_controller_ssh()
+
+    # Retrieves the subclouds. Considers only subclouds that are online, managed, deploy complete, and synchronized.
+    dcmanager_subcloud_list_object_filter = DcManagerSubcloudListObjectFilter().get_healthy_subcloud_filter()
+    dcmanager_subcloud_list_keywords = DcManagerSubcloudListKeywords(ssh_connection_active_controller)
+    dcmanager_subcloud_list = dcmanager_subcloud_list_keywords.get_dcmanager_subcloud_list()
+    dcmanager_subcloud_list_objects_filtered = dcmanager_subcloud_list.get_dcmanager_subcloud_list_objects_filtered(dcmanager_subcloud_list_object_filter)
+
+    # Adds the central subcloud SSH connection to the list of SSH connections.
+    ssh_connections.append(ssh_connection_active_controller)
+
+    # Adds the subcloud SSH connection to the list of SSH connections.
+    for subcloud in dcmanager_subcloud_list_objects_filtered:
+        ssh_connections.append(LabConnectionKeywords().get_subcloud_ssh(subcloud.get_name()))
+
+    for ssh_connection in ssh_connections:
+
+        # Asserts the status of the <platform_app> application in the current SSH connection is 'applied',
+        # provided the subcloud or central cloud has storage backends.
+        system_storage_backend_keywords = SystemStorageBackendKeywords(ssh_connection)
+        system_storage_backends = system_storage_backend_keywords.get_system_storage_backend_list().get_system_storage_backends()
+        if len(system_storage_backends) != 0:
+            system_application_list_keywords = SystemApplicationListKeywords(ssh_connection)
+            app_status = system_application_list_keywords.get_system_application_list().get_application(platform_app).get_status()
+            assert app_status == 'applied', f"The status of application '{platform_app}' is not 'applied'. Current status: {app_status}."
+
+        # Asserts that no alarms are present
+        alarm_list_keywords = AlarmListKeywords(ssh_connection)
+        alarm_list_keywords.wait_for_all_alarms_cleared()
+        # If this test case executed the line above with no exception, all alarms were cleared.
+
+        # TODO: to check the health of Kubernetes pods on subclouds.

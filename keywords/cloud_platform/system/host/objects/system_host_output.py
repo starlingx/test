@@ -96,6 +96,23 @@ class SystemHostOutput:
 
         return hosts[0]
 
+    def get_controllers(self) -> list[SystemHostObject]:
+        """
+        Gets the list of controllers
+        Returns (list[SystemHostObject]): the list of controllers
+
+        """
+        hosts = list(
+            filter(
+                lambda host: 'controller' in host.get_personality(),
+                self.system_hosts,
+            )
+        )
+        if len(hosts) == 0:
+            raise KeywordException("No controller was found.")
+
+        return hosts
+
     def get_computes(self) -> [SystemHostObject]:
         """
         Gets the compute

@@ -106,3 +106,11 @@ class AlarmListObject:
 
         """
         return self.time_stamp
+
+    def __eq__(self, alarm_list_object):
+        if not isinstance(alarm_list_object, AlarmListObject):
+            return False
+        return (self.get_alarm_id() == alarm_list_object.get_alarm_id() and
+                self.get_severity() == alarm_list_object.get_severity() and
+                self.get_entity_id() == alarm_list_object.get_entity_id())
+
