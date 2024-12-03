@@ -222,7 +222,7 @@ def retrieve_subclouds(lab_config: LabConfig, ssh_connection: SSHConnection) -> 
     """
     subclouds: [LabConfig] = []
 
-    lab_config_directory = 'config/lab/files'
+    lab_config_directory = os.path.split(lab_config.get_lab_config_file())[0]  # get the config directory
 
     dcmanager_subcloud_list_keywords = DcManagerSubcloudListKeywords(ssh_connection)
     dcmanager_subclouds = dcmanager_subcloud_list_keywords.get_dcmanager_subcloud_list()
