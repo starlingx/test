@@ -1,5 +1,6 @@
 # This utility file contains functions to help the code find the path to resource files
 # when starlingx gets used as a submodule, or from outside code.
+import os.path
 from pathlib import Path
 
 
@@ -18,6 +19,9 @@ def get_stx_resource_path(relative_path: str) -> str:
         will return /home/user/repo/starlingx/framework/resources/resource_finder.py
     """
 
+    # check to see if the path really is relative, if not just return the path
+    if os.path.isabs(relative_path):
+        return relative_path
     path_of_this_file = Path(__file__)
     root_folder_of_stx = path_of_this_file.parent.parent.parent
     path_to_resource = f"{str(root_folder_of_stx)}/{relative_path}"
