@@ -123,7 +123,7 @@ class DcManagerSubcloudListOutput:
 
         return dcmanager_subclouds_copy
 
-    def get_lowest_id_managed_online_sync_subcloud(self) -> DcManagerSubcloudListObject:
+    def get_healthy_subcloud_with_lowest_id(self) -> DcManagerSubcloudListObject:
         """
         Gets the instance of DcManagerSubcloudListObject with the lowest ID and that satisfies the criteria:
             _ Managed;
@@ -146,3 +146,15 @@ class DcManagerSubcloudListOutput:
 
         lowest_subcloud = min(subclouds, key=lambda subcloud: int(subcloud.get_id()))
         return lowest_subcloud
+
+    def get_subcloud_by_name(self, subcloud_name: str) -> DcManagerSubcloudListObject:
+        dcmanager_subcloud_list_object_filter = DcManagerSubcloudListObjectFilter()
+        dcmanager_subcloud_list_object_filter.set_name(subcloud_name)
+        subclouds = self.get_dcmanager_subcloud_list_objects_filtered(dcmanager_subcloud_list_object_filter)
+
+        if not subclouds:
+            error_message = f"In this DC system, there is no subcloud named {subcloud_name}."
+            get_logger().log_exception(error_message)
+            raise ValueError(error_message)
+
+        return subclouds[0]

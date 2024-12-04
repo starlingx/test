@@ -701,7 +701,7 @@ def test_dc_swact_host(request):
     # Gets the lowest subcloud (the subcloud with the lowest id).
     get_logger().log_info("Obtaining subcloud with the lowest ID.")
     dcmanager_subcloud_list_keywords = DcManagerSubcloudListKeywords(ssh_connection)
-    lowest_subcloud = dcmanager_subcloud_list_keywords.get_dcmanager_subcloud_list().get_lowest_id_managed_online_sync_subcloud()
+    lowest_subcloud = dcmanager_subcloud_list_keywords.get_dcmanager_subcloud_list().get_healthy_subcloud_with_lowest_id()
     get_logger().log_info(f"Subcloud with the lowest ID obtained: ID={lowest_subcloud.get_id()}, Name={lowest_subcloud.get_name()}, Management state={lowest_subcloud.get_management()}")
 
     # Unmanages the lowest subcloud.
@@ -895,3 +895,70 @@ def test_dc_system_health_pre_session():
         # If this test case executed the line above with no exception, all alarms were cleared.
 
         # TODO: to check the health of Kubernetes pods on subclouds.
+
+@mark.p0
+@mark.lab_has_subcloud
+def test_dc_unmanage_manage_subclouds(request):
+    """
+    Test unmanage/manage the subcloud with the lowest ID.
+    Note: It could be any subcloud. In particular, the subcloud with the lowest ID was chosen in this test case.
+
+    Setup:
+        _ Ensure the subcloud is managed.
+    Test Steps:
+        _ Unmanage the subcloud with the lowest ID (it could be any).
+        _ Manage the subcloud chosen above.
+    Teardown:
+        _ Manage the unmanaged subcloud.
+
+    """
+    # The maximum time in seconds to wait for the subcloud to change its state from managed to unmanaged and vice versa.
+    change_state_timeout = 10
+    get_logger().log_info(f"This test case will wait for each subcloud changing its 'management' state for {change_state_timeout} seconds.")
+
+    # Gets the SSH connection to the active controller of the central subcloud.
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    get_logger().log_info(f"SSH connection to central subcloud: '{ssh_connection}'")
+
+    # This test case gets the subcloud with the lowest ID to check the unmanage/manage functionality. It could be any.
+    dcmanager_subcloud_list_keywords = DcManagerSubcloudListKeywords(ssh_connection)
+    dcmanager_subcloud_list = dcmanager_subcloud_list_keywords.get_dcmanager_subcloud_list()
+    subcloud = dcmanager_subcloud_list.get_healthy_subcloud_with_lowest_id()
+    subcloud_name = subcloud.get_name()
+    get_logger().log_info(f"The subcloud with the lowest ID will be considered in this test case. There is no special reason for that. It could be any subcloud. Subcloud chosen: name = {subcloud.get_name()}, ID = {subcloud.get_id()}.")
+
+    # Object responsible for set the subclouds to 'managed'/'unmanaged' management state.
+    dcmanager_subcloud_manage_keywords = DcManagerSubcloudManagerKeywords(ssh_connection)
+
+    def teardown():
+        # Reestablishes the original management state of the subcloud, if necessary.
+        teardown_dcmanager_subcloud_list_keywords = DcManagerSubcloudListKeywords(ssh_connection)
+        teardown_dcmanager_subcloud_list = teardown_dcmanager_subcloud_list_keywords.get_dcmanager_subcloud_list()
+        teardown_subcloud = teardown_dcmanager_subcloud_list.get_subcloud_by_name(subcloud_name)
+        if teardown_subcloud.get_management() == 'unmanaged':
+            dcmanager_subcloud_manage_keywords.get_dcmanager_subcloud_manage(teardown_subcloud.get_name(), change_state_timeout)
+            get_logger().log_info(f"Teardown: The original management state of the subcloud '{teardown_subcloud.get_name()}' was reestablished to '{teardown_subcloud.get_management()}'.")
+        else:
+            get_logger().log_info(f"Teardown: There's no need to reestablish the original management state of the subcloud '{teardown_subcloud.get_name()}', as it is already in the 'managed' state. Current management state: '{teardown_subcloud.get_management()}'")
+
+    request.addfinalizer(teardown)
+
+    get_logger().log_info(f"Starting the first step of this test case: 'Unmanage the subcloud'. Subcloud: {subcloud.get_name()}")
+
+    # Tries to change the state of the subcloud to 'unmanaged' and waits for it for 'change_state_timeout' seconds.
+    dcmanager_subcloud_manage_output = dcmanager_subcloud_manage_keywords.get_dcmanager_subcloud_unmanage(subcloud.get_name(), change_state_timeout)
+
+    assert dcmanager_subcloud_manage_output.get_dcmanager_subcloud_manage_object().get_management() == 'unmanaged', f"It was not possible to change the management state of the subcloud {subcloud.get_name()} to 'unmanaged'."
+    get_logger().log_info(f"Subcloud '{subcloud.get_name()}' had its management state changed to 'unmanaged' successfully.")
+
+    get_logger().log_info("The first step of this test case is concluded.")
+
+    get_logger().log_info(f"Starting the second step of this test case: 'Manage the subcloud'. Subcloud: {subcloud.get_name()}")
+
+    # Tries to change the state of the subcloud to 'managed' and waits for it for 'change_state_timeout' seconds.
+    dcmanager_subcloud_manage_output = dcmanager_subcloud_manage_keywords.get_dcmanager_subcloud_manage(subcloud.get_name(), change_state_timeout)
+
+    assert dcmanager_subcloud_manage_output.get_dcmanager_subcloud_manage_object().get_management() == 'managed', f"It was not possible to change the management state of the subcloud {subcloud.get_name()} to 'managed'."
+    get_logger().log_info(f"Subcloud '{subcloud.get_name()}' had its management state changed to 'managed' successfully.")
+
+    get_logger().log_info("The second and last step of this test case is concluded.")
