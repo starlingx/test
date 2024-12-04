@@ -3,7 +3,7 @@ name = "pypi"
 url = "https://pypi.org/simple"
 
 [requires]
-python_version = ">=3.11"
+python_version = "3.11"
 
 [packages]
 # Linting and Static Analysis
