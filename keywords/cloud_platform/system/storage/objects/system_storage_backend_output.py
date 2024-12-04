@@ -62,3 +62,17 @@ class SystemStorageBackendOutput:
                 system_storage_backend_object.add_capabilities(value['capabilities'])
 
             self.system_storage_backends.append(system_storage_backend_object)
+
+    def get_system_storage_backends(self) -> list[SystemStorageBackendObject]:
+        """
+        Returns a list of objects representing each row of the table displayed as the result of executing the
+        'system storage-backend-list' command.
+
+        Args: None.
+
+        Returns:
+            list[SystemStorageBackendObject]: list of objects representing each row of the table displayed as the result of executing the
+        'system storage-backend-list' command.
+
+        """
+        return self.system_storage_backends
