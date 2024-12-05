@@ -2,9 +2,11 @@
 	// log_location points to the folder which will contain the logs for this automation run.
 	// If it is left as "DEFAULT", then ~/AUTOMATION_LOGS will be used.
 	"log_location": "DEFAULT",
+	"append_lab_and_timestamp": true,  // appends the lab name and timestamp to the log file location
 
 	// Acceptable values are: ERROR, WARNING, INFO, or DEBUG
 	"console_log_level": "DEBUG",	// Level of Logs displayed in the console.
 	"file_log_level": "DEBUG",      // Level of Logs included in log files.
+
 
 }

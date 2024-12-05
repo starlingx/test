@@ -46,6 +46,10 @@ class LoggerConfig:
             raise ValueError(f"The provided File Log Level is invalid. " f"Please select a value in {log_levels_map.keys()}.")
         self.file_log_level_value = log_levels_map[self.file_log_level]
 
+        self.append_lab_and_timestamp = True
+        if 'append_lab_and_timestamp' in log_dict:
+            self.append_lab_and_timestamp = log_dict['append_lab_and_timestamp']
+
     def get_log_location(self) -> str:
         """
         Getter for the folder where we want to store the log files.
@@ -98,6 +102,14 @@ class LoggerConfig:
 
         """
         return self.file_log_level_value
+
+    def get_append_lab_and_timestamp(self) -> bool:
+        """
+        Getter to see if we should append lab name and timestamp folders to the log file location
+        Returns:
+
+        """
+        return self.append_lab_and_timestamp
 
     def to_log_strings(self) -> List[str]:
         """

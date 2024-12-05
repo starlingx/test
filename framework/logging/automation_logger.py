@@ -125,8 +125,10 @@ def configure_logger():
     _LOGGER = logging.getLogger('automation_log')
 
     # create the root folder and make the dirs
-    log_root_folder = logger_config.get_log_location()
-    _LOGGER.log_folder = os.path.join(log_root_folder, lab_configuration.get_lab_name(), strftime('%Y%m%d%H%M'))
+    _LOGGER.log_folder = logger_config.get_log_location()
+
+    if logger_config.get_append_lab_and_timestamp():
+        _LOGGER.log_folder = os.path.join(_LOGGER.log_folder, lab_configuration.get_lab_name(), strftime('%Y%m%d%H%M'))
     os.makedirs(_LOGGER.log_folder, exist_ok=True)
 
     log_file = os.path.join(_LOGGER.get_log_folder(), "full_logs.txt")
