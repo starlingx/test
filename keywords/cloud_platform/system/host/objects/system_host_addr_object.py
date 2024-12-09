@@ -8,9 +8,14 @@ class SystemHostAddrObject:
 
     def __init__(self):
         self.uuid: str = None
+        self.interface_uuid: str = None
         self.if_name: str = None
+        self.forihostid: int = -1
         self.address: str = None
         self.prefix: int = -1
+        self.enable_dad: bool = None
+        self.pool_uuid:str = None
+
 
     def set_uuid(self, uuid):
         """
@@ -60,3 +65,50 @@ class SystemHostAddrObject:
         """
         return self.prefix
 
+    def set_interface_uuid(self, interface_uuid):
+        """
+        Setter for host-addr interface_uuid
+        """
+        self.interface_uuid = interface_uuid
+
+    def get_interface_uuid(self) -> str:
+        """
+        Getter for host-addr interface_uuid
+        """
+        return self.interface_uuid
+
+    def set_forihostid(self, forihostid):
+        """
+        Setter for host interface forihostid
+        """
+        self.forihostid = forihostid
+
+    def get_forihostid(self) -> int:
+        """
+        Getter for host interface forihostid
+        """
+        return self.forihostid
+
+    def set_enable_dad(self, enable_dad):
+        """
+        Setter for host-addr enable_dad
+        """
+        self.enable_dad = enable_dad
+
+    def get_enable_dad(self) -> bool:
+        """
+        Getter for host-addr enable_dad
+        """
+        return self.enable_dad
+
+    def set_pool_uuid(self, pool_uuid):
+        """
+        Setter for host-addr pool_uuid
+        """
+        self.pool_uuid = pool_uuid
+
+    def get_pool_uuid(self) -> str:
+        """
+        Getter for host-addr pool_uuid
+        """
+        return self.pool_uuid

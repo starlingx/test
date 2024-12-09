@@ -1,6 +1,7 @@
 from keywords.base_keyword import BaseKeyword
 from keywords.cloud_platform.command_wrappers import source_openrc
 from keywords.cloud_platform.system.host.objects.system_host_addr_output import SystemHostAddrOutput
+from keywords.cloud_platform.system.host.objects.system_host_addr_show_output import SystemHostAddrShowOutput
 
 class SystemHostAddrKeywords(BaseKeyword):
     """
@@ -29,6 +30,22 @@ class SystemHostAddrKeywords(BaseKeyword):
         output = self.ssh_connection.send(command)
         self.validate_success_return_code(self.ssh_connection)
         system_host_addr_output = SystemHostAddrOutput(output)
+        return system_host_addr_output
+
+    def get_system_host_addr_show(self, uuid) -> SystemHostAddrShowOutput:
+        """
+        Gets the system host-addr-show
+
+        Args:
+            uuid: uuid of the host addr
+        Returns:
+            SystemHostAddrShowOutput object.
+
+        """
+        command = source_openrc(f'system host-addr-show {uuid}')
+        output = self.ssh_connection.send(command)
+        self.validate_success_return_code(self.ssh_connection)
+        system_host_addr_output = SystemHostAddrShowOutput(output)
         return system_host_addr_output
 
 
