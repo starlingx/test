@@ -1,95 +1,215 @@
-========
+===========
 stx-test
-========
+===========
 
 StarlingX Test repository for automated test cases.
 
+This repository contains the test framework and test cases for verifying StarlingX. The test framework provides tools for configuration, automation, and execution of tests, with the ability to run against diverse StarlingX lab environments.
+
 Pre-Requisites
-----------
+--------------
 
-.. code-block:: bash
+To use this repository, ensure the following requirements are met:
 
-    You must have a machine/VM running Ubuntu 22.04 or later
-    The RunAgent must be able to connect to the internet to pull images and dependencies.
-    The RunAgent must be able to connect to your labs via SSH.
-    Download and install Python 3.11, pip and pipenv.
-    Download and install git on the RunAgent
+1. **Operating System**:
+   - Ubuntu 22.04 or later.
 
-Contribute
-----------
+2. **Network Requirements**:
+   - The RunAgent (test execution machine) must:
+     - Have internet access for pulling images and dependencies.
+     - Be able to connect to your StarlingX system(s) via SSH.
 
-- Clone the repo
-- Gerrit hook needs to be added for code review purpose.
+3. **Required Tools**:
+   Install the following tools:
 
-.. code-block:: bash
+   .. code-block:: bash
 
-    # Generate a ssh key if needed
-    ssh-keygen -t rsa -C "<your email address>"
-    ssh-add $private_keyfile_path
+      # Python 3.11
+      sudo apt update
+      sudo apt install -y python3.11 python3-pip
 
-    # Add ssh key to settings https://review.opendev.org/#/q/project:starlingx/test
-    cd <stx-test repo>
-    git remote add gerrit ssh://<your gerrit username>@review.opendev.org/starlingx/test.git
-    git review -s
+      # pipenv
+      pip install --user pipenv
 
-    # Create/activate a virtual python environment and pull the project dependencies.
-    pipenv shell
-    pipenv sync
+Setup and Installation
+----------------------
 
-- When you are ready, create your commit with detailed commit message, and submit for review.
+1. **Clone the Repository**:
+
+   .. code-block:: bash
+
+      git clone https://opendev.org/starlingx/test.git
+      cd test
+
+2. **Setup Gerrit for Code Review**:
+   The procedure to set up Gerrit for StarlingX is the same as for other projects hosted on OpenDev, such as OpenStack. Refer to the `OpenStack Contributor Guide <https://docs.openstack.org/contributors/en_GB/common/setup-gerrit.html>`_ for detailed instructions.
+
+   - **Key Setup and Repository Configuration**:
+
+     .. code-block:: bash
+
+        # Generate an SSH key (recommended: ED25519; RSA is also supported)
+        ssh-keygen -t ed25519 -C "<your email address>"
+        ssh-add ~/.ssh/id_ed25519
+
+        # Alternatively, generate an RSA key for compatibility with older systems:
+        ssh-keygen -t rsa -b 4096 -C "<your email address>"
+        ssh-add ~/.ssh/id_rsa
+
+     - Add your SSH key to Gerrit:
+       - Navigate to https://review.opendev.org/settings/#SSHKeys.
+       - Copy the contents of your public key file (`~/.ssh/id_ed25519.pub` or `~/.ssh/id_rsa.pub`).
+       - Paste the key into the SSH key field on the Gerrit settings page.
+
+   - **Sign the Individual Contributor License Agreement (ICLA)**:
+     Projects hosted on OpenDev, including StarlingX, require signing the `OpenStack Individual Contributor License Agreement (ICLA) <https://docs.openstack.org/contributors/en_GB/common/setup-gerrit.html>`_. This step is outlined in the OpenStack Contributor Guide and the `OpenDev Developer Documentation <https://docs.opendev.org/opendev/infra-manual/latest/developers.html>`_. Follow these instructions to complete the process before submitting changes.
+
+   - **Fetch Gerrit Hooks**:
+     Fetch Gerrit hooks immediately after cloning to enable automatic Change-Id generation during commits and verify your SSH key setup:
+
+         .. code-block:: bash
+
+            git review -s
+
+         Example output:
+
+         .. code-block::
+
+            Creating a git remote called 'gerrit' that maps to:
+                    ssh://<open-review-email-or-username>@review.opendev.org:29418/starlingx/test.git
+
+         If there is an issue with your SSH configuration (e.g., missing or incorrect SSH key), you will see an error message indicating the problem, such as "Permission denied (publickey)".
+
+     - (Optional) If you cloned the repository using HTTPS or need Gerrit hooks:
+       - Add a Gerrit remote (only needed if the default remote does not point to Gerrit).
+
+         .. code-block:: bash
+
+            git remote add gerrit ssh://<your-gerrit-username>@review.opendev.org/starlingx/test.git
+
+3. **Install Python Dependencies**:
+
+   .. code-block:: bash
+
+      # Create and activate a virtual environment
+      pipenv shell
+
+      # Sync project dependencies
+      pipenv sync
+
+4. **Install Pre-Commit Hooks**:
+
+   .. code-block:: bash
+
+      # Install pre-commit hooks for linting and formatting (run in the repository's root directory)
+      pre-commit install
 
 Configuration
+-------------
+
+The framework relies on configuration files found under the `config` directory. These include settings for labs, Docker, Kubernetes, and logging. Default files are provided, but you can customize configurations using CLI options.
+
+Steps to Configure
+~~~~~~~~~~~~~~~~~~
+
+1. **Lab Configuration (`config/lab/files/default.json5`)**:
+   - Holds lab details such as floating IPs, type, and capabilities.
+   - For custom setups:
+     - Use a template file (e.g., `template_simplex.json5`) as a base.
+     - Update `use_jump_host` and `jump_server_config` if a jump server is used.
+
+2. **Docker Configuration (`config/docker/files/default.json5`)**:
+   - Specify credentials for Docker registries used during testing.
+
+3. **Lab Capability Scanner**:
+   - Automatically detect and update lab capabilities:
+
+     .. code-block:: bash
+
+        python scripts/lab_capability_scanner.py --lab_config_file=<lab_config_file>
+
+You are now ready to execute tests!
+
+Running Tests
+-------------
+
+1. **Basic Example**:
+   Run a specific test case:
+
+   .. code-block:: bash
+
+      python framework/runner/scripts/test_executor.py --tests_location=<testcase_location>
+
+2. **Custom Configurations**:
+   Use non-default configurations:
+
+   .. code-block:: bash
+
+      python framework/runner/scripts/test_executor.py \
+        --tests_location=<testcase_location> \
+        --lab_config_file=<config_location>
+
+   Example:
+
+   .. code-block:: bash
+
+      python framework/runner/scripts/test_executor.py \
+        --tests_location=testcases/cloud_platform/sanity \
+        --lab_config_file=config/lab/files/custom_config.json5
+
+3. **UI Testing (Optional)**:
+   Install Chrome for running WebDriver-based UI tests:
+
+   .. code-block:: bash
+
+      wget https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
+      sudo dpkg -i google-chrome-stable_current_amd64.deb
+      sudo apt -f install
+      google-chrome --version
+
+Contribution
+------------
+
+2. **Coding Standards**:
+   - Ensure your code adheres to project conventions. While more detailed best practices are being refined and will be provided in future updates, the following standards are currently enforced:
+     - Use `Google style, PEP-compliant docstrings <https://google.github.io/styleguide/pyguide.html#381-docstrings>`_ for every function and module. These docstrings should align with the principles outlined in `PEP 257 (Docstring Conventions) <https://peps.python.org/pep-0257/>`_. Tools for auto-generating these docstrings are available in IDEs such as `VSCode <https://code.visualstudio.com/docs/python/editing#_auto-generating-docstrings>`_ and `PyCharm <https://www.jetbrains.com/help/pycharm/creating-documentation-comments.html>`_.
+     - Include `type hints <https://peps.python.org/pep-0484/>`_ for all function arguments and return types.
+     - Use `f-strings <https://peps.python.org/pep-0498/>`_ for string formatting.
+   - Pre-commit hooks will run automatically on every commit once installed to ensure formatting and linting.
+
+   - **Tools Enforced by Pre-Commit Hooks**:
+     - `pre-commit <https://pre-commit.com/>`_
+     - `black <https://black.readthedocs.io/en/stable/>`_
+     - `isort <https://pycqa.github.io/isort/>`_
+     - `flake8 <https://flake8.pycqa.org/en/latest/>`_
+
+3. **Submitting Changes**:
+   - Ensure your commit messages adhere to the guidelines in the
+     `OpenStack Git Commit Message Guidelines <https://wiki.openstack.org/wiki/GitCommitMessages>`_.
+   - Submit changes for Gerrit review using the following example:
+
+     .. code-block:: bash
+
+        git commit -s # include sign-off
+        git review
+
+References
 ----------
 
-The framework contains multiple configuration files found under the config folder. There are configurations for docker,
-hosts, kubernetes, labs and logger. By default, the runner will choose the default config file for each (default.json5)
-when running. These files can be found under config/<config_type>/files. However, using command line overrides a user
-can use a custom file. Command line options are --lab_config_file, --k8s_config_file, --logger_config_file, and --docker_config_file.
-
-There are a couple of files that will need to be updated when first setting up.
-
-1) config/lab/files/default.json5
-
-This file is responsible for holding information such as floating ip, lab type, lab capabilities etc. Adjust the
-contents of default.json5 to match the information of the lab where you want to execute the test cases. Based on your
-system type, you can use one of the template files (such as template_simplex.json5) as a starting point. If using a
-jump server, update the values under config/host/files/jump_host.json5 to use the connection information of the
-jump server. Then in the lab configuration file, set "use_jump_host: true", and the "jump_server_config:<jump_host_location>"
-(ex. jump_server_config: "config/host/files/jump_host.json5")
-
-2) config/docker/files/default.json5
-
-This file is responsible for holding information for docker registries used in testing. Adjust the local registry
-credentials to match those of the lab where you want to execute the tests.
-
-Update Lab Capabilities
-Using the lab capability scanner, we can identify common lab capabilities and automatically add them to the configuration.
-This script will create a backup of the original file and create a new one with the lab capabilities added. These
-capabilities will help identify which tests are applicable for a given lab setup.
-
-// Run script from the root location of the repo
-cd <repo_location_root>
-python scripts/lab_capability_scanner.py --lab_config_file=<lab_config_file>
-
-
-.. code-block:: bash
-
-    # (Optional) Install Chrome for Webdriver UI tests
-    wget https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
-    sudo dpkg -i google-chrome-stable_current_amd64.deb
-    sudo apt -f install            [If you encounter errors during the install]
-    google-chrome --version        [Verify that the install was successful]
-
-Execution
-----------
-
-You are now ready to run some tests!
-
-// From the root repo location we can now run tests
-cd <repo_location_root>
-python framework/runner/scripts/test_executor.py --tests_location=<testcase_location>
-
-// Note non-default config locations and filenames are also supported on the commandline as --lab_config_file, --k8s_config_file, --logger_config_file, --docker_config_file
-python framework/runner/scripts/test_executor.py --tests_location=<testcase_location> --lab_config_file=<config_location>
-
-// Ex. python framework/runner/scripts/test_executor.py --tests_location=testcases/cloud_platform/sanity --lab_config_file=/dev/configs/my_config.json
+- `OpenStack Contributor Guide <https://docs.openstack.org/contributors/en_GB/common/setup-gerrit.html>`_
+- `OpenStack Individual Contributor License Agreement (ICLA) <https://review.opendev.org/settings/new-agreement>`_
+- `OpenDev Developer Documentation <https://docs.opendev.org/opendev/infra-manual/latest/developers.html>`_
+- `StarlingX Contributor Guidelines <https://docs.starlingx.io/contributor/index.html>`_
+- `StarlingX Code Submission Guide <https://docs.starlingx.io/developer_resources/code-submission-guide.html>`_
+- `How to Contribute to StarlingX (YouTube) <https://www.youtube.com/watch?v=oHmx0M3cYlE>`_
+- `OpenStack Git Commit Message Guidelines <https://wiki.openstack.org/wiki/GitCommitMessages>`_
+- `Google Style Python Docstrings <https://google.github.io/styleguide/pyguide.html#381-docstrings>`_
+- `VSCode: Auto-Generating Docstrings <https://code.visualstudio.com/docs/python/editing#_auto-generating-docstrings>`_
+- `PyCharm: Creating Documentation Comments <https://www.jetbrains.com/help/pycharm/creating-documentation-comments.html>`_
+- `PEP 257: Docstring Conventions <https://peps.python.org/pep-0257/>`_
+- `PEP 484: Type Hints <https://peps.python.org/pep-0484/>`_
+- `PEP 498: f-Strings <https://peps.python.org/pep-0498/>`_
+- `pre-commit <https://pre-commit.com/>`_
+- `black <https://black.readthedocs.io/en/stable/>`_
+- `isort <https://pycqa.github.io/isort/>`_
+- `flake8 <https://flake8.pycqa.org/en/latest/>`_
