@@ -125,7 +125,7 @@ class DcManagerSubcloudListOutput:
 
     def get_healthy_subcloud_with_lowest_id(self) -> DcManagerSubcloudListObject:
         """
-        Gets the instance of DcManagerSubcloudListObject with the lowest ID and that satisfies the criteria:
+        Gets an instance of DcManagerSubcloudListObject with the lowest ID and that satisfies the criteria:
             _ Managed;
             _ Online;
             _ Deploy completed;
@@ -148,6 +148,18 @@ class DcManagerSubcloudListOutput:
         return lowest_subcloud
 
     def get_subcloud_by_name(self, subcloud_name: str) -> DcManagerSubcloudListObject:
+        """
+        Gets an instance of DcManagerSubcloudListObject whose name attribute is equal to the argument 'subcloud_name'.
+
+        Args:
+            subcloud_name (str): The name of the subcloud to be retrieved.
+
+        Returns:
+            DcManagerSubcloudListObject: An instance of DcManagerSubcloudListObject whose name attribute matches the
+            argument 'subcloud_name'. This instance represents a row from the output of the command
+            'dcmanager subcloud list' where the column 'name' matches the argument 'subcloud_name'.
+
+        """
         dcmanager_subcloud_list_object_filter = DcManagerSubcloudListObjectFilter()
         dcmanager_subcloud_list_object_filter.set_name(subcloud_name)
         subclouds = self.get_dcmanager_subcloud_list_objects_filtered(dcmanager_subcloud_list_object_filter)
