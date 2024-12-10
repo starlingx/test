@@ -894,7 +894,10 @@ def test_dc_system_health_pre_session():
         alarm_list_keywords.wait_for_all_alarms_cleared()
         # If this test case executed the line above with no exception, all alarms were cleared.
 
-        # TODO: to check the health of Kubernetes pods on subclouds.
+        kubectl_get_pods_keywords = KubectlGetPodsKeywords(ssh_connection)
+        kubectl_get_pods_keywords.wait_for_all_pods_status(expected_statuses="Running")
+        # If this test case executed the line above with no exception, all the pods are "Running".
+
 
 @mark.p0
 @mark.lab_has_subcloud
