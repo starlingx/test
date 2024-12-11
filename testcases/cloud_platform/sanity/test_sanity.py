@@ -965,3 +965,56 @@ def test_dc_unmanage_manage_subclouds(request):
     get_logger().log_info(f"Subcloud '{subcloud.get_name()}' had its management state changed to 'managed' successfully.")
 
     get_logger().log_info("The second and last step of this test case is concluded.")
+
+
+@mark.p0
+def test_dc_central_lock_unlock_host(request):
+    """
+    Verify lock/unlock of hosts (standby and compute hosts).
+
+    Test Steps:
+        - Retrieve the standby controller.
+        - Lock standby controller and ensure it is successfully locked.
+        - Unlock standby controller and ensure it is successfully unlocked.
+        - Retrieve a compute host.
+        - Lock the compute host and ensure it is successfully locked.
+        - Unlock the compute host and ensure it is successfully unlocked.
+    """
+    # Gets the SSH connection to the active controller.
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    get_logger().log_info(f"SSH connection to active controller: {ssh_connection}.")
+
+    # Gets the standby controller (represented by a SystemHostObject instance).
+    standby_controller = SystemHostListKeywords(ssh_connection).get_standby_controller()
+    get_logger().log_info(f"Standby controller retrieved. ID: {standby_controller.get_id()}.")
+
+    # Gets the host name of the standby controller.
+    standby_host_name = standby_controller.get_host_name()
+    get_logger().log_info(f"Standby controller's name: {standby_host_name}.")
+
+    # Gets the object responsible for lock/unlock the hosts under test.
+    system_host_lock_keywords = SystemHostLockKeywords(ssh_connection)
+
+    def teardown():
+        # Unlocks the standby host if it was locked in this test but not unlocked.
+        if system_host_lock_keywords.is_host_locked(standby_host_name):
+            system_host_lock_keywords.unlock_host(standby_host_name)
+            get_logger().log_error(f"Teardown: It was not possible to unlock the host {standby_host_name}.")
+        else:
+            get_logger().log_info(f"Teardown: It was not necessary to unlock the host {standby_host_name}.")
+
+    request.addfinalizer(teardown)
+
+    # Tries to lock the standby host.
+    get_logger().log_info(f"The host {standby_host_name} will be set to the 'locked' state.")
+    system_host_lock_keywords.lock_host(standby_host_name)
+    assert system_host_lock_keywords.is_host_locked(standby_host_name), f"It was not possible to lock the host {standby_host_name}."
+    get_logger().log_info(f"The host {standby_host_name} was successfully set to 'locked' state.")
+
+    # Tries to unlock the standby host.
+    get_logger().log_info(f"The host {standby_host_name} will be set to 'unlocked' state.")
+    system_host_lock_keywords.unlock_host(standby_host_name)
+    assert system_host_lock_keywords.is_host_unlocked(standby_host_name), f"It was not possible to unlock the host {standby_host_name}."
+    get_logger().log_info(f"The host {standby_host_name} was successfully set to 'unlocked' state.")
+
+    # TODO test a compute host
