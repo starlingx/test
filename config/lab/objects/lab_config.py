@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional
 
 import json5
 from config.host.objects.host_configuration import HostConfiguration
@@ -204,6 +204,34 @@ class LabConfig:
             if node.name == lab_node_name:
                 return node
         return None
+
+    def get_computes(self) -> [Node]:
+        """
+        Returns the list of nodes whose type is 'compute'.
+        Returns:
+            list[Node]: The list of nodes whose type is 'compute'.
+
+        """
+        nodes = self.get_nodes()
+        computes = [node for node in nodes if node.node_type == 'Compute']
+        return computes
+
+    def get_compute(self, compute_name) -> Optional[Node]:
+        """
+        Retrieve an instance of Node whose type is 'Compute' and name is specified by the argument 'compute_name'.
+        Args:
+            compute_name (str): the name of the 'Compute' node.
+
+        Returns:
+            Node: An instance of Node whose type field is 'Compute'.
+
+        """
+        computes = self.get_computes()
+        compute = [compute_node for compute_node in computes if compute_node.get_name() == compute_name]
+        if len(compute) > 0:
+            return compute[0]
+        else:
+            return None
 
     def is_ipv6(self):
         """

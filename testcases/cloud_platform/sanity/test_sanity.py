@@ -2,6 +2,7 @@ import time
 
 import pytest
 from config.configuration_manager import ConfigurationManager
+from config.lab.objects.node import Node
 from framework.logging.automation_logger import get_logger
 from framework.resources.resource_finder import get_stx_resource_path
 from framework.ssh.secure_transfer_file.secure_transfer_file import SecureTransferFile
@@ -968,6 +969,7 @@ def test_dc_unmanage_manage_subclouds(request):
 
 
 @mark.p0
+@mark.lab_has_subcloud
 def test_dc_central_lock_unlock_host(request):
     """
     Verify lock/unlock of hosts (standby and compute hosts).
@@ -976,9 +978,6 @@ def test_dc_central_lock_unlock_host(request):
         - Retrieve the standby controller.
         - Lock standby controller and ensure it is successfully locked.
         - Unlock standby controller and ensure it is successfully unlocked.
-        - Retrieve a compute host.
-        - Lock the compute host and ensure it is successfully locked.
-        - Unlock the compute host and ensure it is successfully unlocked.
     """
     # Gets the SSH connection to the active controller.
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
@@ -999,7 +998,7 @@ def test_dc_central_lock_unlock_host(request):
         # Unlocks the standby host if it was locked in this test but not unlocked.
         if system_host_lock_keywords.is_host_locked(standby_host_name):
             system_host_lock_keywords.unlock_host(standby_host_name)
-            get_logger().log_error(f"Teardown: It was not possible to unlock the host {standby_host_name}.")
+            get_logger().log_error(f"Teardown: The host {standby_host_name} was successfully unlocked.")
         else:
             get_logger().log_info(f"Teardown: It was not necessary to unlock the host {standby_host_name}.")
 
@@ -1017,4 +1016,52 @@ def test_dc_central_lock_unlock_host(request):
     assert system_host_lock_keywords.is_host_unlocked(standby_host_name), f"It was not possible to unlock the host {standby_host_name}."
     get_logger().log_info(f"The host {standby_host_name} was successfully set to 'unlocked' state.")
 
-    # TODO test a compute host
+
+@mark.p0
+@mark.lab_has_compute
+def test_dc_central_compute_lock_unlock(request):
+    """
+    Verify lock/unlock of 'Compute' type node in the Central controller.
+
+    Test Steps:
+        - Retrieves 'Compute' type node instance.
+        - Locks the node and ensure it is successfully locked.
+        - Unlocks the node and ensure it is successfully unlocked.
+    """
+    # Gets the SSH connection to the active controller.
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    get_logger().log_info(f"SSH connection to active controller: {ssh_connection}.")
+
+    # Gets the object responsible for lock/unlock the hosts under test.
+    system_host_lock_keywords = SystemHostLockKeywords(ssh_connection)
+
+    # Gets the first 'Compute' node.
+    lab_config = ConfigurationManager.get_lab_config()
+    computes = lab_config.get_computes()
+    assert len(computes) > 0, "This Central Controller has no nodes of type 'Compute'."
+    compute: Node = computes[0]
+    compute_name = compute.get_name()
+
+    def teardown():
+        # Unlocks the  'Compute' Node if it was locked in this test but not unlocked.
+        if system_host_lock_keywords.is_host_locked(compute_name):
+            system_host_lock_keywords.unlock_host(compute_name)
+            get_logger().log_error(f"Teardown: The 'Compute' node {compute_name} was successfully unlocked.")
+        else:
+            get_logger().log_info(f"Teardown: It was not necessary to unlock the 'Compute' node {compute_name}.")
+
+    request.addfinalizer(teardown)
+
+    # Tries to lock the 'Compute' node.
+    get_logger().log_info(f"The 'Compute' node {compute_name} will be set to the 'locked' state.")
+    system_host_lock_keywords.lock_host(compute_name)
+    assert system_host_lock_keywords.is_host_locked(
+        compute_name), f"It was not possible to lock the 'Compute' node {compute_name}."
+    get_logger().log_info(f"The 'Compute' node {compute_name} was successfully set to 'locked' state.")
+
+    # Tries to unlock the 'Compute' node.
+    get_logger().log_info(f"The 'Compute' node {compute_name} will be set to 'unlocked' state.")
+    system_host_lock_keywords.unlock_host(compute_name)
+    assert system_host_lock_keywords.is_host_unlocked(
+        compute_name), f"It was not possible to unlock the 'Compute' node {compute_name}."
+    get_logger().log_info(f"The 'Compute' node {compute_name} was successfully set to 'unlocked' state.")
