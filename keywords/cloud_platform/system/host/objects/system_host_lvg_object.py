@@ -15,6 +15,15 @@ class SystemHostLvgObject:
         self.avail_size: float = -1.0
         self.current_pvs: int = -1
         self.current_lvs: int = -1
+        self.ihost_uuid : str = None
+        self.lvm_max_lv: int = -1
+        self.lvm_max_pv: int = -1
+        self.lvm_vg_size_gib: float = -1.0
+        self.lvm_vg_total_pe: int = -1
+        self.lvm_vg_free_pe: int = -1
+        self.created_at: str = None
+        self.updated_at: str = None
+        self.parameters = {}
 
 
     def set_uuid(self, uuid):
@@ -112,3 +121,111 @@ class SystemHostLvgObject:
         Getter for current_lvs
         """
         return self.current_lvs
+
+    def set_ihost_uuid(self, ihost_uuid):
+        """
+        Setter for host-lvg ihost_uuid
+        """
+        self.ihost_uuid = ihost_uuid
+
+    def get_ihost_uuid(self) -> str:
+        """
+        Getter for host-lvg ihost_uuid
+        """
+        return self.ihost_uuid
+
+    def set_lvm_max_lv(self, lvm_max_lv):
+        """
+        Setter for lvm_max_lv
+        """
+        self.lvm_max_lv = lvm_max_lv
+
+    def get_lvm_max_lv(self) -> int:
+        """
+        Getter for lvm_max_lv
+        """
+        return self.lvm_max_lv
+
+    def set_lvm_max_pv(self, lvm_max_pv):
+        """
+        Setter for lvm_max_pv
+        """
+        self.lvm_max_pv = lvm_max_pv
+
+    def get_lvm_max_pv(self) -> int:
+        """
+        Getter for lvm_max_pv
+        """
+        return self.lvm_max_pv
+
+    def set_lvm_vg_size_gib(self, lvm_vg_size_gib):
+        """
+        Setter for lvm_vg_size_gib
+        """
+        self.lvm_vg_size_gib = lvm_vg_size_gib
+
+    def get_lvm_vg_size_gib(self) -> float:
+        """
+        Getter for lvm_vg_size_gib
+        """
+        return self.lvm_vg_size_gib
+
+    def set_lvm_vg_total_pe(self, lvm_vg_total_pe):
+        """
+        Setter for lvm_vg_total_pe
+        """
+        self.lvm_vg_total_pe = lvm_vg_total_pe
+
+    def get_lvm_vg_total_pe(self) -> int:
+        """
+        Getter for lvm_vg_total_pe
+        """
+        return self.lvm_vg_total_pe
+
+    def set_lvm_vg_free_pe(self, lvm_vg_free_pe):
+        """
+        Setter for lvm_vg_free_pe
+        """
+        self.lvm_vg_free_pe = lvm_vg_free_pe
+
+    def get_lvm_vg_free_pe(self) -> int:
+        """
+        Getter for lvm_vg_free_pe
+        """
+        return self.lvm_vg_free_pe
+
+    def set_created_at(self, created_at):
+        """
+        Setter for host-lvg created_at
+        """
+        self.created_at = created_at
+
+    def get_created_at(self) -> str:
+        """
+        Getter for host-lvg created_at
+        """
+        return self.created_at
+
+    def set_updated_at(self, updated_at):
+        """
+        Setter for host-lvg updated_at
+        """
+        self.updated_at = updated_at
+
+    def get_updated_at(self) -> str:
+        """
+        Getter for host-lvg updated_at
+        """
+        return self.updated_at
+
+    def set_parameters(self, parameters):
+        """
+        Setter for host-lvg parameters
+        """
+        self.parameters = parameters
+
+    def get_parameters(self) -> dict:
+        """
+        Getter for host-lvg parameters
+        """
+        return self.parameters
