@@ -16,6 +16,12 @@ class SystemHostPvObject:
         self.pv_type: str = None
         self.lvm_vg_name: str = None
         self.ihost_uuid : str = None
+        self.lvm_pv_uuid: str = None
+        self.lvm_pv_size_gib: float = -1.0
+        self.lvm_pe_total: int = -1
+        self.lvm_pe_alloced: int = -1
+        self.created_at: str = None
+        self.updated_at: str = None
 
 
     def set_uuid(self, uuid):
@@ -125,3 +131,75 @@ class SystemHostPvObject:
         Getter for host-lvg ihost_uuid
         """
         return self.ihost_uuid
+
+    def set_lvm_pv_uuid(self, lvm_pv_uuid):
+        """
+        Setter for the lvm_pv_uuid
+        """
+        self.lvm_pv_uuid = lvm_pv_uuid
+
+    def get_lvm_pv_uuid(self) -> str:
+        """
+        Getter for the lvm_pv_uuid
+        """
+        return self.lvm_pv_uuid
+
+    def set_lvm_pv_size_gib(self, lvm_pv_size_gib):
+        """
+        Setter for the lvm_pv_size_gib
+        """
+        self.lvm_pv_size_gib = lvm_pv_size_gib
+
+    def get_lvm_pv_size_gib(self) -> float:
+        """
+        Getter for the lvm_pv_size_gib
+        """
+        return self.lvm_pv_size_gib
+
+    def set_lvm_pe_total(self, lvm_pe_total):
+        """
+        Setter for the lvm_pe_total
+        """
+        self.lvm_pe_total = lvm_pe_total
+
+    def get_lvm_pe_total(self) -> int:
+        """
+        Getter for the lvm_pe_total
+        """
+        return self.lvm_pe_total
+
+    def set_lvm_pe_alloced(self, lvm_pe_alloced):
+        """
+        Setter for the lvm_pe_alloced
+        """
+        self.lvm_pe_alloced = lvm_pe_alloced
+
+    def get_lvm_pe_alloced(self) -> int:
+        """
+        Getter for the lvm_pe_total
+        """
+        return self.lvm_pe_alloced
+
+    def set_created_at(self, created_at):
+        """
+        Setter for host-lvg created_at
+        """
+        self.created_at = created_at
+
+    def get_created_at(self) -> str:
+        """
+        Getter for host-lvg created_at
+        """
+        return self.created_at
+
+    def set_updated_at(self, updated_at):
+        """
+        Setter for host-lvg updated_at
+        """
+        self.updated_at = updated_at
+
+    def get_updated_at(self) -> str:
+        """
+        Getter for host-lvg updated_at
+        """
+        return self.updated_at
