@@ -31,15 +31,16 @@ class SystemHostRebootKeywords(BaseKeyword):
         """
 
         # check that host is locked before attempting reboot
-        host_value = SystemHostListKeywords().get_system_host_list(self.ssh_connection).get_host(host_name)
+        host_value = SystemHostListKeywords(self.ssh_connection).get_system_host_list().get_host(host_name)
         if not (host_value.get_availability() == 'online' and host_value.get_administrative() == 'locked' and host_value.get_operational() == 'disabled'):
             raise KeywordException("Host must be in locked state before running reboot")
 
-        pre_uptime_of_host = SystemHostListKeywords().get_uptime(self.ssh_connection, host_name)
+        pre_uptime_of_host = SystemHostListKeywords(self.ssh_connection).get_uptime(host_name)
 
         self.ssh_connection.send(source_openrc(f'system host-reboot {host_name}'))
         self.validate_success_return_code(self.ssh_connection)
-        is_reboot_success = self.wait_for_reboot(self.ssh_connection, host_name, pre_uptime_of_host)
+
+        is_reboot_success = self.wait_for_reboot(host_name, pre_uptime_of_host)
         if not is_reboot_success:
             raise KeywordException(f"Reboot of {host_name} was not successful")
         return True
@@ -65,8 +66,8 @@ class SystemHostRebootKeywords(BaseKeyword):
 
         while time.time() < timeout:
             try:
-                host_value = SystemHostListKeywords().get_system_host_list(self.ssh_connection).get_host(host_name)
-                current_uptime = SystemHostListKeywords().get_uptime(self.ssh_connection, host_name)
+                host_value = SystemHostListKeywords(self.ssh_connection).get_system_host_list().get_host(host_name)
+                current_uptime = SystemHostListKeywords(self.ssh_connection).get_uptime(host_name)
                 if host_value.get_availability() == 'online' and host_value.get_administrative() == 'locked' and host_value.get_operational() == 'disabled' and current_uptime < prev_uptime:
                     return True
             except Exception:
