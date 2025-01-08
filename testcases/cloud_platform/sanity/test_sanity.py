@@ -122,9 +122,8 @@ def test_nginx_ingress_controller_applied():
 
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
-    system_applications = SystemApplicationListKeywords(ssh_connection).get_system_application_list()
-    application_status = system_applications.get_application('nginx-ingress-controller').get_status()
-    assert application_status == 'applied', f'nginx-ingress-controller was not applied. Status was {application_status}'
+    system_applications = SystemApplicationListKeywords(ssh_connection)
+    system_applications.validate_app_status('nginx-ingress-controller', 'applied')
 
 
 @mark.p0

@@ -1,6 +1,7 @@
 import time
 
 from framework.logging.automation_logger import get_logger
+from framework.validation.validation import validate_equals_with_retry
 from keywords.base_keyword import BaseKeyword
 from keywords.cloud_platform.command_wrappers import source_openrc
 from keywords.cloud_platform.system.application.object.system_application_list_output import SystemApplicationListOutput
@@ -80,3 +81,23 @@ class SystemApplicationListKeywords(BaseKeyword):
             raise TimeoutError(message)
 
         return system_application_list_output
+
+    def validate_app_status(self, application_name: str, status: str):
+        """
+        This function will validate that the application specified reaches the desired status.
+        Args:
+            application_name: Name of the application that we are waiting for.
+            status: Status in which we want to wait for the application to reach.
+
+        Returns: None
+
+        """
+
+        def get_app_status():
+            system_applications = self.get_system_application_list()
+            application_status = system_applications.get_application(application_name).get_status()
+            return application_status
+
+        message = f"Application {application_name}'s status is {status}"
+        validate_equals_with_retry(get_app_status, status, message)
+
