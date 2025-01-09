@@ -1064,3 +1064,85 @@ def test_dc_central_compute_lock_unlock(request):
     assert system_host_lock_keywords.is_host_unlocked(
         compute_name), f"It was not possible to unlock the 'Compute' node {compute_name}."
     get_logger().log_info(f"The 'Compute' node {compute_name} was successfully set to 'unlocked' state.")
+
+
+@mark.p0
+@mark.lab_has_subcloud
+def test_dc_central_force_reboot_host_active_controller():
+    """
+    Verify force reboot of an active controller
+
+    Test Steps:
+        - log onto active controller
+        - sudo reboot -f
+        - validate that system comes back in correct state
+    """
+    # Opens an SSH session to active controller.
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+
+    # get the host name of the active controller
+    host_name = SystemHostListKeywords(ssh_connection).get_active_controller().get_host_name()
+
+    # get the prev uptime of the host so we can be sure it re-started
+    pre_uptime_of_host = SystemHostListKeywords(ssh_connection).get_uptime(host_name)
+
+    # force reboot the active controller
+    ssh_connection.send_as_sudo("sudo reboot -f")
+
+    wait_for_reboot_to_start(host_name, ssh_connection)
+
+    reboot_success = SystemHostRebootKeywords(ssh_connection).wait_for_force_reboot(host_name, pre_uptime_of_host)
+
+    assert reboot_success, 'Host was not rebooted successfully'
+
+
+@mark.p0
+@mark.lab_has_subcloud
+def test_dc_central_force_reboot_host_standby_controller():
+    """
+    Verify force reboot of an standby controller
+
+    Test Steps:
+        - log onto standby controller
+        - sudo reboot -f
+        - validate that system comes back in correct state
+    """
+    # Opens an SSH session to active controller.
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+
+    standby_ssh_connection = LabConnectionKeywords().get_standby_controller_ssh()
+
+    # get the host name of the standby controller
+    host_name = SystemHostListKeywords(ssh_connection).get_standby_controller().get_host_name()
+
+    # get the prev uptime of the host so we can be sure it re-started
+    pre_uptime_of_host = SystemHostListKeywords(ssh_connection).get_uptime(host_name)
+
+    # force reboot the standby controller
+    standby_ssh_connection.send_as_sudo("sudo reboot -f")
+
+    wait_for_reboot_to_start(host_name, ssh_connection)
+
+    reboot_success = SystemHostRebootKeywords(ssh_connection).wait_for_force_reboot(host_name, pre_uptime_of_host)
+
+    assert reboot_success, 'Host was not rebooted successfully'
+
+
+def wait_for_reboot_to_start(host_name: str, ssh_connection: SSHConnection, timeout: int = 60):
+    """
+    Returns true once we've got availability of offline indicating a reboot has started.
+    """
+    timeout = time.time() + timeout
+    refresh_time = 5
+
+    while time.time() < timeout:
+        try:
+            host_value = SystemHostListKeywords(ssh_connection).get_system_host_list().get_host(host_name)
+            if host_value.get_availability() == 'offline':
+                return True
+        except Exception:
+            get_logger().log_info(f"Found an exception when running system host list command. " f"Trying again after {refresh_time} seconds")
+
+        time.sleep(refresh_time)
+
+    return False
