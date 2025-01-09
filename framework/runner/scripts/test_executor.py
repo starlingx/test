@@ -37,12 +37,17 @@ def execute_test(test: TestCase, test_executor_summary: TestExecutorSummary, tes
 
 def log_summary(test_executor_summary: TestExecutorSummary):
     """
-    Logs the test summary
+    Logs the summary of test execution results and the path to the log directory.
+
+    This function processes the test summary provided by `TestExecutorSummary`, logs each
+    line of the summary, and logs the location of the log directory.
+
     Args:
-        test_executor_summary (): the summary object containing the results
+        test_executor_summary (TestExecutorSummary): The summary object containing the test
+            execution results.
 
     Returns:
-
+        None
     """
     get_logger().log_info("")
     get_logger().log_info("")
@@ -50,7 +55,7 @@ def log_summary(test_executor_summary: TestExecutorSummary):
     for summary_line in test_executor_summary.get_tests_summary():
         get_logger().log_info(summary_line)
     get_logger().log_info("")
-    get_logger().log_info(f"Logs Path: {ConfigurationManager.get_logger_config().get_log_location()}")
+    get_logger().log_info(f"Logs Path: {get_logger().get_log_folder()}")
 
 
 def main():
