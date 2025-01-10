@@ -24,7 +24,7 @@ def get_stx_resource_path(relative_path: str) -> str:
         return relative_path
     path_of_this_file = Path(__file__)
     root_folder_of_stx = path_of_this_file.parent.parent.parent
-    path_to_resource = f"{str(root_folder_of_stx)}/{relative_path}"
+    path_to_resource = str(root_folder_of_stx / relative_path).replace("\\", "/")
 
     return path_to_resource
 
