@@ -18,7 +18,6 @@ from keywords.cloud_platform.fault_management.alarms.alarm_list_keywords import 
 from keywords.cloud_platform.fault_management.fm_client_cli.fm_client_cli_keywords import FaultManagementClientCLIKeywords
 from keywords.cloud_platform.fault_management.fm_client_cli.object.fm_client_cli_object import FaultManagementClientCLIObject
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
-from keywords.cloud_platform.system.application.object.system_application_apply_input import SystemApplicationApplyInput
 from keywords.cloud_platform.system.application.object.system_application_delete_input import SystemApplicationDeleteInput
 from keywords.cloud_platform.system.application.object.system_application_remove_input import SystemApplicationRemoveInput
 from keywords.cloud_platform.system.application.object.system_application_status_enum import SystemApplicationStatusEnum
@@ -556,13 +555,8 @@ def test_dc_install_custom_app():
 
     # Step 3: Apply the custom app on the active controller
 
-    # Setups the apply input object.
-    system_application_apply_input = SystemApplicationApplyInput()
-    system_application_apply_input.set_app_name(app_name)
-    system_application_apply_input.set_timeout_in_seconds(120)
-
     # Executes the application installation
-    system_application_apply_output = SystemApplicationApplyKeywords(ssh_connection).system_application_apply(system_application_apply_input)
+    system_application_apply_output = SystemApplicationApplyKeywords(ssh_connection).system_application_apply(app_name)
 
     # Asserts that the applying process concluded successfully
     system_application_object = system_application_apply_output.get_system_application_object()
@@ -640,7 +634,7 @@ def test_dc_install_custom_app():
         # Step 7: Apply the custom app on the current subcloud.
 
         # Executes the application installation. There is no need to change anything in the apply input object 'system_application_apply_input'.
-        system_application_apply_output = SystemApplicationApplyKeywords(ssh_subcloud_connection).system_application_apply(system_application_apply_input)
+        system_application_apply_output = SystemApplicationApplyKeywords(ssh_subcloud_connection).system_application_apply(app_name)
 
         # Asserts that the applying process concluded successfully on the current subcloud.
         system_application_object = system_application_apply_output.get_system_application_object()

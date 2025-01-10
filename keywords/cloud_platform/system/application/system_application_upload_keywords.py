@@ -64,19 +64,11 @@ class SystemApplicationUploadKeywords(BaseKeyword):
         system_application_output = SystemApplicationOutput(output)
 
         # Tracks the execution of the command 'system application-upload' until its completion or a timeout.
-
-        # Setups the status tracker.
-        system_application_list_status_tracking_input = SystemApplicationListStatusTrackingInput(app_name, SystemApplicationStatusEnum.UPLOADED)
-        system_application_list_status_tracking_input.set_timeout_in_seconds(system_application_upload_input.get_timeout_in_seconds())
-        system_application_list_status_tracking_input.set_check_interval_in_seconds(system_application_upload_input.get_check_interval_in_seconds())
-
-        # Tracks the status of the application.
         system_application_list_keywords = SystemApplicationListKeywords(self.ssh_connection)
-        system_application_list_output = system_application_list_keywords.track_status(system_application_list_status_tracking_input)
+        system_application_list_keywords.validate_app_status(app_name, 'uploaded')
 
         # If the execution arrived here the status of the application is 'uploaded'.
-        application = system_application_list_output.get_application(app_name)
-        system_application_output.get_system_application_object().set_status(application.get_status())
+        system_application_output.get_system_application_object().set_status('uploaded')
 
         return system_application_output
 
