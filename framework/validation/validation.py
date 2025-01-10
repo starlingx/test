@@ -8,6 +8,7 @@ from framework.logging.automation_logger import get_logger
 def validate_equals(observed_value: Any, expected_value: Any, validation_description: str) -> None:
     """
     This function will validate if the observed value matches the expected value with associated logging.
+
     Args:
         observed_value: Value that we see on the system.
         expected_value: Value that is expected and against which we are asserting.
@@ -26,7 +27,7 @@ def validate_equals(observed_value: Any, expected_value: Any, validation_descrip
         raise Exception("Validation Failed")
 
 
-def validate_equals_with_retry(function_to_execute: Callable,
+def validate_equals_with_retry(function_to_execute: Callable[[], Any],
                                expected_value: Any,
                                validation_description: str,
                                timeout: int = 30,
@@ -35,7 +36,7 @@ def validate_equals_with_retry(function_to_execute: Callable,
       Validates that function_to_execute will return the expected value in the specified amount of time.
 
       Args:
-        function_to_execute: The function to be executed repeatedly.
+        function_to_execute: The function to be executed repeatedly, taking no arguments and returning any value.
         expected_value: The expected return value of the function.
         validation_description: Description of this validation for logging purposes.
         timeout: The maximum time (in seconds) to wait for the match.
