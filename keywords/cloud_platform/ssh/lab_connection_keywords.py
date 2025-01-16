@@ -1,4 +1,5 @@
 from config.configuration_manager import ConfigurationManager
+from config.lab.objects.lab_config import LabConfig
 from config.lab.objects.node import Node
 from framework.exceptions.keyword_exception import KeywordException
 from framework.ssh.ssh_connection import SSHConnection
@@ -112,6 +113,35 @@ class LabConnectionKeywords(BaseKeyword):
 
         connection = SSHConnectionManager.create_ssh_connection(
             compute_node.get_ip(),
+            lab_config.get_admin_credentials().get_user_name(),
+            lab_config.get_admin_credentials().get_password(),
+            ssh_port=lab_config.get_ssh_port(),
+            jump_host=jump_host_config,
+        )
+
+        return connection
+
+    def get_subcloud_ssh(self, subcloud_name: str) -> SSHConnection:
+        """
+        Gets an SSH connection to the 'Subcloud' node whose name is specified by the argument 'subcloud_name'.
+        Args:
+             subcloud_name (string): The name of the 'subcloud' node.
+
+        Returns: the SSH connection to the 'subcloud' node whose name is specified by the argument 'subcloud_name'.
+
+        """
+        lab_config = ConfigurationManager.get_lab_config()
+        subcloud_config: LabConfig = lab_config.get_subcloud(subcloud_name)
+
+        if not subcloud_config:
+            raise ValueError(f"There is no 'subcloud' node named {subcloud_name} defined in your config file.")
+
+        jump_host_config = None
+        if lab_config.is_use_jump_server():
+            jump_host_config = lab_config.get_jump_host_configuration()
+
+        connection = SSHConnectionManager.create_ssh_connection(
+            subcloud_config.get_floating_ip(),
             lab_config.get_admin_credentials().get_user_name(),
             lab_config.get_admin_credentials().get_password(),
             ssh_port=lab_config.get_ssh_port(),
