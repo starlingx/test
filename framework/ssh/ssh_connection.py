@@ -48,6 +48,13 @@ class SSHConnection:
 
         self.last_return_code = None  # The last Return Code
 
+        # these are values are used for commands that require ssh pass on remote nodes
+        self.use_ssh_pass = False
+        self.ssh_pass_host = None
+        self.ssh_pass_username = None
+        self.ssh_pass_password = None
+        self.output_start_line = -1  # for parsing out lines that come by default when using ssh pass
+
     def _connect_to_jump_host(self, allow_agent=True, look_for_keys=True):
         """
         This function will connect to the jump_host
@@ -176,6 +183,15 @@ class SSHConnection:
         timeout = time.time() + reconnect_timeout
         refresh_timeout = 5
 
+        # if we are using ssh pass, we need to wrap the call
+        if self.use_ssh_pass:
+            if action == 'SEND_SUDO':  # if it a sudo call we need further changes to avoid password prompt
+                cmd = f"{self.get_ssh_pass_str()} 'echo '{self.ssh_pass_password}' | sudo -S {cmd}'"
+                # since we do not need prompts or to prepend sudo now, change Action to just 'SEND'
+                action = 'SEND'
+            else:
+                cmd = f"{self.get_ssh_pass_str()} '{cmd}'"
+
         while time.time() < timeout:
             try:
 
@@ -195,6 +211,10 @@ class SSHConnection:
 
                 thread_manager.join_all_threads()
                 output = thread_manager.get_thread_object("SSH_Command").get_result()
+
+                # if we use ssh pass we want to skip the preamble before sending back ouput
+                if self.use_ssh_pass and self.output_start_line != -1:  # if -1 it's the call to get preamble so return whole output
+                    output = output[self.output_start_line:]
                 return output
 
             except Exception as e:
@@ -408,6 +428,35 @@ class SSHConnection:
                 self.is_connected = False
 
         return sftp_client
+
+    def setup_ssh_pass(self, host_name: str, host_user_name: str, host_password: str):
+        """
+        Sets up the connection to use ssh pass
+        Args:
+            host_name (): the name of the host to use ssh pass on
+            host_user_name (): the user name to use
+            host_password (): the password to use
+
+        Returns:
+
+        """
+        # setup this ssh connection with ssh pass parameters
+        self.use_ssh_pass = True
+        self.ssh_pass_host = host_name
+        self.ssh_pass_username = host_user_name
+        self.ssh_pass_password = host_password
+
+        # get preamble so we can parse it out
+        output = self.send('\n')
+        self.output_start_line = len(output)
+
+    def get_ssh_pass_str(self):
+        """
+        Returns the str needed to wrap calls with ssh pass
+        Returns: the str for wrapping ssh pass calss
+
+        """
+        return f"sshpass -p '{self.ssh_pass_password}' ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null {self.ssh_pass_username}@{self.ssh_pass_host}"
 
     def __str__(self):
         """

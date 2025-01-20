@@ -1,6 +1,5 @@
 from config.configuration_manager import ConfigurationManager
 from config.lab.objects.lab_config import LabConfig
-from config.lab.objects.node import Node
 from framework.exceptions.keyword_exception import KeywordException
 from framework.ssh.ssh_connection import SSHConnection
 from framework.ssh.ssh_connection_manager import SSHConnectionManager
@@ -100,24 +99,14 @@ class LabConnectionKeywords(BaseKeyword):
 
         Returns: the SSH connection to the 'Compute' node whose name is specified by the argument 'compute_name'.
 
+        NOTE: this 'ssh connection' actually uses ssh_pass to make a call from the active controller connection.
+
         """
+        connection = self.get_active_controller_ssh()
         lab_config = ConfigurationManager.get_lab_config()
-        compute_node: Node = lab_config.get_compute(compute_name)
 
-        if not compute_node:
-            raise ValueError(f"There is no 'Compute' node named {compute_name} defined in your config file.")
-
-        jump_host_config = None
-        if lab_config.is_use_jump_server():
-            jump_host_config = lab_config.get_jump_host_configuration()
-
-        connection = SSHConnectionManager.create_ssh_connection(
-            compute_node.get_ip(),
-            lab_config.get_admin_credentials().get_user_name(),
-            lab_config.get_admin_credentials().get_password(),
-            ssh_port=lab_config.get_ssh_port(),
-            jump_host=jump_host_config,
-        )
+        # setup this connection to use ssh pass
+        connection.setup_ssh_pass(compute_name, lab_config.get_admin_credentials().get_user_name(), lab_config.get_admin_credentials().get_password())
 
         return connection
 

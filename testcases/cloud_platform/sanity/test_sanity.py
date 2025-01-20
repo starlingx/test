@@ -1209,6 +1209,43 @@ def test_dc_central_force_reboot_host_standby_controller():
     assert reboot_success, 'Host was not rebooted successfully'
 
 
+@mark.p0
+@mark.lab_has_subcloud
+@mark.lab_has_worker
+def test_dc_central_force_reboot_host_compute():
+    """
+    Verify force reboot of an compute
+
+    Test Steps:
+        - log onto compute
+        - sudo reboot -f
+        - validate that system comes back in correct state
+    """
+    # Opens an SSH session to active controller.
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+
+    computes = SystemHostListKeywords(ssh_connection).get_computes()
+
+    assert len(computes) > 0, "No computes were found"
+
+    # get the first compute
+    compute = computes[0]
+
+    compute_ssh_connection = LabConnectionKeywords().get_compute_ssh(compute.get_host_name())
+
+    # get the prev uptime of the host so we can be sure it re-started
+    pre_uptime_of_host = SystemHostListKeywords(ssh_connection).get_uptime(compute.get_host_name())
+
+    # force reboot the standby controller
+    compute_ssh_connection.send_as_sudo("reboot -f")
+
+    wait_for_reboot_to_start(compute.get_host_name(), ssh_connection)
+
+    reboot_success = SystemHostRebootKeywords(ssh_connection).wait_for_force_reboot(compute.get_host_name(), pre_uptime_of_host)
+
+    assert reboot_success, 'Host was not rebooted successfully'
+
+
 def wait_for_reboot_to_start(host_name: str, ssh_connection: SSHConnection, timeout: int = 60):
     """
     Returns true once we've got availability of offline indicating a reboot has started.
