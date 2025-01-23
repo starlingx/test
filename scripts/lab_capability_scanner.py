@@ -498,6 +498,11 @@ def get_lab_type(lab_config: LabConfig) -> str:
     Returns: the lab type
 
     """
+
+    # if lab has subclouds, then it's a DC
+    if len(lab_config.get_subclouds()) > 0:
+        return 'DC'
+
     nodes = lab_config.get_nodes()
 
     controller_nodes = list(filter(lambda node: node.get_type() == 'controller', nodes))
