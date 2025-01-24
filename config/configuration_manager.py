@@ -25,6 +25,15 @@ class ConfigurationManagerClass:
         self.rest_api_config: RestAPIConfig = None
         self.configuration_locations_manager = None
 
+    def is_config_loaded(self) -> bool:
+        """
+        This function will return true if the configurations are already loaded.
+
+        Returns:
+
+        """
+        return self.loaded
+
     def load_configs(self, config_file_locations: ConfigurationFileLocationsManager):
         """
         This function will load all the config files.

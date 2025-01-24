@@ -18,5 +18,6 @@ if __name__ == '__main__':
     configuration_locations_manager.set_configs_from_options_parser(parser)
     ConfigurationManager.load_configs(configuration_locations_manager)
 
-    test_scanner_uploader = TestScannerUploader("testcases")
+    folders_to_scan = ["testcases"]
+    test_scanner_uploader = TestScannerUploader(folders_to_scan)
     test_scanner_uploader.scan_and_upload_tests()

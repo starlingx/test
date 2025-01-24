@@ -1,3 +1,5 @@
+from typing import List
+
 import pytest
 from framework.database.objects.testcase import TestCase
 from framework.database.operations.capability_operation import CapabilityOperation
@@ -11,8 +13,8 @@ class TestScannerUploader:
     Class for Scanning tests and uploading.
     """
 
-    def __init__(self, test_folder: str):
-        self.test_folder = test_folder
+    def __init__(self, test_folders: List[str]):
+        self.test_folders = test_folders
 
     def scan_and_upload_tests(self):
         """
@@ -23,9 +25,17 @@ class TestScannerUploader:
 
         test_info_operation = TestInfoOperation()
         scanned_tests = self.scan_for_tests()
-        filtered_test_cases = [test for test in scanned_tests if test.get_pytest_node_id().startswith(self.test_folder)]
 
+        # Filter to find only the test cases in the desired folders.
+        filtered_test_cases = []
+        for test in scanned_tests:
+            if any(test.get_pytest_node_id().startswith(test_folder) for test_folder in self.test_folders):
+                filtered_test_cases.append(test)
+
+        # Upload/Update the test cases in the database
         for test in filtered_test_cases:
+
+            print(f"Inserting/Updating - {test.get_test_suite()}::{test.get_test_name()}")
             test_info_id = test_info_operation.get_info_test_id(test.get_test_name(), test.get_test_suite())
             if not test_info_id:
                 test_info_id = test_info_operation.insert_test(test)
@@ -101,10 +111,13 @@ class TestScannerUploader:
         capabilities = test.get_markers()
         for capability in capabilities:
 
-            capability_id = capability_operation.get_capability_by_marker(capability).get_capability_id()
-            # if capability does not exist, add it
-            if capability_id == -1:
+            capability_object = capability_operation.get_capability_by_marker(capability)
+
+            # If capability does not exist, raise an exception
+            if capability_object == -1:
                 raise ValueError(f"No capability with name {capability} exists")
+
+            capability_id = capability_object.get_capability_id()
 
             mapping_id = capability_test_operation.get_id(capability_id, test_info_id)
             # mapping does not exist, add new one
