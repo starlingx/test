@@ -18,7 +18,6 @@ from keywords.cloud_platform.dcmanager.dcmanager_subcloud_show_keywords import D
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_update_keywords import DcManagerSubcloudUpdateKeywords
 from keywords.cloud_platform.dcmanager.objects.dcmanager_subcloud_list_object_filter import DcManagerSubcloudListObjectFilter
 from keywords.cloud_platform.fault_management.alarms.alarm_list_keywords import AlarmListKeywords
-from keywords.cloud_platform.fault_management.alarms.objects.alarm_list_object import AlarmListObject
 from keywords.cloud_platform.fault_management.fm_client_cli.fm_client_cli_keywords import FaultManagementClientCLIKeywords
 from keywords.cloud_platform.fault_management.fm_client_cli.object.fm_client_cli_object import FaultManagementClientCLIObject
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
@@ -38,14 +37,20 @@ from keywords.cloud_platform.system.host.system_host_swact_keywords import Syste
 from keywords.cloud_platform.system.modify.system_modify_keywords import SystemModifyKeywords
 from keywords.cloud_platform.system.show.system_show_keywords import SystemShowKeywords
 from keywords.cloud_platform.system.storage.system_storage_backend_keywords import SystemStorageBackendKeywords
+from keywords.docker.images.docker_load_image_keywords import DockerLoadImageKeywords
 from keywords.files.file_keywords import FileKeywords
 from keywords.k8s.deployments.kubectl_delete_deployments_keywords import KubectlDeleteDeploymentsKeywords
+from keywords.k8s.deployments.kubectl_expose_deployment_keywords import KubectlExposeDeploymentKeywords
 from keywords.k8s.pods.kubectl_create_pods_keywords import KubectlCreatePodsKeywords
 from keywords.k8s.pods.kubectl_delete_pods_keywords import KubectlDeletePodsKeywords
+from keywords.k8s.pods.kubectl_exec_in_pods_keywords import KubectlExecInPodsKeywords
 from keywords.k8s.pods.kubectl_get_pods_keywords import KubectlGetPodsKeywords
-from pytest import mark
-
+from keywords.k8s.secret.kubectl_create_secrete_keywords import KubectlCreateSecretsKeywords
+from keywords.k8s.service.kubectl_delete_service_keywords import KubectlDeleteServiceKeywords
+from keywords.k8s.service.kubectl_get_service_keywords import KubectlGetServiceKeywords
 from keywords.linux.date.date_keywords import DateKeywords
+from keywords.linux.tar.tar_keywords import TarKeywords
+from pytest import mark
 from web_pages.horizon.admin.platform.horizon_host_inventory_page import HorizonHostInventoryPage
 from web_pages.horizon.login.horizon_login_page import HorizonLoginPage
 
@@ -288,23 +293,23 @@ def test_horizon_host_inventory_display_active_controller(request):
     # Compare the values in the active controller in the Host Inventory table with the output of system host-list.
     horizon_host_information = host_inventory.get_controller_host_information(active_host_name)
     assert (
-            active_controller_output.get_host_name().lower() == horizon_host_information.get_host_name().lower()
+        active_controller_output.get_host_name().lower() == horizon_host_information.get_host_name().lower()
     ), f"Host Name mismatch. Expecting: {active_controller_output.get_host_name().lower()}, Observed: {horizon_host_information.get_host_name().lower()}"
     assert "Controller-Active" == horizon_host_information.get_personality(), f"Expecting Personality: Controller-Active, Observed: {horizon_host_information.get_personality()}"
     assert (
-            active_controller_output.get_administrative().lower() == horizon_host_information.get_admin_state().lower()
+        active_controller_output.get_administrative().lower() == horizon_host_information.get_admin_state().lower()
     ), f"Admin State mismatch. Expecting: {active_controller_output.get_administrative().lower()}, Observed: {horizon_host_information.get_admin_state().lower()}"
     assert (
-            active_controller_output.get_operational().lower() == horizon_host_information.get_operational_state().lower()
+        active_controller_output.get_operational().lower() == horizon_host_information.get_operational_state().lower()
     ), f"Operational State mismatch. Expecting: {active_controller_output.get_operational().lower()}, Observed: {horizon_host_information.get_operational_state().lower()}"
     assert (
-            active_controller_output.get_availability().lower() == horizon_host_information.get_availability_state().lower()
+        active_controller_output.get_availability().lower() == horizon_host_information.get_availability_state().lower()
     ), f"Availability State mismatch. Expecting: {active_controller_output.get_availability().lower()}, Observed: {horizon_host_information.get_availability_state().lower()}"
     assert (
-            'minute' in horizon_host_information.get_uptime()
-            or 'hour' in horizon_host_information.get_uptime()
-            or 'day' in horizon_host_information.get_uptime()
-            or 'week' in horizon_host_information.get_uptime()
+        'minute' in horizon_host_information.get_uptime()
+        or 'hour' in horizon_host_information.get_uptime()
+        or 'day' in horizon_host_information.get_uptime()
+        or 'week' in horizon_host_information.get_uptime()
     ), f"Uptime doesn't follow the expected format '* weeks, * days, * hours, * minutes'. Observed: {horizon_host_information.get_uptime()}"
     assert horizon_host_information.get_status() is None, "Status Column should be empty."
     assert horizon_host_information.get_actions() == "Edit Host", f"Actions button should have a label of 'Edit Host' - Observed: {horizon_host_information.get_actions()}"
@@ -558,7 +563,7 @@ def test_dc_install_custom_app():
     assert system_application_object is not None, f"Expecting 'system_application_object' as not None, Observed: {system_application_object}."
     assert system_application_object.get_name() == app_name, f"Expecting 'app_name' = {app_name}, Observed: {system_application_object.get_name()}."
     assert (
-            system_application_object.get_status() == SystemApplicationStatusEnum.UPLOADED.value
+        system_application_object.get_status() == SystemApplicationStatusEnum.UPLOADED.value
     ), f"Expecting 'system_application_object.get_status()' = {SystemApplicationStatusEnum.UPLOADED.value}, Observed: {system_application_object.get_status()}."
 
     # Step 3: Apply the custom app on the active controller
@@ -571,7 +576,7 @@ def test_dc_install_custom_app():
     assert system_application_object is not None, f"Expecting 'system_application_object' as not None, Observed: {system_application_object}."
     assert system_application_object.get_name() == app_name, f"Expecting 'app_name' = {app_name}, Observed: {system_application_object.get_name()}."
     assert (
-            system_application_object.get_status() == SystemApplicationStatusEnum.APPLIED.value
+        system_application_object.get_status() == SystemApplicationStatusEnum.APPLIED.value
     ), f"Expecting 'system_application_object.get_status()' = {SystemApplicationStatusEnum.APPLIED.value}, Observed: {system_application_object.get_status()}."
 
     # Step 4: Clean the active controller
@@ -582,7 +587,7 @@ def test_dc_install_custom_app():
     system_application_remove_input.set_force_removal(True)
     system_application_output = SystemApplicationRemoveKeywords(ssh_connection).system_application_remove(system_application_remove_input)
     assert (
-            system_application_output.get_system_application_object().get_status() == SystemApplicationStatusEnum.UPLOADED.value
+        system_application_output.get_system_application_object().get_status() == SystemApplicationStatusEnum.UPLOADED.value
     ), f"Expecting 'system_application_output.get_system_application_object().get_status()' = {SystemApplicationStatusEnum.UPLOADED.value}, Observed: {system_application_output.get_system_application_object().get_status()}."
 
     # Deletes the application
@@ -635,7 +640,7 @@ def test_dc_install_custom_app():
         assert system_application_object is not None, f"Expecting 'system_application_object' as not None, Observed: {system_application_object}"
         assert system_application_object.get_name() == app_name, f"Expecting 'app_name' = {app_name}, Observed: {system_application_object.get_name()}"
         assert (
-                system_application_object.get_status() == SystemApplicationStatusEnum.UPLOADED.value
+            system_application_object.get_status() == SystemApplicationStatusEnum.UPLOADED.value
         ), f"Expecting 'system_application_object.get_status()' = {SystemApplicationStatusEnum.UPLOADED.value}, Observed: {system_application_object.get_status()}"
 
         # Step 7: Apply the custom app on the current subcloud.
@@ -648,7 +653,7 @@ def test_dc_install_custom_app():
         assert system_application_object is not None, f"Expecting 'system_application_object' as not None, Observed: {system_application_object}."
         assert system_application_object.get_name() == app_name, f"Expecting app_name = {app_name}, Observed: {system_application_object.get_name()}."
         assert (
-                system_application_object.get_status() == SystemApplicationStatusEnum.APPLIED.value
+            system_application_object.get_status() == SystemApplicationStatusEnum.APPLIED.value
         ), f"Expecting 'system_application_object.get_status()' = {SystemApplicationStatusEnum.APPLIED.value}, Observed: {system_application_object.get_status()}."
 
         # Step 8: Clean the current subcloud.
@@ -659,7 +664,7 @@ def test_dc_install_custom_app():
         system_application_remove_input.set_force_removal(True)
         system_application_output = SystemApplicationRemoveKeywords(ssh_subcloud_connection).system_application_remove(system_application_remove_input)
         assert (
-                system_application_output.get_system_application_object().get_status() == SystemApplicationStatusEnum.UPLOADED.value
+            system_application_output.get_system_application_object().get_status() == SystemApplicationStatusEnum.UPLOADED.value
         ), f"Expecting 'system_application_output.get_system_application_object().get_status()' = {SystemApplicationStatusEnum.UPLOADED.value}, Observed: {system_application_output.get_system_application_object().get_status()}."
 
         # Deletes the application
@@ -768,10 +773,10 @@ def test_dc_swact_host(request):
 
     # Asserts that the swact was done as expected.
     assert (
-            active_controller.get_id() == standby_controller_after_swact.get_id()
+        active_controller.get_id() == standby_controller_after_swact.get_id()
     ), f"The ID of the standby controller ({standby_controller_after_swact.get_id()}) after the execution of the 'swact' operation is not the same as the ID of the active controller ({active_controller.get_id()}) before that execution, as expected. It seems the 'swact' operation did not execute successfully."
     assert (
-            standby_controller.get_id() == active_controller_after_swact.get_id()
+        standby_controller.get_id() == active_controller_after_swact.get_id()
     ), f"The ID of the active controller ({active_controller_after_swact.get_id()}) after the execution of the 'swact' operation is not the same as the ID of the standby controller ({standby_controller.get_id()}) before that execution, as expected. It seems the 'swact' operation did not execute successfully."
 
     # Registers the controllers configuration in the log file.
@@ -812,7 +817,7 @@ def test_dc_swact_host(request):
     dcmanager_subcloud_list_filter.set_id(lowest_subcloud.get_id())
     lowest_subcloud_after_swact = dcmanager_subcloud_list_keywords.get_dcmanager_subcloud_list().get_dcmanager_subcloud_list_objects_filtered(dcmanager_subcloud_list_filter)[0]
     assert (
-            lowest_subcloud_after_swact.get_management() == 'unmanaged'
+        lowest_subcloud_after_swact.get_management() == 'unmanaged'
     ), f"The management state of subcloud {lowest_subcloud} is not 'unmanaged', as expected. Current management state of subcloud {lowest_subcloud}: '{lowest_subcloud.get_management()}'."
 
     # Registers the management state of lowest_subcloud in the log file.
@@ -930,7 +935,8 @@ def test_dc_unmanage_manage_subclouds(request):
     subcloud = dcmanager_subcloud_list.get_healthy_subcloud_with_lowest_id()
     subcloud_name = subcloud.get_name()
     get_logger().log_info(
-        f"The subcloud with the lowest ID will be considered in this test case. There is no special reason for that. It could be any subcloud. Subcloud chosen: name = {subcloud.get_name()}, ID = {subcloud.get_id()}.")
+        f"The subcloud with the lowest ID will be considered in this test case. There is no special reason for that. It could be any subcloud. Subcloud chosen: name = {subcloud.get_name()}, ID = {subcloud.get_id()}."
+    )
 
     # Object responsible for set the subclouds to 'managed'/'unmanaged' management state.
     dcmanager_subcloud_manage_keywords = DcManagerSubcloudManagerKeywords(ssh_connection)
@@ -945,7 +951,8 @@ def test_dc_unmanage_manage_subclouds(request):
             get_logger().log_info(f"Teardown: The original management state of the subcloud '{teardown_subcloud.get_name()}' was reestablished to '{teardown_subcloud.get_management()}'.")
         else:
             get_logger().log_info(
-                f"Teardown: There's no need to reestablish the original management state of the subcloud '{teardown_subcloud.get_name()}', as it is already in the 'managed' state. Current management state: '{teardown_subcloud.get_management()}'")
+                f"Teardown: There's no need to reestablish the original management state of the subcloud '{teardown_subcloud.get_name()}', as it is already in the 'managed' state. Current management state: '{teardown_subcloud.get_management()}'"
+            )
 
     request.addfinalizer(teardown)
 
@@ -954,7 +961,9 @@ def test_dc_unmanage_manage_subclouds(request):
     # Tries to change the state of the subcloud to 'unmanaged' and waits for it for 'change_state_timeout' seconds.
     dcmanager_subcloud_manage_output = dcmanager_subcloud_manage_keywords.get_dcmanager_subcloud_unmanage(subcloud.get_name(), change_state_timeout)
 
-    assert dcmanager_subcloud_manage_output.get_dcmanager_subcloud_manage_object().get_management() == 'unmanaged', f"It was not possible to change the management state of the subcloud {subcloud.get_name()} to 'unmanaged'."
+    assert (
+        dcmanager_subcloud_manage_output.get_dcmanager_subcloud_manage_object().get_management() == 'unmanaged'
+    ), f"It was not possible to change the management state of the subcloud {subcloud.get_name()} to 'unmanaged'."
     get_logger().log_info(f"Subcloud '{subcloud.get_name()}' had its management state changed to 'unmanaged' successfully.")
 
     get_logger().log_info("The first step of this test case is concluded.")
@@ -964,7 +973,9 @@ def test_dc_unmanage_manage_subclouds(request):
     # Tries to change the state of the subcloud to 'managed' and waits for it for 'change_state_timeout' seconds.
     dcmanager_subcloud_manage_output = dcmanager_subcloud_manage_keywords.get_dcmanager_subcloud_manage(subcloud.get_name(), change_state_timeout)
 
-    assert dcmanager_subcloud_manage_output.get_dcmanager_subcloud_manage_object().get_management() == 'managed', f"It was not possible to change the management state of the subcloud {subcloud.get_name()} to 'managed'."
+    assert (
+        dcmanager_subcloud_manage_output.get_dcmanager_subcloud_manage_object().get_management() == 'managed'
+    ), f"It was not possible to change the management state of the subcloud {subcloud.get_name()} to 'managed'."
     get_logger().log_info(f"Subcloud '{subcloud.get_name()}' had its management state changed to 'managed' successfully.")
 
     get_logger().log_info("The second and last step of this test case is concluded.")
@@ -1057,15 +1068,13 @@ def test_dc_central_compute_lock_unlock(request):
     # Tries to lock the 'Compute' node.
     get_logger().log_info(f"The 'Compute' node {compute_name} will be set to the 'locked' state.")
     system_host_lock_keywords.lock_host(compute_name)
-    assert system_host_lock_keywords.is_host_locked(
-        compute_name), f"It was not possible to lock the 'Compute' node {compute_name}."
+    assert system_host_lock_keywords.is_host_locked(compute_name), f"It was not possible to lock the 'Compute' node {compute_name}."
     get_logger().log_info(f"The 'Compute' node {compute_name} was successfully set to 'locked' state.")
 
     # Tries to unlock the 'Compute' node.
     get_logger().log_info(f"The 'Compute' node {compute_name} will be set to 'unlocked' state.")
     system_host_lock_keywords.unlock_host(compute_name)
-    assert system_host_lock_keywords.is_host_unlocked(
-        compute_name), f"It was not possible to unlock the 'Compute' node {compute_name}."
+    assert system_host_lock_keywords.is_host_unlocked(compute_name), f"It was not possible to unlock the 'Compute' node {compute_name}."
     get_logger().log_info(f"The 'Compute' node {compute_name} was successfully set to 'unlocked' state.")
 
 
@@ -1286,7 +1295,7 @@ def test_dc_modify_timezone(request):
     system_modify_keywords = SystemModifyKeywords(ssh_connection)
     # ensure we are in UTC to start
     system_show_object = SystemShowKeywords(ssh_connection).system_show().get_system_show_object()
-    if system_show_object.get_timezone() is not 'UTC':
+    if system_show_object.get_timezone() != 'UTC':
         system_modify_output = system_modify_keywords.system_modify_timezone('UTC')
         validate_equals(system_modify_output.get_system_show_object().get_timezone(), 'UTC', "Update the timezone to UTC.")
 
@@ -1306,3 +1315,148 @@ def test_dc_modify_timezone(request):
     subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
     system_show_object = SystemShowKeywords(subcloud_ssh).system_show().get_system_show_object()
     validate_equals(system_show_object.get_timezone(), 'UTC', "Subcloud timezone is still UTC.")
+
+
+@mark.p0
+def test_pod_to_pod_connection(request):
+    """
+    Verify connection via ping between pods
+    Test Steps:
+        - import images node-hello and pv-test to local registry
+        - deploy both client and server pods
+        - from client1 pod validate successful ping to both server pods
+        - from client2 pod validate successful ping to both server pods
+
+    """
+
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+
+    deploy_images_to_local_registry(ssh_connection)
+
+    pods = deploy_pods(request, ssh_connection)
+    server_pods = pods.get_pods_start_with('server-pod-dep')
+    server_pod1_name = server_pods[0].get_name()
+    server_pod2_name = server_pods[1].get_name()
+
+    server_pod_1_ip = pods.get_pod(server_pod1_name).get_ip()
+    server_pod_2_ip = pods.get_pod(server_pod2_name).get_ip()
+
+    # validate that client pod 1 can ping server pod1
+    kubeclt_exec_in_pods = KubectlExecInPodsKeywords(ssh_connection)
+    kubeclt_exec_in_pods.run_pod_exec_cmd("client-pod1", f"ping -c 3 {server_pod_1_ip} -w 5")
+    assert ssh_connection.get_return_code() == 0, "One or more cleanup items failed."
+
+    # validate that client pod 1 can ping server pod2
+    kubeclt_exec_in_pods.run_pod_exec_cmd("client-pod1", f"ping -c 3 {server_pod_2_ip} -w 5")
+    assert ssh_connection.get_return_code() == 0
+
+    # validate that client pod 2 can ping server pod1
+    kubeclt_exec_in_pods.run_pod_exec_cmd("client-pod2", f"ping -c 3 {server_pod_1_ip} -w 5")
+    assert ssh_connection.get_return_code() == 0
+
+    # validate that client pod 2 can ping server pod2
+    kubeclt_exec_in_pods.run_pod_exec_cmd("client-pod2", f"ping -c 3 {server_pod_2_ip} -w 5")
+    assert ssh_connection.get_return_code() == 0
+
+
+@mark.p0
+def test_pod_to_service_connection(request):
+    """
+    Testcase to validate client pod to service connection
+    Test Steps:
+        - import images node-hello and pv-test to local registry
+        - deploy both client and server pods
+        - from client pod1, test curl to server pods ip's
+        - from client pod2, test curl to server pods ip's
+
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+
+    deploy_images_to_local_registry(ssh_connection)
+
+    pods = deploy_pods(request, ssh_connection)
+    server_pods = pods.get_pods_start_with('server-pod-dep')
+    server_pod1_name = server_pods[0].get_name()
+    server_pod2_name = server_pods[1].get_name()
+
+    server_pod_1_ip = pods.get_pod(server_pod1_name).get_ip()
+    server_pod_2_ip = pods.get_pod(server_pod2_name).get_ip()
+
+    if ConfigurationManager.get_lab_config().is_ipv6():
+        server_pod_1_ip = f"[{server_pod_1_ip}]"
+        server_pod_2_ip = f"[{server_pod_2_ip}]"
+
+    # validate client pod 1 curl with server pod 1
+    kubeclt_exec_in_pods = KubectlExecInPodsKeywords(ssh_connection)
+    kubeclt_exec_in_pods.run_pod_exec_cmd("client-pod1", f"curl -Is {server_pod_1_ip}:8080")
+    assert ssh_connection.get_return_code() == 0
+
+    # validate client pod 1 curl with server pod 2
+    kubeclt_exec_in_pods.run_pod_exec_cmd("client-pod1", f"curl -Is {server_pod_2_ip}:8080")
+    assert ssh_connection.get_return_code() == 0
+
+    # validate client pod 2 curl with server pod 1
+    kubeclt_exec_in_pods.run_pod_exec_cmd("client-pod2", f"curl -Is {server_pod_1_ip}:8080")
+    assert ssh_connection.get_return_code() == 0
+
+    # validate client pod 2 curl with server pod 2
+    kubeclt_exec_in_pods.run_pod_exec_cmd("client-pod2", f"curl -Is {server_pod_2_ip}:8080")
+    assert ssh_connection.get_return_code() == 0
+
+
+@mark.p0
+def test_host_to_service_connection(request):
+    """
+    Test to validate the service connectivity from external network
+    Test Steps:
+        - import images node-hello and pv-test to local registry
+        - deploy both client and server pods
+        - expose the service with node Port
+        - from run agent, test service url with curl
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+
+    deploy_images_to_local_registry(ssh_connection)
+
+    deploy_pods(request, ssh_connection)
+    KubectlExposeDeploymentKeywords(ssh_connection).expose_deployment('server-pod-dep', 'NodePort', 'test-service')
+
+    def remove_service():
+        KubectlDeleteServiceKeywords(ssh_connection).delete_service('test-service')
+
+    request.addfinalizer(remove_service)
+
+    node_port = KubectlGetServiceKeywords(ssh_connection).get_service_node_port('test-service')
+
+    url = f"http://{ConfigurationManager.get_lab_config().get_floating_ip()}:{node_port}"
+    if ConfigurationManager.get_lab_config().is_ipv6():
+        url = f"http://[{ConfigurationManager.get_lab_config().get_floating_ip()}]:{node_port}"
+
+    ssh_connection.send(f"curl -Is {url}")
+
+    assert ssh_connection.get_return_code() == 0
+
+
+def deploy_images_to_local_registry(ssh_connection: SSHConnection):
+    """
+    Deploys images to the local registry for testcases in this suite.
+
+    Args:
+        ssh_connection (): the SSH connection.
+    """
+    local_registry = ConfigurationManager.get_docker_config().get_registry('local_registry')
+
+    file_keywords = FileKeywords(ssh_connection)
+    file_keywords.upload_file(get_stx_resource_path("resources/images/pv-test.tar"), "/home/sysadmin/pv-test.tar", overwrite=False)
+
+    KubectlCreateSecretsKeywords(ssh_connection).create_secret_for_registry(local_registry, 'local-secret')
+    docker_load_image_keywords = DockerLoadImageKeywords(ssh_connection)
+    docker_load_image_keywords.load_docker_image_to_host("pv-test.tar")
+    docker_load_image_keywords.tag_docker_image_for_registry("registry.local:9001/pv-test", "pv-test", local_registry)
+    docker_load_image_keywords.push_docker_image_to_registry("pv-test", local_registry)
+
+    file_keywords.upload_file(get_stx_resource_path("resources/cloud_platform/images/node-hello-alpine/node-hello-alpine.tar.gz"), "/home/sysadmin/node-hello-alpine.tar.gz", overwrite=False)
+    TarKeywords(ssh_connection).extract_tar_file("/home/sysadmin/node-hello-alpine.tar.gz")
+    docker_load_image_keywords.load_docker_image_to_host("node-hello-alpine.tar")
+    docker_load_image_keywords.tag_docker_image_for_registry("registry.local:9001/node-hello:alpine", "node-hello", local_registry)
+    docker_load_image_keywords.push_docker_image_to_registry("node-hello", local_registry)
