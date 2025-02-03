@@ -1,10 +1,11 @@
-===============================
-StarlingX Automation Framework
-===============================
+============================
+**testcases/** Documentation
+============================
 
-------------
-Introduction
-------------
+This section contains documentation related to **automated test cases** used in the StarlingX test framework.
 
-This project contains Automated Test Cases that validate the StarlingX product.
-For more information about StarlingX, see https://docs.starlingx.io/.
+--------
+Contents
+--------
+
+*(Detailed documentation on test case structure, execution, and examples will be added here.)*
