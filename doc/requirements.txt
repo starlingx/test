@@ -1,6 +1,25 @@
+# Documentation and Release Notes Dependencies for Sphinx, Tox, and Zuul CI
+# ------------------------------------------------------------------------
+# This file ensures a consistent environment for building documentation and release notes.
+#
+# Usage:
+# - **Tox (`tox.ini`)** manages documentation builds and release notes.
+# - **Zuul CI** aligns dependencies with OpenStack’s package constraints.
+#
+# Local Development:
+# - **Pipenv** is the preferred tool for local documentation development and previewing.
+# - **sphinx-autobuild** is recommended for live previewing documentation changes.
+# - To maintain consistency, dependencies in **Pipfile should be kept in sync with this file**, 
+#   as this file is used by Tox and Zuul.
+#
+# If updating dependencies, verify compatibility with OpenStack’s constraints:
+# https://opendev.org/openstack/requirements/src/branch/master/upper-constraints.txt
+
+
 # Documentation Sphinx
-sphinx>=2.0.0,!=2.1.0 # BSD
-openstackdocstheme>=2.2.1 # Apache-2.0
+openstackdocstheme==3.4.1
+sphinx==8.1.3
+sphinx-autobuild==2024.2.4
 
 # Documentation Release Notes
-reno>=3.1.0
+reno==4.1.0
