@@ -275,7 +275,11 @@ def get_subcloud_ip(subcloud_name: str, central_cloud_ssh_connection: SSHConnect
     system_oam_show_output_list = central_cloud_ssh_connection.send_expect_prompts(f'ssh {subcloud_name} -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no', expected_prompts)
     system_oam_show_output: SystemOamShowOutput = SystemOamShowOutput(system_oam_show_output_list)
 
+    # Get the oam_ip if available (used in vbox environments).
     subcloud_ip = system_oam_show_output.system_oam_show_object.get_oam_ip()
+    # If oam_ip is not available, fall back to oam_floating_ip (used in physical labs).
+    if not subcloud_ip:
+        subcloud_ip = system_oam_show_output.system_oam_show_object.get_oam_floating_ip()
 
     return subcloud_ip
 
