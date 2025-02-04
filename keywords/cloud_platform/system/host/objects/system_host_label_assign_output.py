@@ -42,7 +42,6 @@ class SystemHostLabelAssignOutput:
         #  {'Property': 'host_uuid', 'Value': '4feff42d-bc8d-4006-9922-a7fa10a6ee19'}
         #  {'Property': 'label_key', 'Value': 'kube-cpu-mgr-policy'}
         #  {'Property': 'label_value', 'Value': 'static'}
-        #  {'Property': 'Property', 'Value': 'Value'}  ###### SEPERATOR ROW ######
         #  {'Property': 'uuid', 'Value': '0260240f-bcca-41f5-9f32-b3acc030dfb0'}
         #  {'Property': 'host_uuid', 'Value': '4feff42d-bc8d-4006-9922-a7fa10a6ee19'}
         #  {'Property': 'label_key', 'Value': 'kube-topology-mgr-policy'}
@@ -51,13 +50,10 @@ class SystemHostLabelAssignOutput:
         system_host_label_object = SystemHostLabelObject()
         for value in output_values:
 
-            # A middle row with 'Property' means that we are changing entry.
-            if value['Property'] == 'Property':
-                self.system_host_labels.append(system_host_label_object)
+            if value['Property'] == 'uuid':  # Every time we hit a uuid, we are encountering a new object.
                 system_host_label_object = SystemHostLabelObject()
-
-            if value['Property'] == 'uuid':
                 system_host_label_object.set_uuid(value['Value'])
+                self.system_host_labels.append(system_host_label_object)
 
             if value['Property'] == 'host_uuid':
                 system_host_label_object.set_host_uuid(value['Value'])
@@ -67,8 +63,6 @@ class SystemHostLabelAssignOutput:
 
             if value['Property'] == 'label_value':
                 system_host_label_object.set_label_value(value['Value'])
-
-        self.system_host_labels.append(system_host_label_object)
 
     def get_all_host_labels(self) -> [SystemHostLabelObject]:
         """

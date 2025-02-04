@@ -164,6 +164,21 @@ system_application_upload = [
     "Please use 'system application-list' or 'system application-show hello-kitty' to view the current progress.\n",
 ]
 
+system_host_if_ptp_remove_wrapped_output = [
+    '+--------------------------------------+---------+-----------+---------------+\n',
+    '| uuid                                 | name    | ptp_insta | parameters    |\n',
+    '|                                      |         | nce_name  |               |\n',
+    '+--------------------------------------+---------+-----------+---------------+\n',
+    "| 0000c96e-6dab-48c2-875a-48af194c893c | n4_p2   | ptp4      | ['masterOnly= |\n",
+    "|                                      |         |           | 1']           |\n",
+    '|                                      |         |           |               |\n',
+    '| 24003e49-f9c4-4794-970e-506fa5c215c0 | n1_if   | clock1    | []            |\n',
+    '| 51e06821-b045-4a6e-854b-6bd829b5c9e2 | ptp1if1 | ptp1      | []            |\n',
+    "| a689d398-329f-46b4-a99f-23b9a2417c27 | n5_p2   | ptp5      | ['masterOnly= |\n",
+    "|                                      |         |           | 1']           |\n",
+    '|                                      |         |           |               |\n',
+    '+--------------------------------------+---------+-----------+---------------+\n',
+]
 
 def test_system_parser():
     """
@@ -218,7 +233,7 @@ def test_system_parser_error():
         SystemTableParser(system_output_error).get_output_values_list()
         assert False, "There should be an exception when parsing the output."
     except KeywordException as e:
-        assert e.args[0] == 'Number of headers and values do not match'
+        assert e.args[0] == 'Number of headers and + separator do not match expected value'
 
 
 def test_system_host_output():
@@ -253,7 +268,7 @@ def test_system_host_output_error():
         SystemHostOutput(system_output_error).get_hosts()
         assert False, "There should be an exception when we parse the output."
     except KeywordException as e:
-        assert e.args[0] == 'Number of headers and values do not match'
+        assert e.args[0] == 'Number of headers and + separator do not match expected value'
 
 
 def test_system_application_output():
@@ -276,6 +291,30 @@ def test_system_application_output():
     assert application.get_status() == 'applied'
     assert application.get_progress() == 'completed'
 
+def test_system_table_parser_with_wrapped_table_entry():
+    """
+    Test the system vertical parser with a table that has a column wrapped.
+    Returns:
+
+    """
+
+    system_vertical_table_parser = SystemTableParser(system_host_if_ptp_remove_wrapped_output)
+    list_of_values = system_vertical_table_parser.get_output_values_list()
+    assert len(list_of_values) == 4
+
+    first_entry = list_of_values[0]
+    assert len(first_entry.keys()) == 4
+    assert first_entry['uuid'] == '0000c96e-6dab-48c2-875a-48af194c893c'
+    assert first_entry['name'] == 'n4_p2'
+    assert first_entry['ptp_instance_name'] == 'ptp4'
+    assert first_entry['parameters'] == "['masterOnly=1']"
+
+    second_entry = list_of_values[1]
+    assert len(second_entry.keys()) == 4
+    assert second_entry['uuid'] == '24003e49-f9c4-4794-970e-506fa5c215c0'
+    assert second_entry['name'] == 'n1_if'
+    assert second_entry['ptp_instance_name'] == 'clock1'
+    assert second_entry['parameters'] == "[]"
 
 def test_system_host_label_assign_output():
     """
