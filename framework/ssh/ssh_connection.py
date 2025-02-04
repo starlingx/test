@@ -86,7 +86,7 @@ class SSHConnection:
             get_logger().log_error(f"Exception: {exception}")
             raise BaseException("Failed to connect to Jump-Host")
 
-    def connect(self, allow_agent=True, look_for_keys=True) -> bool:
+    def connect(self, allow_agent=True, look_for_keys=False) -> bool:
         """
         Creates a connection
         Args:
