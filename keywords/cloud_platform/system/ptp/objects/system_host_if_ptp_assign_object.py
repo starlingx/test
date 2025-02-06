@@ -11,9 +11,6 @@ class SystemHostIfPTPAssignObject:
         self.name = None
         self.ptp_instance_name = None
         self.parameters = []
-    
-    def __str__(self) :
-        return self.name
 
 
     def set_uuid(self, uuid: str):
