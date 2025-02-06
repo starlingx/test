@@ -51,6 +51,15 @@ class AutomationLogger(logging.getLoggerClass()):
         """
         self._log(logging.INFO, message, None, stacklevel=2, extra={'source': 'AUT'})
 
+    def log_warning(self, message):
+        """
+        Logs a warning message, indicating a potential issue that is not critical but requires attention.
+
+        Args:
+            message (str): The warning message to be logged.
+        """
+        self._log(logging.WARNING, message, None, stacklevel=2, extra={'source': 'AUT'})
+
     def log_error(self, message):
         """
         The function to call when logging an automation or a software error or exception.
