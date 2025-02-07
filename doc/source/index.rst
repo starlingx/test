@@ -1,27 +1,32 @@
-======================
-stx-test Documentation
-======================
+==============================
+StarlingX Test Documentation
+==============================
 
-This is the documentation for StarlingX Test.
+------------
+Introduction
+------------
 
+This project contains **Automated Test Cases** that validate the **StarlingX product**.  
+The test framework provides tools and structured test cases to ensure the stability and reliability of StarlingX components.  
 
---------
-Sections
---------
+For more information about StarlingX, see the official documentation:  
+🔗 https://docs.starlingx.io/
+
+----------------------
+Repository Structure
+----------------------
+
+The **StarlingX Test Repository Structure** provides an overview of key directories and their purpose within the automation framework.
 
 .. toctree::
    :maxdepth: 1
 
-   testcases/index
+   directory_structure
 
 -----
 Links
 -----
 
-* Source: `stx-test`_
-* Code Review: `Gerrit`_
-* Bugs: `Storyboard`_
-
-.. _stx-test: https://opendev.org/starlingx/test
-.. _Gerrit: https://review.opendev.org/#/q/project:starlingx/test
-.. _Storyboard: https://storyboard.openstack.org/#!/project/starlingx/test
+* **Source Code:** https://opendev.org/starlingx/test  
+* **Code Review:** https://review.opendev.org/#/q/project:starlingx/test  
+* **Bug Tracking:** https://storyboard.openstack.org/#!/project/starlingx/test  
