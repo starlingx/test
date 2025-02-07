@@ -1,6 +1,7 @@
 from keywords.base_keyword import BaseKeyword
 from keywords.cloud_platform.command_wrappers import source_openrc
 from starlingx.keywords.cloud_platform.system.ptp.objects.system_host_if_ptp_assign_output import SystemHostIfPTPAssignOutput
+from starlingx.keywords.cloud_platform.system.ptp.objects.system_host_if_ptp_list_output import SystemHostIfPTPListOutput
 
 class SystemHostIfPTPKeywords(BaseKeyword):
     """
@@ -20,7 +21,7 @@ class SystemHostIfPTPKeywords(BaseKeyword):
         """
         self.ssh_connection = ssh_connection
 
-    def system_host_if_ptp_assign(self,hostname: str, interface: str, ptp_interface: str) :
+    def system_host_if_ptp_assign(self,hostname: str, interface: str, ptp_interface: str) -> SystemHostIfPTPAssignOutput :
         """
         Associate PTP to an interface at host.
         
@@ -39,7 +40,7 @@ class SystemHostIfPTPKeywords(BaseKeyword):
 
         return system_host_if_ptp_assign_output
 
-    def system_host_if_ptp_remove(self,hostname: str, interface: str, ptp_interface: str) :
+    def system_host_if_ptp_remove(self,hostname: str, interface: str, ptp_interface: str) -> SystemHostIfPTPAssignOutput :
         """
         Disassociate PTP to an interface at host.
         
@@ -57,4 +58,19 @@ class SystemHostIfPTPKeywords(BaseKeyword):
         system_host_if_ptp_remove_output = SystemHostIfPTPAssignOutput(output)
 
         return system_host_if_ptp_remove_output
+
+    def get_system_host_if_ptp_list(self,hostname: str) -> SystemHostIfPTPListOutput :
+        """
+        List all PTP interfaces on the specified host
+        
+        Args:
+            hostname: Hostname or id
+        Returns:
+        """
+        command = source_openrc(f'system host-if-ptp-list --nowrap {hostname}')
+        output = self.ssh_connection.send(command)
+        self.validate_success_return_code(self.ssh_connection)
+        system_host_if_ptp_list_output = SystemHostIfPTPListOutput(output)
+
+        return system_host_if_ptp_list_output
         
