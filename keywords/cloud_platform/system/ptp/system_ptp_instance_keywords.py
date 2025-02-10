@@ -53,7 +53,11 @@ class SystemPTPInstanceKeywords(BaseKeyword):
         output = self.ssh_connection.send(command)
         self.validate_success_return_code(self.ssh_connection)
 
-        return output
+        # output is a List of 1 string. "['Deleted PTP instance: xxxx-xxxx-xxx\n']"
+        if output and len(output) > 0:
+            return output[0].strip()
+        else:
+            raise "Output is expected to be a List with one element."
     
     def get_system_ptp_instance_show(self,name: str) -> SystemPTPInstanceOutput :
         """
@@ -70,7 +74,7 @@ class SystemPTPInstanceKeywords(BaseKeyword):
         self.validate_success_return_code(self.ssh_connection)
         system_ptp_instance_show_output = SystemPTPInstanceOutput(output)
 
-        return system_ptp_instance_show_output[0].strip('\n')
+        return system_ptp_instance_show_output
 
     def get_system_ptp_instance_list(self) -> SystemPTPInstanceListOutput :
         """
@@ -84,3 +88,19 @@ class SystemPTPInstanceKeywords(BaseKeyword):
         system_ptp_instance_list_output = SystemPTPInstanceListOutput(output)
 
         return system_ptp_instance_list_output
+
+    def system_ptp_instance_apply(self) -> str :
+        """
+        Apply the PTP Instance config
+
+        Returns:
+        """
+        command = source_openrc("system ptp-instance-apply")
+        output = self.ssh_connection.send(command)
+        self.validate_success_return_code(self.ssh_connection)
+
+        # output is a List of 1 string. "['Applying the PTP Instance configuration\n']"
+        if output and len(output) > 0:
+            return output[0].strip()
+        else:
+            raise "Output is expected to be a List with one element."
