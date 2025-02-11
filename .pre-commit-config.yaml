@@ -1,32 +1,74 @@
----
+# -----------------------------------------------------------------------------
+# Pre-Commit Hook Configuration for starlingx/test
+#
+# This configuration ensures code quality by enforcing formatting, style, and
+# documentation standards before commits. The following tools are used:
+#
+# - `isort`       → Sorts and organizes imports.
+# - `black`       → Formats Python code to maintain consistent style.
+# - `flake8`      → Runs linting checks for Python code style and errors.
+# - `pydocstyle`  → Enforces PEP 257 and Google-style docstring conventions.
+# - `pydoclint`   → Validates that docstrings match function signatures.
+# - `interrogate` → Ensures all public functions and classes have docstrings.
+#
+# Notes:
+# - `interrogate` is configured to ignore nested functions (`--ignore-nested-functions`)
+#   to avoid unnecessary enforcement on pytest teardowns and small helper functions.
+# - `black` uses `pyproject.toml` for consistency across formatting tools.
+# - `pydocstyle` and `pydoclint` ensure compliance with Google-style docstrings.
+# -----------------------------------------------------------------------------
 default_stages: [commit]
 default_language_version:
     python: python3.11
+
 repos:
   - repo: local
     hooks:
-    - id: flake8
-      name: flake8 - code lint and style checks
-      entry: flake8
-      language: python
-      types: [python]
-      args: [--config, pre-commit/.flake8]
     - id: isort
       name: isort - import sorting
       entry: isort
       language: python
       types: [python]
-      args: [--settings-path, pre-commit/pyproject.toml]
-    - id: black
-      name: black - check formatting (show diff on FAIL)
-      entry: black
-      language: python
-      types: [python]
-      args: [--config, pre-commit/pyproject.toml, --check, --diff, --color, --quiet]
-    - id: black
-      name: black - auto-format code on FAIL
-      entry: black
-      language: python
-      types: [python]
-      args: [--config, pre-commit/pyproject.toml]
+      args: [--settings-path, pyproject.toml]
 
+    - id: black
+      name: black - fail if formatting needed
+      entry: black
+      language: python
+      types: [python]
+      args: [--config, pyproject.toml, --check]
+
+    - id: black
+      name: black - auto-format code
+      entry: black
+      language: python
+      types: [python]
+      args: [--config, pyproject.toml]
+
+    - id: flake8
+      name: flake8 - code lint and style checks
+      entry: flake8
+      language: python
+      types: [python]
+      args: [--config=.flake8]
+
+    - id: pydocstyle
+      name: pydocstyle - enforce PEP 257 and Google-style docstrings
+      entry: pydocstyle
+      language: python
+      types: [python]
+      args: [--config=pydocstyle.ini]
+
+    - id: pydoclint
+      name: pydoclint - enforce Google-style docstring structure
+      entry: pydoclint
+      language: python
+      types: [python]
+      args: ["--config=pyproject.toml"]
+
+    - id: interrogate
+      name: interrogate - ensure all functions and classes have docstrings
+      entry: interrogate
+      language: python
+      types: [python]
+      args: ["--fail-under", "100", "--ignore-module", "--ignore-init-method", "--ignore-nested-functions", "--verbose"]

@@ -10,7 +10,8 @@ This project contains **Automated Test Cases** that validate the **StarlingX pro
 The test framework provides tools and structured test cases to ensure the stability and reliability of StarlingX components.  
 
 For more information about StarlingX, see the official documentation:  
-🔗 https://docs.starlingx.io/
+
+🔗 `StarlingX Documentation <https://docs.starlingx.io/>`_
 
 ----------------------
 Repository Structure
@@ -23,10 +24,20 @@ The **StarlingX Test Repository Structure** provides an overview of key director
 
    directory_structure
 
+-------------------
+Contribution Guide
+-------------------
+
+For full contribution guidelines, including coding standards, pre-commit hooks, and best practices, see:
+
+.. toctree::
+   :maxdepth: 1
+
+   contributing
+
 -----
 Links
 -----
 
-* **Source Code:** https://opendev.org/starlingx/test  
-* **Code Review:** https://review.opendev.org/#/q/project:starlingx/test  
-* **Bug Tracking:** https://storyboard.openstack.org/#!/project/starlingx/test  
+- **Source Code:** `StarlingX Test Repository <https://opendev.org/starlingx/test>`_
+- **Code Review:** `Gerrit Code Review <https://review.opendev.org/#/q/project:starlingx/test>`_
