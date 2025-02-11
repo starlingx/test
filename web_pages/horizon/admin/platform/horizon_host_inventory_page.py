@@ -51,3 +51,13 @@ class HorizonHostInventoryPage(BasePage):
 
         horizon_host_object = HorizonHostObject(row_info_list)
         return horizon_host_object
+
+    def get_controller_edit_host_button_text(self, host_name: str) -> bool:
+        """
+        This function validates that the 'Edit Host' button is displayed for the specified controller host.
+
+        Returns: bool
+        """
+        edit_button_locator = self.locators.get_locator_controller_table_edit_host_button(host_name)
+        edit_button_text = self.driver.get_text(edit_button_locator)
+        return edit_button_text

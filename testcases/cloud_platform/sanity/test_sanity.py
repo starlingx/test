@@ -273,7 +273,7 @@ def test_horizon_host_inventory_display_active_controller(request):
 
     # Validate the Headers of the Controller Table
     all_controller_headers = host_inventory.get_controller_hosts_table_headers()
-    assert len(all_controller_headers) == 8, "There should be exactly 8 table headers"
+    validate_equals(len(all_controller_headers), 8, "There should be exactly 8 table headers")
     assert all_controller_headers[0], "Host Name header is missing."
     assert all_controller_headers[1], "Personality header is missing."
     assert all_controller_headers[2], "Admin State header is missing."
@@ -292,28 +292,21 @@ def test_horizon_host_inventory_display_active_controller(request):
 
     # Compare the values in the active controller in the Host Inventory table with the output of system host-list.
     horizon_host_information = host_inventory.get_controller_host_information(active_host_name)
-    assert (
-        active_controller_output.get_host_name().lower() == horizon_host_information.get_host_name().lower()
-    ), f"Host Name mismatch. Expecting: {active_controller_output.get_host_name().lower()}, Observed: {horizon_host_information.get_host_name().lower()}"
-    assert "Controller-Active" == horizon_host_information.get_personality(), f"Expecting Personality: Controller-Active, Observed: {horizon_host_information.get_personality()}"
-    assert (
-        active_controller_output.get_administrative().lower() == horizon_host_information.get_admin_state().lower()
-    ), f"Admin State mismatch. Expecting: {active_controller_output.get_administrative().lower()}, Observed: {horizon_host_information.get_admin_state().lower()}"
-    assert (
-        active_controller_output.get_operational().lower() == horizon_host_information.get_operational_state().lower()
-    ), f"Operational State mismatch. Expecting: {active_controller_output.get_operational().lower()}, Observed: {horizon_host_information.get_operational_state().lower()}"
-    assert (
-        active_controller_output.get_availability().lower() == horizon_host_information.get_availability_state().lower()
-    ), f"Availability State mismatch. Expecting: {active_controller_output.get_availability().lower()}, Observed: {horizon_host_information.get_availability_state().lower()}"
+    validate_equals(horizon_host_information.get_host_name().lower(), active_controller_output.get_host_name().lower(),  "Host Name of active controller")
+    validate_equals(horizon_host_information.get_personality(),"Controller-Active", "Personality of active controller")
+    validate_equals(horizon_host_information.get_admin_state().lower(),  active_controller_output.get_administrative().lower(), "Admin State of active controller")
+    validate_equals(horizon_host_information.get_operational_state().lower(), active_controller_output.get_operational().lower(), "Operational State of active controller")
+    validate_equals(horizon_host_information.get_availability_state().lower(), active_controller_output.get_availability().lower(), "Availability State of active controller")
+
     assert (
         'minute' in horizon_host_information.get_uptime()
         or 'hour' in horizon_host_information.get_uptime()
         or 'day' in horizon_host_information.get_uptime()
         or 'week' in horizon_host_information.get_uptime()
     ), f"Uptime doesn't follow the expected format '* weeks, * days, * hours, * minutes'. Observed: {horizon_host_information.get_uptime()}"
-    assert horizon_host_information.get_status() is None, "Status Column should be empty."
-    assert horizon_host_information.get_actions() == "Edit Host", f"Actions button should have a label of 'Edit Host' - Observed: {horizon_host_information.get_actions()}"
 
+    validate_equals(horizon_host_information.get_status(), None, "Status Column of active controller")
+    validate_equals(host_inventory.get_controller_edit_host_button_text(active_host_name), "Edit Host", "Label of Edit Host button")
     get_logger().log_info("Validated the the table entries for the Active Controller")
 
 

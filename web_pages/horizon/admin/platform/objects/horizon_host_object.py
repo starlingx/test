@@ -23,7 +23,7 @@ class HorizonHostObject:
         self.availability_state = row_values_list[4]
         self.uptime = row_values_list[5]
         self.status = row_values_list[6]
-        self.actions = row_values_list[7]
+        # row_values_list[7] is the Actions button, which needs to be handled separately
 
     def get_host_name(self) -> str:
         """
@@ -80,11 +80,3 @@ class HorizonHostObject:
 
         """
         return self.status
-
-    def get_actions(self) -> str:
-        """
-        Getter for the actions
-        Returns:
-
-        """
-        return self.actions

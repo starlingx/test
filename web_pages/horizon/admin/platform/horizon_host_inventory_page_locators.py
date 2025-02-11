@@ -15,7 +15,7 @@ class HorizonHostInventoryPageLocators:
         """
         return WebLocator("#hostscontroller th:not(.hidden)", By.CSS_SELECTOR)
 
-    def get_locator_controller_table_row_information(self, host_name: str):
+    def get_locator_controller_table_row_information(self, host_name: str) -> WebLocator:
         """
         Locator which allows us to find all the row information associated with the host_name passed in.
         Args:
@@ -25,6 +25,17 @@ class HorizonHostInventoryPageLocators:
 
         """
         return WebLocator(f"tr[id*='hostscontroller'][ data-display='{host_name}'] td:not(.hidden)", By.CSS_SELECTOR)
+
+    def get_locator_controller_table_edit_host_button(self, host_name: str) -> WebLocator:
+        """
+        Locator which allows us to find the 'Edit Host' button associated with the specified controller host_name.
+        Args:
+            host_name: Name of the host for which we want to find the Edit Host button.
+
+        Returns: A Locator
+
+        """
+        return WebLocator(f"tr[id*='hostscontroller'][ data-display='{host_name}'] a[id*='action_update']", By.CSS_SELECTOR)
 
     def get_locator_worker_table_displayed_headers(self) -> WebLocator:
         """
