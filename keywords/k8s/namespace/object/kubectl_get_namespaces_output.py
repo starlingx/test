@@ -42,3 +42,18 @@ class KubectlGetNamespacesOutput:
 
         """
         return self.kubectl_namespaces
+
+    def is_namespace(self, namespace_name) -> bool:
+        """
+        This function will get the namespace with the name specified from this get_namespace_output.
+        Args:
+            namespace_name: The name of the namespace of interest.
+
+        Returns: bool
+
+        """
+        for ns in self.kubectl_namespaces:
+            if ns.get_name() == namespace_name:
+                return True
+        else:
+            return False
