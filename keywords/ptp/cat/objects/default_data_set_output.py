@@ -1,14 +1,12 @@
+from keywords.ptp.cat.cat_ptp_table_parser import CatPtpTableParser
 from keywords.ptp.pmc.objects.pmc_get_default_data_set_object import PMCGetDefaultDataSetObject
-from keywords.ptp.pmc.pmc_table_parser import PMCTableParser
 
 
-class PMCGetDefaultDataSetOutput:
+class DefaultDataSetOutput:
     """
-    This class parses the output of commands such as 'pmc GET_DEFAULT_DATASET'
+    This class parses the Default Data Set Output
 
     Example:
-        sending: GET DEFAULT_DATA_SET
-    507c6f.fffe.0b5a4d-0 seq 0 RESPONSE MANAGEMENT DEFAULT_DATA_SET
         twoStepFlag            1
         slaveOnly              0
         numberPorts            1
@@ -22,16 +20,16 @@ class PMCGetDefaultDataSetOutput:
 
     """
 
-    def __init__(self, pmc_output: [str]):
+    def __init__(self, cat_ptp_output: [str]):
         """
         Constructor.
             Create an internal PMCGetDefaultDataSet from the passed parameter.
         Args:
-            pmc_output (list[str]): a list of strings representing the output of the pmc command
+            cat_ptp_output (list[str]): a list of strings representing the output of the cat ptp command
 
         """
-        pmc_table_parser = PMCTableParser(pmc_output)
-        output_values = pmc_table_parser.get_output_values_dict()
+        cat_ptp_table_parser = CatPtpTableParser(cat_ptp_output)
+        output_values = cat_ptp_table_parser.get_output_values_dict()
         self.pmc_get_default_data_set_object = PMCGetDefaultDataSetObject()
 
         if 'twoStepFlag' in output_values:
