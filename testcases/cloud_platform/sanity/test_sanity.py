@@ -194,7 +194,7 @@ def test_lock_unlock_compute():
     """
 
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
-    computes = SystemHostListKeywords(ssh_connection).get_compute()
+    computes = SystemHostListKeywords(ssh_connection).get_computes()
 
     assert len(computes) > 0, "No computes were found"
 
