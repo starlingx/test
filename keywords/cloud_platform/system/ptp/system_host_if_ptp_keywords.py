@@ -1,11 +1,11 @@
 from keywords.base_keyword import BaseKeyword
 from keywords.cloud_platform.command_wrappers import source_openrc
-from starlingx.keywords.cloud_platform.system.ptp.objects.system_host_if_ptp_assign_output import SystemHostIfPTPAssignOutput
-from starlingx.keywords.cloud_platform.system.ptp.objects.system_host_if_ptp_list_output import SystemHostIfPTPListOutput
+from keywords.cloud_platform.system.ptp.objects.system_host_if_ptp_assign_output import SystemHostIfPTPAssignOutput
+from keywords.cloud_platform.system.ptp.objects.system_host_if_ptp_list_output import SystemHostIfPTPListOutput
 
 class SystemHostIfPTPKeywords(BaseKeyword):
     """
-    Provides methods to interact with the system host-ptp-instance
+    Provides methods to interact with the system host-if-ptp-instance
     using given SSH connection.
 
     Attributes:

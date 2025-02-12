@@ -1,6 +1,6 @@
 from keywords.base_keyword import BaseKeyword
 from keywords.cloud_platform.command_wrappers import source_openrc
-from starlingx.keywords.cloud_platform.system.ptp.objects.system_ptp_instance_output import SystemPTPInstanceOutput
+from keywords.cloud_platform.system.ptp.objects.system_ptp_instance_output import SystemPTPInstanceOutput
 from keywords.cloud_platform.system.ptp.objects.system_ptp_instance_list_output import SystemPTPInstanceListOutput
 
 class SystemPTPInstanceKeywords(BaseKeyword):
