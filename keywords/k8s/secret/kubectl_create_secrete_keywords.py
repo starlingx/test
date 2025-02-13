@@ -32,3 +32,14 @@ class KubectlCreateSecretsKeywords(BaseKeyword):
         self.ssh_connection.send(
             export_k8s_config(f"kubectl create secret docker-registry {secret_name} --docker-server={docker_server} " f"--docker-username={user_name} --docker-password={password}")
         )
+
+    def create_secret_generic(self, secret_name: str, tls_crt: str, tls_key: str):
+        """
+        Create a generic secret
+
+        Args:
+            secret_name (str): the secret name
+            tls_crt (str): tls_crt file name
+            tls_key (str): tls_key file name
+        """
+        self.ssh_connection.send(export_k8s_config(f"kubectl create secret {secret_name} --from-file=tls.crt={tls_crt} --from-file=tls.key={tls_key}"))

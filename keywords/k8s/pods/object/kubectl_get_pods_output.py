@@ -25,7 +25,7 @@ class KubectlGetPodsOutput:
             pod = KubectlPodObject(pod_dict['NAME'])
 
             if 'NAMESPACE' in pod_dict:
-                pod.set_ready(pod_dict['NAMESPACE'])
+                pod.set_namespace(pod_dict['NAMESPACE'])
 
             if 'READY' in pod_dict:
                 pod.set_ready(pod_dict['READY'])
