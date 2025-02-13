@@ -88,3 +88,43 @@ class SystemPTPInterfaceKeywords(BaseKeyword):
         system_ptp_interface_list_output = SystemPTPInterfaceListOutput(output)
 
         return system_ptp_interface_list_output
+
+    def system_ptp_interface_parameter_add(self,name: str, parameters: str) -> SystemPTPInterfaceOutput :
+        """
+        Add interface level parameters
+        
+        Args:
+            name : name or uuid of interface
+            parameters: parameters can be applied to the interface
+                Ex : system ptp-interface-parameter-add ptpinterface masterOnly=1
+                    system ptp-interface-parameter-add ptpinterface masterOnly=0 domainNumber=0
+
+        Returns:
+        """
+        cmd = f"system ptp-interface-parameter-add {name} {parameters}"
+        command = source_openrc(cmd)
+        output = self.ssh_connection.send(command)
+        self.validate_success_return_code(self.ssh_connection)
+        system_ptp_interface_parameter_add_output = SystemPTPInterfaceOutput(output)
+
+        return system_ptp_interface_parameter_add_output
+
+    def system_ptp_interface_parameter_delete(self,name: str, parameters: str) -> SystemPTPInterfaceOutput :
+        """
+        Delete interface level parameters
+        
+        Args:
+            name : name or uuid of interface
+            parameters: parameters can be delete from the interface
+                Ex : system ptp-interface-parameter-delete ptpinterface masterOnly=1
+                    system ptp-interface-parameter-delete ptpinterface masterOnly=0 domainNumber=0
+
+        Returns:
+        """
+        cmd = f"system ptp-interface-parameter-delete {name} {parameters}"
+        command = source_openrc(cmd)
+        output = self.ssh_connection.send(command)
+        self.validate_success_return_code(self.ssh_connection)
+        system_ptp_interface_parameter_delete_output = SystemPTPInterfaceOutput(output)
+
+        return system_ptp_interface_parameter_delete_output

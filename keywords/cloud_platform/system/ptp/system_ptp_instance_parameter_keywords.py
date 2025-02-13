@@ -47,8 +47,8 @@ class SystemPTPInstanceParameterKeywords(BaseKeyword):
         Args:
             name : name or UUID of instance
             parameters: parameters can be delete from the service of a instance
-                Ex : system ptp-instance-parameter-add ptp1 masterOnly=0
-                    system ptp-instance-parameter-add ptp1 masterOnly=0 domainNumber=0
+                Ex : system ptp-instance-parameter-delete ptp1 masterOnly=0
+                    system ptp-instance-parameter-delete ptp1 masterOnly=0 domainNumber=0
 
         Returns:
         """
