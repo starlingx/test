@@ -45,7 +45,7 @@ from keywords.k8s.pods.kubectl_create_pods_keywords import KubectlCreatePodsKeyw
 from keywords.k8s.pods.kubectl_delete_pods_keywords import KubectlDeletePodsKeywords
 from keywords.k8s.pods.kubectl_exec_in_pods_keywords import KubectlExecInPodsKeywords
 from keywords.k8s.pods.kubectl_get_pods_keywords import KubectlGetPodsKeywords
-from keywords.k8s.secret.kubectl_create_secrete_keywords import KubectlCreateSecretsKeywords
+from keywords.k8s.secret.kubectl_create_secret_keywords import KubectlCreateSecretsKeywords
 from keywords.k8s.service.kubectl_delete_service_keywords import KubectlDeleteServiceKeywords
 from keywords.k8s.service.kubectl_get_service_keywords import KubectlGetServiceKeywords
 from keywords.linux.date.date_keywords import DateKeywords
@@ -292,9 +292,9 @@ def test_horizon_host_inventory_display_active_controller(request):
 
     # Compare the values in the active controller in the Host Inventory table with the output of system host-list.
     horizon_host_information = host_inventory.get_controller_host_information(active_host_name)
-    validate_equals(horizon_host_information.get_host_name().lower(), active_controller_output.get_host_name().lower(),  "Host Name of active controller")
-    validate_equals(horizon_host_information.get_personality(),"Controller-Active", "Personality of active controller")
-    validate_equals(horizon_host_information.get_admin_state().lower(),  active_controller_output.get_administrative().lower(), "Admin State of active controller")
+    validate_equals(horizon_host_information.get_host_name().lower(), active_controller_output.get_host_name().lower(), "Host Name of active controller")
+    validate_equals(horizon_host_information.get_personality(), "Controller-Active", "Personality of active controller")
+    validate_equals(horizon_host_information.get_admin_state().lower(), active_controller_output.get_administrative().lower(), "Admin State of active controller")
     validate_equals(horizon_host_information.get_operational_state().lower(), active_controller_output.get_operational().lower(), "Operational State of active controller")
     validate_equals(horizon_host_information.get_availability_state().lower(), active_controller_output.get_availability().lower(), "Availability State of active controller")
 

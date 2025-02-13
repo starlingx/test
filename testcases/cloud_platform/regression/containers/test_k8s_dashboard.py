@@ -9,7 +9,7 @@ from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKey
 from keywords.k8s.namespace.kubectl_create_namespace_keywords import KubectlCreateNamespacesKeywords
 from keywords.k8s.namespace.kubectl_delete_namespace_keywords import KubectlDeleteNamespaceKeywords
 from keywords.k8s.namespace.kubectl_get_namespaces_keywords import KubectlGetNamespacesKeywords
-from keywords.k8s.secret.kubectl_create_secrete_keywords import KubectlCreateSecretsKeywords
+from keywords.k8s.secret.kubectl_create_secret_keywords import KubectlCreateSecretsKeywords
 from pytest import mark
 
 

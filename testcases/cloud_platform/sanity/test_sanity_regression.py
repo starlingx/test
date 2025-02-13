@@ -38,7 +38,7 @@ from keywords.k8s.pods.kubectl_delete_pods_keywords import KubectlDeletePodsKeyw
 from keywords.k8s.pods.kubectl_exec_in_pods_keywords import KubectlExecInPodsKeywords
 from keywords.k8s.pods.kubectl_get_pods_keywords import KubectlGetPodsKeywords
 from keywords.k8s.pods.validation.kubectl_get_pods_validation_keywords import KubectlPodValidationKeywords
-from keywords.k8s.secret.kubectl_create_secrete_keywords import KubectlCreateSecretsKeywords
+from keywords.k8s.secret.kubectl_create_secret_keywords import KubectlCreateSecretsKeywords
 from keywords.k8s.service.kubectl_delete_service_keywords import KubectlDeleteServiceKeywords
 from keywords.linux.dpkg.dpkg_status import DpkgStatusKeywords
 from keywords.linux.ip.ip_keywords import IPKeywords
@@ -1600,8 +1600,12 @@ def deploy_sriovdp_netdev_pods_ipv6(request, ssh_connection: SSHConnection):
 
     """
     file_keywords = FileKeywords(ssh_connection)
-    file_keywords.upload_file(get_stx_resource_path('resources/cloud_platform/nightly_regression/pod-test-sriovdp-netdev-connectivity-ipv6-0.yaml'), '/home/sysadmin/pod-test-sriovdp-netdev-connectivity-ipv6-0.yaml')
-    file_keywords.upload_file(get_stx_resource_path('resources/cloud_platform/nightly_regression/pod-test-sriovdp-netdev-connectivity-ipv6-1.yaml'), '/home/sysadmin/pod-test-sriovdp-netdev-connectivity-ipv6-1.yaml')
+    file_keywords.upload_file(
+        get_stx_resource_path('resources/cloud_platform/nightly_regression/pod-test-sriovdp-netdev-connectivity-ipv6-0.yaml'), '/home/sysadmin/pod-test-sriovdp-netdev-connectivity-ipv6-0.yaml'
+    )
+    file_keywords.upload_file(
+        get_stx_resource_path('resources/cloud_platform/nightly_regression/pod-test-sriovdp-netdev-connectivity-ipv6-1.yaml'), '/home/sysadmin/pod-test-sriovdp-netdev-connectivity-ipv6-1.yaml'
+    )
 
     kubectl_apply_pods_keywords = KubectlApplyPodsKeywords(ssh_connection)
     kubectl_apply_pods_keywords.apply_from_yaml('/home/sysadmin/pod-test-sriovdp-netdev-connectivity-ipv6-0.yaml')
@@ -1649,8 +1653,12 @@ def deploy_sriovdp_netdev_pods_ipv4(request, ssh_connection: SSHConnection):
 
     """
     file_keywords = FileKeywords(ssh_connection)
-    file_keywords.upload_file(get_stx_resource_path('resources/cloud_platform/nightly_regression/pod-test-sriovdp-netdev-connectivity-ipv4-0.yaml'), '/home/sysadmin/pod-test-sriovdp-netdev-connectivity-ipv4-0.yaml')
-    file_keywords.upload_file(get_stx_resource_path('resources/cloud_platform/nightly_regression/pod-test-sriovdp-netdev-connectivity-ipv4-1.yaml'), '/home/sysadmin/pod-test-sriovdp-netdev-connectivity-ipv4-1.yaml')
+    file_keywords.upload_file(
+        get_stx_resource_path('resources/cloud_platform/nightly_regression/pod-test-sriovdp-netdev-connectivity-ipv4-0.yaml'), '/home/sysadmin/pod-test-sriovdp-netdev-connectivity-ipv4-0.yaml'
+    )
+    file_keywords.upload_file(
+        get_stx_resource_path('resources/cloud_platform/nightly_regression/pod-test-sriovdp-netdev-connectivity-ipv4-1.yaml'), '/home/sysadmin/pod-test-sriovdp-netdev-connectivity-ipv4-1.yaml'
+    )
 
     kubectl_apply_pods_keywords = KubectlApplyPodsKeywords(ssh_connection)
     kubectl_apply_pods_keywords.apply_from_yaml('/home/sysadmin/pod-test-sriovdp-netdev-connectivity-ipv4-0.yaml')
