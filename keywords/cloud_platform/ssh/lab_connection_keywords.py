@@ -65,32 +65,6 @@ class LabConnectionKeywords(BaseKeyword):
 
         return connection
 
-    def get_subcloud_ssh(self, subcloud_name: str) -> SSHConnection:
-        """
-        Gets the subcloud ssh
-        Returns: the SSH connection for the subcloud whose name is specified by 'subcloud_name'.
-
-        """
-        lab_config = ConfigurationManager.get_lab_config()
-        subcloud_config = lab_config.get_subcloud(subcloud_name)
-
-        if not subcloud_config:
-            raise ValueError(f"There is no subcloud named {subcloud_name} defined in your config file.")
-
-        jump_host_config = None
-        if subcloud_config.is_use_jump_server():
-            jump_host_config = subcloud_config.get_jump_host_configuration()
-
-        connection = SSHConnectionManager.create_ssh_connection(
-            subcloud_config.get_floating_ip(),
-            subcloud_config.get_admin_credentials().get_user_name(),
-            subcloud_config.get_admin_credentials().get_password(),
-            ssh_port=subcloud_config.get_ssh_port(),
-            jump_host=jump_host_config,
-        )
-
-        return connection
-
     def get_compute_ssh(self, compute_name: str) -> SSHConnection:
         """
         Gets an SSH connection to the 'Compute' node whose name is specified by the argument 'compute_name'.

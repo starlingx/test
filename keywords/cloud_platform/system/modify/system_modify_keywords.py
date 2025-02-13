@@ -29,3 +29,18 @@ class SystemModifyKeywords(BaseKeyword):
         AlarmListKeywords(self.ssh_connection).wait_for_alarms_cleared([alarm_list_object])
 
         return system_show_output
+
+    def system_modify_https_enabled(self, https_enabled: bool) -> SystemShowOutput:
+        """
+        Runs system command system modify --https-enabled True
+        alias system modify -p True
+
+        Args:
+            https_enabled: boolean value to enable or disable https
+
+        Returns:
+            SystemShowOutput object
+        """
+        output = self.ssh_connection.send(source_openrc(f"system modify -p {https_enabled}"))
+        self.validate_success_return_code(self.ssh_connection)
+        return SystemShowOutput(output)
