@@ -1,5 +1,3 @@
-import re
-
 from framework.exceptions.keyword_exception import KeywordException
 
 
