@@ -17,14 +17,14 @@ class SSHConnection:
     """
 
     def __init__(
-        self,
-        name: str,
-        host: str,
-        user: str,
-        password: str,
-        timeout: int = 30,
-        ssh_port: int = 22,
-        jump_host: HostConfiguration = None,
+            self,
+            name: str,
+            host: str,
+            user: str,
+            password: str,
+            timeout: int = 30,
+            ssh_port: int = 22,
+            jump_host: HostConfiguration = None,
     ):
         """
         Initialization of ssh connection
@@ -163,11 +163,11 @@ class SSHConnection:
         return self._execute_command("SEND_EXPECT_PROMPTS", cmd, prompts=prompts, reconnect_timeout=reconnect_timeout)
 
     def _execute_command(
-        self,
-        action: str,
-        cmd: str,
-        reconnect_timeout: int = 600,
-        prompts: List[PromptResponse] = None,
+            self,
+            action: str,
+            cmd: str,
+            reconnect_timeout: int = 600,
+            prompts: List[PromptResponse] = None,
     ) -> str:
         """
         Executes the given action with the given command. Waits for reconnect timeout for ssh connection
@@ -279,6 +279,8 @@ class SSHConnection:
         if not prompts or len(prompts) < 1:
             raise ValueError("You must specify a list with at least one prompt to call this " "function. Otherwise, please call 'send' instead.")
 
+        code = -1
+
         # Open up a channel to control the SSH connection and send the command.
         channel = self.client.invoke_shell()
         self.__send_in_channel(channel, cmd)
@@ -308,6 +310,8 @@ class SSHConnection:
                 # If we match the prompt, send the associated response if any.
                 if is_prompt_match and prompt.get_prompt_response():
                     self.__send_in_channel(channel, prompt.get_prompt_response())
+
+        self.last_return_code = code
 
         complete_output = prompts[-1].get_complete_output()
 
