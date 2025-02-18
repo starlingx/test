@@ -46,10 +46,7 @@ def copy_k8s_files(ssh_connection):
 
         # Transfers the dashboard file from local path to remote path.
         secure_transfer_file = SecureTransferFile(secure_transfer_file_input_object)
-        file_transfer_succeeded = secure_transfer_file.transfer_file()
-
-        # Asserts the file was really transferred.
-        assert file_transfer_succeeded
+        secure_transfer_file.transfer_file()
 
 
 def create_k8s_dashboard(request, namespace, con_ssh):

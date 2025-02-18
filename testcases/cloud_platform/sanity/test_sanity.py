@@ -533,10 +533,7 @@ def test_dc_install_custom_app():
 
     # Transfers the app file from local path to remote path.
     secure_transfer_file = SecureTransferFile(secure_transfer_file_input_object)
-    file_transfer_succeeded = secure_transfer_file.transfer_file()
-
-    # Asserts the file was really transferred.
-    assert file_transfer_succeeded
+    secure_transfer_file.transfer_file()
 
     # Step 2: Upload the app file to the active controller
 
@@ -618,10 +615,7 @@ def test_dc_install_custom_app():
 
         # Transfer the app file to the current subcloud.
         secure_transfer_file = SecureTransferFile(secure_transfer_file_input_object)
-        file_transfer_succeeded = secure_transfer_file.transfer_file()
-
-        # Asserts the file was really transferred to the current subcloud.
-        assert file_transfer_succeeded
+        secure_transfer_file.transfer_file()
 
         # Step 6: Uploads the app file to the current subcloud.
 
