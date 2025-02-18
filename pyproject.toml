@@ -1,12 +1,14 @@
 [tool.isort]
 py_version = "311"
 profile = "black"
-line_length = 200
 
 [tool.black]
 target-version = ['py311']
-line-length = 200
 skip-string-normalization = true
 preview = true
 include = '\.py'
 
+[tool.pydoclint]
+style = "google"
+check-return-types = true
+allow-init-docstring = true

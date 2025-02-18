@@ -171,10 +171,7 @@ Contribution
 ------------
 
 2. **Coding Standards**:
-   - Ensure your code adheres to project conventions. While more detailed best practices are being refined and will be provided in future updates, the following standards are currently enforced:
-     - Use `Google style, PEP-compliant docstrings <https://google.github.io/styleguide/pyguide.html#381-docstrings>`_ for every function and module. These docstrings should align with the principles outlined in `PEP 257 (Docstring Conventions) <https://peps.python.org/pep-0257/>`_. Tools for auto-generating these docstrings are available in IDEs such as `VSCode <https://code.visualstudio.com/docs/python/editing#_auto-generating-docstrings>`_ and `PyCharm <https://www.jetbrains.com/help/pycharm/creating-documentation-comments.html>`_.
-     - Include `type hints <https://peps.python.org/pep-0484/>`_ for all function arguments and return types.
-     - Use `f-strings <https://peps.python.org/pep-0498/>`_ for string formatting.
+   - Ensure your code adheres to project conventions. For detailed guidelines, see `CONTRIBUTING.rst`.
    - Pre-commit hooks will run automatically on every commit once installed to ensure formatting and linting.
 
    - **Tools Enforced by Pre-Commit Hooks**:
@@ -182,6 +179,9 @@ Contribution
      - `black <https://black.readthedocs.io/en/stable/>`_
      - `isort <https://pycqa.github.io/isort/>`_
      - `flake8 <https://flake8.pycqa.org/en/latest/>`_
+     - `pydocstyle <https://www.pydocstyle.org/en/latest/>`_
+     - `pydoclint <https://github.com/jsh9/pydoclint>`_
+     - `interrogate <https://interrogate.readthedocs.io/en/latest/>`_
 
 3. **Submitting Changes**:
    - Ensure your commit messages adhere to the guidelines in the
@@ -193,8 +193,8 @@ Contribution
         git commit -s # include sign-off
         git review
 
-References
-----------
+6. References
+=============
 
 - `OpenStack Contributor Guide <https://docs.openstack.org/contributors/en_GB/common/setup-gerrit.html>`_
 - `OpenStack Individual Contributor License Agreement (ICLA) <https://review.opendev.org/settings/new-agreement>`_
@@ -203,13 +203,17 @@ References
 - `StarlingX Code Submission Guide <https://docs.starlingx.io/developer_resources/code-submission-guide.html>`_
 - `How to Contribute to StarlingX (YouTube) <https://www.youtube.com/watch?v=oHmx0M3cYlE>`_
 - `OpenStack Git Commit Message Guidelines <https://wiki.openstack.org/wiki/GitCommitMessages>`_
-- `Google Style Python Docstrings <https://google.github.io/styleguide/pyguide.html#381-docstrings>`_
-- `VSCode: Auto-Generating Docstrings <https://code.visualstudio.com/docs/python/editing#_auto-generating-docstrings>`_
-- `PyCharm: Creating Documentation Comments <https://www.jetbrains.com/help/pycharm/creating-documentation-comments.html>`_
-- `PEP 257: Docstring Conventions <https://peps.python.org/pep-0257/>`_
-- `PEP 484: Type Hints <https://peps.python.org/pep-0484/>`_
-- `PEP 498: f-Strings <https://peps.python.org/pep-0498/>`_
+- `Google Python Style Guide <https://google.github.io/styleguide/pyguide.html#381-docstrings>`_
+- `PEP 257 (Docstring Conventions) <https://peps.python.org/pep-0257/>`_
+- `PEP 484 (Type Hints) <https://peps.python.org/pep-0484/>`_
+- `PEP 498 (f-Strings) <https://peps.python.org/pep-0498/>`_
+- `pydocstyle Documentation <https://www.pydocstyle.org/en/latest/>`_
+- `pydoclint Documentation <https://github.com/jsh9/pydoclint>`_
+- `interrogate Documentation <https://interrogate.readthedocs.io/en/latest/>`_
 - `pre-commit <https://pre-commit.com/>`_
 - `black <https://black.readthedocs.io/en/stable/>`_
 - `isort <https://pycqa.github.io/isort/>`_
 - `flake8 <https://flake8.pycqa.org/en/latest/>`_
+- `AutoDocstring for VSCode <https://github.com/autosoft-dev/autoDocstring>`_
+- `VSCode: Auto-Generating Docstrings <https://code.visualstudio.com/docs/python/editing#_auto-generating-docstrings>`_
+- `PyCharm: Creating Documentation Comments <https://www.jetbrains.com/help/pycharm/creating-documentation-comments.html>`_
