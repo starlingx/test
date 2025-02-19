@@ -1,6 +1,6 @@
 import time
 from time import sleep
-from typing import Callable, Any
+from typing import Any, Callable
 
 from framework.logging.automation_logger import get_logger
 
@@ -42,7 +42,7 @@ def validate_equals_with_retry(function_to_execute: Callable[[], Any],
         timeout: The maximum time (in seconds) to wait for the match.
         polling_sleep_time: The interval of time to wait between calls to function_to_execute.
 
-      """
+    """
 
     get_logger().log_info(f"Attempting Validation - {validation_description}")
     end_time = time.time() + timeout
@@ -67,3 +67,28 @@ def validate_equals_with_retry(function_to_execute: Callable[[], Any],
                 # Move on to the next iteration
             else:
                 raise TimeoutError(f"Timeout performing validation - {validation_description}")
+
+
+def validate_list_contains(observed_value: Any, expected_values: Any, validation_description: str) -> None:
+    """
+    This function validates if the observed value matches ANY of the expected values
+    with associated logging.
+
+    Args:
+        observed_value: Value that we see on the system.
+        expected_values: A LIST of values that are expected. The observed value
+        is checked against each of these.
+        validation_description: Description of this validation for logging purposes.
+
+    Returns: None
+
+    Raises: Exception if the validation fails.
+    """
+
+    if observed_value in expected_values:
+        get_logger().log_info(f"Validation Successful - {validation_description}")
+    else:
+        get_logger().log_error(f"Validation Failed - {validation_description}")
+        get_logger().log_error(f"Expected: {expected_values}")
+        get_logger().log_error(f"Observed: {observed_value}")
+        raise Exception("Validation Failed")
