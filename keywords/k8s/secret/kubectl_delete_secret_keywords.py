@@ -15,7 +15,7 @@ class KubectlDeleteSecretsKeywords(BaseKeyword):
         """
         self.ssh_connection = ssh_connection
 
-    def delete_secret(self, secret_name: str) -> str:
+    def delete_secret(self, secret_name: str, namespace: str) -> str:
         """
         Deletes the secret
         Args:
@@ -24,7 +24,7 @@ class KubectlDeleteSecretsKeywords(BaseKeyword):
         Returns: the output
 
         """
-        output = self.ssh_connection.send(export_k8s_config(f"kubectl delete secret {secret_name}"))
+        output = self.ssh_connection.send(export_k8s_config(f"kubectl delete -n {namespace} secret {secret_name}"))
         self.validate_success_return_code(self.ssh_connection)
 
         return output
