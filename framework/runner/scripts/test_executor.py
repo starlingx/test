@@ -1,4 +1,6 @@
 from optparse import OptionParser
+import os
+from typing import Optional
 
 import pytest
 from config.configuration_file_locations_manager import ConfigurationFileLocationsManager
@@ -15,22 +17,30 @@ from framework.runner.objects.test_executor_summary import TestExecutorSummary
 from testcases.conftest import log_configuration
 
 
-def execute_test(test: TestCase, test_executor_summary: TestExecutorSummary, test_case_result_id: int = None):
+def execute_test(test: TestCase, test_executor_summary: TestExecutorSummary, test_case_result_id: Optional[int] = None) -> None:
     """
-    Executes a test
+    Executes a test case using pytest.
+
     Args:
-        test_executor_summary ():
-        test (): the test to run
-        test_case_result_id (): if one is given, update that result instead of creating a new one
+        test (TestCase): The test case to execute.
+        test_executor_summary (TestExecutorSummary): The test executor summary object.
+        test_case_result_id (Optional[int], optional): If provided, updates the specified test case result instead of creating a new one. Defaults to None.
 
     Returns:
-
+        None
     """
-
     result_collector = ResultCollector(test_executor_summary, test, test_case_result_id)
-
     pytest_args = ConfigurationManager.get_config_pytest_args()
-    pytest_args.append(get_stx_resource_path(f'testcases/{test.get_pytest_node_id()}'))
+
+    node_id = test.get_pytest_node_id().lstrip("/")  # Normalize node_id
+
+    # Ensure we do not prepend "testcases/" for unit tests
+    if node_id.startswith("unit_tests/"):
+        resolved_path = get_stx_resource_path(node_id)
+    else:
+        resolved_path = get_stx_resource_path(os.path.join("testcases", node_id))
+
+    pytest_args.append(resolved_path)
 
     pytest.main(pytest_args, plugins=[result_collector])
 
