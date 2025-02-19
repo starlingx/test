@@ -164,6 +164,23 @@ system_application_upload = [
     "Please use 'system application-list' or 'system application-show hello-kitty' to view the current progress.\n",
 ]
 
+system_oam_show_output = [
+    'system oam-show\n',
+    '\x1b[?2004l+----------------+--------------------------------------+',
+    '| Property       | Value                                |\n',
+    '+----------------+--------------------------------------+\n',
+    '| created_at     | 2025-02-18T18:36:41.267146+00:00     |\n',
+    '| isystem_uuid   | 572d2cb4-f5ee-449a-899c-e5a9582147f9 |\n',
+    '| oam_end_ip     | 10.66.77.254                         |\n',
+    '| oam_gateway_ip | 10.66.77.1                           |\n',
+    '| oam_ip         | 10.66.77.234                         |\n',
+    '| oam_start_ip   | 10.66.77.1                           |\n',
+    '| oam_subnet     | 10.66.77.0/24                        |\n',
+    '| updated_at     | None                                 |\n',
+    '| uuid           | 920531a8-55f0-4263-c8cf-6938965f5d45 |\n',
+    '+----------------+--------------------------------------+\n',
+]
+
 system_host_if_ptp_remove_wrapped_output = [
     '+--------------------------------------+---------+-----------+---------------+\n',
     '| uuid                                 | name    | ptp_insta | parameters    |\n',
@@ -197,6 +214,20 @@ def test_system_parser():
     assert output['administrative'] == 'unlocked'
     assert output['operational'] == 'enabled'
     assert output['availability'] == 'available'
+
+def test_system_parser_with_text_after():
+    """
+    Tests the system parser
+    Returns:
+
+    """
+    system_table_parser = SystemTableParser(system_oam_show_output)
+    output_list = system_table_parser.get_output_values_list()
+    assert len(output_list) == 9
+    assert output_list[0]['Property'] == 'created_at'
+    assert output_list[0]['Value'] == '2025-02-18T18:36:41.267146+00:00'
+    assert output_list[8]['Property'] == 'uuid'
+    assert output_list[8]['Value'] == '920531a8-55f0-4263-c8cf-6938965f5d45'
 
 
 def test_system_parser_application_list_output():
