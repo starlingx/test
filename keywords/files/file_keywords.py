@@ -1,3 +1,5 @@
+import time
+
 from framework.exceptions.keyword_exception import KeywordException
 from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
@@ -6,7 +8,7 @@ from keywords.base_keyword import BaseKeyword
 
 class FileKeywords(BaseKeyword):
     """
-    Class for file keywords
+    Class for file keywords.
     """
 
     def __init__(self, ssh_connection: SSHConnection):
@@ -14,47 +16,72 @@ class FileKeywords(BaseKeyword):
 
     def download_file(self, remote_file_path: str, local_file_path: str) -> bool:
         """
-        Method to download a file from the remote host on which the SSH connection is established
+        Method to download a file from the remote host on which the SSH connection is established.
+
         Args:
-            remote_file_path: Absolute path of the file to download.
-            local_file_path: Absolute path (incl file name) to be copied to.
-        Returns: True if download is successful, False otherwise.
+            remote_file_path (str): Absolute path of the file to download.
+            local_file_path (str): Absolute path (incl file name) to be copied to.
+
+        Returns:
+             bool: True if download is successful, False otherwise.
+
+        Raises:
+            KeywordException: if unable to copy file.
         """
         try:
             sftp_client = self.ssh_connection.get_sftp_client()
             sftp_client.get(remote_file_path, local_file_path)
         except Exception as e:
-            get_logger().log_error(f'Exception while downloading remote file [{remote_file_path}] to [{local_file_path}]. {e}')
-            raise KeywordException(f'Exception while downloading remote file [{remote_file_path}] to [{local_file_path}]. {e}')
+            get_logger().log_error(
+                f'Exception while downloading remote file [{remote_file_path}] to [{local_file_path}]. {e}'
+            )
+            raise KeywordException(
+                f'Exception while downloading remote file [{remote_file_path}] to [{local_file_path}]. {e}'
+            )
         return True
 
-    def upload_file(self, local_file_path: str, remote_file_path: str, overwrite: bool = True) -> bool:
+    def upload_file(
+        self, local_file_path: str, remote_file_path: str, overwrite: bool = True
+    ) -> bool:
         """
-        Method to upload a file from the local host to the remote host on
-        which the SSH connection is established
-        Args:
-            local_file_path: Absolute path for the file to be uploaded.
-            remote_file_path: Absolute path (incl file name) to upload to.
-            overwrite: Whether to overwrite if it already exists
+        Method to upload a file.
 
-        Returns: True if upload is successful, False otherwise.
+        It will upload from the local host to the remote host on which the SSH connection
+        is established.
+
+        Args:
+            local_file_path (str): Absolute path for the file to be uploaded.
+            remote_file_path (str): Absolute path (incl file name) to upload to.
+            overwrite (bool): Whether to overwrite if it already exists.
+
+        Returns:
+            bool: True if upload is successful, False otherwise.
+
+        Raises:
+            KeywordException: if unable to upload file.
         """
         try:
             if overwrite or not self.file_exists(remote_file_path):
                 sftp_client = self.ssh_connection.get_sftp_client()
                 sftp_client.put(local_file_path, remote_file_path)
         except Exception as e:
-            get_logger().log_error(f'Exception while uploading local file [{local_file_path}] to [{remote_file_path}]. {e}')
-            raise KeywordException(f'Exception while uploading local file [{local_file_path}] to [{remote_file_path}]. {e}')
+            get_logger().log_error(
+                f'Exception while uploading local file [{local_file_path}] to [{remote_file_path}]. {e}'
+            )
+            raise KeywordException(
+                f'Exception while uploading local file [{local_file_path}] to [{remote_file_path}]. {e}'
+            )
         return True
 
-    def file_exists(self, file_name) -> bool:
+    def file_exists(self, file_name: str) -> bool:
         """
-        Checks if the file exists
-        Args:
-            file_name (): the filename
-        Returns: True if exists, False otherwise
+        Checks if the file exists.
 
+        Args:
+            file_name (str): the filename.
+
+        Returns:
+            bool: True if exists, False otherwise.
         """
         try:
             sftp_client = self.ssh_connection.get_sftp_client()
@@ -65,27 +92,63 @@ class FileKeywords(BaseKeyword):
             get_logger().log_info(f"{file_name} does not exist.")
             return False
 
-    def delete_file(self, file_name):
+    def delete_file(self, file_name: str) -> bool:
         """
-        Deletes the file
+        Deletes the file.
+
         Args:
-            file_name (): the file name
+            file_name (str): the file name.
 
-        Returns: True if delete successful, False otherwise
-
+        Returns:
+            bool: True if delete successful, False otherwise.
         """
         self.ssh_connection.send_as_sudo(f'rm {file_name}')
         return self.file_exists(file_name)
 
-    def get_files_in_dir(self, file_dir) -> [str]:
+    def get_files_in_dir(self, file_dir: str) -> list[str]:
         """
-        Gets a list of filenames in the given dir
+        Gets a list of filenames in the given dir.
+
         Args:
-            file_dir (): the directory
+            file_dir (str): the directory.
 
-        Returns: list of filenames
-
+        Returns:
+            list[str]: list of filenames.
         """
-
         sftp_client = self.ssh_connection.get_sftp_client()
         return sftp_client.listdir(file_dir)
+
+    def read_large_file(self, file_name: str, grep_pattern: str = None) -> list[str]:
+        """
+        Function to read large files and filter.
+
+        We are timing out when reading files over 10000 lines. This function will read the lines in batches.
+        The grep pattern will filter lines using grep. If none is specified, all lines are returned.
+
+        Args:
+            file_name (str): the full path and filename ex. /var/log/user.log.
+            grep_pattern (str): the pattern to use to filter lines ex. 'ptp4l\|phc2sys'.
+
+        Returns:
+            list[str]: The output of the file.
+        """
+        total_output = []
+        start_line = 1  # start at line 1
+        end_line = 10000  # we can handle 10000 lines without issue
+        end_time = time.time() + 300
+
+        grep_arg = ''
+        if grep_pattern:
+            grep_arg = f"| grep {grep_pattern}"
+
+        while time.time() < end_time:
+            output = self.ssh_connection.send(
+                f"sed -n '{start_line},{end_line}p' {file_name} {grep_arg}"
+            )
+            if not output:  # if we get no more output we are at end of file
+                break
+            total_output.extend(output)
+            start_line = end_line + 1
+            end_line = end_line + 10000
+
+        return total_output
