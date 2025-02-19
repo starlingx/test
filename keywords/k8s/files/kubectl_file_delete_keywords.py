@@ -2,9 +2,9 @@ from keywords.base_keyword import BaseKeyword
 from keywords.k8s.k8s_command_wrapper import export_k8s_config
 
 
-class KubectlDeleteDashboardKeywords(BaseKeyword):
+class KubectlFileDeleteKeywords(BaseKeyword):
     """
-    Keywords for delete secrets
+    Keywords for delete file resources
     """
 
     def __init__(self, ssh_connection):

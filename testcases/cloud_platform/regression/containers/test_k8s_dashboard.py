@@ -79,8 +79,8 @@ def create_k8s_dashboard(request, namespace, con_ssh):
     con_ssh.send('openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout {} -out {} ' '-subj "/CN={}"'.format(key, crt, sys_domain_name))
 
     KubectlCreateSecretsKeywords.create_secret_generic(secret_name=secrets_name, tls_crt=crt, tls_key=key)
-    get_logger().log_info(f"Creating resource from file {kubeconfig_file_path}")
 
+    get_logger().log_info(f"Creating resource from file {kubeconfig_file_path}")
     KubectlDashboardApplyKeywords(ssh_connection=con_ssh).dashboard_apply_from_yaml(kubeconfig_file_path)
 
     def teardown():
