@@ -42,8 +42,12 @@ class SystemTableParser:
 
         for line in self.system_output:
 
+            # Skip lines that aren't part of the table.
+            if not (line.startswith("|") or line.__contains__("+--")):
+                continue
+
             # We have hit a separator which enters Headers, Content, or Ends the table
-            if line.__contains__('+'):
+            if line.__contains__('+--'):
 
                 # Find out in which part of the table we are, based on the "+----" separator.
                 if not is_in_headers_block and not is_in_content_block: # First separator -> Enter Headers
