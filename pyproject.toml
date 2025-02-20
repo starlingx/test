@@ -4,7 +4,6 @@ profile = "black"
 
 [tool.black]
 target-version = ['py311']
-skip-string-normalization = true
 preview = true
 include = '\.py'
 
