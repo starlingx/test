@@ -4,7 +4,7 @@ import yaml
 from config.configuration_manager import ConfigurationManager
 from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
-from jinja2 import Environment, FileSystemLoader
+from jinja2 import Environment, FileSystemLoader, Template
 from keywords.base_keyword import BaseKeyword
 from keywords.files.file_keywords import FileKeywords
 
@@ -41,13 +41,13 @@ class YamlKeywords(BaseKeyword):
 
         # Load the Template YAML file.
         with open(template_file, 'r') as template_file:
-            yaml_data = yaml.safe_load(template_file)
+            yaml_template = template_file.read()
 
         # Render the YAML file by replacing the tokens.
-        template_loader = FileSystemLoader('')
-        template_env = Environment(loader=template_loader)
-        template = template_env.from_string(yaml.dump(yaml_data))
-        rendered_yaml = template.render(replacement_dictionary)
+        template = Template(yaml_template)
+        rendered_yaml_string = template.render(replacement_dictionary)
+        yaml_data = yaml.safe_load(rendered_yaml_string)
+        rendered_yaml = yaml.dump(yaml_data)
 
         # Create the new file in the log folder.
         log_folder = ConfigurationManager.get_logger_config().get_test_case_resources_log_location()
