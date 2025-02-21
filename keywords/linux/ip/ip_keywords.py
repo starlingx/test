@@ -116,3 +116,16 @@ class IPKeywords(BaseKeyword):
         ip_br_addr_output = IPBrAddrOutput(output)
 
         return ip_br_addr_output
+
+    def set_ip_port_state(self, port: str, state: str = 'up'):
+        """
+        sets a ip specific port state UP or DOWN as specified via ip link cmd
+
+        Args:
+            port : port to set
+            state: state to set port (up or down)
+
+        Returns:
+        """
+        self.ssh_connection.send_as_sudo(f"ip link set dev {port} {state}")
+        self.validate_success_return_code(self.ssh_connection)
