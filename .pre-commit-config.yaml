@@ -17,7 +17,7 @@
 # - `black` uses `pyproject.toml` for consistency across formatting tools.
 # - `pydocstyle` and `pydoclint` ensure compliance with Google-style docstrings.
 # -----------------------------------------------------------------------------
-default_stages: [commit]
+default_stages: [pre-commit]
 default_language_version:
     python: python3.11
 

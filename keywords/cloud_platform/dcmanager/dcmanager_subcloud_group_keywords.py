@@ -1,0 +1,53 @@
+from framework.ssh.ssh_connection import SSHConnection
+from keywords.base_keyword import BaseKeyword
+from keywords.cloud_platform.command_wrappers import source_openrc
+from keywords.cloud_platform.dcmanager.objects.dcmanager_subcloud_group_output import (
+    DcmanagerSubcloudGroupOutput,
+)
+from keywords.cloud_platform.dcmanager.objects.dcmanager_subcloud_group_show_output import (
+    DcmanagerSubcloudGroupShowOutput,
+)
+
+
+class DcmanagerSubcloudGroupKeywords(BaseKeyword):
+    """
+    This class contains all the keywords related to the 'dcmanager subcloud-group' commands.
+    """
+
+    def __init__(self, ssh_connection: SSHConnection) -> None:
+        """
+        Initializes DcmanagerSubcloudGroupKeywords.
+
+        Args:
+            ssh_connection (SSHConnection): The SSH connection object used for executing commands.
+        """
+        self.ssh_connection = ssh_connection
+
+    def get_dcmanager_subcloud_group_list(self) -> DcmanagerSubcloudGroupOutput:
+        """
+        Gets the dcmanager subcloud-group list.
+
+        Returns:
+            DcmanagerSubcloudGroupOutput: An object containing the list of subcloud groups.
+        """
+        command = source_openrc('dcmanager subcloud-group list')
+        output = self.ssh_connection.send(command)
+        self.validate_success_return_code(self.ssh_connection)
+        return DcmanagerSubcloudGroupOutput(output)
+
+    def get_dcmanager_subcloud_group_show(
+        self, group_id: str
+    ) -> DcmanagerSubcloudGroupShowOutput:
+        """
+        Gets the dcmanager subcloud-group details for a specific group.
+
+        Args:
+            group_id (str): The identifier of the subcloud group.
+
+        Returns:
+            DcmanagerSubcloudGroupShowOutput: An object containing details of the subcloud group.
+        """
+        command = source_openrc(f'dcmanager subcloud-group show {group_id}')
+        output = self.ssh_connection.send(command)
+        self.validate_success_return_code(self.ssh_connection)
+        return DcmanagerSubcloudGroupShowOutput(output)
