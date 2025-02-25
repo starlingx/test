@@ -33,10 +33,10 @@ class FileKeywords(BaseKeyword):
             sftp_client.get(remote_file_path, local_file_path)
         except Exception as e:
             get_logger().log_error(
-                f'Exception while downloading remote file [{remote_file_path}] to [{local_file_path}]. {e}'
+                f"Exception while downloading remote file [{remote_file_path}] to [{local_file_path}]. {e}"
             )
             raise KeywordException(
-                f'Exception while downloading remote file [{remote_file_path}] to [{local_file_path}]. {e}'
+                f"Exception while downloading remote file [{remote_file_path}] to [{local_file_path}]. {e}"
             )
         return True
 
@@ -66,10 +66,10 @@ class FileKeywords(BaseKeyword):
                 sftp_client.put(local_file_path, remote_file_path)
         except Exception as e:
             get_logger().log_error(
-                f'Exception while uploading local file [{local_file_path}] to [{remote_file_path}]. {e}'
+                f"Exception while uploading local file [{local_file_path}] to [{remote_file_path}]. {e}"
             )
             raise KeywordException(
-                f'Exception while uploading local file [{local_file_path}] to [{remote_file_path}]. {e}'
+                f"Exception while uploading local file [{local_file_path}] to [{remote_file_path}]. {e}"
             )
         return True
 
@@ -102,7 +102,7 @@ class FileKeywords(BaseKeyword):
         Returns:
             bool: True if delete successful, False otherwise.
         """
-        self.ssh_connection.send_as_sudo(f'rm {file_name}')
+        self.ssh_connection.send_as_sudo(f"rm {file_name}")
         return self.file_exists(file_name)
 
     def get_files_in_dir(self, file_dir: str) -> list[str]:
@@ -137,7 +137,7 @@ class FileKeywords(BaseKeyword):
         end_line = 10000  # we can handle 10000 lines without issue
         end_time = time.time() + 300
 
-        grep_arg = ''
+        grep_arg = ""
         if grep_pattern:
             grep_arg = f"| grep {grep_pattern}"
 
@@ -152,3 +152,31 @@ class FileKeywords(BaseKeyword):
             end_line = end_line + 10000
 
         return total_output
+
+    def validate_file_exists_with_sudo(self, path: str) -> bool:
+        """
+        Validates whether a file or directory exists at the specified path using sudo.
+
+        Args:
+            path (str): The path to the file or directory.
+
+        Returns:
+            bool: True if the file/directory exists, False otherwise.
+
+        Raises:
+            KeywordException: If there is an error executing the SSH command.
+        """
+        try:
+            cmd = f"find {path} -mtime 0"
+            output = self.ssh_connection.send_as_sudo(cmd)
+
+            # Handle encoding issues
+            output = "".join(
+                [line.replace("â€˜", "").replace("â€™", "") for line in output]
+            )
+
+            return "No such file or directory" not in output
+
+        except Exception as e:
+            get_logger().log_error(f"Failed to check file existence at {path}: {e}")
+            raise KeywordException(f"Failed to check file existence at {path}: {e}")
