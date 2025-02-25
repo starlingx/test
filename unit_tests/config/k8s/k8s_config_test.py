@@ -4,8 +4,7 @@ from config.configuration_manager import ConfigurationManagerClass
 
 def test_default_k8s_config():
     """
-    Tests that the default logger configuration is as expected.
-    Returns:
+    Tests that the default k8s configuration is as expected.
 
     """
     configuration_manager = ConfigurationManagerClass()
