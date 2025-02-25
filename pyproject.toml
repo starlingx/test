@@ -6,6 +6,7 @@ profile = "black"
 target-version = ['py311']
 preview = true
 include = '\.py'
+line-length = 9999  # Prevents Black from arbitrarily wrapping lines
 
 [tool.pydoclint]
 style = "google"
