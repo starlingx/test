@@ -12,3 +12,4 @@ line-length = 9999  # Prevents Black from arbitrarily wrapping lines
 style = "google"
 check-return-types = true
 allow-init-docstring = true
+ignore = ["DOC501"]  # Ignore Raises section requirement
