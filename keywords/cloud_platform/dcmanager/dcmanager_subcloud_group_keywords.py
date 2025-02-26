@@ -30,7 +30,7 @@ class DcmanagerSubcloudGroupKeywords(BaseKeyword):
         Returns:
             DcmanagerSubcloudGroupOutput: An object containing the list of subcloud groups.
         """
-        command = source_openrc('dcmanager subcloud-group list')
+        command = source_openrc("dcmanager subcloud-group list")
         output = self.ssh_connection.send(command)
         self.validate_success_return_code(self.ssh_connection)
         return DcmanagerSubcloudGroupOutput(output)
@@ -47,7 +47,38 @@ class DcmanagerSubcloudGroupKeywords(BaseKeyword):
         Returns:
             DcmanagerSubcloudGroupShowOutput: An object containing details of the subcloud group.
         """
-        command = source_openrc(f'dcmanager subcloud-group show {group_id}')
+        command = source_openrc(f"dcmanager subcloud-group show {group_id}")
         output = self.ssh_connection.send(command)
         self.validate_success_return_code(self.ssh_connection)
         return DcmanagerSubcloudGroupShowOutput(output)
+
+    def dcmanager_subcloud_group_add(
+        self, group_name: str
+    ) -> DcmanagerSubcloudGroupShowOutput:
+        """
+        Creates a dcmanager subcloud-group with the name provided.
+
+        Args:
+            group_name (str): The identifier of the subcloud group.
+
+        Returns:
+            DcmanagerSubcloudGroupShowOutput: An object containing details of the newly created subcloud group.
+        """
+        command = source_openrc(f"dcmanager subcloud-group add --name {group_name}")
+        output = self.ssh_connection.send(command)
+        self.validate_success_return_code(self.ssh_connection)
+        return DcmanagerSubcloudGroupShowOutput(output)
+
+    def dcmanager_subcloud_group_delete(self, group_name: str) -> None:
+        """
+        Deletes the dcmanager subcloud-group with the name provided.
+
+        Args:
+            group_name (str): The identifier of the subcloud group.
+
+        Returns:
+            None: This method does not return a value.
+        """
+        command = source_openrc(f"dcmanager subcloud-group delete {group_name}")
+        self.ssh_connection.send(command)
+        self.validate_success_return_code(self.ssh_connection)
