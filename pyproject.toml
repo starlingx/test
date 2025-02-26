@@ -11,3 +11,4 @@ include = '\.py'
 style = "google"
 check-return-types = true
 allow-init-docstring = true
+ignore = ["DOC501"]  # Ignore Raises section requirement
