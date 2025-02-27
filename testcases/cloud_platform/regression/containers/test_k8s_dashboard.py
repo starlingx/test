@@ -1,94 +1,128 @@
 import os
+import time
+
+from pytest import fixture, mark
 
 from config.configuration_manager import ConfigurationManager
+from framework.exceptions.keyword_exception import KeywordException
 from framework.logging.automation_logger import get_logger
 from framework.resources.resource_finder import get_stx_resource_path
-from framework.ssh.secure_transfer_file.secure_transfer_file import SecureTransferFile
-from framework.ssh.secure_transfer_file.secure_transfer_file_enum import TransferDirection
-from framework.ssh.secure_transfer_file.secure_transfer_file_input_object import SecureTransferFileInputObject
+from framework.rest.rest_client import RestClient
+from framework.ssh.ssh_connection import SSHConnection
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
-from keywords.k8s.dashboard.kubectl_dashboard_apply_keywords import KubectlDashboardApplyKeywords
-from keywords.k8s.dashboard.kubectl_dashboard_delete_keywords import KubectlDeleteDashboardKeywords
-from keywords.k8s.namespace.kubectl_create_namespace_keywords import KubectlCreateNamespacesKeywords
-from keywords.k8s.namespace.kubectl_delete_namespace_keywords import KubectlDeleteNamespaceKeywords
-from keywords.k8s.namespace.kubectl_get_namespaces_keywords import KubectlGetNamespacesKeywords
-from keywords.k8s.secret.kubectl_create_secret_keywords import KubectlCreateSecretsKeywords
-from keywords.k8s.secret.kubectl_delete_secret_keywords import KubectlDeleteSecretsKeywords
-from pytest import mark
+from keywords.files.file_keywords import FileKeywords
+from keywords.k8s.files.kubectl_file_apply_keywords import KubectlFileApplyKeywords
+from keywords.k8s.files.kubectl_file_delete_keywords import KubectlFileDeleteKeywords
+from keywords.k8s.namespace.kubectl_create_namespace_keywords import (
+    KubectlCreateNamespacesKeywords,
+)
+from keywords.k8s.namespace.kubectl_delete_namespace_keywords import (
+    KubectlDeleteNamespaceKeywords,
+)
+from keywords.k8s.namespace.kubectl_get_namespaces_keywords import (
+    KubectlGetNamespacesKeywords,
+)
+from keywords.k8s.patch.kubectl_apply_patch_keywords import KubectlApplyPatchKeywords
+from keywords.k8s.secret.kubectl_create_secret_keywords import (
+    KubectlCreateSecretsKeywords,
+)
+from keywords.k8s.secret.kubectl_delete_secret_keywords import (
+    KubectlDeleteSecretsKeywords,
+)
+from keywords.openssl.openssl_keywords import OpenSSLKeywords
 
 
-def copy_k8s_files(ssh_connection):
+def check_url_access(url: str) -> tuple:
+    """
+    Check the access to a given url.
+
+    Args:
+        url (str): URL to check.
+
+    Returns:
+        tuple: A tuple containing the status code and the response text.
+    """
+    get_logger().log_info(f"curl -i {url}...")
+    req = RestClient().get(url=url)
+    return req.response.status_code, req.response.text
+
+
+def copy_k8s_files(ssh_connection: SSHConnection):
     """
     Copy the necessary k8s dashboard yaml files
 
     Args:
         ssh_connection (SSHConnection): ssh connection object
     """
-    k8s_dashboard_dir = 'k8s_dashboard'
-    dashboard_file_names = list()
-    dashboard_file_names = ['admin-user.yaml', 'kubeconfig.yaml', 'k8s_dashboard.yaml']
+    k8s_dashboard_dir = "k8s_dashboard"
+    dashboard_file_names = ["admin-user.yaml", "kubeconfig.yaml", "k8s_dashboard.yaml"]
     get_logger().log_info("Creating k8s_dashboard directory")
-    ssh_connection.send('mkdir -p {}'.format(k8s_dashboard_dir))
+    ssh_connection.send("mkdir -p {}".format(k8s_dashboard_dir))
     for dashboard_file_name in dashboard_file_names:
-        local_path = get_stx_resource_path(f'resources/cloud_platform/containers/k8s_dashboard/{dashboard_file_name}')
-        remote_path = f'/home/{ConfigurationManager.get_lab_config().get_admin_credentials().get_user_name()}/{k8s_dashboard_dir}/{dashboard_file_name}'
-
-        # Opens an SFTP session to active controller.
-        sftp_client = ssh_connection.get_sftp_client()
-
-        # Sets the parameters for the app file transfer through a new instance of SecureTransferFileInputObject.
-        secure_transfer_file_input_object = SecureTransferFileInputObject()
-        secure_transfer_file_input_object.set_sftp_client(sftp_client)
-        secure_transfer_file_input_object.set_origin_path(local_path)
-        secure_transfer_file_input_object.set_destination_path(remote_path)
-        secure_transfer_file_input_object.set_transfer_direction(TransferDirection.FROM_LOCAL_TO_REMOTE)
-        secure_transfer_file_input_object.set_force(True)
-
-        # Transfers the dashboard file from local path to remote path.
-        secure_transfer_file = SecureTransferFile(secure_transfer_file_input_object)
-        secure_transfer_file.transfer_file()
+        local_path = get_stx_resource_path(f"resources/cloud_platform/containers/k8s_dashboard/{dashboard_file_name}")
+        FileKeywords(ssh_connection).upload_file(local_path, f"/home/sysadmin/{k8s_dashboard_dir}/{dashboard_file_name}")
 
 
-def create_k8s_dashboard(request, namespace, con_ssh):
+def create_k8s_dashboard(request: fixture, namespace: str, con_ssh: SSHConnection):
     """
     Create all necessary resources for the k8s dashboard
     Args:
+        request (fixture): pytest fixture
         namespace (str): kubernetes_dashboard namespace name
         con_ssh (SSHConnection): the SSH connection
+
+    Raises:
+        KeywordException: if the k8s dashboard is not accessible
     """
-    # k8s_dashboard_file = "k8s_dashboard.yaml"
-    # cert = 'k8s_dashboard_certs'
-    dashboard_key = 'k8s_dashboard_certs/dashboard.key'
-    dashboard_cert = 'k8s_dashboard_certs/dashboard.crt'
+    k8s_dashboard_file = "k8s_dashboard.yaml"
+    cert_dir = "k8s_dashboard_certs"
 
-    # port = 30000
-    secrets_name = 'kubernetes-dashboard-certs'
-
-    # k8s_dashboard_file = "k8s_dashboard.yaml"
+    name = "kubernetes-dashboard"
+    port = 30000
+    secrets_name = "kubernetes-dashboard-certs"
 
     home_k8s = "/home/sysadmin/k8s_dashboard"
-    path_cert = os.path.join(home_k8s, dashboard_cert)
-    key = os.path.join(home_k8s, dashboard_key)
-    crt = os.path.join(home_k8s, dashboard_cert)
-    kubeconfig_file_path = os.path.join(home_k8s, "kubeconfig.yaml")
+
+    k8s_dashboard_file_path = os.path.join(home_k8s, k8s_dashboard_file)
 
     sys_domain_name = ConfigurationManager.get_lab_config().get_floating_ip()
+
+    path_cert = os.path.join(home_k8s, cert_dir)
     get_logger().log_info(f"Creating {path_cert} directory")
-    con_ssh.send('mkdir -p {}'.format(path_cert))
+    con_ssh.send("mkdir -p {}".format(path_cert))
+
+    dashboard_key = "k8s_dashboard_certs/dashboard.key"
+    dashboard_cert = "k8s_dashboard_certs/dashboard.crt"
+    key = os.path.join(home_k8s, dashboard_key)
+    crt = os.path.join(home_k8s, dashboard_cert)
     get_logger().log_info("Creating SSL certificate file for kubernetes dashboard secret")
-    con_ssh.send('openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout {} -out {} ' '-subj "/CN={}"'.format(key, crt, sys_domain_name))
+    OpenSSLKeywords(con_ssh).create_certificate(key=key, crt=crt, sys_domain_name=sys_domain_name)
+    KubectlCreateSecretsKeywords(ssh_connection=con_ssh).create_secret_generic(secret_name=secrets_name, tls_crt=crt, tls_key=key, namespace=namespace)
 
-    KubectlCreateSecretsKeywords.create_secret_generic(secret_name=secrets_name, tls_crt=crt, tls_key=key)
-
-    get_logger().log_info(f"Creating resource from file {kubeconfig_file_path}")
-    KubectlDashboardApplyKeywords(ssh_connection=con_ssh).dashboard_apply_from_yaml(kubeconfig_file_path)
+    get_logger().log_info(f"Creating resource from file {k8s_dashboard_file_path}")
+    KubectlFileApplyKeywords(ssh_connection=con_ssh).dashboard_apply_from_yaml(k8s_dashboard_file_path)
 
     def teardown():
-        KubectlDeleteDashboardKeywords(ssh_connection=con_ssh).delete_resources(kubeconfig_file_path)
+        KubectlFileDeleteKeywords(ssh_connection=con_ssh).delete_resources(k8s_dashboard_file_path)
         # delete created dashboard secret
-        KubectlDeleteSecretsKeywords(con_ssh).delete_secret(secret_name=secrets_name)
+        KubectlDeleteSecretsKeywords(con_ssh).delete_secret(namespace=namespace, secret_name=secrets_name)
+        get_logger().log_info("Deleting k8s_dashboard directory")
+        con_ssh.send(f"rm -rf {home_k8s}")
 
+    get_logger().log_info(f"Updating {name} service to be exposed on port {port}")
+    arg_port = '{"spec":{"type":"NodePort","ports":[{"port":443, "nodePort": ' + str(port) + "}]}}"
     request.addfinalizer(teardown)
+    KubectlApplyPatchKeywords(ssh_connection=con_ssh).apply_patch_service(svc_name=name, namespace=namespace, args_port=arg_port)
+
+    get_logger().log_info("Waiting 30s for the service to be up")
+    time.sleep(30)
+
+    get_logger().log_info(f"Verify that {name} is working")
+    end_point = "https://{}:{}".format(sys_domain_name, port)
+
+    status_code, _ = check_url_access(end_point)
+    if not status_code == 200:
+        raise KeywordException(detailed_message=f"Kubernetes dashboard returned status code {status_code}")
 
 
 @mark.p0
@@ -117,7 +151,7 @@ def test_k8s_dashboard_access(request):
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     copy_k8s_files(ssh_connection)
     # Create Dashboard namespace
-    namespace_name = 'kubernetes-dashboard'
+    namespace_name = "kubernetes-dashboard"
     kubectl_create_ns_keyword = KubectlCreateNamespacesKeywords(ssh_connection)
     kubectl_create_ns_keyword.create_namespaces(namespace_name)
 
@@ -133,6 +167,5 @@ def test_k8s_dashboard_access(request):
     request.addfinalizer(teardown)
 
     # Step 2: Create the necessary k8s dashboard resources
-    # TODO:
-    # test_namespace = 'kubernetes-dashboard'
-    # create_k8s_dashboard(namespace=test_namespace, con_ssh=ssh_connection)
+    test_namespace = "kubernetes-dashboard"
+    create_k8s_dashboard(request, namespace=test_namespace, con_ssh=ssh_connection)
