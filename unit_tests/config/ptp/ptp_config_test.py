@@ -1,4 +1,6 @@
-from config.configuration_file_locations_manager import ConfigurationFileLocationsManager
+from config.configuration_file_locations_manager import (
+    ConfigurationFileLocationsManager,
+)
 from config.configuration_manager import ConfigurationManagerClass
 
 
@@ -20,3 +22,4 @@ def test_default_ptp_config():
 
     first_nic = config_for_controller_0.get_nic("nic1")
     assert first_nic.get_sma1_to_nic2() == "output"
+    assert first_nic.get_conn_to_ctrl1_nic1() == "enp81s0f1"

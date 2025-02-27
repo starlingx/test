@@ -29,6 +29,8 @@ class PTPNic:
         self.conn_to_spirent = None
         self.spirent_port = None
 
+        self.nic_dictionary = nic_dict
+
         if "gnss_switch_port" in nic_dict and nic_dict["gnss_switch_port"]:
             self.gnss_switch_port = nic_dict["gnss_switch_port"]
 
@@ -73,6 +75,18 @@ class PTPNic:
 
         """
         return f"PTPNic - {self.name}"
+
+    def to_dictionary(self) -> Dict[str, str]:
+        """
+        This function will return a dictionary view of the PTPNic.
+
+        This is mostly used for substitution in JINJA templates.
+
+        Returns:
+            Dict[str, str]: Dictionary representation
+
+        """
+        return self.nic_dictionary
 
     def get_name(self) -> str:
         """

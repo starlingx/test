@@ -1,0 +1,225 @@
+{
+  ptp_instances: {
+
+    ptp4l: [
+
+      {
+        name: "ptp1",
+        instance_hostnames : ["controller_1", "controller_0"] ,
+        instance_parameters: "tx_timestamp_timeout=700 domainNumber=24 dataset_comparison=G.8275.x priority2=100 boundary_clock_jbod=1",
+        ptp_interface_names: [
+          "ptp1if1",
+          "ptp1if2",
+        ]
+      },
+
+      {
+        name: "ptp2",
+        instance_hostnames : [],
+        instance_parameters: "dataset_comparison=G.8275.x domainNumber=24 tx_timestamp_timeout=700 boundary_clock_jbod=1 priority2=110",
+        ptp_interface_names: [
+          "ptp2if1",
+          "ptp2if2"
+        ],
+      },
+
+      {
+        name: "ptp3",
+        instance_hostnames : ["controller_0"],
+        instance_parameters: "dataset_comparison=G.8275.x domainNumber=24 tx_timestamp_timeout=700 boundary_clock_jbod=1 priority2=100",
+        ptp_interface_names: [
+          "ptp3if1",
+          "ptp3if2"
+        ],
+      },
+
+      {
+        name: "ptp4",
+        instance_hostnames : ["controller_1"],
+        instance_parameters: "priority2=110 dataset_comparison=G.8275.x domainNumber=24 tx_timestamp_timeout=700 boundary_clock_jbod=1",
+        ptp_interface_names: [
+          "ptp4if1",
+          "ptp4if2"
+        ],
+      }
+
+    ],
+
+    phc2sys : [
+
+        {
+          name: "phc1",
+          instance_hostnames : ["controller_1", "controller_0"],
+          instance_parameters: "cmdline_opts=-s {{controller_0.nic1.conn_to_sprint}} -O -37 -m", // lab_topology_synce3.json5 : values is enp81s0f2
+          ptp_interface_names: [
+            "phc1if1",
+          ],
+        },
+
+        {
+          name: "phc2",
+          instance_hostnames : [],
+          instance_parameters: "uds_address=/var/run/ptp4l-ptp2 domainNumber=24",
+          ptp_interface_names: [
+            "phc2if1",
+          ],
+        },
+
+        {
+          name: "phc3",
+          instance_hostnames : [],
+          instance_parameters: "uds_address=/var/run/ptp4l-ptp3 domainNumber=24",
+          ptp_interface_names: [
+            "phc3if1",
+          ],
+        },
+
+        {
+          name: "phc4",
+          instance_hostnames : [],
+          instance_parameters: "uds_address=/var/run/ptp4l-ptp4 domainNumber=24",
+          ptp_interface_names: [
+            "phc4if1",
+          ],
+        },
+
+    ],
+
+    ts2phc : [
+
+        {
+          name: "ts1",
+          instance_hostnames : ["controller_0"],
+          instance_parameters: "ts2phc.nmea_serialport=/dev/gnss0",
+          ptp_interface_names: [
+            "ts1if1",
+          ],
+        }
+
+    ],
+
+    clock : [
+
+      {
+        name: "clock1",
+        instance_hostnames : ["controller_0"],
+        instance_parameters: "",
+        ptp_interface_names: [
+          "clock1if1",
+          "clock1if2",
+        ],
+      }
+
+    ],
+
+  },
+
+  ptp_host_ifs: [
+
+    {
+      name: "ptp1if1",
+      controller_0_interfaces: ["{{ controller_0.nic1.conn_to_ctrl1_nic1 }}"],
+      controller_1_interfaces: ["{{ controller_1.nic1.conn_to_ctrl0_nic1 }}"],
+      ptp_interface_parameter : "",
+    },
+
+    {
+      name: "ptp1if2",
+      controller_0_interfaces: ["{{ controller_0.nic1.conn_to_spirent }}"],
+      controller_1_interfaces: ["{{ controller_1.nic1.conn_to_spirent }}"],
+      ptp_interface_parameter : "",
+    },
+
+    {
+     name: "ptp2if1",
+     controller_0_interfaces: [],
+     controller_1_interfaces: [],
+     ptp_interface_parameter : "",
+    },
+
+   {
+     name: "ptp2if2",
+     controller_0_interfaces: [],
+     controller_1_interfaces: [],
+     ptp_interface_parameter : "",
+    },
+
+   {
+     name: "ptp3if1",
+     controller_0_interfaces: ["{{ controller_0.nic2.conn_to_ctrl1_nic2 }}"],
+     controller_1_interfaces: [],
+     ptp_interface_parameter : "",
+    },
+
+   {
+     name: "ptp3if2",
+     controller_0_interfaces: ["{{ controller_0.nic2.conn_to_spirent }}"],
+     controller_1_interfaces: [],
+     ptp_interface_parameter : "",
+    },
+
+   {
+     name: "ptp4if1",
+     controller_0_interfaces: [],
+     controller_1_interfaces: ["{{ controller_0.nic2.conn_to_ctrl1_nic2 }}"],
+     ptp_interface_parameter : "",
+    },
+
+   {
+     name: "ptp4if2",
+     controller_0_interfaces: [],
+     controller_1_interfaces: ["{{ controller_1.nic2.conn_to_spirent }}"],
+     ptp_interface_parameter : "",
+    },
+
+   {
+     name: "phc1if1",
+     controller_0_interfaces: [],
+     controller_1_interfaces: [],
+     ptp_interface_parameter : "",
+    },
+
+   {
+     name: "phc2if1",
+     controller_0_interfaces: [],
+     controller_1_interfaces: [],
+     ptp_interface_parameter : "",
+    },
+
+   {
+     name: "phc3if1",
+     controller_0_interfaces: [],
+     controller_1_interfaces: [],
+     ptp_interface_parameter : "",
+    },
+
+   {
+     name: "phc4if1",
+     controller_0_interfaces: [],
+     controller_1_interfaces: ["{{ controller_1.nic1.base_port }}", "{{ controller_1.nic2.base_port }}"],
+     ptp_interface_parameter :"",
+    },
+
+   {
+     name: "ts1if1",
+     controller_0_interfaces: ["{{ controller_0.nic1.conn_to_spirent }}", "{{ controller_0.nic2.base_port }}"],
+     controller_1_interfaces: [],
+     ptp_interface_parameter : "",
+    },
+
+   {
+     name: "clock1if1",
+     controller_0_interfaces: ["{{ controller_0.nic1.conn_to_spirent }}"],
+     controller_1_interfaces: [],
+     ptp_interface_parameter : "{{ controller_0.nic1.sma1_to_nic2 }}",
+    },
+
+   {
+     name: "clock1if2",
+     controller_0_interfaces: ["{{ controller_0.nic2.base_port }}"],
+     controller_1_interfaces: [],
+     ptp_interface_parameter : "{{ controller_0.nic2.sma1_to_nic1 }}",
+    },
+  ],
+
+}
