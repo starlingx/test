@@ -32,6 +32,22 @@ class PTPHost:
         """
         return f"PTPHost - {self.name}"
 
+    def get_all_nics_dictionary(self) -> Dict[str, Dict]:
+        """
+        This function will return a dictionary view of the PTPHost.
+
+        This is mostly used for substitution in JINJA templates.
+
+        Returns:
+            Dict[str, Dict]: Dictionary representation
+
+        """
+        dictionary_view = {}
+        for nic in self.get_all_nics():
+            dictionary_view[nic.get_name()] = nic.to_dictionary()
+
+        return dictionary_view
+
     def get_name(self) -> str:
         """
         Getter for the name of this ptp_host.
@@ -65,6 +81,4 @@ class PTPHost:
         for nic in self.nics:
             if nic.get_name() == nic_name:
                 return nic
-        raise Exception(
-            f"There is no PTP NIC called {nic_name} associated with the host {self.name} in the PTP config."
-        )
+        raise Exception(f"There is no PTP NIC called {nic_name} associated with the host {self.name} in the PTP config.")

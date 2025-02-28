@@ -1,4 +1,4 @@
-from typing import List
+from typing import Dict, List
 
 import json5
 
@@ -32,6 +32,22 @@ class PTPConfig:
 
         """
         return "PTPConfig"
+
+    def get_all_hosts_dictionary(self) -> Dict[str, Dict]:
+        """
+        This function will return a dictionary view of the PTPConfig.
+
+        This is mostly used for substitution in JINJA templates.
+
+        Returns:
+            Dict[str, Dict]: Dictionary representation
+
+        """
+        dictionary_view = {}
+        for host in self.get_all_hosts():
+            dictionary_view[host.get_name()] = host.get_all_nics_dictionary()
+
+        return dictionary_view
 
     def get_all_hosts(self) -> List[PTPHost]:
         """

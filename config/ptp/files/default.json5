@@ -13,7 +13,7 @@
             // Can be assigned to any interface of the NIC connected to GNSS and with any NIC on the same host.
             // By default, we use the first port.
             base_port: "enp81s0f0",
-            conn_to_ctr1_nic1: "enp81s0f1",
+            conn_to_ctrl1_nic1: "enp81s0f1",
 
             // Optional Spirent config.
             conn_to_spirent: "",
@@ -33,7 +33,7 @@
             // Can be assigned to any interface of the NIC connected to GNSS and with any NIC on the same host.
             // By default, we use the first port.
             base_port: "",
-            conn_to_ctr1_nic2: "",
+            conn_to_ctrl1_nic2: "",
 
             // Optional Spirent config.
             conn_to_spirent: "",
@@ -56,7 +56,7 @@
             // Can be assigned to any interface of the NIC connected to GNSS and with any NIC on the same host.
             // By default, we use the first port.
             base_port: "",
-            conn_to_ctr0_nic1: "",
+            conn_to_ctrl0_nic1: "",
 
             // Optional Spirent config.
             conn_to_spirent: "",
@@ -75,8 +75,8 @@
             // This port for TS2PHC and PHC2SYS.
             // Can be assigned to any interface of the NIC connected to GNSS and with any NIC on the same host.
             // By default, we use the first port.
-            base_port: "",
-            conn_to_ctr0_nic2: "",
+            base_port: "enp82s0f0",
+            conn_to_ctrl0_nic2: "",
 
             // Optional Spirent config.
             conn_to_spirent: "",
