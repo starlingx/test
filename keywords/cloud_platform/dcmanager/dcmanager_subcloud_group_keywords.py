@@ -35,9 +35,7 @@ class DcmanagerSubcloudGroupKeywords(BaseKeyword):
         self.validate_success_return_code(self.ssh_connection)
         return DcmanagerSubcloudGroupOutput(output)
 
-    def get_dcmanager_subcloud_group_show(
-        self, group_id: str
-    ) -> DcmanagerSubcloudGroupShowOutput:
+    def get_dcmanager_subcloud_group_show(self, group_id: str) -> DcmanagerSubcloudGroupShowOutput:
         """
         Gets the dcmanager subcloud-group details for a specific group.
 
@@ -52,9 +50,7 @@ class DcmanagerSubcloudGroupKeywords(BaseKeyword):
         self.validate_success_return_code(self.ssh_connection)
         return DcmanagerSubcloudGroupShowOutput(output)
 
-    def dcmanager_subcloud_group_add(
-        self, group_name: str
-    ) -> DcmanagerSubcloudGroupShowOutput:
+    def dcmanager_subcloud_group_add(self, group_name: str) -> DcmanagerSubcloudGroupShowOutput:
         """
         Creates a dcmanager subcloud-group with the name provided.
 
@@ -82,3 +78,19 @@ class DcmanagerSubcloudGroupKeywords(BaseKeyword):
         command = source_openrc(f"dcmanager subcloud-group delete {group_name}")
         self.ssh_connection.send(command)
         self.validate_success_return_code(self.ssh_connection)
+
+    def dcmanager_subcloud_group_update(self, group_name: str, update_attr: str, update_value: str) -> DcmanagerSubcloudGroupShowOutput:
+        """
+        Updates the subcloud-group attr using 'dcmanager subcloud-group update <subcloud-group name> --<update_attr> <update_value>' output.
+
+        Args:
+            group_name (str): a str representing a subcloud-group's name.
+            update_attr (str): the attribute to update (ex. description)
+            update_value (str): the value to update the attribute to (ex. this is a new description)
+
+        Returns:
+            DcmanagerSubcloudGroupShowOutput: An object containing details of the newly created subcloud group.
+        """
+        output = self.ssh_connection.send(source_openrc(f"dcmanager subcloud-group update {group_name} --{update_attr} '{update_value}'"))
+        self.validate_success_return_code(self.ssh_connection)
+        return DcmanagerSubcloudGroupShowOutput(output)
