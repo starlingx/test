@@ -1,9 +1,12 @@
-from optparse import OptionParser
 import os
+from optparse import OptionParser
 from typing import Optional
 
 import pytest
-from config.configuration_file_locations_manager import ConfigurationFileLocationsManager
+
+from config.configuration_file_locations_manager import (
+    ConfigurationFileLocationsManager,
+)
 from config.configuration_manager import ConfigurationManager
 from framework.database.objects.testcase import TestCase
 from framework.database.operations.run_content_operation import RunContentOperation
@@ -17,7 +20,7 @@ from framework.runner.objects.test_executor_summary import TestExecutorSummary
 from testcases.conftest import log_configuration
 
 
-def execute_test(test: TestCase, test_executor_summary: TestExecutorSummary, test_case_result_id: Optional[int] = None) -> None:
+def execute_test(test: TestCase, test_executor_summary: TestExecutorSummary, test_case_result_id: Optional[int] = None):
     """
     Executes a test case using pytest.
 
@@ -26,8 +29,6 @@ def execute_test(test: TestCase, test_executor_summary: TestExecutorSummary, tes
         test_executor_summary (TestExecutorSummary): The test executor summary object.
         test_case_result_id (Optional[int], optional): If provided, updates the specified test case result instead of creating a new one. Defaults to None.
 
-    Returns:
-        None
     """
     result_collector = ResultCollector(test_executor_summary, test, test_case_result_id)
     pytest_args = ConfigurationManager.get_config_pytest_args()
@@ -53,11 +54,8 @@ def log_summary(test_executor_summary: TestExecutorSummary):
     line of the summary, and logs the location of the log directory.
 
     Args:
-        test_executor_summary (TestExecutorSummary): The summary object containing the test
-            execution results.
+        test_executor_summary (TestExecutorSummary): The summary object containing the test execution results.
 
-    Returns:
-        None
     """
     get_logger().log_info("")
     get_logger().log_info("")
@@ -71,29 +69,28 @@ def log_summary(test_executor_summary: TestExecutorSummary):
 def main():
     """
     Given the lab configuration, it will run all tests in the given folder that matches the lab capabilities
-    Returns:
 
     """
 
     parser = OptionParser()
 
     parser.add_option(
-        '--tests_location',
-        action='store',
-        type='str',
-        dest='tests_location',
-        help='the location of the tests',
+        "--tests_location",
+        action="store",
+        type="str",
+        dest="tests_location",
+        help="the location of the tests",
     )
 
     parser.add_option(
-        '--test_plan_id',
-        action='store',
-        type='str',
-        dest='test_plan_id',
-        help='the test plan id of the tests to run',
+        "--test_plan_id",
+        action="store",
+        type="str",
+        dest="test_plan_id",
+        help="the test plan id of the tests to run",
     )
 
-    parser.add_option('--test_case_result_id', action='store', type='int', dest='test_case_result_id', help='the id for the testcase result')
+    parser.add_option("--test_case_result_id", action="store", type="int", dest="test_case_result_id", help="the id for the testcase result")
 
     configuration_locations_manager = ConfigurationFileLocationsManager()
     configuration_locations_manager.set_configs_from_options_parser(parser)
@@ -123,13 +120,18 @@ def main():
         tests = test_capability_matcher.get_list_of_tests(options.tests_location)
 
     test_executor_summary = TestExecutorSummary()
+
+    if not tests:
+        test_executor_summary.append_tests_summary("There is no available test case to run that match the lab's capabilities.")
+        test_executor_summary.append_tests_summary("Please review your lab configuration file.")
+
     for test in tests:
         execute_test(test, test_executor_summary, test_case_result_id)
 
     log_summary(test_executor_summary)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     """
     Main Launcher
     """
