@@ -355,6 +355,10 @@ def scan_hosts(lab_config: LabConfig, ssh_connection: SSHConnection) -> [Node]:
             node.append_node_capability('lab_has_sriov')
             lab_config.add_lab_capability('lab_has_sriov')
 
+        if node.get_type() == 'worker':
+            node.append_node_capability('lab_has_compute')
+            lab_config.add_lab_capability('lab_has_compute')
+
         if node.get_type() == 'worker' or 'worker' in node.get_subfunctions():
             node.append_node_capability('lab_has_worker')
             lab_config.add_lab_capability('lab_has_worker')
