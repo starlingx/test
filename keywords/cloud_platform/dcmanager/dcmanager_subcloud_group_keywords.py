@@ -1,6 +1,9 @@
 from framework.ssh.ssh_connection import SSHConnection
 from keywords.base_keyword import BaseKeyword
 from keywords.cloud_platform.command_wrappers import source_openrc
+from keywords.cloud_platform.dcmanager.objects.dcmanager_subcloud_group_list_subcloud_output import (
+    DcmanagerSubcloudGroupListSubcloudOutput,
+)
 from keywords.cloud_platform.dcmanager.objects.dcmanager_subcloud_group_output import (
     DcmanagerSubcloudGroupOutput,
 )
@@ -94,3 +97,18 @@ class DcmanagerSubcloudGroupKeywords(BaseKeyword):
         output = self.ssh_connection.send(source_openrc(f"dcmanager subcloud-group update {group_name} --{update_attr} '{update_value}'"))
         self.validate_success_return_code(self.ssh_connection)
         return DcmanagerSubcloudGroupShowOutput(output)
+
+    def get_dcmanager_subcloud_group_list_subclouds(self, group_id: str) -> DcmanagerSubcloudGroupListSubcloudOutput:
+        """
+        Gets the dcmanager subcloud-group list-subclouds.
+
+        Args:
+            group_id (str): a str representing a subcloud-group's id.
+
+        Returns:
+            DcmanagerSubcloudGroupListSubcloudOutput: An object containing the list of subcloud groups.
+        """
+        command = source_openrc(f"dcmanager subcloud-group list-subclouds {group_id}")
+        output = self.ssh_connection.send(command)
+        self.validate_success_return_code(self.ssh_connection)
+        return DcmanagerSubcloudGroupListSubcloudOutput(output)
