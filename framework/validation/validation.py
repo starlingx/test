@@ -75,6 +75,30 @@ def validate_equals_with_retry(
                 raise TimeoutError(f"Timeout performing validation - {validation_description}")
 
 
+def validate_not_equals(observed_value: Any, expected_value: Any, validation_description: str) -> None:
+    """
+    This function will validate if the observed value does not match the expected value with associated logging.
+
+    Args:
+        observed_value (Any): Value that we see on the system.
+        expected_value (Any): Value that is not expected and against which we are asserting.
+        validation_description (str): Description of this validation for logging purposes.
+
+    Returns: None
+
+    Raises:
+        Exception: raised when validate fails
+
+    """
+    if observed_value != expected_value:
+        get_logger().log_info(f"Validation Successful - {validation_description}")
+    else:
+        get_logger().log_error(f"Validation Failed - {validation_description}")
+        get_logger().log_error(f"Expected: {expected_value}")
+        get_logger().log_error(f"Observed: {observed_value}")
+        raise Exception("Validation Failed")
+
+
 def validate_str_contains(observed_value: str, expected_value: str, validation_description: str) -> None:
     """
     This function will validate if the observed value contains the expected value.
