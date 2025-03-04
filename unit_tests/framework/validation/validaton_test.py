@@ -1,8 +1,14 @@
+import pytest
+
 from config.configuration_file_locations_manager import (
     ConfigurationFileLocationsManager,
 )
 from config.configuration_manager import ConfigurationManager
-from framework.validation.validation import validate_not_equals, validate_str_contains
+from framework.validation.validation import (
+    validate_not_equals,
+    validate_str_contains,
+    validate_str_contains_with_retry,
+)
 
 
 def test_validate_str_contains():
@@ -20,11 +26,44 @@ def test_validate_str_contains_fails():
     """
     configuration_locations_manager = ConfigurationFileLocationsManager()
     ConfigurationManager.load_configs(configuration_locations_manager)
-    try:
+    with pytest.raises(Exception):
         validate_str_contains("observed value contains: <word not found>", "success", "Test that the word success appears")
-        assert False, "Validation passed when it should not have"  # if test succeeds, we should never get to this line
-    except Exception as e:
-        assert e.__str__() == "Validation Failed", "Validation failed as expected."
+
+
+def test_validate_str_contains_with_retries():
+    """
+    Test to validate str contains with retries
+
+    """
+    configuration_locations_manager = ConfigurationFileLocationsManager()
+    ConfigurationManager.load_configs(configuration_locations_manager)
+    counter = 0
+
+    def function_for_validate_with_retries():
+        nonlocal counter
+        if counter == 0:
+            counter += 1
+            return "this was not what you are looking for"
+        else:
+            counter = 0
+            return "successful"
+
+    validate_str_contains_with_retry(function_for_validate_with_retries, "success", "validate success string", polling_sleep_time=0.01)
+
+
+def test_validate_str_contains_with_retries_fail():
+    """
+    Test to validate str contains with retries when it fails
+
+    """
+    configuration_locations_manager = ConfigurationFileLocationsManager()
+    ConfigurationManager.load_configs(configuration_locations_manager)
+
+    def function_for_validate_with_retries():
+        return "this was not what you are looking for"
+
+    with pytest.raises(TimeoutError):
+        validate_str_contains_with_retry(function_for_validate_with_retries, "success", "validate success string", polling_sleep_time=0.01, timeout=0.05)
 
 
 def test_validate_not_equals_str():
