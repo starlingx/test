@@ -25,12 +25,14 @@ class DcManagerSubcloudBackupKeywords(BaseKeyword):
         self,
         sysadmin_password: str,
         con_ssh: SSHConnection,
-        path: str,
+        path: Optional[str] = None,
         subcloud: Optional[str] = None,
         local_only: bool = False,
         backup_yaml: Optional[str] = None,
         group: Optional[str] = None,
         registry: bool = False,
+        release: Optional[str] = None,
+        subcloud_list: Optional[list] = None,
     ) -> None:
         """
         Creates a backup of the specified subcloud.
@@ -38,20 +40,20 @@ class DcManagerSubcloudBackupKeywords(BaseKeyword):
         Args:
             sysadmin_password (str): Subcloud sysadmin password needed for backup creation.
             con_ssh (SSHConnection): SSH connection to execute the command (central_ssh or subcloud_ssh).
-            path (str): The directory path where the backup file will be checked.
+            path (Optional[str]): The directory path where the backup file will be checked.
             subcloud (Optional[str]): The name of the subcloud to backup. Defaults to None.
             local_only (bool): If True, backup will be stored only in the subcloud. Defaults to False.
             backup_yaml (Optional[str]): path to use the yaml file. Defaults to None.
             group (Optional[str]): Subcloud group name to create backup. Defaults to None.
             registry (bool): Option to add the registry backup in the same task. Defaults to False.
+            release (Optional[str]): Release version required to check backup. Defaults to None.
+            subcloud_list (Optional[list]): List of subcloud names when backing up a group. Defaults to None.
 
         Returns:
             None:
         """
         # Command construction
-        cmd = (
-            f"dcmanager subcloud-backup create --sysadmin-password {sysadmin_password}"
-        )
+        cmd = f"dcmanager subcloud-backup create --sysadmin-password {sysadmin_password}"
         if subcloud:
             cmd += f" --subcloud {subcloud}"
         if local_only:
@@ -65,9 +67,13 @@ class DcManagerSubcloudBackupKeywords(BaseKeyword):
 
         self.ssh_connection.send(source_openrc(cmd))
         self.validate_success_return_code(self.ssh_connection)
-
-        # Use wait_for_backup_creation to ensure the file is created
-        self.wait_for_backup_creation(con_ssh, path, subcloud)
+        if group:
+            # Use wait_for_backup_creation to ensure the file is created
+            for subcloud_name in subcloud_list:
+                central_path = f"/opt/dc-vault/backups/{subcloud_name}/{release}"
+                self.wait_for_backup_creation(con_ssh, central_path, subcloud_name)
+        else:
+            self.wait_for_backup_creation(con_ssh, path, subcloud)
 
     def wait_for_backup_creation(
         self,
@@ -115,24 +121,26 @@ class DcManagerSubcloudBackupKeywords(BaseKeyword):
     def delete_subcloud_backup(
         self,
         con_ssh: SSHConnection,
-        path: str,
         release: str,
+        path: Optional[str] = None,
         subcloud: Optional[str] = None,
         local_only: bool = False,
         group: Optional[str] = None,
         sysadmin_password: str = None,
+        subcloud_list: Optional[list] = None,
     ) -> None:
         """
         Sends the command to delete the backup of the specified subcloud and waits for confirmation of its deletion.
 
         Args:
             con_ssh (SSHConnection): SSH connection to execute the command (central_ssh or subcloud_ssh).
-            path (str): The path where the backup file is located.
             release (str): Required to delete a release backup.
+            path (Optional[str]): The path where the backup file is located. Defaults to None.
             subcloud (Optional[str]): The name of the subcloud to delete the backup. Defaults to None.
             local_only (bool): If True, only deletes the local backup in the subcloud. Defaults to False.
             group (Optional[str]): Subcloud group name to delete backup. Defaults to None.
             sysadmin_password (str): Subcloud sysadmin password needed for deletion on local_path. Defaults to None.
+            subcloud_list (Optional[list]): List of subcloud names when deleting backups for a group. Defaults to None.
 
         Returns:
             None:
@@ -151,12 +159,14 @@ class DcManagerSubcloudBackupKeywords(BaseKeyword):
         self.ssh_connection.send(source_openrc(cmd))
         self.validate_success_return_code(self.ssh_connection)
 
-        # Call wait_for_backup_deletion method to wait and verify the backup deletion.
-        self.wait_for_backup_deletion(con_ssh, path, subcloud)
+        if group:
+            for subcloud_name in subcloud_list:
+                central_path = f"/opt/dc-vault/backups/{subcloud_name}/{release}"
+                self.wait_for_backup_deletion(con_ssh, central_path, subcloud_name)
+        else:
+            self.wait_for_backup_deletion(con_ssh, path, subcloud)
 
-    def wait_for_backup_deletion(
-        self, con_ssh: SSHConnection, path: str, subcloud: str
-    ) -> None:
+    def wait_for_backup_deletion(self, con_ssh: SSHConnection, path: str, subcloud: str) -> None:
         """
         Waits for the backup to be deleted by checking for the absence of the backup file.
 
