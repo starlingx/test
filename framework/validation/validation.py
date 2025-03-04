@@ -123,6 +123,55 @@ def validate_str_contains(observed_value: str, expected_value: str, validation_d
         raise Exception("Validation Failed")
 
 
+def validate_str_contains_with_retry(
+    function_to_execute: Callable[[], Any],
+    expected_value: str,
+    validation_description: str,
+    timeout: int = 30,
+    polling_sleep_time: int = 5,
+) -> None:
+    """
+    This function will validate if the observed value contains the expected value.
+
+    Args:
+        function_to_execute (Callable[[], Any]): The function to be executed repeatedly, taking no arguments and returning any value.
+        expected_value(str): the value we are expecting to see in the observed value str.
+        validation_description (str): Description of this validation for logging purposes.
+        timeout (int): The maximum time (in seconds) to wait for the match.
+        polling_sleep_time (int): The interval of time to wait between calls to function_to_execute.
+
+
+    Returns: None
+
+    Raises:
+        Exception: when validate fails
+
+    """
+    get_logger().log_info(f"Attempting Validation - {validation_description}")
+    end_time = time.time() + timeout
+
+    # Attempt the validation
+    while True:
+
+        # Compute the actual value that we are trying to validate.
+        result = function_to_execute()
+
+        if expected_value in result:
+            get_logger().log_info(f"Validation Successful - {validation_description}")
+            return
+        else:
+            get_logger().log_info("Validation Failed")
+            get_logger().log_info(f"Expected: {expected_value}")
+            get_logger().log_info(f"Observed: {result}")
+
+            if time.time() < end_time:
+                get_logger().log_info(f"Retrying in {polling_sleep_time}s")
+                sleep(polling_sleep_time)
+                # Move on to the next iteration
+            else:
+                raise TimeoutError(f"Timeout performing validation - {validation_description}")
+
+
 def validate_list_contains(observed_value: Any, expected_values: Any, validation_description: str) -> None:
     """
     This function validates if the observed value matches ANY of the expected values with associated logging.
