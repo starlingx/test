@@ -1,57 +1,121 @@
 import time
+from typing import Any
 
-import pytest
+from pytest import mark
+
 from config.configuration_manager import ConfigurationManager
 from config.lab.objects.node import Node
 from framework.logging.automation_logger import get_logger
 from framework.resources.resource_finder import get_stx_resource_path
 from framework.ssh.secure_transfer_file.secure_transfer_file import SecureTransferFile
-from framework.ssh.secure_transfer_file.secure_transfer_file_enum import TransferDirection
-from framework.ssh.secure_transfer_file.secure_transfer_file_input_object import SecureTransferFileInputObject
+from framework.ssh.secure_transfer_file.secure_transfer_file_enum import (
+    TransferDirection,
+)
+from framework.ssh.secure_transfer_file.secure_transfer_file_input_object import (
+    SecureTransferFileInputObject,
+)
 from framework.ssh.ssh_connection import SSHConnection
 from framework.validation.validation import validate_equals
 from framework.web.webdriver_core import WebDriverCore
-from keywords.cloud_platform.dcmanager.dcmanager_alarm_summary_keywords import DcManagerAlarmSummaryKeywords
-from keywords.cloud_platform.dcmanager.dcmanager_subcloud_list_keywords import DcManagerSubcloudListKeywords
-from keywords.cloud_platform.dcmanager.dcmanager_subcloud_manager_keywords import DcManagerSubcloudManagerKeywords
-from keywords.cloud_platform.dcmanager.dcmanager_subcloud_show_keywords import DcManagerSubcloudShowKeywords
-from keywords.cloud_platform.dcmanager.dcmanager_subcloud_update_keywords import DcManagerSubcloudUpdateKeywords
-from keywords.cloud_platform.dcmanager.objects.dcmanager_subcloud_list_object_filter import DcManagerSubcloudListObjectFilter
-from keywords.cloud_platform.fault_management.alarms.alarm_list_keywords import AlarmListKeywords
-from keywords.cloud_platform.fault_management.fm_client_cli.fm_client_cli_keywords import FaultManagementClientCLIKeywords
-from keywords.cloud_platform.fault_management.fm_client_cli.object.fm_client_cli_object import FaultManagementClientCLIObject
+from keywords.cloud_platform.dcmanager.dcmanager_alarm_summary_keywords import (
+    DcManagerAlarmSummaryKeywords,
+)
+from keywords.cloud_platform.dcmanager.dcmanager_subcloud_list_keywords import (
+    DcManagerSubcloudListKeywords,
+)
+from keywords.cloud_platform.dcmanager.dcmanager_subcloud_manager_keywords import (
+    DcManagerSubcloudManagerKeywords,
+)
+from keywords.cloud_platform.dcmanager.dcmanager_subcloud_show_keywords import (
+    DcManagerSubcloudShowKeywords,
+)
+from keywords.cloud_platform.dcmanager.dcmanager_subcloud_update_keywords import (
+    DcManagerSubcloudUpdateKeywords,
+)
+from keywords.cloud_platform.dcmanager.objects.dcmanager_subcloud_list_object_filter import (
+    DcManagerSubcloudListObjectFilter,
+)
+from keywords.cloud_platform.fault_management.alarms.alarm_list_keywords import (
+    AlarmListKeywords,
+)
+from keywords.cloud_platform.fault_management.fm_client_cli.fm_client_cli_keywords import (
+    FaultManagementClientCLIKeywords,
+)
+from keywords.cloud_platform.fault_management.fm_client_cli.object.fm_client_cli_object import (
+    FaultManagementClientCLIObject,
+)
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
-from keywords.cloud_platform.system.application.object.system_application_delete_input import SystemApplicationDeleteInput
-from keywords.cloud_platform.system.application.object.system_application_remove_input import SystemApplicationRemoveInput
-from keywords.cloud_platform.system.application.object.system_application_status_enum import SystemApplicationStatusEnum
-from keywords.cloud_platform.system.application.object.system_application_upload_input import SystemApplicationUploadInput
-from keywords.cloud_platform.system.application.system_application_apply_keywords import SystemApplicationApplyKeywords
-from keywords.cloud_platform.system.application.system_application_delete_keywords import SystemApplicationDeleteKeywords
-from keywords.cloud_platform.system.application.system_application_list_keywords import SystemApplicationListKeywords
-from keywords.cloud_platform.system.application.system_application_remove_keywords import SystemApplicationRemoveKeywords
-from keywords.cloud_platform.system.application.system_application_upload_keywords import SystemApplicationUploadKeywords
-from keywords.cloud_platform.system.host.system_host_list_keywords import SystemHostListKeywords
-from keywords.cloud_platform.system.host.system_host_lock_keywords import SystemHostLockKeywords
-from keywords.cloud_platform.system.host.system_host_reboot_keywords import SystemHostRebootKeywords
-from keywords.cloud_platform.system.host.system_host_swact_keywords import SystemHostSwactKeywords
-from keywords.cloud_platform.system.modify.system_modify_keywords import SystemModifyKeywords
+from keywords.cloud_platform.system.application.object.system_application_delete_input import (
+    SystemApplicationDeleteInput,
+)
+from keywords.cloud_platform.system.application.object.system_application_remove_input import (
+    SystemApplicationRemoveInput,
+)
+from keywords.cloud_platform.system.application.object.system_application_status_enum import (
+    SystemApplicationStatusEnum,
+)
+from keywords.cloud_platform.system.application.object.system_application_upload_input import (
+    SystemApplicationUploadInput,
+)
+from keywords.cloud_platform.system.application.system_application_apply_keywords import (
+    SystemApplicationApplyKeywords,
+)
+from keywords.cloud_platform.system.application.system_application_delete_keywords import (
+    SystemApplicationDeleteKeywords,
+)
+from keywords.cloud_platform.system.application.system_application_list_keywords import (
+    SystemApplicationListKeywords,
+)
+from keywords.cloud_platform.system.application.system_application_remove_keywords import (
+    SystemApplicationRemoveKeywords,
+)
+from keywords.cloud_platform.system.application.system_application_upload_keywords import (
+    SystemApplicationUploadKeywords,
+)
+from keywords.cloud_platform.system.host.system_host_list_keywords import (
+    SystemHostListKeywords,
+)
+from keywords.cloud_platform.system.host.system_host_lock_keywords import (
+    SystemHostLockKeywords,
+)
+from keywords.cloud_platform.system.host.system_host_reboot_keywords import (
+    SystemHostRebootKeywords,
+)
+from keywords.cloud_platform.system.host.system_host_swact_keywords import (
+    SystemHostSwactKeywords,
+)
+from keywords.cloud_platform.system.modify.system_modify_keywords import (
+    SystemModifyKeywords,
+)
 from keywords.cloud_platform.system.show.system_show_keywords import SystemShowKeywords
-from keywords.cloud_platform.system.storage.system_storage_backend_keywords import SystemStorageBackendKeywords
+from keywords.cloud_platform.system.storage.system_storage_backend_keywords import (
+    SystemStorageBackendKeywords,
+)
 from keywords.docker.images.docker_load_image_keywords import DockerLoadImageKeywords
 from keywords.files.file_keywords import FileKeywords
-from keywords.k8s.deployments.kubectl_delete_deployments_keywords import KubectlDeleteDeploymentsKeywords
-from keywords.k8s.deployments.kubectl_expose_deployment_keywords import KubectlExposeDeploymentKeywords
+from keywords.k8s.deployments.kubectl_delete_deployments_keywords import (
+    KubectlDeleteDeploymentsKeywords,
+)
+from keywords.k8s.deployments.kubectl_expose_deployment_keywords import (
+    KubectlExposeDeploymentKeywords,
+)
 from keywords.k8s.pods.kubectl_create_pods_keywords import KubectlCreatePodsKeywords
 from keywords.k8s.pods.kubectl_delete_pods_keywords import KubectlDeletePodsKeywords
 from keywords.k8s.pods.kubectl_exec_in_pods_keywords import KubectlExecInPodsKeywords
 from keywords.k8s.pods.kubectl_get_pods_keywords import KubectlGetPodsKeywords
-from keywords.k8s.secret.kubectl_create_secret_keywords import KubectlCreateSecretsKeywords
-from keywords.k8s.service.kubectl_delete_service_keywords import KubectlDeleteServiceKeywords
+from keywords.k8s.pods.object.kubectl_get_pods_output import KubectlGetPodsOutput
+from keywords.k8s.secret.kubectl_create_secret_keywords import (
+    KubectlCreateSecretsKeywords,
+)
+from keywords.k8s.service.kubectl_delete_service_keywords import (
+    KubectlDeleteServiceKeywords,
+)
 from keywords.k8s.service.kubectl_get_service_keywords import KubectlGetServiceKeywords
 from keywords.linux.date.date_keywords import DateKeywords
 from keywords.linux.tar.tar_keywords import TarKeywords
-from pytest import mark
-from web_pages.horizon.admin.platform.horizon_host_inventory_page import HorizonHostInventoryPage
+from web_pages.horizon.admin.platform.horizon_host_inventory_page import (
+    HorizonHostInventoryPage,
+)
 from web_pages.horizon.login.horizon_login_page import HorizonLoginPage
 
 
@@ -78,12 +142,11 @@ def test_check_all_pods_healthy():
         - connect to active controller
         - run kubectl -o wide get pods --all-namespaces
         - validate that all pods are in 'Running, 'Succeeded' or 'Completed' state
-    Returns:
 
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
 
-    healthy_status = ['Running', 'Succeeded', 'Completed']
+    healthy_status = ["Running", "Succeeded", "Completed"]
     is_healthy = KubectlGetPodsKeywords(ssh_connection).wait_for_all_pods_status(healthy_status, timeout=300)
     assert is_healthy
 
@@ -101,8 +164,8 @@ def test_platform_integ_apps_applied():
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     system_applications = SystemApplicationListKeywords(ssh_connection).get_system_application_list()
-    platform_integ_apps_status = system_applications.get_application('platform-integ-apps').get_status()
-    assert platform_integ_apps_status == 'applied', f'platform-integ-apps was not applied. Status was {platform_integ_apps_status}'
+    platform_integ_apps_status = system_applications.get_application("platform-integ-apps").get_status()
+    assert platform_integ_apps_status == "applied", f"platform-integ-apps was not applied. Status was {platform_integ_apps_status}"
 
 
 @mark.p0
@@ -118,8 +181,8 @@ def test_cert_manager_applied():
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     system_applications = SystemApplicationListKeywords(ssh_connection).get_system_application_list()
-    application_status = system_applications.get_application('cert-manager').get_status()
-    assert application_status == 'applied', f'cert-manager was not applied. Status was {application_status}'
+    application_status = system_applications.get_application("cert-manager").get_status()
+    assert application_status == "applied", f"cert-manager was not applied. Status was {application_status}"
 
 
 @mark.p0
@@ -135,7 +198,7 @@ def test_nginx_ingress_controller_applied():
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     system_applications = SystemApplicationListKeywords(ssh_connection)
-    system_applications.validate_app_status('nginx-ingress-controller', 'applied')
+    system_applications.validate_app_status("nginx-ingress-controller", "applied")
 
 
 @mark.p0
@@ -298,54 +361,52 @@ def test_horizon_host_inventory_display_active_controller(request):
     validate_equals(horizon_host_information.get_operational_state().lower(), active_controller_output.get_operational().lower(), "Operational State of active controller")
     validate_equals(horizon_host_information.get_availability_state().lower(), active_controller_output.get_availability().lower(), "Availability State of active controller")
 
-    assert (
-        'minute' in horizon_host_information.get_uptime()
-        or 'hour' in horizon_host_information.get_uptime()
-        or 'day' in horizon_host_information.get_uptime()
-        or 'week' in horizon_host_information.get_uptime()
-    ), f"Uptime doesn't follow the expected format '* weeks, * days, * hours, * minutes'. Observed: {horizon_host_information.get_uptime()}"
+    assert "minute" in horizon_host_information.get_uptime() or "hour" in horizon_host_information.get_uptime() or "day" in horizon_host_information.get_uptime() or "week" in horizon_host_information.get_uptime(), f"Uptime doesn't follow the expected format '* weeks, * days, * hours, * minutes'. Observed: {horizon_host_information.get_uptime()}"
 
     validate_equals(horizon_host_information.get_status(), None, "Status Column of active controller")
     validate_equals(host_inventory.get_controller_edit_host_button_text(active_host_name), "Edit Host", "Label of Edit Host button")
     get_logger().log_info("Validated the the table entries for the Active Controller")
 
 
-def deploy_pods(request, ssh_connection: SSHConnection):
+def deploy_pods(request: Any, ssh_connection: SSHConnection) -> KubectlGetPodsOutput:
     """
     Deploys pods needed by some suites in this suite
+
     Args:
-        request (): request needed for adding teardown
-        ssh_connection (): the ssh connection
+        request (Any): request needed for adding teardown
+        ssh_connection (SSHConnection): the ssh connection
 
     Returns:
+        KubectlGetPodsOutput: the pods output
 
     """
     file_keywords = FileKeywords(ssh_connection)
 
     # Cleanup any old pods
-    KubectlDeleteDeploymentsKeywords(ssh_connection).cleanup_deployment('server-pod-dep')
-    KubectlDeletePodsKeywords(ssh_connection).cleanup_pod('client-pod1')
-    KubectlDeletePodsKeywords(ssh_connection).cleanup_pod('client-pod2')
+    KubectlDeleteDeploymentsKeywords(ssh_connection).cleanup_deployment("server-pod-dep")
+    KubectlDeletePodsKeywords(ssh_connection).cleanup_pod("client-pod1")
+    KubectlDeletePodsKeywords(ssh_connection).cleanup_pod("client-pod2")
 
-    file_keywords.upload_file(get_stx_resource_path('resources/cloud_platform/sanity/pods/client-pod1.yaml'), '/home/sysadmin/client-pod1.yaml')
-    file_keywords.upload_file(get_stx_resource_path('resources/cloud_platform/sanity/pods/client-pod2.yaml'), '/home/sysadmin/client-pod2.yaml')
-    file_keywords.upload_file(get_stx_resource_path('resources/cloud_platform/sanity/pods/server_pod.yaml'), '/home/sysadmin/server_pod.yaml')
+    file_keywords.upload_file(get_stx_resource_path("resources/cloud_platform/sanity/pods/client-pod1.yaml"), "/home/sysadmin/client-pod1.yaml")
+    file_keywords.upload_file(get_stx_resource_path("resources/cloud_platform/sanity/pods/client-pod2.yaml"), "/home/sysadmin/client-pod2.yaml")
+    file_keywords.upload_file(get_stx_resource_path("resources/cloud_platform/sanity/pods/server_pod.yaml"), "/home/sysadmin/server_pod.yaml")
     kubectl_create_pods_keyword = KubectlCreatePodsKeywords(ssh_connection)
-    kubectl_create_pods_keyword.create_from_yaml('/home/sysadmin/server_pod.yaml')
-    kubectl_create_pods_keyword.create_from_yaml('/home/sysadmin/client-pod1.yaml')
-    kubectl_create_pods_keyword.create_from_yaml('/home/sysadmin/client-pod2.yaml')
+    kubectl_create_pods_keyword.create_from_yaml("/home/sysadmin/server_pod.yaml")
+    kubectl_create_pods_keyword.create_from_yaml("/home/sysadmin/client-pod1.yaml")
+    kubectl_create_pods_keyword.create_from_yaml("/home/sysadmin/client-pod2.yaml")
 
     # Create teardown to remove pods
-    def remove_deployments_and_pods():
+    def remove_deployments_and_pods() -> KubectlGetPodsOutput:
         """
         Finalizer to remove deployments and pods
-        Returns:
 
+        Returns:
+            KubectlGetPodsOutput: the pods output
         """
 
-        rc = KubectlDeleteDeploymentsKeywords(ssh_connection).cleanup_deployment('server-pod-dep')
-        rc += KubectlDeletePodsKeywords(ssh_connection).cleanup_pod('client-pod1')
-        rc += KubectlDeletePodsKeywords(ssh_connection).cleanup_pod('client-pod2')
+        rc = KubectlDeleteDeploymentsKeywords(ssh_connection).cleanup_deployment("server-pod-dep")
+        rc += KubectlDeletePodsKeywords(ssh_connection).cleanup_pod("client-pod1")
+        rc += KubectlDeletePodsKeywords(ssh_connection).cleanup_pod("client-pod2")
 
         assert rc == 0
 
@@ -353,20 +414,20 @@ def deploy_pods(request, ssh_connection: SSHConnection):
     pods = KubectlGetPodsKeywords(ssh_connection).get_pods()
 
     # get the server pod names
-    server_pods = pods.get_pods_start_with('server-pod-dep')
+    server_pods = pods.get_pods_start_with("server-pod-dep")
     assert len(server_pods) == 2, "Incorrect number of server pods were created"
     server_pod1_name = server_pods[0].get_name()
     server_pod2_name = server_pods[1].get_name()
 
     # wait for all pods to be running
     kubectl_get_pods_keywords = KubectlGetPodsKeywords(ssh_connection)
-    client_pod1_running = kubectl_get_pods_keywords.wait_for_pod_status('client-pod1', 'Running')
+    client_pod1_running = kubectl_get_pods_keywords.wait_for_pod_status("client-pod1", "Running")
     assert client_pod1_running, "Client pod1 did not reach running status in expected time"
-    client_pod2_running = kubectl_get_pods_keywords.wait_for_pod_status('client-pod2', 'Running')
+    client_pod2_running = kubectl_get_pods_keywords.wait_for_pod_status("client-pod2", "Running")
     assert client_pod2_running, "Client pod2 did not reach running status in expected time"
-    server_pod1_running = kubectl_get_pods_keywords.wait_for_pod_status(server_pod1_name, 'Running')
+    server_pod1_running = kubectl_get_pods_keywords.wait_for_pod_status(server_pod1_name, "Running")
     assert server_pod1_running, "Server pod1 did not reach running status in expected time"
-    server_pod2_running = kubectl_get_pods_keywords.wait_for_pod_status(server_pod2_name, 'Running')
+    server_pod2_running = kubectl_get_pods_keywords.wait_for_pod_status(server_pod2_name, "Running")
     assert server_pod2_running, "Server pod2 did not reach running status in expected time"
 
     # return the pods with the latest status
@@ -512,10 +573,10 @@ def test_dc_install_custom_app():
     # Step 1: Transfer the app file to the active controller
 
     # Defines application name, application file name, source (local) and destination (remote) file paths.
-    app_name = 'hello-kitty'
-    app_file_name = 'hello-kitty-min-k8s-version.tgz'
-    local_path = get_stx_resource_path(f'resources/cloud_platform/containers/{app_file_name}')
-    remote_path = f'/home/{ConfigurationManager.get_lab_config().get_admin_credentials().get_user_name()}/{app_file_name}'
+    app_name = "hello-kitty"
+    app_file_name = "hello-kitty-min-k8s-version.tgz"
+    local_path = get_stx_resource_path(f"resources/cloud_platform/containers/{app_file_name}")
+    remote_path = f"/home/{ConfigurationManager.get_lab_config().get_admin_credentials().get_user_name()}/{app_file_name}"
 
     # Opens an SSH session to active controller.
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
@@ -552,9 +613,7 @@ def test_dc_install_custom_app():
     system_application_object = system_application_upload_output.get_system_application_object()
     assert system_application_object is not None, f"Expecting 'system_application_object' as not None, Observed: {system_application_object}."
     assert system_application_object.get_name() == app_name, f"Expecting 'app_name' = {app_name}, Observed: {system_application_object.get_name()}."
-    assert (
-        system_application_object.get_status() == SystemApplicationStatusEnum.UPLOADED.value
-    ), f"Expecting 'system_application_object.get_status()' = {SystemApplicationStatusEnum.UPLOADED.value}, Observed: {system_application_object.get_status()}."
+    assert system_application_object.get_status() == SystemApplicationStatusEnum.UPLOADED.value, f"Expecting 'system_application_object.get_status()' = {SystemApplicationStatusEnum.UPLOADED.value}, Observed: {system_application_object.get_status()}."
 
     # Step 3: Apply the custom app on the active controller
 
@@ -565,9 +624,7 @@ def test_dc_install_custom_app():
     system_application_object = system_application_apply_output.get_system_application_object()
     assert system_application_object is not None, f"Expecting 'system_application_object' as not None, Observed: {system_application_object}."
     assert system_application_object.get_name() == app_name, f"Expecting 'app_name' = {app_name}, Observed: {system_application_object.get_name()}."
-    assert (
-        system_application_object.get_status() == SystemApplicationStatusEnum.APPLIED.value
-    ), f"Expecting 'system_application_object.get_status()' = {SystemApplicationStatusEnum.APPLIED.value}, Observed: {system_application_object.get_status()}."
+    assert system_application_object.get_status() == SystemApplicationStatusEnum.APPLIED.value, f"Expecting 'system_application_object.get_status()' = {SystemApplicationStatusEnum.APPLIED.value}, Observed: {system_application_object.get_status()}."
 
     # Step 4: Clean the active controller
 
@@ -576,9 +633,7 @@ def test_dc_install_custom_app():
     system_application_remove_input.set_app_name(app_name)
     system_application_remove_input.set_force_removal(True)
     system_application_output = SystemApplicationRemoveKeywords(ssh_connection).system_application_remove(system_application_remove_input)
-    assert (
-        system_application_output.get_system_application_object().get_status() == SystemApplicationStatusEnum.UPLOADED.value
-    ), f"Expecting 'system_application_output.get_system_application_object().get_status()' = {SystemApplicationStatusEnum.UPLOADED.value}, Observed: {system_application_output.get_system_application_object().get_status()}."
+    assert system_application_output.get_system_application_object().get_status() == SystemApplicationStatusEnum.UPLOADED.value, f"Expecting 'system_application_output.get_system_application_object().get_status()' = {SystemApplicationStatusEnum.UPLOADED.value}, Observed: {system_application_output.get_system_application_object().get_status()}."
 
     # Deletes the application
     system_application_delete_input = SystemApplicationDeleteInput()
@@ -626,9 +681,7 @@ def test_dc_install_custom_app():
         system_application_object = system_application_upload_output.get_system_application_object()
         assert system_application_object is not None, f"Expecting 'system_application_object' as not None, Observed: {system_application_object}"
         assert system_application_object.get_name() == app_name, f"Expecting 'app_name' = {app_name}, Observed: {system_application_object.get_name()}"
-        assert (
-            system_application_object.get_status() == SystemApplicationStatusEnum.UPLOADED.value
-        ), f"Expecting 'system_application_object.get_status()' = {SystemApplicationStatusEnum.UPLOADED.value}, Observed: {system_application_object.get_status()}"
+        assert system_application_object.get_status() == SystemApplicationStatusEnum.UPLOADED.value, f"Expecting 'system_application_object.get_status()' = {SystemApplicationStatusEnum.UPLOADED.value}, Observed: {system_application_object.get_status()}"
 
         # Step 7: Apply the custom app on the current subcloud.
 
@@ -639,9 +692,7 @@ def test_dc_install_custom_app():
         system_application_object = system_application_apply_output.get_system_application_object()
         assert system_application_object is not None, f"Expecting 'system_application_object' as not None, Observed: {system_application_object}."
         assert system_application_object.get_name() == app_name, f"Expecting app_name = {app_name}, Observed: {system_application_object.get_name()}."
-        assert (
-            system_application_object.get_status() == SystemApplicationStatusEnum.APPLIED.value
-        ), f"Expecting 'system_application_object.get_status()' = {SystemApplicationStatusEnum.APPLIED.value}, Observed: {system_application_object.get_status()}."
+        assert system_application_object.get_status() == SystemApplicationStatusEnum.APPLIED.value, f"Expecting 'system_application_object.get_status()' = {SystemApplicationStatusEnum.APPLIED.value}, Observed: {system_application_object.get_status()}."
 
         # Step 8: Clean the current subcloud.
 
@@ -650,9 +701,7 @@ def test_dc_install_custom_app():
         system_application_remove_input.set_app_name(app_name)
         system_application_remove_input.set_force_removal(True)
         system_application_output = SystemApplicationRemoveKeywords(ssh_subcloud_connection).system_application_remove(system_application_remove_input)
-        assert (
-            system_application_output.get_system_application_object().get_status() == SystemApplicationStatusEnum.UPLOADED.value
-        ), f"Expecting 'system_application_output.get_system_application_object().get_status()' = {SystemApplicationStatusEnum.UPLOADED.value}, Observed: {system_application_output.get_system_application_object().get_status()}."
+        assert system_application_output.get_system_application_object().get_status() == SystemApplicationStatusEnum.UPLOADED.value, f"Expecting 'system_application_output.get_system_application_object().get_status()' = {SystemApplicationStatusEnum.UPLOADED.value}, Observed: {system_application_output.get_system_application_object().get_status()}."
 
         # Deletes the application
         system_application_delete_input = SystemApplicationDeleteInput()
@@ -702,9 +751,7 @@ def test_dc_swact_host(request):
     dcmanager_subcloud_unmanage_keywords = DcManagerSubcloudManagerKeywords(ssh_connection)
     # Changes the state of lowest_subcloud to 'unmanaged' within a period of 'change_state_timeout'
     dcmanager_subcloud_manage_output = dcmanager_subcloud_unmanage_keywords.get_dcmanager_subcloud_unmanage(lowest_subcloud.get_name(), change_state_timeout)
-    get_logger().log_info(
-        f"The management state of the subcloud {lowest_subcloud.get_name()} was changed to {dcmanager_subcloud_manage_output.get_dcmanager_subcloud_manage_object().get_management()}."
-    )
+    get_logger().log_info(f"The management state of the subcloud {lowest_subcloud.get_name()} was changed to {dcmanager_subcloud_manage_output.get_dcmanager_subcloud_manage_object().get_management()}.")
 
     # Refreshes the variable representing 'lowest_subcloud'.
     subcloud_id_filter = DcManagerSubcloudListObjectFilter()
@@ -716,9 +763,7 @@ def test_dc_swact_host(request):
     def teardown_manage():
         dcmanager_subcloud_manage_keywords = DcManagerSubcloudManagerKeywords(ssh_connection)
         dcmanager_subcloud_manage_output = dcmanager_subcloud_manage_keywords.get_dcmanager_subcloud_manage(lowest_subcloud.get_name(), change_state_timeout)
-        get_logger().log_info(
-            f"The management state has been reestablished as {dcmanager_subcloud_manage_output.get_dcmanager_subcloud_manage_object().get_management()} on {lowest_subcloud.get_name()}"
-        )
+        get_logger().log_info(f"The management state has been reestablished as {dcmanager_subcloud_manage_output.get_dcmanager_subcloud_manage_object().get_management()} on {lowest_subcloud.get_name()}")
 
     # The teardown_manage function must be added at this point because the lowest_subcloud has just had its state changed to 'unmanaged'.
     request.addfinalizer(teardown_manage)
@@ -726,12 +771,6 @@ def test_dc_swact_host(request):
     # Retrieves the managed subclouds before swact.
     dcmanager_subcloud_list_filter = DcManagerSubcloudListObjectFilter.get_healthy_subcloud_filter()
     managed_subclouds_before_swact = dcmanager_subcloud_list_keywords.get_dcmanager_subcloud_list().get_dcmanager_subcloud_list_objects_filtered(dcmanager_subcloud_list_filter)
-
-    # This test is finalized if there are no online, managed, and synchronized subclouds — that is, no healthy subclouds — on the central subcloud.
-    if len(managed_subclouds_before_swact) == 0:
-        message = f"There are no online, managed, and synchronized subclouds on {ssh_connection}. This test case will be finalized because it is intended, among other verifications, to check if the subclouds remain in the 'managed' state after the 'swact' operation."
-        get_logger().log_info(message)
-        pytest.fail(message)
 
     # Registers the healthy subclouds in the log file.
     for managed_subcloud_before_swact in managed_subclouds_before_swact:
@@ -741,35 +780,18 @@ def test_dc_swact_host(request):
     system_host_list_keywords = SystemHostListKeywords(ssh_connection)
     active_controller = system_host_list_keywords.get_active_controller()
     standby_controller = system_host_list_keywords.get_standby_controller()
-    get_logger().log_info(
-        f"A 'swact' operation is about to be executed in {ssh_connection}. Current controllers' configuration before this operation: Active controller = {active_controller.get_host_name()}, Standby controller = {standby_controller.get_host_name()}."
-    )
+    get_logger().log_info(f"A 'swact' operation is about to be executed in {ssh_connection}. Current controllers' configuration before this operation: Active controller = {active_controller.get_host_name()}, Standby controller = {standby_controller.get_host_name()}.")
     system_host_swact_keywords = SystemHostSwactKeywords(ssh_connection)
     system_host_swact_keywords.host_swact()
     swact_successfull = system_host_swact_keywords.wait_for_swact(active_controller, standby_controller)
+    validate_equals(swact_successfull, True, "Validate that swact was successful")
 
     # Gets the controllers after the execution of the swact operation.
     active_controller_after_swact = system_host_list_keywords.get_active_controller()
     standby_controller_after_swact = system_host_list_keywords.get_standby_controller()
 
-    # Verifies if the swact operation was successfully executed.
-    if not swact_successfull:
-        error_message = f"The swact operation failed to execute on {ssh_connection}. Current controllers' configuration before this operation: Active controller = {active_controller_after_swact.get_host_name()}, Standby controller = {standby_controller_after_swact.get_host_name()}. This test case will be finalized because, among other verifications, it is intended to check if the controllers are successfully interchanged after a 'swact' operation is successfully executed."
-        get_logger().log_info(error_message)
-        pytest.fail(error_message)
-
-    # Asserts that the swact was done as expected.
-    assert (
-        active_controller.get_id() == standby_controller_after_swact.get_id()
-    ), f"The ID of the standby controller ({standby_controller_after_swact.get_id()}) after the execution of the 'swact' operation is not the same as the ID of the active controller ({active_controller.get_id()}) before that execution, as expected. It seems the 'swact' operation did not execute successfully."
-    assert (
-        standby_controller.get_id() == active_controller_after_swact.get_id()
-    ), f"The ID of the active controller ({active_controller_after_swact.get_id()}) after the execution of the 'swact' operation is not the same as the ID of the standby controller ({standby_controller.get_id()}) before that execution, as expected. It seems the 'swact' operation did not execute successfully."
-
-    # Registers the controllers configuration in the log file.
-    get_logger().log_info(
-        f"The swact operation was successfully executed. Current controller's configuration: Previous active controller = {active_controller.get_host_name()}, Current active controller = {active_controller_after_swact.get_host_name()}, Previous standby controller = {standby_controller.get_host_name()}, Current standby controller = {standby_controller_after_swact.get_host_name()}."
-    )
+    validate_equals(active_controller.get_id(), standby_controller_after_swact.get_id(), "Validate that active controller is now standby")
+    validate_equals(standby_controller.get_id(), active_controller_after_swact.get_id(), "Validate that standby controller is now active")
 
     # Tear Down function: reestablishes the active/standby host configuration.
     def teardown_swact():
@@ -777,9 +799,7 @@ def test_dc_swact_host(request):
         system_host_list_keyword = SystemHostListKeywords(ssh_connection)
         active_controller_teardown_before_swact = system_host_list_keyword.get_active_controller()
         standby_controller_teardown_before_swact = system_host_list_keyword.get_standby_controller()
-        get_logger().log_info(
-            f"Current controller's configuration: Active controller = {active_controller_teardown_before_swact.get_host_name()}, Standby controller = {standby_controller_teardown_before_swact.get_host_name()}."
-        )
+        get_logger().log_info(f"Current controller's configuration: Active controller = {active_controller_teardown_before_swact.get_host_name()}, Standby controller = {standby_controller_teardown_before_swact.get_host_name()}.")
         system_host_swact_keywords_teardown = SystemHostSwactKeywords(ssh_connection)
         system_host_swact_keywords_teardown.host_swact()
         swact_successfull = system_host_swact_keywords_teardown.wait_for_swact(active_controller_teardown_before_swact, standby_controller_teardown_before_swact)
@@ -796,31 +816,23 @@ def test_dc_swact_host(request):
     # The teardown_manage function must be added at this point because the 'swact' operation has just been executed.
     request.addfinalizer(teardown_swact)
 
-    # Retrieves the managed subclouds after swact.
-    managed_subclouds_after_swact = dcmanager_subcloud_list_keywords.get_dcmanager_subcloud_list().get_dcmanager_subcloud_list_objects_filtered(dcmanager_subcloud_list_filter)
-
     # Asserts that the lowest subcloud is unmanaged.
     dcmanager_subcloud_list_filter = DcManagerSubcloudListObjectFilter()
     dcmanager_subcloud_list_filter.set_id(lowest_subcloud.get_id())
     lowest_subcloud_after_swact = dcmanager_subcloud_list_keywords.get_dcmanager_subcloud_list().get_dcmanager_subcloud_list_objects_filtered(dcmanager_subcloud_list_filter)[0]
-    assert (
-        lowest_subcloud_after_swact.get_management() == 'unmanaged'
-    ), f"The management state of subcloud {lowest_subcloud} is not 'unmanaged', as expected. Current management state of subcloud {lowest_subcloud}: '{lowest_subcloud.get_management()}'."
+    validate_equals(lowest_subcloud_after_swact.get_management(), "unmanaged", "Validate subcloud is still unmanaged")
 
-    # Registers the management state of lowest_subcloud in the log file.
-    get_logger().log_info(
-        f"Management state of the subcloud with lowest id before 'swact' operation: {lowest_subcloud.get_management()}. Management state of the subcloud with lowest id after 'swact' operation: {lowest_subcloud_after_swact.get_management()}."
-    )
+    # Retrieves the managed subclouds after swact.
+    managed_subclouds_after_swact = dcmanager_subcloud_list_keywords.get_dcmanager_subcloud_list().get_dcmanager_subcloud_list_objects_filtered(DcManagerSubcloudListObjectFilter.get_healthy_subcloud_filter())
+    validate_equals(len(managed_subclouds_before_swact), len(managed_subclouds_after_swact), "Validate the number of managed subclouds is the same")
 
     # Asserts that the subclouds in subcloud_before_swact are the same as the subclouds in subcloud_after_swact, and
     # that all these subclouds are in 'managed' status.
     for subcloud_before_swact in managed_subclouds_before_swact:
         subcloud_after_swact = next((subcloud for subcloud in managed_subclouds_after_swact if subcloud.get_id() == subcloud_before_swact.get_id()), None)
         assert subcloud_after_swact is not None
-        assert subcloud_after_swact.get_management() == 'managed'
-        get_logger().log_info(
-            f"Management state of subcloud {subcloud_before_swact.get_name()} before 'swact' operation: {subcloud_before_swact.get_management()}. Management state of subcloud {subcloud_after_swact.get_name()} after 'swact' operation: {subcloud_after_swact.get_management()}."
-        )
+        assert subcloud_after_swact.get_management() == "managed"
+        get_logger().log_info(f"Management state of subcloud {subcloud_before_swact.get_name()} before 'swact' operation: {subcloud_before_swact.get_management()}. Management state of subcloud {subcloud_after_swact.get_name()} after 'swact' operation: {subcloud_after_swact.get_management()}.")
 
     get_logger().log_info("Completed the 'test_dc_swact_host' test case.")
 
@@ -850,7 +862,7 @@ def test_dc_system_health_pre_session():
     """
     # The application 'platform-integ-apps' is responsible for the installation, management, and integration
     # of essential platform applications running on the underlying infrastructure. It must be in 'applied' status.
-    platform_app = 'platform-integ-apps'
+    platform_app = "platform-integ-apps"
 
     # List of DC system SSH connections.
     ssh_connections = []
@@ -880,7 +892,7 @@ def test_dc_system_health_pre_session():
         if len(system_storage_backends) != 0:
             system_application_list_keywords = SystemApplicationListKeywords(ssh_connection)
             app_status = system_application_list_keywords.get_system_application_list().get_application(platform_app).get_status()
-            assert app_status == 'applied', f"The status of application '{platform_app}' is not 'applied'. Current status: {app_status}."
+            assert app_status == "applied", f"The status of application '{platform_app}' is not 'applied'. Current status: {app_status}."
 
         # Asserts that no alarms are present
         alarm_list_keywords = AlarmListKeywords(ssh_connection)
@@ -921,9 +933,7 @@ def test_dc_unmanage_manage_subclouds(request):
     dcmanager_subcloud_list = dcmanager_subcloud_list_keywords.get_dcmanager_subcloud_list()
     subcloud = dcmanager_subcloud_list.get_healthy_subcloud_with_lowest_id()
     subcloud_name = subcloud.get_name()
-    get_logger().log_info(
-        f"The subcloud with the lowest ID will be considered in this test case. There is no special reason for that. It could be any subcloud. Subcloud chosen: name = {subcloud.get_name()}, ID = {subcloud.get_id()}."
-    )
+    get_logger().log_info(f"The subcloud with the lowest ID will be considered in this test case. There is no special reason for that. It could be any subcloud. Subcloud chosen: name = {subcloud.get_name()}, ID = {subcloud.get_id()}.")
 
     # Object responsible for set the subclouds to 'managed'/'unmanaged' management state.
     dcmanager_subcloud_manage_keywords = DcManagerSubcloudManagerKeywords(ssh_connection)
@@ -933,13 +943,11 @@ def test_dc_unmanage_manage_subclouds(request):
         teardown_dcmanager_subcloud_list_keywords = DcManagerSubcloudListKeywords(ssh_connection)
         teardown_dcmanager_subcloud_list = teardown_dcmanager_subcloud_list_keywords.get_dcmanager_subcloud_list()
         teardown_subcloud = teardown_dcmanager_subcloud_list.get_subcloud_by_name(subcloud_name)
-        if teardown_subcloud.get_management() == 'unmanaged':
+        if teardown_subcloud.get_management() == "unmanaged":
             dcmanager_subcloud_manage_keywords.get_dcmanager_subcloud_manage(teardown_subcloud.get_name(), change_state_timeout)
             get_logger().log_info(f"Teardown: The original management state of the subcloud '{teardown_subcloud.get_name()}' was reestablished to '{teardown_subcloud.get_management()}'.")
         else:
-            get_logger().log_info(
-                f"Teardown: There's no need to reestablish the original management state of the subcloud '{teardown_subcloud.get_name()}', as it is already in the 'managed' state. Current management state: '{teardown_subcloud.get_management()}'"
-            )
+            get_logger().log_info(f"Teardown: There's no need to reestablish the original management state of the subcloud '{teardown_subcloud.get_name()}', as it is already in the 'managed' state. Current management state: '{teardown_subcloud.get_management()}'")
 
     request.addfinalizer(teardown)
 
@@ -948,9 +956,7 @@ def test_dc_unmanage_manage_subclouds(request):
     # Tries to change the state of the subcloud to 'unmanaged' and waits for it for 'change_state_timeout' seconds.
     dcmanager_subcloud_manage_output = dcmanager_subcloud_manage_keywords.get_dcmanager_subcloud_unmanage(subcloud.get_name(), change_state_timeout)
 
-    assert (
-        dcmanager_subcloud_manage_output.get_dcmanager_subcloud_manage_object().get_management() == 'unmanaged'
-    ), f"It was not possible to change the management state of the subcloud {subcloud.get_name()} to 'unmanaged'."
+    assert dcmanager_subcloud_manage_output.get_dcmanager_subcloud_manage_object().get_management() == "unmanaged", f"It was not possible to change the management state of the subcloud {subcloud.get_name()} to 'unmanaged'."
     get_logger().log_info(f"Subcloud '{subcloud.get_name()}' had its management state changed to 'unmanaged' successfully.")
 
     get_logger().log_info("The first step of this test case is concluded.")
@@ -960,9 +966,7 @@ def test_dc_unmanage_manage_subclouds(request):
     # Tries to change the state of the subcloud to 'managed' and waits for it for 'change_state_timeout' seconds.
     dcmanager_subcloud_manage_output = dcmanager_subcloud_manage_keywords.get_dcmanager_subcloud_manage(subcloud.get_name(), change_state_timeout)
 
-    assert (
-        dcmanager_subcloud_manage_output.get_dcmanager_subcloud_manage_object().get_management() == 'managed'
-    ), f"It was not possible to change the management state of the subcloud {subcloud.get_name()} to 'managed'."
+    assert dcmanager_subcloud_manage_output.get_dcmanager_subcloud_manage_object().get_management() == "managed", f"It was not possible to change the management state of the subcloud {subcloud.get_name()} to 'managed'."
     get_logger().log_info(f"Subcloud '{subcloud.get_name()}' had its management state changed to 'managed' successfully.")
 
     get_logger().log_info("The second and last step of this test case is concluded.")
@@ -1080,11 +1084,11 @@ def test_dc_subcloud_update_description(request):
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
 
-    test_description = 'test description'
+    test_description = "test description"
 
     lab_config = ConfigurationManager.get_lab_config()
     subclouds = lab_config.get_subclouds()
-    assert len(subclouds) != 0, 'Failed. No subclouds were found'
+    assert len(subclouds) != 0, "Failed. No subclouds were found"
 
     # Get the first subcloud from the list
     subcloud = subclouds[0]
@@ -1093,15 +1097,15 @@ def test_dc_subcloud_update_description(request):
     subcloud_show_object = DcManagerSubcloudShowKeywords(ssh_connection).get_dcmanager_subcloud_show(subcloud_name).get_dcmanager_subcloud_show_object()
     original_description = subcloud_show_object.get_description()
 
-    subcloud_update_output = DcManagerSubcloudUpdateKeywords(ssh_connection).dcmanager_subcloud_update(subcloud_name, 'description', test_description)
+    subcloud_update_output = DcManagerSubcloudUpdateKeywords(ssh_connection).dcmanager_subcloud_update(subcloud_name, "description", test_description)
     new_description = subcloud_update_output.get_dcmanager_subcloud_show_object().get_description()
 
     def teardown():
-        DcManagerSubcloudUpdateKeywords(ssh_connection).dcmanager_subcloud_update(subcloud_name, 'description', original_description)
+        DcManagerSubcloudUpdateKeywords(ssh_connection).dcmanager_subcloud_update(subcloud_name, "description", original_description)
 
     request.addfinalizer(teardown)
 
-    validate_equals(new_description, test_description, 'Validate that the description has been changed')
+    validate_equals(new_description, test_description, "Validate that the description has been changed")
 
 
 @mark.p0
@@ -1119,11 +1123,11 @@ def test_dc_subcloud_update_location(request):
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
 
-    test_location = 'test location'
+    test_location = "test location"
 
     lab_config = ConfigurationManager.get_lab_config()
     subclouds = lab_config.get_subclouds()
-    assert len(subclouds) != 0, 'Failed. No subclouds were found'
+    assert len(subclouds) != 0, "Failed. No subclouds were found"
 
     # Get the first subcloud from the list
     subcloud = subclouds[0]
@@ -1132,15 +1136,15 @@ def test_dc_subcloud_update_location(request):
     subcloud_show_object = DcManagerSubcloudShowKeywords(ssh_connection).get_dcmanager_subcloud_show(subcloud_name).get_dcmanager_subcloud_show_object()
     original_location = subcloud_show_object.get_location()
 
-    subcloud_update_output = DcManagerSubcloudUpdateKeywords(ssh_connection).dcmanager_subcloud_update(subcloud_name, 'location', test_location)
+    subcloud_update_output = DcManagerSubcloudUpdateKeywords(ssh_connection).dcmanager_subcloud_update(subcloud_name, "location", test_location)
     new_location = subcloud_update_output.get_dcmanager_subcloud_show_object().get_location()
 
     def teardown():
-        DcManagerSubcloudUpdateKeywords(ssh_connection).dcmanager_subcloud_update(subcloud_name, 'location', original_location)
+        DcManagerSubcloudUpdateKeywords(ssh_connection).dcmanager_subcloud_update(subcloud_name, "location", original_location)
 
     request.addfinalizer(teardown)
 
-    validate_equals(new_location, test_location, 'Validate that the location has been changed')
+    validate_equals(new_location, test_location, "Validate that the location has been changed")
 
 
 @mark.p0
@@ -1170,7 +1174,7 @@ def test_dc_central_force_reboot_host_active_controller():
 
     reboot_success = SystemHostRebootKeywords(ssh_connection).wait_for_force_reboot(host_name, pre_uptime_of_host)
 
-    assert reboot_success, 'Host was not rebooted successfully'
+    assert reboot_success, "Host was not rebooted successfully"
 
 
 @mark.p0
@@ -1202,7 +1206,7 @@ def test_dc_central_force_reboot_host_standby_controller():
 
     reboot_success = SystemHostRebootKeywords(ssh_connection).wait_for_force_reboot(host_name, pre_uptime_of_host)
 
-    assert reboot_success, 'Host was not rebooted successfully'
+    assert reboot_success, "Host was not rebooted successfully"
 
 
 @mark.p0
@@ -1239,7 +1243,7 @@ def test_dc_central_force_reboot_host_compute():
 
     reboot_success = SystemHostRebootKeywords(ssh_connection).wait_for_force_reboot(compute.get_host_name(), pre_uptime_of_host)
 
-    assert reboot_success, 'Host was not rebooted successfully'
+    assert reboot_success, "Host was not rebooted successfully"
 
 
 def wait_for_reboot_to_start(host_name: str, ssh_connection: SSHConnection, timeout: int = 60):
@@ -1252,7 +1256,7 @@ def wait_for_reboot_to_start(host_name: str, ssh_connection: SSHConnection, time
     while time.time() < timeout:
         try:
             host_value = SystemHostListKeywords(ssh_connection).get_system_host_list().get_host(host_name)
-            if host_value.get_availability() == 'offline':
+            if host_value.get_availability() == "offline":
                 return True
         except Exception:
             get_logger().log_info(f"Found an exception when running system host list command. " f"Trying again after {refresh_time} seconds")
@@ -1282,26 +1286,26 @@ def test_dc_modify_timezone(request):
     system_modify_keywords = SystemModifyKeywords(ssh_connection)
     # ensure we are in UTC to start
     system_show_object = SystemShowKeywords(ssh_connection).system_show().get_system_show_object()
-    if system_show_object.get_timezone() != 'UTC':
-        system_modify_output = system_modify_keywords.system_modify_timezone('UTC')
-        validate_equals(system_modify_output.get_system_show_object().get_timezone(), 'UTC', "Update the timezone to UTC.")
+    if system_show_object.get_timezone() != "UTC":
+        system_modify_output = system_modify_keywords.system_modify_timezone("UTC")
+        validate_equals(system_modify_output.get_system_show_object().get_timezone(), "UTC", "Update the timezone to UTC.")
 
     def teardown():
-        system_modify_output = system_modify_keywords.system_modify_timezone('UTC')
+        system_modify_output = system_modify_keywords.system_modify_timezone("UTC")
         validate_equals(system_modify_output.get_system_show_object().get_timezone(), "UTC" "Update the timezone to UTC.")
 
     request.addfinalizer(teardown)
 
     system_modify_output = system_modify_keywords.system_modify_timezone("America/Los_Angeles")
     validate_equals(system_modify_output.get_system_show_object().get_timezone(), "America/Los_Angeles", "Update the timezone to America/Los_Angeles.")
-    validate_equals(DateKeywords(ssh_connection).get_timezone(), 'PST', 'validate that the system timezone is now PST')
+    validate_equals(DateKeywords(ssh_connection).get_timezone(), "PST", "validate that the system timezone is now PST")
 
     # check the subcloud to ensure the time zone change does not propagate
     dcmanager_subcloud_list = DcManagerSubcloudListKeywords(ssh_connection).get_dcmanager_subcloud_list()
     subcloud_name = dcmanager_subcloud_list.get_healthy_subcloud_with_lowest_id().get_name()
     subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
     system_show_object = SystemShowKeywords(subcloud_ssh).system_show().get_system_show_object()
-    validate_equals(system_show_object.get_timezone(), 'UTC', "Subcloud timezone is still UTC.")
+    validate_equals(system_show_object.get_timezone(), "UTC", "Subcloud timezone is still UTC.")
 
 
 @mark.p0
@@ -1321,7 +1325,7 @@ def test_pod_to_pod_connection(request):
     deploy_images_to_local_registry(ssh_connection)
 
     pods = deploy_pods(request, ssh_connection)
-    server_pods = pods.get_pods_start_with('server-pod-dep')
+    server_pods = pods.get_pods_start_with("server-pod-dep")
     server_pod1_name = server_pods[0].get_name()
     server_pod2_name = server_pods[1].get_name()
 
@@ -1362,7 +1366,7 @@ def test_pod_to_service_connection(request):
     deploy_images_to_local_registry(ssh_connection)
 
     pods = deploy_pods(request, ssh_connection)
-    server_pods = pods.get_pods_start_with('server-pod-dep')
+    server_pods = pods.get_pods_start_with("server-pod-dep")
     server_pod1_name = server_pods[0].get_name()
     server_pod2_name = server_pods[1].get_name()
 
@@ -1406,14 +1410,14 @@ def test_host_to_service_connection(request):
     deploy_images_to_local_registry(ssh_connection)
 
     deploy_pods(request, ssh_connection)
-    KubectlExposeDeploymentKeywords(ssh_connection).expose_deployment('server-pod-dep', 'NodePort', 'test-service')
+    KubectlExposeDeploymentKeywords(ssh_connection).expose_deployment("server-pod-dep", "NodePort", "test-service")
 
     def remove_service():
-        KubectlDeleteServiceKeywords(ssh_connection).delete_service('test-service')
+        KubectlDeleteServiceKeywords(ssh_connection).delete_service("test-service")
 
     request.addfinalizer(remove_service)
 
-    node_port = KubectlGetServiceKeywords(ssh_connection).get_service_node_port('test-service')
+    node_port = KubectlGetServiceKeywords(ssh_connection).get_service_node_port("test-service")
 
     url = f"http://{ConfigurationManager.get_lab_config().get_floating_ip()}:{node_port}"
     if ConfigurationManager.get_lab_config().is_ipv6():
@@ -1429,14 +1433,14 @@ def deploy_images_to_local_registry(ssh_connection: SSHConnection):
     Deploys images to the local registry for testcases in this suite.
 
     Args:
-        ssh_connection (): the SSH connection.
+        ssh_connection (SSHConnection): the SSH connection.
     """
-    local_registry = ConfigurationManager.get_docker_config().get_registry('local_registry')
+    local_registry = ConfigurationManager.get_docker_config().get_registry("local_registry")
 
     file_keywords = FileKeywords(ssh_connection)
     file_keywords.upload_file(get_stx_resource_path("resources/images/pv-test.tar"), "/home/sysadmin/pv-test.tar", overwrite=False)
 
-    KubectlCreateSecretsKeywords(ssh_connection).create_secret_for_registry(local_registry, 'local-secret')
+    KubectlCreateSecretsKeywords(ssh_connection).create_secret_for_registry(local_registry, "local-secret")
     docker_load_image_keywords = DockerLoadImageKeywords(ssh_connection)
     docker_load_image_keywords.load_docker_image_to_host("pv-test.tar")
     docker_load_image_keywords.tag_docker_image_for_registry("registry.local:9001/pv-test", "pv-test", local_registry)
