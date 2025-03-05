@@ -1,4 +1,5 @@
 from config.docker.objects.registry import Registry
+from framework.validation.validation import validate_str_contains
 from keywords.base_keyword import BaseKeyword
 from keywords.docker.login.docker_login_keywords import DockerLoginKeywords
 
@@ -25,7 +26,9 @@ class DockerLoadImageKeywords(BaseKeyword):
         Returns:
 
         """
-        self.ssh_connection.send_as_sudo(f"docker load -i {image_file_name}")
+        output = self.ssh_connection.send_as_sudo(f"docker load -i {image_file_name}")
+        string_output = "".join(output)
+        validate_str_contains(string_output, "Loaded image", "Image")
 
     def tag_docker_image_for_registry(self, image_name: str, tag_name: str, registry: Registry):
         """
