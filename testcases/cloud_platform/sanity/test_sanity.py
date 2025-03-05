@@ -1447,7 +1447,7 @@ def deploy_images_to_local_registry(ssh_connection: SSHConnection):
     docker_load_image_keywords.push_docker_image_to_registry("pv-test", local_registry)
 
     file_keywords.upload_file(get_stx_resource_path("resources/cloud_platform/images/node-hello-alpine/node-hello-alpine.tar.gz"), "/home/sysadmin/node-hello-alpine.tar.gz", overwrite=False)
-    TarKeywords(ssh_connection).extract_tar_file("/home/sysadmin/node-hello-alpine.tar.gz")
+    TarKeywords(ssh_connection).decompress_tar_gz("/home/sysadmin/node-hello-alpine.tar.gz")
     docker_load_image_keywords.load_docker_image_to_host("node-hello-alpine.tar")
     docker_load_image_keywords.tag_docker_image_for_registry("registry.local:9001/node-hello:alpine", "node-hello", local_registry)
     docker_load_image_keywords.push_docker_image_to_registry("node-hello", local_registry)
