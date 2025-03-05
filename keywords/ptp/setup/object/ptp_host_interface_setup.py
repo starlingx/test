@@ -28,7 +28,7 @@ class PTPHostInterfaceSetup:
 
         if "controller_1_interfaces" not in setup_dict:
             raise Exception(f"The ptp host interface entry {self.name} must have controller_1_interfaces defined.")
-        self.controller_0_interfaces = setup_dict["controller_1_interfaces"]
+        self.controller_1_interfaces = setup_dict["controller_1_interfaces"]
 
     def __str__(self):
         """
