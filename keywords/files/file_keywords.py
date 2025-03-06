@@ -32,17 +32,11 @@ class FileKeywords(BaseKeyword):
             sftp_client = self.ssh_connection.get_sftp_client()
             sftp_client.get(remote_file_path, local_file_path)
         except Exception as e:
-            get_logger().log_error(
-                f"Exception while downloading remote file [{remote_file_path}] to [{local_file_path}]. {e}"
-            )
-            raise KeywordException(
-                f"Exception while downloading remote file [{remote_file_path}] to [{local_file_path}]. {e}"
-            )
+            get_logger().log_error(f"Exception while downloading remote file [{remote_file_path}] to [{local_file_path}]. {e}")
+            raise KeywordException(f"Exception while downloading remote file [{remote_file_path}] to [{local_file_path}]. {e}")
         return True
 
-    def upload_file(
-        self, local_file_path: str, remote_file_path: str, overwrite: bool = True
-    ) -> bool:
+    def upload_file(self, local_file_path: str, remote_file_path: str, overwrite: bool = True) -> bool:
         """
         Method to upload a file.
 
@@ -65,12 +59,8 @@ class FileKeywords(BaseKeyword):
                 sftp_client = self.ssh_connection.get_sftp_client()
                 sftp_client.put(local_file_path, remote_file_path)
         except Exception as e:
-            get_logger().log_error(
-                f"Exception while uploading local file [{local_file_path}] to [{remote_file_path}]. {e}"
-            )
-            raise KeywordException(
-                f"Exception while uploading local file [{local_file_path}] to [{remote_file_path}]. {e}"
-            )
+            get_logger().log_error(f"Exception while uploading local file [{local_file_path}] to [{remote_file_path}]. {e}")
+            raise KeywordException(f"Exception while uploading local file [{local_file_path}] to [{remote_file_path}]. {e}")
         return True
 
     def file_exists(self, file_name: str) -> bool:
@@ -142,9 +132,7 @@ class FileKeywords(BaseKeyword):
             grep_arg = f"| grep {grep_pattern}"
 
         while time.time() < end_time:
-            output = self.ssh_connection.send(
-                f"sed -n '{start_line},{end_line}p' {file_name} {grep_arg}"
-            )
+            output = self.ssh_connection.send(f"sed -n '{start_line},{end_line}p' {file_name} {grep_arg}")
             if not output:  # if we get no more output we are at end of file
                 break
             total_output.extend(output)
@@ -171,12 +159,23 @@ class FileKeywords(BaseKeyword):
             output = self.ssh_connection.send_as_sudo(cmd)
 
             # Handle encoding issues
-            output = "".join(
-                [line.replace("â€˜", "").replace("â€™", "") for line in output]
-            )
+            output = "".join([line.replace("â€˜", "").replace("â€™", "") for line in output])
 
             return "No such file or directory" not in output
 
         except Exception as e:
             get_logger().log_error(f"Failed to check file existence at {path}: {e}")
             raise KeywordException(f"Failed to check file existence at {path}: {e}")
+
+    def delete_folder_with_sudo(self, folder_path: str) -> bool:
+        """
+        Deletes the folder.
+
+        Args:
+            folder_path (str): path to the folder.
+
+        Returns:
+            bool: True if delete successful, False otherwise.
+        """
+        self.ssh_connection.send_as_sudo(f"rm -r -f {folder_path}")
+        return self.validate_file_exists_with_sudo(folder_path)

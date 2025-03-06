@@ -4,6 +4,7 @@ from framework.ssh.ssh_connection import SSHConnection
 from framework.validation.validation import validate_equals_with_retry
 from keywords.base_keyword import BaseKeyword
 from keywords.cloud_platform.command_wrappers import source_openrc
+from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.files.file_keywords import FileKeywords
 
 
@@ -20,6 +21,24 @@ class DcManagerSubcloudBackupKeywords(BaseKeyword):
             ssh_connection (SSHConnection): SSH connection to the target system.
         """
         self.ssh_connection = ssh_connection
+
+    def get_backup_path(self, subcloud_name: str, release: str, local_only: bool = False) -> str:
+        """
+        Generate the backup path for a given subcloud and release.
+
+        Args:
+            subcloud_name (str): The name of the subcloud.
+            release (str): The release version associated with the backup.
+            local_only (bool, optional): If True, returns the local subcloud backup path;
+                                        otherwise, returns the central cloud backup path. Defaults to False.
+
+        Returns:
+            str: The full backup path based on the given parameters.
+        """
+        if local_only:
+            return f"/opt/platform-backup/backups/{release}/"
+
+        return f"/opt/dc-vault/backups/{subcloud_name}/{release}"
 
     def create_subcloud_backup(
         self,
@@ -67,11 +86,17 @@ class DcManagerSubcloudBackupKeywords(BaseKeyword):
 
         self.ssh_connection.send(source_openrc(cmd))
         self.validate_success_return_code(self.ssh_connection)
+
         if group:
-            # Use wait_for_backup_creation to ensure the file is created
             for subcloud_name in subcloud_list:
-                central_path = f"/opt/dc-vault/backups/{subcloud_name}/{release}"
-                self.wait_for_backup_creation(con_ssh, central_path, subcloud_name)
+                ssh_connection = LabConnectionKeywords().get_subcloud_ssh(subcloud_name) if local_only else con_ssh
+                backup_path = self.get_backup_path(subcloud_name, release, local_only)
+
+                if local_only:
+                    backup_path = f"{backup_path}{subcloud_name}_platform_backup_*.tgz"
+
+                self.wait_for_backup_creation(ssh_connection, backup_path, subcloud_name)
+
         else:
             self.wait_for_backup_creation(con_ssh, path, subcloud)
 
@@ -161,8 +186,10 @@ class DcManagerSubcloudBackupKeywords(BaseKeyword):
 
         if group:
             for subcloud_name in subcloud_list:
-                central_path = f"/opt/dc-vault/backups/{subcloud_name}/{release}"
-                self.wait_for_backup_deletion(con_ssh, central_path, subcloud_name)
+                ssh_connection = LabConnectionKeywords().get_subcloud_ssh(subcloud_name) if local_only else con_ssh
+                backup_path = self.get_backup_path(subcloud_name, release, local_only)
+
+                self.wait_for_backup_deletion(ssh_connection, backup_path, subcloud_name)
         else:
             self.wait_for_backup_deletion(con_ssh, path, subcloud)
 

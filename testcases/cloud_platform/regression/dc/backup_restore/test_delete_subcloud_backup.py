@@ -5,28 +5,14 @@ from pytest import fail, mark
 from config.configuration_manager import ConfigurationManager
 from framework.logging.automation_logger import get_logger
 from framework.validation.validation import validate_equals
-from keywords.cloud_platform.dcmanager.dcmanager_subcloud_backup_keywords import (
-    DcManagerSubcloudBackupKeywords,
-)
-from keywords.cloud_platform.dcmanager.dcmanager_subcloud_group_keywords import (
-    DcmanagerSubcloudGroupKeywords,
-)
-from keywords.cloud_platform.dcmanager.dcmanager_subcloud_list_keywords import (
-    DcManagerSubcloudListKeywords,
-)
-from keywords.cloud_platform.dcmanager.dcmanager_subcloud_update_keywords import (
-    DcManagerSubcloudUpdateKeywords,
-)
-from keywords.cloud_platform.dcmanager.objects.dcmanager_subcloud_list_object_filter import (
-    DcManagerSubcloudListObjectFilter,
-)
-from keywords.cloud_platform.rest.bare_metal.hosts.get_hosts_keywords import (
-    GetHostsKeywords,
-)
+from keywords.cloud_platform.dcmanager.dcmanager_subcloud_backup_keywords import DcManagerSubcloudBackupKeywords
+from keywords.cloud_platform.dcmanager.dcmanager_subcloud_group_keywords import DcmanagerSubcloudGroupKeywords
+from keywords.cloud_platform.dcmanager.dcmanager_subcloud_list_keywords import DcManagerSubcloudListKeywords
+from keywords.cloud_platform.dcmanager.dcmanager_subcloud_update_keywords import DcManagerSubcloudUpdateKeywords
+from keywords.cloud_platform.dcmanager.objects.dcmanager_subcloud_list_object_filter import DcManagerSubcloudListObjectFilter
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
-from keywords.cloud_platform.system.host.system_host_list_keywords import (
-    SystemHostListKeywords,
-)
+from keywords.cloud_platform.version_info.cloud_platform_version_manager import CloudPlatformVersionManagerClass
+from keywords.files.file_keywords import FileKeywords
 
 
 @mark.p2
@@ -43,8 +29,7 @@ def test_delete_backup_central(request):
 
     """
     central_ssh = LabConnectionKeywords().get_active_controller_ssh()
-    host = SystemHostListKeywords(central_ssh).get_active_controller().get_host_name()
-    host_show_output = GetHostsKeywords().get_hosts().get_system_host_show_object(host)
+    release = CloudPlatformVersionManagerClass().get_sw_version()
 
     # Gets the lowest subcloud (the subcloud with the lowest id).
     dcmanager_subcloud_list_keywords = DcManagerSubcloudListKeywords(central_ssh)
@@ -56,12 +41,6 @@ def test_delete_backup_central(request):
     lab_config = ConfigurationManager.get_lab_config().get_subcloud(subcloud_name)
     subcloud_password = lab_config.get_admin_credentials().get_password()
 
-    # Get the sw_version if available (used in vbox environments).
-    release = host_show_output.get_sw_version()
-    # If sw_version is not available, fall back to software_load (used in physical labs).
-    if not release:
-        release = host_show_output.get_software_load()
-
     dc_manager_backup = DcManagerSubcloudBackupKeywords(central_ssh)
 
     # Path to where the backup file will store.
@@ -69,8 +48,8 @@ def test_delete_backup_central(request):
 
     def teardown():
         get_logger().log_info("Removing test files during teardown")
-        central_ssh.send_as_sudo("rm -r -f /opt/dc-vault/backups/")
-        subcloud_ssh.send_as_sudo("rm -r -f /opt/platform-backup/backups/")
+        FileKeywords(central_ssh).delete_folder_with_sudo("/opt/dc-vault/backups/")
+        FileKeywords(subcloud_ssh).delete_folder_with_sudo("/opt/platform-backup/backups/")
 
     request.addfinalizer(teardown)
 
@@ -97,8 +76,7 @@ def test_delete_backup_local(request):
 
     """
     central_ssh = LabConnectionKeywords().get_active_controller_ssh()
-    host = SystemHostListKeywords(central_ssh).get_active_controller().get_host_name()
-    host_show_output = GetHostsKeywords().get_hosts().get_system_host_show_object(host)
+    release = CloudPlatformVersionManagerClass().get_sw_version()
 
     # Gets the lowest subcloud (the subcloud with the lowest id).
     dcmanager_subcloud_list_keywords = DcManagerSubcloudListKeywords(central_ssh)
@@ -110,12 +88,6 @@ def test_delete_backup_local(request):
     lab_config = ConfigurationManager.get_lab_config().get_subcloud(subcloud_name)
     subcloud_password = lab_config.get_admin_credentials().get_password()
 
-    # Get the sw_version if available (used in vbox environments).
-    release = host_show_output.get_sw_version()
-    # If sw_version is not available, fall back to software_load (used in physical labs).
-    if not release:
-        release = host_show_output.get_software_load()
-
     dc_manager_backup = DcManagerSubcloudBackupKeywords(central_ssh)
 
     # Path to where the backup file will store.
@@ -123,7 +95,7 @@ def test_delete_backup_local(request):
 
     def teardown():
         get_logger().log_info("Removing test files during teardown")
-        subcloud_ssh.send_as_sudo("rm -r -f /opt/platform-backup/backups/")
+        FileKeywords(subcloud_ssh).delete_folder_with_sudo("/opt/platform-backup/backups/")
 
     request.addfinalizer(teardown)
 
@@ -183,7 +155,7 @@ def create_subcloud_group(subcloud_list: List[str]) -> None:
     # Checking Subcloud's assigned to the group correctly
     get_logger().log_info("Checking Subcloud's in the new group")
     group_list = subcloud_group_keywords.get_dcmanager_subcloud_group_list_subclouds(group_name).get_dcmanager_subcloud_group_list_subclouds()
-    subclouds = [subcloud.name for subcloud in group_list]
+    subclouds = [subcloud.get_name() for subcloud in group_list]
     validate_equals(subclouds, subcloud_list, "Checking Subcloud's assigned to the group correctly")
 
 
@@ -204,14 +176,69 @@ def test_delete_backup_group_on_central(request):
     group_name = "Test"
 
     central_ssh = LabConnectionKeywords().get_active_controller_ssh()
-    host = SystemHostListKeywords(central_ssh).get_active_controller().get_host_name()
-    host_show_output = GetHostsKeywords().get_hosts().get_system_host_show_object(host)
+    release = CloudPlatformVersionManagerClass().get_sw_version()
 
-    # Get the sw_version if available (used in vbox environments).
-    release = host_show_output.get_sw_version()
-    # If sw_version is not available, fall back to software_load (used in physical labs).
-    if not release:
-        release = host_show_output.get_software_load()
+    # Retrieves the subclouds. Considers only subclouds that are online, managed, and synced.
+    dcmanager_subcloud_list_input = DcManagerSubcloudListObjectFilter.get_healthy_subcloud_filter()
+    dcmanager_subcloud_list_keywords = DcManagerSubcloudListKeywords(central_ssh)
+    dcmanager_subcloud_list_objects_filtered = dcmanager_subcloud_list_keywords.get_dcmanager_subcloud_list().get_dcmanager_subcloud_list_objects_filtered(dcmanager_subcloud_list_input)
+
+    subcloud_list = [subcloud.get_name() for subcloud in dcmanager_subcloud_list_objects_filtered]
+    if len(subcloud_list) < 2:
+        get_logger().log_info("At least two subclouds managed are required to run the test")
+        fail("At least two subclouds managed are required to run the test")
+
+    # Gets the subcloud sysadmin password needed for backup creation.
+    subcloud_password = ConfigurationManager.get_lab_config().get_subcloud(subcloud_list[0]).get_admin_credentials().get_password()
+
+    # Create a subcloud group and add 2 subclouds
+    create_subcloud_group(subcloud_list)
+
+    dc_manager_backup = DcManagerSubcloudBackupKeywords(central_ssh)
+
+    def teardown_backup():
+        get_logger().log_info("Removing test files during teardown")
+        FileKeywords(central_ssh).delete_folder_with_sudo("/opt/dc-vault/backups/")
+
+    request.addfinalizer(teardown_backup)
+
+    def teardown_group():
+        get_logger().log_info("Removing the created subcloud group during teardown")
+        for subcloud_name in subcloud_list:
+            DcManagerSubcloudUpdateKeywords(central_ssh).dcmanager_subcloud_update(subcloud_name, "group", "Default")
+
+        DcmanagerSubcloudGroupKeywords(central_ssh).dcmanager_subcloud_group_delete(group_name)
+
+    request.addfinalizer(teardown_group)
+
+    # Create a subcloud backup
+    get_logger().log_info(f"Create backup on Central Cloud for subcloud group: {group_name}")
+    dc_manager_backup.create_subcloud_backup(subcloud_password, central_ssh, group=group_name, release=release, subcloud_list=subcloud_list)
+
+    # Delete the backup created
+    get_logger().log_info(f"Delete backup on Central Cloud for subcloud group: {group_name}")
+    dc_manager_backup.delete_subcloud_backup(central_ssh, release=release, group=group_name, subcloud_list=subcloud_list)
+
+
+@mark.p2
+@mark.lab_has_min_2_subclouds
+def test_delete_backup_group_on_local(request):
+    """
+    Verify delete subcloud group backup on local path
+
+    Test Steps:
+        - Create a subcloud group and add 2 subclouds
+        - Create a Subcloud backup and check it on local path
+        - Delete the backup created and verify the backup is deleted
+
+    Teardown:
+        - Remove files created while the Tc was running.
+        - Delete the subcloud group
+
+    """
+    group_name = "Test"
+    central_ssh = LabConnectionKeywords().get_active_controller_ssh()
+    release = CloudPlatformVersionManagerClass().get_sw_version()
 
     # Retrieves the subclouds. Considers only subclouds that are online, managed, and synced.
     dcmanager_subcloud_list_input = DcManagerSubcloudListObjectFilter.get_healthy_subcloud_filter()
@@ -233,7 +260,9 @@ def test_delete_backup_group_on_central(request):
 
     def teardown_backup():
         get_logger().log_info("Removing test files during teardown")
-        central_ssh.send_as_sudo("rm -r -f /opt/dc-vault/backups/")
+        for subcloud_name in subcloud_list:
+            subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
+            FileKeywords(subcloud_ssh).delete_folder_with_sudo("/opt/platform-backup/backups/")
 
     request.addfinalizer(teardown_backup)
 
@@ -241,15 +270,14 @@ def test_delete_backup_group_on_central(request):
         get_logger().log_info("Removing the created subcloud group during teardown")
         for subcloud_name in subcloud_list:
             DcManagerSubcloudUpdateKeywords(central_ssh).dcmanager_subcloud_update(subcloud_name, "group", "Default")
-
         DcmanagerSubcloudGroupKeywords(central_ssh).dcmanager_subcloud_group_delete(group_name)
 
     request.addfinalizer(teardown_group)
 
-    # Create a subcloud backup
-    get_logger().log_info(f"Create backup on Central Cloud for subcloud group: {group_name}")
-    dc_manager_backup.create_subcloud_backup(subcloud_password, central_ssh, group=group_name, release=release, subcloud_list=subcloud_list)
+    # Create a subcloud backup and check it on local path
+    get_logger().log_info(f"Create and check if backup was was created on Central Cloud for subcloud group: {group_name}")
+    dc_manager_backup.create_subcloud_backup(subcloud_password, central_ssh, local_only=True, group=group_name, release=release, subcloud_list=subcloud_list)
 
-    # Delete the backup created
-    get_logger().log_info(f"Delete backup on Central Cloud for subcloud group: {group_name}")
-    dc_manager_backup.delete_subcloud_backup(central_ssh, release=release, group=group_name, subcloud_list=subcloud_list)
+    # Delete the backup created and verify the backup is deleted
+    get_logger().log_info(f"Delete and check if backup was removed on SubClouds for subcloud group: {group_name}")
+    dc_manager_backup.delete_subcloud_backup(central_ssh, release=release, local_only=True, group=group_name, sysadmin_password=subcloud_password, subcloud_list=subcloud_list)
