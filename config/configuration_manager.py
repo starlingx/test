@@ -6,6 +6,7 @@ from config.lab.objects.lab_config import LabConfig
 from config.logger.objects.logger_config import LoggerConfig
 from config.ptp.objects.ptp_config import PTPConfig
 from config.rest_api.objects.rest_api_config import RestAPIConfig
+from config.security.objects.security_config import SecurityConfig
 from config.web.objects.web_config import WebConfig
 from framework.resources.resource_finder import get_stx_resource_path
 
@@ -25,6 +26,7 @@ class ConfigurationManagerClass:
         self.web_config: WebConfig = None
         self.database_config: DatabaseConfig = None
         self.rest_api_config: RestAPIConfig = None
+        self.security_config: SecurityConfig = None
         self.configuration_locations_manager = None
 
     def is_config_loaded(self) -> bool:
@@ -45,6 +47,9 @@ class ConfigurationManagerClass:
 
         Args:
             config_file_locations (ConfigurationFileLocationsManager): class with all the config file locations
+
+        Raises:
+            FileNotFoundError: if config file not found
 
         """
         self.configuration_locations_manager = config_file_locations
@@ -81,6 +86,10 @@ class ConfigurationManagerClass:
         if not rest_api_config_file:
             rest_api_config_file = get_stx_resource_path("config/rest_api/files/default.json5")
 
+        security_config_file = config_file_locations.get_security_config_file()
+        if not security_config_file:
+            security_config_file = get_stx_resource_path("config/security/files/default.json5")
+
         if not self.loaded:
             try:
                 self.lab_config = LabConfig(lab_config_file)
@@ -91,6 +100,7 @@ class ConfigurationManagerClass:
                 self.web_config = WebConfig(web_config_file)
                 self.database_config = DatabaseConfig(database_config_file)
                 self.rest_api_config = RestAPIConfig(rest_api_config_file)
+                self.security_config = SecurityConfig(security_config_file)
                 self.loaded = True
             except FileNotFoundError as e:
                 print(f"Unable to load the config using file: {str(e.filename)} ")
@@ -178,6 +188,15 @@ class ConfigurationManagerClass:
         """
         return self.rest_api_config
 
+    def get_security_config(self) -> SecurityConfig:
+        """
+        Getter for security config
+
+        Returns:
+            SecurityConfig: the security config
+        """
+        return self.security_config
+
     def get_config_pytest_args(self) -> [str]:
         """
         Returns the configuration file locations as pytest args.
@@ -203,6 +222,8 @@ class ConfigurationManagerClass:
             pytest_config_args.append(f"--database_config_file={self.configuration_locations_manager.get_database_config_file()}")
         if self.configuration_locations_manager.rest_api_config_file:
             pytest_config_args.append(f"--rest_api_config_file={self.configuration_locations_manager.get_rest_api_config_file()}")
+        if self.configuration_locations_manager.security_config_file:
+            pytest_config_args.append(f"--security_config_file={self.configuration_locations_manager.get_security_config_file()}")
 
         return pytest_config_args
 

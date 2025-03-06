@@ -17,6 +17,7 @@ class ConfigurationFileLocationsManager:
         self.web_config_file = None
         self.database_config_file = None
         self.rest_api_config_file = None
+        self.security_config_file = None
 
     def set_configs_from_pytest_args(self, session: Session):
         """
@@ -59,6 +60,10 @@ class ConfigurationFileLocationsManager:
         rest_api_config_file = session.config.getoption("--rest_api_config_file")
         if rest_api_config_file:
             self.set_rest_api_config_file(rest_api_config_file)
+
+        security_config_file = session.config.getoption("--security_config_file")
+        if security_config_file:
+            self.set_security_config_file(security_config_file)
 
     def set_configs_from_options_parser(self, parser: OptionParser = None):
         """
@@ -105,6 +110,10 @@ class ConfigurationFileLocationsManager:
         rest_api_config_file = options.rest_api_config_file
         if rest_api_config_file:
             self.set_rest_api_config_file(rest_api_config_file)
+
+        security_config_file = options.security_config_file
+        if security_config_file:
+            self.set_security_config_file(security_config_file)
 
     def _add_options(self, parser: OptionParser):
         """
@@ -178,6 +187,14 @@ class ConfigurationFileLocationsManager:
             type="str",
             dest="rest_api_config_file",
             help="The rest api config file",
+        )
+
+        parser.add_option(
+            "--security_config_file",
+            action="store",
+            type="str",
+            dest="security_config_file",
+            help="The security config file",
         )
 
         options, args = parser.parse_args()
@@ -351,3 +368,23 @@ class ConfigurationFileLocationsManager:
 
         """
         return self.rest_api_config_file
+
+    def get_security_config_file(self) -> str:
+        """
+        Getter for security config file
+
+        Returns:
+            str: the security config file
+
+        """
+        return self.security_config_file
+
+    def set_security_config_file(self, security_config_file: str):
+        """
+        Setter for security config file
+
+        Args:
+            security_config_file (str): the security config file
+
+        """
+        self.security_config_file = security_config_file

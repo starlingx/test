@@ -1,16 +1,10 @@
 import os
 from typing import Any
 
-from config.configuration_file_locations_manager import (
-    ConfigurationFileLocationsManager,
-)
+from config.configuration_file_locations_manager import ConfigurationFileLocationsManager
 from config.configuration_manager import ConfigurationManager
 from framework.logging import log_banners
-from framework.logging.automation_logger import (
-    configure_testcase_log_handler,
-    get_logger,
-    remove_testcase_handler,
-)
+from framework.logging.automation_logger import configure_testcase_log_handler, get_logger, remove_testcase_handler
 
 
 def pytest_addoption(parser: Any):
@@ -29,6 +23,7 @@ def pytest_addoption(parser: Any):
     parser.addoption("--web_config_file", action="store")
     parser.addoption("--database_config_file", action="store")
     parser.addoption("--rest_api_config_file", action="store")
+    parser.addoption("--security_config_file", action="store")
 
 
 def pytest_sessionstart(session: Any):
