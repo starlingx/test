@@ -1,6 +1,7 @@
 [tool.isort]
 py_version = "311"
 profile = "black"
+line_length = 200  # Allows longer imports without excessive wrapping
 
 [tool.black]
 target-version = ['py311']
