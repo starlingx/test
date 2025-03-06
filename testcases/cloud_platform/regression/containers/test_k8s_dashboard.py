@@ -9,26 +9,17 @@ from framework.logging.automation_logger import get_logger
 from framework.resources.resource_finder import get_stx_resource_path
 from framework.rest.rest_client import RestClient
 from framework.ssh.ssh_connection import SSHConnection
+from keywords.cloud_platform.openstack.endpoint.openstack_endpoint_list_keywords import OpenStackEndpointListKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.files.file_keywords import FileKeywords
 from keywords.k8s.files.kubectl_file_apply_keywords import KubectlFileApplyKeywords
 from keywords.k8s.files.kubectl_file_delete_keywords import KubectlFileDeleteKeywords
-from keywords.k8s.namespace.kubectl_create_namespace_keywords import (
-    KubectlCreateNamespacesKeywords,
-)
-from keywords.k8s.namespace.kubectl_delete_namespace_keywords import (
-    KubectlDeleteNamespaceKeywords,
-)
-from keywords.k8s.namespace.kubectl_get_namespaces_keywords import (
-    KubectlGetNamespacesKeywords,
-)
+from keywords.k8s.namespace.kubectl_create_namespace_keywords import KubectlCreateNamespacesKeywords
+from keywords.k8s.namespace.kubectl_delete_namespace_keywords import KubectlDeleteNamespaceKeywords
+from keywords.k8s.namespace.kubectl_get_namespaces_keywords import KubectlGetNamespacesKeywords
 from keywords.k8s.patch.kubectl_apply_patch_keywords import KubectlApplyPatchKeywords
-from keywords.k8s.secret.kubectl_create_secret_keywords import (
-    KubectlCreateSecretsKeywords,
-)
-from keywords.k8s.secret.kubectl_delete_secret_keywords import (
-    KubectlDeleteSecretsKeywords,
-)
+from keywords.k8s.secret.kubectl_create_secret_keywords import KubectlCreateSecretsKeywords
+from keywords.k8s.secret.kubectl_delete_secret_keywords import KubectlDeleteSecretsKeywords
 from keywords.openssl.openssl_keywords import OpenSSLKeywords
 
 
@@ -105,7 +96,7 @@ def create_k8s_dashboard(request: fixture, namespace: str, con_ssh: SSHConnectio
     def teardown():
         KubectlFileDeleteKeywords(ssh_connection=con_ssh).delete_resources(k8s_dashboard_file_path)
         # delete created dashboard secret
-        KubectlDeleteSecretsKeywords(con_ssh).delete_secret(namespace=namespace, secret_name=secrets_name)
+        KubectlDeleteSecretsKeywords(con_ssh).cleanup_secret(namespace=namespace, secret_name=secrets_name)
         get_logger().log_info("Deleting k8s_dashboard directory")
         con_ssh.send(f"rm -rf {home_k8s}")
 
@@ -118,8 +109,7 @@ def create_k8s_dashboard(request: fixture, namespace: str, con_ssh: SSHConnectio
     time.sleep(30)
 
     get_logger().log_info(f"Verify that {name} is working")
-    end_point = "https://{}:{}".format(sys_domain_name, port)
-
+    end_point = OpenStackEndpointListKeywords(ssh_connection=con_ssh).get_k8s_dashboard_url()
     status_code, _ = check_url_access(end_point)
     if not status_code == 200:
         raise KeywordException(detailed_message=f"Kubernetes dashboard returned status code {status_code}")
