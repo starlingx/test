@@ -8,114 +8,52 @@ from config.lab.objects.node import Node
 from framework.logging.automation_logger import get_logger
 from framework.resources.resource_finder import get_stx_resource_path
 from framework.ssh.secure_transfer_file.secure_transfer_file import SecureTransferFile
-from framework.ssh.secure_transfer_file.secure_transfer_file_enum import (
-    TransferDirection,
-)
-from framework.ssh.secure_transfer_file.secure_transfer_file_input_object import (
-    SecureTransferFileInputObject,
-)
+from framework.ssh.secure_transfer_file.secure_transfer_file_enum import TransferDirection
+from framework.ssh.secure_transfer_file.secure_transfer_file_input_object import SecureTransferFileInputObject
 from framework.ssh.ssh_connection import SSHConnection
 from framework.validation.validation import validate_equals
 from framework.web.webdriver_core import WebDriverCore
-from keywords.cloud_platform.dcmanager.dcmanager_alarm_summary_keywords import (
-    DcManagerAlarmSummaryKeywords,
-)
-from keywords.cloud_platform.dcmanager.dcmanager_subcloud_list_keywords import (
-    DcManagerSubcloudListKeywords,
-)
-from keywords.cloud_platform.dcmanager.dcmanager_subcloud_manager_keywords import (
-    DcManagerSubcloudManagerKeywords,
-)
-from keywords.cloud_platform.dcmanager.dcmanager_subcloud_show_keywords import (
-    DcManagerSubcloudShowKeywords,
-)
-from keywords.cloud_platform.dcmanager.dcmanager_subcloud_update_keywords import (
-    DcManagerSubcloudUpdateKeywords,
-)
-from keywords.cloud_platform.dcmanager.objects.dcmanager_subcloud_list_object_filter import (
-    DcManagerSubcloudListObjectFilter,
-)
-from keywords.cloud_platform.fault_management.alarms.alarm_list_keywords import (
-    AlarmListKeywords,
-)
-from keywords.cloud_platform.fault_management.fm_client_cli.fm_client_cli_keywords import (
-    FaultManagementClientCLIKeywords,
-)
-from keywords.cloud_platform.fault_management.fm_client_cli.object.fm_client_cli_object import (
-    FaultManagementClientCLIObject,
-)
+from keywords.cloud_platform.dcmanager.dcmanager_alarm_summary_keywords import DcManagerAlarmSummaryKeywords
+from keywords.cloud_platform.dcmanager.dcmanager_subcloud_list_keywords import DcManagerSubcloudListKeywords
+from keywords.cloud_platform.dcmanager.dcmanager_subcloud_manager_keywords import DcManagerSubcloudManagerKeywords
+from keywords.cloud_platform.dcmanager.dcmanager_subcloud_show_keywords import DcManagerSubcloudShowKeywords
+from keywords.cloud_platform.dcmanager.dcmanager_subcloud_update_keywords import DcManagerSubcloudUpdateKeywords
+from keywords.cloud_platform.dcmanager.objects.dcmanager_subcloud_list_object_filter import DcManagerSubcloudListObjectFilter
+from keywords.cloud_platform.fault_management.alarms.alarm_list_keywords import AlarmListKeywords
+from keywords.cloud_platform.fault_management.fm_client_cli.fm_client_cli_keywords import FaultManagementClientCLIKeywords
+from keywords.cloud_platform.fault_management.fm_client_cli.object.fm_client_cli_object import FaultManagementClientCLIObject
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
-from keywords.cloud_platform.system.application.object.system_application_delete_input import (
-    SystemApplicationDeleteInput,
-)
-from keywords.cloud_platform.system.application.object.system_application_remove_input import (
-    SystemApplicationRemoveInput,
-)
-from keywords.cloud_platform.system.application.object.system_application_status_enum import (
-    SystemApplicationStatusEnum,
-)
-from keywords.cloud_platform.system.application.object.system_application_upload_input import (
-    SystemApplicationUploadInput,
-)
-from keywords.cloud_platform.system.application.system_application_apply_keywords import (
-    SystemApplicationApplyKeywords,
-)
-from keywords.cloud_platform.system.application.system_application_delete_keywords import (
-    SystemApplicationDeleteKeywords,
-)
-from keywords.cloud_platform.system.application.system_application_list_keywords import (
-    SystemApplicationListKeywords,
-)
-from keywords.cloud_platform.system.application.system_application_remove_keywords import (
-    SystemApplicationRemoveKeywords,
-)
-from keywords.cloud_platform.system.application.system_application_upload_keywords import (
-    SystemApplicationUploadKeywords,
-)
-from keywords.cloud_platform.system.host.system_host_list_keywords import (
-    SystemHostListKeywords,
-)
-from keywords.cloud_platform.system.host.system_host_lock_keywords import (
-    SystemHostLockKeywords,
-)
-from keywords.cloud_platform.system.host.system_host_reboot_keywords import (
-    SystemHostRebootKeywords,
-)
-from keywords.cloud_platform.system.host.system_host_swact_keywords import (
-    SystemHostSwactKeywords,
-)
-from keywords.cloud_platform.system.modify.system_modify_keywords import (
-    SystemModifyKeywords,
-)
+from keywords.cloud_platform.system.application.object.system_application_delete_input import SystemApplicationDeleteInput
+from keywords.cloud_platform.system.application.object.system_application_remove_input import SystemApplicationRemoveInput
+from keywords.cloud_platform.system.application.object.system_application_status_enum import SystemApplicationStatusEnum
+from keywords.cloud_platform.system.application.object.system_application_upload_input import SystemApplicationUploadInput
+from keywords.cloud_platform.system.application.system_application_apply_keywords import SystemApplicationApplyKeywords
+from keywords.cloud_platform.system.application.system_application_delete_keywords import SystemApplicationDeleteKeywords
+from keywords.cloud_platform.system.application.system_application_list_keywords import SystemApplicationListKeywords
+from keywords.cloud_platform.system.application.system_application_remove_keywords import SystemApplicationRemoveKeywords
+from keywords.cloud_platform.system.application.system_application_upload_keywords import SystemApplicationUploadKeywords
+from keywords.cloud_platform.system.host.system_host_list_keywords import SystemHostListKeywords
+from keywords.cloud_platform.system.host.system_host_lock_keywords import SystemHostLockKeywords
+from keywords.cloud_platform.system.host.system_host_reboot_keywords import SystemHostRebootKeywords
+from keywords.cloud_platform.system.host.system_host_swact_keywords import SystemHostSwactKeywords
+from keywords.cloud_platform.system.modify.system_modify_keywords import SystemModifyKeywords
 from keywords.cloud_platform.system.show.system_show_keywords import SystemShowKeywords
-from keywords.cloud_platform.system.storage.system_storage_backend_keywords import (
-    SystemStorageBackendKeywords,
-)
+from keywords.cloud_platform.system.storage.system_storage_backend_keywords import SystemStorageBackendKeywords
 from keywords.docker.images.docker_load_image_keywords import DockerLoadImageKeywords
 from keywords.files.file_keywords import FileKeywords
-from keywords.k8s.deployments.kubectl_delete_deployments_keywords import (
-    KubectlDeleteDeploymentsKeywords,
-)
-from keywords.k8s.deployments.kubectl_expose_deployment_keywords import (
-    KubectlExposeDeploymentKeywords,
-)
+from keywords.k8s.deployments.kubectl_delete_deployments_keywords import KubectlDeleteDeploymentsKeywords
+from keywords.k8s.deployments.kubectl_expose_deployment_keywords import KubectlExposeDeploymentKeywords
 from keywords.k8s.pods.kubectl_create_pods_keywords import KubectlCreatePodsKeywords
 from keywords.k8s.pods.kubectl_delete_pods_keywords import KubectlDeletePodsKeywords
 from keywords.k8s.pods.kubectl_exec_in_pods_keywords import KubectlExecInPodsKeywords
 from keywords.k8s.pods.kubectl_get_pods_keywords import KubectlGetPodsKeywords
 from keywords.k8s.pods.object.kubectl_get_pods_output import KubectlGetPodsOutput
-from keywords.k8s.secret.kubectl_create_secret_keywords import (
-    KubectlCreateSecretsKeywords,
-)
-from keywords.k8s.service.kubectl_delete_service_keywords import (
-    KubectlDeleteServiceKeywords,
-)
+from keywords.k8s.secret.kubectl_create_secret_keywords import KubectlCreateSecretsKeywords
+from keywords.k8s.service.kubectl_delete_service_keywords import KubectlDeleteServiceKeywords
 from keywords.k8s.service.kubectl_get_service_keywords import KubectlGetServiceKeywords
 from keywords.linux.date.date_keywords import DateKeywords
 from keywords.linux.tar.tar_keywords import TarKeywords
-from web_pages.horizon.admin.platform.horizon_host_inventory_page import (
-    HorizonHostInventoryPage,
-)
+from web_pages.horizon.admin.platform.horizon_host_inventory_page import HorizonHostInventoryPage
 from web_pages.horizon.login.horizon_login_page import HorizonLoginPage
 
 
@@ -1292,7 +1230,7 @@ def test_dc_modify_timezone(request):
 
     def teardown():
         system_modify_output = system_modify_keywords.system_modify_timezone("UTC")
-        validate_equals(system_modify_output.get_system_show_object().get_timezone(), "UTC" "Update the timezone to UTC.")
+        validate_equals(system_modify_output.get_system_show_object().get_timezone(), "UTC", "Update the timezone to UTC.")
 
     request.addfinalizer(teardown)
 
