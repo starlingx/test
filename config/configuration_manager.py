@@ -7,6 +7,7 @@ from config.logger.objects.logger_config import LoggerConfig
 from config.ptp.objects.ptp_config import PTPConfig
 from config.rest_api.objects.rest_api_config import RestAPIConfig
 from config.security.objects.security_config import SecurityConfig
+from config.usm.objects.usm_config import UsmConfig
 from config.web.objects.web_config import WebConfig
 from framework.resources.resource_finder import get_stx_resource_path
 
@@ -27,6 +28,7 @@ class ConfigurationManagerClass:
         self.database_config: DatabaseConfig = None
         self.rest_api_config: RestAPIConfig = None
         self.security_config: SecurityConfig = None
+        self.usm_config: UsmConfig = None
         self.configuration_locations_manager = None
 
     def is_config_loaded(self) -> bool:
@@ -90,6 +92,10 @@ class ConfigurationManagerClass:
         if not security_config_file:
             security_config_file = get_stx_resource_path("config/security/files/default.json5")
 
+        usm_config_file = config_file_locations.get_usm_config_file()
+        if not usm_config_file:
+            usm_config_file = get_stx_resource_path("config/usm/files/default.json5")
+
         if not self.loaded:
             try:
                 self.lab_config = LabConfig(lab_config_file)
@@ -101,6 +107,7 @@ class ConfigurationManagerClass:
                 self.database_config = DatabaseConfig(database_config_file)
                 self.rest_api_config = RestAPIConfig(rest_api_config_file)
                 self.security_config = SecurityConfig(security_config_file)
+                self.usm_config = UsmConfig(usm_config_file)
                 self.loaded = True
             except FileNotFoundError as e:
                 print(f"Unable to load the config using file: {str(e.filename)} ")
@@ -197,6 +204,15 @@ class ConfigurationManagerClass:
         """
         return self.security_config
 
+    def get_usm_config(self) -> UsmConfig:
+        """
+        Getter for usm config
+
+        Returns:
+            UsmConfig: the usm config
+        """
+        return self.usm_config
+
     def get_config_pytest_args(self) -> [str]:
         """
         Returns the configuration file locations as pytest args.
@@ -224,6 +240,8 @@ class ConfigurationManagerClass:
             pytest_config_args.append(f"--rest_api_config_file={self.configuration_locations_manager.get_rest_api_config_file()}")
         if self.configuration_locations_manager.security_config_file:
             pytest_config_args.append(f"--security_config_file={self.configuration_locations_manager.get_security_config_file()}")
+        if self.configuration_locations_manager.usm_config_file:
+            pytest_config_args.append(f"--usm_config_file={self.configuration_locations_manager.get_usm_config_file()}")
 
         return pytest_config_args
 

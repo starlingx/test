@@ -1,0 +1,44 @@
+{
+    // Indicates the current operation is for Major rel upgrade
+    "usm_is_upgrade": "",
+
+    // Indicates the current operation is patching the system.
+    "usm_is_patch": "",
+
+    // Absolute path to ISO for Major rel upgrade
+    "iso_path": "/path/to/iso/file",
+
+    //  Absolute path to the Signature path for Major rel upgrade.
+    "upgrade_license": "",
+
+    // Absolute path to the .patch file for Patching.
+    "patch_path": "",
+
+    // Path of directory where one or more .patch files are located.
+    "patch_dir": "",
+
+    // Directory on the lab where the files need to be stored.
+    "dest_dir": "",
+
+    // Address of the server where the iso/patch files are located.
+    "build_server": "",
+
+    // Username to authenticate to build_server
+    "build_server_username": "",
+
+    // Password to authenticate to build_server
+    "build_server_password": "",
+
+    //  Arguments for upgrade/patching testing
+    "upgrade_arguments": "",
+
+    // Release ids (one or more) to which the system is upgraded.
+    // Used for either multiple patches or major release + patch(es)
+    "to_release_ids": "",
+
+    // Some extra attributes for patching USM, config
+    "extra_attributes": {
+        "": "",
+    },
+
+}
