@@ -18,6 +18,7 @@ class ConfigurationFileLocationsManager:
         self.database_config_file = None
         self.rest_api_config_file = None
         self.security_config_file = None
+        self.usm_config_file = None
 
     def set_configs_from_pytest_args(self, session: Session):
         """
@@ -64,6 +65,10 @@ class ConfigurationFileLocationsManager:
         security_config_file = session.config.getoption("--security_config_file")
         if security_config_file:
             self.set_security_config_file(security_config_file)
+
+        usm_config_file = session.config.getoption("--usm_config_file")
+        if usm_config_file:
+            self.set_security_config_file(usm_config_file)
 
     def set_configs_from_options_parser(self, parser: OptionParser = None):
         """
@@ -114,6 +119,10 @@ class ConfigurationFileLocationsManager:
         security_config_file = options.security_config_file
         if security_config_file:
             self.set_security_config_file(security_config_file)
+
+        usm_config_file = options.usm_config_file
+        if usm_config_file:
+            self.set_usm_config_file(usm_config_file)
 
     def _add_options(self, parser: OptionParser):
         """
@@ -195,6 +204,14 @@ class ConfigurationFileLocationsManager:
             type="str",
             dest="security_config_file",
             help="The security config file",
+        )
+
+        parser.add_option(
+            "--usm_config_file",
+            action="store",
+            type="str",
+            dest="usm_config_file",
+            help="The Usm config file",
         )
 
         options, args = parser.parse_args()
@@ -388,3 +405,23 @@ class ConfigurationFileLocationsManager:
 
         """
         self.security_config_file = security_config_file
+
+    def get_usm_config_file(self) -> str:
+        """
+        Getter for usm config file
+
+        Returns:
+            str: the usm config file
+
+        """
+        return self.usm_config_file
+
+    def set_usm_config_file(self, usm_config_file: str):
+        """
+        Setter for usm config file
+
+        Args:
+            usm_config_file (str): the usm config file
+
+        """
+        self.usm_config_file = usm_config_file
