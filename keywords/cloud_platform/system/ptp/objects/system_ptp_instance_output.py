@@ -45,3 +45,14 @@ class SystemPTPInstanceOutput:
         Returns:
         """
         return self.system_ptp_instance_object
+    
+    def get_ptp_instance_parameters(self) -> str:
+        """
+        Returns the parameters of the parsed system ptp-instance
+        
+        Returns:
+            str : ptp instance parameters
+
+        Example : 'cmdline_opts=-s xxxx -O -37 -m' boundary_clock_jbod=1 domainNumber=24
+        """
+        return " ".join(map(lambda parameter: f"'{parameter}'" if " " in parameter else parameter, self.system_ptp_instance_object.get_parameters()))

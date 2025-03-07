@@ -5,7 +5,7 @@
 
       {
         name: "ptp1",
-        instance_hostnames : ["controller_1", "controller_0"] ,
+        instance_hostnames : ["controller-0", "controller-1"] ,
         instance_parameters: "tx_timestamp_timeout=700 domainNumber=24 dataset_comparison=G.8275.x priority2=100 boundary_clock_jbod=1",
         ptp_interface_names: [
           "ptp1if1",
@@ -25,7 +25,7 @@
 
       {
         name: "ptp3",
-        instance_hostnames : ["controller_0"],
+        instance_hostnames : ["controller-0"],
         instance_parameters: "dataset_comparison=G.8275.x domainNumber=24 tx_timestamp_timeout=700 boundary_clock_jbod=1 priority2=100",
         ptp_interface_names: [
           "ptp3if1",
@@ -35,7 +35,7 @@
 
       {
         name: "ptp4",
-        instance_hostnames : ["controller_1"],
+        instance_hostnames : ["controller-1"],
         instance_parameters: "priority2=110 dataset_comparison=G.8275.x domainNumber=24 tx_timestamp_timeout=700 boundary_clock_jbod=1",
         ptp_interface_names: [
           "ptp4if1",
@@ -49,8 +49,8 @@
 
         {
           name: "phc1",
-          instance_hostnames : ["controller_1", "controller_0"],
-          instance_parameters: "cmdline_opts=-s {{controller_0.nic1.conn_to_sprint}} -O -37 -m", // lab_topology_synce3.json5 : values is enp81s0f2
+          instance_hostnames : ["controller-0", "controller-1"],
+          instance_parameters: "'cmdline_opts=-s {{controller_0.nic1.conn_to_sprint}} -O -37 -m'",
           ptp_interface_names: [
             "phc1if1",
           ],
@@ -89,7 +89,7 @@
 
         {
           name: "ts1",
-          instance_hostnames : ["controller_0"],
+          instance_hostnames : ["controller-0"],
           instance_parameters: "ts2phc.nmea_serialport=/dev/gnss0",
           ptp_interface_names: [
             "ts1if1",
@@ -102,7 +102,7 @@
 
       {
         name: "clock1",
-        instance_hostnames : ["controller_0"],
+        instance_hostnames : ["controller-0"],
         instance_parameters: "",
         ptp_interface_names: [
           "clock1if1",
@@ -211,14 +211,14 @@
      name: "clock1if1",
      controller_0_interfaces: ["{{ controller_0.nic1.conn_to_spirent }}"],
      controller_1_interfaces: [],
-     ptp_interface_parameter : "{{ controller_0.nic1.sma1_to_nic2 }}",
+     ptp_interface_parameter : "sma1={{ controller_0.nic1.sma1_to_nic2 }}",
     },
 
    {
      name: "clock1if2",
      controller_0_interfaces: ["{{ controller_0.nic2.base_port }}"],
      controller_1_interfaces: [],
-     ptp_interface_parameter : "{{ controller_0.nic2.sma1_to_nic1 }}",
+     ptp_interface_parameter : "sma1={{ controller_0.nic2.sma1_to_nic1 }}",
     },
   ],
 

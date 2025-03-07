@@ -1,0 +1,26 @@
+from pytest import mark
+
+from framework.logging.automation_logger import get_logger
+from framework.resources.resource_finder import get_stx_resource_path
+from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
+from keywords.cloud_platform.system.ptp.ptp_setup_executor_keywords import PTPSetupExecutorKeywords
+from keywords.cloud_platform.system.ptp.ptp_teardown_executor_keywords import PTPTeardownExecutorKeywords
+
+
+@mark.p0
+@mark.lab_is_duplex
+def test_delete_and_add_all_ptp_configuration():
+    """
+    Delete and Add all PTP configurations
+    """
+    lab_connect_keywords = LabConnectionKeywords()
+    ssh_connection = lab_connect_keywords.get_active_controller_ssh()
+
+    get_logger().log_info("Delete all PTP configuration")
+    ptp_teardown_keywords = PTPTeardownExecutorKeywords(ssh_connection)
+    ptp_teardown_keywords.delete_all_ptp_configurations()
+
+    get_logger().log_info("Add all PTP configuration")
+    ptp_setup_template_path = get_stx_resource_path("resources/ptp/setup/ptp_setup_template.json5")
+    ptp_setup_keywords = PTPSetupExecutorKeywords(ssh_connection, ptp_setup_template_path)
+    ptp_setup_keywords.add_all_ptp_configurations()

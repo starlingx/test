@@ -34,10 +34,25 @@ class SystemPTPInterfaceListOutput:
                 system_ptp_interface_list_object.set_parameters(TypeConverter.parse_string_to_list(value['parameters']))
             self.system_ptp_interface_list_output.append(system_ptp_interface_list_object)
 
-    def get_ptp_interface_list(self) -> SystemPTPInterfaceListObject:
+    def get_ptp_interface_list(self) -> list[SystemPTPInterfaceListObject]:
         """
         Returns the parsed system ptp-interface-list
         
         Returns:
+            list[SystemPTPInterfaceListObject] : List representation of system ptp-interface-list objects
         """
         return self.system_ptp_interface_list_output
+
+    def get_ptp_interface_parameters(self, ptp_interface_obj : SystemPTPInterfaceListObject) -> str :
+        """
+        Returns the ptp interface parameters for the specified name
+
+        Args:
+            ptp_interface_obj : PTP interface object
+        
+        Returns:
+            str : ptp interface parameters
+        
+        Example : 'cmdline_opts=-s xxxx -O -37 -m' boundary_clock_jbod=1 domainNumber=24
+        """        
+        return " ".join(map(lambda parameter: f"'{parameter}'" if " " in parameter else parameter, ptp_interface_obj.get_parameters()))
