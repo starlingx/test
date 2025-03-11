@@ -1,7 +1,5 @@
 from framework.exceptions.keyword_exception import KeywordException
-from keywords.cloud_platform.system.storage.objects.system_storage_backend_object import (
-    SystemStorageBackendObject,
-)
+from keywords.cloud_platform.system.storage.objects.system_storage_backend_object import SystemStorageBackendObject
 from keywords.cloud_platform.system.system_table_parser import SystemTableParser
 
 
@@ -93,3 +91,18 @@ class SystemStorageBackendOutput:
         if len(backends) == 0:
             raise KeywordException(f"No application with name {backend} was found.")
         return backends[0]
+
+    def is_backend_configured(self, backend: str) -> bool:
+        """
+        Verifies if Given backend is configured.
+
+        Args:
+             backend (str): backend ceph or ceph-rook.
+
+        Returns:
+             bool: True if backend configured; False otherwise.
+        """
+        backends = list(filter(lambda item: item.get_backend() == backend, self.system_storage_backends))
+        if len(backends) == 0:
+            return False
+        return True
