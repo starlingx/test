@@ -1,3 +1,4 @@
+from config.app.objects.app_config import AppConfig
 from config.configuration_file_locations_manager import ConfigurationFileLocationsManager
 from config.database.objects.database_config import DatabaseConfig
 from config.docker.objects.docker_config import DockerConfig
@@ -29,6 +30,7 @@ class ConfigurationManagerClass:
         self.rest_api_config: RestAPIConfig = None
         self.security_config: SecurityConfig = None
         self.usm_config: UsmConfig = None
+        self.app_config: AppConfig = None
         self.configuration_locations_manager = None
 
     def is_config_loaded(self) -> bool:
@@ -96,6 +98,10 @@ class ConfigurationManagerClass:
         if not usm_config_file:
             usm_config_file = get_stx_resource_path("config/usm/files/default.json5")
 
+        app_config_file = config_file_locations.get_app_config_file()
+        if not app_config_file:
+            app_config_file = get_stx_resource_path("config/app/files/default.json5")
+
         if not self.loaded:
             try:
                 self.lab_config = LabConfig(lab_config_file)
@@ -108,6 +114,7 @@ class ConfigurationManagerClass:
                 self.rest_api_config = RestAPIConfig(rest_api_config_file)
                 self.security_config = SecurityConfig(security_config_file)
                 self.usm_config = UsmConfig(usm_config_file)
+                self.app_config = AppConfig(app_config_file)
                 self.loaded = True
             except FileNotFoundError as e:
                 print(f"Unable to load the config using file: {str(e.filename)} ")
@@ -213,6 +220,16 @@ class ConfigurationManagerClass:
         """
         return self.usm_config
 
+    def get_app_config(self) -> AppConfig:
+        """
+        Getter for app config
+
+        Returns:
+            AppConfig: the app config
+
+        """
+        return self.app_config
+
     def get_config_pytest_args(self) -> [str]:
         """
         Returns the configuration file locations as pytest args.
@@ -242,6 +259,8 @@ class ConfigurationManagerClass:
             pytest_config_args.append(f"--security_config_file={self.configuration_locations_manager.get_security_config_file()}")
         if self.configuration_locations_manager.usm_config_file:
             pytest_config_args.append(f"--usm_config_file={self.configuration_locations_manager.get_usm_config_file()}")
+        if self.configuration_locations_manager.app_config_file:
+            pytest_config_args.append(f"--app_config_file={self.configuration_locations_manager.get_app_config_file()}")
 
         return pytest_config_args
 

@@ -19,6 +19,7 @@ class ConfigurationFileLocationsManager:
         self.rest_api_config_file = None
         self.security_config_file = None
         self.usm_config_file = None
+        self.app_config_file = None
 
     def set_configs_from_pytest_args(self, session: Session):
         """
@@ -69,6 +70,10 @@ class ConfigurationFileLocationsManager:
         usm_config_file = session.config.getoption("--usm_config_file")
         if usm_config_file:
             self.set_security_config_file(usm_config_file)
+
+        app_config_file = session.config.getoption("--app_config_file")
+        if app_config_file:
+            self.set_app_config_file(app_config_file)
 
     def set_configs_from_options_parser(self, parser: OptionParser = None):
         """
@@ -123,6 +128,10 @@ class ConfigurationFileLocationsManager:
         usm_config_file = options.usm_config_file
         if usm_config_file:
             self.set_usm_config_file(usm_config_file)
+
+        app_config_file = options.app_config_file
+        if app_config_file:
+            self.set_app_config_file(app_config_file)
 
     def _add_options(self, parser: OptionParser):
         """
@@ -212,6 +221,14 @@ class ConfigurationFileLocationsManager:
             type="str",
             dest="usm_config_file",
             help="The Usm config file",
+        )
+
+        parser.add_option(
+            "--app_config_file",
+            action="store",
+            type="str",
+            dest="app_config_file",
+            help="The app config file",
         )
 
         options, args = parser.parse_args()
@@ -425,3 +442,22 @@ class ConfigurationFileLocationsManager:
 
         """
         self.usm_config_file = usm_config_file
+
+    def get_app_config_file(self) -> str:
+        """
+        Getter for app config file
+
+        Returns:
+            str: the app config file
+        """
+        return self.app_config_file
+
+    def set_app_config_file(self, app_config_file: str):
+        """
+        Setter for app config file
+
+        Args:
+            app_config_file (str): the app config file
+
+        """
+        self.app_config_file = app_config_file
