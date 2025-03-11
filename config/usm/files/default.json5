@@ -1,6 +1,6 @@
 {
     // Indicates the current operation is for Major rel upgrade
-    "usm_is_upgrade": "",
+    "usm_is_upgrade": true,
 
     // Indicates the current operation is patching the system.
     "usm_is_patch": "",
@@ -9,32 +9,32 @@
     "iso_path": "/path/to/iso/file",
 
     //  Absolute path to the Signature path for Major rel upgrade.
-    "upgrade_license": "",
+    "upgrade_license": "/path/to/lic/file/stx.sig",
 
     // Absolute path to the .patch file for Patching.
-    "patch_path": "",
+    "patch_path": "/home/sysadmin",
 
     // Path of directory where one or more .patch files are located.
-    "patch_dir": "",
+    "patch_dir": "/home/sysadmin/patch_dir",
 
     // Directory on the lab where the files need to be stored.
-    "dest_dir": "",
+    "dest_dir": "/home/sysadmin/upload_test/",
 
     // Address of the server where the iso/patch files are located.
-    "build_server": "",
+    "build_server": "host-name-for-build-server",
 
     // Username to authenticate to build_server
-    "build_server_username": "",
+    "build_server_username": "build_server_username",
 
     // Password to authenticate to build_server
-    "build_server_password": "",
+    "build_server_password": "build_server_password",
 
     //  Arguments for upgrade/patching testing
     "upgrade_arguments": "",
 
     // Release ids (one or more) to which the system is upgraded.
     // Used for either multiple patches or major release + patch(es)
-    "to_release_ids": "",
+    "to_release_ids": "stx-major.minor.version",
 
     // Some extra attributes for patching USM, config
     "extra_attributes": {
