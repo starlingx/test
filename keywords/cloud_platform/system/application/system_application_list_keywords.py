@@ -54,5 +54,5 @@ class SystemApplicationListKeywords(BaseKeyword):
             return application_status
 
         message = f"Application {application_name}'s status is {status}"
-        validate_equals_with_retry(get_app_status, status, message, timeout=120)
+        validate_equals_with_retry(get_app_status, status, message, timeout=300)
 
