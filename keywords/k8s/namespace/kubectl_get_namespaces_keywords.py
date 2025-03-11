@@ -29,3 +29,17 @@ class KubectlGetNamespacesKeywords(BaseKeyword):
         namespaces_list_output = KubectlGetNamespacesOutput(kubectl_get_namespaces_output)
 
         return namespaces_list_output
+
+    def get_namespaces_by_label(self, label) -> KubectlGetNamespacesOutput:
+        """
+        Gets the k8s namespaces available for a given label.
+        Args:
+
+        Returns: KubectlGetNamespacesOutput
+
+        """
+        kubectl_get_namespaces_output = self.ssh_connection.send(export_k8s_config(f"kubectl get ns -l={label}"))
+        self.validate_success_return_code(self.ssh_connection)
+        namespaces_list_output = KubectlGetNamespacesOutput(kubectl_get_namespaces_output)
+
+        return namespaces_list_output

@@ -5,32 +5,34 @@ from keywords.k8s.namespace.object.kubectl_namespace_object import KubectlNamesp
 
 
 class KubectlGetNamespacesOutput:
+    """
+    Class for 'kubectl get ns output' keywords
+    """
 
     def __init__(self, kubectl_get_namespaces_output: str):
         """
         Constructor
 
         Args:
-            kubectl_get_namespaces_output: Raw string output from running a "kubectl get ns" command.
+            kubectl_get_namespaces_output (str): Raw string output from running a "kubectl get ns" command.
 
         """
-
         self.kubectl_namespaces: [KubectlNamespaceObject] = []
         kubectl_get_namespaces_table_parser = KubectlGetNamespacesTableParser(kubectl_get_namespaces_output)
         output_values_list = kubectl_get_namespaces_table_parser.get_output_values_list()
 
         for namespace_dict in output_values_list:
 
-            if 'NAME' not in namespace_dict:
+            if "NAME" not in namespace_dict:
                 raise ValueError(f"There is no NAME associated with the namespace: {namespace_dict}")
 
-            namespace = KubectlNamespaceObject(namespace_dict['NAME'])
+            namespace = KubectlNamespaceObject(namespace_dict["NAME"])
 
-            if 'STATUS' in namespace_dict:
-                namespace.set_status(namespace_dict['STATUS'])
+            if "STATUS" in namespace_dict:
+                namespace.set_status(namespace_dict["STATUS"])
 
-            if 'AGE' in namespace_dict:
-                namespace.set_age(namespace_dict['AGE'])
+            if "AGE" in namespace_dict:
+                namespace.set_age(namespace_dict["AGE"])
 
             self.kubectl_namespaces.append(namespace)
 
@@ -43,13 +45,15 @@ class KubectlGetNamespacesOutput:
         """
         return self.kubectl_namespaces
 
-    def is_namespace(self, namespace_name) -> bool:
+    def is_namespace(self, namespace_name: str) -> bool:
         """
         This function will get the namespace with the name specified from this get_namespace_output.
-        Args:
-            namespace_name: The name of the namespace of interest.
 
-        Returns: bool
+        Args:
+            namespace_name (str): The name of the namespace of interest.
+
+        Returns:
+            bool:  This function return a bool value.
 
         """
         for ns in self.kubectl_namespaces:

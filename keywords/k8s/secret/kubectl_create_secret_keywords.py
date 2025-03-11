@@ -16,12 +16,13 @@ class KubectlCreateSecretsKeywords(BaseKeyword):
         """
         self.ssh_connection = ssh_connection
 
-    def create_secret_for_registry(self, registry: Registry, secret_name: str):
+    def create_secret_for_registry(self, registry: Registry, secret_name: str, namespace: str = "default"):
         """
         Create a secret for the registry
         Args:
             registry (): the registry
             secret_name (): the secret name
+            namespace (): the namespace
 
         Returns:
 
@@ -30,7 +31,7 @@ class KubectlCreateSecretsKeywords(BaseKeyword):
         password = registry.get_password()
         docker_server = registry.get_registry_url()
         self.ssh_connection.send(
-            export_k8s_config(f"kubectl create secret docker-registry {secret_name} --docker-server={docker_server} " f"--docker-username={user_name} --docker-password={password}")
+            export_k8s_config(f"kubectl create secret -n {namespace} docker-registry {secret_name} --docker-server={docker_server} " f"--docker-username={user_name} --docker-password={password}")
         )
 
     def create_secret_generic(self, secret_name: str, tls_crt: str, tls_key: str, namespace: str):
