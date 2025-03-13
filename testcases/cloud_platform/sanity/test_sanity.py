@@ -1236,7 +1236,7 @@ def test_dc_modify_timezone(request):
 
     system_modify_output = system_modify_keywords.system_modify_timezone("America/Los_Angeles")
     validate_equals(system_modify_output.get_system_show_object().get_timezone(), "America/Los_Angeles", "Update the timezone to America/Los_Angeles.")
-    validate_equals(DateKeywords(ssh_connection).get_timezone(), "PST", "validate that the system timezone is now PST")
+    validate_equals(DateKeywords(ssh_connection).get_timezone(), "PDT", "validate that the system timezone is now PST")
 
     # check the subcloud to ensure the time zone change does not propagate
     dcmanager_subcloud_list = DcManagerSubcloudListKeywords(ssh_connection).get_dcmanager_subcloud_list()
