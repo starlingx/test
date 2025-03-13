@@ -1,5 +1,7 @@
 import time
 
+from pytest import mark
+
 from config.configuration_manager import ConfigurationManager
 from framework.logging.automation_logger import get_logger
 from framework.resources.resource_finder import get_stx_resource_path
@@ -45,7 +47,6 @@ from keywords.linux.ip.ip_keywords import IPKeywords
 from keywords.linux.ip.object.ip_link_show_output import IPLinkShowOutput
 from keywords.linux.process_status.process_status_args_keywords import ProcessStatusArgsKeywords
 from keywords.server.power_keywords import PowerKeywords
-from pytest import mark
 
 
 @mark.p0
@@ -68,35 +69,34 @@ def test_push_docker_image_to_local_registry_simplex(request):
 
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
 
-    local_registry = ConfigurationManager.get_docker_config().get_registry('local_registry')
+    local_registry = ConfigurationManager.get_docker_config().get_registry("local_registry")
 
     FileKeywords(ssh_connection).upload_file(get_stx_resource_path("resources/images/busybox.tar"), "/home/sysadmin/busybox.tar", overwrite=False)
-    KubectlCreateSecretsKeywords(ssh_connection).create_secret_for_registry(local_registry, 'local-secret')
+    KubectlCreateSecretsKeywords(ssh_connection).create_secret_for_registry(local_registry, "local-secret")
     docker_load_image_keywords = DockerLoadImageKeywords(ssh_connection)
-    docker_load_image_keywords.load_docker_image_to_host('busybox.tar')
-    docker_load_image_keywords.tag_docker_image_for_registry('busybox', 'busybox', local_registry)
-    docker_load_image_keywords.push_docker_image_to_registry('busybox', local_registry)
+    docker_load_image_keywords.load_docker_image_to_host("busybox.tar")
+    docker_load_image_keywords.tag_docker_image_for_registry("busybox", "busybox", local_registry)
+    docker_load_image_keywords.push_docker_image_to_registry("busybox", local_registry)
 
     def remove_docker_image():
         """
         Finalizer to remove docker image
-        Returns:
 
         """
-        DockerRemoveImagesKeywords(ssh_connection).remove_docker_image('busybox')
+        DockerRemoveImagesKeywords(ssh_connection).remove_docker_image("busybox")
 
     request.addfinalizer(remove_docker_image)
 
     # remove cached images
     docker_image_keywords = DockerImagesKeywords(ssh_connection)
-    docker_image_keywords.remove_image('registry.local:9001/busybox')
-    docker_image_keywords.remove_image('busybox')
+    docker_image_keywords.remove_image("registry.local:9001/busybox")
+    docker_image_keywords.remove_image("busybox")
 
     # pull image
-    docker_image_keywords.pull_image('registry.local:9001/busybox')
+    docker_image_keywords.pull_image("registry.local:9001/busybox")
 
     images = DockerImagesKeywords(ssh_connection).list_images()
-    assert 'registry.local:9001/busybox' in list(map(lambda image: image.get_repository(), images))
+    assert "registry.local:9001/busybox" in list(map(lambda image: image.get_repository(), images))
 
 
 @mark.p0
@@ -120,36 +120,35 @@ def test_push_docker_image_to_local_registry_standby(request):
 
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
 
-    local_registry = ConfigurationManager.get_docker_config().get_registry('local_registry')
+    local_registry = ConfigurationManager.get_docker_config().get_registry("local_registry")
 
     FileKeywords(ssh_connection).upload_file(get_stx_resource_path("resources/images/busybox.tar"), "/home/sysadmin/busybox.tar", overwrite=False)
-    KubectlCreateSecretsKeywords(ssh_connection).create_secret_for_registry(local_registry, 'local-secret')
+    KubectlCreateSecretsKeywords(ssh_connection).create_secret_for_registry(local_registry, "local-secret")
     docker_load_image_keywords = DockerLoadImageKeywords(ssh_connection)
-    docker_load_image_keywords.load_docker_image_to_host('busybox.tar')
-    docker_load_image_keywords.tag_docker_image_for_registry('busybox', 'busybox', local_registry)
-    docker_load_image_keywords.push_docker_image_to_registry('busybox', local_registry)
+    docker_load_image_keywords.load_docker_image_to_host("busybox.tar")
+    docker_load_image_keywords.tag_docker_image_for_registry("busybox", "busybox", local_registry)
+    docker_load_image_keywords.push_docker_image_to_registry("busybox", local_registry)
 
     def remove_docker_image():
         """
         Finalizer to remove docker image
-        Returns:
 
         """
-        DockerRemoveImagesKeywords(ssh_connection).remove_docker_image('busybox')
+        DockerRemoveImagesKeywords(ssh_connection).remove_docker_image("busybox")
 
     request.addfinalizer(remove_docker_image)
 
     # remove cached images from active controller
     docker_image_keywords = DockerImagesKeywords(ssh_connection)
-    docker_image_keywords.remove_image('registry.local:9001/busybox')
-    docker_image_keywords.remove_image('busybox')
+    docker_image_keywords.remove_image("registry.local:9001/busybox")
+    docker_image_keywords.remove_image("busybox")
 
     # pull image
-    docker_image_keywords.pull_image('registry.local:9001/busybox')
+    docker_image_keywords.pull_image("registry.local:9001/busybox")
 
     # check images on active controller
     images = docker_image_keywords.list_images()
-    assert 'registry.local:9001/busybox' in list(map(lambda image: image.get_repository(), images))
+    assert "registry.local:9001/busybox" in list(map(lambda image: image.get_repository(), images))
 
     # check on standby controller
     standby_ssh_connection = LabConnectionKeywords().get_standby_controller_ssh()
@@ -159,15 +158,15 @@ def test_push_docker_image_to_local_registry_standby(request):
 
     # remove cached images from standby controller
     docker_image_keywords = DockerImagesKeywords(standby_ssh_connection)
-    docker_image_keywords.remove_image('registry.local:9001/busybox')
-    docker_image_keywords.remove_image('busybox')
+    docker_image_keywords.remove_image("registry.local:9001/busybox")
+    docker_image_keywords.remove_image("busybox")
 
     # pull image
-    docker_image_keywords.pull_image('registry.local:9001/busybox')
+    docker_image_keywords.pull_image("registry.local:9001/busybox")
 
     # check images on active controller
     images = docker_image_keywords.list_images()
-    assert 'registry.local:9001/busybox' in list(map(lambda image: image.get_repository(), images))
+    assert "registry.local:9001/busybox" in list(map(lambda image: image.get_repository(), images))
 
 
 @mark.p0
@@ -218,7 +217,7 @@ def test_host_operations_with_custom_kubectl_app_standby(request):
     deploy_pods(request, ssh_connection)
 
     swact_success = SystemHostSwactKeywords(ssh_connection).host_swact()
-    assert swact_success, 'Host swact completed successfully'
+    assert swact_success, "Host swact completed successfully"
 
     # if swact was successful, swact again at the end
     def swact_controller():
@@ -255,7 +254,7 @@ def test_upload_charts_via_helm_upload_simplex():
     file_keywords.upload_file(get_stx_resource_path(f"resources/cloud_platform/containers/{helm_file}"), f"/home/sysadmin/{helm_file}", overwrite=True)
 
     # run helm-upload command
-    HelmKeywords(ssh_connection).helm_upload('starlingx', f'/home/sysadmin/{helm_file}')
+    HelmKeywords(ssh_connection).helm_upload("starlingx", f"/home/sysadmin/{helm_file}")
 
     assert file_keywords.file_exists(f"{helm_chart_location}/{helm_file}")
 
@@ -288,7 +287,7 @@ def test_upload_charts_via_helm_upload_standby_controller(request):
     file_keywords.upload_file(get_stx_resource_path(f"resources/cloud_platform/containers/{helm_file}"), f"/home/sysadmin/{helm_file}", overwrite=True)
 
     # run helm-upload command
-    HelmKeywords(ssh_connection).helm_upload('starlingx', f'/home/sysadmin/{helm_file}')
+    HelmKeywords(ssh_connection).helm_upload("starlingx", f"/home/sysadmin/{helm_file}")
 
     assert file_keywords.file_exists(f"{helm_chart_location}/{helm_file}")
 
@@ -312,10 +311,9 @@ def test_system_core_dumps():
 
     Test Steps:
         - Validate no files found in /var/lib/systemd/coredump directory
-    Returns:
 
     """
-    core_dump_dir = '/var/lib/systemd/coredump/'
+    core_dump_dir = "/var/lib/systemd/coredump/"
 
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
 
@@ -332,11 +330,10 @@ def test_system_crash_reports():
     Test Steps:
         - Validate no files found in /var/crash directory
         - Validate no files found in the /var/logs/crash directory
-    Returns:
 
     """
-    crash_report_dir = '/var/crash'
-    crash_log_dir = '/var/log/crash'
+    crash_report_dir = "/var/crash"
+    crash_log_dir = "/var/log/crash"
 
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
 
@@ -364,19 +361,19 @@ def test_force_reboot_host_active_controller(request):
     pre_standby_host = SystemHostListKeywords(ssh_connection).get_standby_controller()
 
     power_keywords = PowerKeywords(ssh_connection)
-    assert power_keywords.power_off(pre_active_host.get_host_name()), 'host was not powered off'
+    assert power_keywords.power_off(pre_active_host.get_host_name()), "host was not powered off"
 
     # swact the hosts at the end of the test
     request.addfinalizer(SystemHostSwactKeywords(ssh_connection).host_swact)
 
     # Power on method checks host status and alarms
-    assert power_keywords.power_on(pre_active_host.get_host_name()), 'host did not come back online in time'
+    assert power_keywords.power_on(pre_active_host.get_host_name()), "host did not come back online in time"
 
     post_active_host = SystemHostListKeywords(ssh_connection).get_active_controller()
     post_standby_host = SystemHostListKeywords(ssh_connection).get_standby_controller()
 
-    assert pre_active_host.get_host_name() == post_standby_host.get_host_name(), 'Active host did not swact to standby'
-    assert pre_standby_host.get_host_name() == post_active_host.get_host_name(), 'Standby host did not swact to active'
+    assert pre_active_host.get_host_name() == post_standby_host.get_host_name(), "Active host did not swact to standby"
+    assert pre_standby_host.get_host_name() == post_active_host.get_host_name(), "Standby host did not swact to active"
 
 
 @mark.p0
@@ -397,7 +394,7 @@ def test_force_reboot_active_host_swact_timeout(request):
     pre_standby_host = SystemHostListKeywords(ssh_connection).get_standby_controller()
 
     power_keywords = PowerKeywords(ssh_connection)
-    assert power_keywords.power_off(pre_active_host.get_host_name()), 'host was not powered off'
+    assert power_keywords.power_off(pre_active_host.get_host_name()), "host was not powered off"
     start_time = time.time()
 
     # swact the hosts at the end of the test
@@ -419,7 +416,7 @@ def test_force_reboot_active_host_swact_timeout(request):
         time.sleep(refresh_time)
     end_time = time.time()
 
-    assert end_time - start_time < MAX_SWACT_TIME, 'swact time was greater then the max timeout'
+    assert end_time - start_time < MAX_SWACT_TIME, "swact time was greater then the max timeout"
 
 
 @mark.p0
@@ -437,10 +434,10 @@ def test_force_reboot_host_standby_controller():
     standby_host = SystemHostListKeywords(ssh_connection).get_standby_controller()
 
     power_keywords = PowerKeywords(ssh_connection)
-    assert power_keywords.power_off(standby_host.get_host_name()), 'host was not powered off'
+    assert power_keywords.power_off(standby_host.get_host_name()), "host was not powered off"
 
     # Power on method checks host status and alarms
-    assert power_keywords.power_on(standby_host.get_host_name()), 'host did not come back online in time'
+    assert power_keywords.power_on(standby_host.get_host_name()), "host did not come back online in time"
 
 
 @mark.p0
@@ -455,17 +452,17 @@ def test_force_reboot_host_worker():
 
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
-    computes = SystemHostListKeywords(ssh_connection).get_compute()
+    computes = SystemHostListKeywords(ssh_connection).get_computes()
 
-    assert len(computes) > 0, 'no computes were found on the system'
+    assert len(computes) > 0, "no computes were found on the system"
 
     compute = computes[0]  # we just need one compute so take the first one
 
     power_keywords = PowerKeywords(ssh_connection)
-    assert power_keywords.power_off(compute.get_host_name()), 'host was not powered off'
+    assert power_keywords.power_off(compute.get_host_name()), "host was not powered off"
 
     # Power on method checks host status and alarms
-    assert power_keywords.power_on(compute.get_host_name()), 'host did not come back online in time'
+    assert power_keywords.power_on(compute.get_host_name()), "host did not come back online in time"
 
 
 @mark.p0
@@ -482,44 +479,42 @@ def test_force_reboot_host_storage():
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     storages = SystemHostListKeywords(ssh_connection).get_storages()
 
-    assert len(storages) > 0, 'no storages were found on the system'
+    assert len(storages) > 0, "no storages were found on the system"
 
     storage = storages[0]  # we just need one compute so take the first one
 
     power_keywords = PowerKeywords(ssh_connection)
-    assert power_keywords.power_off(storage.get_host_name()), 'host was not powered off'
+    assert power_keywords.power_off(storage.get_host_name()), "host was not powered off"
 
     # Power on method checks host status and alarms
-    assert power_keywords.power_on(storage.get_host_name()), 'host did not come back online in time'
+    assert power_keywords.power_on(storage.get_host_name()), "host did not come back online in time"
 
 
 def deploy_images_to_local_registry(ssh_connection: SSHConnection):
     """
     Deploys images to the local registry for testcases in this suite
-    Args:
-        ssh_connection (): the ssh connection
 
-    Returns:
+    Args:
+        ssh_connection (SSHConnection): the ssh connection
 
     """
-    local_registry = ConfigurationManager.get_docker_config().get_registry('local_registry')
+    local_registry = ConfigurationManager.get_docker_config().get_registry("local_registry")
 
     docker_load_image_keywords = DockerLoadImageKeywords(ssh_connection)
     FileKeywords(ssh_connection).upload_file(get_stx_resource_path("resources/images/resource-consumer.tar"), "/home/sysadmin/resource-consumer.tar", overwrite=False)
-    KubectlCreateSecretsKeywords(ssh_connection).create_secret_for_registry(local_registry, 'local-secret')
-    docker_load_image_keywords.load_docker_image_to_host('resource-consumer.tar')
-    docker_load_image_keywords.tag_docker_image_for_registry('gcr.io/kubernetes-e2e-test-images/resource-consumer:1.4', 'resource-consumer', local_registry)
-    docker_load_image_keywords.push_docker_image_to_registry('resource-consumer', local_registry)
+    KubectlCreateSecretsKeywords(ssh_connection).create_secret_for_registry(local_registry, "local-secret")
+    docker_load_image_keywords.load_docker_image_to_host("resource-consumer.tar")
+    docker_load_image_keywords.tag_docker_image_for_registry("gcr.io/kubernetes-e2e-test-images/resource-consumer:1.4", "resource-consumer", local_registry)
+    docker_load_image_keywords.push_docker_image_to_registry("resource-consumer", local_registry)
 
 
-def deploy_pods(request, ssh_connection: SSHConnection):
+def deploy_pods(request: any, ssh_connection: SSHConnection):
     """
     Deploys pods needed by some suites in this suite
-    Args:
-        request (): request needed for adding teardown
-        ssh_connection (): the ssh connection
 
-    Returns:
+    Args:
+        request (any): request needed for adding teardown
+        ssh_connection (SSHConnection): the ssh connection
 
     """
 
@@ -527,20 +522,19 @@ def deploy_pods(request, ssh_connection: SSHConnection):
     def remove_deployments_and_pods():
         """
         Finalizer to remove deployments and pods
-        Returns:
 
         """
-        rc = KubectlDeleteDeploymentsKeywords(ssh_connection).cleanup_deployment('resource-consumer')
-        rc += KubectlDeleteServiceKeywords(ssh_connection).cleanup_service('resource-consumer')
-        rc += KubectlDeleteNamespaceKeywords(ssh_connection).cleanup_namespace('resource-consumer')
+        rc = KubectlDeleteDeploymentsKeywords(ssh_connection).cleanup_deployment("resource-consumer")
+        rc += KubectlDeleteServiceKeywords(ssh_connection).cleanup_service("resource-consumer")
+        rc += KubectlDeleteNamespaceKeywords(ssh_connection).cleanup_namespace("resource-consumer")
 
         assert rc == 0
 
     request.addfinalizer(remove_deployments_and_pods)
 
-    FileKeywords(ssh_connection).upload_file(get_stx_resource_path('resources/cloud_platform/sanity/pods/consumer_app.yaml'), '/home/sysadmin/consumer_app.yaml')
+    FileKeywords(ssh_connection).upload_file(get_stx_resource_path("resources/cloud_platform/sanity/pods/consumer_app.yaml"), "/home/sysadmin/consumer_app.yaml")
     kubectl_create_pods_keyword = KubectlCreatePodsKeywords(ssh_connection)
-    kubectl_create_pods_keyword.create_from_yaml('/home/sysadmin/consumer_app.yaml')
+    kubectl_create_pods_keyword.create_from_yaml("/home/sysadmin/consumer_app.yaml")
 
     assert wait_for_pods_status_running(ssh_connection), "Consumer pods did not reach running status in expected time"
 
@@ -548,23 +542,25 @@ def deploy_pods(request, ssh_connection: SSHConnection):
 def wait_for_pods_status_running(ssh_connection: SSHConnection) -> bool:
     """
     Gets the name of the pods and waits for them to be running
-    Args:
-        ssh_connection (): the ssh connection
 
-    Returns: True if they are running, False otherwise
+    Args:
+        ssh_connection (SSHConnection): the ssh connection
+
+    Returns:
+        bool: True if they are running, False otherwise
 
     """
     pods = KubectlGetPodsKeywords(ssh_connection).get_pods()
 
-    consumer_pods = pods.get_pods_start_with('resource-consumer')
+    consumer_pods = pods.get_pods_start_with("resource-consumer")
     assert len(consumer_pods) == 2, "Incorrect number of consumer_pods were created"
     consumer_pod1_name = consumer_pods[0].get_name()
     consumer_pod2_name = consumer_pods[1].get_name()
 
     # wait for all pods to be running
     kubectl_get_pods_keywords = KubectlGetPodsKeywords(ssh_connection)
-    consumer_pod1_running = kubectl_get_pods_keywords.wait_for_pod_status(consumer_pod1_name, 'Running')
-    consumer_pod2_running = kubectl_get_pods_keywords.wait_for_pod_status(consumer_pod2_name, 'Running')
+    consumer_pod1_running = kubectl_get_pods_keywords.wait_for_pod_status(consumer_pod1_name, "Running")
+    consumer_pod2_running = kubectl_get_pods_keywords.wait_for_pod_status(consumer_pod2_name, "Running")
 
     return consumer_pod1_running and consumer_pod2_running
 
@@ -631,9 +627,7 @@ def test_isolated_2processors_2big_pods_best_effort_simplex(request):
     system_host_cpu_keywords.system_host_cpu_modify(active_controller_name, "platform", num_cores_on_processor_0=2, num_cores_on_processor_1=0)
 
     # Set the Isolated CPUs count to fill all the application cores.
-    system_host_cpu_keywords.system_host_cpu_modify(
-        active_controller_name, "application-isolated", num_cores_on_processor_0=target_application_isolated_cpus_processor_0, num_cores_on_processor_1=target_application_isolated_cpus_processor_1
-    )
+    system_host_cpu_keywords.system_host_cpu_modify(active_controller_name, "application-isolated", num_cores_on_processor_0=target_application_isolated_cpus_processor_0, num_cores_on_processor_1=target_application_isolated_cpus_processor_1)
 
     # Add the kube-cpu-mgr-policy/kube-topology-mgr-policy labels
     get_logger().log_info("Set the label values of 'kube-cpu-mgr-policy=static' and 'kube-topology-mgr-policy=best-effort'.")
@@ -657,22 +651,20 @@ def test_isolated_2processors_2big_pods_best_effort_simplex(request):
 
     # Validate that the system host-cpu-list shows the correct amount of isolated cpus
     host_cpu_output_for_validation = system_host_cpu_keywords.get_system_host_cpu_list(active_controller_name)
-    isolated_physical_cores = host_cpu_output_for_validation.get_number_of_physical_cores(assigned_function='Application-isolated')
-    assert (
-        isolated_physical_cores == target_isolated_cpu_physical_cores
-    ), f"Expecting {target_isolated_cpu_physical_cores} isolcpus physical cores in active controller, Observed: {isolated_physical_cores}"
+    isolated_physical_cores = host_cpu_output_for_validation.get_number_of_physical_cores(assigned_function="Application-isolated")
+    assert isolated_physical_cores == target_isolated_cpu_physical_cores, f"Expecting {target_isolated_cpu_physical_cores} isolcpus physical cores in active controller, Observed: {isolated_physical_cores}"
     get_logger().log_info("Validated that the system host-cpu-list shows the correct amount of isolated cpus")
 
     # Validate that K8s knows that there is the correct amount of allocatable / allocated CPUs
-    expected_total_isolcpus = host_cpu_output_for_validation.get_number_of_logical_cores(assigned_function='Application-isolated')
+    expected_total_isolcpus = host_cpu_output_for_validation.get_number_of_logical_cores(assigned_function="Application-isolated")
     active_controller_node_description = KubectlDescribeNodeKeywords(ssh_connection).describe_node(active_controller_name).get_node_description()
     kubectl_allocatable_isolcpus = active_controller_node_description.get_allocatable().get_windriver_isolcpus()
     assert kubectl_allocatable_isolcpus == expected_total_isolcpus, f"Expecting {expected_total_isolcpus} isolcpus logical cores in active controller. Observed: {kubectl_allocatable_isolcpus}"
     kubectl_allocated_isolcpus = active_controller_node_description.get_allocated_resources().get_windriver_isolcpus()
     kubectl_allocated_isolcpus_requests = kubectl_allocated_isolcpus.get_requests()
     kubectl_allocated_isolcpus_limits = kubectl_allocated_isolcpus.get_limits()
-    assert kubectl_allocated_isolcpus_requests == '0', f"Expecting 0 allocated isolcpus requests in active controller. Observed: {kubectl_allocated_isolcpus_requests}"
-    assert kubectl_allocated_isolcpus_limits == '0', f"Expecting 0 allocated isolcpus limits in active controller. Observed: {kubectl_allocated_isolcpus_limits}"
+    assert kubectl_allocated_isolcpus_requests == "0", f"Expecting 0 allocated isolcpus requests in active controller. Observed: {kubectl_allocated_isolcpus_requests}"
+    assert kubectl_allocated_isolcpus_limits == "0", f"Expecting 0 allocated isolcpus limits in active controller. Observed: {kubectl_allocated_isolcpus_limits}"
     get_logger().log_info("Validated that amount of allocatable / allocated CPUs from 'kubectl describe node'.")
 
     # Validate that the labels are set correctly in the host-labels-list
@@ -696,20 +688,20 @@ def test_isolated_2processors_2big_pods_best_effort_simplex(request):
     get_logger().log_info("Validated the cpu-manager-policy and topology-manager-policy from the kubelet command line.")
 
     # Upload Docker image to local registry
-    local_registry = ConfigurationManager.get_docker_config().get_registry('local_registry')
-    KubectlCreateSecretsKeywords(ssh_connection).create_secret_for_registry(local_registry, 'local-secret')
+    local_registry = ConfigurationManager.get_docker_config().get_registry("local_registry")
+    KubectlCreateSecretsKeywords(ssh_connection).create_secret_for_registry(local_registry, "local-secret")
 
     file_keywords = FileKeywords(ssh_connection)
     file_keywords.upload_file(get_stx_resource_path("resources/images/pv-test.tar"), "/home/sysadmin/pv-test.tar", overwrite=False)
     docker_load_image_keywords = DockerLoadImageKeywords(ssh_connection)
-    docker_load_image_keywords.load_docker_image_to_host('pv-test.tar')
-    docker_load_image_keywords.tag_docker_image_for_registry('registry.local:9001/pv-test', 'pv-test', local_registry)
-    docker_load_image_keywords.push_docker_image_to_registry('pv-test', local_registry)
+    docker_load_image_keywords.load_docker_image_to_host("pv-test.tar")
+    docker_load_image_keywords.tag_docker_image_for_registry("registry.local:9001/pv-test", "pv-test", local_registry)
+    docker_load_image_keywords.push_docker_image_to_registry("pv-test", local_registry)
     get_logger().log_info("Uploaded 'pv-test' docker image to the local registry.")
 
     # Create Pod 0 to fill the isolcpus on one processor
     pod0_name = "test-isolated-2p-2-big-pod-best-effort-ht-aio-pod0"
-    isolcpus_on_processor_0 = host_cpu_output_for_validation.get_number_of_logical_cores(processor_id=0, assigned_function='Application-isolated')
+    isolcpus_on_processor_0 = host_cpu_output_for_validation.get_number_of_logical_cores(processor_id=0, assigned_function="Application-isolated")
     template_file = get_stx_resource_path("resources/cloud_platform/nightly_regression/isolated_cpu_tools.yaml")
     replacement_dictionary = {"pod_name": pod0_name, "number_of_isolcpus": isolcpus_on_processor_0, "host_name": active_controller_name}
     pod0_yaml = YamlKeywords(ssh_connection).generate_yaml_file_from_template(template_file, replacement_dictionary, "isolated_cpu_tools.yaml", "/home/sysadmin")
@@ -730,12 +722,8 @@ def test_isolated_2processors_2big_pods_best_effort_simplex(request):
     kubectl_allocated_isolcpus = active_controller_node_description.get_allocated_resources().get_windriver_isolcpus()
     kubectl_allocated_isolcpus_requests = kubectl_allocated_isolcpus.get_requests()
     kubectl_allocated_isolcpus_limits = kubectl_allocated_isolcpus.get_limits()
-    assert kubectl_allocated_isolcpus_requests == str(
-        isolcpus_on_processor_0
-    ), f"Expecting {isolcpus_on_processor_0} allocated isolcpus requests in active controller. Observed: {kubectl_allocated_isolcpus_requests}"
-    assert kubectl_allocated_isolcpus_limits == str(
-        isolcpus_on_processor_0
-    ), f"Expecting {isolcpus_on_processor_0} allocated isolcpus limits in active controller. Observed: {kubectl_allocated_isolcpus_limits}"
+    assert kubectl_allocated_isolcpus_requests == str(isolcpus_on_processor_0), f"Expecting {isolcpus_on_processor_0} allocated isolcpus requests in active controller. Observed: {kubectl_allocated_isolcpus_requests}"
+    assert kubectl_allocated_isolcpus_limits == str(isolcpus_on_processor_0), f"Expecting {isolcpus_on_processor_0} allocated isolcpus limits in active controller. Observed: {kubectl_allocated_isolcpus_limits}"
     get_logger().log_info("Validated the allocated/allocatable CPUs now that pod0 is running.")
 
     # Validate that the CPUs used by the pod are all on the same processor.
@@ -752,7 +740,7 @@ def test_isolated_2processors_2big_pods_best_effort_simplex(request):
 
     # Create Pod 1 to fill the isolcpus on the second processor
     pod1_name = "test-isolated-2p-2-big-pod-best-effort-ht-aio-pod1"
-    isolcpus_on_processor_1 = host_cpu_output_for_validation.get_number_of_logical_cores(processor_id=1, assigned_function='Application-isolated')
+    isolcpus_on_processor_1 = host_cpu_output_for_validation.get_number_of_logical_cores(processor_id=1, assigned_function="Application-isolated")
     template_file = get_stx_resource_path("resources/cloud_platform/nightly_regression/isolated_cpu_tools.yaml")
     replacement_dictionary = {"pod_name": pod1_name, "number_of_isolcpus": isolcpus_on_processor_1, "host_name": active_controller_name}
     pod1_yaml = YamlKeywords(ssh_connection).generate_yaml_file_from_template(template_file, replacement_dictionary, "isolated_cpu_tools.yaml", "/home/sysadmin")
@@ -774,12 +762,8 @@ def test_isolated_2processors_2big_pods_best_effort_simplex(request):
     kubectl_allocated_isolcpus_requests = kubectl_allocated_isolcpus.get_requests()
     kubectl_allocated_isolcpus_limits = kubectl_allocated_isolcpus.get_limits()
     total_expected_allocated_isolcpus = isolcpus_on_processor_0 + isolcpus_on_processor_1
-    assert kubectl_allocated_isolcpus_requests == str(
-        total_expected_allocated_isolcpus
-    ), f"Expecting {total_expected_allocated_isolcpus} allocated isolcpus requests in active controller. Observed: {kubectl_allocated_isolcpus_requests}"
-    assert kubectl_allocated_isolcpus_limits == str(
-        total_expected_allocated_isolcpus
-    ), f"Expecting {total_expected_allocated_isolcpus} allocated isolcpus limits in active controller. Observed: {kubectl_allocated_isolcpus_limits}"
+    assert kubectl_allocated_isolcpus_requests == str(total_expected_allocated_isolcpus), f"Expecting {total_expected_allocated_isolcpus} allocated isolcpus requests in active controller. Observed: {kubectl_allocated_isolcpus_requests}"
+    assert kubectl_allocated_isolcpus_limits == str(total_expected_allocated_isolcpus), f"Expecting {total_expected_allocated_isolcpus} allocated isolcpus limits in active controller. Observed: {kubectl_allocated_isolcpus_limits}"
     get_logger().log_info("Validated the allocated/allocatable CPUs now that pod0 is running.")
 
     # Validate that the CPUs used by the pod are all on the same processor.
@@ -890,9 +874,7 @@ def test_isolated_2processors_2big_pods_best_effort_standby_controller(request):
     system_host_cpu_keywords.system_host_cpu_modify(standby_controller_name, "platform", num_cores_on_processor_0=2, num_cores_on_processor_1=0)
 
     # Set the Isolated CPUs count to fill all the application cores.
-    system_host_cpu_keywords.system_host_cpu_modify(
-        standby_controller_name, "application-isolated", num_cores_on_processor_0=target_application_isolated_cpus_processor_0, num_cores_on_processor_1=target_application_isolated_cpus_processor_1
-    )
+    system_host_cpu_keywords.system_host_cpu_modify(standby_controller_name, "application-isolated", num_cores_on_processor_0=target_application_isolated_cpus_processor_0, num_cores_on_processor_1=target_application_isolated_cpus_processor_1)
 
     # Add the kube-cpu-mgr-policy/kube-topology-mgr-policy labels
     get_logger().log_info("Set the label values of 'kube-cpu-mgr-policy=static' and 'kube-topology-mgr-policy=best-effort'.")
@@ -916,22 +898,20 @@ def test_isolated_2processors_2big_pods_best_effort_standby_controller(request):
 
     # Validate that the system host-cpu-list shows the correct amount of isolated cpus
     host_cpu_output_for_validation = system_host_cpu_keywords.get_system_host_cpu_list(standby_controller_name)
-    isolated_physical_cores = host_cpu_output_for_validation.get_number_of_physical_cores(assigned_function='Application-isolated')
-    assert (
-        isolated_physical_cores == target_isolated_cpu_physical_cores
-    ), f"Expecting {target_isolated_cpu_physical_cores} isolcpus physical cores in standby controller, Observed: {isolated_physical_cores}"
+    isolated_physical_cores = host_cpu_output_for_validation.get_number_of_physical_cores(assigned_function="Application-isolated")
+    assert isolated_physical_cores == target_isolated_cpu_physical_cores, f"Expecting {target_isolated_cpu_physical_cores} isolcpus physical cores in standby controller, Observed: {isolated_physical_cores}"
     get_logger().log_info("Validated that the system host-cpu-list shows the correct amount of isolated cpus")
 
     # Validate that K8s knows that there is the correct amount of allocatable / allocated CPUs
-    expected_total_isolcpus = host_cpu_output_for_validation.get_number_of_logical_cores(assigned_function='Application-isolated')
+    expected_total_isolcpus = host_cpu_output_for_validation.get_number_of_logical_cores(assigned_function="Application-isolated")
     standby_controller_node_description = KubectlDescribeNodeKeywords(ssh_connection).describe_node(standby_controller_name).get_node_description()
     kubectl_allocatable_isolcpus = standby_controller_node_description.get_allocatable().get_windriver_isolcpus()
     assert kubectl_allocatable_isolcpus == expected_total_isolcpus, f"Expecting {expected_total_isolcpus} isolcpus logical cores in standby controller. Observed: {kubectl_allocatable_isolcpus}"
     kubectl_allocated_isolcpus = standby_controller_node_description.get_allocated_resources().get_windriver_isolcpus()
     kubectl_allocated_isolcpus_requests = kubectl_allocated_isolcpus.get_requests()
     kubectl_allocated_isolcpus_limits = kubectl_allocated_isolcpus.get_limits()
-    assert kubectl_allocated_isolcpus_requests == '0', f"Expecting 0 allocated isolcpus requests in standby controller. Observed: {kubectl_allocated_isolcpus_requests}"
-    assert kubectl_allocated_isolcpus_limits == '0', f"Expecting 0 allocated isolcpus limits in standby controller. Observed: {kubectl_allocated_isolcpus_limits}"
+    assert kubectl_allocated_isolcpus_requests == "0", f"Expecting 0 allocated isolcpus requests in standby controller. Observed: {kubectl_allocated_isolcpus_requests}"
+    assert kubectl_allocated_isolcpus_limits == "0", f"Expecting 0 allocated isolcpus limits in standby controller. Observed: {kubectl_allocated_isolcpus_limits}"
     get_logger().log_info("Validated that amount of allocatable / allocated CPUs from 'kubectl describe node'.")
 
     # Validate that the labels are set correctly in the host-labels-list
@@ -956,20 +936,20 @@ def test_isolated_2processors_2big_pods_best_effort_standby_controller(request):
     get_logger().log_info("Validated the cpu-manager-policy and topology-manager-policy from the kubelet command line.")
 
     # Upload Docker image to local registry
-    local_registry = ConfigurationManager.get_docker_config().get_registry('local_registry')
-    KubectlCreateSecretsKeywords(standby_controller_ssh).create_secret_for_registry(local_registry, 'local-secret')
+    local_registry = ConfigurationManager.get_docker_config().get_registry("local_registry")
+    KubectlCreateSecretsKeywords(standby_controller_ssh).create_secret_for_registry(local_registry, "local-secret")
 
     file_keywords = FileKeywords(standby_controller_ssh)
     file_keywords.upload_file(get_stx_resource_path("resources/images/pv-test.tar"), "/home/sysadmin/pv-test.tar", overwrite=False)
     docker_load_image_keywords = DockerLoadImageKeywords(standby_controller_ssh)
-    docker_load_image_keywords.load_docker_image_to_host('pv-test.tar')
-    docker_load_image_keywords.tag_docker_image_for_registry('registry.local:9001/pv-test', 'pv-test', local_registry)
-    docker_load_image_keywords.push_docker_image_to_registry('pv-test', local_registry)
+    docker_load_image_keywords.load_docker_image_to_host("pv-test.tar")
+    docker_load_image_keywords.tag_docker_image_for_registry("registry.local:9001/pv-test", "pv-test", local_registry)
+    docker_load_image_keywords.push_docker_image_to_registry("pv-test", local_registry)
     get_logger().log_info("Uploaded 'pv-test' docker image to the local registry.")
 
     # Create Pod 0 to fill the isolcpus on one processor
     pod0_name = "test-isolated-2p-2-big-pod-best-effort-ht-aio-pod0"
-    isolcpus_on_processor_0 = host_cpu_output_for_validation.get_number_of_logical_cores(processor_id=0, assigned_function='Application-isolated')
+    isolcpus_on_processor_0 = host_cpu_output_for_validation.get_number_of_logical_cores(processor_id=0, assigned_function="Application-isolated")
     template_file = get_stx_resource_path("resources/cloud_platform/nightly_regression/isolated_cpu_tools.yaml")
     replacement_dictionary = {"pod_name": pod0_name, "number_of_isolcpus": isolcpus_on_processor_0, "host_name": standby_controller_name}
     pod0_yaml = YamlKeywords(standby_controller_ssh).generate_yaml_file_from_template(template_file, replacement_dictionary, "isolated_cpu_tools.yaml", "/home/sysadmin")
@@ -990,12 +970,8 @@ def test_isolated_2processors_2big_pods_best_effort_standby_controller(request):
     kubectl_allocated_isolcpus = standby_controller_node_description.get_allocated_resources().get_windriver_isolcpus()
     kubectl_allocated_isolcpus_requests = kubectl_allocated_isolcpus.get_requests()
     kubectl_allocated_isolcpus_limits = kubectl_allocated_isolcpus.get_limits()
-    assert kubectl_allocated_isolcpus_requests == str(
-        isolcpus_on_processor_0
-    ), f"Expecting {isolcpus_on_processor_0} allocated isolcpus requests in standby controller. Observed: {kubectl_allocated_isolcpus_requests}"
-    assert kubectl_allocated_isolcpus_limits == str(
-        isolcpus_on_processor_0
-    ), f"Expecting {isolcpus_on_processor_0} allocated isolcpus limits in standby controller. Observed: {kubectl_allocated_isolcpus_limits}"
+    assert kubectl_allocated_isolcpus_requests == str(isolcpus_on_processor_0), f"Expecting {isolcpus_on_processor_0} allocated isolcpus requests in standby controller. Observed: {kubectl_allocated_isolcpus_requests}"
+    assert kubectl_allocated_isolcpus_limits == str(isolcpus_on_processor_0), f"Expecting {isolcpus_on_processor_0} allocated isolcpus limits in standby controller. Observed: {kubectl_allocated_isolcpus_limits}"
     get_logger().log_info("Validated the allocated/allocatable CPUs now that pod0 is running.")
 
     # Validate that the CPUs used by the pod are all on the same processor.
@@ -1012,7 +988,7 @@ def test_isolated_2processors_2big_pods_best_effort_standby_controller(request):
 
     # Create Pod 1 to fill the isolcpus on the second processor
     pod1_name = "test-isolated-2p-2-big-pod-best-effort-ht-aio-pod1"
-    isolcpus_on_processor_1 = host_cpu_output_for_validation.get_number_of_logical_cores(processor_id=1, assigned_function='Application-isolated')
+    isolcpus_on_processor_1 = host_cpu_output_for_validation.get_number_of_logical_cores(processor_id=1, assigned_function="Application-isolated")
     template_file = get_stx_resource_path("resources/cloud_platform/nightly_regression/isolated_cpu_tools.yaml")
     replacement_dictionary = {"pod_name": pod1_name, "number_of_isolcpus": isolcpus_on_processor_1, "host_name": standby_controller_name}
     pod1_yaml = YamlKeywords(standby_controller_ssh).generate_yaml_file_from_template(template_file, replacement_dictionary, "isolated_cpu_tools.yaml", "/home/sysadmin")
@@ -1034,12 +1010,8 @@ def test_isolated_2processors_2big_pods_best_effort_standby_controller(request):
     kubectl_allocated_isolcpus_requests = kubectl_allocated_isolcpus.get_requests()
     kubectl_allocated_isolcpus_limits = kubectl_allocated_isolcpus.get_limits()
     total_expected_allocated_isolcpus = isolcpus_on_processor_0 + isolcpus_on_processor_1
-    assert kubectl_allocated_isolcpus_requests == str(
-        total_expected_allocated_isolcpus
-    ), f"Expecting {total_expected_allocated_isolcpus} allocated isolcpus requests in standby controller. Observed: {kubectl_allocated_isolcpus_requests}"
-    assert kubectl_allocated_isolcpus_limits == str(
-        total_expected_allocated_isolcpus
-    ), f"Expecting {total_expected_allocated_isolcpus} allocated isolcpus limits in standby controller. Observed: {kubectl_allocated_isolcpus_limits}"
+    assert kubectl_allocated_isolcpus_requests == str(total_expected_allocated_isolcpus), f"Expecting {total_expected_allocated_isolcpus} allocated isolcpus requests in standby controller. Observed: {kubectl_allocated_isolcpus_requests}"
+    assert kubectl_allocated_isolcpus_limits == str(total_expected_allocated_isolcpus), f"Expecting {total_expected_allocated_isolcpus} allocated isolcpus limits in standby controller. Observed: {kubectl_allocated_isolcpus_limits}"
     get_logger().log_info("Validated the allocated/allocatable CPUs now that pod0 is running.")
 
     # Validate that the CPUs used by the pod are all on the same processor.
@@ -1088,10 +1060,12 @@ def revert_standby_controller_isolcpu_configuration():
 
 @mark.p0
 @mark.lab_has_sriov
-def test_sriovdp_netdev_single_pod_1vf_lock(request):
+def test_sriovdp_netdev_single_pod_1vf_lock(request: any):
     """
     Test creation of a pod with netdevice SR-IOV interfaces
+
     Args:
+        request (any): the request
 
     Test Steps:
         - Create a network attachment definition for the SR-IOV VFs
@@ -1111,69 +1085,71 @@ def test_sriovdp_netdev_single_pod_1vf_lock(request):
     lab_config = ConfigurationManager.get_lab_config()
     computes = []
     for node in lab_config.get_nodes():
-        if 'lab_has_worker' in node.get_node_capabilities():
+        if "lab_has_worker" in node.get_node_capabilities():
             computes.append(node)
 
-    assert len(computes) > 0, 'we do not have any worker nodes for this test'
+    assert len(computes) > 0, "we do not have any worker nodes for this test"
     worker_to_use = computes[0]  # pick the first one
 
     # Deploy required images
     sriov_deploy_images_to_local_registry(ssh_connection)
 
     # Deploy required pods
-    sriov_deploy_pods(request, 'netdef_test-sriovdp.yaml', 'calicoctl-ippool-sriov-pool-group0-data1-vf1.yaml', ssh_connection)
+    sriov_deploy_pods(request, "netdef_test-sriovdp.yaml", "calicoctl-ippool-sriov-pool-group0-data1-vf1.yaml", ssh_connection)
 
     # Deploy daemon set pod
-    deploy_daemonset_pod(request, 'daemon_set_daemonset.yaml', ssh_connection)
+    deploy_daemonset_pod(request, "daemon_set_daemonset.yaml", ssh_connection)
 
     # check the daemonset values
-    daemonset = KubectlGetDaemonsetsKeywords(ssh_connection).get_daemonsets().get_daemonset('daemonset-sriovdp-netdev-single-pod')
+    daemonset = KubectlGetDaemonsetsKeywords(ssh_connection).get_daemonsets().get_daemonset("daemonset-sriovdp-netdev-single-pod")
 
-    assert daemonset, 'no daemonset was found'
-    assert daemonset.get_name() == 'daemonset-sriovdp-netdev-single-pod', 'daesomeset name was incorrect'
-    assert daemonset.get_desired() == 1, 'daemonset desired value was not 1'
-    assert daemonset.get_ready() == 1, 'daemonset ready value was not 1'
-    assert daemonset.get_available() == 1, 'daemonset available value was not 1'
-    assert daemonset.get_node_selector() == "kubernetes.io/hostname=controller-0", 'daemonset node selector is wroing'
+    assert daemonset, "no daemonset was found"
+    assert daemonset.get_name() == "daemonset-sriovdp-netdev-single-pod", "daesomeset name was incorrect"
+    assert daemonset.get_desired() == 1, "daemonset desired value was not 1"
+    assert daemonset.get_ready() == 1, "daemonset ready value was not 1"
+    assert daemonset.get_available() == 1, "daemonset available value was not 1"
+    assert daemonset.get_node_selector() == "kubernetes.io/hostname=controller-0", "daemonset node selector is wroing"
 
     # validate that the sriov interface net1 is 'UP'
     pods = KubectlGetPodsKeywords(ssh_connection).get_pods()
-    daemonset_pod = pods.get_pods_start_with('daemonset-sriovdp-netdev-single-pod')[0]  # should only be one
+    daemonset_pod = pods.get_pods_start_with("daemonset-sriovdp-netdev-single-pod")[0]  # should only be one
 
-    output = KubectlExecInPodsKeywords(ssh_connection).run_pod_exec_cmd(daemonset_pod.get_name(), 'ip link show net1')
+    output = KubectlExecInPodsKeywords(ssh_connection).run_pod_exec_cmd(daemonset_pod.get_name(), "ip link show net1")
     interface = IPLinkShowOutput(output).get_interface()
 
-    assert interface.state == 'UP', 'interface state was not UP'
+    assert interface.state == "UP", "interface state was not UP"
 
     # lock and unlock host and ensure pods come back online and interface is up
-    assert SystemHostLockKeywords(ssh_connection).lock_host(worker_to_use.get_name()), f'failed to lock host {worker_to_use.get_name()}'
-    assert SystemHostLockKeywords(ssh_connection).unlock_host(worker_to_use.get_name()), f'failed to unlock host {worker_to_use.get_name()}'
+    assert SystemHostLockKeywords(ssh_connection).lock_host(worker_to_use.get_name()), f"failed to lock host {worker_to_use.get_name()}"
+    assert SystemHostLockKeywords(ssh_connection).unlock_host(worker_to_use.get_name()), f"failed to unlock host {worker_to_use.get_name()}"
 
     # check calicoctl pod is running
-    assert KubectlGetPodsKeywords(ssh_connection).wait_for_pod_status('calicoctl', 'Running', namespace='kube-system'), 'calicoctl did not start in time'
+    assert KubectlGetPodsKeywords(ssh_connection).wait_for_pod_status("calicoctl", "Running", namespace="kube-system"), "calicoctl did not start in time"
 
     # check that the daemonset pod is running
     pods = KubectlGetPodsKeywords(ssh_connection).get_pods()
-    daemonset_pod = pods.get_pods_start_with('daemonset-sriovdp-netdev-single-pod')[0]  # should only be one
+    daemonset_pod = pods.get_pods_start_with("daemonset-sriovdp-netdev-single-pod")[0]  # should only be one
 
     assert KubectlGetPodsKeywords(ssh_connection).wait_for_pod_status(
         daemonset_pod.get_name(),
-        'Running',
-    ), 'daemonset pod did not start in time'
+        "Running",
+    ), "daemonset pod did not start in time"
 
-    output = KubectlExecInPodsKeywords(ssh_connection).run_pod_exec_cmd(daemonset_pod.get_name(), 'ip link show net1')
+    output = KubectlExecInPodsKeywords(ssh_connection).run_pod_exec_cmd(daemonset_pod.get_name(), "ip link show net1")
     interface = IPLinkShowOutput(output).get_interface()
 
-    assert interface.state == 'UP', 'interface state was not UP'
+    assert interface.state == "UP", "interface state was not UP"
 
 
 @mark.p0
 @mark.lab_has_sriov
 @mark.lab_is_ipv4
-def test_sriovdp_netdev_single_pod_1vf_lock_ipv4(request):
+def test_sriovdp_netdev_single_pod_1vf_lock_ipv4(request: any):
     """
     Test creation of a pod with netdevice SR-IOV interfaces
+
     Args:
+        request (any): the request
 
     Test Steps:
         - Create a network attachment definition for the SR-IOV VFs
@@ -1191,10 +1167,10 @@ def test_sriovdp_netdev_single_pod_1vf_lock_ipv4(request):
     lab_config = ConfigurationManager.get_lab_config()
     computes = []
     for node in lab_config.get_nodes():
-        if 'lab_has_worker' in node.get_node_capabilities():
+        if "lab_has_worker" in node.get_node_capabilities():
             computes.append(node)
 
-    assert len(computes) > 0, 'we do not have any worker nodes for this test'
+    assert len(computes) > 0, "we do not have any worker nodes for this test"
     worker_to_use = computes[0]  # pick the first one
 
     # Deploy required images
@@ -1204,44 +1180,44 @@ def test_sriovdp_netdev_single_pod_1vf_lock_ipv4(request):
     sriov_deploy_pods_ipv4(request, ssh_connection)
 
     # Deploy daemon set pod
-    deploy_daemonset_pod(request, 'daemon_set_daemonset_ipv4.yaml', ssh_connection)
+    deploy_daemonset_pod(request, "daemon_set_daemonset_ipv4.yaml", ssh_connection)
 
     # check the daemonset values
-    daemonset = KubectlGetDaemonsetsKeywords(ssh_connection).get_daemonsets().get_daemonset('daemonset-sriovdp-netdev-single-pod')
+    daemonset = KubectlGetDaemonsetsKeywords(ssh_connection).get_daemonsets().get_daemonset("daemonset-sriovdp-netdev-single-pod")
 
-    assert daemonset, 'no daemonset was found'
-    assert daemonset.get_name() == 'daemonset-sriovdp-netdev-single-pod', 'daesomeset name was incorrect'
-    assert daemonset.get_desired() == 1, 'daemonset desired value was not 1'
-    assert daemonset.get_ready() == 1, 'daemonset ready value was not 1'
-    assert daemonset.get_available() == 1, 'daemonset available value was not 1'
-    assert daemonset.get_node_selector() == "kubernetes.io/hostname=controller-0", 'daemonset node selector is wrong'
+    assert daemonset, "no daemonset was found"
+    assert daemonset.get_name() == "daemonset-sriovdp-netdev-single-pod", "daesomeset name was incorrect"
+    assert daemonset.get_desired() == 1, "daemonset desired value was not 1"
+    assert daemonset.get_ready() == 1, "daemonset ready value was not 1"
+    assert daemonset.get_available() == 1, "daemonset available value was not 1"
+    assert daemonset.get_node_selector() == "kubernetes.io/hostname=controller-0", "daemonset node selector is wrong"
 
     # validate that the sriov interface net1 is 'UP'
     pods = KubectlGetPodsKeywords(ssh_connection).get_pods()
-    daemonset_pod = pods.get_pods_start_with('daemonset-sriovdp-netdev-single-pod')[0]  # should only be one
+    daemonset_pod = pods.get_pods_start_with("daemonset-sriovdp-netdev-single-pod")[0]  # should only be one
 
-    output = KubectlExecInPodsKeywords(ssh_connection).run_pod_exec_cmd(daemonset_pod.get_name(), 'ip link show net1')
+    output = KubectlExecInPodsKeywords(ssh_connection).run_pod_exec_cmd(daemonset_pod.get_name(), "ip link show net1")
     interface = IPLinkShowOutput(output).get_interface()
 
-    assert interface.state == 'UP', 'interface state was not UP'
+    assert interface.state == "UP", "interface state was not UP"
 
     # lock and unlock host and ensure pods come back online and interface is up
-    assert SystemHostLockKeywords(ssh_connection).lock_host(worker_to_use.get_name()), f'failed to lock host {worker_to_use.get_name()}'
-    assert SystemHostLockKeywords(ssh_connection).unlock_host(worker_to_use.get_name()), f'failed to unlock host {worker_to_use.get_name()}'
+    assert SystemHostLockKeywords(ssh_connection).lock_host(worker_to_use.get_name()), f"failed to lock host {worker_to_use.get_name()}"
+    assert SystemHostLockKeywords(ssh_connection).unlock_host(worker_to_use.get_name()), f"failed to unlock host {worker_to_use.get_name()}"
 
     # check that the daemonset pod is running
     pods = KubectlGetPodsKeywords(ssh_connection).get_pods()
-    daemonset_pod = pods.get_pods_start_with('daemonset-sriovdp-netdev-single-pod')[0]  # should only be one
+    daemonset_pod = pods.get_pods_start_with("daemonset-sriovdp-netdev-single-pod")[0]  # should only be one
 
     assert KubectlGetPodsKeywords(ssh_connection).wait_for_pod_status(
         daemonset_pod.get_name(),
-        'Running',
-    ), 'daemonset pod did not start in time'
+        "Running",
+    ), "daemonset pod did not start in time"
 
-    output = KubectlExecInPodsKeywords(ssh_connection).run_pod_exec_cmd(daemonset_pod.get_name(), 'ip link show net1')
+    output = KubectlExecInPodsKeywords(ssh_connection).run_pod_exec_cmd(daemonset_pod.get_name(), "ip link show net1")
     interface = IPLinkShowOutput(output).get_interface()
 
-    assert interface.state == 'UP', 'interface state was not UP'
+    assert interface.state == "UP", "interface state was not UP"
 
 
 @mark.p0
@@ -1264,11 +1240,11 @@ def test_sriovdp_mixed_add_pod_vf_interface(request):
     active_controller = SystemHostListKeywords(ssh_connection).get_active_controller().get_host_name()
 
     sriov_configs = GetSriovConfigKeywords(ssh_connection).get_sriov_configs_for_host(active_controller)
-    assert len(sriov_configs) > 0, 'sriov was not found on the system'
+    assert len(sriov_configs) > 0, "sriov was not found on the system"
 
     # get a config that has type of vf
-    configs = list(filter(lambda config: config.get_system_host_interface_object().get_iftype() == 'vf', sriov_configs))
-    assert len(configs) > 0, 'no sriov with type vf was found'
+    configs = list(filter(lambda config: config.get_system_host_interface_object().get_iftype() == "vf", sriov_configs))
+    assert len(configs) > 0, "no sriov with type vf was found"
 
     # take the first one
     sriov_config = configs[0]
@@ -1278,7 +1254,7 @@ def test_sriovdp_mixed_add_pod_vf_interface(request):
     interface_name = sriov_config.get_system_host_interface_object().get_ifname()
 
     # This call does not need a node name, so passing '' instead
-    node_description_object = KubectlDescribeNodeKeywords(ssh_connection).describe_node('').get_node_description()
+    node_description_object = KubectlDescribeNodeKeywords(ssh_connection).describe_node("").get_node_description()
     # Get the initial num of vfs to validate against later
     initial_vfs_for_datanetwork = node_description_object.get_allocatable().get_datanetwork_allocatable(datanetwork)
 
@@ -1286,10 +1262,10 @@ def test_sriovdp_mixed_add_pod_vf_interface(request):
     SystemHostLockKeywords(ssh_connection).lock_host(active_controller)
 
     # Add the interface called sriov
-    SystemHostInterfaceKeywords(ssh_connection).system_host_interface_add(active_controller, 'sriov', 'vf', interface_name, vf_driver='vfio', ifclass='pci-sriov', num_vfs=1)
+    SystemHostInterfaceKeywords(ssh_connection).system_host_interface_add(active_controller, "sriov", "vf", interface_name, vf_driver="vfio", ifclass="pci-sriov", num_vfs=1)
 
     # Add the new test datanetwork call 'sriov-test-datanetwork'
-    SystemDatanetworkAddKeywords(ssh_connection).datanetwork_add('sriov-test-datanetwork', 'vlan')
+    SystemDatanetworkAddKeywords(ssh_connection).datanetwork_add("sriov-test-datanetwork", "vlan")
 
     # create teardown method to remove the added interface and network
     def remove_datanetwork_and_interface():
@@ -1297,27 +1273,27 @@ def test_sriovdp_mixed_add_pod_vf_interface(request):
         # test was failing while host was locked, check before attempting to lock
         if system_host_lock_keywords.is_host_unlocked(active_controller):
             system_host_lock_keywords.lock_host(active_controller)
-        SystemHostInterfaceKeywords(ssh_connection).cleanup_interface(active_controller, 'sriov')
-        data_network = SystemDatanetworkListKeywords(ssh_connection).system_datanetwork_list().get_system_datanetwork('sriov-test-datanetwork')
+        SystemHostInterfaceKeywords(ssh_connection).cleanup_interface(active_controller, "sriov")
+        data_network = SystemDatanetworkListKeywords(ssh_connection).system_datanetwork_list().get_system_datanetwork("sriov-test-datanetwork")
         SystemDatanetworkDeleteKeywords(ssh_connection).cleanup_datanetwork(data_network.get_uuid())
         system_host_lock_keywords.unlock_host(active_controller)
 
     request.addfinalizer(remove_datanetwork_and_interface)
 
     # assign the new interface sriov to the new sriov-test-datanetwork
-    SystemInterfaceDatanetworkKeywords(ssh_connection).interface_datanetwork_assign(active_controller, 'sriov', 'sriov-test-datanetwork')
+    SystemInterfaceDatanetworkKeywords(ssh_connection).interface_datanetwork_assign(active_controller, "sriov", "sriov-test-datanetwork")
 
     # Unlock the host to see the changes
     SystemHostLockKeywords(ssh_connection).unlock_host(active_controller)
 
     # This call does not need a node name, so passing '' instead
-    node_description_object = KubectlDescribeNodeKeywords(ssh_connection).describe_node('').get_node_description()
+    node_description_object = KubectlDescribeNodeKeywords(ssh_connection).describe_node("").get_node_description()
     post_vfs = node_description_object.get_allocatable().get_datanetwork_allocatable(datanetwork)
-    test_sriov_vfs = node_description_object.get_allocatable().get_datanetwork_allocatable('sriov-test-datanetwork')
+    test_sriov_vfs = node_description_object.get_allocatable().get_datanetwork_allocatable("sriov-test-datanetwork")
 
     # Check that the orig datanetwork has 1 less vf's and the test datanetwork has 1
-    assert post_vfs == initial_vfs_for_datanetwork - 1, 'wrong number of vfs for datanetwork, should be 1 less then original'
-    assert test_sriov_vfs == 1, ' wrong number of vfs for the test datanetwork'
+    assert post_vfs == initial_vfs_for_datanetwork - 1, "wrong number of vfs for datanetwork, should be 1 less then original"
+    assert test_sriov_vfs == 1, " wrong number of vfs for the test datanetwork"
 
 
 @mark.p0
@@ -1337,14 +1313,14 @@ def test_sriovdp_netdev_connectivity_ipv6(request):
 
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
-    pod1_name = 'test-sriovdp-netdev-connectivity-ipv6-0'
-    pod2_name = 'test-sriovdp-netdev-connectivity-ipv6-1'
+    pod1_name = "test-sriovdp-netdev-connectivity-ipv6-0"
+    pod2_name = "test-sriovdp-netdev-connectivity-ipv6-1"
 
     # Deploy required images
     sriov_deploy_images_to_local_registry(ssh_connection)
 
     # Deploy required pods
-    sriov_deploy_pods(request, 'netdef_test-sriovdp.yaml', 'calicoctl-ippool-sriov-pool-group0-data1-vf1.yaml', ssh_connection)
+    sriov_deploy_pods(request, "netdef_test-sriovdp.yaml", "calicoctl-ippool-sriov-pool-group0-data1-vf1.yaml", ssh_connection)
 
     deploy_sriovdp_netdev_pods_ipv6(request, ssh_connection)
 
@@ -1354,22 +1330,22 @@ def test_sriovdp_netdev_connectivity_ipv6(request):
     pod_2 = pods.get_pods_start_with(pod2_name)[0]  # should only be one
 
     kubeclt_exec_in_pods = KubectlExecInPodsKeywords(ssh_connection)
-    output = kubeclt_exec_in_pods.run_pod_exec_cmd(pod_1.get_name(), 'ip link show net1')
+    output = kubeclt_exec_in_pods.run_pod_exec_cmd(pod_1.get_name(), "ip link show net1")
     interface = IPLinkShowOutput(output).get_interface()
 
-    assert interface.state == 'UP', 'interface state was not UP for pod#1'
+    assert interface.state == "UP", "interface state was not UP for pod#1"
 
-    output = kubeclt_exec_in_pods.run_pod_exec_cmd(pod_2.get_name(), 'ip link show net1')
+    output = kubeclt_exec_in_pods.run_pod_exec_cmd(pod_2.get_name(), "ip link show net1")
     interface = IPLinkShowOutput(output).get_interface()
 
-    assert interface.state == 'UP', 'interface state was not UP for pod#2'
+    assert interface.state == "UP", "interface state was not UP for pod#2"
 
     # add routes to both pods
-    IPKeywords(ssh_connection).add_route_in_pod(pod1_name, 'net1')
-    IPKeywords(ssh_connection).add_route_in_pod(pod2_name, 'net1')
+    IPKeywords(ssh_connection).add_route_in_pod(pod1_name, "net1")
+    IPKeywords(ssh_connection).add_route_in_pod(pod2_name, "net1")
 
-    pod_1_ip = IPKeywords(ssh_connection).get_ip_address_from_pod(pod1_name, 'net1')
-    pod_2_ip = IPKeywords(ssh_connection).get_ip_address_from_pod(pod2_name, 'net1')
+    pod_1_ip = IPKeywords(ssh_connection).get_ip_address_from_pod(pod1_name, "net1")
+    pod_2_ip = IPKeywords(ssh_connection).get_ip_address_from_pod(pod2_name, "net1")
 
     # validate that pod1 can ping server pod2
     kubeclt_exec_in_pods.run_pod_exec_cmd(pod1_name, f"ping6 -c 3 {pod_2_ip}")
@@ -1397,14 +1373,14 @@ def test_sriovdp_netdev_connectivity_ipv4(request):
 
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
-    pod1_name = 'test-sriovdp-netdev-connectivity-ipv4-0'
-    pod2_name = 'test-sriovdp-netdev-connectivity-ipv4-1'
+    pod1_name = "test-sriovdp-netdev-connectivity-ipv4-0"
+    pod2_name = "test-sriovdp-netdev-connectivity-ipv4-1"
 
     # Deploy required images
     sriov_deploy_images_to_local_registry(ssh_connection)
 
     # Deploy required pods
-    sriov_deploy_pods(request, 'netdef_test-sriovdp_ipv4_with_pools.yaml', 'calicoctl-ippool-sriov-pool-group0-data0-vf1.yaml', ssh_connection)
+    sriov_deploy_pods(request, "netdef_test-sriovdp_ipv4_with_pools.yaml", "calicoctl-ippool-sriov-pool-group0-data0-vf1.yaml", ssh_connection)
 
     deploy_sriovdp_netdev_pods_ipv4(request, ssh_connection)
 
@@ -1414,22 +1390,22 @@ def test_sriovdp_netdev_connectivity_ipv4(request):
     pod_2 = pods.get_pods_start_with(pod2_name)[0]  # should only be one
 
     kubeclt_exec_in_pods = KubectlExecInPodsKeywords(ssh_connection)
-    output = kubeclt_exec_in_pods.run_pod_exec_cmd(pod_1.get_name(), 'ip link show net1')
+    output = kubeclt_exec_in_pods.run_pod_exec_cmd(pod_1.get_name(), "ip link show net1")
     interface = IPLinkShowOutput(output).get_interface()
 
-    assert interface.state == 'UP', 'interface state was not UP for pod#1'
+    assert interface.state == "UP", "interface state was not UP for pod#1"
 
-    output = kubeclt_exec_in_pods.run_pod_exec_cmd(pod_2.get_name(), 'ip link show net1')
+    output = kubeclt_exec_in_pods.run_pod_exec_cmd(pod_2.get_name(), "ip link show net1")
     interface = IPLinkShowOutput(output).get_interface()
 
-    assert interface.state == 'UP', 'interface state was not UP for pod#2'
+    assert interface.state == "UP", "interface state was not UP for pod#2"
 
     # add routes to both pods
-    IPKeywords(ssh_connection).add_route_in_pod(pod1_name, 'net1')
-    IPKeywords(ssh_connection).add_route_in_pod(pod2_name, 'net1')
+    IPKeywords(ssh_connection).add_route_in_pod(pod1_name, "net1")
+    IPKeywords(ssh_connection).add_route_in_pod(pod2_name, "net1")
 
-    pod_1_ip = IPKeywords(ssh_connection).get_ip_address_from_pod(pod1_name, 'net1')
-    pod_2_ip = IPKeywords(ssh_connection).get_ip_address_from_pod(pod2_name, 'net1')
+    pod_1_ip = IPKeywords(ssh_connection).get_ip_address_from_pod(pod1_name, "net1")
+    pod_2_ip = IPKeywords(ssh_connection).get_ip_address_from_pod(pod2_name, "net1")
 
     # validate that pod1 can ping server pod2
     kubeclt_exec_in_pods.run_pod_exec_cmd(pod1_name, f"ping -c 3 {pod_2_ip}")
@@ -1443,39 +1419,37 @@ def test_sriovdp_netdev_connectivity_ipv4(request):
 def sriov_deploy_images_to_local_registry(ssh_connection: SSHConnection):
     """
     Deploys images to the local registry for sriov testcases in this suite
-    Args:
-        ssh_connection (): the ssh connection
 
-    Returns:
+    Args:
+        ssh_connection (SSHConnection): the ssh connection
 
     """
-    local_registry = ConfigurationManager.get_docker_config().get_registry('local_registry')
+    local_registry = ConfigurationManager.get_docker_config().get_registry("local_registry")
     file_keywords = FileKeywords(ssh_connection)
 
     file_keywords.upload_file(get_stx_resource_path("resources/images/pv-test.tar"), "/home/sysadmin/pv-test.tar", overwrite=False)
-    KubectlCreateSecretsKeywords(ssh_connection).create_secret_for_registry(local_registry, 'local-secret')
+    KubectlCreateSecretsKeywords(ssh_connection).create_secret_for_registry(local_registry, "local-secret")
     docker_load_image_keywords = DockerLoadImageKeywords(ssh_connection)
-    docker_load_image_keywords.load_docker_image_to_host('pv-test.tar')
-    docker_load_image_keywords.tag_docker_image_for_registry('registry.local:9001/pv-test', 'pv-test', local_registry)
-    docker_load_image_keywords.push_docker_image_to_registry('pv-test', local_registry)
+    docker_load_image_keywords.load_docker_image_to_host("pv-test.tar")
+    docker_load_image_keywords.tag_docker_image_for_registry("registry.local:9001/pv-test", "pv-test", local_registry)
+    docker_load_image_keywords.push_docker_image_to_registry("pv-test", local_registry)
 
     file_keywords.upload_file(get_stx_resource_path("resources/images/calico-ctl.tar"), "/home/sysadmin/calico-ctl.tar", overwrite=False)
-    KubectlCreateSecretsKeywords(ssh_connection).create_secret_for_registry(local_registry, 'local-secret')
-    docker_load_image_keywords.load_docker_image_to_host('calico-ctl.tar')
-    docker_load_image_keywords.tag_docker_image_for_registry('registry.local:9001/calico-ctl', 'calico-ctl', local_registry)
-    docker_load_image_keywords.push_docker_image_to_registry('calico-ctl', local_registry)
+    KubectlCreateSecretsKeywords(ssh_connection).create_secret_for_registry(local_registry, "local-secret")
+    docker_load_image_keywords.load_docker_image_to_host("calico-ctl.tar")
+    docker_load_image_keywords.tag_docker_image_for_registry("registry.local:9001/calico-ctl", "calico-ctl", local_registry)
+    docker_load_image_keywords.push_docker_image_to_registry("calico-ctl", local_registry)
 
 
-def sriov_deploy_pods(request, net_def_yaml: str, calicoctl_pod_yaml: str, ssh_connection: SSHConnection):
+def sriov_deploy_pods(request: any, net_def_yaml: str, calicoctl_pod_yaml: str, ssh_connection: SSHConnection):
     """
     Deploys pods needed by the sriov testcases
-    Args:
-        request (): request needed for adding teardown
-        net_def_yaml (): the network definition yaml
-        calicoctl_pod_yaml (): the calicoctl pod yaml
-        ssh_connection (): the ssh connection
 
-    Returns:
+    Args:
+        request (any): request needed for adding teardown
+        net_def_yaml (str): the network definition yaml
+        calicoctl_pod_yaml (str): the calicoctl pod yaml
+        ssh_connection (SSHConnection): the ssh connection
 
     """
 
@@ -1483,10 +1457,9 @@ def sriov_deploy_pods(request, net_def_yaml: str, calicoctl_pod_yaml: str, ssh_c
     def remove_pods_and_network_definitions():
         """
         Finalizer to remove pods, daemonsets and network definitions
-        Returns:
 
         """
-        rc = KubectlDeletePodsKeywords(ssh_connection).cleanup_pod('calicoctl', namespace='kube-system')
+        rc = KubectlDeletePodsKeywords(ssh_connection).cleanup_pod("calicoctl", namespace="kube-system")
         rc += KubectlDeleteNetworkDefinitionKeywords(ssh_connection).cleanup_network_definition("netdev-sriov")
         assert rc == 0
 
@@ -1494,39 +1467,38 @@ def sriov_deploy_pods(request, net_def_yaml: str, calicoctl_pod_yaml: str, ssh_c
 
     # copy required files to system
     file_keywords = FileKeywords(ssh_connection)
-    file_keywords.upload_file(get_stx_resource_path('resources/cloud_platform/nightly_regression/calicoctl_sa.yaml'), '/home/sysadmin/calicoctl_sa.yaml')
-    file_keywords.upload_file(get_stx_resource_path('resources/cloud_platform/nightly_regression/calicoctl_cr.yaml'), '/home/sysadmin/calicoctl_cr.yaml')
-    file_keywords.upload_file(get_stx_resource_path('resources/cloud_platform/nightly_regression/calicoctl_crb.yaml'), '/home/sysadmin/calicoctl_crb.yaml')
-    file_keywords.upload_file(get_stx_resource_path('resources/cloud_platform/nightly_regression/calicoctl_pod.yaml'), '/home/sysadmin/calicoctl_pod.yaml')
-    file_keywords.upload_file(get_stx_resource_path(f'resources/cloud_platform/nightly_regression/{net_def_yaml}'), f'/home/sysadmin/{net_def_yaml}')
-    file_keywords.upload_file(get_stx_resource_path(f'resources/cloud_platform/nightly_regression/{calicoctl_pod_yaml}'), f'/home/sysadmin/{calicoctl_pod_yaml}')
+    file_keywords.upload_file(get_stx_resource_path("resources/cloud_platform/nightly_regression/calicoctl_sa.yaml"), "/home/sysadmin/calicoctl_sa.yaml")
+    file_keywords.upload_file(get_stx_resource_path("resources/cloud_platform/nightly_regression/calicoctl_cr.yaml"), "/home/sysadmin/calicoctl_cr.yaml")
+    file_keywords.upload_file(get_stx_resource_path("resources/cloud_platform/nightly_regression/calicoctl_crb.yaml"), "/home/sysadmin/calicoctl_crb.yaml")
+    file_keywords.upload_file(get_stx_resource_path("resources/cloud_platform/nightly_regression/calicoctl_pod.yaml"), "/home/sysadmin/calicoctl_pod.yaml")
+    file_keywords.upload_file(get_stx_resource_path(f"resources/cloud_platform/nightly_regression/{net_def_yaml}"), f"/home/sysadmin/{net_def_yaml}")
+    file_keywords.upload_file(get_stx_resource_path(f"resources/cloud_platform/nightly_regression/{calicoctl_pod_yaml}"), f"/home/sysadmin/{calicoctl_pod_yaml}")
 
     # apply config files
     kubectl_apply_pods_keywords = KubectlApplyPodsKeywords(ssh_connection)
-    kubectl_apply_pods_keywords.apply_from_yaml('/home/sysadmin/calicoctl_sa.yaml')
-    kubectl_apply_pods_keywords.apply_from_yaml('/home/sysadmin/calicoctl_cr.yaml')
-    kubectl_apply_pods_keywords.apply_from_yaml('/home/sysadmin/calicoctl_crb.yaml')
+    kubectl_apply_pods_keywords.apply_from_yaml("/home/sysadmin/calicoctl_sa.yaml")
+    kubectl_apply_pods_keywords.apply_from_yaml("/home/sysadmin/calicoctl_cr.yaml")
+    kubectl_apply_pods_keywords.apply_from_yaml("/home/sysadmin/calicoctl_crb.yaml")
 
     # apply yaml and check pod is rumnning
-    kubectl_apply_pods_keywords.apply_from_yaml('/home/sysadmin/calicoctl_pod.yaml')
-    assert KubectlGetPodsKeywords(ssh_connection).wait_for_pod_status('calicoctl', 'Running', namespace='kube-system'), 'calicoctl did not start in time'
+    kubectl_apply_pods_keywords.apply_from_yaml("/home/sysadmin/calicoctl_pod.yaml")
+    assert KubectlGetPodsKeywords(ssh_connection).wait_for_pod_status("calicoctl", "Running", namespace="kube-system"), "calicoctl did not start in time"
 
-    kubectl_apply_pods_keywords.apply_from_yaml(f'/home/sysadmin/{net_def_yaml}')
+    kubectl_apply_pods_keywords.apply_from_yaml(f"/home/sysadmin/{net_def_yaml}")
 
     # copy yaml to calicoctl pod
-    KubectlCopyToPodKeywords(ssh_connection).copy_to_pod(f'/home/sysadmin/{calicoctl_pod_yaml}', 'kube-system', 'calicoctl', f'/tmp/{calicoctl_pod_yaml}')
+    KubectlCopyToPodKeywords(ssh_connection).copy_to_pod(f"/home/sysadmin/{calicoctl_pod_yaml}", "kube-system", "calicoctl", f"/tmp/{calicoctl_pod_yaml}")
     # apply yaml in calicoclt pod
-    KubectlExecInPodsKeywords(ssh_connection).exec_calicoctl_apply('calicoctl', 'kube-system', f'/tmp/{calicoctl_pod_yaml}')
+    KubectlExecInPodsKeywords(ssh_connection).exec_calicoctl_apply("calicoctl", "kube-system", f"/tmp/{calicoctl_pod_yaml}")
 
 
-def sriov_deploy_pods_ipv4(request, ssh_connection: SSHConnection):
+def sriov_deploy_pods_ipv4(request: any, ssh_connection: SSHConnection):
     """
     Deploys pods needed by the sriov testcases
-    Args:
-        request (): request needed for adding teardown
-        ssh_connection (): the ssh connection
 
-    Returns:
+    Args:
+        request (any): request needed for adding teardown
+        ssh_connection (SSHConnection): the ssh connection
 
     """
 
@@ -1534,7 +1506,6 @@ def sriov_deploy_pods_ipv4(request, ssh_connection: SSHConnection):
     def remove_pods_and_network_definitions():
         """
         Finalizer to remove pods, daemonsets and network definitions
-        Returns:
 
         """
         rc = KubectlDeleteNetworkDefinitionKeywords(ssh_connection).cleanup_network_definition("netdev-sriov")
@@ -1544,152 +1515,138 @@ def sriov_deploy_pods_ipv4(request, ssh_connection: SSHConnection):
 
     # copy required files to system
     file_keywords = FileKeywords(ssh_connection)
-    file_keywords.upload_file(get_stx_resource_path('resources/cloud_platform/nightly_regression/netdef_test-sriovdp_ipv4.yaml'), '/home/sysadmin/netdef_test-sriovdp_ipv4.yaml')
+    file_keywords.upload_file(get_stx_resource_path("resources/cloud_platform/nightly_regression/netdef_test-sriovdp_ipv4.yaml"), "/home/sysadmin/netdef_test-sriovdp_ipv4.yaml")
 
     # apply config files
     kubectl_apply_pods_keywords = KubectlApplyPodsKeywords(ssh_connection)
-    kubectl_apply_pods_keywords.apply_from_yaml('/home/sysadmin/netdef_test-sriovdp_ipv4.yaml')
+    kubectl_apply_pods_keywords.apply_from_yaml("/home/sysadmin/netdef_test-sriovdp_ipv4.yaml")
 
 
-def deploy_daemonset_pod(request, daemonset_pod_yaml: str, ssh_connection: SSHConnection):
+def deploy_daemonset_pod(request: any, daemonset_pod_yaml: str, ssh_connection: SSHConnection):
     """
     Uploads and deploys the daemonset pod
-    Args:
-        request (): the request
-        daemon_set_pod_yaml: the yaml file to apply
-        ssh_connection (): the ssh connection
 
-    Returns:
+    Args:
+        request (any): the request
+        daemonset_pod_yaml (str): the yaml file to apply
+        ssh_connection (SSHConnection): the ssh connection
 
     """
-    FileKeywords(ssh_connection).upload_file(get_stx_resource_path(f'resources/cloud_platform/nightly_regression/{daemonset_pod_yaml}'), f'/home/sysadmin/{daemonset_pod_yaml}')
+    FileKeywords(ssh_connection).upload_file(get_stx_resource_path(f"resources/cloud_platform/nightly_regression/{daemonset_pod_yaml}"), f"/home/sysadmin/{daemonset_pod_yaml}")
 
-    KubectlApplyPodsKeywords(ssh_connection).apply_from_yaml(f'/home/sysadmin/{daemonset_pod_yaml}')
+    KubectlApplyPodsKeywords(ssh_connection).apply_from_yaml(f"/home/sysadmin/{daemonset_pod_yaml}")
 
     # Create teardown to cleanup
     def remove_daemonset_pod():
         """
         Finalizer to remove pods, daemonsets and network definitions
-        Returns:
 
         """
-        rc = KubectlDeleteDaemonsetAppsKeywords(ssh_connection).cleanup_daemonset_apps('daemonset-sriovdp-netdev-single-pod')
+        rc = KubectlDeleteDaemonsetAppsKeywords(ssh_connection).cleanup_daemonset_apps("daemonset-sriovdp-netdev-single-pod")
         assert rc == 0
 
     request.addfinalizer(remove_daemonset_pod)
 
     # check that the daemonset pod is running
     pods = KubectlGetPodsKeywords(ssh_connection).get_pods()
-    pod = pods.get_pods_start_with('daemonset-sriovdp-netdev-single-pod')
+    pod = pods.get_pods_start_with("daemonset-sriovdp-netdev-single-pod")
 
-    assert len(pod) == 1, 'wrong number of pods'
+    assert len(pod) == 1, "wrong number of pods"
     assert KubectlGetPodsKeywords(ssh_connection).wait_for_pod_status(
         pod[0].get_name(),
-        'Running',
-    ), 'daemonset pod did not start in time'
+        "Running",
+    ), "daemonset pod did not start in time"
 
 
-def deploy_sriovdp_netdev_pods_ipv6(request, ssh_connection: SSHConnection):
+def deploy_sriovdp_netdev_pods_ipv6(request: any, ssh_connection: SSHConnection):
     """
     Uploads and deploys the sriovdp netdev pods
-    Args:
-        request (): the request
-        ssh_connection (): the ssh connection
 
-    Returns:
+    Args:
+        request (any): the request
+        ssh_connection (SSHConnection): the ssh connection
 
     """
     file_keywords = FileKeywords(ssh_connection)
-    file_keywords.upload_file(
-        get_stx_resource_path('resources/cloud_platform/nightly_regression/pod-test-sriovdp-netdev-connectivity-ipv6-0.yaml'), '/home/sysadmin/pod-test-sriovdp-netdev-connectivity-ipv6-0.yaml'
-    )
-    file_keywords.upload_file(
-        get_stx_resource_path('resources/cloud_platform/nightly_regression/pod-test-sriovdp-netdev-connectivity-ipv6-1.yaml'), '/home/sysadmin/pod-test-sriovdp-netdev-connectivity-ipv6-1.yaml'
-    )
+    file_keywords.upload_file(get_stx_resource_path("resources/cloud_platform/nightly_regression/pod-test-sriovdp-netdev-connectivity-ipv6-0.yaml"), "/home/sysadmin/pod-test-sriovdp-netdev-connectivity-ipv6-0.yaml")
+    file_keywords.upload_file(get_stx_resource_path("resources/cloud_platform/nightly_regression/pod-test-sriovdp-netdev-connectivity-ipv6-1.yaml"), "/home/sysadmin/pod-test-sriovdp-netdev-connectivity-ipv6-1.yaml")
 
     kubectl_apply_pods_keywords = KubectlApplyPodsKeywords(ssh_connection)
-    kubectl_apply_pods_keywords.apply_from_yaml('/home/sysadmin/pod-test-sriovdp-netdev-connectivity-ipv6-0.yaml')
-    kubectl_apply_pods_keywords.apply_from_yaml('/home/sysadmin/pod-test-sriovdp-netdev-connectivity-ipv6-1.yaml')
+    kubectl_apply_pods_keywords.apply_from_yaml("/home/sysadmin/pod-test-sriovdp-netdev-connectivity-ipv6-0.yaml")
+    kubectl_apply_pods_keywords.apply_from_yaml("/home/sysadmin/pod-test-sriovdp-netdev-connectivity-ipv6-1.yaml")
 
     # Create teardown to cleanup
     def remove_pods():
         """
         Finalizer to remove pods, daemonsets and network definitions
-        Returns:
 
         """
-        rc = KubectlDeletePodsKeywords(ssh_connection).cleanup_pod('test-sriovdp-netdev-connectivity-ipv6-0')
-        rc += KubectlDeletePodsKeywords(ssh_connection).cleanup_pod('test-sriovdp-netdev-connectivity-ipv6-1')
+        rc = KubectlDeletePodsKeywords(ssh_connection).cleanup_pod("test-sriovdp-netdev-connectivity-ipv6-0")
+        rc += KubectlDeletePodsKeywords(ssh_connection).cleanup_pod("test-sriovdp-netdev-connectivity-ipv6-1")
         assert rc == 0
 
     request.addfinalizer(remove_pods)
 
     # check that the daemonset pod is running
     pods = KubectlGetPodsKeywords(ssh_connection).get_pods()
-    pod_1 = pods.get_pods_start_with('test-sriovdp-netdev-connectivity-ipv6-0')
-    pod_2 = pods.get_pods_start_with('test-sriovdp-netdev-connectivity-ipv6-1')
+    pod_1 = pods.get_pods_start_with("test-sriovdp-netdev-connectivity-ipv6-0")
+    pod_2 = pods.get_pods_start_with("test-sriovdp-netdev-connectivity-ipv6-1")
 
-    assert len(pod_1) == 1, 'wrong number of pods'
+    assert len(pod_1) == 1, "wrong number of pods"
     assert KubectlGetPodsKeywords(ssh_connection).wait_for_pod_status(
         pod_1[0].get_name(),
-        'Running',
-    ), 'pod1 did not start in time'
+        "Running",
+    ), "pod1 did not start in time"
 
-    assert len(pod_2) == 1, 'wrong number of pods'
+    assert len(pod_2) == 1, "wrong number of pods"
     assert KubectlGetPodsKeywords(ssh_connection).wait_for_pod_status(
         pod_2[0].get_name(),
-        'Running',
-    ), 'pod2 did not start in time'
+        "Running",
+    ), "pod2 did not start in time"
 
 
-def deploy_sriovdp_netdev_pods_ipv4(request, ssh_connection: SSHConnection):
+def deploy_sriovdp_netdev_pods_ipv4(request: any, ssh_connection: SSHConnection):
     """
     Uploads and deploys the sriovdp netdev pods
-    Args:
-        request (): the request
-        ssh_connection (): the ssh connection
 
-    Returns:
+    Args:
+        request (any): the request
+        ssh_connection (SSHConnection): the ssh connection
 
     """
     file_keywords = FileKeywords(ssh_connection)
-    file_keywords.upload_file(
-        get_stx_resource_path('resources/cloud_platform/nightly_regression/pod-test-sriovdp-netdev-connectivity-ipv4-0.yaml'), '/home/sysadmin/pod-test-sriovdp-netdev-connectivity-ipv4-0.yaml'
-    )
-    file_keywords.upload_file(
-        get_stx_resource_path('resources/cloud_platform/nightly_regression/pod-test-sriovdp-netdev-connectivity-ipv4-1.yaml'), '/home/sysadmin/pod-test-sriovdp-netdev-connectivity-ipv4-1.yaml'
-    )
+    file_keywords.upload_file(get_stx_resource_path("resources/cloud_platform/nightly_regression/pod-test-sriovdp-netdev-connectivity-ipv4-0.yaml"), "/home/sysadmin/pod-test-sriovdp-netdev-connectivity-ipv4-0.yaml")
+    file_keywords.upload_file(get_stx_resource_path("resources/cloud_platform/nightly_regression/pod-test-sriovdp-netdev-connectivity-ipv4-1.yaml"), "/home/sysadmin/pod-test-sriovdp-netdev-connectivity-ipv4-1.yaml")
 
     kubectl_apply_pods_keywords = KubectlApplyPodsKeywords(ssh_connection)
-    kubectl_apply_pods_keywords.apply_from_yaml('/home/sysadmin/pod-test-sriovdp-netdev-connectivity-ipv4-0.yaml')
-    kubectl_apply_pods_keywords.apply_from_yaml('/home/sysadmin/pod-test-sriovdp-netdev-connectivity-ipv4-1.yaml')
+    kubectl_apply_pods_keywords.apply_from_yaml("/home/sysadmin/pod-test-sriovdp-netdev-connectivity-ipv4-0.yaml")
+    kubectl_apply_pods_keywords.apply_from_yaml("/home/sysadmin/pod-test-sriovdp-netdev-connectivity-ipv4-1.yaml")
 
     # Create teardown to cleanup
     def remove_pods():
         """
         Finalizer to remove pods, daemonsets and network definitions
-        Returns:
 
         """
-        rc = KubectlDeletePodsKeywords(ssh_connection).cleanup_pod('test-sriovdp-netdev-connectivity-ipv4-0')
-        rc += KubectlDeletePodsKeywords(ssh_connection).cleanup_pod('test-sriovdp-netdev-connectivity-ipv4-1')
+        rc = KubectlDeletePodsKeywords(ssh_connection).cleanup_pod("test-sriovdp-netdev-connectivity-ipv4-0")
+        rc += KubectlDeletePodsKeywords(ssh_connection).cleanup_pod("test-sriovdp-netdev-connectivity-ipv4-1")
         assert rc == 0
 
     request.addfinalizer(remove_pods)
 
     # check that the daemonset pod is running
     pods = KubectlGetPodsKeywords(ssh_connection).get_pods()
-    pod_1 = pods.get_pods_start_with('test-sriovdp-netdev-connectivity-ipv4-0')
-    pod_2 = pods.get_pods_start_with('test-sriovdp-netdev-connectivity-ipv4-1')
+    pod_1 = pods.get_pods_start_with("test-sriovdp-netdev-connectivity-ipv4-0")
+    pod_2 = pods.get_pods_start_with("test-sriovdp-netdev-connectivity-ipv4-1")
 
-    assert len(pod_1) == 1, 'wrong number of pods'
+    assert len(pod_1) == 1, "wrong number of pods"
     assert KubectlGetPodsKeywords(ssh_connection).wait_for_pod_status(
         pod_1[0].get_name(),
-        'Running',
-    ), 'pod1 did not start in time'
+        "Running",
+    ), "pod1 did not start in time"
 
-    assert len(pod_2) == 1, 'wrong number of pods'
+    assert len(pod_2) == 1, "wrong number of pods"
     assert KubectlGetPodsKeywords(ssh_connection).wait_for_pod_status(
         pod_2[0].get_name(),
-        'Running',
-    ), 'pod2 did not start in time'
+        "Running",
+    ), "pod2 did not start in time"
