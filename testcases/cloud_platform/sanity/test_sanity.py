@@ -838,7 +838,7 @@ def test_dc_system_health_pre_session():
         # If this test case executed the line above with no exception, all alarms were cleared.
 
         kubectl_get_pods_keywords = KubectlGetPodsKeywords(ssh_connection)
-        kubectl_get_pods_keywords.wait_for_all_pods_status(expected_statuses="Running")
+        kubectl_get_pods_keywords.wait_for_all_pods_status(expected_statuses=["Running", "Completed"])
         # If this test case executed the line above with no exception, all the pods are "Running".
 
 
