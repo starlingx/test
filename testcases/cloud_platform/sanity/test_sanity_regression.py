@@ -6,6 +6,7 @@ from config.configuration_manager import ConfigurationManager
 from framework.logging.automation_logger import get_logger
 from framework.resources.resource_finder import get_stx_resource_path
 from framework.ssh.ssh_connection import SSHConnection
+from framework.validation.validation import validate_equals_with_retry
 from keywords.cloud_platform.helm.helm_keywords import HelmKeywords
 from keywords.cloud_platform.networking.sriov.get_sriov_config_keywords import GetSriovConfigKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
@@ -1060,6 +1061,7 @@ def revert_standby_controller_isolcpu_configuration():
 
 @mark.p0
 @mark.lab_has_sriov
+@mark.lab_is_ipv6
 def test_sriovdp_netdev_single_pod_1vf_lock(request: any):
     """
     Test creation of a pod with netdevice SR-IOV interfaces
@@ -1095,10 +1097,10 @@ def test_sriovdp_netdev_single_pod_1vf_lock(request: any):
     sriov_deploy_images_to_local_registry(ssh_connection)
 
     # Deploy required pods
-    sriov_deploy_pods(request, "netdef_test-sriovdp.yaml", "calicoctl-ippool-sriov-pool-group0-data1-vf1.yaml", ssh_connection)
+    sriov_deploy_pods(request, "netdef_test-sriovdp_ipv4.yaml", "calicoctl-ippool-sriov-pool-group0-data1-vf1.yaml", ssh_connection)
 
     # Deploy daemon set pod
-    deploy_daemonset_pod(request, "daemon_set_daemonset.yaml", ssh_connection)
+    deploy_daemonset_pod(request, "daemon_set_daemonset_ipv4.yaml", ssh_connection)
 
     # check the daemonset values
     daemonset = KubectlGetDaemonsetsKeywords(ssh_connection).get_daemonsets().get_daemonset("daemonset-sriovdp-netdev-single-pod")
@@ -1127,18 +1129,35 @@ def test_sriovdp_netdev_single_pod_1vf_lock(request: any):
     assert KubectlGetPodsKeywords(ssh_connection).wait_for_pod_status("calicoctl", "Running", namespace="kube-system"), "calicoctl did not start in time"
 
     # check that the daemonset pod is running
-    pods = KubectlGetPodsKeywords(ssh_connection).get_pods()
-    daemonset_pod = pods.get_pods_start_with("daemonset-sriovdp-netdev-single-pod")[0]  # should only be one
+    def get_running_pods() -> bool:
+        """
+        Gets the daemonset pod that is running
 
-    assert KubectlGetPodsKeywords(ssh_connection).wait_for_pod_status(
-        daemonset_pod.get_name(),
-        "Running",
-    ), "daemonset pod did not start in time"
+        Returns:
+            bool: True if found running, False otherwise
+        """
+        pods = KubectlGetPodsKeywords(ssh_connection).get_pods()
+        daemonset_pod = pods.get_pods_start_with("daemonset-sriovdp-netdev-single-pod")[0]  # should only be one
+        if daemonset_pod.status == "Running":
+            return True
+        return False
 
-    output = KubectlExecInPodsKeywords(ssh_connection).run_pod_exec_cmd(daemonset_pod.get_name(), "ip link show net1")
-    interface = IPLinkShowOutput(output).get_interface()
+    validate_equals_with_retry(get_running_pods, True, "Validate pod is running", 300)
 
-    assert interface.state == "UP", "interface state was not UP"
+    def get_interface_state() -> str:
+        """
+        Gets state of the interface
+
+        Returns:
+            str: the interface state
+        """
+        pods = KubectlGetPodsKeywords(ssh_connection).get_pods()
+        daemonset_pod = pods.get_pods_start_with("daemonset-sriovdp-netdev-single-pod")[0]
+        output = KubectlExecInPodsKeywords(ssh_connection).run_pod_exec_cmd(daemonset_pod.get_name(), "ip link show net1")
+        interface = IPLinkShowOutput(output).get_interface()
+        return interface.get_state()
+
+    validate_equals_with_retry(get_interface_state, "UP", "Validate the interface status is UP", 300)
 
 
 @mark.p0
@@ -1206,18 +1225,35 @@ def test_sriovdp_netdev_single_pod_1vf_lock_ipv4(request: any):
     assert SystemHostLockKeywords(ssh_connection).unlock_host(worker_to_use.get_name()), f"failed to unlock host {worker_to_use.get_name()}"
 
     # check that the daemonset pod is running
-    pods = KubectlGetPodsKeywords(ssh_connection).get_pods()
-    daemonset_pod = pods.get_pods_start_with("daemonset-sriovdp-netdev-single-pod")[0]  # should only be one
+    def get_running_pods() -> bool:
+        """
+        Gets the daemonset pod that is running
 
-    assert KubectlGetPodsKeywords(ssh_connection).wait_for_pod_status(
-        daemonset_pod.get_name(),
-        "Running",
-    ), "daemonset pod did not start in time"
+        Returns:
+            bool: True if found running, False otherwise
+        """
+        pods = KubectlGetPodsKeywords(ssh_connection).get_pods()
+        daemonset_pod = pods.get_pods_start_with("daemonset-sriovdp-netdev-single-pod")[0]  # should only be one
+        if daemonset_pod.status == "Running":
+            return True
+        return False
 
-    output = KubectlExecInPodsKeywords(ssh_connection).run_pod_exec_cmd(daemonset_pod.get_name(), "ip link show net1")
-    interface = IPLinkShowOutput(output).get_interface()
+    validate_equals_with_retry(get_running_pods, True, "Validate pod is running", 300)
 
-    assert interface.state == "UP", "interface state was not UP"
+    def get_interface_state() -> str:
+        """
+        Gets state of the interface
+
+        Returns:
+            str: the interface state
+        """
+        pods = KubectlGetPodsKeywords(ssh_connection).get_pods()
+        daemonset_pod = pods.get_pods_start_with("daemonset-sriovdp-netdev-single-pod")[0]
+        output = KubectlExecInPodsKeywords(ssh_connection).run_pod_exec_cmd(daemonset_pod.get_name(), "ip link show net1")
+        interface = IPLinkShowOutput(output).get_interface()
+        return interface.get_state()
+
+    validate_equals_with_retry(get_interface_state, "UP", "Validate the interface status is UP", 300)
 
 
 @mark.p0
