@@ -11,7 +11,7 @@ from framework.ssh.secure_transfer_file.secure_transfer_file import SecureTransf
 from framework.ssh.secure_transfer_file.secure_transfer_file_enum import TransferDirection
 from framework.ssh.secure_transfer_file.secure_transfer_file_input_object import SecureTransferFileInputObject
 from framework.ssh.ssh_connection import SSHConnection
-from framework.validation.validation import validate_equals
+from framework.validation.validation import validate_equals, validate_equals_with_retry
 from framework.web.webdriver_core import WebDriverCore
 from keywords.cloud_platform.dcmanager.dcmanager_alarm_summary_keywords import DcManagerAlarmSummaryKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_list_keywords import DcManagerSubcloudListKeywords
@@ -68,8 +68,19 @@ def test_check_alarms():
 
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
-    alarms = AlarmListKeywords(ssh_connection).alarm_list()
-    assert not alarms, "There were alarms found on the system"
+
+    def no_alarms() -> bool:
+        """
+        Checks if there are no alarms on the system
+
+        Returns:
+            bool: True if no alarms
+        """
+        alarms = AlarmListKeywords(ssh_connection).alarm_list()
+        return not alarms
+
+    # if another test created some temp alarms, lets give it some time
+    validate_equals_with_retry(no_alarms, True, "Validate that no alarms on the system", 300)
 
 
 @mark.p0
