@@ -13,12 +13,12 @@ class OpenStackEndpointListKeywords(BaseKeyword):
     def __init__(self, ssh_connection: SSHConnection):
         self.ssh_connection = ssh_connection
 
-    def endpoint_list(self):
+    def endpoint_list(self) -> OpenStackEndpointListOutput:
         """
-        Keyword for openstack endpoint list
+        Executes the 'openstack endpoint list' command and parses the output.
 
         Returns:
-            OpenStackEndpointListOutput object
+            OpenStackEndpointListOutput: Parsed output of the 'openstack endpoint list' command.
         """
         output = self.ssh_connection.send(source_openrc("openstack endpoint list"))
         self.validate_success_return_code(self.ssh_connection)
@@ -32,5 +32,5 @@ class OpenStackEndpointListKeywords(BaseKeyword):
         """
         endpoint_output = self.endpoint_list()
         url = endpoint_output.get_endpoint("keystone", "public").get_url().rsplit(":", 1)[0]
-        end_point = f"{url}:{ConfigurationManager.get_k8s_config().get_dashboard_port()}"
+        end_point = f"{url}:{ConfigurationManager.get_k8s_config().get_dashboard_port()}/"
         return end_point

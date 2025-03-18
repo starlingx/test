@@ -1,5 +1,4 @@
 import os
-import time
 
 from pytest import fixture, mark
 
@@ -9,9 +8,11 @@ from framework.logging.automation_logger import get_logger
 from framework.resources.resource_finder import get_stx_resource_path
 from framework.rest.rest_client import RestClient
 from framework.ssh.ssh_connection import SSHConnection
+from framework.web.webdriver_core import WebDriverCore
 from keywords.cloud_platform.openstack.endpoint.openstack_endpoint_list_keywords import OpenStackEndpointListKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.files.file_keywords import FileKeywords
+from keywords.files.yaml_keywords import YamlKeywords
 from keywords.k8s.files.kubectl_file_apply_keywords import KubectlFileApplyKeywords
 from keywords.k8s.files.kubectl_file_delete_keywords import KubectlFileDeleteKeywords
 from keywords.k8s.namespace.kubectl_create_namespace_keywords import KubectlCreateNamespacesKeywords
@@ -23,6 +24,7 @@ from keywords.k8s.secret.kubectl_delete_secret_keywords import KubectlDeleteSecr
 from keywords.k8s.serviceaccount.kubectl_delete_serviceaccount_keywords import KubectlDeleteServiceAccountKeywords
 from keywords.k8s.token.kubectl_create_token_keywords import KubectlCreateTokenKeywords
 from keywords.openssl.openssl_keywords import OpenSSLKeywords
+from web_pages.k8s_dashboard.login.k8s_login_page import K8sLoginPage
 
 
 def check_url_access(url: str) -> tuple:
@@ -49,7 +51,7 @@ def copy_k8s_files(request: fixture, ssh_connection: SSHConnection):
         ssh_connection (SSHConnection): ssh connection object
     """
     k8s_dashboard_dir = "k8s_dashboard"
-    dashboard_file_names = ["admin-user.yaml", "kubeconfig.yaml", "k8s_dashboard.yaml"]
+    dashboard_file_names = ["admin-user.yaml", "k8s_dashboard.yaml"]
     get_logger().log_info("Creating k8s_dashboard directory")
     ssh_connection.send("mkdir -p {}".format(k8s_dashboard_dir))
     for dashboard_file_name in dashboard_file_names:
@@ -112,9 +114,6 @@ def create_k8s_dashboard(request: fixture, namespace: str, con_ssh: SSHConnectio
     request.addfinalizer(teardown)
     KubectlApplyPatchKeywords(ssh_connection=con_ssh).apply_patch_service(svc_name=name, namespace=namespace, args_port=arg_port)
 
-    get_logger().log_info("Waiting 30s for the service to be up")
-    time.sleep(30)
-
     get_logger().log_info(f"Verify that {name} is working")
     end_point = OpenStackEndpointListKeywords(ssh_connection=con_ssh).get_k8s_dashboard_url()
     status_code, _ = check_url_access(end_point)
@@ -148,16 +147,42 @@ def get_k8s_token(request: fixture, con_ssh: SSHConnection) -> str:
     KubectlFileApplyKeywords(ssh_connection=con_ssh).apply_resource_from_yaml(admin_user_file_path)
 
     get_logger().log_info("Creating the token for admin-user")
-    token = KubectlCreateTokenKeywords(ssh_connection=con_ssh).create_token(nspace="kube-system", user=serviceaccount)
+    token = KubectlCreateTokenKeywords(ssh_connection=con_ssh).create_token("kube-system", serviceaccount)
 
     def teardown():
         get_logger().log_info(f"Removing serviceaccount {serviceaccount} in kube-system")
-        KubectlDeleteServiceAccountKeywords(ssh_connection=con_ssh).cleanup_serviceaccount(serviceaccount_name=serviceaccount, nspace="kube-system")
+        KubectlDeleteServiceAccountKeywords(ssh_connection=con_ssh).cleanup_serviceaccount(serviceaccount, "kube-system")
 
     request.addfinalizer(teardown)
 
     get_logger().log_info(f"Token for login to dashboard: {token}")
     return token
+
+
+def get_local_kubeconfig_path() -> str:
+    """
+    Get the local path to the kubeconfig file.
+
+    Returns:
+        str: The local path to the kubeconfig.yaml file.
+    """
+    kubeconfig_file = "kubeconfig.yaml"
+    local_path = get_stx_resource_path(f"resources/cloud_platform/containers/k8s_dashboard/{kubeconfig_file}")
+    return local_path
+
+
+def update_token_in_local_kubeconfig(token: str) -> str:
+    """
+    Update the token in the local kubeconfig file and save it to a temporary location.
+
+    Args:
+        token (str): The token to be updated in the kubeconfig file.
+
+    Returns:
+        str: The path to the updated temporary kubeconfig file.
+    """
+    tmp_kubeconfig_path = YamlKeywords(ssh_connection=None).generate_yaml_file_from_template(template_file=get_local_kubeconfig_path(), target_file_name="kubeconfig_tmp.yaml", replacement_dictionary={"token_value": token}, target_remote_location=None, copy_to_remote=False)
+    return tmp_kubeconfig_path
 
 
 @mark.p0
@@ -173,6 +198,26 @@ def test_k8s_dashboard_access(request):
             - Check the copies on the SystemController.
         Step 2: Create namespace kubernetes-dashboard
             - Check that the dashboard is correctly created
+        Step 3: Create the necessary k8s dashboard resources
+            - Create SSL certificate for the dashboard.
+            - Create the necessary secrets.
+            - Apply the k8s dashboard yaml file.
+            - Expose the dashboard service on port 30000.
+            - Verify that the dashboard is accessible.
+        Step 4: Create the token for the dashboard
+            - Create the admin-user service-account.
+            - Bind the cluster-admin ClusterRoleBinding to the admin-user.
+            - Create a token for the admin-user.
+        Step 5: Navigate to K8s dashboard login page
+            - Get the k8s dashboard URL.
+            - Open the k8s dashboard login page.
+            - Login to the dashboard using the token.
+        Step 6 : Logout from the dashboard
+            - Logout from the dashboard
+        Step 7 : Login to the dashboard using kubeconfig file
+            - Update the token in the kubeconfig file
+            - Open the k8s dashboard login page.
+            - Login to the dashboard using the kubeconfig file.
 
     Teardown:
         - Delete the kubernetes-dashboard namespace
@@ -185,7 +230,7 @@ def test_k8s_dashboard_access(request):
     # Opens an SSH session to active controller.
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     copy_k8s_files(request, ssh_connection)
-    # Create Dashboard namespace
+    # Step 2: Create Dashboard namespace
     namespace_name = "kubernetes-dashboard"
     kubectl_create_ns_keyword = KubectlCreateNamespacesKeywords(ssh_connection)
     kubectl_create_ns_keyword.create_namespaces(namespace_name)
@@ -201,9 +246,26 @@ def test_k8s_dashboard_access(request):
 
     request.addfinalizer(teardown)
 
-    # Step 2: Create the necessary k8s dashboard resources
+    # Step 3: Create the necessary k8s dashboard resources
     test_namespace = "kubernetes-dashboard"
     create_k8s_dashboard(request, namespace=test_namespace, con_ssh=ssh_connection)
 
-    # Step 3: Create the token for the dashboard
-    get_k8s_token(request=request, con_ssh=ssh_connection)
+    # Step 4: Create the token for the dashboard
+    token = get_k8s_token(request=request, con_ssh=ssh_connection)
+
+    # Step 5: Navigate to K8s dashboard login page
+
+    k8s_dashboard_url = OpenStackEndpointListKeywords(ssh_connection=ssh_connection).get_k8s_dashboard_url()
+    driver = WebDriverCore()
+    request.addfinalizer(lambda: driver.close())
+
+    login_page = K8sLoginPage(driver)
+    login_page.navigate_to_login_page(k8s_dashboard_url)
+    # Login to the dashboard using the token.
+    login_page.login_with_token(token)
+    # Step 6: Logout from dashboard
+    login_page.logout()
+
+    # Step 7: Login to the dashboard using kubeconfig file
+    kubeconfig_tmp_path = update_token_in_local_kubeconfig(token=token)
+    login_page.login_with_kubeconfig(kubeconfig_tmp_path)
