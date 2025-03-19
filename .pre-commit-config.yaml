@@ -64,7 +64,7 @@ repos:
       entry: pydoclint
       language: python
       types: [python]
-      args: ["--config=pyproject.toml"]
+      args: [--config=pyproject.toml]
 
     - id: interrogate
       name: interrogate - ensure all functions and classes have docstrings

@@ -50,7 +50,7 @@
         {
           name: "phc1",
           instance_hostnames : ["controller-0", "controller-1"],
-          instance_parameters: "'cmdline_opts=-s {{controller_0.nic1.conn_to_sprint}} -O -37 -m'",
+          instance_parameters: "'cmdline_opts=-s {{controller_0.nic1.conn_to_spirent}} -O -37 -m'",
           ptp_interface_names: [
             "phc1if1",
           ],
