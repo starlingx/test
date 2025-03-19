@@ -1,89 +1,110 @@
 {
-    controller_0 : {
 
-        nic1 : {
+    // GNSS server information if you want to turn on/off GNSS ports.
+    gnss_server_host: "gnss_server_hostname_or_ip",
+    gnss_server_username: "gnss_server_username",
+    gnss_server_password: "gnss_server_password",
 
-            gnss_switch_port: "./gnss_switch_port_file.exp 1",
+    // Information about the NIC cards and SMA connections.
+    hosts: {
 
-            // Parameters can be : sma1 input/output, sma2 input/output, u.fl1 output, u.fl2 input, synce_rclka enabled, synce_rclkb enabled
-            sma1_to_nic2: "output", // CLOCK OUTPUT INTERFACE Controller-0 NIC1
-            sma2_to_nic2: "",
+        controller_0 : {
 
-            // This port for TS2PHC and PHC2SYS.
-            // Can be assigned to any interface of the NIC connected to GNSS and with any NIC on the same host.
-            // By default, we use the first port.
-            base_port: "enp81s0f0",
-            conn_to_ctrl1_nic1: "enp81s0f1",
+            sma_connectors: {
 
-            // Optional Spirent config.
-            conn_to_spirent: "",
-            spirent_port: "",
+                nic_1_2: {
+                 input: { nic: "nic1", sma: "sma1" },
+                 output:{ nic: "nic2", sma: "sma2" },
+                },
+
+                nic_2_3: {
+                 input: { nic: "nic2", sma: "sma1" },
+                 output:{ nic: "nic3", sma: "sma1" },
+                },
+            },
+
+            ufl_connectors: {
+
+                nic_1_3: {
+                 input: { nic: "nic1", ufl: "ufl1" },
+                 output:{ nic: "nic2", ufl: "ufl1" },
+                },
+
+            },
+
+            nics: {
+
+                nic1 : {
+
+                    // This port for TS2PHC and PHC2SYS.
+                    // Can be assigned to any interface of the NIC connected to GNSS and with any NIC on the same host.
+                    // By default, we use the first port.
+                    base_port: "enp81s0f0",
+                    gpio_switch_port: "30",
+                    pci_slot: "00:007.01",
+
+                    nic_connection: {
+                       to_host: "controller_1",
+                       to_nic: "nic1",
+                       interface: "enp81s0f1"
+                    },
+
+                    // Optional Spirent config.
+                    conn_to_spirent: "conn_spirent_placeholder",
+                    spirent_port: "1234",
+
+                },
+
+                nic2 : {
+
+                    base_port: "",
+                    gpio_switch_port: "",
+                    conn_to_spirent: "",
+                    spirent_port: "",
+
+                },
+
+                nic3 : {
+
+                    base_port: "",
+                    gpio_switch_port: "",
+                    conn_to_spirent: "",
+                    spirent_port: "",
+
+                }
+            },
 
         },
 
-        nic2 : {
+        controller_1 : {
 
-            gnss_switch_port: "",
+            sma_connectors: {
 
-            // Parameters can be : sma1 input/output, sma2 input/output, u.fl1 output, u.fl2 input, synce_rclka enabled, synce_rclkb enabled
-            sma1_to_nic1: "input", // CLOCK OUTPUT INTERFACE Controller-0 NIC2
-            sma2_to_nic1: "",
+                nic_1_2: {
+                 input: { nic: "nic1", sma: "sma1" },
+                 output:{ nic: "nic2", sma: "sma2" },
+                },
 
-            // This port for TS2PHC and PHC2SYS.
-            // Can be assigned to any interface of the NIC connected to GNSS and with any NIC on the same host.
-            // By default, we use the first port.
-            base_port: "",
-            conn_to_ctrl1_nic2: "",
+            },
 
-            // Optional Spirent config.
-            conn_to_spirent: "",
-            spirent_port: "",
+            nics: {
+                nic1: {
+                    base_port: "",
+                    gpio_switch_port: "",
+                    conn_to_spirent: "",
+                    spirent_port: "",
+                },
+                nic2: {
+                    base_port: "enp82s0f0",
+                    gpio_switch_port: "",
+                    conn_to_spirent: "",
+                    spirent_port: "",
+                },
+            },
 
-        }
+        },
+
     },
 
-    controller_1 : {
-
-        nic1 : {
-
-            gnss_switch_port: "",
-
-            // Parameters can be : sma1 input/output, sma2 input/output, u.fl1 output, u.fl2 input, synce_rclka enabled, synce_rclkb enabled
-            sma1_to_nic2: "output", // CLOCK OUTPUT INTERFACE Controller-1 NIC1
-            sma2_to_nic2: "",
-
-            // This port for TS2PHC and PHC2SYS.
-            // Can be assigned to any interface of the NIC connected to GNSS and with any NIC on the same host.
-            // By default, we use the first port.
-            base_port: "",
-            conn_to_ctrl0_nic1: "",
-
-            // Optional Spirent config.
-            conn_to_spirent: "",
-            spirent_port: "",
-
-        },
-
-        nic2 : {
-
-            gnss_switch_port: "",
-
-            // Parameters can be : sma1 input/output, sma2 input/output, u.fl1 output, u.fl2 input, synce_rclka enabled, synce_rclkb enabled
-            sma1_to_nic1: "input", // CLOCK OUTPUT INTERFACE Controller-1 NIC2
-            sma2_to_nic1: "",
-
-            // This port for TS2PHC and PHC2SYS.
-            // Can be assigned to any interface of the NIC connected to GNSS and with any NIC on the same host.
-            // By default, we use the first port.
-            base_port: "enp82s0f0",
-            conn_to_ctrl0_nic2: "",
-
-            // Optional Spirent config.
-            conn_to_spirent: "",
-            spirent_port: "",
-
-        },
-
-    },
 
 }

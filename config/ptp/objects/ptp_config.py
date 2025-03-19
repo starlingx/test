@@ -19,10 +19,35 @@ class PTPConfig:
             raise
 
         ptp_dict = json5.load(json_data)
-        self.ptp_hosts = []
-        for ptp_host in ptp_dict:
-            host = PTPHost(ptp_host, ptp_dict[ptp_host])
-            self.ptp_hosts.append(host)
+
+        # GNSS server information
+        self.gnss_server_host = ptp_dict["gnss_server_host"]
+        self.gnss_server_username = ptp_dict["gnss_server_username"]
+        self.gnss_server_password = ptp_dict["gnss_server_password"]
+
+        # Extract the NIC Connections and Host information from the dictionary
+        self.ptp_hosts = self._extract_ptp_hosts(ptp_dict)
+
+    def _extract_ptp_hosts(self, ptp_dict: Dict[str, str]) -> List[PTPHost]:
+        """
+        Build the PTPHost objects from the dictionary
+
+        Args:
+            ptp_dict (Dict[str, str]): JSON representation of the PTP config
+
+        Returns:
+            List[PTPHost]: List of PTPHost
+        """
+        ptp_hosts = []
+        ptp_hosts_dict = {}
+        if "hosts" in ptp_dict:
+            ptp_hosts_dict = ptp_dict["hosts"]
+
+        for ptp_host_name in ptp_hosts_dict.keys():
+            host = PTPHost(ptp_host_name, ptp_hosts_dict[ptp_host_name])
+            ptp_hosts.append(host)
+
+        return ptp_hosts
 
     def __str__(self):
         """
