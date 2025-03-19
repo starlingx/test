@@ -31,6 +31,24 @@ class PTPNicConnection:
         """
         return f"{self.from_nic} to {self.to_host}:{self.to_nic}"
 
+    def to_dictionary(self) -> Dict[str, str]:
+        """
+        This function will return a dictionary view of the PTPNicConnection.
+
+        This is mostly used for substitution in JINJA templates.
+
+        Returns:
+            Dict[str, str]: Dictionary representation
+
+        """
+        dictionary = {
+            "from_nic": self.from_nic,
+            "to_host": self.to_host,
+            "to_nic": self.to_nic,
+            "interface": self.interface,
+        }
+        return dictionary
+
     def validate_nic_connection_dict(self, nic_connection_dict: Dict[str, str]) -> None:
         """
         Checks if the nic_connection_dict contains all the necessary fields.

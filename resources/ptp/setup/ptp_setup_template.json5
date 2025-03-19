@@ -118,8 +118,8 @@
 
     {
       name: "ptp1if1",
-      controller_0_interfaces: ["{{ controller_0.nic1.conn_to_ctrl1_nic1 }}"],
-      controller_1_interfaces: ["{{ controller_1.nic1.conn_to_ctrl0_nic1 }}"],
+      controller_0_interfaces: ["{{ controller_0.nic1.nic_connection.interface }}"], // Connection to controller1-nic1
+      controller_1_interfaces: ["{{ controller_1.nic1.nic_connection.interface }}"], // Connection to controller0-nic1
       ptp_interface_parameter : "",
     },
 
@@ -146,7 +146,7 @@
 
    {
      name: "ptp3if1",
-     controller_0_interfaces: ["{{ controller_0.nic2.conn_to_ctrl1_nic2 }}"],
+     controller_0_interfaces: ["{{ controller_0.nic2.nic_connection.interface }}"], // Connection to Controller1 Nic 2
      controller_1_interfaces: [],
      ptp_interface_parameter : "",
     },
@@ -161,7 +161,7 @@
    {
      name: "ptp4if1",
      controller_0_interfaces: [],
-     controller_1_interfaces: ["{{ controller_0.nic2.conn_to_ctrl1_nic2 }}"],
+     controller_1_interfaces: ["{{ controller_0.nic2.nic_connection.interface  }}"], // Connection to Controller1 Nic 2
      ptp_interface_parameter : "",
     },
 
@@ -211,14 +211,14 @@
      name: "clock1if1",
      controller_0_interfaces: ["{{ controller_0.nic1.conn_to_spirent }}"],
      controller_1_interfaces: [],
-     ptp_interface_parameter : "sma1={{ controller_0.nic1.sma1_to_nic2 }}",
+     ptp_interface_parameter : "sma1={{ controller_0.nic1.sma1.name }}",
     },
 
    {
      name: "clock1if2",
      controller_0_interfaces: ["{{ controller_0.nic2.base_port }}"],
      controller_1_interfaces: [],
-     ptp_interface_parameter : "sma1={{ controller_0.nic2.sma1_to_nic1 }}",
+     ptp_interface_parameter : "sma1={{ controller_0.nic2.sma1.name }}",
     },
   ],
 

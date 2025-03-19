@@ -58,6 +58,25 @@ class SMAConnector:
         """
         return self.name
 
+    def to_dictionary(self) -> Dict[str, str]:
+        """
+        This function will return a dictionary view of the SMA Connector.
+
+        This is mostly used for substitution in JINJA templates.
+
+        Returns:
+            Dict[str, str]: Dictionary representation
+
+        """
+        dictionary = {
+            "name": self.name,
+            "input_nic": self.input_nic,
+            "input_sma": self.input_sma,
+            "output_nic": self.output_nic,
+            "output_sma": self.output_sma,
+        }
+        return dictionary
+
     def get_name(self) -> str:
         """
         Retrieves the name from the SMA connector.

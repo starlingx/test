@@ -19,7 +19,7 @@ class PTPNic:
             nic_dict (Dict[str, str]): The dictionary read from the JSON config file associated with this NIC.
 
         """
-        self.name = nic_name
+        self.name: str = nic_name
         self.gpio_switch_port = None
         self.pci_slot = None
         self.base_port = None
@@ -30,9 +30,6 @@ class PTPNic:
         self.nic_connection = None
         self.conn_to_spirent = None
         self.spirent_port = None
-
-        # Store the raw dictionary for JINJA templating.
-        self.nic_dictionary = nic_dict
 
         if "gpio_switch_port" in nic_dict and nic_dict["gpio_switch_port"]:
             self.gpio_switch_port = nic_dict["gpio_switch_port"]
@@ -71,7 +68,40 @@ class PTPNic:
             Dict[str, str]: Dictionary representation
 
         """
-        return self.nic_dictionary
+        sma1_dict = None
+        if self.sma1:
+            sma1_dict = self.sma1.to_dictionary()
+
+        sma2_dict = None
+        if self.sma2:
+            sma2_dict = self.sma2.to_dictionary()
+
+        ufl1_dict = None
+        if self.ufl1:
+            ufl1_dict = self.ufl1.to_dictionary()
+
+        ufl2_dict = None
+        if self.ufl2:
+            ufl2_dict = self.ufl2.to_dictionary()
+
+        nic_connection_dict = None
+        if self.nic_connection:
+            nic_connection_dict = self.nic_connection.to_dictionary()
+
+        ptp_nic_dictionary = {
+            "name": self.name,
+            "gpio_switch_port": self.gpio_switch_port,
+            "pci_slot": self.pci_slot,
+            "base_port": self.base_port,
+            "sma1": sma1_dict,
+            "sma2": sma2_dict,
+            "ufl1": ufl1_dict,
+            "ufl2": ufl2_dict,
+            "nic_connection": nic_connection_dict,
+            "conn_to_spirent": self.conn_to_spirent,
+            "spirent_port": self.spirent_port,
+        }
+        return ptp_nic_dictionary
 
     def get_name(self) -> str:
         """
