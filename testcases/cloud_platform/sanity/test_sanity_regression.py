@@ -1097,10 +1097,10 @@ def test_sriovdp_netdev_single_pod_1vf_lock(request: any):
     sriov_deploy_images_to_local_registry(ssh_connection)
 
     # Deploy required pods
-    sriov_deploy_pods(request, "netdef_test-sriovdp_ipv4.yaml", "calicoctl-ippool-sriov-pool-group0-data1-vf1.yaml", ssh_connection)
+    sriov_deploy_pods(request, "netdef_test-sriovdp.yaml", "calicoctl-ippool-sriov-pool-group0-data1-vf1.yaml", ssh_connection)
 
     # Deploy daemon set pod
-    deploy_daemonset_pod(request, "daemon_set_daemonset_ipv4.yaml", ssh_connection)
+    deploy_daemonset_pod(request, "daemon_set_daemonset.yaml", ssh_connection)
 
     # check the daemonset values
     daemonset = KubectlGetDaemonsetsKeywords(ssh_connection).get_daemonsets().get_daemonset("daemonset-sriovdp-netdev-single-pod")
