@@ -193,3 +193,13 @@ class FileKeywords(BaseKeyword):
         # active_controller_ssh.send(f"sshpass -p '{pasw}' rsync -avz {source} {user}@{destination}")
         self.ssh_connection.send(f"sshpass -p '{pasw}' rsync -avz {source_path} {remote_path}")
         self.validate_success_return_code(self.ssh_connection)
+
+    def rename_file(self, old_file_name: str, new_file_name: str):
+        """
+        Renames the file.
+
+        Args:
+            old_file_name (str): path to file to be renamed
+            new_file_name (str): path to be set for renamed file
+        """
+        self.ssh_connection.send_as_sudo(f"mv {old_file_name} {new_file_name}")

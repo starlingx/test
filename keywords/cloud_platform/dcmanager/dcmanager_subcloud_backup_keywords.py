@@ -4,6 +4,7 @@ from framework.ssh.ssh_connection import SSHConnection
 from framework.validation.validation import validate_equals_with_retry
 from keywords.base_keyword import BaseKeyword
 from keywords.cloud_platform.command_wrappers import source_openrc
+from keywords.cloud_platform.dcmanager.dcmanager_subcloud_show_keywords import DcManagerSubcloudShowKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.files.file_keywords import FileKeywords
 
@@ -224,4 +225,43 @@ class DcManagerSubcloudBackupKeywords(BaseKeyword):
             function_to_execute=check_backup_deleted,
             expected_value=f"Backup successfully deleted from {path} for {subcloud}",
             validation_description=f"Backup deletion for subcloud {subcloud} completed.",
+        )
+
+    def wait_for_backup_status_complete(
+        self,
+        subcloud: str,
+        expected_status: str,
+        check_interval: int = 30,
+        timeout: int = 600,
+    ) -> None:
+        """
+        Waits for subcloud backup status to be the expected status.
+
+        Args:
+            subcloud (str): The name of the subcloud to check.
+            expected_status (str): Sets status to be verified.
+            check_interval (int): Time interval (in seconds) to check for file creation. Defaults to 30.
+            timeout (int): Maximum time (in seconds) to wait for file creation. Defaults to 600.
+
+        Returns:
+            None:
+        """
+
+        def check_backup_status_completed() -> bool:
+            """
+            Checks if the backup has been created.
+
+            Returns:
+                bool: Return if backup condition is met.
+            """
+            dcmanager_subcloud_obj = DcManagerSubcloudShowKeywords(self.ssh_connection).get_dcmanager_subcloud_show(subcloud).get_dcmanager_subcloud_show_object()
+            backup_flag = dcmanager_subcloud_obj.get_backup_status()
+            return backup_flag == expected_status
+
+        validate_equals_with_retry(
+            function_to_execute=check_backup_status_completed,
+            expected_value=True,
+            validation_description=f"Wait for backup creation of subcloud {subcloud} to be {expected_status}.",
+            timeout=timeout,
+            polling_sleep_time=check_interval,
         )
