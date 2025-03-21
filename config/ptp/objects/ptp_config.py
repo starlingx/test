@@ -28,6 +28,33 @@ class PTPConfig:
         # Extract the NIC Connections and Host information from the dictionary
         self.ptp_hosts = self._extract_ptp_hosts(ptp_dict)
 
+    def get_gnss_server_host(self) -> str:
+        """
+        Getter for the GNSS server host.
+
+        Returns:
+            str: gnss server host
+        """
+        return self.gnss_server_host
+
+    def get_gnss_server_username(self) -> str:
+        """
+        Getter for the GNSS server username.
+
+        Returns:
+            str: gnss server username
+        """
+        return self.gnss_server_username
+
+    def get_gnss_server_password(self) -> str:
+        """
+        Getter for the GNSS server password.
+
+        Returns:
+            str: gnss server password
+        """
+        return self.gnss_server_password
+
     def _extract_ptp_hosts(self, ptp_dict: Dict[str, str]) -> List[PTPHost]:
         """
         Build the PTPHost objects from the dictionary
