@@ -6,7 +6,7 @@
 		"user_name": "fake_user",
 		"password": "fake_password"
 	},
-	bm_password: "",
+	"bm_password": "",
 	"use_jump_server": false,
 	"lab_capabilities": [],
 	"nodes": {
