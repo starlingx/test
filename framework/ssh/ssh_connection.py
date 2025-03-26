@@ -3,38 +3,43 @@ import time
 from typing import List
 
 import paramiko
+from paramiko.client import SSHClient
+from paramiko.sftp_client import SFTPClient
+
 from config.host.objects.host_configuration import HostConfiguration
 from framework.logging.automation_logger import get_logger
 from framework.ssh.prompt_response import PromptResponse
 from framework.threading.thread_manager import ThreadManager
-from paramiko.client import SSHClient
-from paramiko.sftp_client import SFTPClient
 
 
 class SSHConnection:
     """
-    This class holds information and actions for an ssh connection
+    This class holds information and actions for an ssh connection.
     """
 
     def __init__(
-            self,
-            name: str,
-            host: str,
-            user: str,
-            password: str,
-            timeout: int = 30,
-            ssh_port: int = 22,
-            jump_host: HostConfiguration = None,
+        self,
+        name: str,
+        host: str,
+        user: str,
+        password: str,
+        timeout: int = 30,
+        ssh_port: int = 22,
+        jump_host: HostConfiguration = None,
     ):
         """
-        Initialization of ssh connection
+        Initialize the SSH connection object.
+
+        This sets up the basic configuration used to create an SSH session, optionally through a jump host.
+
         Args:
-            name: the name of the connection
-            host: the host of the connection
-            user: the user to connect with
-            password: the password
-            timeout: Amount of time to wait for the connection to the lab
-            jump_host: the configuration of the jump host if it's needed
+            name (str): The name of the connection.
+            host (str): The target host to connect to.
+            user (str): The SSH username.
+            password (str): The SSH password.
+            timeout (int): The timeout for establishing a connection, in seconds.
+            ssh_port (int): The port used for SSH. Defaults to 22.
+            jump_host (HostConfiguration, optional): Configuration for a jump host, if needed.
         """
         self.client = SSHClient()
         self.name = name
@@ -55,17 +60,20 @@ class SSHConnection:
         self.ssh_pass_password = None
         self.output_start_line = -1  # for parsing out lines that come by default when using ssh pass
 
-    def _connect_to_jump_host(self, allow_agent=True, look_for_keys=True):
+    def _connect_to_jump_host(self, allow_agent: bool = True, look_for_keys: bool = True) -> None:
         """
-        This function will connect to the jump_host
+        Connect to the configured jump host using SSH.
+
+        Uses paramiko to establish the SSH session with the jump host, based on
+        credentials provided in the `jump_host` configuration.
+
         Args:
-            allow_agent: connect to SSH agent (Paramiko arg). True by default
-            look_for_keys: Re-use saved private keys. (Paramiko arg).
+            allow_agent (bool): Connect to SSH agent (Paramiko arg). Default is True.
+            look_for_keys (bool): Re-use saved private keys (Paramiko arg). Default is True.
 
-        Returns: None
-
+        Returns:
+            None:
         """
-
         try:
             host = self.jump_host.get_host()
             user_name = self.jump_host.get_credentials().get_user_name()
@@ -86,14 +94,16 @@ class SSHConnection:
             get_logger().log_error(f"Exception: {exception}")
             raise BaseException("Failed to connect to Jump-Host")
 
-    def connect(self, allow_agent=True, look_for_keys=False) -> bool:
+    def connect(self, allow_agent: bool = True, look_for_keys: bool = False) -> bool:
         """
-        Creates a connection
-        Args:
-            allow_agent: connect to SSH agent (Paramiko arg). True by default
-            look_for_keys: Re-use saved private keys. (Paramiko arg).
-        Returns: True if the connection was successful, false otherwise.
+        Create an SSH connection to the target host.
 
+        Args:
+            allow_agent (bool): Use SSH agent forwarding (Paramiko arg). Default is True.
+            look_for_keys (bool): Search for saved private keys (Paramiko arg). Default is False.
+
+        Returns:
+            bool: True if the connection was successful, False otherwise.
         """
         is_connection_success = True
         self.client.set_missing_host_key_policy(paramiko.AutoAddPolicy)
@@ -102,7 +112,7 @@ class SSHConnection:
             # if a jump host is configured, create that connection first
             if self.jump_host:
                 self._connect_to_jump_host(allow_agent, look_for_keys)
-                sock = self.client.get_transport().open_channel("direct-tcpip", (self.host, self.ssh_port), ('', 0), timeout=self.timeout)
+                sock = self.client.get_transport().open_channel("direct-tcpip", (self.host, self.ssh_port), ("", 0), timeout=self.timeout)
 
             self.client.connect(
                 self.host,
@@ -127,68 +137,79 @@ class SSHConnection:
 
     def send(self, cmd: str, reconnect_timeout: int = 600) -> str:
         """
-        Sends a command and returns the output. Waits for the reconnect timeout in case of ssh disconnects
+        Send a command to the SSH session and return the output.
+
+        Retries the connection for up to `reconnect_timeout` seconds
+        if the session is lost.
+
         Args:
-            cmd (): the cmd to send
-            reconnect_timeout (): the amount of time in secs to wait for ssh connection
+            cmd (str): The command to execute.
+            reconnect_timeout (int): Time in seconds to retry the connection.
 
-        Returns: the output of the command
-
+        Returns:
+            str: The output of the command.
         """
         return self._execute_command("SEND", cmd, reconnect_timeout=reconnect_timeout)
 
     def send_as_sudo(self, cmd: str, reconnect_timeout: int = 600) -> str:
         """
-        Sends a command using sudo and returns the output. Waits for the reconnect timeout in case of ssh disconnects
+        Sends a command using sudo and returns the output. Waits for reconnect timeout.
+
         Args:
-            cmd (): the cmd to send
-            reconnect_timeout (): the amount of time in secs to wait for ssh connection
+            cmd (str): The command to send.
+            reconnect_timeout (int): How long to wait for SSH reconnection if needed.
 
-        Returns: the output of the command
-
+        Returns:
+            str: Output of the executed command.
         """
         return self._execute_command("SEND_SUDO", cmd, reconnect_timeout=reconnect_timeout)
 
     def send_expect_prompts(self, cmd: str, prompts: List[PromptResponse], reconnect_timeout: int = 600) -> str:
         """
-        Sends a command, waits for prompts and returns the output. Wait for the reconnect timeout in case of ssh disconnects
+        Sends a command, waits for prompts and returns the output.
+
+        Waits for the reconnect timeout in case of SSH disconnects.
+
         Args:
-            cmd (): the cmd to send
-            prompts: the prompts to expect
-            reconnect_timeout (): the amount of time in secs to wait for ssh connection
+            cmd (str): The command to send.
+            prompts (List[PromptResponse]): The prompts to expect.
+            reconnect_timeout (int): The amount of time in seconds to wait for SSH connection.
 
-        Returns: the output of the command
-
+        Returns:
+            str: The output of the command.
         """
         return self._execute_command("SEND_EXPECT_PROMPTS", cmd, prompts=prompts, reconnect_timeout=reconnect_timeout)
 
     def _execute_command(
-            self,
-            action: str,
-            cmd: str,
-            reconnect_timeout: int = 600,
-            prompts: List[PromptResponse] = None,
+        self,
+        action: str,
+        cmd: str,
+        reconnect_timeout: int = 600,
+        prompts: List[PromptResponse] = None,
     ) -> str:
         """
-        Executes the given action with the given command. Waits for reconnect timeout for ssh connection
+        Executes the given action with the given command.
+
+        Waits for reconnect timeout in case of SSH disconnects.
+
         Args:
-            action (): the actions ex. SEND, SEND_SUDO, SEND_EXPECT_PROMPTS
-            cmd (): the cmd to run
-            reconnect_timeout (): the time to wait for ssh connection
-            prompts (): expected prompts if any
+            action (str): The action to execute, e.g., SEND, SEND_SUDO, SEND_EXPECT_PROMPTS.
+            cmd (str): The command to run.
+            reconnect_timeout (int): The time in seconds to wait for SSH connection.
+            prompts (List[PromptResponse], optional): Expected prompts, if any.
 
-        Returns:the output of the command
-
+        Returns:
+            str: The output of the command.
         """
         timeout = time.time() + reconnect_timeout
         refresh_timeout = 5
 
         # if we are using ssh pass, we need to wrap the call
         if self.use_ssh_pass:
-            if action == 'SEND_SUDO':  # if it a sudo call we need further changes to avoid password prompt
+            if action == "SEND_SUDO":  # if it a sudo call we need further changes to avoid password prompt
                 cmd = f"{self.get_ssh_pass_str()} 'echo '{self.ssh_pass_password}' | sudo -S {cmd}'"
                 # since we do not need prompts or to prepend sudo now, change Action to just 'SEND'
-                action = 'SEND'
+                action = "SEND"
             else:
                 cmd = f"{self.get_ssh_pass_str()} '{cmd}'"
 
@@ -200,11 +221,11 @@ class SSHConnection:
 
                 thread_manager = ThreadManager(timeout=reconnect_timeout / 10)
 
-                if action == 'SEND':
+                if action == "SEND":
                     thread_manager.start_thread("SSH_Command", self._send, cmd)
-                elif action == 'SEND_SUDO':
+                elif action == "SEND_SUDO":
                     thread_manager.start_thread("SSH_Command", self._send_as_sudo, cmd)
-                elif action == 'SEND_EXPECT_PROMPTS':
+                elif action == "SEND_EXPECT_PROMPTS":
                     thread_manager.start_thread("SSH_Command", self._send_expect_prompts, cmd, prompts)
                 else:
                     raise ValueError(f"{action} is not a supported command for an SSHConnection.")
@@ -214,7 +235,7 @@ class SSHConnection:
 
                 # if we use ssh pass we want to skip the preamble before sending back ouput
                 if self.use_ssh_pass and self.output_start_line != -1:  # if -1 it's the call to get preamble so return whole output
-                    output = output[self.output_start_line:]
+                    output = output[self.output_start_line :]
                 return output
 
             except Exception as e:
@@ -224,13 +245,14 @@ class SSHConnection:
 
     def _send(self, cmd: str, timeout: int = 30) -> str:
         """
-        Sends the given cmd with the given timeout
+        Sends the given command with the specified timeout.
+
         Args:
-            cmd: the command to send
-            timeout: the timeout
+            cmd (str): The command to send.
+            timeout (int): The timeout in seconds for command execution.
 
-        Returns: the output
-
+        Returns:
+            str: The output of the command.
         """
         get_logger().log_ssh(cmd)
 
@@ -241,19 +263,20 @@ class SSHConnection:
         output = stdout.readlines()
 
         for line in output:
-            clean_line = line.rstrip('\n')
+            clean_line = line.rstrip("\n")
             get_logger().log_ssh(clean_line)
 
         return output
 
     def _send_as_sudo(self, cmd: str) -> str:
         """
-        This function will send the command specified as sudo and answer the password prompt.
+        Sends the specified command using sudo and handles the password prompt.
+
         Args:
-            cmd: The command to be executed. "sudo cmd"
+            cmd (str): The command to execute with sudo.
 
-        Returns (str): The output of the command.
-
+        Returns:
+            str: The output of the command.
         """
         # Deliberately skipping the "P" in the password as some prompts have
         # different cases
@@ -264,17 +287,17 @@ class SSHConnection:
 
     def _send_expect_prompts(self, cmd: str, prompts: List[PromptResponse], timeout: int = 30) -> str:
         """
-        This function will send the cmd specified and wait for the specified prompts in order.
+        Send the command and wait for the specified prompts in order.
+
         Args:
-            cmd (str): The command to execute
-            prompts (list[PromptResponse]): An ordered list of prompts that we expect and the
-                                            associated responses
-            timeout (int): Timeout waiting for the output of our command
+            cmd (str): The command to execute.
+            prompts (List[PromptResponse]): An ordered list of prompts we expect and
+                the associated responses.
+            timeout (int): Timeout in seconds to wait for each prompt.
 
-        Returns (str): The SSH output generated before the last prompt.
-                       If there are intermediate prompts, it will return the output between the
-                       last two prompts
-
+        Returns:
+            str: The SSH output generated before the last prompt. If there are
+            intermediate prompts, returns the output between the last two prompts.
         """
         if not prompts or len(prompts) < 1:
             raise ValueError("You must specify a list with at least one prompt to call this " "function. Otherwise, please call 'send' instead.")
@@ -296,11 +319,11 @@ class SSHConnection:
                 code, output_buffer = self.__read_from_channel(channel, timeout)
 
                 if code != 0:
-                    print("Failed to match prompt of {}".format(prompt.get_prompt_substring()))
+                    get_logger().log_warning(f"Failed to match prompt of {prompt.get_prompt_substring()}")
                     break
 
                 # Log the current console output.
-                print(output_buffer, end="")
+                get_logger().log_info(output_buffer.rstrip())
 
                 # Add the currently read buffer to the output
                 output_since_last_prompt += output_buffer
@@ -317,42 +340,45 @@ class SSHConnection:
 
         # output is a long string, break into list using line breaks but add back the line break as it's needed
         # for table parsing
-        output_list = [line + '\n' for line in complete_output.split('\n') if line]
+        output_list = [line + "\n" for line in complete_output.split("\n") if line]
 
         return output_list
 
-    def __send_in_channel(self, ssh_channel, cmd: str):
+    def __send_in_channel(self, ssh_channel: paramiko.Channel, cmd: str) -> None:
         """
-        Given a channel that was opened via self.client.invoke_shell(), this function
-        will send the 'cmd' specified to the channel.
+        Send a command through the given SSH channel.
+
+        This method assumes the channel was opened via `invoke_shell()` and waits
+        until the channel is ready before sending the command.
+
         Args:
-            ssh_channel: The ssh channel obtained from self.client.invoke_shell()
-            cmd: The command to send through the channel.
-
-        Returns: None
-
+            ssh_channel (paramiko.Channel): The SSH channel obtained from
+                `self.client.invoke_shell()`.
+            cmd (str): The command to send.
         """
-
         while not ssh_channel.send_ready():
             time.sleep(0.009)  # Avoid spamming the channel. Value taken from paramiko-expect.
-        print(cmd)
+        get_logger().log_info(f"Sending command: {cmd}")
         ssh_channel.send(cmd)
         ssh_channel.send("\n")
 
-    def __read_from_channel(self, ssh_channel, timeout: int) -> (int, str):
+    def __read_from_channel(self, ssh_channel: paramiko.Channel, timeout: int) -> tuple[int, str]:
         """
-        Given a channel that was opened via self.client.invoke_shell(), this function
-        will read data returned from the channel.
+        Read data from an SSH channel opened via `invoke_shell()`.
+
+        Waits for the channel to be ready and reads the output. Times out if no
+        response is received in the given number of seconds.
+
         Args:
-            ssh_channel: The ssh channel obtained from self.client.invoke_shell()
-            timeout (int): The amount of time in seconds to wait for a response from the channel.
+            ssh_channel (paramiko.Channel): The SSH channel obtained from
+                `self.client.invoke_shell()`.
+            timeout (int): Time in seconds to wait for a response.
 
-        Returns (int, str): Tuple(Return Code, Channel String Output)
-            ---- Return Code; 0 is Success, -1 is timeout of connection closed.
-            ---- String output sent from the channel.
-
+        Returns:
+            tuple[int, str]: A tuple of return code and string output.
+                - Return code: 0 on success, -1 on timeout or connection closed.
+                - Output: The response string read from the SSH channel.
         """
-
         # Setup Variables
         decoder = codecs.getincrementaldecoder("utf-8")()
         base_time = time.time()
@@ -361,7 +387,7 @@ class SSHConnection:
         while not ssh_channel.recv_ready():
             time.sleep(0.009)  # Avoid spamming the channel. Value taken from paramiko-expect.
             if time.time() >= (base_time + timeout):
-                print('Timeout Exceeded waiting for SSH output to return: {}s'.format(timeout))
+                get_logger().log_warning("SSH output read timed out — buffer may be incomplete or prompt unmatched.")
                 return -1, "Timeout Exceeded"
 
         # Read some of the output
@@ -369,49 +395,57 @@ class SSHConnection:
 
         # If we have an empty buffer, then the SSH session has been closed
         if len(current_buffer) == 0:
-            print('SSH Connection has been closed')
+            get_logger().log_warning("SSH session closed: received empty buffer from remote channel")
             return -1, "Connection has been closed"
 
         # Convert the buffer to our chosen encoding
         current_buffer_decoded = decoder.decode(current_buffer)
 
         # Strip all ugly \r (Ctrl-M making) characters from the current read
-        current_buffer_decoded = current_buffer_decoded.replace('\r', '')
+        current_buffer_decoded = current_buffer_decoded.replace("\r", "")
 
         return 0, current_buffer_decoded
 
     def get_return_code(self) -> str:
         """
-        This function will return the last return code captured by this SSH connection.
-        Returns: the last return code captured by this SSH connection.
+        Return the last return code captured by this SSH connection.
 
+        Returns:
+            str: The last return code from the most recent SSH command.
         """
         return self.last_return_code
 
-    def close(self):
+    def close(self) -> None:
         """
-        Closes the connection
-        Returns:
+        Close the SSH connection.
 
+        This shuts down the underlying Paramiko SSH client.
+
+        Returns:
+            None:
         """
         self.client.close()
 
     def get_name(self) -> str:
         """
-        Getter for the name
-        Returns: the name
+        Get the name of this SSH connection.
 
+        Returns:
+            str: The name of the connection.
         """
         return self.name
 
     def get_sftp_client(self, reconnect_timeout: int = 600) -> SFTPClient:
         """
-        Getter for sftp client for us in file operations
+        Get an SFTP client for file operations.
+
+        Retries the connection for up to `reconnect_timeout` seconds if disconnected.
+
         Args:
-            reconnect_timeout (): the reconnect timeout
+            reconnect_timeout (int): The number of seconds to retry connecting.
 
-        Returns: the sftp_client
-
+        Returns:
+            SFTPClient: A Paramiko SFTP client for performing file operations.
         """
         timeout = time.time() + reconnect_timeout
         refresh_timeout = 5
@@ -433,16 +467,17 @@ class SSHConnection:
 
         return sftp_client
 
-    def setup_ssh_pass(self, host_name: str, host_user_name: str, host_password: str):
+    def setup_ssh_pass(self, host_name: str, host_user_name: str, host_password: str) -> None:
         """
-        Sets up the connection to use ssh pass
+        Set up the connection to use sshpass for remote authentication.
+
+        Stores SSH credentials and calculates the starting line number to strip
+        connection preamble in subsequent SSH commands.
+
         Args:
-            host_name (): the name of the host to use ssh pass on
-            host_user_name (): the user name to use
-            host_password (): the password to use
-
-        Returns:
-
+            host_name (str): The host to use sshpass on.
+            host_user_name (str): The username for SSH authentication.
+            host_password (str): The password for SSH authentication.
         """
         # setup this ssh connection with ssh pass parameters
         self.use_ssh_pass = True
@@ -451,22 +486,25 @@ class SSHConnection:
         self.ssh_pass_password = host_password
 
         # get preamble so we can parse it out
-        output = self.send('\n')
+        output = self.send("\n")
         self.output_start_line = len(output)
 
-    def get_ssh_pass_str(self):
+    def get_ssh_pass_str(self) -> str:
         """
-        Returns the str needed to wrap calls with ssh pass
-        Returns: the str for wrapping ssh pass calss
+        Return the SSH pass command string.
 
+        This wraps SSH calls with `sshpass` to support automated password-based login.
+
+        Returns:
+            str: The formatted SSH pass command string.
         """
         return f"sshpass -p '{self.ssh_pass_password}' ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null {self.ssh_pass_username}@{self.ssh_pass_host}"
 
-    def __str__(self):
+    def __str__(self) -> str:
         """
-        Overwrites the default string representation.
+        Return the string representation of this connection.
 
-        Returns: String representation of this connection.
-
+        Returns:
+            str: A string identifying this SSH connection.
         """
         return f"ssh_con:{self.name}"
