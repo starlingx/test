@@ -18,40 +18,35 @@ class KubectlDeleteServiceAccountKeywords(BaseKeyword):
         """
         self.ssh_connection = ssh_connection
 
-    def delete_serviceaccount(self, serviceaccount_name: str, nspace: str = None) -> str:
+    def delete_serviceaccount(self, serviceaccount_name: str, namespace: str = None):
         """
         Deletes the specified Kubernetes service account.
 
         Args:
             serviceaccount_name (str): The name of the service account to delete.
-            nspace (str, optional): The namespace of the service account. Defaults to None.
-
-        Returns:
-            str: The output of the kubectl delete command.
+            namespace (str, optional): The namespace of the service account. Defaults to None.
         """
         args = ""
-        if nspace:
-            args += f" -n {nspace} "
+        if namespace:
+            args += f" -n {namespace} "
         args += f"{serviceaccount_name}"
-        output = self.ssh_connection.send(export_k8s_config(f"kubectl delete serviceaccount {args}"))
+        self.ssh_connection.send(export_k8s_config(f"kubectl delete serviceaccount {args}"))
         self.validate_success_return_code(self.ssh_connection)
 
-        return output
-
-    def cleanup_serviceaccount(self, serviceaccount_name: str, nspace: str = None) -> str:
+    def cleanup_serviceaccount(self, serviceaccount_name: str, namespace: str = None) -> int:
         """
-        Deletes a Kubernetes ServiceAccount,method is used for cleanup purposes.
+        Deletes a Kubernetes ServiceAccount. This method is used for cleanup purposes.
 
         Args:
             serviceaccount_name (str): The name of the ServiceAccount to delete.
-            nspace (str, optional): The namespace of the ServiceAccount. Defaults to None.
+            namespace (str, optional): The namespace of the ServiceAccount. Defaults to None.
 
         Returns:
-            str: The output of the command.
+            int: The return code of the kubectl delete command.
         """
         args = ""
-        if nspace:
-            args += f" -n {nspace} "
+        if namespace:
+            args += f" -n {namespace} "
         args += f"{serviceaccount_name}"
         self.ssh_connection.send(export_k8s_config(f"kubectl delete serviceaccount {args}"))
         rc = self.ssh_connection.get_return_code()

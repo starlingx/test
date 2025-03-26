@@ -2,6 +2,8 @@ import time
 from typing import List
 
 import selenium
+from selenium import webdriver
+
 from config.configuration_manager import ConfigurationManager
 from framework.logging.automation_logger import get_logger
 from framework.web.action.web_action_click import WebActionClick
@@ -11,7 +13,6 @@ from framework.web.condition.web_condition import WebCondition
 from framework.web.condition.web_condition_text_equals import WebConditionTextEquals
 from framework.web.web_action_executor import WebActionExecutor
 from framework.web.web_locator import WebLocator
-from selenium import webdriver
 
 
 class WebDriverCore:
@@ -57,6 +58,7 @@ class WebDriverCore:
             is_navigation_success = True
 
         timeout = time.time() + 30
+        reload_attempt_timeout = 2
         while not is_navigation_success and time.time() < timeout:
 
             for condition in conditions:
@@ -66,9 +68,10 @@ class WebDriverCore:
 
             if not is_navigation_success:
                 get_logger().log_debug(f"Failed to load page with URL: {url}")
-                get_logger().log_debug("Sleep for 2 seconds and try reloading the page.")
-                time.sleep(2)
+                get_logger().log_debug(f"Reload page and sleep for {reload_attempt_timeout} seconds ")
                 self.driver.get(url)
+                time.sleep(reload_attempt_timeout)
+                reload_attempt_timeout += 2
 
         if is_navigation_success:
             get_logger().log_debug(f"Navigation to {url} successful.")
