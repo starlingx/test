@@ -1,4 +1,5 @@
 import codecs
+import re
 import time
 from typing import List
 
@@ -401,6 +402,10 @@ class SSHConnection:
         # Convert the buffer to our chosen encoding
         current_buffer_decoded = decoder.decode(current_buffer)
 
+        # Strip ANSI escape sequences added by shell commands like sudo or colored prompts
+        # These sequences are common in interactive `invoke_shell()` sessions
+        current_buffer_decoded = self._strip_ansi_sequences(current_buffer_decoded)
+
         # Strip all ugly \r (Ctrl-M making) characters from the current read
         current_buffer_decoded = current_buffer_decoded.replace("\r", "")
 
@@ -508,3 +513,25 @@ class SSHConnection:
             str: A string identifying this SSH connection.
         """
         return f"ssh_con:{self.name}"
+
+    @staticmethod
+    def _strip_ansi_sequences(text: str) -> str:
+        """
+        Remove ANSI escape sequences from a string.
+
+        This is a commonly used regular expression for matching ANSI terminal
+        control codes (e.g., color codes, cursor movement, etc.). These are
+        typically found in output from interactive shell commands.
+
+        Regex pattern adapted from:
+        - https://stackoverflow.com/a/14693789
+        - https://github.com/chalk/ansi-regex/blob/main/index.js
+
+        Args:
+            text (str): A string that may contain ANSI escape sequences.
+
+        Returns:
+            str: Cleaned string without ANSI sequences.
+        """
+        ansi_escape_pattern = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
+        return ansi_escape_pattern.sub("", text)
