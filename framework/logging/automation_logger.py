@@ -24,6 +24,7 @@ class AutomationLogger(logging.getLoggerClass()):
         super().__init__(name, level)
         self.log_folder = None
         self.test_case_log_dir = None
+        self._step_counter = 0 # for use in test case step
 
     def log(self, level, message, *args, **kwargs):
         """
@@ -111,6 +112,25 @@ class AutomationLogger(logging.getLoggerClass()):
 
         """
         return self.test_case_log_dir
+
+    def reset_step_counter(self) -> None:
+        """Reset the test step counter at the beginning of each test case."""
+        self._step_counter = 0
+
+    def log_test_case_step(self, description: str, numbered: bool = True) -> None:
+        """
+        Log a test step with optional automatic numbering and a distinct 'TST' source.
+
+        Args:
+            description (str): A short description of the test step.
+            numbered (bool): Whether to auto-increment and include the step number.
+        """
+        if numbered:
+            self._step_counter += 1
+            message = f"Test Step {self._step_counter}: {description}"
+        else:
+            message = f"Test Step: {description}"
+        self._log(logging.INFO, message, None, stacklevel=2, extra={'source': 'TST'})
 
 
 @staticmethod
