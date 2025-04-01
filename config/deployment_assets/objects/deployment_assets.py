@@ -32,7 +32,7 @@ class DeploymentAssets:
         Returns (str): boostrap_file
 
         """
-        return self.bootstrap_file
+        return self.bootstrap_file.strip()
 
     def get_deployment_config_file(self) -> str:
         """
@@ -41,7 +41,7 @@ class DeploymentAssets:
         Returns (str): deployment_config_file
 
         """
-        return self.deployment_config_file
+        return self.deployment_config_file.strip()
 
     def get_install_file(self) -> str:
         """
@@ -50,4 +50,4 @@ class DeploymentAssets:
         Returns (str): install_file
 
         """
-        return self.install_file
+        return self.install_file.strip()
