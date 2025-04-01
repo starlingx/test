@@ -170,3 +170,20 @@ class DcManagerSubcloudListOutput:
             raise ValueError(error_message)
 
         return subclouds[0]
+
+    def is_subcloud_in_output(self, subcloud_name: str) -> bool:
+        """
+        Checks if a subcloud is in the output of 'dcmanager subcloud list' command.
+
+        Args:
+            subcloud_name (str): The name of the subcloud to check.
+
+        Returns:
+            bool: True if the subcloud is in the output, False otherwise.
+
+        """
+        dcmanager_subcloud_list_object_filter = DcManagerSubcloudListObjectFilter()
+        dcmanager_subcloud_list_object_filter.set_name(subcloud_name)
+        subclouds = self.get_dcmanager_subcloud_list_objects_filtered(dcmanager_subcloud_list_object_filter)
+
+        return bool(subclouds)

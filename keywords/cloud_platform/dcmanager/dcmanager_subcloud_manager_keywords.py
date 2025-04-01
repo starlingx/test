@@ -7,6 +7,7 @@ from keywords.cloud_platform.command_wrappers import source_openrc
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_list_keywords import DcManagerSubcloudListKeywords
 from keywords.cloud_platform.dcmanager.objects.dcmanager_subcloud_list_object_filter import DcManagerSubcloudListObjectFilter
 from keywords.cloud_platform.dcmanager.objects.dcmanager_subcloud_manage_output import DcManagerSubcloudManageOutput
+from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 
 
 class DcManagerSubcloudManagerKeywords(BaseKeyword):
@@ -19,7 +20,7 @@ class DcManagerSubcloudManagerKeywords(BaseKeyword):
         """
         Constructor
         Args:
-            ssh_connection: The SSH connection to the central subcloud.
+            ssh_connection (SSHConnection): The SSH connection to the central subcloud.
         """
         self.ssh_connection = ssh_connection
 
@@ -38,7 +39,7 @@ class DcManagerSubcloudManagerKeywords(BaseKeyword):
             'dcmanager subcloud manage <subcloud_name>' if successful, or None otherwise.
 
         """
-        return self._get_dcmanager_subcloud_operation(subcloud_name, timeout, 'manage')
+        return self._get_dcmanager_subcloud_operation(subcloud_name, timeout, "manage")
 
     def get_dcmanager_subcloud_unmanage(self, subcloud_name: str, timeout: int) -> DcManagerSubcloudManageOutput:
         """
@@ -55,7 +56,7 @@ class DcManagerSubcloudManagerKeywords(BaseKeyword):
             'dcmanager subcloud unmanage <subcloud_name>' if successful, or None otherwise.
 
         """
-        return self._get_dcmanager_subcloud_operation(subcloud_name, timeout, 'unmanage')
+        return self._get_dcmanager_subcloud_operation(subcloud_name, timeout, "unmanage")
 
     def _get_dcmanager_subcloud_operation(self, subcloud_name: str, end_time: int, operation: str) -> DcManagerSubcloudManageOutput:
         """
@@ -73,12 +74,12 @@ class DcManagerSubcloudManagerKeywords(BaseKeyword):
             'dcmanager subcloud <operation> <subcloud_name>' if successful, or None otherwise.
 
         """
-        target_state = 'managed'
-        if operation == 'unmanage':
-            target_state = 'unmanaged'
+        target_state = "managed"
+        if operation == "unmanage":
+            target_state = "unmanaged"
 
         # This section is responsible for changing the state of the subcloud to 'managed' or 'unmanaged'.
-        output = self.ssh_connection.send(source_openrc(f'dcmanager subcloud {operation} {subcloud_name}'))
+        output = self.ssh_connection.send(source_openrc(f"dcmanager subcloud {operation} {subcloud_name}"))
         self.validate_success_return_code(self.ssh_connection)
         dcmanager_subcloud_manage_output = DcManagerSubcloudManageOutput(output)
 
@@ -95,6 +96,41 @@ class DcManagerSubcloudManagerKeywords(BaseKeyword):
                 return dcmanager_subcloud_manage_output
             time.sleep(5)
 
+        error_message = f"Failed to change the state of subcloud '{subcloud_name}' to '{target_state}'."
+        get_logger().log_error(error_message)
+        raise TimeoutError(error_message)
+
+    def set_subcloud_poweroff(self, subcloud_name: str, timeout: int = 600) -> bool:
+        """Does the power off of the subcloud
+
+        Args:
+            subcloud_name (str): The name of the subcloud to be powered off.
+            timeout (int): The maximum time, in seconds, to wait for the subcloud to enter the 'offline' state.
+
+        Returns:
+            bool: True if the subcloud is successfully powered off and its state is 'offline', False otherwise.
+        Raises: TimeoutError
+        """
+        # get SSH connection to subcloud
+        subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
+        # power off the subcloud
+        # TODO find a better way to do it. as DC libvirt has no IPMI , To make work for both
+        # labs and virtual labs we need to find a way to power off the subcloud
+        subcloud_ssh.send_as_sudo("shutdown -h now")
+        self.validate_success_return_code(subcloud_ssh)
+
+        # This section is responsible for verifying whether the state has changed within a defined timeout.
+        target_state = "offline"
+        end_time = time.time() + timeout
+        while time.time() < end_time:
+            dcm_sc_list_kw = DcManagerSubcloudListKeywords(self.ssh_connection)
+            subclouds_list = dcm_sc_list_kw.get_dcmanager_subcloud_list()
+            subclouds = subclouds_list.get_dcmanager_subcloud_list_objects()
+            for sc in subclouds:
+                if sc.get_name() == subcloud_name and sc.get_availability() == target_state:
+                    return True
+            # If the subcloud is not in the list or its availability is not 'offline', wait and check again
+            time.sleep(5)
         error_message = f"Failed to change the state of subcloud '{subcloud_name}' to '{target_state}'."
         get_logger().log_error(error_message)
         raise TimeoutError(error_message)
