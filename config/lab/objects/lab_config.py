@@ -220,7 +220,7 @@ class LabConfig:
             List[Node]: List of compute nodes
         """
         nodes = self.get_nodes()
-        computes = [node for node in nodes if node.node_type == "Compute"]
+        computes = [node for node in nodes if node.node_type == "worker"]
         return computes
 
     def get_compute(self, compute_name: str) -> Optional[Node]:
