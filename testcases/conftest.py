@@ -64,6 +64,8 @@ def pytest_runtest_setup(item: Any):
         item(Any): The test case item that we are about to execute.
 
     """
+    # Reset test step counter for this test case
+    get_logger().reset_step_counter()
     # add testcase log handler at test start
     configure_testcase_log_handler(ConfigurationManager.get_logger_config(), item.name)
     log_banners.log_test_start_banner(item)
