@@ -187,3 +187,27 @@ class DcManagerSubcloudListOutput:
         subclouds = self.get_dcmanager_subcloud_list_objects_filtered(dcmanager_subcloud_list_object_filter)
 
         return bool(subclouds)
+
+    def get_lower_id_async_subcloud(self) -> DcManagerSubcloudListObject:
+        """"
+        Gets an instance of DcManagerSubcloudListObject with the lowest ID and that satisfies the criteria:
+            _ Managed;
+            _ Online;
+            _ Deploy completed;
+            _ out-of-sync
+
+        Returns:
+            DcManagerSubcloudListObject: the instance of DcManagerSubcloudListObject with the lowest ID that satisfies
+            the above criteria.
+
+        """
+        dcmanager_subcloud_list_obj_filter = DcManagerSubcloudListObjectFilter.get_out_of_sync_subcloud_filter()
+        subclouds = self.get_dcmanager_subcloud_list_objects_filtered(
+            dcmanager_subcloud_list_obj_filter)
+
+        if not subclouds:
+            error_message = "In this DC system, there is no subcloud managed, online, deploy completed, and out-of-sync."
+            get_logger().log_exception(error_message)
+            raise ValueError(error_message)
+
+        return min(subclouds, key=lambda subcloud: int(subcloud.get_id()))
