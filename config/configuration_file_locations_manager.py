@@ -10,6 +10,7 @@ class ConfigurationFileLocationsManager:
 
     def __init__(self):
         self.lab_config_file = None
+        self.deployment_assets_config_file = None
         self.k8s_config_file = None
         self.ptp_config_file = None
         self.logger_config_file = None
@@ -34,6 +35,10 @@ class ConfigurationFileLocationsManager:
         lab_config_file = session.config.getoption("--lab_config_file")
         if lab_config_file:
             self.set_lab_config_file(lab_config_file)
+
+        deployment_assets_config_file = session.config.getoption("--deployment_assets_config_file")
+        if deployment_assets_config_file:
+            self.set_deployment_assets_config_file(deployment_assets_config_file)
 
         k8s_config_file = session.config.getoption("--k8s_config_file")
         if k8s_config_file:
@@ -93,6 +98,10 @@ class ConfigurationFileLocationsManager:
         if lab_config_file:
             self.set_lab_config_file(lab_config_file)
 
+        deployment_assets_config_file = options.deployment_assets_config_file
+        if deployment_assets_config_file:
+            self.set_deployment_assets_config_file(deployment_assets_config_file)
+
         k8s_config_file = options.k8s_config_file
         if k8s_config_file:
             self.set_k8s_config_file(k8s_config_file)
@@ -149,6 +158,14 @@ class ConfigurationFileLocationsManager:
             type="str",
             dest="lab_config_file",
             help="the lab file used for scanning",
+        )
+
+        parser.add_option(
+            "--deployment_assets_config_file",
+            action="store",
+            type="str",
+            dest="deployment_assets_config_file",
+            help="The location of the files used to deploy the lab",
         )
 
         parser.add_option(
@@ -255,6 +272,27 @@ class ConfigurationFileLocationsManager:
 
         """
         return self.lab_config_file
+
+    def set_deployment_assets_config_file(self, deployment_assets_config_file: str):
+        """
+        Setter for deployment assets config file.
+
+        Args:
+            deployment_assets_config_file (str): the location of the deployment assets config file
+
+        Returns: None
+
+        """
+        self.deployment_assets_config_file = deployment_assets_config_file
+
+    def get_deployment_assets_config_file(self) -> str:
+        """
+        Getter for deployment assets config file.
+
+        Returns: the deployment assets config file.
+
+        """
+        return self.deployment_assets_config_file
 
     def set_k8s_config_file(self, k8s_config_file: str):
         """

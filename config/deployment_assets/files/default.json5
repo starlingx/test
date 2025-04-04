@@ -1,0 +1,27 @@
+{
+
+	// This config file keeps track of the location of the Installation / Boostrap config files
+	// used to deploy the lab (and its subclouds, if any)
+	// All the files are assumed to be stored on the Central Cloud in the case of a DC system.
+
+	"controller" : {
+		deployment_config_file: "/home/sysadmin/deployment-config.yaml",
+	},
+
+	"subclouds" : {
+
+		"subcloud1": {
+			bootstrap_file: "/home/sysadmin/subcloud1/subcloud1-bootstrap-values.yaml",
+			deployment_config_file: "/home/sysadmin/subcloud1/subcloud1-deploy-standard.yaml",
+			install_file: "/home/sysadmin/subcloud1/subcloud1-install-values.yaml"
+		},
+
+		"subcloud2": {
+			bootstrap_file: "/home/sysadmin/subcloud2/subcloud2-bootstrap-values.yaml",
+			deployment_config_file: "/home/sysadmin/subcloud2/subcloud2-deploy-standard.yaml",
+			install_file: "/home/sysadmin/subcloud2/subcloud2-install-values.yaml"
+		},
+
+	},
+
+}

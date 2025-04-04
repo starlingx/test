@@ -16,6 +16,7 @@ def pytest_addoption(parser: Any):
 
     """
     parser.addoption("--lab_config_file", action="store")
+    parser.addoption("--deployment_assets_config_file", action="store")
     parser.addoption("--k8s_config_file", action="store")
     parser.addoption("--ptp_config_file", action="store")
     parser.addoption("--logger_config_file", action="store")
