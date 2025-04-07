@@ -26,6 +26,7 @@ Contents
    :maxdepth: 1
 
    ssh/index
+   logging/index
 
 Directory Structure
 ===================
