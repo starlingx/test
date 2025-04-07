@@ -24,3 +24,22 @@ def test_delete_and_add_all_ptp_configuration():
     ptp_setup_template_path = get_stx_resource_path("resources/ptp/setup/ptp_setup_template.json5")
     ptp_setup_keywords = PTPSetupExecutorKeywords(ssh_connection, ptp_setup_template_path)
     ptp_setup_keywords.add_all_ptp_configurations()
+
+
+@mark.p0
+@mark.lab_has_compute
+def test_delete_and_add_all_ptp_configuration_for_compute():
+    """
+    Delete and Add all PTP configurations
+    """
+    lab_connect_keywords = LabConnectionKeywords()
+    ssh_connection = lab_connect_keywords.get_active_controller_ssh()
+
+    get_logger().log_info("Delete all PTP configuration")
+    ptp_teardown_keywords = PTPTeardownExecutorKeywords(ssh_connection)
+    ptp_teardown_keywords.delete_all_ptp_configurations()
+
+    get_logger().log_info("Add all PTP configuration")
+    ptp_setup_template_path = get_stx_resource_path("resources/ptp/setup/ptp_setup_template_with_compute.json5")
+    ptp_setup_keywords = PTPSetupExecutorKeywords(ssh_connection, ptp_setup_template_path)
+    ptp_setup_keywords.add_all_ptp_configurations()

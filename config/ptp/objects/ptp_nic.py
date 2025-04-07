@@ -30,6 +30,8 @@ class PTPNic:
         self.nic_connection = None
         self.conn_to_spirent = None
         self.spirent_port = None
+        self.conn_to_proxmox = None
+        self.proxmox_port = None
 
         if "gpio_switch_port" in nic_dict and nic_dict["gpio_switch_port"]:
             self.gpio_switch_port = nic_dict["gpio_switch_port"]
@@ -48,6 +50,12 @@ class PTPNic:
 
         if "spirent_port" in nic_dict and nic_dict["spirent_port"]:
             self.spirent_port = nic_dict["spirent_port"]
+
+        if "conn_to_proxmox" in nic_dict and nic_dict["conn_to_proxmox"]:
+            self.conn_to_proxmox = nic_dict["conn_to_proxmox"]
+
+        if "proxmox_port" in nic_dict and nic_dict["proxmox_port"]:
+            self.proxmox_port = nic_dict["proxmox_port"]
 
     def __str__(self):
         """
@@ -100,6 +108,8 @@ class PTPNic:
             "nic_connection": nic_connection_dict,
             "conn_to_spirent": self.conn_to_spirent,
             "spirent_port": self.spirent_port,
+            "conn_to_proxmox": self.conn_to_proxmox,
+            "proxmox_port": self.proxmox_port,
         }
         return ptp_nic_dictionary
 
@@ -243,3 +253,21 @@ class PTPNic:
             The Spirent port.
         """
         return self.spirent_port
+
+    def get_conn_to_proxmox(self) -> str:
+        """
+        Gets the connection to proxmox.
+
+        Returns (str):
+            The connection to proxmox.
+        """
+        return self.conn_to_proxmox
+
+    def get_proxmox_port(self) -> str:
+        """
+        Gets the proxmox port.
+
+        Returns (str):
+            The proxmox port.
+        """
+        return self.proxmox_port

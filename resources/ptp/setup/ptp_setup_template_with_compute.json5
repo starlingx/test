@@ -5,7 +5,7 @@
 
       {
         name: "ptp1",
-        instance_hostnames : ["controller-0", "controller-1"] ,
+        instance_hostnames : ["controller-0", "controller-1","compute-0"] ,
         instance_parameters: "tx_timestamp_timeout=700 domainNumber=24 dataset_comparison=G.8275.x priority2=100 boundary_clock_jbod=1",
         ptp_interface_names: [
           "ptp1if1",
@@ -49,8 +49,8 @@
 
         {
           name: "phc1",
-          instance_hostnames : ["controller-0", "controller-1"],
-          instance_parameters: "cmdline_opts='-s {{controller_0.nic1.conn_to_spirent}} -O -37 -m'",
+          instance_hostnames : ["controller-0", "controller-1","compute-0"],
+          instance_parameters: "cmdline_opts='-s {{controller_0.nic1.conn_to_proxmox}} -O -37 -m'",
           ptp_interface_names: [
             "phc1if1",
           ],
@@ -120,13 +120,15 @@
       name: "ptp1if1",
       controller_0_interfaces: ["{{ controller_0.nic1.nic_connection.interface }}"], // Connection to controller1-nic1
       controller_1_interfaces: ["{{ controller_1.nic1.nic_connection.interface }}"], // Connection to controller0-nic1
+      compute_0_interfaces: [],
       ptp_interface_parameter : "",
     },
 
     {
       name: "ptp1if2",
-      controller_0_interfaces: ["{{ controller_0.nic1.conn_to_spirent }}"],
-      controller_1_interfaces: ["{{ controller_1.nic1.conn_to_spirent }}"],
+      controller_0_interfaces: ["{{ controller_0.nic1.conn_to_proxmox }}"],
+      controller_1_interfaces: ["{{ controller_1.nic1.conn_to_proxmox }}"],
+      compute_0_interfaces: [],
       ptp_interface_parameter : "",
     },
 
@@ -134,6 +136,7 @@
      name: "ptp2if1",
      controller_0_interfaces: [],
      controller_1_interfaces: [],
+     compute_0_interfaces: [],
      ptp_interface_parameter : "",
     },
 
@@ -141,6 +144,7 @@
      name: "ptp2if2",
      controller_0_interfaces: [],
      controller_1_interfaces: [],
+     compute_0_interfaces: [],
      ptp_interface_parameter : "",
     },
 
@@ -148,13 +152,15 @@
      name: "ptp3if1",
      controller_0_interfaces: ["{{ controller_0.nic2.nic_connection.interface }}"], // Connection to Controller1 Nic 2
      controller_1_interfaces: [],
+     compute_0_interfaces: [],
      ptp_interface_parameter : "",
     },
 
    {
      name: "ptp3if2",
-     controller_0_interfaces: ["{{ controller_0.nic2.conn_to_spirent }}"],
+     controller_0_interfaces: ["{{ controller_0.nic2.conn_to_proxmox }}"],
      controller_1_interfaces: [],
+     compute_0_interfaces: [],
      ptp_interface_parameter : "",
     },
 
@@ -162,13 +168,15 @@
      name: "ptp4if1",
      controller_0_interfaces: [],
      controller_1_interfaces: ["{{ controller_0.nic2.nic_connection.interface  }}"], // Connection to Controller1 Nic 2
+     compute_0_interfaces: [],
      ptp_interface_parameter : "",
     },
 
    {
      name: "ptp4if2",
      controller_0_interfaces: [],
-     controller_1_interfaces: ["{{ controller_1.nic2.conn_to_spirent }}"],
+     controller_1_interfaces: ["{{ controller_1.nic2.conn_to_proxmox }}"],
+     compute_0_interfaces: [],
      ptp_interface_parameter : "",
     },
 
@@ -176,6 +184,7 @@
      name: "phc1if1",
      controller_0_interfaces: [],
      controller_1_interfaces: [],
+     compute_0_interfaces: [],
      ptp_interface_parameter : "",
     },
 
@@ -183,6 +192,7 @@
      name: "phc2if1",
      controller_0_interfaces: [],
      controller_1_interfaces: [],
+     compute_0_interfaces: [],
      ptp_interface_parameter : "",
     },
 
@@ -190,6 +200,7 @@
      name: "phc3if1",
      controller_0_interfaces: [],
      controller_1_interfaces: [],
+     compute_0_interfaces: [],
      ptp_interface_parameter : "",
     },
 
@@ -197,20 +208,23 @@
      name: "phc4if1",
      controller_0_interfaces: [],
      controller_1_interfaces: ["{{ controller_1.nic1.base_port }}", "{{ controller_1.nic2.base_port }}"],
+     compute_0_interfaces: [],
      ptp_interface_parameter :"",
     },
 
    {
      name: "ts1if1",
-     controller_0_interfaces: ["{{ controller_0.nic1.conn_to_spirent }}", "{{ controller_0.nic2.base_port }}"],
+     controller_0_interfaces: ["{{ controller_0.nic1.conn_to_proxmox }}", "{{ controller_0.nic2.base_port }}"],
      controller_1_interfaces: [],
+     compute_0_interfaces: [],
      ptp_interface_parameter : "",
     },
 
    {
      name: "clock1if1",
-     controller_0_interfaces: ["{{ controller_0.nic1.conn_to_spirent }}"],
+     controller_0_interfaces: ["{{ controller_0.nic1.conn_to_proxmox }}"],
      controller_1_interfaces: [],
+     compute_0_interfaces: [],
      ptp_interface_parameter : "sma1={{ controller_0.nic1.sma1.name }}",
     },
 
@@ -218,6 +232,7 @@
      name: "clock1if2",
      controller_0_interfaces: ["{{ controller_0.nic2.base_port }}"],
      controller_1_interfaces: [],
+     compute_0_interfaces: [],
      ptp_interface_parameter : "sma1={{ controller_0.nic2.sma1.name }}",
     },
   ],
