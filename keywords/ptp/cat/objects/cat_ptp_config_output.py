@@ -9,7 +9,7 @@ from keywords.ptp.cat.objects.transport_options_output import TransportOptionsOu
 
 class CATPtpConfigOutput:
     """
-    This class parses the output of command cat ' /etc/linuxptp/ptp4l.conf'
+    This class parses the output of command cat ' /etc/linuxptp/ptpinstance/ptp4l.conf'
 
     Example:
         [global]
@@ -147,15 +147,15 @@ class CATPtpConfigOutput:
 
         in_header = False
         in_body = False
-        config_object = ''
+        config_object = ""
         body_str = []
         for line in cat_config_output:
-            if not in_header and line == '#\n':
+            if not in_header and line == "#\n":
                 self.create_config_object(config_object, body_str)
                 in_header = True
-            elif in_header and line != '#\n':
+            elif in_header and line != "#\n":
                 config_object = line.strip()
-            elif line == '#\n' and in_header:  # we are exiting the header
+            elif line == "#\n" and in_header:  # we are exiting the header
                 in_header = False
                 in_body = True
                 # reset the body str
@@ -175,19 +175,19 @@ class CATPtpConfigOutput:
         Returns:
 
         """
-        if 'Default Data Set' in config_object:
+        if "Default Data Set" in config_object:
             self.data_set_output = DefaultDataSetOutput(body_str)
-        if 'Port Data Set' in config_object:
+        if "Port Data Set" in config_object:
             self.port_data_set_output = PortDataSetOutput(body_str)
-        if 'Run time options' in config_object:
+        if "Run time options" in config_object:
             self.run_time_options_output = RunTimeOptionsOutput(body_str)
-        if 'Servo Options' in config_object:
+        if "Servo Options" in config_object:
             self.servo_options_output = ServoOptionsOutput(body_str)
-        if 'Transport options' in config_object:
+        if "Transport options" in config_object:
             self.transport_options_output = TransportOptionsOutput(body_str)
-        if 'Default interface options' in config_object:
+        if "Default interface options" in config_object:
             self.default_interface_options_output = DefaultInterfaceOptionsOutput(body_str)
-        if 'Clock description' in config_object:
+        if "Clock description" in config_object:
             self.clock_description_output = ClockDescriptionOutput(body_str)
 
     def get_data_set_output(self) -> DefaultDataSetOutput:

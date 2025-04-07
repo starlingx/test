@@ -20,6 +20,9 @@ class PTPConfig:
 
         ptp_dict = json5.load(json_data)
 
+        # what kind of device it is.
+        self.external_ptp_device_type = ptp_dict["external_ptp_device_type"]
+
         # GNSS server information
         self.gnss_server_host = ptp_dict["gnss_server_host"]
         self.gnss_server_username = ptp_dict["gnss_server_username"]
@@ -27,6 +30,15 @@ class PTPConfig:
 
         # Extract the NIC Connections and Host information from the dictionary
         self.ptp_hosts = self._extract_ptp_hosts(ptp_dict)
+
+    def get_external_ptp_device_type(self) -> str:
+        """
+        Getter for the external ptp device type.
+
+        Returns:
+            str: external ptp device type
+        """
+        return self.external_ptp_device_type
 
     def get_gnss_server_host(self) -> str:
         """

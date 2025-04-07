@@ -29,7 +29,7 @@ def test_generate_ptp_setup_from_template():
     phc2sys_setup_list = ptp_setup.get_phc2sys_setup_list()
     assert len(phc2sys_setup_list) == 4
     phc1 = ptp_setup.get_phc2sys_setup("phc1")
-    assert phc1.get_instance_parameters() == "'cmdline_opts=-s conn_spirent_placeholder -O -37 -m'"
+    assert phc1.get_instance_parameters() == "cmdline_opts='-s conn_spirent_placeholder -O -37 -m'"
 
     # ts2phc Validations
     ts2phc_setup_list = ptp_setup.get_ts2phc_setup_list()
