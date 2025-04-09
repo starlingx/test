@@ -1,4 +1,5 @@
 {
+    external_ptp_device_type: "",
 
     // GNSS server information if you want to turn on/off GNSS ports.
     gnss_server_host: "gnss_server_hostname_or_ip",
