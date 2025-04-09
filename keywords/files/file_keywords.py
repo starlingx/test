@@ -1,5 +1,6 @@
 import time
 
+from config.configuration_manager import ConfigurationManager
 from framework.exceptions.keyword_exception import KeywordException
 from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
@@ -179,3 +180,16 @@ class FileKeywords(BaseKeyword):
         """
         self.ssh_connection.send_as_sudo(f"rm -r -f {folder_path}")
         return self.validate_file_exists_with_sudo(folder_path)
+
+    def execute_rsync(self, source_path: str, remote_path: str):
+        """Execute rsync command to copy files from source (active controller) to destination
+
+        Args:
+            source_path (str): The source path in active controller
+            remote_path (str): The destination path
+        """
+        pasw = ConfigurationManager.get_lab_config().get_admin_credentials().get_password()
+
+        # active_controller_ssh.send(f"sshpass -p '{pasw}' rsync -avz {source} {user}@{destination}")
+        self.ssh_connection.send(f"sshpass -p '{pasw}' rsync -avz {source_path} {remote_path}")
+        self.validate_success_return_code(self.ssh_connection)

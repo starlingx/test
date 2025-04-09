@@ -13,8 +13,7 @@ class LabConnectionKeywords(BaseKeyword):
     """
 
     def get_active_controller_ssh(self) -> SSHConnection:
-        """
-        Gets the active controller ssh
+        """Gets the active controller ssh
 
         Returns:
             SSHConnection: the ssh for the active controller
@@ -118,8 +117,8 @@ class LabConnectionKeywords(BaseKeyword):
         return connection
 
     def get_subcloud_ssh(self, subcloud_name: str) -> SSHConnection:
-        """
-        Gets an SSH connection to the 'Subcloud' node whose name is specified by the argument 'subcloud_name'.
+        """Gets an SSH connection to the 'Subcloud' node whose name is specified by the argument 'subcloud_name'.
+
         Args:
              subcloud_name (str): The name of the 'subcloud' node.
 

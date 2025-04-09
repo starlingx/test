@@ -5,23 +5,23 @@
 	// All the files are assumed to be stored on the Central Cloud in the case of a DC system.
 
 	"controller" : {
-		deployment_config_file: "/home/sysadmin/deployment-config.yaml",
+		"deployment_config_file": "/home/sysadmin/deployment-config.yaml",
 	},
-
 	"subclouds" : {
-
 		"subcloud1": {
-			bootstrap_file: "/home/sysadmin/subcloud1/subcloud1-bootstrap-values.yaml",
-			deployment_config_file: "/home/sysadmin/subcloud1/subcloud1-deploy-standard.yaml",
-			install_file: "/home/sysadmin/subcloud1/subcloud1-install-values.yaml"
+			"bootstrap_file": "/home/sysadmin/subcloud-1/subcloud1-bootstrap-values.yaml",
+			"deployment_config_file": "/home/sysadmin/subcloud-1/subcloud1-deploy-standard.yaml",
+			"install_file": "/home/sysadmin/subcloud-1/subcloud1-install-values.yaml"
 		},
-
 		"subcloud2": {
-			bootstrap_file: "/home/sysadmin/subcloud2/subcloud2-bootstrap-values.yaml",
-			deployment_config_file: "/home/sysadmin/subcloud2/subcloud2-deploy-standard.yaml",
-			install_file: "/home/sysadmin/subcloud2/subcloud2-install-values.yaml"
+			"bootstrap_file": "/home/sysadmin/subcloud-2/subcloud2-bootstrap-values.yaml",
+			"deployment_config_file": "/home/sysadmin/subcloud-2/subcloud2-deploy-standard.yaml",
+			"install_file": "/home/sysadmin/subcloud-2/subcloud2-install-values.yaml"
 		},
-
+        "subcloud3": {
+			"bootstrap_file": "/home/sysadmin/subcloud-3/subcloud3-bootstrap-values.yaml",
+			"deployment_config_file": "/home/sysadmin/subcloud-3/subcloud3-deploy-standard.yaml",
+			"install_file": "/home/sysadmin/subcloud-3/subcloud3-install-values.yaml"
+		},
 	},
-
 }

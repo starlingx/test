@@ -682,7 +682,6 @@ def test_dc_swact_host(request):
         _ Reestablishes the active/standby host configuration.
 
     """
-    get_logger().log_info("Starting 'test_dc_swact_host' test case.")
 
     # Time in seconds for a subcloud to change its state from 'managed' to 'unmanaged' and vice versa.
     change_state_timeout = 60
