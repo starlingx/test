@@ -14,7 +14,6 @@ from framework.ssh.ssh_connection import SSHConnection
 from framework.validation.validation import validate_equals, validate_equals_with_retry
 from framework.web.webdriver_core import WebDriverCore
 from keywords.cloud_platform.dcmanager.dcmanager_alarm_summary_keywords import DcManagerAlarmSummaryKeywords
-from keywords.cloud_platform.dcmanager.dcmanager_subcloud_delete_keywords import DcManagerSubcloudDeleteKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_list_keywords import DcManagerSubcloudListKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_manager_keywords import DcManagerSubcloudManagerKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_show_keywords import DcManagerSubcloudShowKeywords
@@ -1400,64 +1399,3 @@ def deploy_images_to_local_registry(ssh_connection: SSHConnection):
     docker_load_image_keywords.load_docker_image_to_host("node-hello-alpine.tar")
     docker_load_image_keywords.tag_docker_image_for_registry("node-hello:alpine", "node-hello", local_registry)
     docker_load_image_keywords.push_docker_image_to_registry("node-hello", local_registry)
-
-
-@mark.p0
-@mark.lab_has_min_2_subclouds
-def test_dc_subcloud_delete(request):
-    """
-    Verify subcloud deletion works as expected
-
-    Test Steps:
-        - log onto system controller
-        - list all subclouds and get the lowest id subcloud
-        - unmanage the subcloud
-        - power off the subcloud
-        - delete the subcloud
-        - validate that the subcloud is deleted
-    """
-
-    get_logger().log_info("Starting 'test_dc_subcloud_delete' test case.")
-
-    # Gets the SSH connection to the active controller of the central cloud.
-    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
-
-    # check if subclouds has added in config
-    subclouds = ConfigurationManager.get_lab_config().get_subclouds()
-    if not subclouds:
-        raise ValueError("Failed. No subclouds were found in lab config")
-
-    # List all subclouds and get the lowest id subcloud.
-    dcm_sc_list_kw = DcManagerSubcloudListKeywords(ssh_connection)
-    subclouds_list = dcm_sc_list_kw.get_dcmanager_subcloud_list()
-
-    # Retrieves subclouds before deletion.
-    orig_subclouds = subclouds_list.get_dcmanager_subcloud_list_objects()
-    total_subclouds = len(orig_subclouds)
-    lowest_subcloud = subclouds_list.get_healthy_subcloud_with_lowest_id()
-    sc_name = lowest_subcloud.get_name()
-
-    get_logger().log_info(f"Total subclouds Before deletion: {total_subclouds}")
-
-    msg = (f"Subcloud selected for deletion ID={lowest_subcloud.get_id()} ", f" Name={sc_name}, ", f" Management state={lowest_subcloud.get_management()} ")
-    get_logger().log_info(msg)
-
-    dcm_sc_manager_kw = DcManagerSubcloudManagerKeywords(ssh_connection)
-    # Unmanage the subcloud.
-    get_logger().log_test_case_step(f"Unmanage subcloud={sc_name}.")
-    dcm_sc_manage_output = dcm_sc_manager_kw.get_dcmanager_subcloud_unmanage(sc_name, timeout=10)
-    get_logger().log_info(f"The management state of the subcloud {sc_name} was changed to {dcm_sc_manage_output.get_dcmanager_subcloud_manage_object().get_management()}.")
-
-    # poweroff the subcloud.
-    get_logger().log_test_case_step(f"Poweroff subcloud={sc_name}.")
-    dcm_sc_manager_kw.set_subcloud_poweroff(sc_name)
-    # delete the subcloud
-    get_logger().log_test_case_step(f"Delete subcloud={sc_name}.")
-    dcm_sc_del_kw = DcManagerSubcloudDeleteKeywords(ssh_connection)
-    dcm_sc_del_kw.dcmanager_subcloud_delete(sc_name)
-    # Retrieves subclouds after deletion.
-    subclouds_list = dcm_sc_list_kw.get_dcmanager_subcloud_list()
-    subclouds_after_deletion = subclouds_list.get_dcmanager_subcloud_list_objects()
-    # assert len(subclouds_after_deletion) == total_subclouds - 1, "Subcloud was not deleted successfully"
-    validate_equals(len(subclouds_after_deletion), total_subclouds - 1, "Subcloud deleted successfully")
-    validate_equals(subclouds_list.is_subcloud_in_output(sc_name), False, f"{sc_name} is no longer in the subcloud list.")

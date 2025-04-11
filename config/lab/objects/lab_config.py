@@ -459,3 +459,14 @@ class LabConfig:
                 log_strings.append(f"    {log_string}")
 
         return log_strings
+
+    def get_controllers(self) -> List[Node]:
+        """
+        Getter for controller nodes.
+
+        Returns:
+            List[Node]: List of controller nodes
+        """
+        nodes = self.get_nodes()
+        controllers = [node for node in nodes if node.node_type == "controller"]
+        return controllers
