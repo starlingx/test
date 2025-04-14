@@ -52,7 +52,7 @@ class DcManagerSubcloudListKeywords(BaseKeyword):
 
         """
         failed_status = ["bootstrap-failed", "install-failed", "create-failed"]
-        time_out = 3600
+        time_out = 4800
         polling_sleep_time = 60
         end_time = time.time() + time_out
 
