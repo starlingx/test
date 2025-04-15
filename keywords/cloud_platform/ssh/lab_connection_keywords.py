@@ -145,3 +145,29 @@ class LabConnectionKeywords(BaseKeyword):
         )
 
         return connection
+
+    def get_secondary_active_controller_ssh(self) -> SSHConnection:
+        """Gets an SSH connection to the secondary active controller node.
+
+        Returns:
+            SSHConnection: the ssh for the secondary active controller
+        """
+        lab_config = ConfigurationManager.get_lab_config()
+        secondary_lab_config = lab_config.get_secondary_system_controller_config()
+
+        if not secondary_lab_config:
+            raise ValueError(f"There is no {secondary_lab_config} defined in your config file.")
+
+        jump_host_config = None
+        if lab_config.is_use_jump_server():
+            jump_host_config = lab_config.get_jump_host_configuration()
+
+        connection = SSHConnectionManager.create_ssh_connection(
+            secondary_lab_config.get_floating_ip(),
+            secondary_lab_config.get_admin_credentials().get_user_name(),
+            secondary_lab_config.get_admin_credentials().get_password(),
+            ssh_port=secondary_lab_config.get_ssh_port(),
+            jump_host=jump_host_config,
+        )
+
+        return connection
