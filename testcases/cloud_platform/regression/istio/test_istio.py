@@ -63,7 +63,7 @@ def test_uninstall_istio():
         Exception: If application Istio failed to remove or delete
     """
 
-    # Setup app configs and lab connection
+    # Setups app configs and lab connection
     app_config = ConfigurationManager.get_app_config()
     istio_name = app_config.get_istio_app_name()
     lab_connect_keywords = LabConnectionKeywords()
@@ -86,4 +86,3 @@ def test_uninstall_istio():
     system_application_delete_input.set_force_deletion(False)
     delete_msg = SystemApplicationDeleteKeywords(ssh_connection).get_system_application_delete(system_application_delete_input)
     validate_equals(delete_msg, f"Application {istio_name} deleted.\n", f"Application deletion message validation")
-

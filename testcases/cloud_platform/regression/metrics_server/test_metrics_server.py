@@ -84,4 +84,3 @@ def test_uninstall_metrics_server():
     system_application_delete_input.set_force_deletion(False)
     delete_msg = SystemApplicationDeleteKeywords(ssh_connection).get_system_application_delete(system_application_delete_input)
     validate_equals(delete_msg, f"Application {metrics_server_name} deleted.\n", f"Application deletion message validation")
-
