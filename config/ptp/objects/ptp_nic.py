@@ -78,11 +78,11 @@ class PTPNic:
         """
         sma1_dict = None
         if self.sma1:
-            sma1_dict = self.sma1.to_dictionary()
+            sma1_dict = self.sma1.to_dictionary(self.name)
 
         sma2_dict = None
         if self.sma2:
-            sma2_dict = self.sma2.to_dictionary()
+            sma2_dict = self.sma2.to_dictionary(self.name)
 
         ufl1_dict = None
         if self.ufl1:
