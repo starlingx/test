@@ -1,6 +1,7 @@
 import copy
 from typing import List, Optional
 
+from config.configuration_manager import ConfigurationManager
 from framework.exceptions.keyword_exception import KeywordException
 from framework.logging.automation_logger import get_logger
 from keywords.cloud_platform.dcmanager.dcmanager_table_parser import DcManagerTableParser
@@ -13,12 +14,12 @@ class DcManagerSubcloudListOutput:
     Represents the output of 'dcmanager subcloud list' command as a list of DcManagerSubcloudListObject objects.
     """
 
-    def __init__(self, dcmanager_subcloud_list_output):
+    def __init__(self, dcmanager_subcloud_list_output: list[str]):
         """
         Constructor
 
         Args:
-            dcmanager_subcloud_list_output (list(str)): output of 'dcmanager subcloud list' command
+            dcmanager_subcloud_list_output (list[str]): output of 'dcmanager subcloud list' command
 
         """
         self.dcmanager_subclouds: [DcManagerSubcloudListObject] = []
@@ -27,40 +28,40 @@ class DcManagerSubcloudListOutput:
 
         for value in output_values:
 
-            if 'id' not in value:
+            if "id" not in value:
                 raise KeywordException(f"The output line {value} was not valid because it is missing an 'id'.")
 
-            if value['id'] == "<none>":
+            if value["id"] == "<none>":
                 continue
 
-            dcmanager_subcloud_object: DcManagerSubcloudListObject = DcManagerSubcloudListObject(value['id'])
+            dcmanager_subcloud_object: DcManagerSubcloudListObject = DcManagerSubcloudListObject(value["id"])
 
-            if 'name' in value:
-                dcmanager_subcloud_object.set_name(value['name'])
+            if "name" in value:
+                dcmanager_subcloud_object.set_name(value["name"])
 
-            if 'management' in value:
-                dcmanager_subcloud_object.set_management(value['management'])
+            if "management" in value:
+                dcmanager_subcloud_object.set_management(value["management"])
 
-            if 'availability' in value:
-                dcmanager_subcloud_object.set_availability(value['availability'])
+            if "availability" in value:
+                dcmanager_subcloud_object.set_availability(value["availability"])
 
-            if 'deploy status' in value:
-                dcmanager_subcloud_object.set_deploy_status(value['deploy status'])
+            if "deploy status" in value:
+                dcmanager_subcloud_object.set_deploy_status(value["deploy status"])
 
-            if 'sync' in value:
-                dcmanager_subcloud_object.set_sync(value['sync'])
+            if "sync" in value:
+                dcmanager_subcloud_object.set_sync(value["sync"])
 
-            if 'backup status' in value:
-                dcmanager_subcloud_object.set_backup_status(value['backup status'])
+            if "backup status" in value:
+                dcmanager_subcloud_object.set_backup_status(value["backup status"])
 
-            if 'prestage status' in value:
-                dcmanager_subcloud_object.set_prestage_status(value['prestage status'])
+            if "prestage status" in value:
+                dcmanager_subcloud_object.set_prestage_status(value["prestage status"])
 
             self.dcmanager_subclouds.append(dcmanager_subcloud_object)
 
     def get_dcmanager_subcloud_list_objects(self) -> List[DcManagerSubcloudListObject]:
-        """
-        This function will return the list of DcManagerSubcloudObject objects.
+        """This function will return the list of DcManagerSubcloudObject objects.
+
         Args: None
 
         Returns: list (DcManagerSubcloudObject): list of DcManagerSubcloudListObject objects representing the output of
@@ -70,16 +71,17 @@ class DcManagerSubcloudListOutput:
         return self.get_dcmanager_subcloud_list_objects_filtered(None)
 
     def get_dcmanager_subcloud_list_objects_filtered(self, dcmanager_subcloud_list_object_filter: Optional[DcManagerSubcloudListObjectFilter]) -> Optional[List[DcManagerSubcloudListObject]]:
-        """
-        Looks for a DcManagerSubcloudListObject instance in 'dcmanager_subclouds' whose properties are equal to the
-        respective properties in 'dcmanager_subcloud_list_input', if they are defined in it.
+        """Look for DcManagerSubcloudListObject instances in 'dcmanager_subclouds'
+
+        whose properties match the respective properties in the provided filter object,
+        if they are defined.
+
         Args:
-            dcmanager_subcloud_list_object_filter (DcManagerSubcloudListObjectFilter): object with the properties values to filter the
-            items in the 'dcmanager_subclouds'.
+            dcmanager_subcloud_list_object_filter (Optional[DcManagerSubcloudListObjectFilter]):
+                An object containing property values to filter the items in 'dcmanager_subclouds'.
 
         Returns:
-            List[DcManagerSubcloudListObject]: the filtered list of DcManagerSubcloudListObject instances we are looking for.
-
+            Optional[List[DcManagerSubcloudListObject]]: A filtered list of matching DcManagerSubcloudListObject instances.
         """
         if dcmanager_subcloud_list_object_filter is None:
             return self.dcmanager_subclouds
@@ -124,8 +126,8 @@ class DcManagerSubcloudListOutput:
         return dcmanager_subclouds_copy
 
     def get_healthy_subcloud_with_lowest_id(self) -> DcManagerSubcloudListObject:
-        """
-        Gets an instance of DcManagerSubcloudListObject with the lowest ID and that satisfies the criteria:
+        """Gets an instance of DcManagerSubcloudListObject with the lowest ID and that satisfies the criteria:
+
             _ Managed;
             _ Online;
             _ Deploy completed;
@@ -189,8 +191,8 @@ class DcManagerSubcloudListOutput:
         return bool(subclouds)
 
     def get_lower_id_async_subcloud(self) -> DcManagerSubcloudListObject:
-        """"
-        Gets an instance of DcManagerSubcloudListObject with the lowest ID and that satisfies the criteria:
+        """Gets an instance of DcManagerSubcloudListObject with the lowest ID and that satisfies the criteria:
+
             _ Managed;
             _ Online;
             _ Deploy completed;
@@ -202,8 +204,7 @@ class DcManagerSubcloudListOutput:
 
         """
         dcmanager_subcloud_list_obj_filter = DcManagerSubcloudListObjectFilter.get_out_of_sync_subcloud_filter()
-        subclouds = self.get_dcmanager_subcloud_list_objects_filtered(
-            dcmanager_subcloud_list_obj_filter)
+        subclouds = self.get_dcmanager_subcloud_list_objects_filtered(dcmanager_subcloud_list_obj_filter)
 
         if not subclouds:
             error_message = "In this DC system, there is no subcloud managed, online, deploy completed, and out-of-sync."
@@ -211,3 +212,42 @@ class DcManagerSubcloudListOutput:
             raise ValueError(error_message)
 
         return min(subclouds, key=lambda subcloud: int(subcloud.get_id()))
+
+    def get_undeployed_subcloud_name(self, lab_type: str) -> str:
+        """
+        Fetch the name of the first subcloud that is not deployed.
+
+        This method iterates through the subclouds in the lab configuration
+        and returns the name of the first subcloud that is not deployed.
+        This is used to determine the appropriate subcloud to check based
+        on the lab type.
+
+        Args:
+            lab_type (str): The type of the lab (e.g., 'simplex', 'duplex').
+
+        Returns:
+            str: The name of the first subcloud that is not deployed.
+
+        Raises:
+            ValueError: If no suitable subcloud is found.
+        """
+        # fetch all the subclouds from the system
+        deployed_sc_names = [i.get_name() for i in self.dcmanager_subclouds]
+
+        lab_config = ConfigurationManager.get_lab_config()
+        # fetch all the subclouds from the lab config
+        sc_names_from_config = lab_config.get_subclouds_name_by_type(lab_type)
+
+        # raise if there is no subcloud in the config for the given type
+        if not sc_names_from_config:
+            error_message = f"No Lab found with Type: {lab_type} in the configuration."
+            get_logger().log_exception(error_message)
+            raise ValueError(error_message)
+
+        all_free_sc = set(sc_names_from_config).difference(set(deployed_sc_names))
+
+        if not all_free_sc:
+            error_message = "No subcloud found in the configuration that is not deployed."
+            get_logger().log_exception(error_message)
+            raise ValueError(error_message)
+        return all_free_sc.pop()

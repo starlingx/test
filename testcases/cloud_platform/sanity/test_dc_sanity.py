@@ -106,8 +106,10 @@ def test_dc_subcloud_add_simplex():
         - validate that the subcloud is added
     """
     sanity_pre_requisite()
-    # read the config file for subcloud
-    subcloud_name = "subcloud1"
+    # fetch not deployed subcloud
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    dcmanager_subcloud_list_keywords = DcManagerSubcloudListKeywords(ssh_connection)
+    subcloud_name = dcmanager_subcloud_list_keywords.get_dcmanager_subcloud_list().get_undeployed_subcloud_name("Simplex")
     subcloud_add(subcloud_name)
 
 
@@ -150,8 +152,10 @@ def test_dc_subcloud_add_duplex():
         - validate that the subcloud is added
     """
     sanity_pre_requisite()
-    # read the config file for subcloud
-    subcloud_name = "subcloud2"
+    # fetch not deployed subcloud
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    dcmanager_subcloud_list_keywords = DcManagerSubcloudListKeywords(ssh_connection)
+    subcloud_name = dcmanager_subcloud_list_keywords.get_dcmanager_subcloud_list().get_undeployed_subcloud_name("Duplex")
     subcloud_add(subcloud_name)
 
 
