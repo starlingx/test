@@ -58,11 +58,14 @@ class SMAConnector:
         """
         return self.name
 
-    def to_dictionary(self) -> Dict[str, str]:
+    def to_dictionary(self, nic_name: str) -> Dict[str, str]:
         """
         This function will return a dictionary view of the SMA Connector.
 
         This is mostly used for substitution in JINJA templates.
+
+        Args:
+            nic_name (str): Name of the nic attached to this ptp_nic_connection
 
         Returns:
             Dict[str, str]: Dictionary representation
@@ -74,8 +77,25 @@ class SMAConnector:
             "input_sma": self.input_sma,
             "output_nic": self.output_nic,
             "output_sma": self.output_sma,
+            "is_input_or_output": self.is_input_or_output(nic_name),
         }
         return dictionary
+
+    def is_input_or_output(self, nic_name: str) -> str:
+        """
+        This function will return 'input' or 'output' if the specified nic_name is used as an input/output for this sma_connector.
+
+        Args:
+            nic_name (str): Name of the nic attached to this sma_connector
+
+        Returns:
+            str: 'input' or 'output'
+
+        """
+        if self.input_nic == nic_name:
+            return "input"
+        else:
+            return "output"
 
     def get_name(self) -> str:
         """
