@@ -1,6 +1,6 @@
+from framework.ssh.ssh_connection import SSHConnection
 from keywords.base_keyword import BaseKeyword
 from keywords.k8s.k8s_command_wrapper import export_k8s_config
-from starlingx.framework.ssh.ssh_connection import SSHConnection
 
 
 class KubectlApplyPodsKeywords(BaseKeyword):

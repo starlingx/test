@@ -470,3 +470,31 @@ class LabConfig:
         nodes = self.get_nodes()
         controllers = [node for node in nodes if node.node_type == "controller"]
         return controllers
+
+    def get_subclouds_by_type(self, subcloud_type: str = None) -> List["LabConfig"]:
+        """
+        Get a list of subcloud configurations by type.
+
+        Args:
+            subcloud_type (str): Type of the subcloud to retrieve
+
+        Returns:
+            List[LabConfig]: List of subcloud configurations of the specified type
+        """
+        if subcloud_type is None:
+            return self.subclouds
+        return [subcloud for subcloud in self.subclouds if subcloud.get_lab_type().lower() == subcloud_type.lower()]
+
+    def get_subclouds_name_by_type(self, subcloud_type: str = None) -> List[str]:
+        """
+        Get a list of subcloud names by type.
+
+        Args:
+            subcloud_type (str): Type of the subcloud to retrieve
+
+        Returns:
+            List[str]: List of subcloud names of the specified type
+        """
+        if subcloud_type is None:
+            return self.subclouds
+        return [subcloud.get_lab_name() for subcloud in self.get_subclouds_by_type(subcloud_type)]
