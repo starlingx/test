@@ -73,7 +73,7 @@ class PMCGetDefaultDataSetOutput:
             self.pmc_get_default_data_set_object.set_clock_identity(output_values["clockIdentity"])
 
         if "domainNumber" in output_values:
-            self.pmc_get_default_data_set_object.set_domain_number(output_values["domainNumber"])
+            self.pmc_get_default_data_set_object.set_domain_number(int(output_values["domainNumber"]))
 
         if "free_running" in output_values:
             self.pmc_get_default_data_set_object.set_free_running(int(output_values["free_running"]))

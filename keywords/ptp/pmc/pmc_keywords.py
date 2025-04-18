@@ -8,6 +8,7 @@ from keywords.ptp.pmc.objects.pmc_get_parent_data_set_output import PMCGetParent
 from keywords.ptp.pmc.objects.pmc_get_port_data_set_output import PMCGetPortDataSetOutput
 from keywords.ptp.pmc.objects.pmc_get_time_properties_data_set_output import PMCGetTimePropertiesDataSetOutput
 from keywords.ptp.pmc.objects.pmc_get_time_status_np_output import PMCGetTimeStatusNpOutput
+from keywords.ptp.pmc.objects.pmc_get_port_data_set_output import PMCGetPortDataSetOutput
 
 
 class PMCKeywords(BaseKeyword):
@@ -153,15 +154,11 @@ class PMCKeywords(BaseKeyword):
     def pmc_get_default_data_set(self, config_file: str, socket_file: str, unicast: bool = True, boundry_clock: int = 0) -> PMCGetDefaultDataSetOutput:
         """
         Gets the default data set
-
         Args:
             config_file (str): the config file
             socket_file (str): the socket file
             unicast (bool): true to use unicast
             boundry_clock (int): the boundry clock
-
-        Returns:
-            PMCGetDefaultDataSetOutput: the default dataset output
 
         Example: PMCKeywords(ssh_connection).pmc_get_default_data_set('/etc/linuxptp/ptpinstance/ptp4l-ptp5.conf', ' /var/run/ptp4l-ptp5')
 
@@ -171,6 +168,24 @@ class PMCKeywords(BaseKeyword):
         output = self.ssh_connection.send_as_sudo(cmd)
         pmc_get_default_data_set_output = PMCGetDefaultDataSetOutput(output)
         return pmc_get_default_data_set_output
+
+    def pmc_get_port_data_set(self, config_file: str, socket_file: str, unicast: bool = True, boundry_clock: int = 0) -> PMCGetPortDataSetOutput:
+        """
+        Gets the port data set
+        Args:
+            config_file (str): the config file
+            socket_file (str): the socket file
+            unicast (bool): true to use unicast
+            boundry_clock (int): the boundry clock
+
+        Example: PMCKeywords(ssh_connection).pmc_get_port_data_set('/etc/linuxptp/ptpinstance/ptp4l-ptp5.conf', ' /var/run/ptp4l-ptp5')
+
+        """
+        cmd = f"pmc {'-u' if unicast else ''} -b {boundry_clock} -f {config_file} -s {socket_file} 'GET PORT_DATA_SET'"
+
+        output = self.ssh_connection.send_as_sudo(cmd)
+        pmc_get_port_data_set_output = PMCGetPortDataSetOutput(output)
+        return pmc_get_port_data_set_output
 
     def pmc_get_domain(self, config_file: str, socket_file: str, unicast: bool = True, boundry_clock: int = 0) -> PMCGetDomainOutput:
         """

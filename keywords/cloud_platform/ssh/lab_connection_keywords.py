@@ -78,9 +78,11 @@ class LabConnectionKeywords(BaseKeyword):
 
         """
         lab_config = ConfigurationManager.get_lab_config()
-
+        
+        if 'worker' in lab_config.get_node(hostname).get_type() :
+            return self.get_compute_ssh(hostname)
+        
         host_ip = lab_config.get_node(hostname).get_ip()
-
         jump_host_config = None
         if lab_config.is_use_jump_server():
             jump_host_config = lab_config.get_jump_host_configuration()
@@ -92,7 +94,6 @@ class LabConnectionKeywords(BaseKeyword):
             ssh_port=lab_config.get_ssh_port(),
             jump_host=jump_host_config,
         )
-
         return connection
 
     def get_compute_ssh(self, compute_name: str) -> SSHConnection:

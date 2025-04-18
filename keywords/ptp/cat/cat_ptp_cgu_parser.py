@@ -65,7 +65,7 @@ class CatPtpCguParser:
         """
         cgu: PtpCguComponentObject = None
 
-        match = re.match(r"Found (\S+) CGU", self.cat_ptp_cgu_output[0])
+        match = re.match(r"(Found (\S+) CGU|Password: Found (\S+) CGU)", self.cat_ptp_cgu_output[0]) # Ask about this
         if match:
             chip_model = match.group(1)
             config_version_match = re.search(

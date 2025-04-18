@@ -232,7 +232,7 @@ class PMCGetDefaultDataSetObject:
         """
         self.clock_identity = clock_identity
 
-    def get_domain_number(self) -> str:
+    def get_domain_number(self) -> int:
         """
         Getter for domain_number
 
@@ -242,7 +242,7 @@ class PMCGetDefaultDataSetObject:
         """
         return self.domain_number
 
-    def set_domain_number(self, domain_number: str):
+    def set_domain_number(self, domain_number: int):
         """
         Setter for domain_number
 

@@ -65,7 +65,7 @@ class DefaultDataSetOutput:
             self.pmc_get_default_data_set_object.set_clock_identity(output_values["clockIdentity"])
 
         if "domainNumber" in output_values:
-            self.pmc_get_default_data_set_object.set_domain_number(output_values["domainNumber"])
+            self.pmc_get_default_data_set_object.set_domain_number(int(output_values["domainNumber"]))
 
         if "free_running" in output_values:
             self.pmc_get_default_data_set_object.set_free_running(int(output_values["free_running"]))
@@ -108,6 +108,9 @@ class DefaultDataSetOutput:
 
         if "time_stamping" in output_values:
             self.get_pmc_get_default_data_set_object().set_time_stamping(output_values["time_stamping"])
+
+        if "tx_timestamp_timeout" in output_values:
+            self.get_pmc_get_default_data_set_object().set_tx_timestamp_timeout(int(output_values["tx_timestamp_timeout"]))
 
         if "uds_address" in output_values:
             self.get_pmc_get_default_data_set_object().set_uds_address(output_values["uds_address"])

@@ -46,7 +46,7 @@ class PTP4LStatusParser:
         for line in self.ptp4l_status_output:
             line = line.strip()
             if line.startswith('●'):  # we have a new service to get values for
-                service_name = line.split('@')[1].split(' ')[0]  # format ptp4l@ptp1.service - Precision Time Protocol (PTP) service
+                service_name = line.split('@')[1].split(' ')[0].replace('.service','')  # format ptp4l@ptp1.service - Precision Time Protocol (PTP) service
                 services[service_name] = {}
                 current_service = services[service_name]
             elif line.startswith('└─') and current_service is not None:

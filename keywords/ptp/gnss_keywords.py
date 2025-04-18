@@ -1,3 +1,4 @@
+import re
 import time
 from multiprocessing import get_logger
 from time import sleep
@@ -18,6 +19,77 @@ class GnssKeywords(BaseKeyword):
         """
         Initializes the GnssKeywords.
         """
+
+    def get_pci_slot_name(self,  hostname: str, interface: str) -> str:
+        """
+        Retrieves the PCI_SLOT_NAME from the uevent file for a given PTP interface.
+
+        Args:
+            hostname (str) : The name of the host
+            interface (str): The name of the ptp interface (e.g., "enp138s0f0").
+
+        Returns:
+            str: The PCI slot name if found, otherwise None.
+        
+        Raises:
+            Exception: raised when PCI_SLOT_NAME not found
+        """
+        lab_connect_keywords = LabConnectionKeywords()
+        ssh_connection = lab_connect_keywords.get_ssh_for_hostname(hostname)
+
+        # The GNSS signal will always be on port 0 of the NIC, even if ts2phc uses ports 1, 2, 3, and so on.
+        interface_name = f"{interface[:-1]}0"
+        uevent_path = f"/sys/class/net/{interface_name}/device/uevent"
+
+        uevent_content = ssh_connection.send(f"grep PCI_SLOT_NAME {uevent_path}")
+
+        # Use regex to find the PCI_SLOT_NAME
+        match = re.search(r"PCI_SLOT_NAME=(.*)", " ".join(uevent_content))
+        if match:
+            return match.group(1).strip()  # Return the captured value, removing leading/trailing spaces
+        else:
+            raise Exception(f"PCI_SLOT_NAME not found in {uevent_path}")
+
+    def get_gnss_serial_port_from_gnss_directory(self,  hostname: str, interface: str) -> str:
+        """
+        Get GNSS serial port from the specified gnss directory.
+
+        Args:
+            hostname (str) : The name of the host
+            interface (str): The name of the PTP interface (e.g., "enp138s0f0").
+            
+        Returns:
+            str: The GNSS serial port value (e.g., "gnss0") if found, otherwise None.
+        """
+        lab_connect_keywords = LabConnectionKeywords()
+        ssh_connection = lab_connect_keywords.get_ssh_for_hostname(hostname)
+
+        pci_address = self.get_pci_slot_name(hostname, interface)
+
+        gnss_dir = f"/sys/bus/pci/devices/{pci_address}/gnss"
+
+        contents = ssh_connection.send(f"ls {gnss_dir}")
+        if not contents:
+            get_logger().log_info(f"The directory {gnss_dir} is empty.")
+            return None
+        
+        return " ".join(contents).strip() # Return the captured value in str, removing leading/trailing spaces
+
+    def extract_gnss_port(self, instance_parameters: str) -> str:
+        """
+        Extracts the GNSS serial port value from a ts2phc.nmea_serialport configuration string using regex.
+
+        Args:
+            instance_parameters (str): The string containing the ts2phc.nmea_serialport setting.
+
+        Returns:
+            str: The GNSS serial port value (e.g., "gnss0") if found, otherwise None.
+        """
+        match = re.search(r"ts2phc\.nmea_serialport\s*=\s*/dev/([^ ]*)", instance_parameters)
+        if match:
+            return match.group(1)
+        else:
+            return None
 
     def gnss_power_on(self, hostname: str, nic: str) -> None:
         """
@@ -88,6 +160,8 @@ class GnssKeywords(BaseKeyword):
             expected_pps_dpll_status (list): expected list of PPS DPLL status values.
             timeout (int): The maximum time (in seconds) to wait for the match.
             polling_sleep_time (int): The time period to wait to receive the expected output.
+        
+        Returns: None
 
         Raises:
             TimeoutError: raised when validate does not equal in the required time

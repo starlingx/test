@@ -80,7 +80,7 @@ class PTP4LStatusOutput:
         """
         Getter for ptp4l object with the given service name
         Args:
-            service_name (): the name of the service
+            service_name (str): the name of the service (e.g., "phc1")
 
         Returns: PTP4LStatusObject
 

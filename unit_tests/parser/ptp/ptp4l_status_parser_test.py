@@ -33,7 +33,7 @@ def test_ptp4l_service_status_output_parser():
     ptp4l_service_status_output = PTP4LStatusOutput(ptp4l_status_output)
 
     # validate first service 'ptp1.service'
-    ptp4l_status_object = ptp4l_service_status_output.get_ptp4l_object('ptp1.service')
+    ptp4l_status_object = ptp4l_service_status_output.get_ptp4l_object('ptp1')
 
     assert ptp4l_status_object.get_active() == 'active (running) since Mon 2025-02-10 18:36:34 UTC; 3 days ago'
     assert ptp4l_status_object.get_c_group() == '/system.slice/system-ptp4l.slice/ptp4l@ptp1.service'
@@ -46,7 +46,7 @@ def test_ptp4l_service_status_output_parser():
     assert ptp4l_status_object.get_tasks() == '1 (limit: 150897)'
 
     # validate second service 'ptp3.service
-    ptp4l_status_object = ptp4l_service_status_output.get_ptp4l_object('ptp3.service')
+    ptp4l_status_object = ptp4l_service_status_output.get_ptp4l_object('ptp3')
 
     assert ptp4l_status_object.get_active() == 'active (running) since Wed 2025-02-12 16:22:23 UTC; 2 days ago'
     assert ptp4l_status_object.get_c_group() == '/system.slice/system-ptp4l.slice/ptp4l@ptp3.service'

@@ -39,6 +39,12 @@ class PTP4LSetup:
             ptp_interfaces.append(ptp_host_ifs_dict[ptp_interface_name])
         self.ptp_interfaces = ptp_interfaces
 
+        self.ptp_role = "MASTER" # default value is MASTER
+        if "ptp_role" in setup_dict:
+            self.ptp_role = setup_dict["ptp_role"]
+        
+        self.port_state = setup_dict.get("port_state")
+
     def __str__(self) -> str:
         """
         String representation of this object.
@@ -99,3 +105,22 @@ class PTP4LSetup:
             if ptp_interface.get_name() == interface_name:
                 return ptp_interface
         raise Exception(f"There is no ptp interface named {interface_name} in the ptp4l setup.")
+
+
+    def get_ptp_role(self) -> str:
+        """
+        Gets the ptp role
+
+        Returns:
+           str: ptp role
+        """
+        return self.ptp_role
+
+    def get_port_state(self) -> str:
+        """
+        Gets the port state
+
+        Returns:
+           str: port state
+        """
+        return self.port_state

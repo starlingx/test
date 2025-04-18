@@ -190,6 +190,17 @@ class PTPSetupExecutorKeywords(BaseKeyword):
                 system_ptp_interface_show_output = system_ptp_interface_keywords.get_system_ptp_interface_show(interface_name)
                 validate_str_contains(system_ptp_interface_show_output.get_ptp_interface().get_interface_names(), f"{ctrl1_hostname}/{interface}", f"assign ptp interface for {ctrl1_hostname}")
 
+            compute_0_interfaces = ptp_host_if.get_compute_0_interfaces()
+            comp0_hostname = "compute-0"
+            for interface in compute_0_interfaces:
+                if not interface :
+                    continue
+                
+                system_host_if_ptp_keywords.system_host_if_ptp_assign(comp0_hostname, interface, interface_name)
+                system_ptp_interface_show_output = system_ptp_interface_keywords.get_system_ptp_interface_show(interface_name)
+                validate_str_contains(system_ptp_interface_show_output.get_ptp_interface().get_interface_names(), f"{comp0_hostname}/{interface}", f"assign ptp interface for {comp0_hostname}")
+
+
             ptp_interface_parameters = ptp_host_if.get_ptp_interface_parameter()
             if ptp_interface_parameters :
                 system_ptp_interface_parameter_add_output = system_ptp_interface_keywords.system_ptp_interface_parameter_add(interface_name, ptp_interface_parameters)

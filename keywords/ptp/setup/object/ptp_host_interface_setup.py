@@ -30,6 +30,10 @@ class PTPHostInterfaceSetup:
             raise Exception(f"The ptp host interface entry {self.name} must have controller_1_interfaces defined.")
         self.controller_1_interfaces = setup_dict["controller_1_interfaces"]
 
+        self.compute_0_interfaces = None
+        if "compute_0_interfaces" in setup_dict:
+            self.compute_0_interfaces = setup_dict.get("compute_0_interfaces")
+            
     def __str__(self):
         """
         String representation of this object.
@@ -75,3 +79,12 @@ class PTPHostInterfaceSetup:
             List[str]: The controller_1_interfaces of this ptp host interface setup.
         """
         return self.controller_1_interfaces
+
+    def get_compute_0_interfaces(self) -> List[str]:
+        """
+        Gets the compute_0_interfaces of this ptp host interface setup.
+
+        Returns:
+            List[str]: The compute_0_interfaces of this ptp host interface setup.
+        """
+        return self.compute_0_interfaces
