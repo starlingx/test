@@ -36,7 +36,7 @@ class DcManagerSubcloudAddKeywords(BaseKeyword):
         install_file = sc_assets.get_install_file()
 
         # Get the subcloud bootstrap address
-        boot_add = sc_config.get_nodes()[0].get_ip()
+        boot_add = sc_config.get_first_controller().get_ip()
         admin_creds = sc_config.get_admin_credentials()
 
         # Execute the command

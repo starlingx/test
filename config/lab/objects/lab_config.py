@@ -496,5 +496,16 @@ class LabConfig:
             List[str]: List of subcloud names of the specified type
         """
         if subcloud_type is None:
-            return self.subclouds
+            return [subcloud.get_lab_name() for subcloud in self.subclouds]
         return [subcloud.get_lab_name() for subcloud in self.get_subclouds_by_type(subcloud_type)]
+
+    def get_first_controller(self) -> Optional[Node]:
+        """Get the first controller node.
+
+        Returns:
+            Optional[Node]: The first controller node if found, None otherwise
+        """
+        controllers = self.get_controllers()
+        if len(controllers) > 0:
+            return controllers[0]
+        return None

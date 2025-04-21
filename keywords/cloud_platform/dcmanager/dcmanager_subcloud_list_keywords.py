@@ -51,7 +51,7 @@ class DcManagerSubcloudListKeywords(BaseKeyword):
             Exception: if the subcloud is in a failed state.
 
         """
-        failed_status = ["bootstrap-failed", "install-failed", "create-failed"]
+        failed_status = ["bootstrap-failed", "install-failed", "create-failed", "config-failed"]
         time_out = 4800
         polling_sleep_time = 60
         end_time = time.time() + time_out
