@@ -129,10 +129,10 @@ class CATPtpConfigOutput:
 
     """
 
-    def __init__(self, cat_config_output: [str]):
+    def __init__(self, cat_config_output: list[str]):
         """
-        Constructor.
-            Create an list of config objects for the given output
+        Create an list of config objects for the given output
+
         Args:
             cat_config_output (list[str]): a list of strings representing the output of the cat config  command
 
@@ -144,18 +144,19 @@ class CATPtpConfigOutput:
         self.transport_options_output: TransportOptionsOutput = None
         self.default_interface_options_output: DefaultInterfaceOptionsOutput = None
         self.clock_description_output: ClockDescriptionOutput = None
+        self.associated_interfaces: list[str] = []
 
         in_header = False
         in_body = False
         config_object = ""
         body_str = []
         for line in cat_config_output:
-            if not in_header and line == "#\n":
+            if not in_header and (line == "##\n" or line == "#\n"):
                 self.create_config_object(config_object, body_str)
                 in_header = True
-            elif in_header and line != "#\n":
-                config_object = line.strip()
-            elif line == "#\n" and in_header:  # we are exiting the header
+            elif in_header and line not in ["#\n", "##\n"]:
+                config_object = line.strip("#\n")
+            elif (line == "#\n" or line == "##\n") and in_header:  # we are exiting the header
                 in_header = False
                 in_body = True
                 # reset the body str
@@ -165,14 +166,13 @@ class CATPtpConfigOutput:
         # Create the last config item
         self.create_config_object(config_object, body_str)
 
-    def create_config_object(self, config_object: str, body_str: [str]):
+    def create_config_object(self, config_object: str, body_str: list[str]):
         """
         Creates the config object
-        Args:
-            config_object (): the object to be created
-            body_str (): the body of the config
 
-        Returns:
+        Args:
+            config_object (str): the object to be created
+            body_str (list[str]): the body of the config
 
         """
         if "Default Data Set" in config_object:
@@ -189,19 +189,26 @@ class CATPtpConfigOutput:
             self.default_interface_options_output = DefaultInterfaceOptionsOutput(body_str)
         if "Clock description" in config_object:
             self.clock_description_output = ClockDescriptionOutput(body_str)
+        if "Associated interface:" in config_object:
+            associated_interface = config_object.split(":")[1].strip()  # split and get the value
+            self.associated_interfaces.append(associated_interface)
 
     def get_data_set_output(self) -> DefaultDataSetOutput:
         """
         Getter for the default data set output
-        Returns: a PMCGetDefaultDataSetOutput object
+
+        Returns:
+            DefaultDataSetOutput: a PMCGetDefaultDataSetOutput object
 
         """
         return self.data_set_output
 
     def get_default_interface_options_output(self) -> DefaultInterfaceOptionsOutput:
         """
-        Getter for default interface options ouput
-        Returns: a DefaultInterfaceOptionsOutput object
+        Getter for default interface options output
+
+        Returns:
+            DefaultInterfaceOptionsOutput: a DefaultInterfaceOptionsOutput object
 
         """
         return self.default_interface_options_output
@@ -209,7 +216,9 @@ class CATPtpConfigOutput:
     def get_port_data_set_output(self) -> PortDataSetOutput:
         """
         Getter for port data set output
-        Returns: a PortDataSetOutput object
+
+        Returns:
+            PortDataSetOutput: a PortDataSetOutput object
 
         """
         return self.port_data_set_output
@@ -217,7 +226,9 @@ class CATPtpConfigOutput:
     def get_run_time_options_output(self) -> RunTimeOptionsOutput:
         """
         Getter for run time options output
-        Returns: a RunTimeOptionsOutput object
+
+        Returns:
+            RunTimeOptionsOutput: a RunTimeOptionsOutput object
 
         """
         return self.run_time_options_output
@@ -225,7 +236,9 @@ class CATPtpConfigOutput:
     def get_servo_options_output(self) -> ServoOptionsOutput:
         """
         Getter for servo options output
-        Returns: a ServoOptionsOutput object
+
+        Returns:
+            ServoOptionsOutput: a ServoOptionsOutput object
 
         """
         return self.servo_options_output
@@ -233,7 +246,9 @@ class CATPtpConfigOutput:
     def get_transport_options_output(self) -> TransportOptionsOutput:
         """
         Getter for transport options output
-        Returns: a TransportOptionsOutput object
+
+        Returns:
+            TransportOptionsOutput: a TransportOptionsOutput object
 
         """
         return self.transport_options_output
@@ -241,7 +256,29 @@ class CATPtpConfigOutput:
     def get_clock_description_output(self) -> ClockDescriptionOutput:
         """
         Getter for clock description output
-        Returns: a ClockDescriptionOutput object
+
+        Returns:
+            ClockDescriptionOutput: a ClockDescriptionOutput object
 
         """
         return self.clock_description_output
+
+    def set_associated_interfaces(self, associated_interfaces: list[str]):
+        """
+        Setter for associated_interfaces
+
+        Args:
+            associated_interfaces (list[str]): the associated_interfaces
+
+        """
+        self.associated_interfaces = associated_interfaces
+
+    def get_associated_interfaces(self) -> list[str]:
+        """
+        Getter for associated_interfaces
+
+        Returns:
+            list[str]: the associated_interfaces
+
+        """
+        return self.associated_interfaces
