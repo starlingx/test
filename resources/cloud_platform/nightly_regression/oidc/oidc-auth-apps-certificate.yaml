@@ -1,0 +1,22 @@
+# To use this yaml file, you must have the following variable defined:
+# - oam_ip: The oam ip of the lab
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+   name: oidc-auth-apps-certificate
+   namespace: kube-system
+spec:
+   secretName: oidc-auth-apps-certificate
+   duration: 2160h # 90 days
+   renewBefore: 360h # 15 days
+   issuerRef:
+      name: system-local-ca
+      kind: ClusterIssuer
+   commonName: "{{ oam_ip }}"
+   subject:
+      organizations:
+         - ABC-Company
+      organizationalUnits:
+         - StarlingX-system-oidc-auth-apps
+   ipAddresses:
+   - "{{ oam_ip }}"
