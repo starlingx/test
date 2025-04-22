@@ -6,6 +6,7 @@ from framework.ssh.ssh_connection import SSHConnection
 from keywords.base_keyword import BaseKeyword
 from keywords.cloud_platform.command_wrappers import source_openrc
 from keywords.cloud_platform.fault_management.alarms.alarm_list_keywords import AlarmListKeywords
+from keywords.cloud_platform.fault_management.alarms.objects.alarm_list_object import AlarmListObject
 from keywords.cloud_platform.system.host.system_host_list_keywords import SystemHostListKeywords
 
 
@@ -95,6 +96,7 @@ class SystemHostLockKeywords(BaseKeyword):
             KeywordException: If unlock does not occur in the given time
 
         """
+        self.unlock_host_pre_check()
         self.ssh_connection.send(source_openrc(f"system host-unlock {host_name}"))
         self.validate_success_return_code(self.ssh_connection)
         is_host_unlocked = self.wait_for_host_unlocked(host_name)
@@ -102,6 +104,19 @@ class SystemHostLockKeywords(BaseKeyword):
             host_value = SystemHostListKeywords(self.ssh_connection).get_system_host_list().get_host(host_name)
             raise KeywordException("Unlock host did not unlock in the required time. Host values were: " f"Operational: {host_value.get_operational()} " f"Administrative: {host_value.get_administrative()} " f"Availability: {host_value.get_availability()}")
         return True
+
+    def unlock_host_pre_check(self):
+        """
+        Checks to ensure no apps are currently applying as this will cause unlock to fail
+
+        """
+        # check not apps are applying
+        alarm = AlarmListObject()
+        alarm.set_alarm_id("750.004")
+        try:
+            AlarmListKeywords(self.ssh_connection).wait_for_alarms_cleared([alarm])
+        except TimeoutError:  # Alarm still exists, we can't unlock
+            raise KeywordException("Failed unlock pre-check. Application apply was in progress")
 
     def wait_for_host_unlocked(self, host_name: str, unlock_wait_timeout: int = 1800) -> bool:
         """

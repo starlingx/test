@@ -186,9 +186,9 @@ def test_lock_unlock_standby_controller():
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     standby_controller = SystemHostListKeywords(ssh_connection).get_standby_controller()
     lock_success = SystemHostLockKeywords(ssh_connection).lock_host(standby_controller.get_host_name())
-    assert lock_success, "Controller was not locked successfully."
+    validate_equals(lock_success, True, "Validate controller was locked successfully")
     unlock_success = SystemHostLockKeywords(ssh_connection).unlock_host(standby_controller.get_host_name())
-    assert unlock_success, "Controller was not unlocked successfully."
+    validate_equals(unlock_success, True, "Validate controller was unlocked successfully")
 
 
 @mark.p0
