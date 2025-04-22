@@ -168,6 +168,23 @@ class FileKeywords(BaseKeyword):
             get_logger().log_error(f"Failed to check file existence at {path}: {e}")
             raise KeywordException(f"Failed to check file existence at {path}: {e}")
 
+    def create_directory_with_sudo(self, dir_path: str) -> bool:
+        """
+        Create a directory using sudo if it does not already exist.
+
+        Args:
+            dir_path (str): Absolute path to the directory to create.
+
+        Returns:
+            bool: True if directory exists or was created successfully.
+        """
+        if self.validate_file_exists_with_sudo(dir_path):
+            get_logger().log_info(f"Directory already exists: {dir_path}")
+            return True
+
+        self.ssh_connection.send_as_sudo(f"mkdir -p {dir_path}")
+        return self.validate_file_exists_with_sudo(dir_path)
+
     def delete_folder_with_sudo(self, folder_path: str) -> bool:
         """
         Deletes the folder.
