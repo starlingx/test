@@ -2,6 +2,7 @@ import time
 
 from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
+from framework.validation.validation import validate_equals_with_retry
 from keywords.base_keyword import BaseKeyword
 from keywords.cloud_platform.command_wrappers import source_openrc
 from keywords.cloud_platform.dcmanager.objects.dcmanager_subcloud_list_output import DcManagerSubcloudListOutput
@@ -68,3 +69,27 @@ class DcManagerSubcloudListKeywords(BaseKeyword):
             time.sleep(polling_sleep_time)
         get_logger().log_error(msg)
         raise TimeoutError(msg)
+
+    def validate_subcloud_availability_status(self, subcloud_name: str) -> bool:
+        """Validates the availability status of the specified subcloud until reaches online state.
+
+        Args:
+            subcloud_name (str): a str name for the subcloud.
+
+        Returns:
+            bool: True if the subcloud reaches the desired status.
+
+        Raises:
+            Exception: if the subcloud is offline.
+
+        """
+
+        def get_availability():
+            sc_list_out = self.get_dcmanager_subcloud_list().get_subcloud_by_name(subcloud_name)
+            sc_availability = sc_list_out.get_availability()
+            msg = f"Subcloud {subcloud_name} is in {sc_availability} state"
+            get_logger().log_info(msg)
+
+            return sc_availability
+
+        validate_equals_with_retry(get_availability, "online", "Validate if subcloud is in online state.")
