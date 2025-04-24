@@ -16,7 +16,7 @@ def test_default_deployment_assets_config():
     assert default_config is not None, "Default deployment_assets config wasn't loaded successfully"
     assert not default_config.get_controller_deployment_assets().get_bootstrap_file(), "There should be no Boostrap Config for controller"
     assert default_config.get_controller_deployment_assets().get_deployment_config_file() == "/home/sysadmin/deployment-config.yaml", "There should be a Deployment Config for controller"
-    assert default_config.get_subcloud_deployment_assets("subcloud1").get_deployment_config_file() == "/home/sysadmin/subcloud1/subcloud1-deploy-standard.yaml", "There should be a Deployment Config for subcloud1"
+    assert default_config.get_subcloud_deployment_assets("subcloud1").get_deployment_config_file() == "/home/sysadmin/subcloud-1/subcloud1-deploy-standard.yaml", "There should be a Deployment Config for subcloud1"
 
 
 def test_custom_deployment_assets_config():

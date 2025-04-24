@@ -32,7 +32,7 @@ class DeploymentAssets:
         Returns (str): boostrap_file
 
         """
-        return self.bootstrap_file.strip()
+        return self.bootstrap_file.strip() if self.bootstrap_file else self.bootstrap_file
 
     def get_deployment_config_file(self) -> str:
         """
