@@ -8,7 +8,7 @@ from keywords.cloud_platform.system.ptp.ptp_teardown_executor_keywords import PT
 
 
 @mark.p0
-@mark.lab_is_duplex
+@mark.lab_has_standby_controller
 def test_delete_and_add_all_ptp_configuration():
     """
     Delete and Add all PTP configurations
