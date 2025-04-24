@@ -213,7 +213,7 @@ class DcManagerSubcloudListOutput:
 
         return min(subclouds, key=lambda subcloud: int(subcloud.get_id()))
 
-    def get_undeployed_subcloud_name(self, lab_type: str) -> str:
+    def get_undeployed_subcloud_name(self, lab_type: str = None) -> str:
         """
         Fetch the name of the first subcloud that is not deployed.
 
@@ -226,10 +226,7 @@ class DcManagerSubcloudListOutput:
             lab_type (str): The type of the lab (e.g., 'simplex', 'duplex').
 
         Returns:
-            str: The name of the first subcloud that is not deployed.
-
-        Raises:
-            ValueError: If no suitable subcloud is found.
+            str: The name of the first subcloud that is not deployed or None.
         """
         # fetch all the subclouds from the system
         deployed_sc_names = [i.get_name() for i in self.dcmanager_subclouds]
@@ -238,16 +235,13 @@ class DcManagerSubcloudListOutput:
         # fetch all the subclouds from the lab config
         sc_names_from_config = lab_config.get_subclouds_name_by_type(lab_type)
 
-        # raise if there is no subcloud in the config for the given type
+        # return None if there is no subcloud in the config for the given type
         if not sc_names_from_config:
-            error_message = f"No Lab found with Type: {lab_type} in the configuration."
-            get_logger().log_exception(error_message)
-            raise ValueError(error_message)
+            return None
 
         all_free_sc = set(sc_names_from_config).difference(set(deployed_sc_names))
 
         if not all_free_sc:
-            error_message = "No subcloud found in the configuration that is not deployed."
-            get_logger().log_exception(error_message)
-            raise ValueError(error_message)
+            return None
+
         return all_free_sc.pop()
