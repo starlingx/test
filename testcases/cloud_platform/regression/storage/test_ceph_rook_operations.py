@@ -31,16 +31,16 @@ def test_ceph_rook_host_fs_operation():
 
     system_storage_backend_keywords = SystemStorageBackendKeywords(ssh_connection)
 
-    get_logger().log_info("\n\nCheck whether rook-ceph is configured as storage backend.\n")
+    get_logger().log_test_case_step("\n\nCheck whether rook-ceph is configured as storage backend.\n")
 
     if not system_storage_backend_keywords.get_system_storage_backend_list().is_backend_configured("ceph-rook"):
-        get_logger().log_info("\n\nAdd rook-ceph as storage backend.\n")
+        get_logger().log_test_case_step("\n\nAdd rook-ceph as storage backend.\n")
         system_storage_backend_keywords.system_storage_backend_add(backend="ceph-rook", confirmed=True)
 
     backend_name = system_storage_backend_keywords.get_system_storage_backend_list().get_system_storage_backend("ceph-rook").get_backend()
     get_logger().log_info(f"Backend is: {backend_name}")
 
-    get_logger().log_info(f"\n\nCheck whether 'image-conversion' or 'ceph' file system exist on the {host}.\n")
+    get_logger().log_test_case_step(f"\n\nCheck whether 'image-conversion' or 'ceph' file system exist on the {host}.\n")
     system_host_fs_keywords = SystemHostFSKeywords(ssh_connection)
     fs_name = ""
     if not system_host_fs_keywords.get_system_host_fs_list(host_name=host).is_fs_exist(fs_name="image-conversion"):
@@ -52,7 +52,7 @@ def test_ceph_rook_host_fs_operation():
     get_logger().log_info(f"{fs_name} is available for test.")
 
     fs_size = 2
-    get_logger().log_info(f"\n\nAdd {fs_name} as size of {fs_size}GB into file system\n")
+    get_logger().log_test_case_step(f"\n\nAdd {fs_name} as size of {fs_size}GB into file system\n")
     system_host_fs_keywords.system_host_fs_add(hostname=host, fs_name=fs_name, fs_size=fs_size)
 
     def is_filesystem_exist():
@@ -69,18 +69,18 @@ def test_ceph_rook_host_fs_operation():
     validate_equals_with_retry(is_filesystem_ready, "Ready", f"{fs_name} is in Ready Status in 2 mins", 120, 5)
 
     fs_new_size = 3
-    get_logger().log_info(f"\n\nIncrease {fs_name} size to {fs_new_size}GiB.\n")
+    get_logger().log_test_case_step(f"\n\nIncrease {fs_name} size to {fs_new_size}GiB.\n")
     system_host_fs_keywords.system_host_fs_modify(hostname=host, fs_name=fs_name, fs_size=fs_new_size)
     curr_fs_size = system_host_fs_keywords.get_system_host_fs_list(host).get_system_host_fs(fs_name).get_size()
     validate_equals(curr_fs_size, fs_new_size, f"Tried to set {fs_name} to {fs_new_size}GB, actually set to {curr_fs_size}GB")
     validate_equals_with_retry(is_filesystem_ready, "Ready", f"{fs_name} is in Ready Status in 2 mins", 120, 5)
 
     fs_new_size = 1
-    get_logger().log_info(f"\n\nDecrease {fs_name} to {fs_new_size}GiB, it should be rejected\n")
+    get_logger().log_test_case_step(f"\n\nDecrease {fs_name} to {fs_new_size}GiB, it should be rejected\n")
     msg = system_host_fs_keywords.system_host_fs_modify_with_error(hostname=host, fs_name=fs_name, fs_size=fs_new_size)
     get_logger().log_info(f"Error msg: {msg}.")
     validate_str_contains(msg[0], "should be bigger than", f"host-fs-modify decrease size should be rejected: {msg[0]}")
 
-    get_logger().log_info(f"\n\nDelete {fs_name} file system on {host}\n.")
+    get_logger().log_test_case_step(f"\n\nDelete {fs_name} file system on {host}.\n")
     system_host_fs_keywords.system_host_fs_delete(hostname=host, fs_name=fs_name)
     validate_equals_with_retry(is_filesystem_exist, False, f"{fs_name} should be deleted in 2 mins", 120, 5)
