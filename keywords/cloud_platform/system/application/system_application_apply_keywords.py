@@ -94,3 +94,19 @@ class SystemApplicationApplyKeywords(BaseKeyword):
         cmd = f'system application-apply {app_name}'
 
         return cmd
+
+    def is_applied_or_failed(self, app_name: str) -> bool:
+        """
+        Verifies if the application has already been applied or apply-failed.
+        Args:
+            app_name (str): a string representing the name of the application.
+
+        Returns:
+            bool: True if the application named 'app_name' has already been applied or apply-failed; False otherwise.
+
+        """
+        system_application_list_keywords = SystemApplicationListKeywords(self.ssh_connection)
+        if system_application_list_keywords.get_system_application_list().is_in_application_list(app_name):
+            application = system_application_list_keywords.get_system_application_list().get_application(app_name)
+            return application.get_status() == SystemApplicationStatusEnum.APPLIED.value or application.get_status() == SystemApplicationStatusEnum.APPLY_FAILED.value
+        return False

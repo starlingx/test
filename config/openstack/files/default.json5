@@ -1,0 +1,19 @@
+{
+  // openstack configuration
+  "app_name": "stx-openstack",
+  "version_cmd": "cat /opt/platform/fluxcd/*/stx-openstack/*/metadata.yaml",
+
+  "remote": {
+    "enabled": false,
+    "file_server": "",
+    "app_version": "latest_build",
+    "app_build": "stx-openstack-master-debian",
+
+  },
+
+  "custom": {
+    "enabled": true,
+    "file_location": "/home/sysadmin/",
+    "file_name": "helm-chart-manifest.tgz"
+  }
+}

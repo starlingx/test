@@ -27,6 +27,7 @@ def pytest_addoption(parser: Any):
     parser.addoption("--security_config_file", action="store")
     parser.addoption("--usm_config_file", action="store")
     parser.addoption("--app_config_file", action="store")
+    parser.addoption("--openstack_config_file", action="store")
 
 
 def pytest_sessionstart(session: Any):

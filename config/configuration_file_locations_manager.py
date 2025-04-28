@@ -21,6 +21,7 @@ class ConfigurationFileLocationsManager:
         self.security_config_file = None
         self.usm_config_file = None
         self.app_config_file = None
+        self.openstack_config_file = None
 
     def set_configs_from_pytest_args(self, session: Session):
         """
@@ -79,6 +80,10 @@ class ConfigurationFileLocationsManager:
         app_config_file = session.config.getoption("--app_config_file")
         if app_config_file:
             self.set_app_config_file(app_config_file)
+
+        openstack_config_file = session.config.getoption("--openstack_config_file")
+        if openstack_config_file:
+            self.set_openstack_config_file(openstack_config_file)
 
     def set_configs_from_options_parser(self, parser: OptionParser = None):
         """
@@ -141,6 +146,10 @@ class ConfigurationFileLocationsManager:
         app_config_file = options.app_config_file
         if app_config_file:
             self.set_app_config_file(app_config_file)
+
+        openstack_config_file = options.openstack_config_file
+        if openstack_config_file:
+            self.set_openstack_config_file(openstack_config_file)
 
     def _add_options(self, parser: OptionParser):
         """
@@ -246,6 +255,14 @@ class ConfigurationFileLocationsManager:
             type="str",
             dest="app_config_file",
             help="The app config file",
+        )
+
+        parser.add_option(
+            "--openstack_config_file",
+            action="store",
+            type="str",
+            dest="openstack_config_file",
+            help="The openstack config file",
         )
 
         options, args = parser.parse_args()
@@ -499,3 +516,22 @@ class ConfigurationFileLocationsManager:
 
         """
         self.app_config_file = app_config_file
+
+    def get_openstack_config_file(self) -> str:
+        """
+        Getter for openstack config file
+
+        Returns:
+            str: the openstack config file
+        """
+        return self.openstack_config_file
+
+    def set_openstack_config_file(self, openstack_config_file: str):
+        """
+        Setter for app config file
+
+        Args:
+            openstack_config_file (str): the app config file
+
+        """
+        self.openstack_config_file = openstack_config_file

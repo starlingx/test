@@ -193,3 +193,52 @@ def validate_list_contains(observed_value: Any, expected_values: Any, validation
         get_logger().log_error(f"Expected: {expected_values}")
         get_logger().log_error(f"Observed: {observed_value}")
         raise Exception("Validation Failed")
+
+
+def validate_list_contains_with_retry(
+    function_to_execute: Callable[[], Any],
+    expected_values: Any,
+    validation_description: str,
+    timeout: int = 30,
+    polling_sleep_time: int = 5,
+) -> str:
+    """
+    This function will validate if the observed value contains the expected value.
+
+    Args:
+        function_to_execute (Callable[[], Any]): The function to be executed repeatedly, taking no arguments and returning any value.
+        expected_values (Any): the list of expected values.
+        validation_description (str): Description of this validation for logging purposes.
+        timeout (int): The maximum time (in seconds) to wait for the match.
+        polling_sleep_time (int): The interval of time to wait between calls to function_to_execute.
+
+
+    Returns: str
+
+    Raises:
+        Exception: when validate fails
+
+    """
+    get_logger().log_info(f"Attempting Validation - {validation_description}")
+    end_time = time.time() + timeout
+
+    # Attempt the validation
+    while True:
+
+        # Compute the actual value that we are trying to validate.
+        result = function_to_execute()
+
+        if result in expected_values:
+            get_logger().log_info(f"Validation Successful - {validation_description}")
+            return result
+        else:
+            get_logger().log_info("Validation Failed")
+            get_logger().log_info(f"Expected: {expected_values}")
+            get_logger().log_info(f"Observed: {result}")
+
+            if time.time() < end_time:
+                get_logger().log_info(f"Retrying in {polling_sleep_time}s")
+                sleep(polling_sleep_time)
+                # Move on to the next iteration
+            else:
+                raise TimeoutError(f"Timeout performing validation - {validation_description}")
