@@ -60,6 +60,7 @@ class LabConnectionKeywords(BaseKeyword):
             standby_ip,
             lab_config.get_admin_credentials().get_user_name(),
             lab_config.get_admin_credentials().get_password(),
+            name=standby_host_name,
             ssh_port=lab_config.get_ssh_port(),
             jump_host=jump_host_config,
         )
@@ -78,10 +79,10 @@ class LabConnectionKeywords(BaseKeyword):
 
         """
         lab_config = ConfigurationManager.get_lab_config()
-        
-        if 'worker' in lab_config.get_node(hostname).get_type() :
+
+        if "worker" in lab_config.get_node(hostname).get_type():
             return self.get_compute_ssh(hostname)
-        
+
         host_ip = lab_config.get_node(hostname).get_ip()
         jump_host_config = None
         if lab_config.is_use_jump_server():
@@ -91,6 +92,7 @@ class LabConnectionKeywords(BaseKeyword):
             host_ip,
             lab_config.get_admin_credentials().get_user_name(),
             lab_config.get_admin_credentials().get_password(),
+            name=hostname,
             ssh_port=lab_config.get_ssh_port(),
             jump_host=jump_host_config,
         )
@@ -110,6 +112,7 @@ class LabConnectionKeywords(BaseKeyword):
 
         """
         connection = self.get_active_controller_ssh()
+        connection.set_name(compute_name)
         lab_config = ConfigurationManager.get_lab_config()
 
         # setup this connection to use ssh pass
