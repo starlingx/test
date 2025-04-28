@@ -211,7 +211,7 @@ class SSHConnection:
         # if we are using ssh pass, we need to wrap the call
         if self.use_ssh_pass:
             if action == "SEND_SUDO":  # if it a sudo call we need further changes to avoid password prompt
-                cmd = f"{self.get_ssh_pass_str()} 'echo '{self.ssh_pass_password}' | sudo -S {cmd}'"
+                cmd = f'{self.get_ssh_pass_str()} "echo "{self.ssh_pass_password}" | sudo -S {cmd}"'
                 # since we do not need prompts or to prepend sudo now, change Action to just 'SEND'
                 action = "SEND"
             else:
