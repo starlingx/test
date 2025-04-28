@@ -202,23 +202,6 @@ class FileKeywords(BaseKeyword):
         self.ssh_connection.send_as_sudo(f"mkdir -p {dir_path}")
         return self.validate_file_exists_with_sudo(dir_path)
 
-    def create_directory(self, dir_path: str) -> bool:
-        """
-        Create a directory if it does not already exist.
-
-        Args:
-            dir_path (str): Absolute path to the directory to create.
-
-        Returns:
-            bool: True if directory exists or was created successfully.
-        """
-        if self.validate_file_exists_with_sudo(dir_path):
-            get_logger().log_info(f"Directory already exists: {dir_path}")
-            return True
-
-        self.ssh_connection.send(f"mkdir -p {dir_path}")
-        return self.validate_file_exists_with_sudo(dir_path)
-
     def delete_folder_with_sudo(self, folder_path: str) -> bool:
         """
         Deletes the folder.
@@ -254,3 +237,50 @@ class FileKeywords(BaseKeyword):
             new_file_name (str): path to be set for renamed file
         """
         self.ssh_connection.send_as_sudo(f"mv {old_file_name} {new_file_name}")
+
+    def rsync_from_remote_server(self, remote_server: str, remote_user: str, remote_password: str, remote_path: str, local_dest_path: str, recursive: bool = False, rsync_options: str = "") -> bool:
+        """
+        Rsync a file or directory from a remote server to the target host.
+
+        This method runs rsync on the host associated with the current SSHConnection
+        (self.ssh_connection). It initiates an outbound connection to the remote server
+        using sshpass for authentication, allowing flexible copying of files or directories
+        from external sources to the target host.
+
+        Default rsync options are '-avz' (archive mode, verbose, compression). Additional options
+        can be appended if needed to support scenarios like progress display, bandwidth throttling, or cleanup.
+
+        Args:
+            remote_server (str): Remote server IP address or hostname.
+            remote_user (str): Username to authenticate with the remote server.
+            remote_password (str): Password to authenticate with the remote server.
+            remote_path (str): Absolute path to the file or directory on the remote server.
+            local_dest_path (str): Absolute path on the target host where the file or directory should be copied.
+            recursive (bool, optional): Whether to copy directories recursively by adding 'r' to options. Defaults to False.
+            rsync_options (str, optional): Additional rsync command-line options (e.g., "--progress", "--bwlimit=10000"). Defaults to "".
+
+        Returns:
+            bool: True if the rsync operation is successful.
+
+        Raises:
+            KeywordException: If the rsync operation fails due to SSH, rsync, or connection issues.
+        """
+        opts = "-avz"
+        if recursive:
+            opts += "r"
+
+        if rsync_options:
+            opts += f" {rsync_options}"
+
+        cmd = f"sshpass -p '{remote_password}' rsync {opts} -e 'ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10' {remote_user}@{remote_server}:{remote_path} {local_dest_path}"
+
+        get_logger().log_info(f"Executing rsync command: {cmd}")
+
+        try:
+            self.ssh_connection.send(cmd)
+            self.validate_success_return_code(self.ssh_connection)
+        except Exception as e:
+            get_logger().log_error(f"Failed to rsync file from {remote_user}@{remote_server}:{remote_path} to {local_dest_path}: {e}")
+            raise KeywordException(f"Failed to rsync file from {remote_user}@{remote_server}:{remote_path} to {local_dest_path}: {e}") from e
+
+        return True
