@@ -100,3 +100,29 @@ class KubectlGetPodsKeywords(BaseKeyword):
             time.sleep(5)
 
         return False
+    def wait_for_pods_to_reach_status(self, expected_status: str, pod_names: list, namespace: str = None, poll_interval: int = 5, timeout: int = 180) -> bool:
+            """
+            Waits timeout amount of time for the given pod in a namespace to be in the given status
+            Args:
+                expected_status (str): the expected status
+                pod_names (list): the pod names
+                namespace (str): the namespace
+                poll_interval (int): the interval in secs to poll for status
+                timeout (int): the timeout in secs
+
+            Returns:
+                bool: True if pod is in expected status else False
+
+            """
+
+            pod_status_timeout = time.time() + timeout
+
+            while time.time() < pod_status_timeout:
+                pods = self.get_pods(namespace).get_pods()
+                not_ready_pods = list(filter(lambda pod: pod.get_name() in pod_names and pod.get_status() != expected_status, pods))
+                if len(not_ready_pods) == 0:
+                    return True
+                time.sleep(poll_interval)
+
+            raise KeywordException(f"Pods {pod_names} in namespace {namespace} did not reach status {expected_status} within {timeout} seconds")
+        

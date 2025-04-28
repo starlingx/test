@@ -202,6 +202,23 @@ class FileKeywords(BaseKeyword):
         self.ssh_connection.send_as_sudo(f"mkdir -p {dir_path}")
         return self.validate_file_exists_with_sudo(dir_path)
 
+    def create_directory(self, dir_path: str) -> bool:
+        """
+        Create a directory if it does not already exist.
+
+        Args:
+            dir_path (str): Absolute path to the directory to create.
+
+        Returns:
+            bool: True if directory exists or was created successfully.
+        """
+        if self.validate_file_exists_with_sudo(dir_path):
+            get_logger().log_info(f"Directory already exists: {dir_path}")
+            return True
+
+        self.ssh_connection.send(f"mkdir -p {dir_path}")
+        return self.validate_file_exists_with_sudo(dir_path)
+
     def delete_folder_with_sudo(self, folder_path: str) -> bool:
         """
         Deletes the folder.
