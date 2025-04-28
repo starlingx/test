@@ -85,6 +85,12 @@ class LabConfig:
         if "system_controller_name" in lab_dict:
             self.system_controller_name = lab_dict["system_controller_name"]
 
+        self.secondary_system_controller = None
+        if "secondary_system_controller" in lab_dict:
+            secondary_system_controller = lab_dict["secondary_system_controller"]
+            secondary_lab_file = get_stx_resource_path(secondary_system_controller)
+            self.secondary_system_controller = LabConfig(secondary_lab_file)
+
         self.lab_config_file = config
 
     def get_floating_ip(self) -> str:
@@ -428,6 +434,24 @@ class LabConfig:
             system_controller_name (str): the system_controller_name
         """
         self.system_controller_name = system_controller_name
+
+    def get_secondary_system_controller_config(self) -> object:
+        """
+        Get the secondary system controller object.
+
+        Returns:
+            object: Secondary dc configuration.
+        """
+        return self.secondary_system_controller
+
+    def get_secondary_system_controller_name(self) -> str:
+        """
+        Gets the secondary controller host name
+
+        Returns:
+            str: Secondary lab name.
+        """
+        return self.secondary_system_controller.get_lab_name()
 
     def to_log_strings(self) -> List[str]:
         """
