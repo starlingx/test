@@ -435,6 +435,16 @@ class SSHConnection:
         """
         self.client.close()
 
+    def set_name(self, name: str) -> None:
+        """
+        Sets the name of this SSH connection
+
+        Args:
+            name (str): Name to assign to this SSH connection
+
+        """
+        self.name = name
+
     def get_name(self) -> str:
         """
         Get the name of this SSH connection.
