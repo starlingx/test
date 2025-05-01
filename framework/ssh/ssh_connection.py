@@ -226,7 +226,7 @@ class SSHConnection:
                 thread_manager = ThreadManager(timeout=reconnect_timeout / 10)
 
                 if action == "SEND":
-                    thread_manager.start_thread("SSH_Command", self._send, cmd, get_pty)
+                    thread_manager.start_thread("SSH_Command", self._send, cmd, get_pty=get_pty)
                 elif action == "SEND_SUDO":
                     thread_manager.start_thread("SSH_Command", self._send_as_sudo, cmd)
                 elif action == "SEND_EXPECT_PROMPTS":
@@ -261,11 +261,7 @@ class SSHConnection:
         """
         get_logger().log_ssh(cmd)
 
-        if get_pty:
-            stdin, stdout, stderr = self.client.exec_command(cmd, timeout=timeout, get_pty=True)
-        else:  # Sending get_pty=False causes issues with Paramiko timeouts.
-            stdin, stdout, stderr = self.client.exec_command(cmd, timeout=timeout)
-
+        stdin, stdout, stderr = self.client.exec_command(cmd, timeout=timeout, get_pty=get_pty)
         stdout.channel.set_combine_stderr(True)
         self.last_return_code = stdout.channel.recv_exit_status()
         output = stdout.readlines()
