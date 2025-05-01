@@ -237,7 +237,7 @@ class ConfigurationFileLocationsManager:
             action="store",
             type="str",
             dest="usm_config_file",
-            help="The Usm config file",
+            help="The USM config file",
         )
 
         parser.add_option(

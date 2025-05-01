@@ -1,44 +1,64 @@
 {
-    // Indicates the current operation is for Major rel upgrade
-    "usm_is_upgrade": true,
+  // Type of operation: "upgrade" or "patch"
+  "usm_operation_type": "upgrade",
 
-    // Indicates the current operation is patching the system.
-    "usm_is_patch": "",
+  // Whether a reboot is required after the operation
+  "requires_reboot": false,
 
-    // Absolute path to ISO for Major rel upgrade
-    "iso_path": "/path/to/iso/file",
+  // If true, copy files from a remote build server to the controller
+  "copy_from_remote": false,
 
-    //  Absolute path to the Signature path for Major rel upgrade.
-    "upgrade_license": "/path/to/lic/file/stx.sig",
+  // ISO and SIG source paths
+  // Required if usm_operation_type = "upgrade"
+  // If copy_from_remote=true, these must be full remote paths
+  // If copy_from_remote=false, these are assumed to already exist on the controller
+  "iso_path": "/home/sysadmin/starlingx-10.0.0.iso",
+  "sig_path": "/home/sysadmin/starlingx-10.0.0.sig",
 
-    // Absolute path to the .patch file for Patching.
-    "patch_path": "/home/sysadmin",
+  // Patch file paths
+  // Required if usm_operation_type = "patch"
+  // Exactly one of the following must be set:
+  // - patch_path: to upload a single patch file
+  // - patch_dir: to upload a directory containing multiple .patch files
+  // Leave both empty for upgrade operations
+  //
+  // Examples:
+  // "patch_path": "/home/sysadmin/starlingx-10.0.0.patch"
+  // "patch_dir": "/home/sysadmin/patches/"
+  "patch_path": "",
+  "patch_dir": "",
 
-    // Path of directory where one or more .patch files are located.
-    "patch_dir": "/home/sysadmin/patch_dir",
+  // Destination directory on the controller where files will be copied
+  "dest_dir": "/home/sysadmin/upload_test/",
 
-    // Directory on the lab where the files need to be stored.
-    "dest_dir": "/home/sysadmin/upload_test/",
+  // Expected release IDs to validate a successful software upload or patching.
+  //
+  // This should always be a list of one or more version strings.
+  // In most upgrade workflows, this will contain a single release ID.
+  // For example:
+  //   "to_release_ids": ["starlingx-10.0.0"]
+  //
+  // In some patch workflows, especially when applying multiple patches,
+  // this list can contain multiple target release IDs expected after upload.
+  // For example:
+  //   "to_release_ids": ["starlingx-10.0.0", "starlingx-10.0.1"]
+  "to_release_ids": ["starlingx-10.0.0"],
 
-    // Address of the server where the iso/patch files are located.
-    "build_server": "host-name-for-build-server",
+  // Remote build server credentials (only used if copy_from_remote = true)
+  "remote_server": "",
+  "remote_server_username": "",
+  "remote_server_password": "",
 
-    // Username to authenticate to build_server
-    "build_server_username": "build_server_username",
+  // Optional CLI arguments passed to the 'software upload' or 'software upgrade' command
+  // Example: "--force"
+  "upgrade_arguments": "",
 
-    // Password to authenticate to build_server
-    "build_server_password": "build_server_password",
+  // Extra attributes for future workflows (e.g., patch staging, etc.)
+  "extra_attributes": {
+    // Example: "staged": "true"
+  },
 
-    //  Arguments for upgrade/patching testing
-    "upgrade_arguments": "",
-
-    // Release ids (one or more) to which the system is upgraded.
-    // Used for either multiple patches or major release + patch(es)
-    "to_release_ids": "stx-major.minor.version",
-
-    // Some extra attributes for patching USM, config
-    "extra_attributes": {
-        "": "",
-    },
-
+  // Polling configuration for checking upload success
+  "upload_poll_interval_sec": 30,
+  "upload_timeout_sec": 1800
 }

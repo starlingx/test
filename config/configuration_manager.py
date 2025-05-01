@@ -9,7 +9,7 @@ from config.logger.objects.logger_config import LoggerConfig
 from config.ptp.objects.ptp_config import PTPConfig
 from config.rest_api.objects.rest_api_config import RestAPIConfig
 from config.security.objects.security_config import SecurityConfig
-from config.usm.objects.usm_config import UsmConfig
+from config.usm.objects.usm_config import USMConfig
 from config.web.objects.web_config import WebConfig
 from framework.resources.resource_finder import get_stx_resource_path
 
@@ -31,7 +31,7 @@ class ConfigurationManagerClass:
         self.database_config: DatabaseConfig = None
         self.rest_api_config: RestAPIConfig = None
         self.security_config: SecurityConfig = None
-        self.usm_config: UsmConfig = None
+        self.usm_config: USMConfig = None
         self.app_config: AppConfig = None
         self.configuration_locations_manager = None
 
@@ -120,7 +120,7 @@ class ConfigurationManagerClass:
                 self.database_config = DatabaseConfig(database_config_file)
                 self.rest_api_config = RestAPIConfig(rest_api_config_file)
                 self.security_config = SecurityConfig(security_config_file)
-                self.usm_config = UsmConfig(usm_config_file)
+                self.usm_config = USMConfig(usm_config_file)
                 self.app_config = AppConfig(app_config_file)
                 self.loaded = True
             except FileNotFoundError as e:
@@ -227,12 +227,12 @@ class ConfigurationManagerClass:
         """
         return self.security_config
 
-    def get_usm_config(self) -> UsmConfig:
+    def get_usm_config(self) -> USMConfig:
         """
         Getter for usm config
 
         Returns:
-            UsmConfig: the usm config
+            USMConfig: the usm config
         """
         return self.usm_config
 
@@ -246,11 +246,11 @@ class ConfigurationManagerClass:
         """
         return self.app_config
 
-    def get_config_pytest_args(self) -> [str]:
+    def get_config_pytest_args(self) -> list[str]:
         """
         Returns the configuration file locations as pytest args.
 
-        Returns ([str]):
+        Returns (list[str]): A list of strings representing pytest arguments for configuration file locations.
 
         """
         pytest_config_args = []
