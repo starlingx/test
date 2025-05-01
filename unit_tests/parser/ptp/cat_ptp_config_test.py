@@ -164,7 +164,7 @@ def test_cat_ptp_config_output():
     assert default_data_set_object.get_socket_priority() == 0
     assert default_data_set_object.get_priority1() == 128
     assert default_data_set_object.get_priority2() == 128
-    assert default_data_set_object.get_domain_number() == "0"
+    assert default_data_set_object.get_domain_number() == 0
     assert default_data_set_object.get_utc_offset() == 37
     assert default_data_set_object.get_clock_class() == 248
     assert default_data_set_object.get_clock_accuracy() == "0xFE"
@@ -283,7 +283,7 @@ def test_cat_ptp_output_format_with_associated_interfaces():
     assert default_data_set_object.get_clock_servo() == "linreg"
     assert default_data_set_object.get_dataset_comparison() == "G.8275.x"
     assert default_data_set_object.get_delay_mechanism() == "E2E"
-    assert default_data_set_object.get_domain_number() == "24"
+    assert default_data_set_object.get_domain_number() == 24
     assert default_data_set_object.get_message_tag() == "ptp1"
     assert default_data_set_object.get_network_transport() == "L2"
     assert default_data_set_object.get_priority2() == 100

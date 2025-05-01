@@ -36,5 +36,5 @@
 		"subcloud1": "config/lab/files/template_subcloud1.json5",
 		"subcloud2": "config/lab/files/template_subcloud2.json5"
 	},
-	"secondary_system_controller": "config/lab/files/secondary_system_controller.json5",
+	"secondary_system_controller": "config/lab/files/template_secondary_system_controller.json5",
 }
