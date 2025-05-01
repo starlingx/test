@@ -238,7 +238,7 @@ class FileKeywords(BaseKeyword):
         """
         self.ssh_connection.send_as_sudo(f"mv {old_file_name} {new_file_name}")
 
-    def rsync_from_remote_server(self, remote_server: str, remote_user: str, remote_password: str, remote_path: str, local_dest_path: str, recursive: bool = False, rsync_options: str = "") -> bool:
+    def rsync_from_remote_server(self, remote_server: str, remote_user: str, remote_password: str, remote_path: str, local_dest_path: str, recursive: bool = False, rsync_options: str = "") -> None:
         """
         Rsync a file or directory from a remote server to the target host.
 
@@ -258,9 +258,6 @@ class FileKeywords(BaseKeyword):
             local_dest_path (str): Absolute path on the target host where the file or directory should be copied.
             recursive (bool, optional): Whether to copy directories recursively by adding 'r' to options. Defaults to False.
             rsync_options (str, optional): Additional rsync command-line options (e.g., "--progress", "--bwlimit=10000"). Defaults to "".
-
-        Returns:
-            bool: True if the rsync operation is successful.
 
         Raises:
             KeywordException: If the rsync operation fails due to SSH, rsync, or connection issues.
@@ -282,5 +279,3 @@ class FileKeywords(BaseKeyword):
         except Exception as e:
             get_logger().log_error(f"Failed to rsync file from {remote_user}@{remote_server}:{remote_path} to {local_dest_path}: {e}")
             raise KeywordException(f"Failed to rsync file from {remote_user}@{remote_server}:{remote_path} to {local_dest_path}: {e}") from e
-
-        return True
