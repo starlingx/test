@@ -261,7 +261,10 @@ class SSHConnection:
         """
         get_logger().log_ssh(cmd)
 
-        stdin, stdout, stderr = self.client.exec_command(cmd, timeout=timeout, get_pty=get_pty)
+        if get_pty:
+            stdin, stdout, stderr = self.client.exec_command(cmd, timeout=timeout, get_pty=True)
+        else:  # Sending get_pty=False causes issues with Paramiko timeouts.
+            stdin, stdout, stderr = self.client.exec_command(cmd, timeout=timeout)
 
         stdout.channel.set_combine_stderr(True)
         self.last_return_code = stdout.channel.recv_exit_status()
