@@ -307,3 +307,14 @@ class FileKeywords(BaseKeyword):
         except Exception as e:
             get_logger().log_error(f"Failed to rsync file from {remote_user}@{remote_server}:{remote_path} to {local_dest_path}: {e}")
             raise KeywordException(f"Failed to rsync file from {remote_user}@{remote_server}:{remote_path} to {local_dest_path}: {e}") from e
+
+        return True
+
+    def copy_file(self, src_file: str, dest_file: str):
+        """Copies a file from the source path to the destination path.
+
+        Args:
+            src_file  (str): The source file path.
+            dest_file (str): The destination file path.
+        """
+        self.ssh_connection.send(f"cp {src_file} {dest_file}")
