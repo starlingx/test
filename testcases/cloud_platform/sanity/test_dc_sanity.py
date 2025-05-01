@@ -35,11 +35,13 @@ def sanity_pre_requisite():
     for sc_assets in deployment_assets_config.subclouds_deployment_assets.values():
         # get base path of the file
         for file in [sc_assets.get_deployment_config_file(), sc_assets.get_install_file(), sc_assets.get_bootstrap_file()]:
+
             # get the base path of the file
-            base_file_path = os.path.join(os.path.dirname(file), "")
-            # prepare remote path
-            remote_path = f"{user}@{standby_host_name}:{base_file_path}"
-            file_kw.execute_rsync(file, remote_path)
+            base_file_path = f"{os.path.dirname(file)}/"
+
+            # RSync the files over to the standby controller
+            password = ConfigurationManager.get_lab_config().get_admin_credentials().get_password()
+            file_kw.rsync_to_remote_server(file, standby_host_name, user, password, base_file_path)
 
 
 def subcloud_add(subcloud_name: str):
