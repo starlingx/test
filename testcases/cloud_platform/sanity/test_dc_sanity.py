@@ -96,7 +96,7 @@ def subcloud_delete(subcloud_name: str):
 
 
 @mark.p0
-@mark.lab_has_min_2_subclouds
+@mark.subcloud_lab_is_simplex
 def test_dc_subcloud_add_simplex():
     """Verify subcloud Add works as expected
 
@@ -142,7 +142,7 @@ def test_dc_swact():
 
 
 @mark.p0
-@mark.lab_has_min_2_subclouds
+@mark.subcloud_lab_is_duplex
 def test_dc_subcloud_add_duplex():
     """Verify subcloud Add works as expected
 
@@ -160,7 +160,7 @@ def test_dc_subcloud_add_duplex():
 
 
 @mark.p0
-@mark.lab_has_min_2_subclouds
+@mark.subcloud_lab_is_simplex
 def test_dc_subcloud_delete_simplex():
     """
     Verify subcloud deletion works as expected
@@ -178,7 +178,7 @@ def test_dc_subcloud_delete_simplex():
 
 
 @mark.p0
-@mark.lab_has_min_2_subclouds
+@mark.subcloud_lab_is_duplex
 def test_dc_subcloud_delete_duplex():
     """
     Verify subcloud deletion works as expected
