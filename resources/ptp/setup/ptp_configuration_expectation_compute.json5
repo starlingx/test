@@ -11,7 +11,6 @@
           "ptp1if1",
           "ptp1if2",
         ],
-        ptp_role: "MASTER"
       },
 
       {
@@ -22,7 +21,6 @@
           "ptp2if1",
           "ptp2if2"
         ],
-        ptp_role: "MASTER"
       },
 
       {
@@ -33,7 +31,6 @@
           "ptp3if1",
           "ptp3if2"
         ],
-        ptp_role: "MASTER"
       },
 
       {
@@ -44,7 +41,6 @@
           "ptp4if1",
           "ptp4if2"
         ],
-        ptp_role: "SLAVE"
       }
 
     ],
@@ -232,4 +228,88 @@
      ptp_interface_parameter : "sma1={{ controller_0.nic2.sma1.is_input_or_output }}",
     },
   ],
+  // This section is for validation purposes. All expected values are maintained here
+  "expected_dict": {
+    "ptp4l": [
+      {
+        "name": "ptp1",
+        "ptp_role": "tgm",
+        "controller_0_port_data_set": [
+          {
+            "interface" : "{{ controller_0.nic1.nic_connection.interface }}",
+            "port_state": "MASTER"
+          },
+          {
+            "interface" : "{{ controller_0.nic1.conn_to_proxmox }}",
+            "port_state": "MASTER"
+          }
+        ],
+        "controller_1_port_data_set": [
+          {
+            "interface" : "{{ controller_1.nic1.nic_connection.interface }}",
+            "port_state": "PASSIVE"  
+          },
+          {
+            "interface" : "{{ controller_1.nic1.conn_to_proxmox }}",
+            "port_state": "MASTER"
+          }
+        ],
+        "compute_0_port_data_set": [
+          {
+            "interface" : "{{ compute_0.nic1.nic_connection.interface }}",
+            "port_state": "LISTENING"
+          }
+        ]
+      },
+      {
+        "name": "ptp2",
+        "ptp_role": "tgm"
+      },
+      {
+        "name": "ptp3",
+        "ptp_role": "tgm",
+        "controller_0_port_data_set": [
+          {
+            "interface": "{{ controller_0.nic2.nic_connection.interface }}", // ctrl0 NIC2 is MASTER and ctr1 NIC2 is SLAVE
+            "port_state": "MASTER"
+          },
+          {
+            "interface": "{{ controller_0.nic2.conn_to_proxmox }}",
+            "port_state": "MASTER"
+          }
+        ],
+        "compute_0_port_data_set": [
+          {
+            "interface": "{{ compute_0.nic2.nic_connection.interface }}",
+            "port_state": "MASTER"
+          }
+        ]
+      },
+      {
+        "name": "ptp4",
+        "ptp_role": "tbc",
+        "controller_1_port_data_set": [
+          {
+            "interface": "{{ controller_1.nic2.nic_connection.interface  }}",
+            "port_state": "SLAVE",
+            "parent_port_identity" : {
+              "name": "ptp3", 
+              "hostname":"controller-0", 
+              "interface": "{{ controller_0.nic2.nic_connection.interface }}" // ctrl-0 NIC2 is Master and ctrl-1 NIC2 is slave
+            }, 
+          },
+          {
+            "interface": "{{ controller_1.nic2.conn_to_proxmox }}",
+            "port_state": "MASTER"
+          }
+        ]
+      }
+    ],
+    "parent_data_set" : {{ parent_data_set_tgm_default }},
+    "time_properties_data_set": {{ time_properties_data_set_tgm_default }},
+    "grandmaster_settings": {
+      "tgm" : {{ grandmaster_settings.grandmaster_settings_tgm_default }}, 
+      "tbm" : {{ grandmaster_settings.grandmaster_settings_tbc_default }}
+    }
+  },
 }

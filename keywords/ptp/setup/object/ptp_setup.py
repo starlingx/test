@@ -1,10 +1,14 @@
 from typing import Dict, List
 
 from keywords.ptp.setup.object.clock_setup import ClockSetup
+from keywords.ptp.setup.object.grandmaster_settings import GrandmasterSettings
+from keywords.ptp.setup.object.parent_data_set import ParentDataSet
 from keywords.ptp.setup.object.phc2sys_setup import PHC2SysSetup
+from keywords.ptp.setup.object.ptp4l_expected_dict import PTP4LExpectedDict
 from keywords.ptp.setup.object.ptp4l_setup import PTP4LSetup
 from keywords.ptp.setup.object.ptp_host_interface_setup import PTPHostInterfaceSetup
 from keywords.ptp.setup.object.ts2phc_setup import TS2PHCSetup
+from keywords.ptp.setup.time_properties_data_set import TimePropertiesDataSet
 
 
 class PTPSetup:
@@ -25,6 +29,11 @@ class PTPSetup:
         self.ts2phc_setup_list: List[TS2PHCSetup] = []
         self.clock_setup_list: List[ClockSetup] = []
         self.host_ptp_if_dict: Dict[str, PTPHostInterfaceSetup] = {}  # Name -> PTPHostInterfaceSetup
+        self.ptp4l_expected_list: List[PTP4LExpectedDict] = []
+        self.parent_data_set: Dict[str, ParentDataSet] = {}
+        self.time_properties_data_set: Dict[str, TimePropertiesDataSet] = {}
+        self.grandmaster_settings_tgm: Dict[str, GrandmasterSettings] = {}
+        self.grandmaster_settings_tbc: Dict[str, GrandmasterSettings] = {}
 
         if "ptp_instances" not in setup_dict:
             raise Exception("You must define a ptp_instances section in your ptp setup_dict")
@@ -62,6 +71,25 @@ class PTPSetup:
             for clock_entry_dict in clock_list:
                 clock_setup = ClockSetup(clock_entry_dict, self.host_ptp_if_dict)
                 self.clock_setup_list.append(clock_setup)
+
+        expected_dict = setup_dict["expected_dict"]
+        if "ptp4l" in expected_dict:
+            ptp4l_list = expected_dict["ptp4l"]
+            for ptp4l_expected_dict in ptp4l_list:
+                ptp4l_expected = PTP4LExpectedDict(ptp4l_expected_dict)
+                self.ptp4l_expected_list.append(ptp4l_expected)
+
+        if "parent_data_set" in expected_dict:
+            self.parent_data_set = ParentDataSet(expected_dict["parent_data_set"])
+
+        if "time_properties_data_set" in expected_dict:
+            self.time_properties_data_set = TimePropertiesDataSet(expected_dict["time_properties_data_set"])
+
+        if "grandmaster_settings_tgm" in expected_dict:
+            self.grandmaster_settings_tgm = GrandmasterSettings(expected_dict["grandmaster_settings_tgm"])
+
+        if "grandmaster_settings_tbc" in expected_dict:
+            self.grandmaster_settings_tbc = GrandmasterSettings(expected_dict["grandmaster_settings_tbc"])
 
     def __str__(self) -> str:
         """
@@ -168,3 +196,48 @@ class PTPSetup:
             if setup.get_name() == setup_name:
                 return setup
         raise Exception(f"There is no clock setup named {setup_name}")
+
+    def get_expected_ptp4l_list(self) -> List[PTP4LExpectedDict]:
+        """
+        Getter for the list of expected ptp4l list.
+
+        Returns:
+            List[PTP4LExpectedDict]: list of ptp4l expected dict
+        """
+        return self.ptp4l_expected_list
+
+    def get_parent_data_set(self) -> ParentDataSet:
+        """
+        Getter for the parent data set.
+
+        Returns:
+            ParentDataSet: The parent data set
+        """
+        return self.parent_data_set
+
+    def get_time_properties_data_set(self) -> TimePropertiesDataSet:
+        """
+        Getter for the time properties data set.
+
+        Returns:
+            TimePropertiesDataSet: The time properties data set
+        """
+        return self.time_properties_data_set
+
+    def get_grandmaster_settings_tgm(self) -> GrandmasterSettings:
+        """
+        Getter for the grandmaster settings tgm.
+
+        Returns:
+            GrandmasterSettings: The grandmaster settings tgm
+        """
+        return self.grandmaster_settings_tgm
+
+    def get_grandmaster_settings_tbc(self) -> GrandmasterSettings:
+        """
+        Getter for the grandmaster settings tbc.
+
+        Returns:
+            GrandmasterSettings: The grandmaster settings tbc
+        """
+        return self.grandmaster_settings_tbc

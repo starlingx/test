@@ -47,11 +47,16 @@ class SystemPTPInterfaceListOutput:
         Returns the ptp interface parameters for the specified name
 
         Args:
-            ptp_interface_obj (obj): PTP interface object
+            ptp_interface_obj (SystemPTPInterfaceListObject): PTP interface object
 
         Returns:
             str: ptp interface parameters
 
         Example : "cmdline_opts='-s xxxx -O -37 -m' boundary_clock_jbod=1 domainNumber=24"
         """
-        return repr(" ".join(ptp_interface_obj.get_parameters()))
+        parameters = ptp_interface_obj.get_parameters()
+
+        if not parameters:
+            return ""
+
+        return repr(" ".join(parameters))
