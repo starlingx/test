@@ -1,0 +1,72 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: pvtest
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: pvtestkey
+  namespace: pvtest
+type: kubernetes.io/dockerconfigjson
+data:
+  .dockerconfigjson: eyJhdXRocyI6eyJyZWdpc3RyeS5sb2NhbDo5MDAxIjp7InVzZXJuYW1lIjoiYWRtaW4iLCJwYXNzd29yZCI6IkxpNjludXgqMTIzNCIsImF1dGgiOiJZV1J0YVc0NlRHazJPVzUxZUNveE1qTTAifX19
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+ name: stepca-issuer
+ namespace: pvtest
+spec:
+ acme:
+   server: '{{ stepca_server_url }}'
+   skipTLSVerify: true
+   privateKeySecretRef:
+     name: stepca-issuer
+   solvers:
+   - http01:
+       ingress:
+         podTemplate:
+           spec:
+             imagePullSecrets:
+             - name: pvtestkey
+         class:  nginx
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kuard
+  namespace: pvtest
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kuard
+  template:
+    metadata:
+      labels:
+        app: kuard
+    spec:
+      containers:
+      - name: kuard
+        image: gcr.io/kuar-demo/kuard-amd64:blue
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+          protocol: TCP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kuard
+  namespace: pvtest
+  labels:
+    app: kuard
+spec:
+  ports:
+    - port: 80
+      targetPort: 8080
+      protocol: TCP
+  selector:
+    app: kuard

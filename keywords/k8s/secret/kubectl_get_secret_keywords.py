@@ -1,7 +1,11 @@
+import json
+
 from framework.ssh.ssh_connection import SSHConnection
 from keywords.base_keyword import BaseKeyword
 from keywords.k8s.k8s_command_wrapper import export_k8s_config
 from keywords.k8s.secret.object.kubectl_get_secret_output import KubectlGetSecretOutput
+from keywords.k8s.secret.object.kubectl_secret_object import KubectlSecretObject
+
 
 class KubectlGetSecretsKeywords(BaseKeyword):
     """
@@ -27,7 +31,7 @@ class KubectlGetSecretsKeywords(BaseKeyword):
         output = self.ssh_connection.send(export_k8s_config(cmd))
         self.validate_success_return_code(self.ssh_connection)
         return KubectlGetSecretOutput(output)
-    
+
     def get_secret_names(self, namespace: str = "default") -> list[str]:
         """
         Returns a list of secret names in the given namespace.
@@ -38,6 +42,41 @@ class KubectlGetSecretsKeywords(BaseKeyword):
         """
         secrets_output = self.get_secrets(namespace)
         return [secret.get_name() for secret in secrets_output.kubectl_secret]
+
+    def get_secret_json_output(self, secret_name: str, namespace: str = "default") -> KubectlSecretObject | None:
+        """
+        Get a secret as a structured object.
+
+        Args:
+            secret_name (str): The name of the Kubernetes secret.
+            namespace (str): The namespace where the secret resides.
+
+        Returns:
+            KubectlSecretObject | None: The parsed secret object, or None if not found.
+        """
+        command = f"kubectl get secret {secret_name} -n {namespace} -o json"
+        output = self.ssh_connection.send(export_k8s_config(command))
+        self.validate_success_return_code(self.ssh_connection)
+        if isinstance(output, list):
+            output = "".join(output)
+        json_obj = json.loads(output)
+        secret_obj = KubectlSecretObject(secret_name)
+        secret_obj.load_json(json_obj)
+        return secret_obj
+
+    def get_certificate_issuer(self, secret_name: str, namespace: str = "default") -> str | None:
+        """
+        Extract the certificate issuer from a TLS secret.
+
+        Args:
+            secret_name (str): The name of the TLS secret.
+            namespace (str): The namespace containing the secret.
+
+        Returns:
+            str | None: The certificate issuer string if found, otherwise None.
+        """
+        secret_output = self.get_secret_json_output(secret_name, namespace)
+        return secret_output.get_certificate_issuer()
 
     def get_secret_with_custom_output(self, secret_name: str, namespace: str, output_format: str, extra_parameters: str = None, base64: bool = False) -> str:
         """

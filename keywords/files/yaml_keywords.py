@@ -1,7 +1,7 @@
 import os
 
 import yaml
-from jinja2 import Environment, FileSystemLoader, Template
+from jinja2 import Template
 
 from config.configuration_manager import ConfigurationManager
 from framework.logging.automation_logger import get_logger
@@ -18,25 +18,29 @@ class YamlKeywords(BaseKeyword):
     def __init__(self, ssh_connection: SSHConnection):
         """
         Constructor
+
         Args:
-            ssh_connection:
+            ssh_connection (SSHConnection): The SSH connection object.
         """
         self.ssh_connection = ssh_connection
 
-    def generate_yaml_file_from_template(self, template_file: str, replacement_dictionary: str, target_file_name: str, target_remote_location: str, copy_to_remote: bool = True) -> str:
+    def generate_yaml_file_from_template(self, template_file: str, replacement_dictionary: dict, target_file_name: str, target_remote_location: str, copy_to_remote: bool = True) -> str:
         """
-        This function will generate a YAML file from the specified template. The parameters in the file will get substituted by
-        using the key-value pairs from the replacement_dictionary. A copy of the file will be stored in the logs folder as 'target_file_name'.
-        It will then be SCPed over to 'target_remote_location' on the machine to which this SSH connection is connected
+        This function will generate a YAML file from the specified template.
+
+        The parameters in the file will get substituted by using the key-value pairs from the replacement_dictionary. A copy of the file will be stored in the logs folder as 'target_file_name'.
+        It will then be SCPed over to 'target_remote_location' on the machine to which this SSH connection is connected.
 
         Args:
             template_file (str): Path to the template YAML file.
-                     Example: 'resources/cloud_platform/folder/file_name'.
+                Example: 'resources/cloud_platform/folder/file_name'.
+
             replacement_dictionary (dict): Dictionary containing placeholder keys and their replacement values.
-                            Example: { 'pod_name': 'awesome_pod_name', 'memory': '2Gb' }.
+                Example: { 'pod_name': 'awesome_pod_name', 'memory': '2Gb' }.
+
             target_file_name (str): Name of the generated YAML file.
             target_remote_location (str): Remote directory path where the file will be uploaded if `copy_to_remote` is True.
-            copy_to_remote (bool, optional): Flag indicating whether to upload the file to a remote location. Defaults to True.
+            copy_to_remote (bool): Flag indicating whether to upload the file to a remote location. Defaults to True.
 
         Returns:
             str: Path to the generated YAML file, either local or remote depending on `copy_to_remote`.
@@ -48,8 +52,8 @@ class YamlKeywords(BaseKeyword):
         # Render the YAML file by replacing the tokens.
         template = Template(yaml_template)
         rendered_yaml_string = template.render(replacement_dictionary)
-        yaml_data = yaml.safe_load(rendered_yaml_string)
-        rendered_yaml = yaml.dump(yaml_data)
+        yaml_data_list = list(yaml.safe_load_all(rendered_yaml_string))
+        rendered_yaml = "---\n".join([yaml.dump(data, default_flow_style=False) for data in yaml_data_list])
 
         # Create the new file in the log folder.
         log_folder = ConfigurationManager.get_logger_config().get_test_case_resources_log_location()
