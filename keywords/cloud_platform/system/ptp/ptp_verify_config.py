@@ -1,16 +1,17 @@
 import re
-from typing import Any
+from typing import Any, Dict
 
 from framework.logging.automation_logger import get_logger
-from framework.validation.validation import validate_equals
+from framework.validation.validation import validate_equals, validate_equals_with_retry, validate_list_contains
 from keywords.base_keyword import BaseKeyword
+from keywords.cloud_platform.fault_management.alarms.alarm_list_keywords import AlarmListKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.linux.systemctl.systemctl_status_keywords import SystemCTLStatusKeywords
+from keywords.ptp.cat.cat_clock_conf_keywords import CatClockConfKeywords
 from keywords.ptp.cat.cat_ptp_cgu_keywords import CatPtpCguKeywords
 from keywords.ptp.cat.cat_ptp_config_keywords import CatPtpConfigKeywords
 from keywords.ptp.gnss_keywords import GnssKeywords
 from keywords.ptp.pmc.pmc_keywords import PMCKeywords
-from keywords.ptp.setup.object.ptp_host_interface_setup import PTPHostInterfaceSetup
 from keywords.ptp.setup.ptp_setup_reader import PTPSetupKeywords
 
 
@@ -39,6 +40,12 @@ class PTPVerifyConfigKeywords(BaseKeyword):
         self.ts2phc_setup_list = ptp_setup.get_ts2phc_setup_list()
         self.clock_setup_list = ptp_setup.get_clock_setup_list()
 
+        self.ptp4l_expected_list_objects = ptp_setup.get_expected_ptp4l_list()
+        self.expected_parent_data_set_object = ptp_setup.get_parent_data_set()
+        self.expected_time_properties_data_set_object = ptp_setup.get_time_properties_data_set()
+        self.expected_grandmaster_settings_tbc_object = ptp_setup.get_grandmaster_settings_tbc()
+        self.expected_grandmaster_settings_tgm_object = ptp_setup.get_grandmaster_settings_tgm()
+
         self.ctrl0_hostname = "controller-0"
         self.ctrl1_hostname = "controller-1"
         self.comp0_hostname = "compute-0"
@@ -59,6 +66,8 @@ class PTPVerifyConfigKeywords(BaseKeyword):
 
         self.verify_ptp_config_file_content()
 
+        validate_equals_with_retry(self.no_alarms, True, "Validate that no alarms on the system", 300)
+
     def verify_gnss_status(self) -> None:
         """
         verify GNSS status
@@ -77,23 +86,14 @@ class PTPVerifyConfigKeywords(BaseKeyword):
                 continue
 
             for ptp_host_if in ptp_host_ifs:
-                controller_0_interfaces = ptp_host_if.get_controller_0_interfaces()
-                for interface in controller_0_interfaces:
-                    if not interface:
-                        continue
-                    self.validate_gnss_status_on_hostname(self.ctrl0_hostname, interface, expected_gnss_port)
-
-                controller_1_interfaces = ptp_host_if.get_controller_1_interfaces()
-                for interface in controller_1_interfaces:
-                    if not interface:
-                        continue
-                    self.validate_gnss_status_on_hostname(self.ctrl1_hostname, interface, expected_gnss_port)
-
-                compute_0_interfaces = ptp_host_if.get_compute_0_interfaces()
-                for interface in compute_0_interfaces:
-                    if not interface:
-                        continue
-                    self.validate_gnss_status_on_hostname(self.comp0_hostname, interface, expected_gnss_port)
+                for hostname, get_interfaces in [
+                    (self.ctrl0_hostname, ptp_host_if.get_controller_0_interfaces),
+                    (self.ctrl1_hostname, ptp_host_if.get_controller_1_interfaces),
+                    (self.comp0_hostname, ptp_host_if.get_compute_0_interfaces),
+                ]:
+                    for interface in get_interfaces():
+                        if interface:
+                            self.validate_gnss_status_on_hostname(hostname, interface, expected_gnss_port)
 
     def verify_sma_status(self) -> None:
         """
@@ -108,23 +108,14 @@ class PTPVerifyConfigKeywords(BaseKeyword):
                 ptp_interface_parameters = ptp_host_if.get_ptp_interface_parameter()
 
                 if "input" in ptp_interface_parameters:
-                    controller_0_interfaces = ptp_host_if.get_controller_0_interfaces()
-                    for interface in controller_0_interfaces:
-                        if not interface:
-                            continue
-                        self.validate_sma_status_on_hostname(self.ctrl0_hostname, interface)
-
-                    controller_1_interfaces = ptp_host_if.get_controller_1_interfaces()
-                    for interface in controller_1_interfaces:
-                        if not interface:
-                            continue
-                        self.validate_sma_status_on_hostname(self.ctrl1_hostname, interface)
-
-                    compute_0_interfaces = ptp_host_if.get_compute_0_interfaces()
-                    for interface in compute_0_interfaces:
-                        if not interface:
-                            continue
-                        self.validate_sma_status_on_hostname(self.comp0_hostname, interface)
+                    for hostname, get_interfaces in [
+                        (self.ctrl0_hostname, ptp_host_if.get_controller_0_interfaces),
+                        (self.ctrl1_hostname, ptp_host_if.get_controller_1_interfaces),
+                        (self.comp0_hostname, ptp_host_if.get_compute_0_interfaces),
+                    ]:
+                        for interface in get_interfaces():
+                            if interface:
+                                self.validate_sma_status_on_hostname(hostname, interface)
 
     def verify_systemctl_status(self) -> None:
         """
@@ -134,30 +125,22 @@ class PTPVerifyConfigKeywords(BaseKeyword):
         """
         systemctl_status_Keywords = SystemCTLStatusKeywords(self.ssh_connection)
 
-        for ptp4l_instance_obj in self.ptp4l_setup_list:
-            name = ptp4l_instance_obj.get_name()
-            service_name = f"ptp4l@{name}.service"
+        for service_type, setup_list in [
+            ("ptp4l", self.ptp4l_setup_list),
+            ("phc2sys", self.phc2sys_setup_list),
+            ("ts2phc", self.ts2phc_setup_list),
+        ]:
+            for instance_obj in setup_list:
+                name = instance_obj.get_name()
+                service_name = f"{service_type}@{name}.service"
+                hostnames = instance_obj.get_instance_hostnames()
+                instance_parameters = instance_obj.get_instance_parameters()
 
-            hostnames = ptp4l_instance_obj.get_instance_hostnames()
-            for hostname in hostnames:
-                systemctl_status_Keywords.verify_status_on_hostname(hostname, name, service_name)
-
-        for phc2sys_instance_obj in self.phc2sys_setup_list:
-            name = phc2sys_instance_obj.get_name()
-            service_name = f"phc2sys@{name}.service"
-
-            hostnames = phc2sys_instance_obj.get_instance_hostnames()
-            instance_parameters = phc2sys_instance_obj.get_instance_parameters()
-            for hostname in hostnames:
-                systemctl_status_Keywords.verify_ptp_status_and_instance_parameters_on_hostname(hostname, name, service_name, instance_parameters)
-
-        for ts2phc_instance_obj in self.ts2phc_setup_list:
-            name = ts2phc_instance_obj.get_name()
-            service_name = f"ts2phc@{name}.service"
-
-            hostnames = ts2phc_instance_obj.get_instance_hostnames()
-            for hostname in hostnames:
-                systemctl_status_Keywords.verify_status_on_hostname(hostname, name, service_name)
+                for hostname in hostnames:
+                    if service_type == "phc2sys":
+                        systemctl_status_Keywords.verify_ptp_status_and_instance_parameters_on_hostname(hostname, name, service_name, instance_parameters)
+                    else:
+                        systemctl_status_Keywords.verify_status_on_hostname(hostname, name, service_name)
 
     def verify_ptp_config_file_content(self) -> None:
         """
@@ -165,17 +148,19 @@ class PTPVerifyConfigKeywords(BaseKeyword):
 
         Returns: None
         """
-        for ptp4l_instance_obj in self.ptp4l_setup_list:
-            config_file = f"/etc/linuxptp/ptpinstance/ptp4l-{ptp4l_instance_obj.get_name()}.conf"
-            hostnames = ptp4l_instance_obj.get_instance_hostnames()
-            for hostname in hostnames:
-                self.validate_ptp_config_file_content(ptp4l_instance_obj, hostname, config_file)
-
-        for ts2phc_instance_obj in self.ts2phc_setup_list:
-            config_file = f"/etc/linuxptp/ptpinstance/ts2phc-{ts2phc_instance_obj.get_name()}.conf"
-            hostnames = ts2phc_instance_obj.get_instance_hostnames()
-            for hostname in hostnames:
-                self.validate_ptp_config_file_content(ts2phc_instance_obj, hostname, config_file)
+        for service_type, setup_list in [
+            ("ptp4l", self.ptp4l_setup_list),
+            ("ts2phc", self.ts2phc_setup_list),
+            ("clock", self.clock_setup_list),
+        ]:
+            for instance_obj in setup_list:
+                config_file = f"/etc/linuxptp/ptpinstance/{service_type}-{instance_obj.get_name()}.conf" if service_type != "clock" else "/etc/linuxptp/ptpinstance/clock-conf.conf"
+                hostnames = instance_obj.get_instance_hostnames()
+                for hostname in hostnames:
+                    if service_type == "clock":
+                        self.validate_ptp_config_file_content_for_clock(instance_obj, hostname, config_file)
+                    else:
+                        self.validate_ptp_config_file_content(instance_obj, hostname, config_file)
 
     def verify_ptp_pmc_values(self) -> None:
         """
@@ -183,6 +168,7 @@ class PTPVerifyConfigKeywords(BaseKeyword):
 
         Returns: None
         """
+        port_data_set = self.get_port_data_set_using_interface_and_port_identity_mapping()
         for ptp4l_instance_obj in self.ptp4l_setup_list:
             name = ptp4l_instance_obj.get_name()
             config_file = f"/etc/linuxptp/ptpinstance/ptp4l-{name}.conf"
@@ -190,14 +176,14 @@ class PTPVerifyConfigKeywords(BaseKeyword):
 
             hostnames = ptp4l_instance_obj.get_instance_hostnames()
             instance_parameters = ptp4l_instance_obj.get_instance_parameters()
-            ptp_role = ptp4l_instance_obj.get_ptp_role()
+            ptp_role = next((obj.get_ptp_role() for obj in self.ptp4l_expected_list_objects if obj.get_name() == name), None)
             for hostname in hostnames:
 
-                self.validate_port_data_set(hostname, config_file, socket_file, expected_port_state="MASTER")
+                self.validate_port_data_set(hostname, name, config_file, socket_file)
 
                 self.validate_get_domain(hostname, instance_parameters, config_file, socket_file)
 
-                self.validate_parent_data_set(hostname, instance_parameters, config_file, socket_file)
+                self.validate_parent_data_set(hostname, name, port_data_set, config_file, socket_file)
 
                 self.validate_time_properties_data_set(hostname, config_file, socket_file)
 
@@ -369,31 +355,90 @@ class PTPVerifyConfigKeywords(BaseKeyword):
             observed_tx_timestamp_timeout = get_pmc_get_default_data_set_object.get_tx_timestamp_timeout()
             validate_equals(observed_tx_timestamp_timeout, expected_tx_timestamp_timeout, "tx_timestamp_timeout value within PTP config file content")
 
-        get_associated_interfaces = list(
-            map(
-                lambda ptp_host_if: ptp_host_if.get_controller_0_interfaces() if hostname == "controller-0" else ptp_host_if.get_controller_1_interfaces() if hostname == "controller-1" else ptp_host_if.get_compute_0_interfaces() if hostname == "compute-0" else [],
-                ptp_instance_obj.get_ptp_interfaces(),
-            )
-        )
-        expected_associated_interfaces = sum(get_associated_interfaces, [])
+        interfaces_getter = {
+            "controller-0": lambda x: x.get_controller_0_interfaces(),
+            "controller-1": lambda x: x.get_controller_1_interfaces(),
+            "compute-0": lambda x: x.get_compute_0_interfaces(),
+        }.get(hostname, lambda x: [])
+
+        expected_associated_interfaces = [interface for ptp_host_if in ptp_instance_obj.get_ptp_interfaces() for interface in interfaces_getter(ptp_host_if) if interface]  # Avoid empty interface names
+
         observed_associated_interfaces = cat_ptp_config_output.get_associated_interfaces()
         validate_equals(observed_associated_interfaces, expected_associated_interfaces, "Associated interfaces within PTP config file content")
+
+    def validate_ptp_config_file_content_for_clock(
+        self,
+        ptp_instance_obj: Any,
+        hostname: str,
+        config_file: str,
+    ) -> None:
+        """
+        Validates the ptp config file content for clock.
+
+        Args:
+            ptp_instance_obj (Any) : PTP instance setup object
+            hostname (str): The name of the host.
+            config_file (str): the config file.
+
+        Returns: None
+
+        Raises:
+            Exception: raised when validate fails
+        """
+        lab_connect_keywords = LabConnectionKeywords()
+        ssh_connection = lab_connect_keywords.get_ssh_for_hostname(hostname)
+
+        cat_ptp_config_keywords = CatClockConfKeywords(ssh_connection)
+        cat_ptp_config_output = cat_ptp_config_keywords.cat_clock_conf(config_file)
+        get_clock_conf_objects = cat_ptp_config_output.get_clock_conf_objects()
+
+        expected_clock_config = []
+        interfaces_getter = {
+            "controller-0": lambda x: x.get_controller_0_interfaces(),
+            "controller-1": lambda x: x.get_controller_1_interfaces(),
+            "compute-0": lambda x: x.get_compute_0_interfaces(),
+        }.get(hostname, lambda x: [])
+
+        for ptp_host_if in ptp_instance_obj.get_ptp_interfaces():
+            interfaces = interfaces_getter(ptp_host_if)
+            if interfaces:
+                expected_clock_config.append(
+                    {
+                        "ifname": ", ".join(interfaces),
+                        "ptp_interface_parameter": ptp_host_if.get_ptp_interface_parameter(),
+                    }
+                )
+
+        for index, clock_conf_obj in enumerate(get_clock_conf_objects):
+            observed_ifname = clock_conf_obj.get_ifname()
+            observed_sma_name = clock_conf_obj.get_sma_name()
+            observed_sma_mode = clock_conf_obj.get_sma_mode()
+
+            if index >= len(expected_clock_config):
+                raise Exception("Observed clock index is greater than expected clock list index")
+
+            expected_ifname = expected_clock_config[index].get("ifname")
+            expected_ptp_interface_parameter = expected_clock_config[index].get("ptp_interface_parameter")
+
+            validate_equals(observed_ifname, expected_ifname, "ifname value within PTP config file content for clock-conf.conf")
+            validate_list_contains(observed_sma_name, expected_ptp_interface_parameter, "sma name value within PTP config file content for clock-conf.conf")
+            validate_list_contains(observed_sma_mode, expected_ptp_interface_parameter, "sma mode value within PTP config file content for clock-conf.conf")
 
     def validate_port_data_set(
         self,
         hostname: str,
+        name: str,
         config_file: str,
         socket_file: str,
-        expected_port_state: str,
     ) -> None:
         """
         Validates the get port data set.
 
         Args:
             hostname (str): The name of the host.
+            name (str): The ptp instance name
             config_file (str): the config file.
             socket_file (str): the socket file.
-            expected_port_state (str): The current state of the port (e.g., MASTER, SLAVE, PASSIVE, LISTENING)
 
         Returns: None
 
@@ -404,12 +449,28 @@ class PTPVerifyConfigKeywords(BaseKeyword):
         ssh_connection = lab_connect_keywords.get_ssh_for_hostname(hostname)
         pmc_keywords = PMCKeywords(ssh_connection)
 
-        get_port_data_set_output = pmc_keywords.pmc_get_port_data_set(config_file, socket_file)
-        get_pmc_get_port_data_set_object = get_port_data_set_output.get_pmc_get_port_data_set_object()
-        observed_port_identity = get_pmc_get_port_data_set_object.get_port_identity()
-        observed_port_state = get_pmc_get_port_data_set_object.get_port_state()
+        for ptp4l_expected_object in self.ptp4l_expected_list_objects:
+            if ptp4l_expected_object.get_name() == name:
+                port_data_set_getter = {
+                    "controller-0": ptp4l_expected_object.get_controller_0_port_data_set,
+                    "controller-1": ptp4l_expected_object.get_controller_1_port_data_set,
+                    "compute-0": ptp4l_expected_object.get_compute_0_port_data_set,
+                }.get(hostname)
+                break
 
-        validate_equals(observed_port_state, expected_port_state, "portState value within GET PORT_DATA_SET")
+        expected_port_data_set_objects = port_data_set_getter() if port_data_set_getter else None
+
+        get_port_data_set_output = pmc_keywords.pmc_get_port_data_set(config_file, socket_file)
+        get_pmc_get_port_data_set_objects = get_port_data_set_output.get_pmc_get_port_data_set_objects()
+
+        for index, get_pmc_get_port_data_set_object in enumerate(get_pmc_get_port_data_set_objects):
+            if index >= len(expected_port_data_set_objects):
+                raise Exception("Observed port data set index is greater than expected port data set objects index")
+
+            expected_port_state = expected_port_data_set_objects[index].get_port_state()
+            observed_port_state = get_pmc_get_port_data_set_object.get_port_state()
+
+            validate_equals(observed_port_state, expected_port_state, "portState value within GET PORT_DATA_SET")
 
     def validate_get_domain(
         self,
@@ -447,7 +508,8 @@ class PTPVerifyConfigKeywords(BaseKeyword):
     def validate_parent_data_set(
         self,
         hostname: str,
-        instance_parameters: str,
+        name: str,
+        port_data_set: Dict,
         config_file: str,
         socket_file: str,
     ) -> None:
@@ -456,7 +518,8 @@ class PTPVerifyConfigKeywords(BaseKeyword):
 
         Args:
             hostname (str): The name of the host.
-            instance_parameters (str): instance parameters
+            name (str): The ptp instance name
+            port_data_set (Dict): port data set using interface and port indentity mapping
             config_file (str): the config file.
             socket_file (str): the socket file.
 
@@ -470,27 +533,50 @@ class PTPVerifyConfigKeywords(BaseKeyword):
         ssh_connection = lab_connect_keywords.get_ssh_for_hostname(hostname)
         pmc_keywords = PMCKeywords(ssh_connection)
 
-        # gm.ClockClass value is always 6 if it is in a good status.
-        expected_gm_clock_class = 6
-        # gm.ClockAccuracy and gm.OffsetScaledLogVariance values can be overwritten using instance parameters,
-        # but for now, the default values are in use
-        expected_gm_clock_accuracy = "0x20"
-        expected_gm_offset_scaled_log_variance = "0x4e5d"
-
-        parameters = self.parse_instance_parameters_string(instance_parameters)
-        expected_grandmaster_priority2 = parameters.get("priority2")
+        expected_gm_clock_class = self.expected_parent_data_set_object.get_gm_clock_class()
+        expected_gm_clock_accuracy = self.expected_parent_data_set_object.get_gm_clock_accuracy()
+        expected_gm_offset_scaled_log_variance = self.expected_parent_data_set_object.get_gm_offset_scaled_log_variance()
 
         get_parent_data_set_output = pmc_keywords.pmc_get_parent_data_set(config_file, socket_file)
         get_parent_data_set_object = get_parent_data_set_output.get_pmc_get_parent_data_set_object()
+        observed_parent_port_identity = get_parent_data_set_object.get_parent_port_identity()
         observed_gm_clock_class = get_parent_data_set_object.get_gm_clock_class()
         observed_gm_clock_accuracy = get_parent_data_set_object.get_gm_clock_accuracy()
         observed_gm_offset_scaled_log_variance = get_parent_data_set_object.get_gm_offset_scaled_log_variance()
-        observed_grandmaster_priority2 = get_parent_data_set_object.get_grandmaster_priority2()
 
         validate_equals(observed_gm_clock_class, expected_gm_clock_class, "gm.ClockClass value within GET PARENT_DATA_SET")
         validate_equals(observed_gm_clock_accuracy, expected_gm_clock_accuracy, "gm.ClockAccuracy value within GET PARENT_DATA_SET")
         validate_equals(observed_gm_offset_scaled_log_variance, expected_gm_offset_scaled_log_variance, "gm.OffsetScaledLogVariance value within GET PARENT_DATA_SET")
-        validate_equals(observed_grandmaster_priority2, expected_grandmaster_priority2, "grandmasterPriority2 value within GET PARENT_DATA_SET")
+
+        # Validates the parentPortIdentity of the SLAVE's PARENT_DATA_SET against the portIdentity of the MASTER's PORT_DATA_SET.
+        if not port_data_set:
+            return
+
+        for ptp4l_expected_object in self.ptp4l_expected_list_objects:
+            if ptp4l_expected_object.get_name() == name:
+                port_data_set_getter = {
+                    "controller-0": ptp4l_expected_object.get_controller_0_port_data_set,
+                    "controller-1": ptp4l_expected_object.get_controller_1_port_data_set,
+                    "compute-0": ptp4l_expected_object.get_compute_0_port_data_set,
+                }.get(hostname)
+                break
+
+        expected_port_data_set_objects = port_data_set_getter() if port_data_set_getter else None
+
+        for expected_port_data_set_object in expected_port_data_set_objects:
+            expected_parent_port_identity_dict = expected_port_data_set_object.get_parent_port_identity()
+            if expected_parent_port_identity_dict:
+                parent_instance_name = expected_parent_port_identity_dict.get("name")
+                parent_hostname = expected_parent_port_identity_dict.get("hostname")
+                parent_interface = expected_parent_port_identity_dict.get("interface")
+
+                if not all([parent_instance_name, parent_hostname, parent_interface]):
+                    continue  # Skip if any essential key is missing
+
+                for observed_port_data_set in port_data_set:
+                    expected_port_identity = observed_port_data_set.get(parent_interface)
+                    if observed_port_data_set.get("name") == parent_instance_name and observed_port_data_set.get("hostname") == parent_hostname and expected_port_identity:
+                        validate_equals(observed_parent_port_identity, expected_port_identity, "Parent port identity matches the master port identity")
 
     def validate_time_properties_data_set(
         self,
@@ -515,11 +601,10 @@ class PTPVerifyConfigKeywords(BaseKeyword):
         ssh_connection = lab_connect_keywords.get_ssh_for_hostname(hostname)
         pmc_keywords = PMCKeywords(ssh_connection)
 
-        # default values if it is in a good status.
-        expected_current_utc_offset = 37
-        expected_current_utc_offset_valid = 0
-        expected_time_traceable = 1
-        expected_frequency_traceable = 1
+        expected_current_utc_offset = self.expected_time_properties_data_set_object.get_current_utc_offset()
+        expected_current_utc_offset_valid = self.expected_time_properties_data_set_object.get_current_utc_offset_valid()
+        expected_time_traceable = self.expected_time_properties_data_set_object.get_time_traceable()
+        expected_frequency_traceable = self.expected_time_properties_data_set_object.get_frequency_traceable()
 
         get_time_properties_data_set_output = pmc_keywords.pmc_get_time_properties_data_set(config_file, socket_file)
         get_time_properties_data_set_object = get_time_properties_data_set_output.get_pmc_get_time_properties_data_set_object()
@@ -554,26 +639,21 @@ class PTPVerifyConfigKeywords(BaseKeyword):
         Raises:
             Exception: raised when validate fails
         """
-        if ptp_role == "MASTER":
-            expected_clock_class = 6
-            expected_clock_accuracy = "0x20"
-            expected_offset_scaled_log_variance = "0x4e5d"
-            expected_time_traceable = 1
-            expected_frequency_traceable = 1
-            expected_time_source = "0x20"
+        if ptp_role == "tgm":
+            expected_grandmaster_settings_object = self.expected_grandmaster_settings_tgm_object
         else:
-            expected_clock_class = 248
-            expected_clock_accuracy = "0xfe"
-            expected_offset_scaled_log_variance = "0xffff"
-            expected_time_traceable = 0
-            expected_frequency_traceable = 0
-            expected_time_source = "0xa0"
+            expected_grandmaster_settings_object = self.expected_grandmaster_settings_tbc_object
 
-        expected_current_utc_offset_valid = 0
+        expected_clock_class = expected_grandmaster_settings_object.get_clock_class()
+        expected_clock_accuracy = expected_grandmaster_settings_object.get_clock_accuracy()
+        expected_offset_scaled_log_variance = expected_grandmaster_settings_object.get_offset_scaled_log_variance()
+        expected_time_traceable = expected_grandmaster_settings_object.get_time_traceable()
+        expected_frequency_traceable = expected_grandmaster_settings_object.get_frequency_traceable()
+        expected_time_source = expected_grandmaster_settings_object.get_time_source()
+        expected_current_utc_offset_valid = expected_grandmaster_settings_object.get_current_utc_offset_valid()
 
         lab_connect_keywords = LabConnectionKeywords()
         ssh_connection = lab_connect_keywords.get_ssh_for_hostname(hostname)
-
         pmc_keywords = PMCKeywords(ssh_connection)
         get_grandmaster_settings_np_output = pmc_keywords.pmc_get_grandmaster_settings_np(config_file, socket_file)
         get_grandmaster_settings_np_object = get_grandmaster_settings_np_output.get_pmc_get_grandmaster_settings_np_object()
@@ -592,6 +672,56 @@ class PTPVerifyConfigKeywords(BaseKeyword):
         validate_equals(observed_time_traceable, expected_time_traceable, "timeTraceable value within GET GRANDMASTER_SETTINGS_NP")
         validate_equals(observed_frequency_traceable, expected_frequency_traceable, "frequencyTraceable value within GET GRANDMASTER_SETTINGS_NP")
         validate_equals(observed_time_source, expected_time_source, "timeSource value within GET GRANDMASTER_SETTINGS_NP")
+
+    def get_port_data_set_using_interface_and_port_identity_mapping(self) -> Dict:
+        """
+        Get port data set using interface and port identity mapping to validate the parentPortIdentity of the SLAVE's
+        PARENT_DATA_SET against the portIdentity of the MASTER's PORT_DATA_SET.
+
+        Returns:
+            Dict: port data set using interface and port indentity mapping
+        """
+        port_data_set_list = []
+        lab_connect_keywords = LabConnectionKeywords()
+
+        for ptp4l_instance_obj in self.ptp4l_setup_list:
+            name = ptp4l_instance_obj.get_name()
+            config_file = f"/etc/linuxptp/ptpinstance/ptp4l-{name}.conf"
+            socket_file = f"/var/run/ptp4l-{name}"
+
+            hostnames = ptp4l_instance_obj.get_instance_hostnames()
+            for hostname in hostnames:
+
+                ssh_connection = lab_connect_keywords.get_ssh_for_hostname(hostname)
+                pmc_keywords = PMCKeywords(ssh_connection)
+
+                port_data_set_dict = {}
+                port_data_set_dict["name"] = name
+                port_data_set_dict["hostname"] = hostname
+
+                get_port_data_set_output = pmc_keywords.pmc_get_port_data_set(config_file, socket_file)
+                get_pmc_get_port_data_set_objects = get_port_data_set_output.get_pmc_get_port_data_set_objects()
+
+                for ptp4l_expected_object in self.ptp4l_expected_list_objects:
+                    if ptp4l_expected_object.get_name() == name:
+                        port_data_set_getter = {
+                            "controller-0": ptp4l_expected_object.get_controller_0_port_data_set,
+                            "controller-1": ptp4l_expected_object.get_controller_1_port_data_set,
+                            "compute-0": ptp4l_expected_object.get_compute_0_port_data_set,
+                        }.get(hostname)
+                        break
+
+                expected_port_data_set_objects = port_data_set_getter() if port_data_set_getter else None
+
+                for index, get_pmc_get_port_data_set_object in enumerate(get_pmc_get_port_data_set_objects):
+                    if index >= len(expected_port_data_set_objects):
+                        raise Exception("Observed port data set index is greater than expected port data set objects index")
+
+                    port_data_set_dict[expected_port_data_set_objects[index].get_interface()] = get_pmc_get_port_data_set_object.get_port_identity()
+
+                port_data_set_list.append(port_data_set_dict)
+
+        return port_data_set_list
 
     def parse_instance_parameters_string(self, instance_parameters: str) -> dict:
         """
@@ -621,3 +751,13 @@ class PTPVerifyConfigKeywords(BaseKeyword):
                     pass
                 parameters[key] = value
         return parameters
+
+    def no_alarms(self) -> bool:
+        """
+        Checks if there are no alarms on the system
+
+        Returns:
+            bool: True if no alarms
+        """
+        alarms = AlarmListKeywords(self.ssh_connection).alarm_list()
+        return not alarms

@@ -2,6 +2,7 @@ import json5
 from jinja2 import Template
 
 from config.configuration_manager import ConfigurationManager
+from framework.resources.resource_finder import get_stx_resource_path
 from keywords.base_keyword import BaseKeyword
 from keywords.ptp.setup.object.ptp_setup import PTPSetup
 
@@ -26,9 +27,16 @@ class PTPSetupKeywords(BaseKeyword):
         with open(template_file_location, "r") as template_file:
             json5_template = template_file.read()
 
+        ptp_default_status_values_file_path = get_stx_resource_path("resources/ptp/ptp_default_status_values.json5")
+        with open(ptp_default_status_values_file_path, "r") as ptp_default_status_values_template_file:
+            ptp_default_status_values_template = json5.load(ptp_default_status_values_template_file)
+
         # Build a replacement dictionary from the PTP Config
         ptp_config = ConfigurationManager.get_ptp_config()
         replacement_dictionary = ptp_config.get_all_hosts_dictionary()
+
+        # Update lab_topology dict with ptp_default_status_values
+        replacement_dictionary.update(ptp_default_status_values_template)
 
         # Render the JSON5 file by replacing the tokens.
         template = Template(json5_template)
