@@ -1,6 +1,8 @@
 import time
 
 from framework.ssh.ssh_connection import SSHConnection
+from framework.logging.automation_logger import get_logger
+from framework.validation.validation import validate_equals_with_retry
 from keywords.base_keyword import BaseKeyword
 from keywords.k8s.k8s_command_wrapper import export_k8s_config
 from keywords.k8s.pods.object.kubectl_get_pods_output import KubectlGetPodsOutput
@@ -40,6 +42,30 @@ class KubectlGetPodsKeywords(BaseKeyword):
         pods_list_output = KubectlGetPodsOutput(kubectl_get_pods_output)
 
         return pods_list_output
+    
+    def get_pods_no_validation(self, namespace: str = None) -> KubectlGetPodsOutput:
+        """
+        Gets the k8s pods that are available using '-o wide'.
+
+        Args:
+            namespace(str, optional): The namespace to search for pods. If None, it will search in all namespaces.
+
+        Returns:
+            KubectlGetPodsOutput: An object containing the parsed output of the command.
+
+        """
+        arg_namespace = ""
+        if namespace:
+            arg_namespace = f"-n {namespace}"
+
+        kubectl_get_pods_output = self.ssh_connection.send(export_k8s_config(f"kubectl {arg_namespace} -o wide get pods"))
+        rc = self.ssh_connection.get_return_code()
+        if rc != 0:
+            return None
+        pods_list_output = KubectlGetPodsOutput(kubectl_get_pods_output)
+
+        return pods_list_output
+
 
     def get_pods_all_namespaces(self) -> KubectlGetPodsOutput:
         """
@@ -71,9 +97,11 @@ class KubectlGetPodsKeywords(BaseKeyword):
         pod_status_timeout = time.time() + timeout
 
         while time.time() < pod_status_timeout:
-            pod_status = self.get_pods(namespace).get_pod(pod_name).get_status()
-            if pod_status == expected_status:
-                return True
+            pods_output = self.get_pods_no_validation()
+            if pods_output:
+                pod_status = self.get_pods(namespace).get_pod(pod_name).get_status()
+                if pod_status == expected_status:
+                    return True
             time.sleep(5)
 
         return False
@@ -100,6 +128,7 @@ class KubectlGetPodsKeywords(BaseKeyword):
             time.sleep(5)
 
         return False
+    
     def wait_for_pods_to_reach_status(self, expected_status: str, pod_names: list, namespace: str = None, poll_interval: int = 5, timeout: int = 180) -> bool:
             """
             Waits timeout amount of time for the given pod in a namespace to be in the given status
@@ -125,4 +154,45 @@ class KubectlGetPodsKeywords(BaseKeyword):
                 time.sleep(poll_interval)
 
             raise KeywordException(f"Pods {pod_names} in namespace {namespace} did not reach status {expected_status} within {timeout} seconds")
-        
+          
+    def wait_for_kubernetes_to_restart(self, timeout: int = 600, check_interval: int = 20) -> bool:
+        """
+        Wait for the Kubernetes API to go down, then wait for the kube-apiserver pod to be Running.
+
+        Args:
+            timeout (int): Maximum time to wait in seconds.
+            check_interval (int): Time between checks in seconds.
+
+        Returns:
+            bool: True if Kubernetes restarted and kube-apiserver pod becomes Running.
+
+        Raises:
+            TimeoutError: If the Kubernetes API doesn't restart properly.
+        """
+
+        def is_kubernetes_up() -> bool:
+            output = self.ssh_connection.send(export_k8s_config("kubectl get pods -A"))
+            return "was refused - did you specify the right host or port?" not in output[0]
+
+        validate_equals_with_retry(
+            function_to_execute=is_kubernetes_up,
+            expected_value=False,
+            validation_description="Kubernetes is down for a restart",
+            timeout=timeout,
+            polling_sleep_time=check_interval,
+        )
+
+        validate_equals_with_retry(
+            function_to_execute=is_kubernetes_up,
+            expected_value=True,
+            validation_description="Kubernetes is back up after the restart",
+            timeout=timeout,
+            polling_sleep_time=check_interval,
+        )
+
+        return self.wait_for_pod_status(
+            pod_name="kube-apiserver-controller-0",
+            expected_status="Running",
+            namespace="kube-system",
+            timeout=timeout
+        )

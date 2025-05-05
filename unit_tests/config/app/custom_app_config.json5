@@ -1,5 +1,6 @@
 {
   base_application_path: "fake_path",
   istio_app_name: "istio_custom",
-  metric_server_app_name: "metrics-server_custom"
+  metric_server_app_name: "metrics-server_custom",
+  oidc_app_name: "oidc-auth-apps_custom"
 }

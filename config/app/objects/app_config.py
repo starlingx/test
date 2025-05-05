@@ -17,6 +17,7 @@ class AppConfig:
         self.base_application_path = app_dict["base_application_path"]
         self.istio_app_name = app_dict["istio_app_name"]
         self.metric_server_app_name = app_dict["metric_server_app_name"]
+        self.oidc_app_name = app_dict["oidc_app_name"]
 
     def get_base_application_path(self) -> str:
         """
@@ -47,3 +48,13 @@ class AppConfig:
 
         """
         return self.metric_server_app_name
+    
+    def get_oidc_app_name(self) -> str:
+        """
+        Getter for oidc app name
+
+        Returns:
+            str: the oidc app name
+
+        """
+        return self.oidc_app_name

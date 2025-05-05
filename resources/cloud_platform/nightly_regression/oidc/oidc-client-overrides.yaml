@@ -1,0 +1,8 @@
+tlsName: oidc-auth-apps-certificate
+config:
+   # The |OIDC|-client container mounts the dex-ca-cert secret at /home, therefore
+   # issuer_root_ca: /home/<filename-only-of-generic-secret>
+   issuer_root_ca: /home/dex-ca-cert.crt
+   issuer_root_ca_secret: dex-ca-cert
+   # secret for accessing dex
+   client_secret: stx-oidc-client-p@ssw0rd
