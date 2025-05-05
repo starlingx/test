@@ -533,3 +533,21 @@ class LabConfig:
         if len(controllers) > 0:
             return controllers[0]
         return None
+
+    def get_counterpart_controller(self, lab_node_name: str) -> Node:
+        """Function to get the paired controller
+
+        Finds and returns the counterpart controller name from a list of controllers,
+        given the name of the current controller. Assumes there are exactly two controllers.
+
+        Args:
+            lab_node_name (str): The name of the current controller.
+
+        Returns:
+            Node: The counterpart / paired controller Node.
+        """
+        counterpart_controllers = [node for node in self.get_controllers() if node.get_name() != lab_node_name]
+        if not counterpart_controllers:
+            raise Exception("Others controller Not Found")
+        else:
+            return counterpart_controllers[0]

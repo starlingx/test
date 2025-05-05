@@ -4,9 +4,12 @@
 	// used to deploy the lab (and its subclouds, if any)
 	// All the files are assumed to be stored on the Central Cloud in the case of a DC system.
 
-	"controller" : {
-		"deployment_config_file": "/home/sysadmin/deployment-config.yaml",
-	},
+    "controller" : {
+        "controller-0" : {
+            "deployment_config_file": "/home/sysadmin/deployment-config.yaml",
+            "docker_ca_file": "",
+        }
+    },
 	"subclouds" : {
 		"subcloud1": {
 			"bootstrap_file": "/home/sysadmin/subcloud-1/subcloud1-bootstrap-values.yaml",
@@ -25,3 +28,5 @@
 		},
 	},
 }
+
+
