@@ -43,7 +43,9 @@ class PMCTableParser:
 
         total_rows = len(self.pmc_output)
 
-        for row in self.pmc_output[2 : total_rows - 1]:  # Ignore the first 2 rows and the last row (prompt)
+        for row in self.pmc_output[2:total_rows]:  # Ignore the first 2 rows and the last row (prompt)
+            if "~$" in row:
+                continue  # this a prompt, we can ignore
             if "RESPONSE MANAGEMENT" in row:  # signifies the start of a different set of values of the same object type.
                 output_values_dict_list.append(output_values_dict)
                 output_values_dict = {}

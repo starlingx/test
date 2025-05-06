@@ -56,6 +56,13 @@ pmc_get_domain_output = [
     "sysadmin@controller-0:~$\n",
 ]
 
+# fmt: off
+pmc_get_domain_output_compute = [
+    'Password: sending: GET DOMAIN\n',
+    '   507c6f.fffe.21ba71-0 seq 0 RESPONSE MANAGEMENT DOMAIN \n',
+    '       domainNumber 24\n'
+]
+
 pmc_get_grandmaster_settings_output = [
     "sending: GET GRANDMASTER_SETTINGS_NP\n",
     "   507c6f.fffe.0b5a4d-0 seq 0 RESPONSE MANAGEMENT GRANDMASTER_SETTINGS_NP\n",
@@ -101,7 +108,13 @@ pmc_get_time_status_output = [
     "sysadmin@controller-0:~$\n",
 ]
 
-pmc_get_port_data_set_output = ["sending: GET PORT_DATA_SET\n", "   b48351.fffe.0a37b0-1 seq 0 RESPONSE MANAGEMENT PORT_DATA_SET \n", "       portIdentity            b48351.fffe.0a37b0-1\n", "       portState               SLAVE\n", "       logMinDelayReqInterval  0\n", "       peerMeanPathDelay       0\n", "       logAnnounceInterval     1\n", "       announceReceiptTimeout  3\n", "       logSyncInterval         0\n", "       delayMechanism          1\n", "       logMinPdelayReqInterval 0\n", "       versionNumber           2\n", "   b48351.fffe.0a37b0-2 seq 0 RESPONSE MANAGEMENT PORT_DATA_SET \n", "       portIdentity            b48351.fffe.0a37b0-2\n", "       portState               MASTER\n", "       logMinDelayReqInterval  0\n", "       peerMeanPathDelay       0\n", "       logAnnounceInterval     1\n", "       announceReceiptTimeout  3\n", "       logSyncInterval         0\n", "       delayMechanism          1\n", "       logMinPdelayReqInterval 0\n", "       versionNumber           2\n", "sysadmin@controller-1:~$ \n"]
+pmc_get_port_data_set_output = ["sending: GET PORT_DATA_SET\n", "   b48351.fffe.0a37b0-1 seq 0 RESPONSE MANAGEMENT PORT_DATA_SET \n", "       portIdentity            b48351.fffe.0a37b0-1\n",
+                                "       portState               SLAVE\n", "       logMinDelayReqInterval  0\n", "       peerMeanPathDelay       0\n", "       logAnnounceInterval     1\n",
+                                "       announceReceiptTimeout  3\n", "       logSyncInterval         0\n", "       delayMechanism          1\n", "       logMinPdelayReqInterval 0\n",
+                                "       versionNumber           2\n", "   b48351.fffe.0a37b0-2 seq 0 RESPONSE MANAGEMENT PORT_DATA_SET \n", "       portIdentity            b48351.fffe.0a37b0-2\n",
+                                "       portState               MASTER\n", "       logMinDelayReqInterval  0\n", "       peerMeanPathDelay       0\n", "       logAnnounceInterval     1\n",
+                                "       announceReceiptTimeout  3\n", "       logSyncInterval         0\n", "       delayMechanism          1\n", "       logMinPdelayReqInterval 0\n",
+                                "       versionNumber           2\n", "sysadmin@controller-1:~$ \n"]
 
 
 def test_pmc_get_default_data_set_table_parser():
@@ -125,7 +138,7 @@ def test_pmc_get_default_data_set_table_parser():
     assert output_dict["offsetScaledLogVariance"] == "0xffff"
     assert output_dict["priority2"] == "128"
     assert output_dict["clockIdentity"] == "507c6f.fffe.0b5a4d"
-    assert output_dict["domainNumber"] == 0
+    assert output_dict["domainNumber"] == "0"
 
 
 def test_pmc_get_default_data_set_output():
@@ -210,6 +223,17 @@ def test_pmc_get_domain_output():
 
     """
     pmc_domain_output = PMCGetDomainOutput(pmc_get_domain_output)
+    pmc_get_domain_object = pmc_domain_output.get_pmc_get_domain_object()
+
+    assert pmc_get_domain_object.get_domain_number() == 24
+
+
+def test_pmc_get_domain_output_compute():
+    """
+    Tests pmc get domain output
+
+    """
+    pmc_domain_output = PMCGetDomainOutput(pmc_get_domain_output_compute)
     pmc_get_domain_object = pmc_domain_output.get_pmc_get_domain_object()
 
     assert pmc_get_domain_object.get_domain_number() == 24

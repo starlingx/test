@@ -1,7 +1,15 @@
 from keywords.ptp.cat.objects.clock_conf_output import ClockConfOutput
 
-# fmt off
-clock_conf_output = ["ifname [enp138s0f0]\n", "base_port [enp138s0f0]\n", "sma1 input\n", "ifname [enp81s0f0]\n", "base_port [enp81s0f0]\n", "sma1 output\n", "sysadmin@controller-0:~$ \n"]
+# fmt: off
+clock_conf_output = [
+    "ifname [enp138s0f0]\n",
+    "base_port [enp138s0f0]\n",
+    "sma1 input\n",
+    "ifname [enp81s0f0]\n",
+    "base_port [enp81s0f0]\n",
+    "sma1 output\n",
+    "sysadmin@controller-0:~$ \n"
+]
 
 
 def test_clock_conf_output():

@@ -1,6 +1,6 @@
 from typing import Any, Dict, List
 
-from starlingx.keywords.ptp.setup.object.port_data_set import PortDataSet
+from keywords.ptp.setup.object.port_data_set import PortDataSet
 
 
 class PTP4LExpectedDict:
@@ -64,7 +64,7 @@ class PTP4LExpectedDict:
         """
         return self.ptp_role
 
-    def get_port_data_set_for_hostname(self, hostname) -> List[PortDataSet]:
+    def get_port_data_set_for_hostname(self, hostname: str) -> List[PortDataSet]:
         """
         Gets the list of port data set for hostname.
 
