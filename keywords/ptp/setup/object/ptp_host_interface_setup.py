@@ -33,7 +33,7 @@ class PTPHostInterfaceSetup:
         self.compute_0_interfaces = None
         if "compute_0_interfaces" in setup_dict:
             self.compute_0_interfaces = setup_dict.get("compute_0_interfaces")
-            
+
     def __str__(self):
         """
         String representation of this object.
@@ -88,3 +88,20 @@ class PTPHostInterfaceSetup:
             List[str]: The compute_0_interfaces of this ptp host interface setup.
         """
         return self.compute_0_interfaces
+
+    def get_interfaces_for_hostname(self, hostname: str) -> List[str]:
+        """
+        Gets the interfaces for the given hostname in this PTP host interface setup.
+
+        Args:
+            hostname (str): The name of the host.
+
+        Returns:
+            List[str]: The interfaces for the given hostname in this PTP host interface setup.
+        """
+        interfaces_to_hostname_mapping = {
+            "controller-0": self.controller_0_interfaces,
+            "controller-1": self.controller_1_interfaces,
+            "compute-0": self.compute_0_interfaces,
+        }
+        return interfaces_to_hostname_mapping.get(hostname)

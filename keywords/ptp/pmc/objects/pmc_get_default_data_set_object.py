@@ -4,6 +4,7 @@ class PMCGetDefaultDataSetObject:
     """
 
     def __init__(self):
+        self.ts2phc_nmea_serialport = ""
         self.two_step_flag: int = -1
         self.slave_only: int = -1
         self.number_ports: int = -1
@@ -31,6 +32,26 @@ class PMCGetDefaultDataSetObject:
         self.time_stamping: str = ""
         self.tx_timestamp_timeout: int = -1
         self.uds_address: str = ""
+
+    def get_ts2phc_nmea_serialport(self) -> str:
+        """
+        Getter for ts2phc_nmea_serialport
+
+        Returns:
+            str: ts2phc_nmea_serialport
+
+        """
+        return self.ts2phc_nmea_serialport
+
+    def set_ts2phc_nmea_serialport(self, ts2phc_nmea_serialport: str):
+        """
+        Setter for ts2phc_nmea_serialport
+
+        Args:
+            ts2phc_nmea_serialport (str): the ts2phc_nmea_serialport value
+
+        """
+        self.ts2phc_nmea_serialport = ts2phc_nmea_serialport
 
     def get_two_step_flag(self) -> int:
         """
@@ -237,7 +258,7 @@ class PMCGetDefaultDataSetObject:
         Getter for domain_number
 
         Returns:
-            str: the domain_number value
+            int: the domain_number value
 
         """
         return self.domain_number
@@ -247,7 +268,7 @@ class PMCGetDefaultDataSetObject:
         Setter for domain_number
 
         Args:
-            domain_number (str): the domain_number value
+            domain_number (int): the domain_number value
 
         """
         self.domain_number = domain_number
