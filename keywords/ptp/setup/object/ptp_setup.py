@@ -72,12 +72,8 @@ class PTPSetup:
                 clock_setup = ClockSetup(clock_entry_dict, self.host_ptp_if_dict)
                 self.clock_setup_list.append(clock_setup)
 
-        expected_dict = setup_dict["expected_dict"]
-        if "ptp4l" in expected_dict:
-            ptp4l_list = expected_dict["ptp4l"]
-            for ptp4l_expected_dict in ptp4l_list:
-                ptp4l_expected = PTP4LExpectedDict(ptp4l_expected_dict)
-                self.ptp4l_expected_list.append(ptp4l_expected)
+        expected_dict = setup_dict.get("expected_dict", {})
+        self.ptp4l_expected_list.extend(PTP4LExpectedDict(item) for item in expected_dict.get("ptp4l", []))
 
         if "parent_data_set" in expected_dict:
             self.parent_data_set = ParentDataSet(expected_dict["parent_data_set"])
@@ -205,6 +201,21 @@ class PTPSetup:
             List[PTP4LExpectedDict]: list of ptp4l expected dict
         """
         return self.ptp4l_expected_list
+
+    def get_ptp4l_expected_by_name(self, name: str) -> PTP4LExpectedDict:
+        """
+        Getter for ptp4l expected by name.
+
+        Args:
+            name (str): The name of the instance.
+
+        Returns:
+            PTP4LExpectedDict: ptp4l expected by name
+        """
+        ptp4l_expected_obj = next((obj for obj in self.ptp4l_expected_list if obj.get_name() == name), None)
+        if not ptp4l_expected_obj:
+            raise ValueError(f"No expected PTP4L object found for name: {name}")
+        return ptp4l_expected_obj
 
     def get_parent_data_set(self) -> ParentDataSet:
         """

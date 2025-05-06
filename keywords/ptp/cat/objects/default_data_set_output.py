@@ -34,6 +34,9 @@ class DefaultDataSetOutput:
         output_values = cat_ptp_table_parser.get_output_values_dict()
         self.pmc_get_default_data_set_object = PMCGetDefaultDataSetObject()
 
+        if "ts2phc.nmea_serialport" in output_values:
+            self.pmc_get_default_data_set_object.set_ts2phc_nmea_serialport(output_values["ts2phc.nmea_serialport"])
+
         if "twoStepFlag" in output_values:
             self.pmc_get_default_data_set_object.set_two_step_flag(int(output_values["twoStepFlag"]))
 

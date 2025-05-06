@@ -64,41 +64,23 @@ class PTP4LExpectedDict:
         """
         return self.ptp_role
 
-    def get_controller_0_port_data_set(self) -> List[PortDataSet]:
+    def get_port_data_set_for_hostname(self, hostname) -> List[PortDataSet]:
         """
-        Gets the list of controller-0 port data set.
+        Gets the list of port data set for hostname.
+
+        Args:
+            hostname (str): The name of the host.
 
         Returns:
-            List[PortDataSet]: The list of controller-0 port data set.
+            List[PortDataSet]: The list of port data set for hostname.
         """
-        port_data_set_list = []
-        for port_data_set in self.controller_0_port_data_set:
-            port_data_set_object = PortDataSet(port_data_set)
-            port_data_set_list.append(port_data_set_object)
-        return port_data_set_list
+        hostname_to_port_data_set = {
+            "controller-0": self.controller_0_port_data_set,
+            "controller-1": self.controller_1_port_data_set,
+            "compute-0": self.compute_0_port_data_set,
+        }.get(hostname)
 
-    def get_controller_1_port_data_set(self) -> List[PortDataSet]:
-        """
-        Gets the list of controller-1 port data set.
+        if not hostname_to_port_data_set:
+            raise Exception(f"Expected port data set not found for hostname: {hostname}")
 
-        Returns:
-            List[PortDataSet]: The list of controller-1 port data set.
-        """
-        port_data_set_list = []
-        for port_data_set in self.controller_1_port_data_set:
-            port_data_set_object = PortDataSet(port_data_set)
-            port_data_set_list.append(port_data_set_object)
-        return port_data_set_list
-
-    def get_compute_0_port_data_set(self) -> List[PortDataSet]:
-        """
-        Gets the list of compute-0 port data set.
-
-        Returns:
-            List[PortDataSet]: The list of compute-0 port data set.
-        """
-        port_data_set_list = []
-        for port_data_set in self.compute_0_port_data_set:
-            port_data_set_object = PortDataSet(port_data_set)
-            port_data_set_list.append(port_data_set_object)
-        return port_data_set_list
+        return [PortDataSet(port_data_set) for port_data_set in hostname_to_port_data_set]
