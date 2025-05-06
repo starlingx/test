@@ -16,13 +16,14 @@ class DeploymentAssetsConfig:
             raise
 
         deployment_assets_dict = json5.load(json_data)
-        self.controller_deployment_assets = DeploymentAssets(deployment_assets_dict["controller"])
+        controller_name, dep_assets_dict = deployment_assets_dict["controller"].popitem()
+        self.controller_deployment_assets = DeploymentAssets(controller_name, dep_assets_dict)
 
         self.subclouds_deployment_assets = {}
         if "subclouds" in deployment_assets_dict:
             subclouds_dict = deployment_assets_dict["subclouds"]
             for subcloud_name in subclouds_dict.keys():
-                self.subclouds_deployment_assets[subcloud_name] = DeploymentAssets(subclouds_dict[subcloud_name])
+                self.subclouds_deployment_assets[subcloud_name] = DeploymentAssets(None, subclouds_dict[subcloud_name])
 
     def get_controller_deployment_assets(self) -> DeploymentAssets:
         """

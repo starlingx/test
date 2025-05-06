@@ -1,8 +1,5 @@
-import os
-
 from pytest import mark
 
-from config.configuration_manager import ConfigurationManager
 from framework.logging.automation_logger import get_logger
 from framework.validation.validation import validate_equals
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_add_keywords import DcManagerSubcloudAddKeywords
@@ -10,38 +7,9 @@ from keywords.cloud_platform.dcmanager.dcmanager_subcloud_delete_keywords import
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_list_keywords import DcManagerSubcloudListKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_manager_keywords import DcManagerSubcloudManagerKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
+from keywords.cloud_platform.sync_files.sync_deployment_assets import SyncDeploymentAssets
 from keywords.cloud_platform.system.host.system_host_list_keywords import SystemHostListKeywords
 from keywords.cloud_platform.system.host.system_host_swact_keywords import SystemHostSwactKeywords
-from keywords.files.file_keywords import FileKeywords
-
-
-def sanity_pre_requisite():
-    """
-    Sanity pre-requisite for the test case
-    """
-    # Sync the lab configuration between active and standby controller
-    lab_config = ConfigurationManager.get_lab_config()
-    active_controller_ssh = LabConnectionKeywords().get_active_controller_ssh()
-    user = lab_config.get_admin_credentials().get_user_name()
-
-    # get the standby controller
-    standby_controller = SystemHostListKeywords(active_controller_ssh).get_standby_controller()
-    if not standby_controller:
-        raise Exception("System does not have a standby controller")
-    standby_host_name = standby_controller.get_host_name()
-    deployment_assets_config = ConfigurationManager.get_deployment_assets_config()
-    file_kw = FileKeywords(active_controller_ssh)
-    # sync all subclouds files
-    for sc_assets in deployment_assets_config.subclouds_deployment_assets.values():
-        # get base path of the file
-        for file in [sc_assets.get_deployment_config_file(), sc_assets.get_install_file(), sc_assets.get_bootstrap_file()]:
-
-            # get the base path of the file
-            base_file_path = f"{os.path.dirname(file)}/"
-
-            # RSync the files over to the standby controller
-            password = ConfigurationManager.get_lab_config().get_admin_credentials().get_password()
-            file_kw.rsync_to_remote_server(file, standby_host_name, user, password, base_file_path)
 
 
 def subcloud_add(subcloud_name: str):
@@ -107,9 +75,9 @@ def test_dc_subcloud_add_simplex():
         - add The subcloud
         - validate that the subcloud is added
     """
-    sanity_pre_requisite()
     # fetch not deployed subcloud
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    SyncDeploymentAssets(ssh_connection).sync_assets()
     dcmanager_subcloud_list_keywords = DcManagerSubcloudListKeywords(ssh_connection)
     subcloud_name = dcmanager_subcloud_list_keywords.get_dcmanager_subcloud_list().get_undeployed_subcloud_name("Simplex")
     subcloud_add(subcloud_name)
@@ -153,9 +121,9 @@ def test_dc_subcloud_add_duplex():
         - add The subcloud
         - validate that the subcloud is added
     """
-    sanity_pre_requisite()
     # fetch not deployed subcloud
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    SyncDeploymentAssets(ssh_connection).sync_assets()
     dcmanager_subcloud_list_keywords = DcManagerSubcloudListKeywords(ssh_connection)
     subcloud_name = dcmanager_subcloud_list_keywords.get_dcmanager_subcloud_list().get_undeployed_subcloud_name("Duplex")
     subcloud_add(subcloud_name)
