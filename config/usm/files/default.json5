@@ -12,8 +12,8 @@
   // Required if usm_operation_type = "upgrade"
   // If copy_from_remote=true, these must be full remote paths
   // If copy_from_remote=false, these are assumed to already exist on the controller
-  "iso_path": "/home/sysadmin/starlingx-10.0.0.iso",
-  "sig_path": "/home/sysadmin/starlingx-10.0.0.sig",
+  "iso_path": "/home/sysadmin/usm_test/starlingx-10.0.0.iso",
+  "sig_path": "/home/sysadmin/usm_test/starlingx-10.0.0.sig",
 
   // Patch file paths
   // Required if usm_operation_type = "patch"
@@ -29,7 +29,7 @@
   "patch_dir": "",
 
   // Destination directory on the controller where files will be copied
-  "dest_dir": "/home/sysadmin/upload_test/",
+  "dest_dir": "/home/sysadmin/usm_test/",
 
   // Expected release IDs to validate a successful software upload or patching.
   //
@@ -53,10 +53,6 @@
   // Example: "--force"
   "upgrade_arguments": "",
 
-  // Extra attributes for future workflows (e.g., patch staging, etc.)
-  "extra_attributes": {
-    // Example: "staged": "true"
-  },
 
   // Polling configuration for checking upload success
   "upload_poll_interval_sec": 30,

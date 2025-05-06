@@ -1,25 +1,27 @@
 """Software List Output."""
 
+from typing import List
+
 from keywords.cloud_platform.system.system_table_parser import SystemTableParser
 from keywords.cloud_platform.upgrade.objects.software_list_object import SoftwareListObject
 
 
 class SoftwareListOutput:
     """
+    Parses the output of the 'software list' command into structured objects.
 
-    This class parses o/p 'software list' command into an object of
-    type SoftwareListObject.
-
+    This class uses SystemTableParser to convert the raw CLI output of
+    'software list' into a list of SoftwareListObject entries.
     """
 
-    def __init__(self, software_list_output):
+    def __init__(self, software_list_output: str):
         """
-        Constructor
+        Initialize and parse the software list output.
 
         Args:
-            software_list_output (str): output of 'software list' command
+            software_list_output (str): Raw output from 'software list' command.
         """
-        self.software_list: SoftwareListObject = []
+        self.software_list: List[SoftwareListObject] = []
         system_table_parser = SystemTableParser(software_list_output)
         self.output_values = system_table_parser.get_output_values_list()
 
@@ -31,59 +33,65 @@ class SoftwareListOutput:
             )
             self.software_list.append(software_list_object)
 
-    def get_software_lists(self) -> list[SoftwareListObject]:
+    def get_software_lists(self) -> List[SoftwareListObject]:
         """
         Get all software list objects.
 
         Returns:
-            the list of software list objects
-
+            List[SoftwareListObject]: Parsed software entries.
         """
         return self.software_list
 
-    def get_software_list_details(self):
+    def get_software_list_details(self) -> List[dict]:
         """
         Get software list details in a list of dictionaries.
 
         Returns:
-            list of software list dict
-
+            List[dict]: Parsed release table rows.
         """
         return self.output_values
 
-    def get_release_name_by_state(self, state):
+    def get_release_name_by_state(self, state: str) -> List[str]:
         """
-        Get Release name of a release based in its state.
+        Get names of all releases with a given state.
 
         Args:
-            state: State of the release.
+            state (str): Desired software release state (e.g., "deployed").
 
         Returns:
-            list of release name.
-
+            List[str]: Matching release names.
         """
-        software_list_details = self.output_values
-        release_name = []
-        for j in range(len(software_list_details)):
-            if software_list_details[j]["State"] == state:
-                release_details = software_list_details[j]
-                release_name.append(release_details["Release"])
-        return release_name
+        return [entry["Release"] for entry in self.output_values if entry["State"] == state]
 
-    def get_release_state_by_release_name(self, release_name):
+    def get_release_state_by_release_name(self, release_name: str) -> str:
         """
-        Get the Release State based on the release name.
+        Get the state of a release by its name.
 
         Args:
-            release_name: name of the release.
+            release_name (str): Software release name.
 
         Returns:
-            state of the release
-
+            str: State of the release (e.g., "available", "deployed"). Empty string if not found.
         """
-        software_list_details = self.output_values
-        for j in range(len(software_list_details)):
-            for i in software_list_details:
-                if software_list_details[j]["Release"] == release_name:
-                    release_details = software_list_details[j]
-        return release_details["State"]
+        for entry in self.output_values:
+            if entry["Release"] == release_name:
+                return entry["State"]
+        return ""
+
+    def __str__(self) -> str:
+        """
+        Return a human-readable string representation of the software list.
+
+        Returns:
+            str: Formatted software entries as strings.
+        """
+        return "\n".join([str(entry) for entry in self.software_list])
+
+    def __repr__(self) -> str:
+        """
+        Return the developer-facing representation of the object.
+
+        Returns:
+            str: Class name and row count.
+        """
+        return f"{self.__class__.__name__}(rows={len(self.software_list)})"

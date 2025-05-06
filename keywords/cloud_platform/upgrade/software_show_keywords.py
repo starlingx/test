@@ -37,3 +37,16 @@ class SoftwareShowKeywords(BaseKeyword):
         software_show_output = SoftwareShowOutput(output)
 
         return software_show_output
+
+    def get_release_state(self, release_id: str) -> str:
+        """
+        Return the release state of a specific version using 'software show'.
+
+        Args:
+            release_id (str): The software release ID to show.
+
+        Returns:
+            str: The state string (e.g., "available", "deployed", etc.)
+        """
+        output = self.get_software_show(sudo=True, release_id=release_id)
+        return output.get_property_value("State")

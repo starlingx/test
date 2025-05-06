@@ -39,3 +39,18 @@ class SoftwareShowOutput:
         """
         software_show = self.software_show
         return software_show
+
+    def get_property_value(self, property_name: str) -> str:
+        """
+        Return the value for a given software show property (e.g., "State").
+
+        Args:
+            property_name (str): Property key to look up.
+
+        Returns:
+            str: The corresponding value, or empty string if not found.
+        """
+        for entry in self.output_values:
+            if entry["Property"] == property_name:
+                return entry["Value"]
+        return ""
