@@ -2,7 +2,6 @@ import time
 
 from framework.exceptions.keyword_exception import KeywordException
 from framework.ssh.ssh_connection import SSHConnection
-from framework.logging.automation_logger import get_logger
 from framework.validation.validation import validate_equals_with_retry
 from keywords.base_keyword import BaseKeyword
 from keywords.k8s.k8s_command_wrapper import export_k8s_config
@@ -79,6 +78,34 @@ class KubectlGetPodsKeywords(BaseKeyword):
         pods_list_output = KubectlGetPodsOutput(kubectl_get_pods_output)
 
         return pods_list_output
+
+    def wait_for_pod_max_age(self, pod_name: str, max_age: int, namespace: str = None, timeout: int = 600, check_interval: int = 20) -> bool:
+        """
+        Waits for the pod to be in a certain max_age.
+
+        Args:
+            pod_name (str): the pod name
+            max_age (int): the max age in minutes
+            namespace (str): the namespace
+            timeout (int): the timeout in seconds
+            check_interval (int): the interval between checks in seconds
+
+        Returns:
+            bool: True if the pod's age became max_age
+        """
+        end_time = time.time() + timeout
+
+        while time.time() < end_time:
+            pods_output = self.get_pods_no_validation(namespace)
+            if not pods_output:
+                time.sleep(check_interval)
+                continue
+            pod_age_in_minutes = pods_output.get_pod(pod_name).get_age_in_minutes()
+            if pod_age_in_minutes == max_age:
+                return True
+            time.sleep(check_interval)
+
+        raise Exception(f"The pod {pod_name} did not reach the age {max_age}")
 
     def wait_for_pod_status(self, pod_name: str, expected_status: str, namespace: str = None, timeout: int = 600) -> bool:
         """
@@ -160,8 +187,8 @@ class KubectlGetPodsKeywords(BaseKeyword):
                 return True
             time.sleep(poll_interval)
 
-        raise KeywordException(f"Pods {pods_in_incorrect_status} in namespace {namespace} did not reach status {expected_status} within {timeout} seconds")
-
+            raise KeywordException(f"Pods {pod_names} in namespace {namespace} did not reach status {expected_status} within {timeout} seconds")
+          
     def wait_for_kubernetes_to_restart(self, timeout: int = 600, check_interval: int = 20) -> bool:
         """
         Wait for the Kubernetes API to go down, then wait for the kube-apiserver pod to be Running.
@@ -197,9 +224,16 @@ class KubectlGetPodsKeywords(BaseKeyword):
             polling_sleep_time=check_interval,
         )
 
-        return self.wait_for_pod_status(
+        self.wait_for_pod_status(
             pod_name="kube-apiserver-controller-0",
             expected_status="Running",
+            namespace="kube-system",
+            timeout=timeout
+        )
+
+        return self.wait_for_pod_max_age(
+            pod_name="kube-apiserver-controller-0",
+            max_age=3,
             namespace="kube-system",
             timeout=timeout
         )
