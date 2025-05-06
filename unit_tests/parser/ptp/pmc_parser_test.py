@@ -20,7 +20,7 @@ pmc_output = [
     "       offsetScaledLogVariance 0xffff\n",
     "       priority2              128\n",
     "       clockIdentity          507c6f.fffe.0b5a4d\n",
-    "       domainNumber           0.\n",
+    "       domainNumber           0\n",
     "sysadmin@controller-0:~$\n",
 ]
 
@@ -125,7 +125,7 @@ def test_pmc_get_default_data_set_table_parser():
     assert output_dict["offsetScaledLogVariance"] == "0xffff"
     assert output_dict["priority2"] == "128"
     assert output_dict["clockIdentity"] == "507c6f.fffe.0b5a4d"
-    assert output_dict["domainNumber"] == "0."
+    assert output_dict["domainNumber"] == 0
 
 
 def test_pmc_get_default_data_set_output():
@@ -145,7 +145,7 @@ def test_pmc_get_default_data_set_output():
     assert pmc_get_default_data_set_object.get_offset_scaled_log_variance() == "0xffff"
     assert pmc_get_default_data_set_object.get_priority2() == 128
     assert pmc_get_default_data_set_object.get_clock_identity() == "507c6f.fffe.0b5a4d"
-    assert pmc_get_default_data_set_object.get_domain_number() == "0."
+    assert pmc_get_default_data_set_object.get_domain_number() == 0
 
 
 def test_pmc_get_parent_data_set_table_parser():
