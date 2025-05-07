@@ -1,4 +1,7 @@
+import os
+
 from framework.web.condition.web_condition_element_visible import WebConditionElementVisible
+from framework.web.condition.web_condition_text_equals import WebConditionTextEquals
 from framework.web.webdriver_core import WebDriverCore
 from web_pages.base_page import BasePage
 from web_pages.k8s_dashboard.login.k8s_login_page_locators import K8sLoginPageLocators
@@ -41,13 +44,17 @@ class K8sLoginPage(BasePage):
         Args:
             kubeconfig_path (str): The file path to the kubeconfig file.
         """
-        condition = WebConditionElementVisible(self.locators.get_locator_input_kubeconfig_file())
+        visible_input_locator = self.locators.get_locator_input_kubeconfig_file()
+
+        condition = WebConditionElementVisible(visible_input_locator)
         kubeconfig_option = self.locators.get_locator_kubeconfig_option()
         self.driver.click(kubeconfig_option, conditions=[condition])
 
         # this actually needs to be changed to send_keys
-        kubeconfig_input = self.locators.get_locator_input_kubeconfig_file()
-        self.driver.set_text(kubeconfig_input, kubeconfig_path)
+        file_name = os.path.basename(kubeconfig_path)
+        file_is_displayed_in_visible_input = WebConditionTextEquals(visible_input_locator, file_name)
+        kubeconfig_input = self.locators.get_locator_hidden_input_kubeconfig_file()
+        self.driver.send_keys(kubeconfig_input, kubeconfig_path, [file_is_displayed_in_visible_input])
 
         self.click_signin()
 

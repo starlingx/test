@@ -1,5 +1,3 @@
-import os
-
 from pytest import fixture, mark
 
 from config.configuration_manager import ConfigurationManager
@@ -72,30 +70,29 @@ def copy_k8s_files(request: fixture, ssh_connection: SSHConnection):
         FileKeywords(ssh_connection).upload_file(local_path, f"/home/sysadmin/{k8s_dashboard_dir}/{dashboard_file_name}")
 
 
-def create_k8s_dashboard(request: fixture, namespace: str, con_ssh: SSHConnection):
+def create_k8s_dashboard(namespace: str, con_ssh: SSHConnection):
     """
     Create all necessary resources for the k8s dashboard
+
     Args:
-        request (fixture): pytest fixture
         namespace (str): kubernetes_dashboard namespace name
         con_ssh (SSHConnection): the SSH connection
 
     Raises:
         KeywordException: if the k8s dashboard is not accessible
     """
-
-    k8s_dashboard_file_path = os.path.join(HOME_K8S_DIR, K8S_DASHBOARD_FILE)
+    k8s_dashboard_file_path = f"{HOME_K8S_DIR}/{K8S_DASHBOARD_FILE}"
 
     sys_domain_name = ConfigurationManager.get_lab_config().get_floating_ip()
 
-    path_cert = os.path.join(HOME_K8S_DIR, K8S_CERT_DIR)
+    path_cert = f"{HOME_K8S_DIR}/{K8S_CERT_DIR}"
     get_logger().log_info(f"Creating {path_cert} directory")
     FileKeywords(con_ssh).create_directory(path_cert)
 
     dashboard_key = "k8s_dashboard_certs/dashboard.key"
     dashboard_cert = "k8s_dashboard_certs/dashboard.crt"
-    key = os.path.join(HOME_K8S_DIR, dashboard_key)
-    crt = os.path.join(HOME_K8S_DIR, dashboard_cert)
+    key = f"{HOME_K8S_DIR}/{dashboard_key}"
+    crt = f"{HOME_K8S_DIR}/{dashboard_cert}"
     get_logger().log_info("Creating SSL certificate file for kubernetes dashboard secret")
     OpenSSLKeywords(con_ssh).create_certificate(key=key, crt=crt, sys_domain_name=sys_domain_name)
     KubectlCreateSecretsKeywords(ssh_connection=con_ssh).create_secret_generic(secret_name=K8S_DASHBOARD_SECRETS_NAME, tls_crt=crt, tls_key=key, namespace=namespace)
@@ -104,11 +101,9 @@ def create_k8s_dashboard(request: fixture, namespace: str, con_ssh: SSHConnectio
     KubectlFileApplyKeywords(ssh_connection=con_ssh).apply_resource_from_yaml(k8s_dashboard_file_path)
     kubectl_get_pods_keywords = KubectlGetPodsKeywords(con_ssh)
     get_logger().log_info(f"Waiting for pods in {namespace} namespace to reach status 'Running'")
+
     # Wait for all pods to reach 'Running' status
-    is_dashboard_pods_running = KubectlGetPodsKeywords.wait_for_pods_to_reach_status(
-        expected_status="Running",
-        namespace=namespace,
-    )
+    is_dashboard_pods_running = kubectl_get_pods_keywords.wait_for_pods_to_reach_status("Running", namespace=namespace)
     assert is_dashboard_pods_running, f"Not all pods in {namespace} namespace reached 'Running' status"
 
     get_logger().log_info(f"Updating {K8S_DASHBOARD_NAME} service to be exposed on port {K8S_DASHBOARD_PORT}")
@@ -141,7 +136,7 @@ def get_k8s_token(request: fixture, con_ssh: SSHConnection) -> str:
     adminuserfile = "admin-user.yaml"
     serviceaccount = "admin-user"
 
-    admin_user_file_path = os.path.join(HOME_K8S_DIR, adminuserfile)
+    admin_user_file_path = f"{HOME_K8S_DIR}/{adminuserfile}"
 
     get_logger().log_info("Creating the admin-user service-account")
     KubectlFileApplyKeywords(ssh_connection=con_ssh).apply_resource_from_yaml(admin_user_file_path)
@@ -266,7 +261,7 @@ def test_k8s_dashboard_access(request):
 
     request.addfinalizer(teardown_secret)
 
-    create_k8s_dashboard(request, namespace=test_namespace, con_ssh=ssh_connection)
+    create_k8s_dashboard(namespace=test_namespace, con_ssh=ssh_connection)
 
     # Step 4: Create the token for the dashboard
     def teardown_svc_account():
@@ -291,5 +286,5 @@ def test_k8s_dashboard_access(request):
     login_page.logout()
 
     # Step 7: Login to the dashboard using kubeconfig file
-    # kubeconfig_tmp_path = update_token_in_local_kubeconfig(token=token)
-    # login_page.login_with_kubeconfig(kubeconfig_tmp_path)
+    kubeconfig_tmp_path = update_token_in_local_kubeconfig(token=token)
+    login_page.login_with_kubeconfig(kubeconfig_tmp_path)

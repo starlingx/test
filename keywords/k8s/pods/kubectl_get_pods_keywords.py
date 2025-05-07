@@ -1,5 +1,6 @@
 import time
 
+from framework.exceptions.keyword_exception import KeywordException
 from framework.ssh.ssh_connection import SSHConnection
 from framework.logging.automation_logger import get_logger
 from framework.validation.validation import validate_equals_with_retry
@@ -42,7 +43,7 @@ class KubectlGetPodsKeywords(BaseKeyword):
         pods_list_output = KubectlGetPodsOutput(kubectl_get_pods_output)
 
         return pods_list_output
-    
+
     def get_pods_no_validation(self, namespace: str = None) -> KubectlGetPodsOutput:
         """
         Gets the k8s pods that are available using '-o wide'.
@@ -65,7 +66,6 @@ class KubectlGetPodsKeywords(BaseKeyword):
         pods_list_output = KubectlGetPodsOutput(kubectl_get_pods_output)
 
         return pods_list_output
-
 
     def get_pods_all_namespaces(self) -> KubectlGetPodsOutput:
         """
@@ -128,33 +128,40 @@ class KubectlGetPodsKeywords(BaseKeyword):
             time.sleep(5)
 
         return False
-    
-    def wait_for_pods_to_reach_status(self, expected_status: str, pod_names: list, namespace: str = None, poll_interval: int = 5, timeout: int = 180) -> bool:
-            """
-            Waits timeout amount of time for the given pod in a namespace to be in the given status
-            Args:
-                expected_status (str): the expected status
-                pod_names (list): the pod names
-                namespace (str): the namespace
-                poll_interval (int): the interval in secs to poll for status
-                timeout (int): the timeout in secs
 
-            Returns:
-                bool: True if pod is in expected status else False
+    def wait_for_pods_to_reach_status(self, expected_status: str, pod_names: list = None, namespace: str = None, poll_interval: int = 5, timeout: int = 180) -> bool:
+        """
+        Waits timeout amount of time for the given pod in a namespace to be in the given status
 
-            """
+        Args:
+            expected_status (str): the expected status
+            pod_names (list): the pod names to look for. If left as None, we will check for all the pods.
+            namespace (str): the namespace
+            poll_interval (int): the interval in secs to poll for status
+            timeout (int): the timeout in secs
 
-            pod_status_timeout = time.time() + timeout
+        Returns:
+            bool: True if pod is in expected status else False
 
-            while time.time() < pod_status_timeout:
-                pods = self.get_pods(namespace).get_pods()
-                not_ready_pods = list(filter(lambda pod: pod.get_name() in pod_names and pod.get_status() != expected_status, pods))
-                if len(not_ready_pods) == 0:
-                    return True
-                time.sleep(poll_interval)
+        """
+        pod_status_timeout = time.time() + timeout
 
-            raise KeywordException(f"Pods {pod_names} in namespace {namespace} did not reach status {expected_status} within {timeout} seconds")
-          
+        while time.time() < pod_status_timeout:
+
+            pods = self.get_pods(namespace).get_pods()
+
+            # We need to filter the list for only the pods matching the pod names if specified
+            if pod_names:
+                pods = [pod for pod in pods if pod.get_name() in pod_names]
+
+            pods_in_incorrect_status = [pod for pod in pods if pod.get_status() != expected_status]
+
+            if len(pods_in_incorrect_status) == 0:
+                return True
+            time.sleep(poll_interval)
+
+        raise KeywordException(f"Pods {pods_in_incorrect_status} in namespace {namespace} did not reach status {expected_status} within {timeout} seconds")
+
     def wait_for_kubernetes_to_restart(self, timeout: int = 600, check_interval: int = 20) -> bool:
         """
         Wait for the Kubernetes API to go down, then wait for the kube-apiserver pod to be Running.

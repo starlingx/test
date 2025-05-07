@@ -44,9 +44,22 @@ class K8sLoginPageLocators:
         """
         Locator for the Kubeconfig File Input.
 
+        This is the visible input, which will show the name of the file uploaded.
+        To upload a file, you need to use the hidden_input instead.
+
         Returns: WebLocator
         """
         return WebLocator("""[title="fileInput"]""", By.CSS_SELECTOR)
+
+    def get_locator_hidden_input_kubeconfig_file(self) -> WebLocator:
+        """
+        Locator for the Hidden Kubeconfig File Input.
+
+        This is the input that needs to be used to upload the file using set_text.
+
+        Returns: WebLocator
+        """
+        return WebLocator("""input[type="file"]""", By.CSS_SELECTOR)
 
     def get_locator_user_button(self) -> WebLocator:
         """

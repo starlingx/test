@@ -8,6 +8,7 @@ from config.configuration_manager import ConfigurationManager
 from framework.logging.automation_logger import get_logger
 from framework.web.action.web_action_click import WebActionClick
 from framework.web.action.web_action_get_text import WebActionGetText
+from framework.web.action.web_action_send_keys import WebActionSendKeys
 from framework.web.action.web_action_set_text import WebActionSetText
 from framework.web.condition.web_condition import WebCondition
 from framework.web.condition.web_condition_text_equals import WebConditionTextEquals
@@ -23,8 +24,8 @@ class WebDriverCore:
     def __init__(self):
         """
         Constructor which will instantiate the driver object.
-        """
 
+        """
         chrome_options = selenium.webdriver.chrome.options.Options()
         chrome_options.add_argument("--ignore-certificate-errors")
         if ConfigurationManager.get_web_config().get_run_headless():
@@ -34,6 +35,7 @@ class WebDriverCore:
     def close(self) -> None:
         """
         Close the WebDriver and browser window.
+
         Returns: None
 
         """
@@ -42,11 +44,12 @@ class WebDriverCore:
     def navigate_to_url(self, url: str, conditions: List[WebCondition] = []) -> None:
         """
         This function will navigate to the specified url.
+
         The navigation will get retried if until one of the conditions is met (or we time out).
 
         Args:
-            url: URL to navigate to.
-            conditions: Conditions for successful navigation to this URL.
+            url (str): URL to navigate to.
+            conditions (List[WebCondition]): Conditions for successful navigation to this URL.
 
         Returns: None
 
@@ -81,30 +84,46 @@ class WebDriverCore:
     def click(self, locator: WebLocator, conditions: List[WebCondition] = []) -> None:
         """
         Click on the target element
+
         Args:
-            locator: The locator of the element that we want to click on.
-            conditions: Conditions that must be satisfied for the Action to be declared successful.
+            locator (WebLocator): The locator of the element that we want to click on.
+            conditions (List[WebCondition]): Conditions that must be satisfied for the Action to be declared successful.
 
         Returns: None
 
         """
-
         action = WebActionClick(self.driver, locator, conditions)
         action_executor = WebActionExecutor(action)
         action_executor.execute_action()
 
-    def set_text(self, locator: WebLocator, text: str, conditions: List[WebCondition] = []) -> None:
+    def send_keys(self, locator: WebLocator, keys: str, conditions: List[WebCondition] = []) -> None:
         """
-        Clears the text content of the element, then sets the text of the element.
+        Sends Keys directly to a WebElement. SendText should be favored wherever it can be used.
+
         Args:
-            locator: The locator of the element that we want to set the text of.
-            text: The text that we want to set.
-            conditions: Conditions that must be satisfied for the Action to be declared successful.
+            locator (WebLocator): The locator of the element that we want to set the text of.
+            keys (str): The keys that we want to send
+            conditions (List[WebCondition]): Conditions that must be satisfied for the Action to be declared successful.
 
         Returns: None
 
         """
+        action = WebActionSendKeys(self.driver, locator, conditions)
+        action_executor = WebActionExecutor(action)
+        action_executor.execute_action(keys)
 
+    def set_text(self, locator: WebLocator, text: str, conditions: List[WebCondition] = []) -> None:
+        """
+        Clears the text content of the element, then sets the text of the element.
+
+        Args:
+            locator (WebLocator): The locator of the element that we want to set the text of.
+            text (str): The text that we want to set.
+            conditions (List[WebCondition]): Conditions that must be satisfied for the Action to be declared successful.
+
+        Returns: None
+
+        """
         conditions_clone = [condition for condition in conditions]
         conditions_clone.append(WebConditionTextEquals(locator, text))
         action = WebActionSetText(self.driver, locator, conditions_clone)
@@ -114,14 +133,15 @@ class WebDriverCore:
     def get_text(self, locator: WebLocator, conditions: List[WebCondition] = []) -> str:
         """
         Gets the Text content of the element
-        Args:
-            locator: The locator of the element from which we want to get the text contents.
-            conditions: Conditions that must be satisfied for the Action to be declared successful.
 
-        Returns: None
+        Args:
+            locator (WebLocator): The locator of the element from which we want to get the text contents.
+            conditions (List[WebCondition]): Conditions that must be satisfied for the Action to be declared successful.
+
+        Returns:
+            str:
 
         """
-
         action = WebActionGetText(self.driver, locator, conditions)
         action_executor = WebActionExecutor(action)
         return action_executor.execute_action()
@@ -129,14 +149,15 @@ class WebDriverCore:
     def get_all_elements_text(self, locator: WebLocator, conditions: List[WebCondition] = []) -> List[str]:
         """
         Gets the text content of all the elements that are matching the locator.
-        Args:
-            locator: A locator that matches multiple elements from which we want to get the text.
-            conditions: Conditions that must be satisfied for the Action to be declared successful.
 
-        Returns: None
+        Args:
+            locator (WebLocator): A locator that matches multiple elements from which we want to get the text.
+            conditions (List[WebCondition]): Conditions that must be satisfied for the Action to be declared successful.
+
+        Returns:
+            List[str]:
 
         """
-
         action = WebActionGetText(self.driver, locator, conditions)
         action_executor = WebActionExecutor(action)
         return action_executor.execute_mass_action()
