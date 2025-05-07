@@ -80,7 +80,8 @@ class LabConnectionKeywords(BaseKeyword):
         """
         lab_config = ConfigurationManager.get_lab_config()
 
-        if "worker" in lab_config.get_node(hostname).get_type():
+        host_node = lab_config.get_node(hostname)
+        if host_node and host_node.get_type() and "worker" in host_node.get_type():
             return self.get_compute_ssh(hostname)
 
         host_ip = lab_config.get_node(hostname).get_ip()
