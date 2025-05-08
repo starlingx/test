@@ -38,6 +38,8 @@ def subcloud_add(subcloud_name: str):
     manage_status = dcmanager_subcloud_manage_output.get_dcmanager_subcloud_manage_object().get_management()
     get_logger().log_info(f"The management state of the subcloud {subcloud_name} {manage_status}")
 
+    DcManagerSubcloudListKeywords(ssh_connection).validate_subcloud_sync_status(subcloud_name, "in-sync")
+
 
 def subcloud_delete(subcloud_name: str):
     """Delete a subcloud from the system.

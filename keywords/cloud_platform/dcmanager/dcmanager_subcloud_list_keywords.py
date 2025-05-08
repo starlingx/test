@@ -93,3 +93,22 @@ class DcManagerSubcloudListKeywords(BaseKeyword):
             return sc_availability
 
         validate_equals_with_retry(get_availability, "online", "Validate if subcloud is in online state.")
+
+    def validate_subcloud_sync_status(self, subcloud_name: str, expected_sync_status: str) -> None:
+        """
+        Validates the sync status of the specified subcloud. The function will raise if the expected_sync_status isn't reached.
+
+        Args:
+            subcloud_name (str): a str name for the subcloud.
+            expected_sync_status (str): The expected sync status of the subcloud. e.g. 'in-sync'
+
+        """
+
+        def get_sync():
+            sc_list_out = self.get_dcmanager_subcloud_list().get_subcloud_by_name(subcloud_name)
+            actual_sync_status = sc_list_out.get_sync()
+            get_logger().log_info(f"Subcloud {subcloud_name} is {actual_sync_status}")
+
+            return actual_sync_status
+
+        validate_equals_with_retry(get_sync, expected_sync_status, f"Sync status of {subcloud_name}", timeout=120)
