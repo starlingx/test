@@ -142,7 +142,6 @@ class SystemHostLockKeywords(BaseKeyword):
                 get_logger().log_info(f"Found an exception when checking the health of the system. Trying again after {refresh_time} seconds")
 
             time.sleep(refresh_time)
-
         return False
 
     def is_host_unlocked(self, host_name: str) -> bool:
@@ -179,3 +178,36 @@ class SystemHostLockKeywords(BaseKeyword):
             return True
 
         return False
+
+    def unlock_multiple_hosts(ssh_connection: SSHConnection, host_names: list[str]) -> None:
+        """
+        Unlocks multiple hosts in succession without waiting between each unlock.
+
+        Args:
+            host_names (list[str]): List of host names to unlock
+        """
+        for host_name in host_names:
+            get_logger().log_info(f"Sending unlock command for host: {host_name}")
+            SystemHostLockKeywords(ssh_connection).unlock_host_pre_check()
+            ssh_connection.send(source_openrc(f"system host-unlock {host_name}"))
+            SystemHostLockKeywords(ssh_connection).validate_success_return_code(ssh_connection)
+
+        for host_name in host_names:
+            if not SystemHostLockKeywords(ssh_connection).wait_for_host_unlocked(host_name):
+                raise RuntimeError(f"{host_name} was not unlocked successfully.")
+
+    def lock_multiple_hosts(ssh_connection: SSHConnection, host_names: list[str]) -> None:
+        """
+        Locks multiple hosts in succession without waiting between each lock.
+
+        Args:
+            host_names (list[str]): List of host names to lock
+        """
+        for host_name in host_names:
+            get_logger().log_info(f"Sending lock command for host: {host_name}")
+            ssh_connection.send(source_openrc(f"system host-lock {host_name}"))
+            SystemHostLockKeywords(ssh_connection).validate_success_return_code(ssh_connection)
+
+            is_host_locked = SystemHostLockKeywords(ssh_connection).wait_for_host_locked(host_name)
+            if not is_host_locked:
+                raise RuntimeError(f"{host_name} was not locked successfully.")

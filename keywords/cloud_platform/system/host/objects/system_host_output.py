@@ -39,12 +39,12 @@ class SystemHostOutput:
             else:
                 raise KeywordException(f"The output line {value} was not valid")
 
-    def get_hosts(self) -> [SystemHostObject]:
+    def get_hosts(self) -> list[SystemHostObject]:
         """
-        Returns the list of system host objects
+        Returns the list of system host objects.
 
         Returns:
-            list: list of SystemHostObject
+            list[SystemHostObject]: List of SystemHostObject
         """
         return self.system_hosts
 
@@ -118,7 +118,7 @@ class SystemHostOutput:
 
         return hosts
 
-    def get_controllers_and_computes(self) -> [SystemHostObject]:
+    def get_controllers_and_computes(self) -> list[SystemHostObject]:
         """
         Gets the controllers and computes
 
@@ -136,9 +136,10 @@ class SystemHostOutput:
 
         return hosts
 
-    def get_computes(self) -> [SystemHostObject]:
+    def get_computes(self) -> list[SystemHostObject]:
         """
         Gets the compute
+
         Returns: the compute
 
         """
@@ -153,9 +154,10 @@ class SystemHostOutput:
 
         return hosts
 
-    def get_storages(self) -> [SystemHostObject]:
+    def get_storages(self) -> list[SystemHostObject]:
         """
         Gets the storages
+
         Returns: the storages
 
         """
@@ -171,14 +173,15 @@ class SystemHostOutput:
         return hosts
 
     @staticmethod
-    def is_valid_output(value):
+    def is_valid_output(value: dict) -> bool:
         """
-        Checks to ensure the output has the correct keys
+        Checks to ensure the output has the correct keys.
+
         Args:
-            value (): the value to check
+            value (dict): The value to check.
 
         Returns:
-
+            bool: True if valid, False otherwise.
         """
         valid = True
         if "id" not in value:
@@ -201,3 +204,22 @@ class SystemHostOutput:
             valid = False
 
         return valid
+
+    def get_host_names(self) -> list[str]:
+        """
+        Returns the list of host names.
+
+        Returns:
+            list[str]: List of host names
+        """
+        return [host.get_host_name() for host in self.system_hosts]
+
+    def get_host_names_except_active_controller(self) -> list[str]:
+        """
+        Returns the list of host names excluding the active controller.
+
+        Returns:
+            list[str]: List of host names excluding the active controller
+        """
+        active_controller_name = self.get_active_controller().get_host_name()
+        return [host.get_host_name() for host in self.system_hosts if host.get_host_name() != active_controller_name]

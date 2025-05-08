@@ -7,6 +7,7 @@ from keywords.ceph.ceph_status_keywords import CephStatusKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.cloud_platform.system.host.system_host_fs_keywords import SystemHostFSKeywords
 from keywords.cloud_platform.system.host.system_host_list_keywords import SystemHostListKeywords
+from keywords.cloud_platform.system.host.system_host_lock_keywords import SystemHostLockKeywords
 from keywords.cloud_platform.system.storage.system_storage_backend_keywords import SystemStorageBackendKeywords
 
 
@@ -215,3 +216,37 @@ def test_ceph_rook_capabilities_testing_open_model(request):
         ceph_pool_keywords = CephOsdPoolLsDetailKeywords(ssh_connection)
         pool_update = ceph_pool_keywords.wait_for_ceph_osd_pool_min_size_update(pool_name=".mgr", expected_min_size=curr_min_replication)
         validate_equals(pool_update, True, "Replicated min_size is updated.")
+
+
+@mark.lab_standard
+@mark.lab_ceph_rook
+def test_lock_unlock_multiple_hosts():
+    """
+    Lock and unlock multiple nodes on a standard lab
+
+    Test Steps:
+        - Make sure ceph-rook is storage backend
+        - Lock all hosts (excluding active controller)
+        - Unlock all hosts
+        - Check ceph-rook health OK
+    Args: None
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+
+    system_host_keywords = SystemHostListKeywords(ssh_connection)
+    full_host_list = system_host_keywords.get_system_host_with_extra_column(["capabilities"])
+    host_names = full_host_list.get_host_names_except_active_controller()
+
+    ceph_status_keywords = CephStatusKeywords(ssh_connection)
+
+    get_logger().log_test_case_step("Checking rook-ceph health before Lock/Unlock nodes.")
+    ceph_status_keywords.wait_for_ceph_health_status(expect_health_status=True)
+
+    get_logger().log_test_case_step("Locking multiple nodes.")
+    SystemHostLockKeywords.lock_multiple_hosts(ssh_connection, host_names)
+
+    get_logger().log_test_case_step("Unlocking all previously locked nodes.")
+    SystemHostLockKeywords.unlock_multiple_hosts(ssh_connection, host_names)
+
+    get_logger().log_test_case_step("Checking ceph health after Lock/Unlock nodes.")
+    ceph_status_keywords.wait_for_ceph_health_status(expect_health_status=True)
