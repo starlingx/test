@@ -118,6 +118,30 @@ class KubectlPodObject:
         """
 
         return self.age
+    
+    def get_age_in_minutes(self) -> int:
+        """
+        Converts the age of the pod into minutes.
+        
+        Returns:
+             int: The age of the pod in minutes.
+        """
+        pod_age = self.get_age()
+        total_minutes = 0
+
+        if "m" in pod_age:
+            minutes = int(pod_age.split("m")[0])
+            total_minutes += minutes
+        if "h" in pod_age:
+            hours = int(pod_age.split("h")[0])
+            total_minutes += hours * 60
+        if "d" in pod_age:
+            days = int(pod_age.split("d")[0])
+            total_minutes += days * 1440
+        if "s" in pod_age:
+            pass
+
+        return total_minutes
 
     def set_ip(self, ip: str) -> None:
         """
