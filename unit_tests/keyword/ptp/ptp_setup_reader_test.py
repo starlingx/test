@@ -21,9 +21,9 @@ def test_generate_ptp_setup_from_template():
     assert len(ptp4l_setup_list) == 4
     ptp1 = ptp_setup.get_ptp4l_setup("ptp1")
     ptp1if1 = ptp1.get_ptp_interface("ptp1if1")
-    assert ptp1if1.get_controller_0_interfaces() == ["enp81s0f1"]
+    assert ptp1if1.get_interfaces_for_hostname("controller-0") == ["enp81s0f1"]
     ptp1if2 = ptp1.get_ptp_interface("ptp1if2")
-    assert ptp1if2.get_controller_0_interfaces() == ["conn_spirent_placeholder"]
+    assert ptp1if2.get_interfaces_for_hostname("controller-0") == ["conn_spirent_placeholder"]
 
     # phc2sys Validations
     phc2sys_setup_list = ptp_setup.get_phc2sys_setup_list()

@@ -21,7 +21,6 @@ class PTPNic:
         """
         self.name: str = nic_name
         self.gpio_switch_port = None
-        self.pci_slot = None
         self.base_port = None
         self.sma1 = None
         self.sma2 = None
@@ -35,9 +34,6 @@ class PTPNic:
 
         if "gpio_switch_port" in nic_dict and nic_dict["gpio_switch_port"]:
             self.gpio_switch_port = nic_dict["gpio_switch_port"]
-
-        if "pci_slot" in nic_dict and nic_dict["pci_slot"]:
-            self.pci_slot = nic_dict["pci_slot"]
 
         if "base_port" in nic_dict and nic_dict["base_port"]:
             self.base_port = nic_dict["base_port"]
@@ -99,7 +95,6 @@ class PTPNic:
         ptp_nic_dictionary = {
             "name": self.name,
             "gpio_switch_port": self.gpio_switch_port,
-            "pci_slot": self.pci_slot,
             "base_port": self.base_port,
             "sma1": sma1_dict,
             "sma2": sma2_dict,
@@ -132,16 +127,6 @@ class PTPNic:
 
         """
         return self.gpio_switch_port
-
-    def get_pci_slot(self) -> str:
-        """
-        Gets the pci slot
-
-        Returns (str):
-            The pci slot
-
-        """
-        return self.pci_slot
 
     def get_base_port(self) -> str:
         """

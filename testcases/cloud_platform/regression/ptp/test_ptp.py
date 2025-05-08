@@ -7,7 +7,7 @@ from framework.resources.resource_finder import get_stx_resource_path
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.cloud_platform.system.ptp.ptp_setup_executor_keywords import PTPSetupExecutorKeywords
 from keywords.cloud_platform.system.ptp.ptp_teardown_executor_keywords import PTPTeardownExecutorKeywords
-from keywords.cloud_platform.system.ptp.ptp_verify_config import PTPVerifyConfigKeywords
+from keywords.cloud_platform.system.ptp.ptp_verify_config_keywords import PTPVerifyConfigKeywords
 from keywords.files.file_keywords import FileKeywords
 
 

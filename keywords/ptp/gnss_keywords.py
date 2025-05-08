@@ -20,7 +20,7 @@ class GnssKeywords(BaseKeyword):
         Initializes the GnssKeywords.
         """
 
-    def get_pci_slot_name(self,  hostname: str, interface: str) -> str:
+    def get_pci_slot_name(self, hostname: str, interface: str) -> str:
         """
         Retrieves the PCI_SLOT_NAME from the uevent file for a given PTP interface.
 
@@ -30,7 +30,7 @@ class GnssKeywords(BaseKeyword):
 
         Returns:
             str: The PCI slot name if found, otherwise None.
-        
+
         Raises:
             Exception: raised when PCI_SLOT_NAME not found
         """
@@ -50,14 +50,14 @@ class GnssKeywords(BaseKeyword):
         else:
             raise Exception(f"PCI_SLOT_NAME not found in {uevent_path}")
 
-    def get_gnss_serial_port_from_gnss_directory(self,  hostname: str, interface: str) -> str:
+    def get_gnss_serial_port_from_gnss_directory(self, hostname: str, interface: str) -> str:
         """
         Get GNSS serial port from the specified gnss directory.
 
         Args:
             hostname (str) : The name of the host
             interface (str): The name of the PTP interface (e.g., "enp138s0f0").
-            
+
         Returns:
             str: The GNSS serial port value (e.g., "gnss0") if found, otherwise None.
         """
@@ -72,8 +72,8 @@ class GnssKeywords(BaseKeyword):
         if not contents:
             get_logger().log_info(f"The directory {gnss_dir} is empty.")
             return None
-        
-        return " ".join(contents).strip() # Return the captured value in str, removing leading/trailing spaces
+
+        return " ".join(contents).strip()  # Return the captured value in str, removing leading/trailing spaces
 
     def extract_gnss_port(self, instance_parameters: str) -> str:
         """
@@ -104,8 +104,9 @@ class GnssKeywords(BaseKeyword):
 
         host_name = hostname.replace("-", "_")
         ptp_config = ConfigurationManager.get_ptp_config()
-        pci_slot = ptp_config.get_host(host_name).get_nic(nic).get_pci_slot()
-        cgu_location = f"/sys/kernel/debug/ice/{pci_slot}/cgu"
+        interface = ptp_config.get_host(host_name).get_nic(nic).get_base_port()
+        pci_address = self.get_pci_slot_name(hostname, interface)
+        cgu_location = f"/sys/kernel/debug/ice/{pci_address}/cgu"
 
         gpio_switch_port = ptp_config.get_host(host_name).get_nic(nic).get_gpio_switch_port()
         command = f"echo 1 > /sys/class/gpio/gpio{gpio_switch_port}/value"
@@ -129,8 +130,9 @@ class GnssKeywords(BaseKeyword):
 
         host_name = hostname.replace("-", "_")
         ptp_config = ConfigurationManager.get_ptp_config()
-        pci_slot = ptp_config.get_host(host_name).get_nic(nic).get_pci_slot()
-        cgu_location = f"/sys/kernel/debug/ice/{pci_slot}/cgu"
+        interface = ptp_config.get_host(host_name).get_nic(nic).get_base_port()
+        pci_address = self.get_pci_slot_name(hostname, interface)
+        cgu_location = f"/sys/kernel/debug/ice/{pci_address}/cgu"
 
         gpio_switch_port = ptp_config.get_host(host_name).get_nic(nic).get_gpio_switch_port()
         command = f"echo 0 > /sys/class/gpio/gpio{gpio_switch_port}/value"
@@ -160,7 +162,7 @@ class GnssKeywords(BaseKeyword):
             expected_pps_dpll_status (list): expected list of PPS DPLL status values.
             timeout (int): The maximum time (in seconds) to wait for the match.
             polling_sleep_time (int): The time period to wait to receive the expected output.
-        
+
         Returns: None
 
         Raises:

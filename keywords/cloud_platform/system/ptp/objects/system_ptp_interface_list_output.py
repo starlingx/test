@@ -1,4 +1,5 @@
 from keywords.cloud_platform.system.ptp.objects.system_ptp_interface_list_object import SystemPTPInterfaceListObject
+from keywords.cloud_platform.system.ptp.ptp_parameters_parser import PTPParametersParser
 from keywords.cloud_platform.system.system_table_parser import SystemTableParser
 
 
@@ -51,12 +52,5 @@ class SystemPTPInterfaceListOutput:
 
         Returns:
             str: ptp interface parameters
-
-        Example : "cmdline_opts='-s xxxx -O -37 -m' boundary_clock_jbod=1 domainNumber=24"
         """
-        parameters = ptp_interface_obj.get_parameters()
-
-        if not parameters:
-            return ""
-
-        return repr(" ".join(parameters))
+        return PTPParametersParser(ptp_interface_obj.get_parameters()).process_cmdline_opts()
