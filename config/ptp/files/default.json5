@@ -42,7 +42,6 @@
                     // By default, we use the first port.
                     base_port: "enp81s0f0",
                     gpio_switch_port: "30",
-                    pci_slot: "00:007.01",
 
                     nic_connection: {
                        to_host: "controller_1",

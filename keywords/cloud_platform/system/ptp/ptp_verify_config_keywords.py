@@ -97,7 +97,7 @@ class PTPVerifyConfigKeywords(BaseKeyword):
         verify SMA status
 
         Args:
-            hostnames (list): list of controllers and computes
+            hosts (list): list of controllers and computes
 
         Returns: None
         """

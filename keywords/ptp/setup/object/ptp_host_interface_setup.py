@@ -62,33 +62,6 @@ class PTPHostInterfaceSetup:
         """
         return self.ptp_interface_parameter
 
-    def get_controller_0_interfaces(self) -> List[str]:
-        """
-        Gets the controller_0_interfaces of this ptp host interface setup.
-
-        Returns:
-            List[str]: The controller_0_interfaces of this ptp host interface setup.
-        """
-        return self.controller_0_interfaces
-
-    def get_controller_1_interfaces(self) -> List[str]:
-        """
-        Gets the controller_1_interfaces of this ptp host interface setup.
-
-        Returns:
-            List[str]: The controller_1_interfaces of this ptp host interface setup.
-        """
-        return self.controller_1_interfaces
-
-    def get_compute_0_interfaces(self) -> List[str]:
-        """
-        Gets the compute_0_interfaces of this ptp host interface setup.
-
-        Returns:
-            List[str]: The compute_0_interfaces of this ptp host interface setup.
-        """
-        return self.compute_0_interfaces
-
     def get_interfaces_for_hostname(self, hostname: str) -> List[str]:
         """
         Gets the interfaces for the given hostname in this PTP host interface setup.

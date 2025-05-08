@@ -1,9 +1,10 @@
 from typing import Any
 
 from framework.logging.automation_logger import get_logger
-from framework.validation.validation import validate_equals, validate_str_contains
+from framework.validation.validation import validate_equals, validate_equals_with_retry, validate_str_contains
 from keywords.base_keyword import BaseKeyword
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
+from keywords.cloud_platform.system.host.system_host_list_keywords import SystemHostListKeywords
 from keywords.cloud_platform.system.ptp.system_host_if_ptp_keywords import SystemHostIfPTPKeywords
 from keywords.cloud_platform.system.ptp.system_host_ptp_instance_keywords import SystemHostPTPInstanceKeywords
 from keywords.cloud_platform.system.ptp.system_ptp_instance_keywords import SystemPTPInstanceKeywords
@@ -11,6 +12,7 @@ from keywords.cloud_platform.system.ptp.system_ptp_instance_parameter_keywords i
 from keywords.cloud_platform.system.ptp.system_ptp_interface_keywords import SystemPTPInterfaceKeywords
 from keywords.ptp.setup.object.ptp_setup import PTPSetup
 from keywords.ptp.setup.ptp_setup_reader import PTPSetupKeywords
+from starlingx.keywords.linux.systemctl.systemctl_status_keywords import SystemCTLStatusKeywords
 
 
 class PTPSetupExecutorKeywords(BaseKeyword):
@@ -42,9 +44,7 @@ class PTPSetupExecutorKeywords(BaseKeyword):
         """
         Configure all ptp configurations
         """
-        lab_connect_keywords = LabConnectionKeywords()
-        ssh_connection = lab_connect_keywords.get_active_controller_ssh()
-        system_ptp_instance_keywords = SystemPTPInstanceKeywords(ssh_connection)
+        system_ptp_instance_keywords = SystemPTPInstanceKeywords(self.ssh_connection)
 
         self.add_all_ptp_configurations_for_ptp4l_service()
 
@@ -56,6 +56,25 @@ class PTPSetupExecutorKeywords(BaseKeyword):
 
         system_ptp_instance_apply_output = system_ptp_instance_keywords.system_ptp_instance_apply()
         validate_equals(system_ptp_instance_apply_output, "Applying the PTP Instance configuration", "apply PTP instance configuration")
+
+        # After applying the instance configuration, it needs to check whether the services are available or not.
+        def check_ptp4l_status() -> bool:
+            """
+            Checks if the PTP4L service is active and running.
+
+            Returns:
+                bool: True if the service is active and running, False otherwise.
+            """
+            ptp4l_status_output = SystemCTLStatusKeywords(self.ssh_connection).get_status("ptp4l@*")
+            if not ptp4l_status_output:
+                return False  # Handle the case of an empty list
+
+            for line in ptp4l_status_output:
+                if "Active: active (running)" in line:
+                    return True
+            return False
+
+        validate_equals_with_retry(check_ptp4l_status, True, 600)
 
     def add_all_ptp_configurations_for_ptp4l_service(self):
         """
@@ -164,49 +183,28 @@ class PTPSetupExecutorKeywords(BaseKeyword):
         name = ptp_instance_obj.get_name()
         ptp_host_ifs = ptp_instance_obj.get_ptp_interfaces()
 
+        hosts = SystemHostListKeywords(ssh_connection).get_system_host_list().get_controllers_and_computes()
+
         for ptp_host_if in ptp_host_ifs:
             interface_name = ptp_host_if.get_name()
             system_ptp_interface_output = system_ptp_interface_keywords.system_ptp_interface_add(interface_name, name)
             validate_equals(system_ptp_interface_output.get_ptp_interface().get_ptp_instance_name(), name, "PTP instance name of the PTP interface")
             validate_str_contains(system_ptp_interface_output.get_ptp_interface().get_name(), interface_name, "add PTP interface")
 
-            controller_0_interfaces = ptp_host_if.get_controller_0_interfaces()
-            ctrl0_hostname = "controller-0"
-            for interface in controller_0_interfaces:
-                if not interface :
-                    continue
-
-                system_host_if_ptp_keywords.system_host_if_ptp_assign(ctrl0_hostname, interface, interface_name)
-                system_ptp_interface_show_output = system_ptp_interface_keywords.get_system_ptp_interface_show(interface_name)
-                validate_str_contains(system_ptp_interface_show_output.get_ptp_interface().get_interface_names(), f"{ctrl0_hostname}/{interface}", f"assign ptp interface for {ctrl0_hostname}")
-
-            controller_1_interfaces = ptp_host_if.get_controller_1_interfaces()
-            ctrl1_hostname = "controller-1"
-            for interface in controller_1_interfaces:
-                if not interface :
-                    continue
-                
-                system_host_if_ptp_keywords.system_host_if_ptp_assign(ctrl1_hostname, interface, interface_name)
-                system_ptp_interface_show_output = system_ptp_interface_keywords.get_system_ptp_interface_show(interface_name)
-                validate_str_contains(system_ptp_interface_show_output.get_ptp_interface().get_interface_names(), f"{ctrl1_hostname}/{interface}", f"assign ptp interface for {ctrl1_hostname}")
-
-            compute_0_interfaces = ptp_host_if.get_compute_0_interfaces()
-            comp0_hostname = "compute-0"
-            for interface in compute_0_interfaces:
-                if not interface :
-                    continue
-                
-                system_host_if_ptp_keywords.system_host_if_ptp_assign(comp0_hostname, interface, interface_name)
-                system_ptp_interface_show_output = system_ptp_interface_keywords.get_system_ptp_interface_show(interface_name)
-                validate_str_contains(system_ptp_interface_show_output.get_ptp_interface().get_interface_names(), f"{comp0_hostname}/{interface}", f"assign ptp interface for {comp0_hostname}")
-
+            for host in hosts:
+                hostname = host.get_host_name()
+                interfaces = ptp_host_if.get_interfaces_for_hostname(hostname)
+                for interface in filter(None, interfaces):
+                    system_host_if_ptp_keywords.system_host_if_ptp_assign(hostname, interface, interface_name)
+                    system_ptp_interface_show_output = system_ptp_interface_keywords.get_system_ptp_interface_show(interface_name)
+                    validate_str_contains(system_ptp_interface_show_output.get_ptp_interface().get_interface_names(), f"{hostname}/{interface}", f"assign ptp interface for {hostname}")
 
             ptp_interface_parameters = ptp_host_if.get_ptp_interface_parameter()
-            if ptp_interface_parameters :
+            if ptp_interface_parameters:
                 system_ptp_interface_parameter_add_output = system_ptp_interface_keywords.system_ptp_interface_parameter_add(interface_name, ptp_interface_parameters)
                 self.validate_parameters(system_ptp_interface_parameter_add_output.get_ptp_interface_parameters(), ptp_interface_parameters, "add PTP interface parameters")
-    
-    def validate_parameters(self, observed_value: str, expected_value: str, validation_description: str) -> None : 
+
+    def validate_parameters(self, observed_value: str, expected_value: str, validation_description: str) -> None:
         """
         This function will validate if the observed value matches the expected value with associated logging.
 
