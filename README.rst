@@ -99,10 +99,13 @@ Setup and Installation
 
 4. **Install Pre-Commit Hooks**:
 
+   Pre-commit hooks are used to enforce code formatting, linting, and unit testing before code is committed or pushed for review.
+
    .. code-block:: bash
 
-      # Install pre-commit hooks for linting and formatting (run in the repository's root directory)
-      pre-commit install
+      # Install hooks for commit-time (linting, formatting) and push-time (unit test enforcement)
+      pre-commit install --hook-type pre-commit
+      pre-commit install --hook-type pre-push
 
 Configuration
 -------------
