@@ -1,3 +1,5 @@
+import time
+
 from pytest import mark
 
 from framework.logging.automation_logger import get_logger
@@ -19,13 +21,20 @@ def subcloud_add(subcloud_name: str):
         subcloud_name (str): name of the subcloud to be added
     """
     # Gets the SSH connection to the active controller of the central cloud.
-    change_state_timeout = 60
+    change_state_timeout = 60  # seconds
 
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     dcm_sc_add_kw = DcManagerSubcloudAddKeywords(ssh_connection)
     dcm_sc_add_kw.dcmanager_subcloud_add(subcloud_name)
     dcmanager_subcloud_manage_keywords = DcManagerSubcloudManagerKeywords(ssh_connection)
+    # Record the start time for to know the transition time
+    start_time = time.time()
+    # Wait for the subcloud to be in the managed state
     dcmanager_subcloud_manage_output = dcmanager_subcloud_manage_keywords.get_dcmanager_subcloud_manage(subcloud_name, change_state_timeout)
+    # Check the elapsed time
+    end_time = time.time()
+    elapsed_time = end_time - start_time
+    get_logger().log_info(f"Elapsed time for subcloud {subcloud_name} to be in managed state: {elapsed_time} seconds")
     manage_status = dcmanager_subcloud_manage_output.get_dcmanager_subcloud_manage_object().get_management()
     get_logger().log_info(f"The management state of the subcloud {subcloud_name} {manage_status}")
 
