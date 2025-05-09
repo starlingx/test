@@ -55,6 +55,6 @@ class KubectlGetCertStatusKeywords(BaseKeyword):
 
         def get_cert_status():
             cert_status = self.get_certificates(namespace).get_cert(certs_name).get_ready()
-            return bool(cert_status)
+            return cert_status == "True"
 
         validate_equals_with_retry(get_cert_status, is_ready, "Verify the certs status issued", timeout=600)
