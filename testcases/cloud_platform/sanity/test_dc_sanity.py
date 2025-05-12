@@ -26,6 +26,9 @@ def subcloud_add(subcloud_name: str):
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     dcm_sc_add_kw = DcManagerSubcloudAddKeywords(ssh_connection)
     dcm_sc_add_kw.dcmanager_subcloud_add(subcloud_name)
+    # check for the subcloud online status before trigerring the manage command
+    dcm_sc_list_kw = DcManagerSubcloudListKeywords(ssh_connection)
+    dcm_sc_list_kw.validate_subcloud_availability_status(subcloud_name)
     dcmanager_subcloud_manage_keywords = DcManagerSubcloudManagerKeywords(ssh_connection)
     # Record the start time for to know the transition time
     start_time = time.time()
