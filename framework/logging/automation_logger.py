@@ -97,6 +97,13 @@ class AutomationLogger(logging.getLoggerClass()):
         """
         self._log(logging.INFO, message, None, stacklevel=2, extra={'source': 'SSH'})
 
+    def log_kpi(self, message):
+        """This info-level log statement is used to log elapsed time for KPIs.
+        Args:
+            message: The message that will be logged.
+        """
+        self._log(logging.INFO, message, None, stacklevel=2, extra={"source": "KPI"})
+
     def get_log_folder(self) -> str:
         """
         Getter for log folder
