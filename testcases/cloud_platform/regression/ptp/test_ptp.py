@@ -45,8 +45,8 @@ def test_delete_and_add_all_ptp_configuration_for_compute():
 
     get_logger().log_info("Add all PTP configuration")
     ptp_setup_template_path = get_stx_resource_path("resources/ptp/setup/ptp_configuration_expectation_compute.json5")
-    ptp_setup_keywords = PTPSetupExecutorKeywords(ssh_connection, ptp_setup_template_path)
-    ptp_setup_keywords.add_all_ptp_configurations()
+    ptp_setup_executor_keywords = PTPSetupExecutorKeywords(ssh_connection, ptp_setup_template_path)
+    ptp_setup_executor_keywords.add_all_ptp_configurations()
 
     get_logger().log_info("Verify all PTP configuration")
     ptp_verify_config_keywords = PTPVerifyConfigKeywords(ssh_connection, ptp_setup_template_path)

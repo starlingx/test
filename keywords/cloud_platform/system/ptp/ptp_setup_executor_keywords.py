@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, List, Tuple
 
 from framework.logging.automation_logger import get_logger
 from framework.validation.validation import validate_equals, validate_equals_with_retry, validate_str_contains
@@ -10,9 +10,10 @@ from keywords.cloud_platform.system.ptp.system_host_ptp_instance_keywords import
 from keywords.cloud_platform.system.ptp.system_ptp_instance_keywords import SystemPTPInstanceKeywords
 from keywords.cloud_platform.system.ptp.system_ptp_instance_parameter_keywords import SystemPTPInstanceParameterKeywords
 from keywords.cloud_platform.system.ptp.system_ptp_interface_keywords import SystemPTPInterfaceKeywords
+from keywords.linux.systemctl.systemctl_status_keywords import SystemCTLStatusKeywords
+from keywords.ptp.gnss_keywords import GnssKeywords
 from keywords.ptp.setup.object.ptp_setup import PTPSetup
 from keywords.ptp.setup.ptp_setup_reader import PTPSetupKeywords
-from starlingx.keywords.linux.systemctl.systemctl_status_keywords import SystemCTLStatusKeywords
 
 
 class PTPSetupExecutorKeywords(BaseKeyword):
@@ -57,24 +58,7 @@ class PTPSetupExecutorKeywords(BaseKeyword):
         system_ptp_instance_apply_output = system_ptp_instance_keywords.system_ptp_instance_apply()
         validate_equals(system_ptp_instance_apply_output, "Applying the PTP Instance configuration", "apply PTP instance configuration")
 
-        # After applying the instance configuration, it needs to check whether the services are available or not.
-        def check_ptp4l_status() -> bool:
-            """
-            Checks if the PTP4L service is active and running.
-
-            Returns:
-                bool: True if the service is active and running, False otherwise.
-            """
-            ptp4l_status_output = SystemCTLStatusKeywords(self.ssh_connection).get_status("ptp4l@*")
-            if not ptp4l_status_output:
-                return False  # Handle the case of an empty list
-
-            for line in ptp4l_status_output:
-                if "Active: active (running)" in line:
-                    return True
-            return False
-
-        validate_equals_with_retry(check_ptp4l_status, True, 600)
+        self.wait_for_ptp_configuration_to_update_after_applying()
 
     def add_all_ptp_configurations_for_ptp4l_service(self):
         """
@@ -219,3 +203,60 @@ class PTPSetupExecutorKeywords(BaseKeyword):
             Exception: raised when validate fails
         """
         validate_equals(set(observed_value.split()), set(expected_value.split()), validation_description)
+
+    def wait_for_ptp_configuration_to_update_after_applying(self) -> None:
+        """
+        Wait for the PTP configuration to update after applying
+
+        Returns: None
+
+        Raises:
+            TimeoutError: raised when validate does not equal in the required time
+        """
+        gnss_keywords = GnssKeywords()
+
+        # wait for systemctl status
+        def check_ptp4l_status() -> bool:
+            """
+            Checks if the PTP4L service is active and running.
+
+            Returns:
+                bool: True if the service is active and running, False otherwise.
+            """
+            ptp4l_status_output = SystemCTLStatusKeywords(self.ssh_connection).get_status("ptp4l@*")
+            return any("Active: active (running)" in line for line in ptp4l_status_output or [])
+
+        validate_equals_with_retry(check_ptp4l_status, True, "systemctl status for ptp4l", 120, 30)
+
+        # wait for SMA status
+        check_sma_status = False
+        for clock_instance_obj in self.clock_setup_list:
+
+            ifaces_to_check = [(host, iface) for host in clock_instance_obj.get_instance_hostnames() for ptp_host_if in clock_instance_obj.get_ptp_interfaces() if "input" in ptp_host_if.get_ptp_interface_parameter() for iface in filter(None, ptp_host_if.get_interfaces_for_hostname(host))]
+
+            for host, interface in ifaces_to_check:
+                pci_address = gnss_keywords.get_pci_slot_name(host, interface)
+                cgu_location = f"/sys/kernel/debug/ice/{pci_address}/cgu"
+                gnss_keywords.validate_gnss_1pps_state_and_pps_dpll_status(host, cgu_location, "SMA1", "valid", ["locked_ho_acq"], 120, 30)
+                check_sma_status = True
+                break
+
+            if check_sma_status:
+                break
+
+        # wait for GNSS status
+        check_gnss_status = False
+        for ts2phc_instance_obj in self.ts2phc_setup_list:
+            expected_gnss_port = gnss_keywords.extract_gnss_port(ts2phc_instance_obj.get_instance_parameters())
+            if not expected_gnss_port:
+                continue
+            ifaces_to_check = [(host, iface) for host in ts2phc_instance_obj.get_instance_hostnames() for ptp_host_if in ts2phc_instance_obj.get_ptp_interfaces() for iface in filter(None, ptp_host_if.get_interfaces_for_hostname(host)) if gnss_keywords.get_gnss_serial_port_from_gnss_directory(host, iface) == expected_gnss_port]
+            for host, interface in ifaces_to_check:
+                pci_address = gnss_keywords.get_pci_slot_name(host, interface)
+                cgu_location = f"/sys/kernel/debug/ice/{pci_address}/cgu"
+                gnss_keywords.validate_gnss_1pps_state_and_pps_dpll_status(host, cgu_location, "GNSS-1PPS", "valid", ["locked_ho_acq"], 120, 30)
+                check_gnss_status = True
+                break
+
+            if check_gnss_status:
+                break
