@@ -31,6 +31,7 @@ from keywords.cloud_platform.system.application.system_application_apply_keyword
 from keywords.cloud_platform.system.application.system_application_delete_keywords import SystemApplicationDeleteKeywords
 from keywords.cloud_platform.system.application.system_application_list_keywords import SystemApplicationListKeywords
 from keywords.cloud_platform.system.application.system_application_remove_keywords import SystemApplicationRemoveKeywords
+from keywords.cloud_platform.system.application.system_application_show_keywords import SystemApplicationShowKeywords
 from keywords.cloud_platform.system.application.system_application_upload_keywords import SystemApplicationUploadKeywords
 from keywords.cloud_platform.system.host.system_host_list_keywords import SystemHostListKeywords
 from keywords.cloud_platform.system.host.system_host_lock_keywords import SystemHostLockKeywords
@@ -124,14 +125,12 @@ def test_cert_manager_applied():
 
     Test Steps:
         - connect to active controller
-        - run system cmd - system application-list
-        - validate that cert manager is in applied state
+        - run system cmd - system application-show nginx-ingress-controller
+        - validate cert manager state is 'applied', 'active' and progress 'completed'
 
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
-    system_applications = SystemApplicationListKeywords(ssh_connection).get_system_application_list()
-    application_status = system_applications.get_application("cert-manager").get_status()
-    assert application_status == "applied", f"cert-manager was not applied. Status was {application_status}"
+    SystemApplicationShowKeywords(ssh_connection).validate_app_status(app_name="cert-manager", expected_status="applied", expected_active="True", expected_progress="completed")
 
 
 @mark.p0
@@ -141,13 +140,12 @@ def test_nginx_ingress_controller_applied():
 
     Test Steps:
         - connect to active controller
-        - run system cmd - system application-list
-        - validate that nginx ingress controller is in applied state
+        - run system cmd - system application-show nginx-ingress-controller
+        - validate nginx ingress controller state is 'applied', 'active' and progress 'completed'
 
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
-    system_applications = SystemApplicationListKeywords(ssh_connection)
-    system_applications.validate_app_status("nginx-ingress-controller", "applied")
+    SystemApplicationShowKeywords(ssh_connection).validate_app_status(app_name="nginx-ingress-controller", expected_status="applied", expected_active="True", expected_progress="completed")
 
 
 @mark.p0
