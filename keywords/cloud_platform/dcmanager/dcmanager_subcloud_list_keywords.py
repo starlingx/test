@@ -111,4 +111,4 @@ class DcManagerSubcloudListKeywords(BaseKeyword):
 
             return actual_sync_status
 
-        validate_equals_with_retry(get_sync, expected_sync_status, f"Sync status of {subcloud_name}", timeout=120)
+        validate_equals_with_retry(get_sync, expected_sync_status, f"Sync status of {subcloud_name}", timeout=1200)

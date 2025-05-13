@@ -1,4 +1,11 @@
 {
     // dns name for the lab
-    "dns_name": "fake_dns_name"
+    "dns_name": "fake_dns_name",
+
+    // ACME server url
+    "stepca_server_url": "custom_server_url",
+
+    // ACME server issuer
+    "stepca_server_issuer": "custom_server_issuer",
+
 }
