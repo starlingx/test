@@ -21,7 +21,7 @@ class KubectlGetPodsKeywords(BaseKeyword):
             ssh_connection (SSHConnection): An SSH connection object to the target system.
         """
         self.ssh_connection = ssh_connection
-        
+
     def get_pods(self, namespace: str = None, label: str = None) -> KubectlGetPodsOutput:
         """
         Gets the k8s pods that are available using '-o wide'.
@@ -49,7 +49,7 @@ class KubectlGetPodsKeywords(BaseKeyword):
         pods_list_output = KubectlGetPodsOutput(kubectl_get_pods_output)
 
         return pods_list_output
-    
+
     def get_pods_no_validation(self, namespace: str = None) -> KubectlGetPodsOutput:
         """
         Gets the k8s pods that are available using '-o wide'.
@@ -161,7 +161,7 @@ class KubectlGetPodsKeywords(BaseKeyword):
                 return True
             time.sleep(5)
 
-        return False
+        raise KeywordException("All pods are not in the expected status")
 
     def wait_for_pods_to_reach_status(self, expected_status: str, pod_names: list = None, namespace: str = None, poll_interval: int = 5, timeout: int = 180) -> bool:
         """

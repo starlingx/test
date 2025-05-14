@@ -46,7 +46,7 @@ def test_patch_apply(request):
 
     # Prestage the subcloud with the latest software deployed in the controller
     get_logger().log_info(f"Prestage {subcloud_name} with {sw_release}.")
-    DcmanagerSubcloudPrestage(central_ssh).dcmanager_subcloud_prestage(subcloud_name=subcloud_name, syspass=subcloud_password)
+    DcmanagerSubcloudPrestage(central_ssh).dcmanager_subcloud_prestage(subcloud_name=subcloud_name, syspass=subcloud_password, for_sw_deploy=True)
 
     # Create software deploy strategy
     get_logger().log_info(f"Create sw-deploy strategy for {subcloud_name}.")

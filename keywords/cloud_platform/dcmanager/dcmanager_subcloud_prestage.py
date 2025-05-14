@@ -1,4 +1,3 @@
-from config.configuration_manager import ConfigurationManager
 from framework.ssh.ssh_connection import SSHConnection
 from framework.validation.validation import validate_equals_with_retry
 from keywords.base_keyword import BaseKeyword
@@ -20,19 +19,18 @@ class DcmanagerSubcloudPrestage(BaseKeyword):
         """
         self.ssh_connection = ssh_connection
 
-    def dcmanager_subcloud_prestage(self, subcloud_name: str, syspass: str) -> None:
+    def dcmanager_subcloud_prestage(self, subcloud_name: str, syspass: str, for_sw_deploy: bool = False) -> None:
         """
         Runs dcmanager subcloud prestage command.
 
         Args:
             subcloud_name (str): The name of the subcloud to check.
             syspass (str): The sysadmin password to be passed to the command.
+            for_sw_deploy (bool): whether to enable --for-sw-deploy flag.
 
         """
-        lab_config = ConfigurationManager.get_lab_config()
-        pasw = lab_config.get_admin_credentials().get_password()
-
-        command = source_openrc(f"dcmanager subcloud prestage --for-sw-deploy {subcloud_name}" f" --sysadmin-password {pasw}")
+        cmd_options = "--for-sw-deploy" if for_sw_deploy else ""
+        command = source_openrc(f"dcmanager subcloud prestage {cmd_options} {subcloud_name}" f" --sysadmin-password {syspass}")
 
         self.ssh_connection.send(command)
         self.validate_success_return_code(self.ssh_connection)
