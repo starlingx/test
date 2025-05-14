@@ -1,14 +1,11 @@
 from typing import Dict, List
 
 from keywords.ptp.setup.object.clock_setup import ClockSetup
-from keywords.ptp.setup.object.grandmaster_settings import GrandmasterSettings
-from keywords.ptp.setup.object.parent_data_set import ParentDataSet
 from keywords.ptp.setup.object.phc2sys_setup import PHC2SysSetup
 from keywords.ptp.setup.object.ptp4l_expected_dict import PTP4LExpectedDict
 from keywords.ptp.setup.object.ptp4l_setup import PTP4LSetup
 from keywords.ptp.setup.object.ptp_host_interface_setup import PTPHostInterfaceSetup
 from keywords.ptp.setup.object.ts2phc_setup import TS2PHCSetup
-from keywords.ptp.setup.time_properties_data_set import TimePropertiesDataSet
 
 
 class PTPSetup:
@@ -30,10 +27,6 @@ class PTPSetup:
         self.clock_setup_list: List[ClockSetup] = []
         self.host_ptp_if_dict: Dict[str, PTPHostInterfaceSetup] = {}  # Name -> PTPHostInterfaceSetup
         self.ptp4l_expected_list: List[PTP4LExpectedDict] = []
-        self.parent_data_set: Dict[str, ParentDataSet] = {}
-        self.time_properties_data_set: Dict[str, TimePropertiesDataSet] = {}
-        self.grandmaster_settings_tgm: Dict[str, GrandmasterSettings] = {}
-        self.grandmaster_settings_tbc: Dict[str, GrandmasterSettings] = {}
 
         if "ptp_instances" not in setup_dict:
             raise Exception("You must define a ptp_instances section in your ptp setup_dict")
@@ -74,18 +67,6 @@ class PTPSetup:
 
         expected_dict = setup_dict.get("expected_dict", {})
         self.ptp4l_expected_list.extend(PTP4LExpectedDict(item) for item in expected_dict.get("ptp4l", []))
-
-        if "parent_data_set" in expected_dict:
-            self.parent_data_set = ParentDataSet(expected_dict["parent_data_set"])
-
-        if "time_properties_data_set" in expected_dict:
-            self.time_properties_data_set = TimePropertiesDataSet(expected_dict["time_properties_data_set"])
-
-        if "grandmaster_settings_tgm" in expected_dict:
-            self.grandmaster_settings_tgm = GrandmasterSettings(expected_dict["grandmaster_settings_tgm"])
-
-        if "grandmaster_settings_tbc" in expected_dict:
-            self.grandmaster_settings_tbc = GrandmasterSettings(expected_dict["grandmaster_settings_tbc"])
 
     def __str__(self) -> str:
         """
@@ -216,39 +197,3 @@ class PTPSetup:
         if not ptp4l_expected_obj:
             raise ValueError(f"No expected PTP4L object found for name: {name}")
         return ptp4l_expected_obj
-
-    def get_parent_data_set(self) -> ParentDataSet:
-        """
-        Getter for the parent data set.
-
-        Returns:
-            ParentDataSet: The parent data set
-        """
-        return self.parent_data_set
-
-    def get_time_properties_data_set(self) -> TimePropertiesDataSet:
-        """
-        Getter for the time properties data set.
-
-        Returns:
-            TimePropertiesDataSet: The time properties data set
-        """
-        return self.time_properties_data_set
-
-    def get_grandmaster_settings_tgm(self) -> GrandmasterSettings:
-        """
-        Getter for the grandmaster settings tgm.
-
-        Returns:
-            GrandmasterSettings: The grandmaster settings tgm
-        """
-        return self.grandmaster_settings_tgm
-
-    def get_grandmaster_settings_tbc(self) -> GrandmasterSettings:
-        """
-        Getter for the grandmaster settings tbc.
-
-        Returns:
-            GrandmasterSettings: The grandmaster settings tbc
-        """
-        return self.grandmaster_settings_tbc

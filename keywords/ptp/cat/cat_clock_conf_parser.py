@@ -35,8 +35,8 @@ class CatClockConfParser:
         output_values_dict = {}
         is_first_ifname = True
         for row in self.cat_clock_conf_output:
-            if "~$" in row:
-                continue  # this is a prompt and should be ignored
+            if "~$" in row or "Password:" in row:
+                continue  # these prompts and should be ignored
             values = row.strip("\n").split(None, 1)  # split once
             if len(values) == 2:
                 key, value = values

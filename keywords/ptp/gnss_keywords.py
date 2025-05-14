@@ -115,7 +115,7 @@ class GnssKeywords(BaseKeyword):
 
         expected_gnss_1pps_state = "valid"
         expected_pps_dpll_status = ["locked_ho_acq"]
-        self.validate_gnss_1pps_state_and_pps_dpll_status(hostname, cgu_location, expected_gnss_1pps_state, expected_pps_dpll_status)
+        self.validate_gnss_1pps_state_and_pps_dpll_status(hostname, cgu_location, "GNSS-1PPS", expected_gnss_1pps_state, expected_pps_dpll_status)
 
     def gnss_power_off(self, hostname: str, nic: str) -> None:
         """
@@ -141,12 +141,13 @@ class GnssKeywords(BaseKeyword):
 
         expected_gnss_1pps_state = "invalid"
         expected_pps_dpll_status = ["holdover", "freerun"]
-        self.validate_gnss_1pps_state_and_pps_dpll_status(hostname, cgu_location, expected_gnss_1pps_state, expected_pps_dpll_status)
+        self.validate_gnss_1pps_state_and_pps_dpll_status(hostname, cgu_location, "GNSS-1PPS", expected_gnss_1pps_state, expected_pps_dpll_status)
 
     def validate_gnss_1pps_state_and_pps_dpll_status(
         self,
         hostname: str,
         cgu_location: str,
+        cgu_input: str,
         expected_gnss_1pps_state: str,
         expected_pps_dpll_status: list,
         timeout: int = 800,
@@ -158,6 +159,7 @@ class GnssKeywords(BaseKeyword):
         Args:
             hostname (str): The name of the host.
             cgu_location (str): the cgu location.
+            cgu_input (str): the cgu input name.
             expected_gnss_1pps_state (str): The expected gnss 1pss state value.
             expected_pps_dpll_status (list): expected list of PPS DPLL status values.
             timeout (int): The maximum time (in seconds) to wait for the match.
@@ -185,7 +187,7 @@ class GnssKeywords(BaseKeyword):
             pps_dpll_object = ptp_cgu_component.get_pps_dpll()
             status = pps_dpll_object.get_status()
 
-            input_object = ptp_cgu_component.get_cgu_input("GNSS-1PPS")
+            input_object = ptp_cgu_component.get_cgu_input(cgu_input)
             state = input_object.get_state()
 
             if status in expected_pps_dpll_status and state == expected_gnss_1pps_state:
