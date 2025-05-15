@@ -186,9 +186,10 @@ class KubectlGetPodsKeywords(BaseKeyword):
             if len(pods_in_incorrect_status) == 0:
                 return True
             time.sleep(poll_interval)
+        pods_in_incorrect_status_names = [pod.get_name() for pod in pods_in_incorrect_status]
+        pods_in_incorrect_status_names = ", ".join(pods_in_incorrect_status_names)
+        raise KeywordException(f"Pods {pods_in_incorrect_status_names} in namespace {namespace} did not reach status {expected_status} within {timeout} seconds")
 
-            raise KeywordException(f"Pods {pod_names} in namespace {namespace} did not reach status {expected_status} within {timeout} seconds")
-          
     def wait_for_kubernetes_to_restart(self, timeout: int = 600, check_interval: int = 20) -> bool:
         """
         Wait for the Kubernetes API to go down, then wait for the kube-apiserver pod to be Running.
@@ -224,16 +225,6 @@ class KubectlGetPodsKeywords(BaseKeyword):
             polling_sleep_time=check_interval,
         )
 
-        self.wait_for_pod_status(
-            pod_name="kube-apiserver-controller-0",
-            expected_status="Running",
-            namespace="kube-system",
-            timeout=timeout
-        )
+        self.wait_for_pod_status(pod_name="kube-apiserver-controller-0", expected_status="Running", namespace="kube-system", timeout=timeout)
 
-        return self.wait_for_pod_max_age(
-            pod_name="kube-apiserver-controller-0",
-            max_age=3,
-            namespace="kube-system",
-            timeout=timeout
-        )
+        return self.wait_for_pod_max_age(pod_name="kube-apiserver-controller-0", max_age=3, namespace="kube-system", timeout=timeout)

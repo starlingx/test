@@ -217,6 +217,7 @@ def test_k8s_dashboard_access(request):
 
     # Defines dashboard file name, source (local) and destination (remote) file paths.
     # Opens an SSH session to active controller.
+    get_logger().log_test_case_step("Step 1: Transfer the dashboard files to the active controller")
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
 
     def teardown_dashboard_directory():
@@ -228,6 +229,7 @@ def test_k8s_dashboard_access(request):
 
     copy_k8s_files(request, ssh_connection)
     # Step 2: Create Dashboard namespace
+    get_logger().log_test_case_step("Step 2: Create Dashboard namespace")
 
     def teardown_dashboard_namespace():
         # cleanup created dashboard namespace
@@ -253,6 +255,7 @@ def test_k8s_dashboard_access(request):
     assert ns_list.is_namespace(namespace_name=namespace_name)
 
     # Step 3: Create the necessary k8s dashboard resources
+    get_logger().log_test_case_step("Step 3: Create the necessary k8s dashboard resources")
     test_namespace = "kubernetes-dashboard"
 
     def teardown_secret():
@@ -264,6 +267,8 @@ def test_k8s_dashboard_access(request):
     create_k8s_dashboard(namespace=test_namespace, con_ssh=ssh_connection)
 
     # Step 4: Create the token for the dashboard
+    get_logger().log_test_case_step("Step 4: Create the token for the dashboard")
+
     def teardown_svc_account():
         serviceaccount = "admin-user"
         get_logger().log_info(f"Removing serviceaccount {serviceaccount} in kube-system")
@@ -273,7 +278,7 @@ def test_k8s_dashboard_access(request):
     token = get_k8s_token(request=request, con_ssh=ssh_connection)
 
     # Step 5: Navigate to K8s dashboard login page
-
+    get_logger().log_test_case_step("Step 5: Navigate to K8s dashboard login page")
     k8s_dashboard_url = OpenStackEndpointListKeywords(ssh_connection=ssh_connection).get_k8s_dashboard_url()
     driver = WebDriverCore()
     request.addfinalizer(lambda: driver.close())
@@ -282,9 +287,11 @@ def test_k8s_dashboard_access(request):
     login_page.navigate_to_login_page(k8s_dashboard_url)
     # Login to the dashboard using the token.
     login_page.login_with_token(token)
+    get_logger().log_test_case_step("Step 6: Logout from dashboard")
     # Step 6: Logout from dashboard
     login_page.logout()
 
     # Step 7: Login to the dashboard using kubeconfig file
+    get_logger().log_test_case_step("Step 7: Login to the dashboard using kubeconfig file")
     kubeconfig_tmp_path = update_token_in_local_kubeconfig(token=token)
     login_page.login_with_kubeconfig(kubeconfig_tmp_path)
