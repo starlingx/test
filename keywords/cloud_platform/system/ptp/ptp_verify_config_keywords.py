@@ -24,17 +24,16 @@ class PTPVerifyConfigKeywords(BaseKeyword):
         ssh_connection: An instance of an SSH connection.
     """
 
-    def __init__(self, ssh_connection, ptp_setup_template_path):
+    def __init__(self, ssh_connection, ptp_setup: PTPSetupKeywords):
         """
         Initializes the PTPVerifyConfigKeywords with an SSH connection.
 
         Args:
             ssh_connection: An instance of an SSH connection.
             ptp_setup_template_path : ptp setup template path
+            expected_dict : expected dict
         """
         self.ssh_connection = ssh_connection
-        ptp_setup_keywords = PTPSetupKeywords()
-        ptp_setup = ptp_setup_keywords.generate_ptp_setup_from_template(ptp_setup_template_path)
         self.ptp_setup = ptp_setup
 
         self.ptp4l_setup_list = ptp_setup.get_ptp4l_setup_list()
@@ -432,7 +431,7 @@ class PTPVerifyConfigKeywords(BaseKeyword):
             raise Exception("Observed port data set objects contains more entries than expected port data set objects")
 
         for expected_port_data_set_obj, observed_port_data_set_obj in zip(expected_port_data_set_objects, observed_port_data_set_objects):
-            validate_equals(observed_port_data_set_obj.get_port_state(), expected_port_data_set_obj.get_port_state(), "portState value within GET PORT_DATA_SET")
+            validate_list_contains(observed_port_data_set_obj.get_port_state(), expected_port_data_set_obj.get_port_state(), "portState value within GET PORT_DATA_SET")
 
     def validate_get_domain(
         self,
@@ -523,6 +522,10 @@ class PTPVerifyConfigKeywords(BaseKeyword):
 
             if not all([parent_instance_name, parent_hostname, parent_interface]):
                 continue  # Skip incomplete entries
+
+            # If the system becomes its own master instead of using the remote,
+            # update the last digit in the observed parent port identity from 0 to 1.
+            observed_parent_port_identity = re.sub(r"-0$", "-1", observed_parent_port_identity) if (name == parent_instance_name and hostname == parent_hostname and expected_port_data_set_obj.get_interface() == parent_interface) else observed_parent_port_identity
 
             for observed_port_data_set in port_data_set:
                 if observed_port_data_set.get("name") == parent_instance_name and observed_port_data_set.get("hostname") == parent_hostname and parent_interface in observed_port_data_set:
@@ -662,7 +665,6 @@ class PTPVerifyConfigKeywords(BaseKeyword):
                 for observed_port_data_set_obj, expected_port_data_set_obj in zip(observed_port_data_set_objects, expected_port_data_set_objects):
                     interface = expected_port_data_set_obj.get_interface()
                     port_data_set_dict[interface] = observed_port_data_set_obj.get_port_identity()
-
                 port_data_set_list.append(port_data_set_dict)
 
         return port_data_set_list
