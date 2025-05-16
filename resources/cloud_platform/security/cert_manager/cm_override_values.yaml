@@ -1,0 +1,2 @@
+podLabels:
+ '{{ cm_label_key }}': '{{ cm_label_value }}'

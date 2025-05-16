@@ -21,28 +21,35 @@ class KubectlGetPodsKeywords(BaseKeyword):
             ssh_connection (SSHConnection): An SSH connection object to the target system.
         """
         self.ssh_connection = ssh_connection
-
-    def get_pods(self, namespace: str = None) -> KubectlGetPodsOutput:
+        
+    def get_pods(self, namespace: str = None, label: str = None) -> KubectlGetPodsOutput:
         """
         Gets the k8s pods that are available using '-o wide'.
 
         Args:
             namespace(str, optional): The namespace to search for pods. If None, it will search in all namespaces.
+            label (str, optional): The label to search for pods.
 
         Returns:
             KubectlGetPodsOutput: An object containing the parsed output of the command.
 
         """
         arg_namespace = ""
+
+        arg_label = ""
+
         if namespace:
             arg_namespace = f"-n {namespace}"
 
-        kubectl_get_pods_output = self.ssh_connection.send(export_k8s_config(f"kubectl {arg_namespace} -o wide get pods"))
+        if label:
+            arg_label = f"-l {label}"
+
+        kubectl_get_pods_output = self.ssh_connection.send(export_k8s_config(f"kubectl {arg_namespace} {arg_label} -o wide get pods"))
         self.validate_success_return_code(self.ssh_connection)
         pods_list_output = KubectlGetPodsOutput(kubectl_get_pods_output)
 
         return pods_list_output
-
+    
     def get_pods_no_validation(self, namespace: str = None) -> KubectlGetPodsOutput:
         """
         Gets the k8s pods that are available using '-o wide'.
