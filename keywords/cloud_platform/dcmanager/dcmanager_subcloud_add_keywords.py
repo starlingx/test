@@ -67,3 +67,25 @@ class DcManagerSubcloudAddKeywords(BaseKeyword):
 
         self.ssh_connection.send(cmd)
         self.validate_success_return_code(self.ssh_connection)
+
+    def dcmanager_subcloud_add_enroll(self, subcloud_name: str, bootstrap_values: str, install_values: str, deploy_config_file: str):
+        """
+        Runs 'dcmanager subcloud add --enroll' command.
+
+        Args:
+            subcloud_name (str): Subcloud name.
+            bootstrap_values (str): Bootstrap values file name.
+            install_values (str): Install values file name.
+            deploy_config_file (str): Deployment config file name.
+        """
+
+        lab_config = ConfigurationManager.get_lab_config()
+        subcloud_obj = lab_config.get_subcloud(subcloud_name)
+
+        subcloud_ip = subcloud_obj.get_floating_ip()
+        subcloud_psswr = subcloud_obj.get_admin_credentials().get_password()
+
+        cmd = source_openrc(f"dcmanager subcloud add --enroll --bootstrap-address {subcloud_ip} --bootstrap-values {bootstrap_values} --install-values {install_values} --deploy-config {deploy_config_file} --sysadmin-password {subcloud_psswr} --bmc-password {subcloud_psswr}")
+
+        self.ssh_connection.send(cmd)
+        self.validate_success_return_code(self.ssh_connection)
