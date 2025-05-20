@@ -551,14 +551,22 @@ def wait_for_pods_status_running(ssh_connection: SSHConnection) -> bool:
         bool: True if they are running, False otherwise
 
     """
-    pods = KubectlGetPodsKeywords(ssh_connection).get_pods()
 
+    # Wait until the pods are created.
+    def get_number_of_consumer_pods():
+        pods = KubectlGetPodsKeywords(ssh_connection).get_pods()
+        consumer_pods = pods.get_pods_start_with("resource-consumer")
+        return len(consumer_pods)
+
+    validate_equals_with_retry(get_number_of_consumer_pods, 2, "There are 2 resource-consumer pods created")
+
+    # Get the full names of those consumer pods
+    pods = KubectlGetPodsKeywords(ssh_connection).get_pods()
     consumer_pods = pods.get_pods_start_with("resource-consumer")
-    assert len(consumer_pods) == 2, "Incorrect number of consumer_pods were created"
     consumer_pod1_name = consumer_pods[0].get_name()
     consumer_pod2_name = consumer_pods[1].get_name()
 
-    # wait for all pods to be running
+    # Wait for all pods to be running
     kubectl_get_pods_keywords = KubectlGetPodsKeywords(ssh_connection)
     consumer_pod1_running = kubectl_get_pods_keywords.wait_for_pod_status(consumer_pod1_name, "Running")
     consumer_pod2_running = kubectl_get_pods_keywords.wait_for_pod_status(consumer_pod2_name, "Running")
