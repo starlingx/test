@@ -1,4 +1,4 @@
-from typing import Any, List, Tuple
+from typing import Any
 
 from framework.logging.automation_logger import get_logger
 from framework.validation.validation import validate_equals, validate_equals_with_retry, validate_str_contains
@@ -250,7 +250,16 @@ class PTPSetupExecutorKeywords(BaseKeyword):
             expected_gnss_port = gnss_keywords.extract_gnss_port(ts2phc_instance_obj.get_instance_parameters())
             if not expected_gnss_port:
                 continue
-            ifaces_to_check = [(host, iface) for host in ts2phc_instance_obj.get_instance_hostnames() for ptp_host_if in ts2phc_instance_obj.get_ptp_interfaces() for iface in filter(None, ptp_host_if.get_interfaces_for_hostname(host)) if gnss_keywords.get_gnss_serial_port_from_gnss_directory(host, iface) == expected_gnss_port]
+
+            ifaces_to_check = []
+            for host in ts2phc_instance_obj.get_instance_hostnames():
+                for ptp_host_if in ts2phc_instance_obj.get_ptp_interfaces():
+                    interfaces = ptp_host_if.get_interfaces_for_hostname(host)
+                    for iface in filter(None, interfaces):
+                        gnss_port = gnss_keywords.get_gnss_serial_port_from_gnss_directory(host, iface)
+                        if gnss_port == expected_gnss_port:
+                            ifaces_to_check.append((host, iface))
+
             for host, interface in ifaces_to_check:
                 pci_address = gnss_keywords.get_pci_slot_name(host, interface)
                 cgu_location = f"/sys/kernel/debug/ice/{pci_address}/cgu"

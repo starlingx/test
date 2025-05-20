@@ -283,7 +283,7 @@
           "port_data_set": [
             {
               "interface" : "{{ compute_0.nic1.nic_connection.interface }}",
-              "port_state": "LISTENING"
+              "port_state": ["LISTENING", "FAULTY"]
             }
           ]
         }

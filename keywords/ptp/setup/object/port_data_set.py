@@ -20,7 +20,8 @@ class PortDataSet:
 
         self.port_state = None
         if "port_state" in expected_dict:
-            self.port_state = expected_dict["port_state"]
+            port_state = expected_dict["port_state"]
+            self.port_state = port_state if isinstance(port_state, list) else [port_state]
 
         self.parent_port_identity = None
         if "parent_port_identity" in expected_dict:
@@ -35,12 +36,12 @@ class PortDataSet:
         """
         return self.interface
 
-    def get_port_state(self) -> str:
+    def get_port_state(self) -> list:
         """
         Gets the port state.
 
         Returns:
-            str: The port state.
+            list: The port state.
         """
         return self.port_state
 
