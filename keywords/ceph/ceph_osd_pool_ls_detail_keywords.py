@@ -48,11 +48,10 @@ class CephOsdPoolLsDetailKeywords(BaseKeyword):
             bool: True if the pool replicated size is updated as expected
 
         """
-        output = self.ssh_connection.send("ceph osd pool ls detail")
-        pool_object = CephOsdPoolLsDetailOutput(output).get_ceph_osd_pool(pool_name)
         replicated_update_timeout = time.time() + timeout
-
         while time.time() < replicated_update_timeout:
+            output = self.ssh_connection.send("ceph osd pool ls detail")
+            pool_object = CephOsdPoolLsDetailOutput(output).get_ceph_osd_pool(pool_name)
             ceph_osd_pool_replication_size = pool_object.get_replicated_size()
             if ceph_osd_pool_replication_size == expected_replicated_size:
                 return True
@@ -73,11 +72,10 @@ class CephOsdPoolLsDetailKeywords(BaseKeyword):
             bool: True if the pool min_size is updated as expected
 
         """
-        output = self.ssh_connection.send("ceph osd pool ls detail")
-        pool_object = CephOsdPoolLsDetailOutput(output).get_ceph_osd_pool(pool_name)
-        mini_update_timeout = time.time() + timeout
-
-        while time.time() < mini_update_timeout:
+        min_replicated_update_timeout = time.time() + timeout
+        while time.time() < min_replicated_update_timeout:
+            output = self.ssh_connection.send("ceph osd pool ls detail")
+            pool_object = CephOsdPoolLsDetailOutput(output).get_ceph_osd_pool(pool_name)
             ceph_osd_pool_min_size = pool_object.get_min_size()
             if ceph_osd_pool_min_size == expected_min_size:
                 return True
