@@ -19,7 +19,7 @@ def test_openstack_version():
     configuration_manager.load_configs(config_file_locations)
     cmd = configuration_manager.get_openstack_config().get_version_cmd()
 
-    get_logger().log_info('Display App Version Step')
+    get_logger().log_info("Display App Version Step")
     lab_connect_keywords = LabConnectionKeywords()
     ssh_connection = lab_connect_keywords.get_active_controller_ssh()
     cmd_out = ssh_connection.send(cmd)
