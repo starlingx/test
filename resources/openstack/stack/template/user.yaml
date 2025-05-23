@@ -1,0 +1,39 @@
+heat_template_version: wallaby
+
+description: >
+  Heat template to create OpenStack users.
+
+parameters:
+  name:
+    type: string
+    default: "{{ name }}"
+    description: Name of the user
+
+  password:
+    type: string
+    default: "{{ password }}"
+    description: Password for the user
+
+  email:
+    type: string
+    default: "{{ email }}"
+    description: Email of the user
+
+  default_project:
+    type: string
+    default: "{{ default_project }}"
+    description: Name of the project to assign the user to
+
+resources:
+  user:
+    type: OS::Keystone::User
+    properties:
+      name: { get_param: name }
+      password: { get_param: password }
+      email: { get_param: email }
+      default_project: { get_param: default_project }
+
+outputs:
+  user_id:
+    description: ID of the created user
+    value: { get_resource: user }

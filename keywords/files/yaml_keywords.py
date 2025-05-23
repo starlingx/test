@@ -67,3 +67,17 @@ class YamlKeywords(BaseKeyword):
             FileKeywords(self.ssh_connection).upload_file(rendered_yaml_file_location, target_remote_file)
             return target_remote_file
         return rendered_yaml_file_location
+
+    def load_yaml(self, file_path):
+        """
+        This function will load a yaml file from the local dir
+
+        Args:
+            file_path (str): Path to the YAML file.
+                Example: 'resources/cloud_platform/folder/file_name'.
+
+        Returns:
+            file: The loaded YAML file
+        """
+        with open(file_path, 'r') as file:
+            return yaml.safe_load(file)

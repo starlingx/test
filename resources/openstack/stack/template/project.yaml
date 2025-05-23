@@ -1,0 +1,90 @@
+heat_template_version: wallaby
+
+description: >
+  Heat template to create a single OpenStack project with quotas.
+
+parameters:
+  name:
+    type: string
+    default: "{{ name }}"
+    description: Name of the project
+
+  description:
+    type: string
+    default: "{{ description }}"
+    description: Description of the project
+
+  network:
+    type: number
+    default: "{{ network }}"
+    description: Quota for the number of networks
+
+  subnet:
+    type: number
+    default: "{{ subnet }}"
+    description: Quota for the number of subnets
+
+  port:
+    type: number
+    default: "{{ port }}"
+    description: Quota for the number of ports
+
+  floatingip:
+    type: number
+    default: "{{ floatingip }}"
+    description: Quota for the number of floating IPs
+
+  instances:
+    type: number
+    default: "{{ instances }}"
+    description: Quota for the number of instances
+
+  cores:
+    type: number
+    default: "{{ cores }}"
+    description: Quota for the number of cores
+
+  volumes:
+    type: number
+    default: "{{ volumes }}"
+    description: Quota for the number of volumes
+
+  snapshots:
+    type: number
+    default: "{{ snapshots }}"
+    description: Quota for the number of snapshots
+
+resources:
+  project:
+    type: OS::Keystone::Project
+    properties:
+      name: { get_param: name }
+      description: { get_param: description }
+
+  cinder_quota:
+    type: OS::Cinder::Quota
+    properties:
+      project: { get_resource: project }
+      volumes: { get_param: volumes }
+      snapshots: { get_param: snapshots }
+
+  neutron_quota:
+    type: OS::Neutron::Quota
+    properties:
+      project: { get_resource: project }
+      network: { get_param: network }
+      subnet: { get_param: subnet }
+      port: { get_param: port }
+      floatingip: { get_param: floatingip }
+
+  nova_quota:
+    type: OS::Nova::Quota
+    properties:
+      project: { get_resource: project }
+      cores: { get_param: cores }
+      instances: { get_param: instances }
+
+outputs:
+  project_id:
+    description: ID of the created project
+    value: { get_attr: [project, show, id] }

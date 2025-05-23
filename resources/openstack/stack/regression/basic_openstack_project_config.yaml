@@ -1,0 +1,56 @@
+project:
+  - name: ace_project_1
+    description: Ace 1 Project
+    quota:
+      network: 8
+      subnet: 18
+      port: 83
+      floatingip: 10
+      instances: 10
+      cores: 30
+      volumes: 12
+      snapshots: 12
+  - name: ace_project_2
+    description: Ace 2 Project
+    quota:
+      network: 8
+      subnet: 18
+      port: 83
+      floatingip: 10
+      instances: 10
+      cores: 30
+      volumes: 12
+      snapshots: 12
+user:
+  - name: ace_one
+    password: password
+    email: tenant1@noreply.com
+    default_project: ace_project_1
+  - name: ace_two
+    password: password
+    email: tenant2@noreply.com
+    default_project: ace_project_2
+role_assignment:
+  - role: admin
+    name: ace_one_admin_ace_project_1
+    project: ace_test_1
+    user: ace_one
+  - role: admin
+    name: ace_two_admin_ace_project_2
+    project: ace_test_2
+    user: ace_two
+webimage:
+  - name: ace_cirros_image
+    container_format: bare
+    disk_format: raw
+    location: http://download.cirros-cloud.net/0.4.0/cirros-0.4.0-x86_64-disk.img
+    min_disk: 0
+    min_ram: 0
+    visibility: public
+flavor:
+  - name: ace_small
+    ram: 1024
+    disk: 2
+    vcpus: 1
+    extra_specs:
+      hw:mem_page_size: large
