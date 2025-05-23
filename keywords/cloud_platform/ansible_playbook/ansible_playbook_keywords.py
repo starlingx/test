@@ -39,5 +39,4 @@ class AnsiblePlaybookKeywords(BaseKeyword):
         self.validate_success_return_code(self.ssh_connection)
         get_logger().log_info("get ansible playbook backup output")
         backup_output = AnsiblePlaybookBackUpOutput(cmd_out)
-        backup_output.validate_ansible_playbook_backup_result()
-        return backup_output
+        return backup_output.validate_ansible_playbook_backup_result()
