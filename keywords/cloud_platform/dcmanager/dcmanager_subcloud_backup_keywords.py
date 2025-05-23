@@ -39,7 +39,7 @@ class DcManagerSubcloudBackupKeywords(BaseKeyword):
         if local_only:
             return f"/opt/platform-backup/backups/{release}/"
 
-        return f"/opt/dc-vault/backups/{subcloud_name}/{release}"
+        return f"/opt/dc-vault/backups/{subcloud_name}/{release}/"
 
     def create_subcloud_backup(
         self,

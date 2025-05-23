@@ -5,10 +5,12 @@ from pytest import mark
 from config.configuration_manager import ConfigurationManager
 from config.lab.objects.lab_type_enum import LabTypeEnum
 from framework.logging.automation_logger import get_logger
-from framework.validation.validation import validate_equals
+from framework.validation.validation import validate_equals, validate_list_contains
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_backup_keywords import DcManagerSubcloudBackupKeywords
+from keywords.cloud_platform.dcmanager.dcmanager_subcloud_group_keywords import DcmanagerSubcloudGroupKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_list_keywords import DcManagerSubcloudListKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_show_keywords import DcManagerSubcloudShowKeywords
+from keywords.cloud_platform.dcmanager.dcmanager_subcloud_update_keywords import DcManagerSubcloudUpdateKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.cloud_platform.version_info.cloud_platform_version_manager import CloudPlatformVersionManagerClass
 from keywords.files.file_keywords import FileKeywords
@@ -191,3 +193,96 @@ def test_verify_backup_local_duplex(request):
 
     request.addfinalizer(teardown)
     verify_backup_local_custom_path(subcloud.get_name())
+
+@mark.lab_has_subcloud
+def test_verify_backup_central_simplex_group(request):
+    """
+    Verify backup of subcloud group
+
+    Test Steps:
+        - Create a Subcloud group
+        - Assign subcloud to group
+        - Verify the subcloud backup file is transferred to the centralized
+    default location
+        - Check backup match current Date and if it is complete
+    Teardown:
+        - Remove Test Group
+        - Remove files created while the Tc was running.
+    """
+
+    central_ssh = LabConnectionKeywords().get_active_controller_ssh()
+    release = CloudPlatformVersionManagerClass().get_sw_version()
+
+    # Gets the lowest subcloud (the subcloud with the lowest id).
+    dcmanager_subcloud_list_keywords = DcManagerSubcloudListKeywords(central_ssh)
+    lowest_subcloud = dcmanager_subcloud_list_keywords.get_dcmanager_subcloud_list().get_healthy_subcloud_with_lowest_id()
+    subcloud_name = lowest_subcloud.get_name()
+
+    # Gets the lowest subcloud sysadmin password needed for backup creation.
+    lab_config = ConfigurationManager.get_lab_config().get_subcloud(subcloud_name)
+    subcloud_password = lab_config.get_admin_credentials().get_password()
+
+    dc_manager_backup = DcManagerSubcloudBackupKeywords(central_ssh)
+    central_path = f"/opt/dc-vault/backups/{subcloud_name}/{release}/"
+
+    def teardown():
+        get_logger().log_info("Removing test files")
+        FileKeywords(central_ssh).delete_folder_with_sudo("subcloud_backup.yaml")
+        FileKeywords(central_ssh).delete_folder_with_sudo(f"{central_path}{subcloud_name}_platform_backup_*.tgz")
+
+    def teardown_group():
+        get_logger().log_info("Removing the created subcloud group before teardown.")
+        DcManagerSubcloudUpdateKeywords(central_ssh).dcmanager_subcloud_update(subcloud_name=subcloud_name, update_attr="group", update_value="Default")
+        DcmanagerSubcloudGroupKeywords(central_ssh).dcmanager_subcloud_group_delete("TestGroup")
+
+    request.addfinalizer(teardown)
+    request.addfinalizer(teardown_group)
+
+    # Create subcloud group TestGroup
+    DcmanagerSubcloudGroupKeywords(central_ssh).dcmanager_subcloud_group_add(group_name="TestGroup")
+    # Adds subcloud to TestGroup
+    DcManagerSubcloudUpdateKeywords(central_ssh).dcmanager_subcloud_update(subcloud_name=subcloud_name, update_attr="group", update_value="TestGroup")
+
+    group_list = DcmanagerSubcloudGroupKeywords(central_ssh).get_dcmanager_subcloud_group_list_subclouds("TestGroup").get_dcmanager_subcloud_group_list_subclouds()
+    subclouds = [subcloud.get_name() for subcloud in group_list]
+    validate_list_contains(subcloud_name, subclouds, "Verifies if the subcloud name is in the list of subclouds.")
+
+    dc_manager_backup.create_subcloud_backup(subcloud_password, central_ssh, path=f"{central_path}{subcloud_name}_platform_backup_*.tgz", group="TestGroup", subcloud_list=[subcloud_name], release=str(release))
+
+
+@mark.lab_has_subcloud
+def test_verify_backup_local_simplex_images(request):
+    """
+    Verify Backup of registry container images
+
+    Testcase steps:
+            - Pull, tag and push a test image to local registry
+            - Create backup of subcloud and registry backup
+            - Made a Subcloud Restore
+            - Check if the test image was restored
+    """
+
+    central_ssh = LabConnectionKeywords().get_active_controller_ssh()
+    release = CloudPlatformVersionManagerClass().get_sw_version()
+
+    # Gets the lowest subcloud (the subcloud with the lowest id).
+    dcmanager_subcloud_list_keywords = DcManagerSubcloudListKeywords(central_ssh)
+    lowest_subcloud = dcmanager_subcloud_list_keywords.get_dcmanager_subcloud_list().get_healthy_subcloud_with_lowest_id()
+    subcloud_name = lowest_subcloud.get_name()
+    subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
+
+    # Gets the lowest subcloud sysadmin password needed for backup creation.
+    lab_config = ConfigurationManager.get_lab_config().get_subcloud(subcloud_name)
+    subcloud_password = lab_config.get_admin_credentials().get_password()
+
+    dc_manager_backup = DcManagerSubcloudBackupKeywords(central_ssh)
+    local_path = f"/opt/platform-backup/backups/{release}/"
+
+    def teardown():
+        get_logger().log_info("Removing test files")
+        FileKeywords(central_ssh).delete_folder_with_sudo("subcloud_backup.yaml")
+        FileKeywords(central_ssh).delete_folder_with_sudo(f"{local_path}{subcloud_name}_platform_backup_*.tgz")
+
+    request.addfinalizer(teardown)
+
+    dc_manager_backup.create_subcloud_backup(subcloud_password, subcloud_ssh, subcloud=subcloud_name, path=f"{local_path}{subcloud_name}_platform_backup_*.tgz", local_only=True, registry=True)
