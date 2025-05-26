@@ -4,6 +4,7 @@ import time
 from pytest import mark
 
 from config.configuration_manager import ConfigurationManager
+from framework.kpi.time_kpi import TimeKPI
 from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
 from framework.validation.validation import validate_equals
@@ -70,20 +71,28 @@ def test_phased_deployment(request):
     dcm_sc_deploy_kw = DCManagerSubcloudDeployKeywords(ssh_connection)
 
     # dcmanager subcloud deploy create
+    time_kpi_start_create = TimeKPI(time.time())
     get_logger().log_info(f"dcmanager subcloud deploy create {subcloud_name}.")
     dcm_sc_deploy_kw.dcmanager_subcloud_deploy_create(subcloud_name)
+    time_kpi_start_create.log_elapsed_time(time.time(), "time taken subcloud deploy create")
 
     # dcmanager subcloud deploy install
+    time_kpi_start_install = TimeKPI(time.time())
     get_logger().log_info(f"dcmanager subcloud deploy install {subcloud_name}.")
     dcm_sc_deploy_kw.dcmanager_subcloud_deploy_install(subcloud_name)
+    time_kpi_start_install.log_elapsed_time(time.time(), "time taken subcloud deploy install")
 
     # dcmanager subcloud deploy bootstrap
+    time_kpi_start_bootstrap = TimeKPI(time.time())
     get_logger().log_info(f"dcmanager subcloud deploy bootstrap {subcloud_name}.")
     dcm_sc_deploy_kw.dcmanager_subcloud_deploy_bootstrap(subcloud_name)
+    time_kpi_start_bootstrap.log_elapsed_time(time.time(), "time taken subcloud deploy bootstrap")
 
     # dcmanager subcloud deploy config
+    time_kpi_start_config = TimeKPI(time.time())
     get_logger().log_info(f"dcmanager subcloud deploy config {subcloud_name}.")
     dcm_sc_deploy_kw.dcmanager_subcloud_deploy_config(subcloud_name)
+    time_kpi_start_config.log_elapsed_time(time.time(), "time taken subcloud deploy config")
 
 
 @mark.p0
@@ -127,7 +136,9 @@ def test_subcloud_deploy_abort_resume(request):
     dcm_sc_list_kw = DcManagerSubcloudListKeywords(ssh_connection)
     dcm_sc_list_kw.validate_subcloud_status(subcloud_name, "bootstrap-aborted")
     # dcmanager subcloud deploy resume
+    time_kpi_start_resume = TimeKPI(time.time())
     dcm_sc_deploy_kw.dcmanager_subcloud_deploy_resume(subcloud_name)
+    time_kpi_start_resume.log_elapsed_time(time.time(), "time taken subcloud deploy resume")
 
 
 def test_bootstrap_failure_replay():
@@ -189,8 +200,9 @@ def test_bootstrap_failure_replay():
     FileKeywords(ssh_connection).rename_file(bootstrap_bkup_file, bootstrap_file)
 
     # dcmanager subcloud deploy resume
+    time_kpi_start_resume = TimeKPI(time.time())
     dcm_sc_deploy_kw.dcmanager_subcloud_deploy_resume(subcloud_name)
-
+    time_kpi_start_resume.log_elapsed_time(time.time(), "time taken subcloud deploy resume")
     # dcmanager subcloud deploy config
     get_logger().log_info(f"dcmanager subcloud deploy config {subcloud_name}.")
     dcm_sc_deploy_kw.dcmanager_subcloud_deploy_config(subcloud_name)
