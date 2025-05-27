@@ -49,3 +49,54 @@ class SystemStorageBackendKeywords(BaseKeyword):
 
         self.ssh_connection.send(source_openrc(f"system storage-backend-add {backend} {extra_args}"))
         self.validate_success_return_code(self.ssh_connection)
+
+    def system_storage_backend_modify(self, backend: str, services: str = None, deployment_model: str = None, replication: int = 0, min_replication: int = 0):
+        """
+        Modify the storage backend
+
+        Args:
+            backend (str): the backend name ceph or ceph-rook
+            services (str): New services value
+            deployment_model (str): new deployment_model
+            replication (int): new replication value
+            min_replication (int): min_replication value
+
+        """
+        extra_args = ""
+        if deployment_model:
+            extra_args += f"--deployment {deployment_model} "
+        if services:
+            extra_args += f"--services {services} "
+        if replication > 0:
+            extra_args += f"replication={replication} "
+        if min_replication > 0:
+            extra_args += f"min_replication={min_replication} "
+
+        self.ssh_connection.send(source_openrc(f"system storage-backend-modify {backend}-store {extra_args}"))
+        self.validate_success_return_code(self.ssh_connection)
+
+    def system_storage_backend_modify_with_error(self, backend: str, services: str = None, deployment_model: str = None, replication: int = 0, min_replication: int = 0) -> list[str]:
+        """
+        Run the "system storage-backend-modify" command with invalid arguments
+
+        Args:
+            backend (str): the backend name ceph or ceph-rook
+            services (str): New services value
+            deployment_model (str): new deployment_model
+            replication (int): new replication value
+            min_replication (int): min_replication value
+        Returns:
+             list[str]: a list of error msg
+        """
+        extra_args = ""
+        if deployment_model:
+            extra_args += f"--deployment {deployment_model} "
+        if services:
+            extra_args += f"--services {services} "
+        if replication > 0:
+            extra_args += f"replication={replication} "
+        if min_replication > 0:
+            extra_args += f"min_replication={min_replication} "
+
+        msg = self.ssh_connection.send(source_openrc(f"system storage-backend-modify {backend}-store {extra_args}"))
+        return msg

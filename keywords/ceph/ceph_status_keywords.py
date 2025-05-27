@@ -40,8 +40,6 @@ class CephStatusKeywords(BaseKeyword):
                   False: ceph health status not match expect status
 
         """
-        if expect_health_status not in (True, False):
-            raise ValueError(f"expect_health_status:{expect_health_status} is not valid.")
 
         def get_ceph_health_status():
             output = self.ssh_connection.send("ceph -s")
