@@ -50,15 +50,15 @@ class SmaKeywords(BaseKeyword):
         self.ssh_connection.send_expect_prompts("sudo su", expected_prompts)
 
         # Expected states for validation
-        expected_gnss_1pps_state = "invalid"
-        expected_pps_dpll_status = ["holdover"]
+        expected_cgu_input_state = "invalid"
+        expected_dpll_status_list = ["holdover"]
 
         # Construct CGU location path
         pci_address = gnss_keywords.get_pci_slot_name(hostname, interface)
         cgu_location = f"/sys/kernel/debug/ice/{pci_address}/cgu"
 
         # Validate GNSS 1PPS state and DPLL status
-        gnss_keywords.validate_gnss_1pps_state_and_pps_dpll_status(hostname, cgu_location, "SMA1", expected_gnss_1pps_state, expected_pps_dpll_status)
+        gnss_keywords.validate_sma1_and_gnss_1pps_eec_pps_dpll_status_with_retry(hostname, cgu_location, "SMA1", expected_cgu_input_state, expected_dpll_status_list)
 
     def enable_sma(self, hostname: str, nic: str) -> None:
         """
@@ -88,13 +88,9 @@ class SmaKeywords(BaseKeyword):
         # Run echo command to crash standby controller
         self.ssh_connection.send_expect_prompts("sudo su", expected_prompts)
 
-        # Expected states for validation
-        expected_gnss_1pps_state = "valid"
-        expected_pps_dpll_status = ["locked_ho_acq"]
-
         # Construct CGU location path
         pci_address = gnss_keywords.get_pci_slot_name(hostname, interface)
         cgu_location = f"/sys/kernel/debug/ice/{pci_address}/cgu"
 
         # Validate GNSS 1PPS state and DPLL status
-        gnss_keywords.validate_gnss_1pps_state_and_pps_dpll_status(hostname, cgu_location, "SMA1", expected_gnss_1pps_state, expected_pps_dpll_status)
+        gnss_keywords.validate_sma1_and_gnss_1pps_eec_pps_dpll_status_with_retry(hostname, cgu_location, "SMA1")

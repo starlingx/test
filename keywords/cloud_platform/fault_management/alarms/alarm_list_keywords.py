@@ -1,3 +1,4 @@
+import re
 import time
 
 from framework.logging.automation_logger import get_logger
@@ -128,24 +129,74 @@ class AlarmListKeywords(BaseKeyword):
         Raises:
             TimeoutError: if alarms are not found within the timeout period.
         """
-        timeout = self.get_timeout_in_seconds()
         check_interval = self.get_check_interval_in_seconds()
         end_time = time.time() + self.get_timeout_in_seconds()
 
-        alarm_descriptions = ", ".join(f"[ID: {alarm.get_alarm_id()}, Reason: {alarm.get_reason_text()}, Entity: {alarm.get_entity_id()}]" for alarm in alarms)
+        alarm_descriptions = ", ".join(self.alarm_to_str(alarm) for alarm in alarms)
 
         while time.time() < end_time:
-            current_alarms = self.alarm_list()
-            all_matched = all(any(current.get_alarm_id() == expected.get_alarm_id() and current.get_reason_text() == expected.get_reason_text() and current.get_entity_id() == expected.get_entity_id() for current in current_alarms) for expected in alarms)
+            observed_alarms = self.alarm_list()
+            all_matched = True
+            for expected_alarm_obj in alarms:
+                match_found = any(self.alarms_match(observed_alarm_obj, expected_alarm_obj) for observed_alarm_obj in observed_alarms)
+                if not match_found:
+                    get_logger().log_info(f"Expected alarm not found yet: {self.alarm_to_str(expected_alarm_obj)}")
+                    all_matched = False
+                    break
 
             if all_matched:
-                get_logger().log_info(f"All expected alarms are now present in SSH connection ({self.get_ssh_connection()}): {alarm_descriptions}")
+                get_logger().log_info(f"All expected alarms are now present: {alarm_descriptions}")
                 return
 
-            get_logger().log_info(f"Waiting for expected alarms to appear in SSH connection ({self.get_ssh_connection()}). " f"Retrying in {check_interval:.3f} seconds. Remaining time: {end_time - time.time():.3f} seconds.")
+            get_logger().log_info(f"Waiting for expected alarms. Retrying in {check_interval:.3f} seconds. Remaining time: {end_time - time.time():.3f} seconds.")
             time.sleep(check_interval)
 
-        raise TimeoutError(f"The following alarms did not appear within {timeout} seconds: {alarm_descriptions}")
+        # Final check before raising
+        observed_alarms = self.alarm_list()
+        observed_alarm_str = [self.alarm_to_str(observed_alarm_obj) for observed_alarm_obj in observed_alarms]
+        raise TimeoutError(f"Timeout. Alarms not found:\nExpected: {alarm_descriptions}\nObserved alarms:\n" + "\n".join(observed_alarm_str))
+
+    def alarms_match(self, observed_alarm_object: AlarmListObject, expected_alarm_object: AlarmListObject) -> bool:
+        """
+        Compares two AlarmListObject instances for equality based on
+        alarm ID, reason text, and entity ID.
+
+        Args:
+            observed_alarm_object (AlarmListObject): The current alarm object to compare against.
+            expected_alarm_object (AlarmListObject): The expected alarm object.
+
+        Returns:
+            bool: True if all three fields (alarm ID, reason text, and entity ID) match exactly
+                (after stripping whitespace for text fields), False otherwise.
+        """
+        observed_id = observed_alarm_object.get_alarm_id()
+        expected_id = expected_alarm_object.get_alarm_id()
+
+        observed_reason_text = observed_alarm_object.get_reason_text()
+        expected_reason_text_pattern = expected_alarm_object.get_reason_text()
+
+        observed_entity_id = observed_alarm_object.get_entity_id()
+        expected_entity_id = expected_alarm_object.get_entity_id()
+
+        # Perform the comparisons, making each condition clear.
+        id_matches = observed_id == expected_id
+        reason_text_matches = re.fullmatch(expected_reason_text_pattern, observed_reason_text)
+        entity_id_matches = observed_entity_id == expected_entity_id
+
+        # Return True only if all three conditions are met.
+        return id_matches and reason_text_matches and entity_id_matches
+
+    def alarm_to_str(self, alarm: AlarmListObject) -> str:
+        """
+        Formats an AlarmListObject into a human-readable string representation.
+
+        Args:
+            alarm (AlarmListObject): The alarm object to format.
+
+        Returns:
+            str: A string in the format "ID: <alarm_id>, Reason: <reason_text>, Entity: <entity_id>".
+        """
+        return f"[ID: {alarm.get_alarm_id()}, Reason: {alarm.get_reason_text()}, Entity: {alarm.get_entity_id()}]"
 
     def get_timeout_in_seconds(self) -> int:
         """

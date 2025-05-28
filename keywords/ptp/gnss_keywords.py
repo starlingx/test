@@ -1,7 +1,6 @@
 import re
 import time
 from multiprocessing import get_logger
-from time import sleep
 
 from config.configuration_manager import ConfigurationManager
 from keywords.base_keyword import BaseKeyword
@@ -109,13 +108,19 @@ class GnssKeywords(BaseKeyword):
         cgu_location = f"/sys/kernel/debug/ice/{pci_address}/cgu"
 
         gpio_switch_port = ptp_config.get_host(host_name).get_nic(nic).get_gpio_switch_port()
-        command = f"echo 1 > /sys/class/gpio/gpio{gpio_switch_port}/value"
-        # power on gnss
-        gnss_ssh_connection.send_as_sudo(command)
 
-        expected_gnss_1pps_state = "valid"
-        expected_pps_dpll_status = ["locked_ho_acq"]
-        self.validate_gnss_1pps_state_and_pps_dpll_status(hostname, cgu_location, "GNSS-1PPS", expected_gnss_1pps_state, expected_pps_dpll_status)
+        export_cmd = f"[ ! -d /sys/class/gpio/gpio{gpio_switch_port} ] && " f"echo {gpio_switch_port} | sudo tee /sys/class/gpio/export > /dev/null"
+        gnss_ssh_connection.send_as_sudo(export_cmd)
+
+        # Set direction to output
+        direction_cmd = f"echo out | tee /sys/class/gpio/gpio{gpio_switch_port}/direction > /dev/null"
+        gnss_ssh_connection.send_as_sudo(direction_cmd)
+
+        # Set GPIO value to 1 (power on GNSS)
+        value_cmd = f"echo 1 | tee /sys/class/gpio/gpio{gpio_switch_port}/value > /dev/null"
+        gnss_ssh_connection.send_as_sudo(value_cmd)
+
+        self.validate_sma1_and_gnss_1pps_eec_pps_dpll_status_with_retry(hostname, cgu_location, timeout=1200, polling_interval=120)
 
     def gnss_power_off(self, hostname: str, nic: str) -> None:
         """
@@ -135,74 +140,86 @@ class GnssKeywords(BaseKeyword):
         cgu_location = f"/sys/kernel/debug/ice/{pci_address}/cgu"
 
         gpio_switch_port = ptp_config.get_host(host_name).get_nic(nic).get_gpio_switch_port()
-        command = f"echo 0 > /sys/class/gpio/gpio{gpio_switch_port}/value"
-        # power off gnss
-        gnss_ssh_connection.send_as_sudo(command)
+        export_cmd = f"[ ! -d /sys/class/gpio/gpio{gpio_switch_port} ] && " f"echo {gpio_switch_port} | sudo tee /sys/class/gpio/export > /dev/null"
+        gnss_ssh_connection.send_as_sudo(export_cmd)
 
-        expected_gnss_1pps_state = "invalid"
-        expected_pps_dpll_status = ["holdover", "freerun"]
-        self.validate_gnss_1pps_state_and_pps_dpll_status(hostname, cgu_location, "GNSS-1PPS", expected_gnss_1pps_state, expected_pps_dpll_status)
+        # Set direction to output
+        direction_cmd = f"echo out | tee /sys/class/gpio/gpio{gpio_switch_port}/direction > /dev/null"
+        gnss_ssh_connection.send_as_sudo(direction_cmd)
 
-    def validate_gnss_1pps_state_and_pps_dpll_status(
+        # Set GPIO value to 0 (power off GNSS)
+        value_cmd = f"echo 0 | tee /sys/class/gpio/gpio{gpio_switch_port}/value > /dev/null"
+        gnss_ssh_connection.send_as_sudo(value_cmd)
+
+        # Expected states for validation
+        expected_cgu_input_state = "invalid"
+        expected_dpll_status_list = ["holdover"]
+
+        self.validate_sma1_and_gnss_1pps_eec_pps_dpll_status_with_retry(hostname, cgu_location, expected_cgu_input_state=expected_cgu_input_state, expected_dpll_status_list=expected_dpll_status_list, timeout=1500, polling_interval=120)
+
+    def validate_sma1_and_gnss_1pps_eec_pps_dpll_status_with_retry(
         self,
         hostname: str,
         cgu_location: str,
-        cgu_input: str,
-        expected_gnss_1pps_state: str,
-        expected_pps_dpll_status: list,
+        cgu_input: str = "GNSS-1PPS",
+        expected_cgu_input_state: str = "valid",
+        expected_dpll_status_list: list = ["locked_ho_acq"],
         timeout: int = 800,
-        polling_sleep_time: int = 60,
+        polling_interval: int = 60,
     ) -> None:
         """
-        Validates the GNSS-1PPS state and PPS DPLL status within the specified time.
+        Validates the synchronization status of SMA1, GNSS 1PPS input, and both EEC and PPS DPLLs
+        on the specified host within a defined timeout.
 
         Args:
-            hostname (str): The name of the host.
-            cgu_location (str): the cgu location.
-            cgu_input (str): the cgu input name.
-            expected_gnss_1pps_state (str): The expected gnss 1pss state value.
-            expected_pps_dpll_status (list): expected list of PPS DPLL status values.
-            timeout (int): The maximum time (in seconds) to wait for the match.
-            polling_sleep_time (int): The time period to wait to receive the expected output.
+            hostname (str): Hostname of the target system.
+            cgu_location (str): Path to the CGU debug file on the target system.
+            cgu_input (str): CGU input identifier (e.g., "GNSS_1PPS" or "SMA1").
+            expected_cgu_input_state (str): Expected CGU input state (e.g., "valid", "invalid").
+            expected_dpll_status_list (list): List of acceptable DPLL statuses (e.g., ["locked_ho_acq"], ["holdover", "freerun"]).
+            timeout (int): Maximum wait time in seconds for synchronization (default: 800).
+            polling_interval (int): Time in seconds between polling attempts (default: 60).
 
         Returns: None
 
         Raises:
-            TimeoutError: raised when validate does not equal in the required time
+            TimeoutError: If expected input state or DPLL statuses are not observed within the timeout period.
+
+        Notes:
+            Status	        Meaning
+            locked	        DPLL is locked to a valid timing source.
+            holdover	    Timing is maintained using previously locked values (interim fallback).
+            freerun	        No synchronization — internal clock is free-running.
+            invalid	        Signal or lock state is not usable.
+            locked_ho_acq	locked with holdover acquisition.
         """
-        get_logger().log_info("Attempting Validation - GNSS-1PPS state and PPS DPLL status")
+        get_logger().log_info("Attempting Validation - CGU input state and DPLL statuses...")
         end_time = time.time() + timeout
 
-        lab_connect_keywords = LabConnectionKeywords()
-        ssh_connection = lab_connect_keywords.get_ssh_for_hostname(hostname)
-        cat_ptp_cgu_keywords = CatPtpCguKeywords(ssh_connection)
+        ssh_connection = LabConnectionKeywords().get_ssh_for_hostname(hostname)
+        cgu_reader = CatPtpCguKeywords(ssh_connection)
 
         # Attempt the validation
         while True:
+            cgu_output = cgu_reader.cat_ptp_cgu(cgu_location)
+            cgu_component = cgu_output.get_cgu_component()
 
-            # Compute the actual status and state that we are trying to validate.
-            ptp_cgu_output = cat_ptp_cgu_keywords.cat_ptp_cgu(cgu_location)
-            ptp_cgu_component = ptp_cgu_output.get_cgu_component()
+            eec_dpll_status = cgu_component.get_eec_dpll().get_status()
+            pps_dpll_status = cgu_component.get_pps_dpll().get_status()
+            cgu_input_state = cgu_component.get_cgu_input(cgu_input).get_state()
 
-            pps_dpll_object = ptp_cgu_component.get_pps_dpll()
-            status = pps_dpll_object.get_status()
-
-            input_object = ptp_cgu_component.get_cgu_input(cgu_input)
-            state = input_object.get_state()
-
-            if status in expected_pps_dpll_status and state == expected_gnss_1pps_state:
-                get_logger().log_info("Validation Successful - GNSS-1PPS state and PPS DPLL status")
+            if cgu_input_state == expected_cgu_input_state and eec_dpll_status in expected_dpll_status_list and pps_dpll_status in expected_dpll_status_list:
+                get_logger().log_info("Validation Successful - CGU input state and both DPLL statuses match expectations.")
                 return
             else:
                 get_logger().log_info("Validation Failed")
-                get_logger().log_info(f"Expected GNSS-1PPS state: {expected_gnss_1pps_state}")
-                get_logger().log_info(f"Observed GNSS-1PPS state: {state}")
-                get_logger().log_info(f"Expected PPS DPLL status: {expected_pps_dpll_status}")
-                get_logger().log_info(f"Observed PPS DPLL status: {status}")
+                get_logger().log_info(f"Expected CGU input {cgu_input} state: {expected_cgu_input_state}, Observed: {cgu_input_state}")
+                get_logger().log_info(f"Expected EEC DPLL status: {expected_dpll_status_list}, Observed: {eec_dpll_status}")
+                get_logger().log_info(f"Expected PPS DPLL status: {expected_dpll_status_list}, Observed: {pps_dpll_status}")
 
                 if time.time() < end_time:
-                    get_logger().log_info(f"Retrying in {polling_sleep_time}s")
-                    sleep(polling_sleep_time)
+                    get_logger().log_info(f"Retrying in {polling_interval}s")
+                    time.sleep(polling_interval)
                     # Move on to the next iteration
                 else:
-                    raise TimeoutError("Timeout performing validation - GNSS-1PPS state and PPS DPLL status")
+                    raise TimeoutError("Timeout exceeded: CGU input state or DPLL statuses did not meet expected values.")

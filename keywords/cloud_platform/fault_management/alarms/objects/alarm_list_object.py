@@ -12,6 +12,16 @@ class AlarmListObject:
         self.severity = None
         self.time_stamp = None
 
+    def __str__(self):
+        """
+        String representation of this object.
+
+        Returns:
+            str: String representation of this object.
+
+        """
+        return self.get_alarm_id()
+
     def set_alarm_id(self, alarm_id: str):
         """
         Setter for alarm id
@@ -110,7 +120,4 @@ class AlarmListObject:
     def __eq__(self, alarm_list_object):
         if not isinstance(alarm_list_object, AlarmListObject):
             return False
-        return (self.get_alarm_id() == alarm_list_object.get_alarm_id() and
-                self.get_severity() == alarm_list_object.get_severity() and
-                self.get_entity_id() == alarm_list_object.get_entity_id())
-
+        return self.get_alarm_id() == alarm_list_object.get_alarm_id() and self.get_severity() == alarm_list_object.get_severity() and self.get_entity_id() == alarm_list_object.get_entity_id()
