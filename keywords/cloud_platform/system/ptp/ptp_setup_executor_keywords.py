@@ -237,7 +237,7 @@ class PTPSetupExecutorKeywords(BaseKeyword):
             for host, interface in ifaces_to_check:
                 pci_address = gnss_keywords.get_pci_slot_name(host, interface)
                 cgu_location = f"/sys/kernel/debug/ice/{pci_address}/cgu"
-                gnss_keywords.validate_gnss_1pps_state_and_pps_dpll_status(host, cgu_location, "SMA1", "valid", ["locked_ho_acq"], 120, 30)
+                gnss_keywords.validate_sma1_and_gnss_1pps_eec_pps_dpll_status_with_retry(host, cgu_location, "SMA1", timeout=120, polling_interval=30)
                 check_sma_status = True
                 break
 
@@ -263,7 +263,7 @@ class PTPSetupExecutorKeywords(BaseKeyword):
             for host, interface in ifaces_to_check:
                 pci_address = gnss_keywords.get_pci_slot_name(host, interface)
                 cgu_location = f"/sys/kernel/debug/ice/{pci_address}/cgu"
-                gnss_keywords.validate_gnss_1pps_state_and_pps_dpll_status(host, cgu_location, "GNSS-1PPS", "valid", ["locked_ho_acq"], 120, 30)
+                gnss_keywords.validate_sma1_and_gnss_1pps_eec_pps_dpll_status_with_retry(host, cgu_location, timeout=120, polling_interval=30)
                 check_gnss_status = True
                 break
 

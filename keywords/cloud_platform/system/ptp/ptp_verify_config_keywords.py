@@ -13,6 +13,7 @@ from keywords.ptp.cat.cat_ptp_cgu_keywords import CatPtpCguKeywords
 from keywords.ptp.cat.cat_ptp_config_keywords import CatPtpConfigKeywords
 from keywords.ptp.gnss_keywords import GnssKeywords
 from keywords.ptp.pmc.pmc_keywords import PMCKeywords
+from keywords.ptp.ptp4l.ptp_service_status_validator import PTPServiceStatusValidator
 from keywords.ptp.setup.ptp_setup_reader import PTPSetupKeywords
 
 
@@ -112,7 +113,7 @@ class PTPVerifyConfigKeywords(BaseKeyword):
 
         Returns: None
         """
-        systemctl_status_Keywords = SystemCTLStatusKeywords(self.ssh_connection)
+        ptp_service_status_validator = PTPServiceStatusValidator(self.ssh_connection)
 
         for service_type, setup_list in [
             ("ptp4l", self.ptp4l_setup_list),
@@ -127,9 +128,9 @@ class PTPVerifyConfigKeywords(BaseKeyword):
 
                 for hostname in hostnames:
                     if service_type == "phc2sys" and "cmdline_opts" in instance_parameters:  # Here the PHC service is using the clock from the NIC, not from the PTP instance.
-                        systemctl_status_Keywords.verify_ptp_status_and_instance_parameters_on_hostname(hostname, name, service_name, instance_parameters)
+                        ptp_service_status_validator.verify_status_and_instance_parameters_on_hostname(hostname, name, service_name, instance_parameters)
                     else:
-                        systemctl_status_Keywords.verify_status_on_hostname(hostname, name, service_name)
+                        ptp_service_status_validator.verify_status_on_hostname(hostname, name, service_name)
 
     def verify_ptp_config_file_content(self) -> None:
         """
@@ -152,9 +153,12 @@ class PTPVerifyConfigKeywords(BaseKeyword):
                     else:
                         self.validate_ptp_config_file_content(instance_obj, hostname, config_file)
 
-    def verify_ptp_pmc_values(self) -> None:
+    def verify_ptp_pmc_values(self, check_domain: bool = True) -> None:
         """
-        verify ptp pmc values
+        Verify PTP PMC values across all ptp4l instances and host mappings.
+
+        Args:
+            check_domain (bool): Whether to validate the PTP domain number (default: True).
 
         Returns: None
         """
@@ -171,7 +175,8 @@ class PTPVerifyConfigKeywords(BaseKeyword):
 
                 self.validate_port_data_set(hostname, name, config_file, socket_file)
 
-                self.validate_get_domain(hostname, instance_parameters, config_file, socket_file)
+                if check_domain:
+                    self.validate_get_domain(hostname, instance_parameters, config_file, socket_file)
 
                 self.validate_parent_data_set(hostname, name, port_data_set, config_file, socket_file)
 
