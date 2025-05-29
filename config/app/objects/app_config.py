@@ -18,6 +18,7 @@ class AppConfig:
         self.istio_app_name = app_dict["istio_app_name"]
         self.metric_server_app_name = app_dict["metric_server_app_name"]
         self.oidc_app_name = app_dict["oidc_app_name"]
+        self.power_metrics_app_name = app_dict["power_metrics_app_name"]
 
     def get_base_application_path(self) -> str:
         """
@@ -58,3 +59,13 @@ class AppConfig:
 
         """
         return self.oidc_app_name
+    
+    def get_power_metrics_app_name(self) -> str:
+        """
+        Getter for power metrics app name
+
+        Returns:
+            str: the power metrics app name path
+
+        """
+        return self.power_metrics_app_name
