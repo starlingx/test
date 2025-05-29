@@ -245,3 +245,33 @@ class DcManagerSubcloudListOutput:
             return None
 
         return all_free_sc.pop()
+
+    def get_healthy_subcloud_by_type(self, lab_type: str) -> DcManagerSubcloudListObject:
+        """Fetch the last healthy subcloud by type.
+
+        Args:
+            lab_type (str): The type of the lab (e.g., 'simplex', 'duplex').
+
+        Returns:
+            DcManagerSubcloudListObject: The first healthy subcloud object of the specified type.
+        """
+        dcmanager_subcloud_list_object_filter = DcManagerSubcloudListObjectFilter.get_healthy_subcloud_filter()
+        subclouds = self.get_dcmanager_subcloud_list_objects_filtered(dcmanager_subcloud_list_object_filter)
+        subclouds_by_type = []
+
+        if not subclouds:
+            error_message = "In this DC system, there is no subcloud managed, online, deploy completed, and out-of-sync."
+            get_logger().log_exception(error_message)
+            raise ValueError(error_message)
+
+        for sc in subclouds:
+            lab_config = ConfigurationManager.get_lab_config()
+            sc_config = lab_config.get_subcloud(sc.get_name())
+            if sc_config.get_lab_type() == lab_type:
+                subclouds_by_type.append(sc)
+
+        if not subclouds_by_type:
+            error_message = f"In this DC system, there is no healthy subcloud of type {lab_type}."
+            get_logger().log_exception(error_message)
+            raise ValueError(error_message)
+        return max(subclouds_by_type, key=lambda subcloud: int(subcloud.get_id()))
