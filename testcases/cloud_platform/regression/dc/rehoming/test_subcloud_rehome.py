@@ -2,11 +2,14 @@ from pytest import mark
 
 from config.configuration_manager import ConfigurationManager
 from framework.logging.automation_logger import get_logger
+from framework.validation.validation import validate_equals
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_add_keywords import DcManagerSubcloudAddKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_delete_keywords import DcManagerSubcloudDeleteKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_list_keywords import DcManagerSubcloudListKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_manager_keywords import DcManagerSubcloudManagerKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
+from keywords.cloud_platform.system.host.system_host_list_keywords import SystemHostListKeywords
+from keywords.cloud_platform.system.host.system_host_route_keywords import SystemHostRouteKeywords
 
 
 @mark.p2
@@ -33,9 +36,14 @@ def test_rehome_one_subcloud(request):
     dcmanager_subcloud_list_keywords = DcManagerSubcloudListKeywords(origin_system_controller_ssh)
     lowest_subcloud = dcmanager_subcloud_list_keywords.get_dcmanager_subcloud_list().get_healthy_subcloud_with_lowest_id()
     subcloud_name = lowest_subcloud.get_name()
+    subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
+
+    subcloud_hostname = SystemHostListKeywords(subcloud_ssh).get_active_controller().get_host_name()
 
     subcloud_bootstrap_values = deployment_assets_config.get_subcloud_deployment_assets(subcloud_name).get_bootstrap_file()
     subcloud_install_values = deployment_assets_config.get_subcloud_deployment_assets(subcloud_name).get_install_file()
+
+    network_list = SystemHostRouteKeywords(subcloud_ssh).get_system_host_route_list_networks(subcloud_hostname)
 
     get_logger().log_info(f"Running rehome command on {destination_system_controller_ssh}")
     DcManagerSubcloudAddKeywords(destination_system_controller_ssh).dcmanager_subcloud_add_migrate(subcloud_name, bootstrap_values=subcloud_bootstrap_values, install_values=subcloud_install_values)
@@ -53,3 +61,5 @@ def test_rehome_one_subcloud(request):
 
     get_logger().log_info(f"Deleting subcloud from {destination_system_controller_ssh}")
     DcManagerSubcloudDeleteKeywords(destination_system_controller_ssh).dcmanager_subcloud_delete(subcloud_name=subcloud_name)
+
+    validate_equals(len(network_list), 1, "Validate system host route list only has one route.")
