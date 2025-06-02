@@ -6,11 +6,10 @@ from pytest import mark
 from config.configuration_manager import ConfigurationManager
 from framework.logging.automation_logger import get_logger
 from framework.resources.resource_finder import get_stx_resource_path
-from framework.validation.validation import validate_equals_with_retry
 from keywords.cloud_platform.fault_management.alarms.alarm_list_keywords import AlarmListKeywords
 from keywords.cloud_platform.fault_management.alarms.objects.alarm_list_object import AlarmListObject
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
-from keywords.cloud_platform.system.ptp.ptp_readiness_watcher import PTPReadinessWatcher
+from keywords.cloud_platform.system.ptp.ptp_readiness_keywords import PTPReadinessKeywords
 from keywords.cloud_platform.system.ptp.ptp_setup_executor_keywords import PTPSetupExecutorKeywords
 from keywords.cloud_platform.system.ptp.ptp_teardown_executor_keywords import PTPTeardownExecutorKeywords
 from keywords.cloud_platform.system.ptp.ptp_verify_config_keywords import PTPVerifyConfigKeywords
@@ -131,7 +130,6 @@ def test_ptp_operation_interface_down_and_up():
     ssh_connection = lab_connect_keywords.get_active_controller_ssh()
 
     ip_keywords = IPKeywords(ssh_connection)
-    ptp_readiness_watcher = PTPReadinessWatcher()
 
     ptp_setup_keywords = PTPSetupKeywords()
     ptp_setup_template_path = get_stx_resource_path("resources/ptp/setup/ptp_configuration_expectation_compute.json5")
@@ -203,7 +201,8 @@ def test_ptp_operation_interface_down_and_up():
     AlarmListKeywords(ssh_connection).wait_for_alarms_to_appear([not_locked_alarm_obj])
 
     get_logger().log_info(f"Waiting for PMC port states after interface {ctrl0_nic1_interface} goes down.")
-    ptp_readiness_watcher.wait_for_port_state_appear_in_port_data_set("ptp1", "controller-1", ["MASTER", "MASTER"])
+    ptp_readiness_keywords = PTPReadinessKeywords(LabConnectionKeywords().get_ssh_for_hostname("controller-1"))
+    ptp_readiness_keywords.wait_for_port_state_appear_in_port_data_set("ptp1", "controller-1", ["MASTER", "MASTER"])
 
     get_logger().log_info(f"Verifying PMC data after interface {ctrl0_nic1_interface} goes down.")
     ptp_verify_config_keywords = PTPVerifyConfigKeywords(ssh_connection, ctrl0_nic1_iface_down_ptp_setup)
@@ -219,7 +218,8 @@ def test_ptp_operation_interface_down_and_up():
     AlarmListKeywords(ssh_connection).wait_for_alarms_cleared([not_locked_alarm_obj])
 
     get_logger().log_info(f"Waiting for PMC port states after interface {ctrl0_nic1_interface} comes up.")
-    ptp_readiness_watcher.wait_for_port_state_appear_in_port_data_set("ptp1", "controller-1", ["SLAVE", "MASTER"])
+    ptp_readiness_keywords = PTPReadinessKeywords(LabConnectionKeywords().get_ssh_for_hostname("controller-1"))
+    ptp_readiness_keywords.wait_for_port_state_appear_in_port_data_set("ptp1", "controller-1", ["SLAVE", "MASTER"])
 
     get_logger().log_info(f"Verifying PMC data after interface {ctrl0_nic1_interface} comes up.")
     ptp_verify_config_keywords = PTPVerifyConfigKeywords(ssh_connection, ctrl0_nic1_iface_up_ptp_setup)
@@ -293,7 +293,8 @@ def test_ptp_operation_interface_down_and_up():
     AlarmListKeywords(ssh_connection).wait_for_alarms_to_appear([not_locked_alarm_obj])
 
     get_logger().log_info(f"Waiting for PMC port states after interface {ctrl0_nic2_interface} goes down.")
-    ptp_readiness_watcher.wait_for_port_state_appear_in_port_data_set("ptp4", "controller-1", ["MASTER", "MASTER"])
+    ptp_readiness_keywords = PTPReadinessKeywords(LabConnectionKeywords().get_ssh_for_hostname("controller-1"))
+    ptp_readiness_keywords.wait_for_port_state_appear_in_port_data_set("ptp4", "controller-1", ["MASTER", "MASTER"])
 
     get_logger().log_info(f"Verifying PMC data after interface {ctrl0_nic2_interface} goes down.")
     ptp_verify_config_keywords = PTPVerifyConfigKeywords(ssh_connection, ctrl0_nic2_iface_down_ptp_setup)
@@ -306,7 +307,8 @@ def test_ptp_operation_interface_down_and_up():
     AlarmListKeywords(ssh_connection).wait_for_alarms_cleared([not_locked_alarm_obj])
 
     get_logger().log_info(f"Waiting for PMC port states after interface {ctrl0_nic2_interface} comes up.")
-    ptp_readiness_watcher.wait_for_port_state_appear_in_port_data_set("ptp4", "controller-1", ["SLAVE", "MASTER"])
+    ptp_readiness_keywords = PTPReadinessKeywords(LabConnectionKeywords().get_ssh_for_hostname("controller-1"))
+    ptp_readiness_keywords.wait_for_port_state_appear_in_port_data_set("ptp4", "controller-1", ["SLAVE", "MASTER"])
 
     get_logger().log_info(f"Verifying PMC data after interface {ctrl0_nic2_interface} comes up.")
     ptp_verify_config_keywords = PTPVerifyConfigKeywords(ssh_connection, ctrl0_nic2_iface_up_ptp_setup)
@@ -341,8 +343,6 @@ def test_ptp_operation_sma_disabled_and_enable():
     ssh_connection = lab_connect_keywords.get_active_controller_ssh()
     ptp_setup_keywords = PTPSetupKeywords()
     ptp_setup_template_path = get_stx_resource_path("resources/ptp/setup/ptp_configuration_expectation_compute.json5")
-
-    ptp_readiness_watcher = PTPReadinessWatcher()
 
     get_logger().log_info("Verifying PTP operation and corresponding status changes when SMA is disabled.")
 
@@ -450,7 +450,8 @@ def test_ptp_operation_sma_disabled_and_enable():
     AlarmListKeywords(ssh_connection).wait_for_alarms_to_appear([not_locked_alarm_obj, signal_loss_alarm_obj])
 
     get_logger().log_info("Waiting for clock class after SMA1 is disabled")
-    ptp_readiness_watcher.wait_for_clock_class_appear_in_grandmaster_settings_np("ptp3", "controller-0", 7)
+    ptp_readiness_keywords = PTPReadinessKeywords(LabConnectionKeywords().get_ssh_for_hostname("controller-0"))
+    ptp_readiness_keywords.wait_for_clock_class_appear_in_grandmaster_settings_np("ptp3", "controller-0", 7)
 
     get_logger().log_info("Verifying PMC data after SMA1 is disabled")
     ptp_verify_config_keywords = PTPVerifyConfigKeywords(ssh_connection, ctrl0_nic2_sma1_disable_exp_ptp_setup)
@@ -469,7 +470,8 @@ def test_ptp_operation_sma_disabled_and_enable():
     AlarmListKeywords(ssh_connection).wait_for_alarms_cleared([alarm_list_object])
 
     get_logger().log_info("Waiting for clock class after SMA1 is enabled")
-    ptp_readiness_watcher.wait_for_clock_class_appear_in_grandmaster_settings_np("ptp3", "controller-0", 6)
+    ptp_readiness_keywords = PTPReadinessKeywords(LabConnectionKeywords().get_ssh_for_hostname("controller-0"))
+    ptp_readiness_keywords.wait_for_clock_class_appear_in_grandmaster_settings_np("ptp3", "controller-0", 6)
 
     get_logger().log_info("Verifying PMC data after SMA1 is enabled")
     ptp_verify_config_keywords = PTPVerifyConfigKeywords(ssh_connection, ctrl0_nic2_sma1_enable_exp_ptp_setup)
@@ -498,8 +500,6 @@ def test_ptp_operation_gnss_off_and_on():
     ssh_connection = lab_connect_keywords.get_active_controller_ssh()
     ptp_setup_keywords = PTPSetupKeywords()
     ptp_setup_template_path = get_stx_resource_path("resources/ptp/setup/ptp_configuration_expectation_compute.json5")
-
-    ptp_readiness_watcher = PTPReadinessWatcher()
 
     get_logger().log_info("Verifying PTP operation and status when GNSS is turned off...")
 
@@ -696,10 +696,11 @@ def test_ptp_operation_gnss_off_and_on():
 
     get_logger().log_info("Verifying clock class degradation after GNSS is off.")
     # The clock is in "Holdover" or "Degraded" mode
-    ptp_readiness_watcher.wait_for_clock_class_appear_in_grandmaster_settings_np("ptp1", "controller-0", 248)
-    ptp_readiness_watcher.wait_for_clock_class_appear_in_grandmaster_settings_np("ptp3", "controller-0", 248)
+    ptp_readiness_keywords = PTPReadinessKeywords(LabConnectionKeywords().get_ssh_for_hostname("controller-0"))
+    ptp_readiness_keywords.wait_for_clock_class_appear_in_grandmaster_settings_np("ptp1", "controller-0", 248)
+    ptp_readiness_keywords.wait_for_clock_class_appear_in_grandmaster_settings_np("ptp3", "controller-0", 248)
     # GNSS loss
-    ptp_readiness_watcher.wait_for_gm_clock_class_appear_in_parent_data_set("ptp1", "controller-0", 165)
+    ptp_readiness_keywords.wait_for_gm_clock_class_appear_in_parent_data_set("ptp1", "controller-0", 165)
 
     get_logger().log_info("Verifying PMC configuration after GNSS is off.")
     ptp_verify_config_keywords = PTPVerifyConfigKeywords(ssh_connection, ctrl0_nic1_gnss_disable_exp_ptp_setup)
@@ -712,9 +713,9 @@ def test_ptp_operation_gnss_off_and_on():
     AlarmListKeywords(ssh_connection).wait_for_alarms_cleared([ptp1_not_locked_alarm_obj, ptp4_not_locked_alarm_obj, pps_signal_loss_alarm_obj, gnss_signal_loss_alarm_obj])
 
     get_logger().log_info("Verifying clock class restoration after GNSS is on.")
-    ptp_readiness_watcher.wait_for_clock_class_appear_in_grandmaster_settings_np("ptp1", "controller-0", 6)
-    ptp_readiness_watcher.wait_for_clock_class_appear_in_grandmaster_settings_np("ptp3", "controller-0", 6)
-    ptp_readiness_watcher.wait_for_gm_clock_class_appear_in_parent_data_set("ptp1", "controller-0", 6)
+    ptp_readiness_keywords.wait_for_clock_class_appear_in_grandmaster_settings_np("ptp1", "controller-0", 6)
+    ptp_readiness_keywords.wait_for_clock_class_appear_in_grandmaster_settings_np("ptp3", "controller-0", 6)
+    ptp_readiness_keywords.wait_for_gm_clock_class_appear_in_parent_data_set("ptp1", "controller-0", 6)
 
     get_logger().log_info("Verifying PMC configuration after GNSS is restored.")
     ctrl0_nic1_gnss_enable_exp_dict_overrides = {"ptp4l": [{"name": "ptp4", "controller-1": {"grandmaster_settings": {"clock_class": 165}}}]}
@@ -820,7 +821,6 @@ def test_ptp_operation_service_stop_start_restart():
     ptp_setup_template_path = get_stx_resource_path("resources/ptp/setup/ptp_configuration_expectation_compute.json5")
     systemctl_keywords = SystemCTLKeywords(ssh_connection)
     ptp_service_status_validator = PTPServiceStatusValidator(ssh_connection)
-    ptp_readiness_watcher = PTPReadinessWatcher()
 
     get_logger().log_info("Stopping ptp4l@ptp1.service on controller-0...")
 
@@ -921,7 +921,8 @@ def test_ptp_operation_service_stop_start_restart():
     AlarmListKeywords(ssh_connection).wait_for_alarms_to_appear([ctrl0_alarm, ctrl1_alarm])
 
     get_logger().log_info("Verifying degraded PMC values after service stop...")
-    ptp_readiness_watcher.wait_for_gm_clock_class_appear_in_parent_data_set("ptp1", "controller-1", 165)
+    ptp_readiness_keywords = PTPReadinessKeywords(LabConnectionKeywords().get_ssh_for_hostname("controller-1"))
+    ptp_readiness_keywords.wait_for_gm_clock_class_appear_in_parent_data_set("ptp1", "controller-1", 165)
     ptp_verify_config_keywords = PTPVerifyConfigKeywords(ssh_connection, ctrl0_ptp1_service_stop_exp_ptp_setup)
     ptp_verify_config_keywords.verify_ptp_pmc_values(check_domain=False)
 
@@ -934,7 +935,7 @@ def test_ptp_operation_service_stop_start_restart():
     AlarmListKeywords(ssh_connection).wait_for_alarms_cleared([ctrl0_alarm, ctrl1_alarm])
 
     get_logger().log_info("Verifying full PMC configuration after service start...")
-    ptp_readiness_watcher.wait_for_gm_clock_class_appear_in_parent_data_set("ptp1", "controller-1", 6)
+    ptp_readiness_keywords.wait_for_gm_clock_class_appear_in_parent_data_set("ptp1", "controller-1", 6)
     start_exp_ptp_setup = ptp_setup_keywords.filter_and_render_ptp_config(ptp_setup_template_path, selected_instances)
     ptp_verify_config_keywords = PTPVerifyConfigKeywords(ssh_connection, start_exp_ptp_setup)
     ptp_verify_config_keywords.verify_ptp_pmc_values(check_domain=False)
@@ -948,6 +949,7 @@ def test_ptp_operation_service_stop_start_restart():
     AlarmListKeywords(ssh_connection).wait_for_alarms_cleared([ctrl0_alarm, ctrl1_alarm])
 
     get_logger().log_info("Verifying PMC configuration and clock class after service restart...")
-    ptp_readiness_watcher.wait_for_clock_class_appear_in_grandmaster_settings_np("ptp1", "controller-0", 6)
-    ptp_readiness_watcher.wait_for_gm_clock_class_appear_in_parent_data_set("ptp1", "controller-0", 6)
+    ptp_readiness_keywords = PTPReadinessKeywords(LabConnectionKeywords().get_ssh_for_hostname("controller-0"))
+    ptp_readiness_keywords.wait_for_clock_class_appear_in_grandmaster_settings_np("ptp1", "controller-0", 6)
+    ptp_readiness_keywords.wait_for_gm_clock_class_appear_in_parent_data_set("ptp1", "controller-0", 6)
     ptp_verify_config_keywords.verify_ptp_pmc_values(check_domain=False)

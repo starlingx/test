@@ -20,7 +20,10 @@ class AlarmListObject:
             str: String representation of this object.
 
         """
-        return self.get_alarm_id()
+        alarm_id = self.get_alarm_id() or ""
+        reason_text = self.get_reason_text() or ""
+        entity_id = self.get_entity_id() or ""
+        return f"[ID: {alarm_id}, Reason: {reason_text}, Entity: {entity_id}]"
 
     def set_alarm_id(self, alarm_id: str):
         """

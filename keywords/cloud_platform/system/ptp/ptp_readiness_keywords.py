@@ -1,9 +1,8 @@
 from framework.validation.validation import validate_equals_with_retry
-from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.ptp.pmc.pmc_keywords import PMCKeywords
 
 
-class PTPReadinessWatcher:
+class PTPReadinessKeywords:
     """
     PMC (PTP Management Client) operations to check various PTP parameters with retry logic.
 
@@ -11,24 +10,14 @@ class PTPReadinessWatcher:
         ssh_connection: An instance of an SSH connection.
     """
 
-    def __init__(self):
+    def __init__(self, ssh_connection):
         """
-        Initializes the PTPReadinessWatcher.
-        """
-
-    def _get_ptp_instance_paths(self, name: str) -> tuple[str, str]:
-        """
-        Helper method to get the config and socket file paths for a PTP instance.
+        Initializes the PTPReadinessKeywords with an SSH connection.
 
         Args:
-            name (str): Name of the PTP instance.
-
-        Returns:
-            tuple[str, str]: A tuple containing (config_file_path, socket_file_path).
+            ssh_connection: An instance of an SSH connection.
         """
-        config_file = f"/etc/linuxptp/ptpinstance/ptp4l-{name}.conf"
-        socket_file = f"/var/run/ptp4l-{name}"
-        return config_file, socket_file
+        self.ssh_connection = ssh_connection
 
     def wait_for_port_state_appear_in_port_data_set(self, name: str, hostname: str, expected_port_states: list[str]) -> None:
         """
@@ -43,21 +32,20 @@ class PTPReadinessWatcher:
             Exception: If expected port states do not appear within the timeout.
         """
 
-        def check_port_state_in_port_data_set(name: str, hostname: str) -> list[str]:
+        def check_port_state_in_port_data_set(name: str) -> list[str]:
             """
             Checks whether the observed port states from the port data set match the expected port states.
 
             Args:
                 name (str): Name of the PTP instance.
-                hostname (str): Hostname of the target system.
 
             Returns:
                 list[str]: List of expected port states.
             """
-            config_file, socket_file = self._get_ptp_instance_paths(name)
+            config_file = f"/etc/linuxptp/ptpinstance/ptp4l-{name}.conf"
+            socket_file = f"/var/run/ptp4l-{name}"
 
-            ssh_connection = LabConnectionKeywords().get_ssh_for_hostname(hostname)
-            pmc_keywords = PMCKeywords(ssh_connection)
+            pmc_keywords = PMCKeywords(self.ssh_connection)
 
             observed_states = [obj.get_port_state() for obj in pmc_keywords.pmc_get_port_data_set(config_file, socket_file).get_pmc_get_port_data_set_objects()]
 
@@ -78,21 +66,20 @@ class PTPReadinessWatcher:
             Exception: If expected clock class do not appear within the timeout.
         """
 
-        def get_clock_class_in_grandmaster_settings_np(name: str, hostname: str) -> int:
+        def get_clock_class_in_grandmaster_settings_np(name: str) -> int:
             """
             Get the observed clock class from the grandmaster settings np.
 
             Args:
                 name (str): Name of the PTP instance.
-                hostname (str): Hostname of the target system.
 
             Returns:
                 int: observed clock class.
             """
-            config_file, socket_file = self._get_ptp_instance_paths(name)
+            config_file = f"/etc/linuxptp/ptpinstance/ptp4l-{name}.conf"
+            socket_file = f"/var/run/ptp4l-{name}"
 
-            ssh_connection = LabConnectionKeywords().get_ssh_for_hostname(hostname)
-            pmc_keywords = PMCKeywords(ssh_connection)
+            pmc_keywords = PMCKeywords(self.ssh_connection)
 
             get_grandmaster_settings_np_object = pmc_keywords.pmc_get_grandmaster_settings_np(config_file, socket_file).get_pmc_get_grandmaster_settings_np_object()
             observed_clock_class = get_grandmaster_settings_np_object.get_clock_class()
@@ -114,21 +101,20 @@ class PTPReadinessWatcher:
             Exception: If expected gm clock class do not appear within the timeout.
         """
 
-        def get_gm_clock_class_in_parent_data_set(name: str, hostname: str) -> int:
+        def get_gm_clock_class_in_parent_data_set(name: str) -> int:
             """
             Get the observed gm clock class from the parent data set.
 
             Args:
                 name (str): Name of the PTP instance.
-                hostname (str): Hostname of the target system.
 
             Returns:
                 int: observed gm clock class.
             """
-            config_file, socket_file = self._get_ptp_instance_paths(name)
+            config_file = f"/etc/linuxptp/ptpinstance/ptp4l-{name}.conf"
+            socket_file = f"/var/run/ptp4l-{name}"
 
-            ssh_connection = LabConnectionKeywords().get_ssh_for_hostname(hostname)
-            pmc_keywords = PMCKeywords(ssh_connection)
+            pmc_keywords = PMCKeywords(self.ssh_connection)
 
             parent_data_set_obj = pmc_keywords.pmc_get_parent_data_set(config_file, socket_file).get_pmc_get_parent_data_set_object()
             observed_gm_clock_class = parent_data_set_obj.get_gm_clock_class()

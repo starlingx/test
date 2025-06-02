@@ -137,6 +137,15 @@ class PTPNic:
         """
         return self.base_port
 
+    def get_nic_connection(self) -> PTPNicConnection:
+        """
+        Gets the nic connection.
+
+        Returns:
+            PTPNicConnection: PTP NIC connection.
+        """
+        return self.nic_connection
+
     def get_sma1(self) -> SMAConnector:
         """
         Gets the SMAConnector associated with sma1
