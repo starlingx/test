@@ -1,0 +1,8 @@
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: {{ platform_issuer }}
+  namespace: {{ namespace }}
+spec:
+  ca:
+    secretName: {{ root_ca_secret }}

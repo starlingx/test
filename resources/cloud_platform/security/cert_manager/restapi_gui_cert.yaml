@@ -1,0 +1,13 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ restapi_gui_cert }}
+  namespace: {{ namespace }}
+spec:
+  commonName: {{ floating_ip }}
+  dnsNames:
+    - restapi.local
+  issuerRef:
+    name: {{ platform_issuer }}
+    kind: Issuer
+  secretName: {{ restapi_gui_secret }}
