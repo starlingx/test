@@ -83,7 +83,7 @@ class SystemAddrpoolListOutput:
         Returns:
             The floating address of the addrpool with the specified name.
         """
-        addrpools = list(filter(lambda pool: pool.get_name() == name, self.system_addrpool))
+        addrpools = list(filter(lambda pool: name in pool.get_name(), self.system_addrpool))
         if not addrpools:
             raise KeywordException(f"No addrpool with name {name} was found.")
         return addrpools[0].get_floating_address()

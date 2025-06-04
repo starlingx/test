@@ -82,11 +82,16 @@ def test_install_oidc():
     oidc_auth_yaml = YamlKeywords(ssh_connection).generate_yaml_file_from_template(template_file, replacement_dictionary, "oidc-auth-apps-certificate.yaml", file_path_oidc, True)
     KubectlApplyPodsKeywords(ssh_connection).apply_from_yaml(oidc_auth_yaml)
 
+    # Define ca.crt or tls.crt
+    secret_output = KubectlGetSecretsKeywords(ssh_connection).get_secret_json_output(secret_name="system-local-ca", namespace="cert-manager")
+    cert_data = secret_output.get_data()
+    cert = "ca" if "ca.crt" in cert_data else "tls"
+    
     # Creates dex and local LDAP certs
-    dex_ca_cert = KubectlGetSecretsKeywords(ssh_connection).get_secret_with_custom_output(secret_name="system-local-ca", namespace="cert-manager", output_format="jsonpath", extra_parameters='"{.data.ca\.crt}"', base64=True)
+    dex_ca_cert = KubectlGetSecretsKeywords(ssh_connection).get_secret_with_custom_output(secret_name="system-local-ca", namespace="cert-manager", output_format="jsonpath", extra_parameters=f'"{{.data.{cert}\\.crt}}"', base64=True)
     file_keywords.create_file_with_echo("/home/sysadmin/oidc/dex-ca-cert.crt", dex_ca_cert)
     KubectlCreateSecretsKeywords(ssh_connection).create_secret_generic(namespace="kube-system", secret_name="dex-ca-cert", tls_crt="/home/sysadmin/oidc/dex-ca-cert.crt")
-    local_ldap_ca_cert = KubectlGetSecretsKeywords(ssh_connection).get_secret_with_custom_output(secret_name="system-local-ca", namespace="cert-manager", output_format="jsonpath", extra_parameters='"{.data.ca\.crt}"', base64=True)
+    local_ldap_ca_cert = KubectlGetSecretsKeywords(ssh_connection).get_secret_with_custom_output(secret_name="system-local-ca", namespace="cert-manager", output_format="jsonpath", extra_parameters=f'"{{.data.{cert}\\.crt}}"', base64=True)
     file_keywords.create_file_with_echo("/home/sysadmin/oidc/local-ldap-ca-cert.crt", local_ldap_ca_cert)
     KubectlCreateSecretsKeywords(ssh_connection).create_secret_generic(namespace="kube-system", secret_name="local-ldap-ca-cert", tls_crt="/home/sysadmin/oidc/local-ldap-ca-cert.crt")
 

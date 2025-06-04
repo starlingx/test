@@ -35,11 +35,9 @@ class SystemAddrpoolListKeywords(BaseKeyword):
     
     def get_management_floating_address(self) -> str:
         """
-        Retrieves the floating address for the addrpool with name 'management-ipv4' or 'management-ipv6' depending on lab IP type.
+        Retrieves the floating address for the addrpool with name 'management'.
 
         Returns:
-            The floating address for the management-ipv4/ipv6.
+            The floating address for the name with management field.
         """
-        management_ip_type = "management-ipv6" if ConfigurationManager.get_lab_config().is_ipv6() else "management-ipv4"
-        system_addrpool_list_output = self.get_system_addrpool_list()
-        return system_addrpool_list_output.get_floating_address_by_name(management_ip_type)
+        return self.get_system_addrpool_list().get_floating_address_by_name("management")
