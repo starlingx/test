@@ -108,17 +108,20 @@ class GnssKeywords(BaseKeyword):
         cgu_location = f"/sys/kernel/debug/ice/{pci_address}/cgu"
 
         gpio_switch_port = ptp_config.get_host(host_name).get_nic(nic).get_gpio_switch_port()
+        if not gpio_switch_port:
+            raise Exception(f"GPIO switch port not configured for {hostname} {nic}")
 
-        export_cmd = f"[ ! -d /sys/class/gpio/gpio{gpio_switch_port} ] && " f"echo {gpio_switch_port} | sudo tee /sys/class/gpio/export > /dev/null"
-        gnss_ssh_connection.send_as_sudo(export_cmd)
+        # Export GPIO pin if not already exported
+        export_cmd = f"if [ ! -d /sys/class/gpio/gpio{gpio_switch_port} ]; then echo {gpio_switch_port} > /sys/class/gpio/export; fi"
+        gnss_ssh_connection.send(export_cmd)
 
         # Set direction to output
-        direction_cmd = f"echo out | tee /sys/class/gpio/gpio{gpio_switch_port}/direction > /dev/null"
-        gnss_ssh_connection.send_as_sudo(direction_cmd)
+        direction_cmd = f"echo out > /sys/class/gpio/gpio{gpio_switch_port}/direction"
+        gnss_ssh_connection.send(direction_cmd)
 
         # Set GPIO value to 1 (power on GNSS)
-        value_cmd = f"echo 1 | tee /sys/class/gpio/gpio{gpio_switch_port}/value > /dev/null"
-        gnss_ssh_connection.send_as_sudo(value_cmd)
+        value_cmd = f"echo 1 > /sys/class/gpio/gpio{gpio_switch_port}/value"
+        gnss_ssh_connection.send(value_cmd)
 
         self.validate_sma1_and_gnss_1pps_eec_pps_dpll_status_with_retry(hostname, cgu_location, timeout=1200, polling_interval=120)
 
@@ -140,16 +143,20 @@ class GnssKeywords(BaseKeyword):
         cgu_location = f"/sys/kernel/debug/ice/{pci_address}/cgu"
 
         gpio_switch_port = ptp_config.get_host(host_name).get_nic(nic).get_gpio_switch_port()
-        export_cmd = f"[ ! -d /sys/class/gpio/gpio{gpio_switch_port} ] && " f"echo {gpio_switch_port} | sudo tee /sys/class/gpio/export > /dev/null"
-        gnss_ssh_connection.send_as_sudo(export_cmd)
+        if not gpio_switch_port:
+            raise Exception(f"GPIO switch port not configured for {hostname} {nic}")
+
+        # Export GPIO pin if not already exported
+        export_cmd = f"if [ ! -d /sys/class/gpio/gpio{gpio_switch_port} ]; then echo {gpio_switch_port} > /sys/class/gpio/export; fi"
+        gnss_ssh_connection.send(export_cmd)
 
         # Set direction to output
-        direction_cmd = f"echo out | tee /sys/class/gpio/gpio{gpio_switch_port}/direction > /dev/null"
-        gnss_ssh_connection.send_as_sudo(direction_cmd)
+        direction_cmd = f"echo out > /sys/class/gpio/gpio{gpio_switch_port}/direction"
+        gnss_ssh_connection.send(direction_cmd)
 
         # Set GPIO value to 0 (power off GNSS)
-        value_cmd = f"echo 0 | tee /sys/class/gpio/gpio{gpio_switch_port}/value > /dev/null"
-        gnss_ssh_connection.send_as_sudo(value_cmd)
+        value_cmd = f"echo 0 > /sys/class/gpio/gpio{gpio_switch_port}/value"
+        gnss_ssh_connection.send(value_cmd)
 
         # Expected states for validation
         expected_cgu_input_state = "invalid"

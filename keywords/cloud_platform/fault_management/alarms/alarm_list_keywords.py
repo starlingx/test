@@ -132,15 +132,14 @@ class AlarmListKeywords(BaseKeyword):
         check_interval = self.get_check_interval_in_seconds()
         end_time = time.time() + self.get_timeout_in_seconds()
 
-        alarm_descriptions = ", ".join(self.alarm_to_str(alarm) for alarm in alarms)
-
+        alarm_descriptions = ", ".join(str(alarm) for alarm in alarms)
         while time.time() < end_time:
             observed_alarms = self.alarm_list()
             all_matched = True
             for expected_alarm_obj in alarms:
                 match_found = any(self.alarms_match(observed_alarm_obj, expected_alarm_obj) for observed_alarm_obj in observed_alarms)
                 if not match_found:
-                    get_logger().log_info(f"Expected alarm not found yet: {self.alarm_to_str(expected_alarm_obj)}")
+                    get_logger().log_info(f"Expected alarm not found yet: {expected_alarm_obj}")
                     all_matched = False
                     break
 
@@ -153,7 +152,7 @@ class AlarmListKeywords(BaseKeyword):
 
         # Final check before raising
         observed_alarms = self.alarm_list()
-        observed_alarm_str = [self.alarm_to_str(observed_alarm_obj) for observed_alarm_obj in observed_alarms]
+        observed_alarm_str = [str(observed_alarm_obj) for observed_alarm_obj in observed_alarms]
         raise TimeoutError(f"Timeout. Alarms not found:\nExpected: {alarm_descriptions}\nObserved alarms:\n" + "\n".join(observed_alarm_str))
 
     def alarms_match(self, observed_alarm_object: AlarmListObject, expected_alarm_object: AlarmListObject) -> bool:
@@ -185,18 +184,6 @@ class AlarmListKeywords(BaseKeyword):
 
         # Return True only if all three conditions are met.
         return id_matches and reason_text_matches and entity_id_matches
-
-    def alarm_to_str(self, alarm: AlarmListObject) -> str:
-        """
-        Formats an AlarmListObject into a human-readable string representation.
-
-        Args:
-            alarm (AlarmListObject): The alarm object to format.
-
-        Returns:
-            str: A string in the format "ID: <alarm_id>, Reason: <reason_text>, Entity: <entity_id>".
-        """
-        return f"[ID: {alarm.get_alarm_id()}, Reason: {alarm.get_reason_text()}, Entity: {alarm.get_entity_id()}]"
 
     def get_timeout_in_seconds(self) -> int:
         """

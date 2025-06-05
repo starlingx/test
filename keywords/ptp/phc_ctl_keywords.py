@@ -32,12 +32,13 @@ class PhcCtlKeywords(BaseKeyword):
         Get the current time of the PHC clock device
 
         Args:
-            device : may be either CLOCK_REALTIME, any /dev/ptpX device, or any ethernet device which supports ethtool's get_ts_info ioctl.
+            device (str): may be either CLOCK_REALTIME, any /dev/ptpX device, or any ethernet device which supports ethtool's get_ts_info ioctl.
 
         Example:
             phc_ctl[643764.828]: clock time is 1739856255.215802036 or Tue Feb 18 05:24:15 2025
 
         Returns:
+            str: output of command
         """
         output = self.ssh_connection.send_as_sudo(f"phc_ctl {device} get")
         self.validate_success_return_code(self.ssh_connection)
@@ -52,12 +53,13 @@ class PhcCtlKeywords(BaseKeyword):
         Compare the PHC clock device to CLOCK_REALTIME
 
         Args:
-            device : may be either CLOCK_REALTIME, any /dev/ptpX device, or any ethernet device which supports ethtool's get_ts_info ioctl.
+            device (str): may be either CLOCK_REALTIME, any /dev/ptpX device, or any ethernet device which supports ethtool's get_ts_info ioctl.
 
         Example:
             phc_ctl[645639.878]: offset from CLOCK_REALTIME is -37000000008ns
 
         Returns:
+            str: output of command
         """
         output = self.ssh_connection.send_as_sudo(f"phc_ctl {device} cmp")
         self.validate_success_return_code(self.ssh_connection)
@@ -72,13 +74,14 @@ class PhcCtlKeywords(BaseKeyword):
         Adjust the PHC clock by an amount of seconds provided
 
         Args:
-            device : may be either CLOCK_REALTIME, any /dev/ptpX device, or any ethernet device which supports ethtool's get_ts_info ioctl.
-            seconds :
+            device (str): may be either CLOCK_REALTIME, any /dev/ptpX device, or any ethernet device which supports ethtool's get_ts_info ioctl.
+            seconds (str): seconds
 
         Example:
             phc_ctl[646368.470]: adjusted clock by 0.000001 seconds
 
         Returns:
+            str: output of command
         """
         output = self.ssh_connection.send_as_sudo(f"phc_ctl {device} adj {seconds}")
         self.validate_success_return_code(self.ssh_connection)
@@ -93,13 +96,14 @@ class PhcCtlKeywords(BaseKeyword):
         Set the PHC clock time to the value specified in seconds. Defaults to reading CLOCK_REALTIME if no value is provided.
 
         Args:
-            device : may be either CLOCK_REALTIME, any /dev/ptpX device, or any ethernet device which supports ethtool's get_ts_info ioctl.
-            seconds :
+            device (str): may be either CLOCK_REALTIME, any /dev/ptpX device, or any ethernet device which supports ethtool's get_ts_info ioctl.
+            seconds (str): seconds
 
         Example :
             phc_ctl[647759.416]: set clock time to 1739860212.789318498 or Tue Feb 18 06:30:12 2025
 
         Returns:
+            str: output of command
         """
         if seconds:
             cmd = f"phc_ctl {device} set {seconds}"
@@ -156,7 +160,7 @@ class PhcCtlKeywords(BaseKeyword):
         run_as_root(f"nohup bash {remote_script_path} & echo $! > /tmp/phc_loop.pid")
 
         alarm_keywords = AlarmListKeywords(LabConnectionKeywords().get_active_controller_ssh())
-        alarm_descriptions = ", ".join(alarm_keywords.alarm_to_str(alarm_obj) for alarm_obj in alarms)
+        alarm_descriptions = ", ".join(str(alarm_obj) for alarm_obj in alarms)
 
         get_logger().log_info(f"Waiting for alarms: {alarm_descriptions}")
 
@@ -180,5 +184,5 @@ class PhcCtlKeywords(BaseKeyword):
         run_as_root("rm -f /tmp/phc_loop.sh /tmp/phc_loop.pid")
 
         if not all_matched:
-            observed_alarm_strs = [alarm_keywords.alarm_to_str(observed_alarm_obj) for observed_alarm_obj in observed_alarms]
+            observed_alarm_strs = [str(observed_alarm_obj) for observed_alarm_obj in observed_alarms]
             raise TimeoutError(f"Timeout: Expected alarms not found within {timeout}s.\n" f"Expected: {alarm_descriptions}\n" f"Observed:\n" + "\n".join(observed_alarm_strs))
