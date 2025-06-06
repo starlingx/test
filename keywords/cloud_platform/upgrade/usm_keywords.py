@@ -3,6 +3,7 @@ from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
 from framework.validation.validation import validate_equals_with_retry
 from keywords.base_keyword import BaseKeyword
+from keywords.cloud_platform.upgrade.objects.software_upload_output import SoftwareUploadOutput
 from keywords.cloud_platform.upgrade.software_show_keywords import SoftwareShowKeywords
 
 
@@ -16,7 +17,7 @@ class USMKeywords(BaseKeyword):
     def __init__(self, ssh_connection: SSHConnection):
         self.ssh_connection = ssh_connection
 
-    def upload_patch_file(self, patch_file_path: str) -> None:
+    def upload_patch_file(self, patch_file_path: str) -> SoftwareUploadOutput:
         """
         Upload a single patch file using 'software upload'.
 
@@ -25,11 +26,15 @@ class USMKeywords(BaseKeyword):
 
         Raises:
             KeywordException: On failure to upload.
+
+        Returns:
+            SoftwareUploadOutput: Parsed output containing details of the uploaded patch.
         """
         get_logger().log_info(f"Uploading patch file: {patch_file_path}")
         output = self.ssh_connection.send_as_sudo(f"software upload {patch_file_path}")
         self.validate_success_return_code(self.ssh_connection)
         get_logger().log_info("Upload completed:\n" + "\n".join(output))
+        return SoftwareUploadOutput(output)
 
     def upload_patch_dir(self, patch_dir_path: str) -> None:
         """
