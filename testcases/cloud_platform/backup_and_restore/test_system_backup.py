@@ -4,6 +4,7 @@ from framework.logging.automation_logger import get_logger
 from framework.validation.validation import validate_equals
 from keywords.cloud_platform.ansible_playbook.ansible_playbook_keywords import AnsiblePlaybookKeywords
 from keywords.cloud_platform.ansible_playbook.backup_files_upload_keywords import BackUpFilesUploadKeywords
+from keywords.cloud_platform.ansible_playbook.software_state_keywords import SoftwareStateKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.files.file_keywords import FileKeywords
 
@@ -23,6 +24,13 @@ def test_backup():
     backup_dir = "/opt/backups"
     local_backup_folder_path = "/tmp/bnr"
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+
+    # Patch/Software release state check before backup
+    patch_keywords = SoftwareStateKeywords(ssh_connection)
+    patch_state_output = patch_keywords.get_patch_state()
+    patch_states = patch_state_output.patch_states
+    get_logger().log_info(f"Patch/Software release states before backup: {patch_states}")
+
     get_logger().log_info("Delete old backup files if present in back up directory")
     backup_files = FileKeywords(ssh_connection).get_files_in_dir(backup_dir)
     for backup_file in backup_files:
