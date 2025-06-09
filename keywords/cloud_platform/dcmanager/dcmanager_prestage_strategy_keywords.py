@@ -9,7 +9,7 @@ class DcmanagerPrestageStrategyKeywords(BaseKeyword):
     This class contains all the keywords related to the 'dcmanager prestage-strategy' commands.
     """
 
-    def __init__(self, ssh_connection: SSHConnection) -> None:
+    def __init__(self, ssh_connection: SSHConnection) -> str:
         """
         Initializes DcmanagerPrestageStrategyKeywords.
 
@@ -17,6 +17,20 @@ class DcmanagerPrestageStrategyKeywords(BaseKeyword):
             ssh_connection (SSHConnection): The SSH connection object used for executing commands.
         """
         self.ssh_connection = ssh_connection
+
+    def get_dcmanager_prestage_strategy_abort(self) -> None:
+        """Gets the prestage-strategy abort."""
+        command = source_openrc("dcmanager prestage-strategy abort")
+        output = self.ssh_connection.send(command)
+        self.validate_success_return_code(self.ssh_connection)
+        return output
+
+    def get_dcmanager_prestage_strategy_apply(self) -> None:
+        """Gets the prestage-strategy apply."""
+        command = source_openrc("dcmanager prestage-strategy apply")
+        output = self.ssh_connection.send(command)
+        self.validate_success_return_code(self.ssh_connection)
+        return output
 
     def get_dcmanager_prestage_strategy_create(self) -> DcmanagerPrestageStrategyShowOutput:
         """
