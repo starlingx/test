@@ -53,7 +53,7 @@ class DcmanagerSubcloudPrestage(BaseKeyword):
 
         Args:
             subcloud (str): Subcloud name.
-            prestaging_packages (bool): Sets the value to check if should wait for prestaging-packages status or complete status.
+            prestaging_packages (bool): Sets the value to check if should wait for prestaging status or complete status.
             check_interval (int): Interval to wait before looping again.
             timeout (int): Sets the await timeout.
         """
@@ -67,7 +67,7 @@ class DcmanagerSubcloudPrestage(BaseKeyword):
             """
             prestaged = DcManagerSubcloudShowKeywords(self.ssh_connection).get_dcmanager_subcloud_show(subcloud).get_dcmanager_subcloud_show_object().get_prestage_status()
             if prestaging_packages:
-                return prestaged == "prestaging-packages"
+                return prestaged == "prestaging"
             else:
                 return prestaged == "complete"
 
