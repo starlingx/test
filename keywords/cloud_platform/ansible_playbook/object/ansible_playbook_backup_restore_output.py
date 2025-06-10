@@ -1,9 +1,9 @@
 from framework.logging.automation_logger import get_logger
 
 
-class AnsiblePlaybookBackUpOutput:
+class AnsiblePlaybookBackUpRestoreOutput:
     """
-    This class parses the output of 'Ansible-playbook backup' command to verify the output.
+    This class parses the output of 'Ansible-playbook backup and Restore' command to verify the output.
     """
 
     def __init__(self, cmd_output: str):
@@ -15,7 +15,7 @@ class AnsiblePlaybookBackUpOutput:
         """
         self.cmd_output = cmd_output
 
-    def validate_ansible_playbook_backup_result(self) -> bool:
+    def validate_ansible_playbook_backup_restore_result(self) -> bool:
         """
         Checks if the output contains all the expected values.
 
@@ -46,6 +46,6 @@ class AnsiblePlaybookBackUpOutput:
                 failed = [i for i in result if "failed" in i]
                 if failed:
                     if int(failed[0].split("=")[1]) == 0:
-                        successful_backup = True
-        get_logger().log_info(f"successful backup : {successful_backup}")
-        return successful_backup
+                        successful_backup_restore = True
+        get_logger().log_info(f"successful ansible : {successful_backup_restore}")
+        return successful_backup_restore

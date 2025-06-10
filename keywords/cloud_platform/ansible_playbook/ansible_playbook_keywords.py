@@ -1,7 +1,7 @@
 from config.configuration_manager import ConfigurationManager
 from framework.logging.automation_logger import get_logger
 from keywords.base_keyword import BaseKeyword
-from keywords.cloud_platform.ansible_playbook.object.ansible_playbook_backup_output import AnsiblePlaybookBackUpOutput
+from keywords.cloud_platform.ansible_playbook.object.ansible_playbook_backup_restore_output import AnsiblePlaybookBackUpRestoreOutput
 
 
 class AnsiblePlaybookKeywords(BaseKeyword):
@@ -21,7 +21,7 @@ class AnsiblePlaybookKeywords(BaseKeyword):
         Executes the `ansible-playbook` backup command and returns the parsed output.
 
         Args:
-            backup_dir (str): backuo playbook path
+            backup_dir (str): backup playbook path
             backup_registry (bool): backup registry
 
         Returns:
@@ -38,5 +38,33 @@ class AnsiblePlaybookKeywords(BaseKeyword):
         cmd_out = self.ssh_connection.send(command, reconnect_timeout=3600)
         self.validate_success_return_code(self.ssh_connection)
         get_logger().log_info("get ansible playbook backup output")
-        backup_output = AnsiblePlaybookBackUpOutput(cmd_out)
-        return backup_output.validate_ansible_playbook_backup_result()
+        backup_output = AnsiblePlaybookBackUpRestoreOutput(cmd_out)
+        return backup_output.validate_ansible_playbook_backup_restore_result()
+
+    def ansible_playbook_restore(self, backup_dir: str, restore_mode: str = "optimized", restore_registry: bool = True) -> bool:
+        """
+        Executes the ansible-playbook restore command
+
+        Args:
+            backup_dir (str): Directory where backup file is stored
+            restore_mode (str): Restore mode (default: optimized)
+            restore_registry (bool): Whether to restore the registry filesystem
+
+        Returns:
+            bool: True if restore succeeded
+        """
+        restore_playbook_path = "/usr/share/ansible/stx-ansible/playbooks/restore_platform.yml"
+        admin_password = ConfigurationManager.get_lab_config().get_admin_credentials().get_password()
+        restore_registry_arg = '-e "restore_registry_filesystem=true"' if restore_registry else ""
+
+        # Get the latest backup file
+        cmd = f"ls {backup_dir}/*_platform_backup_*.tgz | tail -n 1 | xargs basename"
+        backup_filename = self.ssh_connection.send(cmd)[0].strip()
+
+        command = f"ansible-playbook {restore_playbook_path} " f'-e "ansible_become_pass={admin_password}" ' f'-e "admin_password={admin_password}" ' f'-e "initial_backup_dir={backup_dir}" ' f'-e "backup_filename={backup_filename}" ' f'-e "restore_mode={restore_mode}" ' f"{restore_registry_arg}"
+
+        cmd_out = self.ssh_connection.send(command, reconnect_timeout=3600)
+        self.validate_success_return_code(self.ssh_connection)
+        get_logger().log_info("get ansible playbook restore output")
+        restore_output = AnsiblePlaybookBackUpRestoreOutput(cmd_out)
+        return restore_output.validate_ansible_playbook_backup_restore_result()
