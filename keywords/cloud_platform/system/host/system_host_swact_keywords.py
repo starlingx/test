@@ -21,17 +21,23 @@ class SystemHostSwactKeywords(BaseKeyword):
         """
         self.ssh_connection = ssh_connection
 
-    def host_swact(self):
+    def host_swact(self, force: bool = False):
         """
-        Does a swact action.
+        Performs a controller switchover action (swact).
+
         Args:
+            force: If True, forces the swact operation even if there are warnings.
+                If False, performs a normal swact without force option.
 
         Returns:
-
+            bool: True if swact was successful, raises exception otherwise.
         """
         active_controller = SystemHostListKeywords(self.ssh_connection).get_active_controller()
         standby_controller = SystemHostListKeywords(self.ssh_connection).get_standby_controller()
-        self.ssh_connection.send(source_openrc(f'system host-swact {active_controller.get_host_name()}'))
+        if force:
+            self.ssh_connection.send(source_openrc(f"system host-swact --force {active_controller.get_host_name()}"))
+        else:
+            self.ssh_connection.send(source_openrc(f"system host-swact {active_controller.get_host_name()}"))
         self.validate_success_return_code(self.ssh_connection)
         is_swact_success = self.wait_for_swact(active_controller, standby_controller)
         if not is_swact_success:

@@ -1,9 +1,25 @@
 {
+  // PTP Configuration Expectation for Compute Nodes
+  // This file defines the expected PTP configuration for compute nodes in the StarlingX system
+  // Values are derived from default.json5 and match the topology diagram
+  
+  // Service types:
+  // - TBC: Time Boundary Clock - Receives time from a master clock and distributes it to downstream clocks
+  // - TGM: Telecom Grandmaster - Acts as the primary source of time in the network (receives from GNSS or SMA)
+  // - T-TSC: Telecom Time Slave Clock - Synchronizes to an upstream master clock
+  
+  // Time sources:
+  // - GNSS: Global Navigation Satellite System provides time to Controller-0 NIC1
+  // - SMA: SubMiniature version A connector provides clock to Controller-0 NIC2
+  
   ptp_instances: {
 
     ptp4l: [
 
       {
+        // PTP1 instance - Telecom Grandmaster (TGM)
+        // Receives time from GNSS on Controller-0 NIC1
+        // Distributes time to controller-1 with Priority 100 (Master)
         name: "ptp1",
         instance_hostnames : ["compute-0", "controller-0", "controller-1"],
         instance_parameters: "priority2=100 tx_timestamp_timeout=700 boundary_clock_jbod=1 domainNumber=24 dataset_comparison=G.8275.x",
@@ -14,6 +30,9 @@
       },
 
       {
+        // PTP2 instance - Time Boundary Clock (TBC)
+        // Receives time from controller-0 PTP1 (GNSS source)
+        // Distributes time to External device type with Priority 110 (Master)
         name: "ptp2",
         instance_hostnames : [],
         instance_parameters: "priority2=110 dataset_comparison=G.8275.x tx_timestamp_timeout=700 boundary_clock_jbod=1 domainNumber=24",
@@ -24,6 +43,9 @@
       },
 
       {
+        // PTP3 instance - Telecom Grandmaster (TGM)
+        // Receives clock from SMA on Controller-0 NIC2
+        // Distributes time to controller-1 with Priority 100 (Master)
         name: "ptp3",
         instance_hostnames : ["controller-0", "compute-0"],
         instance_parameters: "priority2=100 dataset_comparison=G.8275.x tx_timestamp_timeout=700 boundary_clock_jbod=1 domainNumber=24",
@@ -34,6 +56,9 @@
       },
 
       {
+        // PTP4 instance - Time Boundary Clock (TBC)
+        // Receives time from controller-0 PTP3 (SMA clock source)
+        // Distributes time to Spirent Module2_port-5 with Priority 110 (Master)
         name: "ptp4",
         instance_hostnames : ["controller-1"],
         instance_parameters: "boundary_clock_jbod=1 tx_timestamp_timeout=700 priority2=110 dataset_comparison=G.8275.x domainNumber=24",
@@ -45,8 +70,12 @@
 
     ],
 
+    // phc2sys - Synchronizes system clock to PTP hardware clock
+    // Used to maintain time synchronization between hardware and system clocks
     phc2sys : [
         {
+          // PHC1 instance - Synchronizes controller-0 and compute-0 system clocks
+          // Uses controller-0's NIC1 connection to Spirent as reference
           name: "phc1",
           instance_hostnames : ["controller-0", "compute-0"],
           instance_parameters: "cmdline_opts='-s {{controller_0.nic1.conn_to_proxmox}} -O -37 -m'",
@@ -84,8 +113,12 @@
 
     ],
 
+    // ts2phc - Synchronizes PTP hardware clock to external time source
+    // Used with GNSS receivers to provide accurate time reference
     ts2phc : [
         {
+          // TS1 instance - Synchronizes controller-0 to GNSS time source
+          // Uses NMEA serial port for GNSS connection
           name: "ts1",
           instance_hostnames : ["controller-0", "compute-0"],
           instance_parameters: "ts2phc.nmea_serialport=/dev/gnss0",
@@ -96,6 +129,8 @@
     ],
     clock : [
       {
+        // Clock1 instance - Provides clock signals for controller-0 and compute-0
+        // Connects to SMA interfaces for physical clock distribution
         name: "clock1",
         instance_hostnames : ["controller-0","compute-0"],
         instance_parameters: "",
@@ -108,6 +143,8 @@
 
   },
 
+  // PTP Host Interfaces - Maps logical PTP interfaces to physical network interfaces
+  // Defines which physical interfaces are used for each PTP instance on each host
   ptp_host_ifs: [
     {
       name: "ptp1if1",
@@ -229,6 +266,8 @@
     },
   ],
   // This section is for validation purposes. All expected values are maintained here
+  // Used by test framework to verify correct PTP configuration and behavior
+  // Defines expected port states, parent-child relationships, and clock settings
   "expected_dict": {
     "ptp4l": [
       {

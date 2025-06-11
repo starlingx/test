@@ -6,9 +6,14 @@ from pytest import mark
 from config.configuration_manager import ConfigurationManager
 from framework.logging.automation_logger import get_logger
 from framework.resources.resource_finder import get_stx_resource_path
+from framework.validation.validation import validate_equals
 from keywords.cloud_platform.fault_management.alarms.alarm_list_keywords import AlarmListKeywords
 from keywords.cloud_platform.fault_management.alarms.objects.alarm_list_object import AlarmListObject
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
+from keywords.cloud_platform.system.host.system_host_list_keywords import SystemHostListKeywords
+from keywords.cloud_platform.system.host.system_host_lock_keywords import SystemHostLockKeywords
+from keywords.cloud_platform.system.host.system_host_reboot_keywords import SystemHostRebootKeywords
+from keywords.cloud_platform.system.host.system_host_swact_keywords import SystemHostSwactKeywords
 from keywords.cloud_platform.system.ptp.ptp_readiness_keywords import PTPReadinessKeywords
 from keywords.cloud_platform.system.ptp.ptp_setup_executor_keywords import PTPSetupExecutorKeywords
 from keywords.cloud_platform.system.ptp.ptp_teardown_executor_keywords import PTPTeardownExecutorKeywords
@@ -202,7 +207,7 @@ def test_ptp_operation_interface_down_and_up():
 
     get_logger().log_info(f"Waiting for PMC port states after interface {ctrl0_nic1_interface} goes down.")
     ptp_readiness_keywords = PTPReadinessKeywords(LabConnectionKeywords().get_ssh_for_hostname("controller-1"))
-    ptp_readiness_keywords.wait_for_port_state_appear_in_port_data_set("ptp1", "controller-1", ["MASTER", "MASTER"])
+    ptp_readiness_keywords.wait_for_port_state_appear_in_port_data_set("ptp1", ["MASTER", "MASTER"])
 
     get_logger().log_info(f"Verifying PMC data after interface {ctrl0_nic1_interface} goes down.")
     ptp_verify_config_keywords = PTPVerifyConfigKeywords(ssh_connection, ctrl0_nic1_iface_down_ptp_setup)
@@ -219,7 +224,7 @@ def test_ptp_operation_interface_down_and_up():
 
     get_logger().log_info(f"Waiting for PMC port states after interface {ctrl0_nic1_interface} comes up.")
     ptp_readiness_keywords = PTPReadinessKeywords(LabConnectionKeywords().get_ssh_for_hostname("controller-1"))
-    ptp_readiness_keywords.wait_for_port_state_appear_in_port_data_set("ptp1", "controller-1", ["SLAVE", "MASTER"])
+    ptp_readiness_keywords.wait_for_port_state_appear_in_port_data_set("ptp1", ["SLAVE", "MASTER"])
 
     get_logger().log_info(f"Verifying PMC data after interface {ctrl0_nic1_interface} comes up.")
     ptp_verify_config_keywords = PTPVerifyConfigKeywords(ssh_connection, ctrl0_nic1_iface_up_ptp_setup)
@@ -294,7 +299,7 @@ def test_ptp_operation_interface_down_and_up():
 
     get_logger().log_info(f"Waiting for PMC port states after interface {ctrl0_nic2_interface} goes down.")
     ptp_readiness_keywords = PTPReadinessKeywords(LabConnectionKeywords().get_ssh_for_hostname("controller-1"))
-    ptp_readiness_keywords.wait_for_port_state_appear_in_port_data_set("ptp4", "controller-1", ["MASTER", "MASTER"])
+    ptp_readiness_keywords.wait_for_port_state_appear_in_port_data_set("ptp4", ["MASTER", "MASTER"])
 
     get_logger().log_info(f"Verifying PMC data after interface {ctrl0_nic2_interface} goes down.")
     ptp_verify_config_keywords = PTPVerifyConfigKeywords(ssh_connection, ctrl0_nic2_iface_down_ptp_setup)
@@ -308,7 +313,7 @@ def test_ptp_operation_interface_down_and_up():
 
     get_logger().log_info(f"Waiting for PMC port states after interface {ctrl0_nic2_interface} comes up.")
     ptp_readiness_keywords = PTPReadinessKeywords(LabConnectionKeywords().get_ssh_for_hostname("controller-1"))
-    ptp_readiness_keywords.wait_for_port_state_appear_in_port_data_set("ptp4", "controller-1", ["SLAVE", "MASTER"])
+    ptp_readiness_keywords.wait_for_port_state_appear_in_port_data_set("ptp4", ["SLAVE", "MASTER"])
 
     get_logger().log_info(f"Verifying PMC data after interface {ctrl0_nic2_interface} comes up.")
     ptp_verify_config_keywords = PTPVerifyConfigKeywords(ssh_connection, ctrl0_nic2_iface_up_ptp_setup)
@@ -451,7 +456,7 @@ def test_ptp_operation_sma_disabled_and_enable():
 
     get_logger().log_info("Waiting for clock class after SMA1 is disabled")
     ptp_readiness_keywords = PTPReadinessKeywords(LabConnectionKeywords().get_ssh_for_hostname("controller-0"))
-    ptp_readiness_keywords.wait_for_clock_class_appear_in_grandmaster_settings_np("ptp3", "controller-0", 7)
+    ptp_readiness_keywords.wait_for_clock_class_appear_in_grandmaster_settings_np("ptp3", 7)
 
     get_logger().log_info("Verifying PMC data after SMA1 is disabled")
     ptp_verify_config_keywords = PTPVerifyConfigKeywords(ssh_connection, ctrl0_nic2_sma1_disable_exp_ptp_setup)
@@ -471,7 +476,7 @@ def test_ptp_operation_sma_disabled_and_enable():
 
     get_logger().log_info("Waiting for clock class after SMA1 is enabled")
     ptp_readiness_keywords = PTPReadinessKeywords(LabConnectionKeywords().get_ssh_for_hostname("controller-0"))
-    ptp_readiness_keywords.wait_for_clock_class_appear_in_grandmaster_settings_np("ptp3", "controller-0", 6)
+    ptp_readiness_keywords.wait_for_clock_class_appear_in_grandmaster_settings_np("ptp3", 6)
 
     get_logger().log_info("Verifying PMC data after SMA1 is enabled")
     ptp_verify_config_keywords = PTPVerifyConfigKeywords(ssh_connection, ctrl0_nic2_sma1_enable_exp_ptp_setup)
@@ -697,10 +702,10 @@ def test_ptp_operation_gnss_off_and_on():
     get_logger().log_info("Verifying clock class degradation after GNSS is off.")
     # The clock is in "Holdover" or "Degraded" mode
     ptp_readiness_keywords = PTPReadinessKeywords(LabConnectionKeywords().get_ssh_for_hostname("controller-0"))
-    ptp_readiness_keywords.wait_for_clock_class_appear_in_grandmaster_settings_np("ptp1", "controller-0", 248)
-    ptp_readiness_keywords.wait_for_clock_class_appear_in_grandmaster_settings_np("ptp3", "controller-0", 248)
+    ptp_readiness_keywords.wait_for_clock_class_appear_in_grandmaster_settings_np("ptp1", 248)
+    ptp_readiness_keywords.wait_for_clock_class_appear_in_grandmaster_settings_np("ptp3", 248)
     # GNSS loss
-    ptp_readiness_keywords.wait_for_gm_clock_class_appear_in_parent_data_set("ptp1", "controller-0", 165)
+    ptp_readiness_keywords.wait_for_gm_clock_class_appear_in_parent_data_set("ptp1", 165)
 
     get_logger().log_info("Verifying PMC configuration after GNSS is off.")
     ptp_verify_config_keywords = PTPVerifyConfigKeywords(ssh_connection, ctrl0_nic1_gnss_disable_exp_ptp_setup)
@@ -713,9 +718,9 @@ def test_ptp_operation_gnss_off_and_on():
     AlarmListKeywords(ssh_connection).wait_for_alarms_cleared([ptp1_not_locked_alarm_obj, ptp4_not_locked_alarm_obj, pps_signal_loss_alarm_obj, gnss_signal_loss_alarm_obj])
 
     get_logger().log_info("Verifying clock class restoration after GNSS is on.")
-    ptp_readiness_keywords.wait_for_clock_class_appear_in_grandmaster_settings_np("ptp1", "controller-0", 6)
-    ptp_readiness_keywords.wait_for_clock_class_appear_in_grandmaster_settings_np("ptp3", "controller-0", 6)
-    ptp_readiness_keywords.wait_for_gm_clock_class_appear_in_parent_data_set("ptp1", "controller-0", 6)
+    ptp_readiness_keywords.wait_for_clock_class_appear_in_grandmaster_settings_np("ptp1", 6)
+    ptp_readiness_keywords.wait_for_clock_class_appear_in_grandmaster_settings_np("ptp3", 6)
+    ptp_readiness_keywords.wait_for_gm_clock_class_appear_in_parent_data_set("ptp1", 6)
 
     get_logger().log_info("Verifying PMC configuration after GNSS is restored.")
     ctrl0_nic1_gnss_enable_exp_dict_overrides = {"ptp4l": [{"name": "ptp4", "controller-1": {"grandmaster_settings": {"clock_class": 165}}}]}
@@ -922,7 +927,7 @@ def test_ptp_operation_service_stop_start_restart():
 
     get_logger().log_info("Verifying degraded PMC values after service stop...")
     ptp_readiness_keywords = PTPReadinessKeywords(LabConnectionKeywords().get_ssh_for_hostname("controller-1"))
-    ptp_readiness_keywords.wait_for_gm_clock_class_appear_in_parent_data_set("ptp1", "controller-1", 165)
+    ptp_readiness_keywords.wait_for_gm_clock_class_appear_in_parent_data_set("ptp1", 165)
     ptp_verify_config_keywords = PTPVerifyConfigKeywords(ssh_connection, ctrl0_ptp1_service_stop_exp_ptp_setup)
     ptp_verify_config_keywords.verify_ptp_pmc_values(check_domain=False)
 
@@ -935,7 +940,7 @@ def test_ptp_operation_service_stop_start_restart():
     AlarmListKeywords(ssh_connection).wait_for_alarms_cleared([ctrl0_alarm, ctrl1_alarm])
 
     get_logger().log_info("Verifying full PMC configuration after service start...")
-    ptp_readiness_keywords.wait_for_gm_clock_class_appear_in_parent_data_set("ptp1", "controller-1", 6)
+    ptp_readiness_keywords.wait_for_gm_clock_class_appear_in_parent_data_set("ptp1", 6)
     start_exp_ptp_setup = ptp_setup_keywords.filter_and_render_ptp_config(ptp_setup_template_path, selected_instances)
     ptp_verify_config_keywords = PTPVerifyConfigKeywords(ssh_connection, start_exp_ptp_setup)
     ptp_verify_config_keywords.verify_ptp_pmc_values(check_domain=False)
@@ -951,5 +956,195 @@ def test_ptp_operation_service_stop_start_restart():
     get_logger().log_info("Verifying PMC configuration and clock class after service restart...")
     ptp_readiness_keywords = PTPReadinessKeywords(LabConnectionKeywords().get_ssh_for_hostname("controller-0"))
     ptp_readiness_keywords.wait_for_clock_class_appear_in_grandmaster_settings_np("ptp1", "controller-0", 6)
-    ptp_readiness_keywords.wait_for_gm_clock_class_appear_in_parent_data_set("ptp1", "controller-0", 6)
+    ptp_readiness_keywords.wait_for_gm_clock_class_appear_in_parent_data_set("ptp1", 6)
     ptp_verify_config_keywords.verify_ptp_pmc_values(check_domain=False)
+
+
+@mark.p1
+@mark.lab_has_compute
+@mark.lab_has_ptp_configuration_compute
+def test_ptp_host_operation_swact(request):
+    """
+    Verify PTP configuration persistence and functionality after controller swact.
+
+    Test Steps:
+        - Perform swact operation on the active controller
+        - Verify all PTP configurations remain intact after swact
+
+    Preconditions:
+        - System is set up with valid PTP configuration as defined in ptp_configuration_expectation_compute.json5.
+        - Both controllers are operational with one active and one standby.
+
+    Notes:
+        - This test validates that PTP services continue to function properly after a controller switchover
+        - The test will automatically swact back to the original controller at the end of the test
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    system_host_list_keywords = SystemHostListKeywords(ssh_connection)
+    active_controller = system_host_list_keywords.get_active_controller()
+    standby_controller = system_host_list_keywords.get_standby_controller()
+
+    get_logger().log_info("Performing controller swact operation")
+    system_host_swact_keywords = SystemHostSwactKeywords(ssh_connection)
+    system_host_swact_keywords.host_swact()
+    swact_success = system_host_swact_keywords.wait_for_swact(active_controller, standby_controller)
+    validate_equals(swact_success, True, "Host swact")
+
+    get_logger().log_info("Verifying all PTP configurations after swact")
+    ptp_setup_template_path = get_stx_resource_path("resources/ptp/setup/ptp_configuration_expectation_compute.json5")
+    ptp_setup_keywords = PTPSetupKeywords()
+    ptp_setup = ptp_setup_keywords.generate_ptp_setup_from_template(ptp_setup_template_path)
+    ptp_verify_config_keywords = PTPVerifyConfigKeywords(ssh_connection, ptp_setup)
+    ptp_verify_config_keywords.verify_all_ptp_configurations()
+
+    # if swact was successful, swact again at the end
+    def swact_controller():
+        get_logger().log_info("Starting teardown_swact(). Re-establishing the previous active/standby configuration of the controllers.")
+        system_host_list_keyword = SystemHostListKeywords(ssh_connection)
+        active_controller_teardown_before_swact = system_host_list_keyword.get_active_controller()
+        standby_controller_teardown_before_swact = system_host_list_keyword.get_standby_controller()
+        system_host_swact_keywords_teardown = SystemHostSwactKeywords(ssh_connection)
+        system_host_swact_keywords_teardown.host_swact()
+        system_host_swact_keywords_teardown.wait_for_swact(active_controller_teardown_before_swact, standby_controller_teardown_before_swact)
+
+    request.addfinalizer(swact_controller)
+
+
+@mark.p1
+@mark.lab_has_compute
+@mark.lab_has_ptp_configuration_compute
+def test_ptp_host_operation_lock_and_unlock():
+    """
+    Verify PTP configuration persistence and functionality after controller lock and unlock operations.
+
+    Test Steps:
+        - Lock the standby controller
+        - Unlock the standby controller
+        - Verify all PTP configurations remain intact after lock and unlock operations
+
+    Preconditions:
+        - System is set up with valid PTP configuration as defined in ptp_configuration_expectation_compute.json5
+        - Both controllers are operational with one active and one standby
+
+    Expected Results:
+        - Lock and unlock operations complete successfully
+        - PTP configuration remains intact and functional after operations
+        - No unexpected PTP alarms are present after operations
+
+    Notes:
+        - This test validates that PTP services continue to function properly after controller maintenance operations
+        - The test performs operations on the standby controller to minimize service disruption
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    system_host_list_keywords = SystemHostListKeywords(ssh_connection)
+    standby_controller = system_host_list_keywords.get_standby_controller()
+
+    get_logger().log_info("Performing lock operation on the standby controller")
+    lock_success = SystemHostLockKeywords(ssh_connection).lock_host(standby_controller.get_host_name())
+    validate_equals(lock_success, True, "Controller locked")
+
+    get_logger().log_info("Performing unlock operation on the standby controller")
+    unlock_success = SystemHostLockKeywords(ssh_connection).unlock_host(standby_controller.get_host_name())
+    validate_equals(unlock_success, True, "Controller unlocked")
+
+    get_logger().log_info("Waiting for PMC port states after lock and unlock host")
+    ptp_readiness_keywords = PTPReadinessKeywords(LabConnectionKeywords().get_ssh_for_hostname("controller-0"))
+    ptp_readiness_keywords.wait_for_port_state_appear_in_port_data_set("ptp1", ["MASTER", "MASTER"])
+    ptp_readiness_keywords = PTPReadinessKeywords(LabConnectionKeywords().get_ssh_for_hostname("controller-1"))
+    ptp_readiness_keywords.wait_for_port_state_appear_in_port_data_set("ptp1", ["SLAVE", "MASTER"])
+
+    get_logger().log_info("Verifying PTP configurations after lock and unlock operations")
+    ptp_setup_template_path = get_stx_resource_path("resources/ptp/setup/ptp_configuration_expectation_compute.json5")
+    ptp_setup_keywords = PTPSetupKeywords()
+    ptp_setup = ptp_setup_keywords.generate_ptp_setup_from_template(ptp_setup_template_path)
+    ptp_verify_config_keywords = PTPVerifyConfigKeywords(ssh_connection, ptp_setup)
+    ptp_verify_config_keywords.verify_all_ptp_configurations()
+
+
+@mark.p1
+@mark.lab_has_compute
+@mark.lab_has_ptp_configuration_compute
+def test_ptp_host_operation_reboot():
+    """
+    Verify PTP configuration persistence and functionality after controller reboot.
+
+    Test Steps:
+        - Lock, reboot, and unlock the standby controller
+        - Verify all PTP configurations remain intact after reboot
+
+    Preconditions:
+        - System is set up with valid PTP configuration as defined in ptp_configuration_expectation_compute.json5.
+        - Both controllers are operational with one active and one standby.
+
+    Notes:
+        - This test validates that PTP services continue to function properly after a controller reboot
+        - The test performs operations on the standby controller to avoid service disruption
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    system_host_list_keywords = SystemHostListKeywords(ssh_connection)
+    standby_controller = system_host_list_keywords.get_standby_controller()
+
+    get_logger().log_info("Performing controller reboot operation")
+    lock_success = SystemHostLockKeywords(ssh_connection).lock_host(standby_controller.get_host_name())
+    validate_equals(lock_success, True, "Controller locked")
+    reboot_success = SystemHostRebootKeywords(ssh_connection).host_reboot(standby_controller.get_host_name())
+    validate_equals(reboot_success, True, "Host reboot")
+    unlock_success = SystemHostLockKeywords(ssh_connection).unlock_host(standby_controller.get_host_name())
+    validate_equals(unlock_success, True, "Controller unlocked")
+
+    get_logger().log_info("Verifying all PTP configurations after reboot")
+    ptp_setup_template_path = get_stx_resource_path("resources/ptp/setup/ptp_configuration_expectation_compute.json5")
+    ptp_setup_keywords = PTPSetupKeywords()
+    ptp_setup = ptp_setup_keywords.generate_ptp_setup_from_template(ptp_setup_template_path)
+    ptp_verify_config_keywords = PTPVerifyConfigKeywords(ssh_connection, ptp_setup)
+    ptp_verify_config_keywords.verify_all_ptp_configurations()
+
+
+@mark.p1
+@mark.lab_has_compute
+@mark.lab_has_ptp_configuration_compute
+def test_ptp_host_operation_force_switchover(request):
+    """
+    Verify PTP configuration persistence and functionality after controller force switchover.
+
+    Test Steps:
+        - Performing controller force switchover operation
+        - Verify all PTP configurations remain intact after force switchover
+
+    Preconditions:
+        - System is set up with valid PTP configuration as defined in ptp_configuration_expectation_compute.json5
+        - Both controllers are operational with one active and one standby
+        - PTP services are running correctly before the test
+
+    Notes:
+        - This test validates that PTP services continue to function properly after a forced controller switchover
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    system_host_list_keywords = SystemHostListKeywords(ssh_connection)
+    active_controller = system_host_list_keywords.get_active_controller()
+    standby_controller = system_host_list_keywords.get_standby_controller()
+
+    get_logger().log_info("Performing controller force switchover operation")
+    system_host_swact_keywords = SystemHostSwactKeywords(ssh_connection)
+    system_host_swact_keywords.host_swact(force=True)
+    swact_success = system_host_swact_keywords.wait_for_swact(active_controller, standby_controller)
+    validate_equals(swact_success, True, "Host swact")
+
+    get_logger().log_info("Verifying all PTP configurations after force switchover")
+    ptp_setup_template_path = get_stx_resource_path("resources/ptp/setup/ptp_configuration_expectation_compute.json5")
+    ptp_setup_keywords = PTPSetupKeywords()
+    ptp_setup = ptp_setup_keywords.generate_ptp_setup_from_template(ptp_setup_template_path)
+    ptp_verify_config_keywords = PTPVerifyConfigKeywords(ssh_connection, ptp_setup)
+    ptp_verify_config_keywords.verify_all_ptp_configurations()
+
+    # if swact was successful, swact again at the end
+    def swact_controller():
+        get_logger().log_info("Starting teardown_swact(). Re-establishing the previous active/standby configuration of the controllers.")
+        system_host_list_keyword = SystemHostListKeywords(ssh_connection)
+        active_controller_teardown_before_swact = system_host_list_keyword.get_active_controller()
+        standby_controller_teardown_before_swact = system_host_list_keyword.get_standby_controller()
+        system_host_swact_keywords_teardown = SystemHostSwactKeywords(ssh_connection)
+        system_host_swact_keywords_teardown.host_swact()
+        system_host_swact_keywords_teardown.wait_for_swact(active_controller_teardown_before_swact, standby_controller_teardown_before_swact)
+
+    request.addfinalizer(swact_controller)

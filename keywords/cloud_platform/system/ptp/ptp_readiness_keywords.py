@@ -19,13 +19,12 @@ class PTPReadinessKeywords:
         """
         self.ssh_connection = ssh_connection
 
-    def wait_for_port_state_appear_in_port_data_set(self, name: str, hostname: str, expected_port_states: list[str]) -> None:
+    def wait_for_port_state_appear_in_port_data_set(self, name: str, expected_port_states: list[str]) -> None:
         """
         Waits until the port states observed in the port data set match the expected states, or times out.
 
         Args:
             name (str): Name of the PTP instance.
-            hostname (str): Hostname of the target system.
             expected_port_states (list[str]): List of expected port states to wait for.
 
         Raises:
@@ -51,15 +50,14 @@ class PTPReadinessKeywords:
 
             return observed_states
 
-        validate_equals_with_retry(lambda: check_port_state_in_port_data_set(name, hostname), expected_port_states, "port state in port data set", 120, 30)
+        validate_equals_with_retry(lambda: check_port_state_in_port_data_set(name), expected_port_states, "port state in port data set", 120, 30)
 
-    def wait_for_clock_class_appear_in_grandmaster_settings_np(self, name: str, hostname: str, expected_clock_class: int) -> None:
+    def wait_for_clock_class_appear_in_grandmaster_settings_np(self, name: str, expected_clock_class: int) -> None:
         """
         Waits until the clock class observed in the grandmaster settings np match the expected clock class, or times out.
 
         Args:
             name (str): Name of the PTP instance.
-            hostname (str): Hostname of the target system.
             expected_clock_class (int): expected clock class to wait for.
 
         Raises:
@@ -86,15 +84,14 @@ class PTPReadinessKeywords:
 
             return observed_clock_class
 
-        validate_equals_with_retry(lambda: get_clock_class_in_grandmaster_settings_np(name, hostname), expected_clock_class, "clock class in grandmaster settings np", 120, 30)
+        validate_equals_with_retry(lambda: get_clock_class_in_grandmaster_settings_np(name), expected_clock_class, "clock class in grandmaster settings np", 120, 30)
 
-    def wait_for_gm_clock_class_appear_in_parent_data_set(self, name: str, hostname: str, expected_gm_clock_class: int) -> None:
+    def wait_for_gm_clock_class_appear_in_parent_data_set(self, name: str, expected_gm_clock_class: int) -> None:
         """
         Waits until the gm clock class observed in the parent data set match the expected clock class, or times out.
 
         Args:
             name (str): Name of the PTP instance.
-            hostname (str): Hostname of the target system.
             expected_gm_clock_class (int): expected gm clock class to wait for.
 
         Raises:
@@ -121,4 +118,4 @@ class PTPReadinessKeywords:
 
             return observed_gm_clock_class
 
-        validate_equals_with_retry(lambda: get_gm_clock_class_in_parent_data_set(name, hostname), expected_gm_clock_class, "gm clock class in parent data set", 120, 30)
+        validate_equals_with_retry(lambda: get_gm_clock_class_in_parent_data_set(name), expected_gm_clock_class, "gm clock class in parent data set", 120, 30)
