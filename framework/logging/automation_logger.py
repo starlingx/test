@@ -25,7 +25,9 @@ class AutomationLogger(logging.getLoggerClass()):
         super().__init__(name, level)
         self.log_folder = None
         self.test_case_log_dir = None
-        self._step_counter = 0  # for use in test case step
+        self._test_case_step_counter = 0
+        self._setup_step_counter = 0
+        self._teardown_step_counter = 0
 
     def log(self, level: int, message: str, *args, **kwargs) -> None:
         """
@@ -130,24 +132,78 @@ class AutomationLogger(logging.getLoggerClass()):
         """
         return self.test_case_log_dir
 
-    def reset_step_counter(self) -> None:
-        """Reset the test step counter at the beginning of each test case."""
-        self._step_counter = 0
+    def reset_all_step_counters(self) -> None:
+        """Reset all internal step counters: setup, test case, and teardown."""
+        self._test_case_step_counter = 0
+        self._setup_step_counter = 0
+        self._teardown_step_counter = 0
 
     def log_test_case_step(self, description: str, numbered: bool = True) -> None:
         """
-        Log a test step with optional automatic numbering and a distinct 'TST' source.
+        Log a test case step with optional automatic numbering and a distinct 'TST' source.
 
         Args:
             description (str): A short description of the test step.
             numbered (bool): Whether to auto-increment and include the step number.
         """
         if numbered:
-            self._step_counter += 1
-            message = f"Test Step {self._step_counter}: {description}"
+            self._test_case_step_counter += 1
+        step_num = self._test_case_step_counter if numbered else None
+        banner_line = self._format_step_tag("Test", step_num, description)
+        self._log(logging.INFO, banner_line, None, stacklevel=2, extra={"source": "TST"})
+
+    def log_setup_step(self, description: str, numbered: bool = True) -> None:
+        """
+        Log a setup step with optional automatic numbering and a distinct 'TSU' source.
+
+        Args:
+            description (str): A short description of the setup step.
+            numbered (bool): Whether to auto-increment and include the step number.
+        """
+        if numbered:
+            self._setup_step_counter += 1
+        step_num = self._setup_step_counter if numbered else None
+        banner_line = self._format_step_tag("Setup", step_num, description)
+        self._log(logging.INFO, banner_line, None, stacklevel=2, extra={"source": "TSU"})
+
+    def log_teardown_step(self, description: str, numbered: bool = True) -> None:
+        """
+        Log a teardown step with optional automatic numbering and a distinct 'TTD' source.
+
+        Args:
+            description (str): A short description of the teardown step.
+            numbered (bool): Whether to auto-increment and include the step number.
+        """
+        if numbered:
+            self._teardown_step_counter += 1
+        step_num = self._teardown_step_counter if numbered else None
+        banner_line = self._format_step_tag("Teardown", step_num, description)
+        self._log(logging.INFO, banner_line, None, stacklevel=2, extra={"source": "TTD"})
+
+    def _format_step_tag(self, tag: str, step_number: int | None, description: str = "") -> str:
+        """
+        Format a standardized left-aligned single-line banner.
+
+        Args:
+            tag (str): The stage label (e.g., "SETUP", "TEST", "TEARDOWN").
+            step_number (int | None): Step number within the stage. Optional.
+            description (str): Step description.
+
+        Returns:
+            str: A left-aligned banner like:
+                -------------------- [ Test Step 2: Validate throughput ] ---------------------
+        """
+        banner_char = "-"
+        total_width = 90
+
+        label = tag.title()
+        if step_number is not None:
+            content = f"[ {label} Step {step_number}: {description} ]"
         else:
-            message = f"Test Step: {description}"
-        self._log(logging.INFO, message, None, stacklevel=2, extra={"source": "TST"})
+            content = f"[ {label}: {description} ]"
+
+        padding = total_width - len(content) - 1  # -1 for the leading space
+        return banner_char * 20 + " " + content + " " + banner_char * max(padding - 20, 0)
 
 
 @staticmethod
