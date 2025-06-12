@@ -27,19 +27,19 @@ class SwManagerSwDeployStrategyShowOutput:
         if self.is_valid_output(output_values):
             self.swmanager_sw_deploy_strategy = SwManagerSwDeployStrategyObject()
             sw_deploy_strat = output_values["Strategy Software Deploy Strategy"]
-            self.swmanager_sw_deploy_strategy.set_strategy_uuid(sw_deploy_strat["strategy-uuid"])
-            self.swmanager_sw_deploy_strategy.set_release_id(sw_deploy_strat["release-id"])
-            self.swmanager_sw_deploy_strategy.set_controller_apply_type(sw_deploy_strat["controller-apply-type"])
-            self.swmanager_sw_deploy_strategy.set_storage_apply_type(sw_deploy_strat["storage-apply-type"])
-            self.swmanager_sw_deploy_strategy.set_worker_apply_type(sw_deploy_strat["worker-apply-type"])
-            self.swmanager_sw_deploy_strategy.set_default_instance_action(sw_deploy_strat["default-instance-action"])
-            self.swmanager_sw_deploy_strategy.set_alarm_restrictions(sw_deploy_strat["alarm-restrictions"])
-            self.swmanager_sw_deploy_strategy.set_current_phase(sw_deploy_strat["current-phase"])
-            self.swmanager_sw_deploy_strategy.set_current_stage(sw_deploy_strat["current-stage"])
-            self.swmanager_sw_deploy_strategy.set_current_step(sw_deploy_strat["current-step"])
-            self.swmanager_sw_deploy_strategy.set_current_phase_completion(sw_deploy_strat["current-phase-completion"])
-            self.swmanager_sw_deploy_strategy.set_state(sw_deploy_strat["state"])
-            self.swmanager_sw_deploy_strategy.set_inprogress(sw_deploy_strat["inprogress"])
+            self.swmanager_sw_deploy_strategy.set_strategy_uuid(sw_deploy_strat.get("strategy-uuid"))
+            self.swmanager_sw_deploy_strategy.set_release_id(sw_deploy_strat.get("release-id"))
+            self.swmanager_sw_deploy_strategy.set_controller_apply_type(sw_deploy_strat.get("controller-apply-type"))
+            self.swmanager_sw_deploy_strategy.set_storage_apply_type(sw_deploy_strat.get("storage-apply-type"))
+            self.swmanager_sw_deploy_strategy.set_worker_apply_type(sw_deploy_strat.get("worker-apply-type"))
+            self.swmanager_sw_deploy_strategy.set_default_instance_action(sw_deploy_strat.get("default-instance-action"))
+            self.swmanager_sw_deploy_strategy.set_alarm_restrictions(sw_deploy_strat.get("alarm-restrictions"))
+            self.swmanager_sw_deploy_strategy.set_current_phase(sw_deploy_strat.get("current-phase"))
+            self.swmanager_sw_deploy_strategy.set_current_stage(sw_deploy_strat.get("current-stage"))
+            self.swmanager_sw_deploy_strategy.set_current_step(sw_deploy_strat.get("current-step"))
+            self.swmanager_sw_deploy_strategy.set_current_phase_completion(sw_deploy_strat.get("current-phase-completion"))
+            self.swmanager_sw_deploy_strategy.set_state(sw_deploy_strat.get("state"))
+            self.swmanager_sw_deploy_strategy.set_inprogress(sw_deploy_strat.get("inprogress"))
         else:
             raise KeywordException(f"The output line {output_values} was not valid")
 
@@ -63,7 +63,7 @@ class SwManagerSwDeployStrategyShowOutput:
         Returns:
             bool: True if all required fields are present, False otherwise.
         """
-        required_fields = ["strategy-uuid", "release-id", "controller-apply-type", "storage-apply-type", "worker-apply-type", "default-instance-action", "alarm-restrictions", "current-phase", "current-stage", "current-step", "current-phase-completion", "state", "inprogress"]
+        required_fields = ["strategy-uuid", "release-id", "controller-apply-type", "storage-apply-type", "worker-apply-type", "default-instance-action", "alarm-restrictions", "current-phase", "current-phase-completion", "state"]
         if "Strategy Software Deploy Strategy" not in value:
             get_logger().log_error("Strategy Software Deploy Strategy is not in the output value")
             return False

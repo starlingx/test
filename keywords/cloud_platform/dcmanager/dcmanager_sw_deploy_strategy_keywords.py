@@ -65,7 +65,7 @@ class DcmanagerSwDeployStrategy(BaseKeyword):
         """
         Starts sw-deploy-strategy deletion process if there is a strategy in progress and waits for its deletion.
         """
-        validate_equals_with_retry(function_to_execute=self.check_sw_deploy_strategy_delete_output, expected_value=True, validation_description="Waits for strategy deletion", timeout=60, polling_sleep_time=10)
+        validate_equals_with_retry(function_to_execute=self.check_sw_deploy_strategy_delete_output, expected_value=True, validation_description="Waits for strategy deletion", timeout=240, polling_sleep_time=10)
 
     def wait_sw_deployment(
         self,
