@@ -1,19 +1,19 @@
 from pytest import FixtureRequest, mark
 
-from starlingx.config.configuration_file_locations_manager import ConfigurationFileLocationsManager
-from starlingx.config.configuration_manager import ConfigurationManager
-from starlingx.framework.logging.automation_logger import get_logger
-from starlingx.framework.resources.resource_finder import get_stx_resource_path
-from starlingx.framework.ssh.ssh_connection import SSHConnection
-from starlingx.framework.validation.validation import validate_equals
-from starlingx.keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
-from starlingx.keywords.docker.images.docker_load_image_keywords import DockerLoadImageKeywords
-from starlingx.keywords.files.file_keywords import FileKeywords
-from starlingx.keywords.k8s.files.kubectl_file_delete_keywords import KubectlFileDeleteKeywords
-from starlingx.keywords.k8s.namespace.kubectl_get_namespaces_keywords import KubectlGetNamespacesKeywords
-from starlingx.keywords.k8s.pods.kubectl_apply_pods_keywords import KubectlApplyPodsKeywords
-from starlingx.keywords.k8s.pods.kubectl_get_pods_keywords import KubectlGetPodsKeywords
-from starlingx.keywords.k8s.secret.kubectl_create_secret_keywords import KubectlCreateSecretsKeywords
+from config.configuration_file_locations_manager import ConfigurationFileLocationsManager
+from config.configuration_manager import ConfigurationManager
+from framework.logging.automation_logger import get_logger
+from framework.resources.resource_finder import get_stx_resource_path
+from framework.ssh.ssh_connection import SSHConnection
+from framework.validation.validation import validate_equals
+from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
+from keywords.docker.images.docker_load_image_keywords import DockerLoadImageKeywords
+from keywords.files.file_keywords import FileKeywords
+from keywords.k8s.files.kubectl_file_delete_keywords import KubectlFileDeleteKeywords
+from keywords.k8s.namespace.kubectl_get_namespaces_keywords import KubectlGetNamespacesKeywords
+from keywords.k8s.pods.kubectl_apply_pods_keywords import KubectlApplyPodsKeywords
+from keywords.k8s.pods.kubectl_get_pods_keywords import KubectlGetPodsKeywords
+from keywords.k8s.secret.kubectl_create_secret_keywords import KubectlCreateSecretsKeywords
 
 
 @mark.p0

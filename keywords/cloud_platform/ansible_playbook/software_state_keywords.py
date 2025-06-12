@@ -1,12 +1,11 @@
-from wrcp.keywords.cloud_platform.software.patch.software_patch_keywords import SwPatchQueryKeywords
-
 from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
 from keywords.base_keyword import BaseKeyword
-from starlingx.keywords.cloud_platform.ansible_playbook.object.software_state_output import SoftwareStateOutput
-from starlingx.keywords.cloud_platform.upgrade.software_list_keywords import SoftwareListKeywords
-from starlingx.keywords.cloud_platform.version_info.cloud_platform_software_version import CloudPlatformSoftwareVersion
-from starlingx.keywords.cloud_platform.version_info.cloud_platform_version_manager import CloudPlatformVersionManager
+from keywords.cloud_platform.ansible_playbook.object.software_state_output import SoftwareStateOutput
+from keywords.cloud_platform.software.patch.software_patch_keywords import SwPatchQueryKeywords
+from keywords.cloud_platform.upgrade.software_list_keywords import SoftwareListKeywords
+from keywords.cloud_platform.version_info.cloud_platform_software_version import CloudPlatformSoftwareVersion
+from keywords.cloud_platform.version_info.cloud_platform_version_manager import CloudPlatformVersionManager
 
 
 class SoftwareStateKeywords(BaseKeyword):

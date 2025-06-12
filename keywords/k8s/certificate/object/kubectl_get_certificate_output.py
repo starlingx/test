@@ -1,5 +1,5 @@
-from starlingx.keywords.k8s.certificate.object.kubectl_cert_object import KubectlCertObject
-from starlingx.keywords.k8s.certificate.object.kubectl_get_certificate_table_parser import KubectlGetCertsTableParser
+from keywords.k8s.certificate.object.kubectl_cert_object import KubectlCertObject
+from keywords.k8s.certificate.object.kubectl_get_certificate_table_parser import KubectlGetCertsTableParser
 
 
 class KubectlGetCertsOutput:
