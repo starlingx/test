@@ -3,7 +3,7 @@ from typing import Any, Dict, List
 from keywords.ptp.setup.object.grandmaster_settings import GrandmasterSettings
 from keywords.ptp.setup.object.parent_data_set import ParentDataSet
 from keywords.ptp.setup.object.port_data_set import PortDataSet
-from keywords.ptp.setup.time_properties_data_set import TimePropertiesDataSet
+from keywords.ptp.setup.object.time_properties_data_set import TimePropertiesDataSet
 
 
 class PTP4LExpectedDict:

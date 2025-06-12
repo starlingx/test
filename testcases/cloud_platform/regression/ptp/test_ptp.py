@@ -1126,7 +1126,7 @@ def test_ptp_host_operation_force_switchover(request):
 
     get_logger().log_info("Performing controller force switchover operation")
     system_host_swact_keywords = SystemHostSwactKeywords(ssh_connection)
-    system_host_swact_keywords.host_swact(force=True)
+    system_host_swact_keywords.host_swact_force()
     swact_success = system_host_swact_keywords.wait_for_swact(active_controller, standby_controller)
     validate_equals(swact_success, True, "Host swact")
 

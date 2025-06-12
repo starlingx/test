@@ -291,7 +291,7 @@
           "parent_data_set" : {{ parent_data_set_tgm_default }},
           "time_properties_data_set": {{ time_properties_data_set_tgm_default }},
           "grandmaster_settings": {
-            "clock_class": 165,
+            "clock_class": [165, 248],
             "clock_accuracy": "0xfe",
             "offset_scaled_log_variance": "0xffff",
             "time_traceable": 0,
@@ -364,7 +364,15 @@
         "controller-1" : {
           "parent_data_set" : {{ parent_data_set_tgm_default }},
           "time_properties_data_set": {{ time_properties_data_set_tgm_default }},
-          "grandmaster_settings": {{ grandmaster_settings.grandmaster_settings_tbc_default }}, 
+          "grandmaster_settings": {
+            "clock_class": [165, 248],
+            "clock_accuracy": "0xfe",
+            "offset_scaled_log_variance": "0xffff",
+            "time_traceable": 0,
+            "frequency_traceable": 0,
+            "time_source": "0xa0",
+            "current_utc_offset_valid": 0
+          },
           "port_data_set": [
             {
               "interface": "{{ controller_1.nic2.nic_connection.interface  }}",

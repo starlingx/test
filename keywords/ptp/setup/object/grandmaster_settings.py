@@ -16,7 +16,8 @@ class GrandmasterSettings:
         """
         if "clock_class" not in expected_dict:
             raise Exception("Every expected dict should have a clock_class.")
-        self.clock_class = expected_dict["clock_class"]
+        clock_class = expected_dict["clock_class"]
+        self.clock_class = clock_class if isinstance(clock_class, list) else [clock_class]
 
         if "clock_accuracy" not in expected_dict:
             raise Exception("Every expected dict should have a clock_accuracy.")
@@ -42,12 +43,12 @@ class GrandmasterSettings:
             raise Exception("Every expected dict should have a current_utc_offset_valid.")
         self.current_utc_offset_valid = expected_dict["current_utc_offset_valid"]
 
-    def get_clock_class(self) -> int:
+    def get_clock_class(self) -> list:
         """
         Gets the clock class.
 
         Returns:
-            int: The clock class.
+            list: The clock class.
         """
         return self.clock_class
 
