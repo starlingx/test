@@ -8,6 +8,7 @@ from keywords.cloud_platform.dcmanager.dcmanager_prestage_strategy_keywords impo
 from keywords.cloud_platform.dcmanager.dcmanager_strategy_step_keywords import DcmanagerStrategyStepKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_list_keywords import DcManagerSubcloudListKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_prestage import DcmanagerSubcloudPrestage
+from keywords.cloud_platform.dcmanager.dcmanager_subcloud_show_keywords import DcManagerSubcloudShowKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_sw_deploy_strategy_keywords import DcmanagerSwDeployStrategy
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.cloud_platform.swmanager.swmanager_sw_deploy_strategy_keywords import SwManagerSwDeployStrategyKeywords
@@ -76,8 +77,7 @@ def swman_sw_deploy_strategy_create_apply(release: str):
     swman_deploy_kw = SwManagerSwDeployStrategyKeywords(central_ssh)
 
     get_logger().log_test_case_step("Through the VIM orchestration deploy the patch in the system controller")
-    swman_strat_out = swman_deploy_kw.get_sw_deploy_strategy_create(release=release, delete=True)
-    swman_obj = swman_strat_out.get_swmanager_sw_deploy_strategy_show()
+    swman_obj = swman_deploy_kw.get_sw_deploy_strategy_create(release=release, delete=True)
     get_logger().log_info(f"Created sw-deploy strategy: {swman_obj.get_strategy_uuid()} for release {swman_obj.get_release_id()}")
     get_logger().log_info(f"release = {release}  get_release_id = {swman_obj.get_release_id()}")
     get_logger().log_test_case_step("Apply the strategy")
@@ -114,6 +114,9 @@ def dcman_sw_deploy_strategy_create_apply(subcloud_name: str, release: str):
     central_ssh = LabConnectionKeywords().get_active_controller_ssh()
     dcman_sw_deploy_kw = DcmanagerSwDeployStrategy(central_ssh)
 
+    # before creating the strategy, waith for subcloud software_sync_status to out-of-sync
+    sc_show_obj = DcManagerSubcloudShowKeywords(central_ssh).wait_for_state(subcloud_name, field="software_sync_status", expected_status="in-sync")
+    validate_equals(sc_show_obj.get_software_sync_status(), "out-of-sync", "Ready to create the sw-deploy strategy.")
     get_logger().log_test_case_step(f"Create the sw-deploy strategy for {subcloud_name} with {release}")
     dcman_sw_deploy_kw.dcmanager_sw_deploy_strategy_create(subcloud_name=subcloud_name, sw_version=release)
     get_logger().log_test_case_step("Apply the strategy")
