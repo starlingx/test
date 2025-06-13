@@ -40,7 +40,7 @@ class DcmanagerPrestageStrategyKeywords(BaseKeyword):
         self.ssh_connection.send(command)
         self.validate_success_return_code(self.ssh_connection)
         # wait for apply to complete
-        return self.wait_for_state(["complete", "apply-failed"])
+        return self.wait_for_state(["complete", "failed"])
 
     def get_dcmanager_prestage_strategy_create(self, sysadmin_password: str, sw_deploy: bool = True) -> DcmanagerPrestageStrategyShowOutput:
         """Gets the prestage-strategy create.

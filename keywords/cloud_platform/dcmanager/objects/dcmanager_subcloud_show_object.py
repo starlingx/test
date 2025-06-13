@@ -1,6 +1,6 @@
 class DcManagerSubcloudShowObject:
-    """
-    This class represents a detailed subcloud as object.
+    """This class represents a detailed subcloud as object.
+
     This is typically the output of the 'dcmanager subcloud show <subcloud name>' command output table as shown below.
 
     +-----------------------------+----------------------------------+
@@ -26,6 +26,11 @@ class DcManagerSubcloudShowObject:
     """
 
     def __init__(self, id: str):
+        """Constructor for the DcManagerSubcloudShowObject class.
+
+        Args:
+            id (str): The unique identifier for the subcloud.
+        """
         self.id: str = id
         self.name: str
         self.description: str
@@ -417,6 +422,18 @@ class DcManagerSubcloudShowObject:
         Setter for the USM Sync Status
         """
         self.usm_sync_status = usm_sync_status
+
+    def get_software_sync_status(self) -> str:
+        """
+        Getter for the software Sync Status
+        """
+        return self.software_sync_status
+
+    def set_software_sync_status(self, software_sync_status: str):
+        """
+        Setter for the software Sync Status
+        """
+        self.software_sync_status = software_sync_status
 
     def get_region_name(self) -> str:
         """
