@@ -41,3 +41,12 @@ class SystemAddrpoolListKeywords(BaseKeyword):
             The floating address for the name with management field.
         """
         return self.get_system_addrpool_list().get_floating_address_by_name("management")
+
+    def get_management_gateway_address(self) -> str:
+        """
+        Retrieves the gateway address for the addrpool with name 'management'.
+
+        Returns:
+            The gateway address for the name with management field.
+        """
+        return self.get_system_addrpool_list().get_gateway_address_by_name("management")

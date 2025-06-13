@@ -39,7 +39,6 @@ class SystemAddrpoolListOutput:
 
     """
 
-
     def __init__(self, system_addrpool_list_output):
         """
         Constructor
@@ -54,15 +53,15 @@ class SystemAddrpoolListOutput:
             if self.is_valid_output(value):
                 self.system_addrpool.append(
                     SystemAddrpoolListObject(
-                        value['uuid'],
-                        value['name'],
-                        value['network'],
-                        value['order'],
-                        value['ranges'],
-                        value['floating_address'],
-                        value['controller0_address'],
-                        value['controller1_address'],
-                        value['gateway_address'],
+                        value["uuid"],
+                        value["name"],
+                        value["network"],
+                        value["order"],
+                        value["ranges"],
+                        value["floating_address"],
+                        value["controller0_address"],
+                        value["controller1_address"],
+                        value["gateway_address"],
                     )
                 )
             else:
@@ -88,19 +87,27 @@ class SystemAddrpoolListOutput:
             raise KeywordException(f"No addrpool with name {name} was found.")
         return addrpools[0].get_floating_address()
 
+    def get_gateway_address_by_name(self, name: str) -> str:
+        """
+        Gets the gateway address for the given name.
+
+        Args:
+            name: the name of the desired addrpool
+
+        Returns:
+            The floating address of the addrpool with the specified name.
+
+        """
+        addrpools = list(filter(lambda pool: name in pool.get_name(), self.system_addrpool))
+        if not addrpools:
+            raise KeywordException(f"No addrpool with name {name} was found.")
+        return addrpools[0].get_gateway_address()
+
     @staticmethod
     def is_valid_output(value):
-        required_keys = ['uuid', 'name', 'network', 'order', 'ranges', 'floating_address', 'controller0_address', 'controller1_address', 'gateway_address']
+        required_keys = ["uuid", "name", "network", "order", "ranges", "floating_address", "controller0_address", "controller1_address", "gateway_address"]
         for key in required_keys:
             if key not in value:
-                get_logger().log_error(f'{key} is not in the output value: {value}')
+                get_logger().log_error(f"{key} is not in the output value: {value}")
                 return False
         return True
-
-
-
-
-
-
-
-
