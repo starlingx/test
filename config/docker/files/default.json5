@@ -1,10 +1,70 @@
+// Example Docker registry configuration.
+//
+// This file is used as the default by ConfigurationManager.get_docker_config(),
+// unless overridden via the --docker_config_file CLI option or programmatically.
+//
+// Registry endpoints, credentials, and image manifest paths can be overridden at runtime
+// using --docker_config_file or set programmatically via ConfigurationManager.
+//
+// Registry Resolution Behavior:
+// - The "source_registry" field (if present) on an individual image in the manifest takes highest precedence.
+//   This allows different images within the same manifest to pull from different source registries.
+// - Use "manifest_registry_map" to override the source registry per manifest.
+// - Use "default_source_registry" as a global fallback if neither of the above is set.
+//   This is useful when all your images come from a single upstream source like DockerHub.
+//   The resolution priority is:
+//     1. source_registry (per image)
+//     2. manifest_registry_map (per manifest)
+//     3. default_source_registry (global fallback)
+//
+// Notes:
+// - Each registry must define a unique "registry_name", which acts as a logical key.
+//   This is referenced by:
+//   * the "source_registry" field in image manifests
+//   * the "manifest_registry_map" in this config file
+//   * the "default_source_registry" fallback below
+//
+// - "image_manifest_files" may include one or more YAML files.
+// - Each image listed in a manifest is pulled from its resolved source registry
+//   and pushed into the "local_registry" defined below.
+
 {
-  registries: {
-    "local_registry" : {
-        "registry_name": "local_registry",
-        "registry_url": "registry.local:9001",
-        "user_name": "test_user",
-        "password": "test_password",
-    }
+  "default_source_registry": "dockerhub",
+
+  "image_manifest_files": [
+    "resources/image_manifests/stx-test-images.yaml",
+    "resources/image_manifests/stx-test-images-invalid.yaml",
+    // "resources/image_manifests/harbor-test-images.yaml",
+    // "resources/stx-networking-images.yaml",
+  ],
+
+  "manifest_registry_map": {
+    "resources/image_manifests/stx-test-images.yaml": "dockerhub",
+    // "resources/image_manifests/stx-test-images-invalid.yaml": "dockerhub",
+    // "resources/image_manifests/harbor-test-images.yaml": "harbor",
+  },
+
+  "registries": {
+    "dockerhub": {
+      "registry_name": "dockerhub",
+      "registry_url": "docker.io",
+      "user_name": "",
+      "password": "",
+    },
+
+    // Example entry for a private registry such as Harbor:
+    // "harbor": {
+    //   "registry_name": "harbor",
+    //   "registry_url": "harbor.example.org:5000",
+    //   "user_name": "robot_user",
+    //   "password": "robot_token",
+    // }
+
+    "local_registry": {
+      "registry_name": "local_registry",
+      "registry_url": "registry.local:9001",
+      "user_name": "test_user",
+      "password": "test_password",
+    },
   }
 }

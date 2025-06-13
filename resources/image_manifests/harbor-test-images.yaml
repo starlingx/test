@@ -1,0 +1,31 @@
+# ------------------------------------------------------------------------------
+# Image Manifest: harbor-test-images.yaml
+#
+# This manifest defines one or more Docker images to be synchronized from a
+# Harbor registry into the local StarlingX registry.
+#
+# Purpose:
+# - Demonstrates syncing images from a private registry (Harbor).
+# - Used to verify that authentication and sync logic function correctly.
+#
+# Notes:
+# - Each image entry must include both `name` and `tag`.
+# - Use logical registry names (not raw URLs) in the `source_registry` field.
+#     - Must match a key under `registries` in `config/docker/files/default.json5`.
+#     - Examples: `harbor`, `dockerhub`
+# - Image names must include full namespace (e.g., `examplecorp/my-image`).
+# - Credentials for accessing private registries (like Harbor) are not specified here.
+#     - Authentication details (username, password, etc.) are configured in
+#       `config/docker/files/default.json5` under the corresponding `registries` entry.
+#        - This file defaults to `config/docker/files/default.json5`, but can be overridden using `--docker_config_file`.
+# - Registry resolution is handled dynamically via `ConfigurationManager`.
+# - Resolution priority (from most to least specific):
+#     1. `source_registry` field on the image entry (optional)
+#     2. `manifest_registry_map` in `config/docker/files/default.json5`
+#     3. `default_source_registry` in `config/docker/files/default.json5`
+# ------------------------------------------------------------------------------
+
+images:
+  - name: "harbor_user/network-soak-test"
+    tag: "latest"  # Example only; avoid using 'latest' in production or automated test environments.
+    source_registry: "harbor" # Logical registry name from docker config e.g. config/docker/files/default.json5.

@@ -1,0 +1,31 @@
+# ------------------------------------------------------------------------------
+# Image Manifest: stx-test-images-mixed-registries.yaml
+#
+# This manifest defines a mix of Docker images to be synchronized from multiple
+# source registries (e.g., DockerHub and Harbor) into the local registry.
+#
+# Purpose:
+# - Validates manifest-driven image sync logic across different registry backends.
+# - Demonstrates per-image control over the source registry via `source_registry`.
+#
+# Notes:
+# - Each image entry must include both `name` and `tag`.
+# - Use logical registry names (not raw URLs) in the `source_registry` field.
+#     - The name must match a key under `registries` in the Docker config file.
+#       - This file defaults to `config/docker/files/default.json5`, but can be overridden using `--docker_config_file`.
+#     - Examples: `dockerhub`, `harbor`
+# - Image names must include full namespace (e.g., starlingx/stx-keystone).
+# - Registry resolution is handled dynamically via ConfigurationManager.
+# - Resolution priority (from most to least specific):
+#     1. `source_registry` field on the image entry (optional)
+#     2. `manifest_registry_map` in config/docker/files/default.json5
+#     3. `default_source_registry` in config/docker/files/default.json5
+# ------------------------------------------------------------------------------
+images:
+  - name: "starlingx/stx-keystone"
+    tag: "master-debian-stable-20250530T120001Z.0"
+    source_registry: "dockerhub"
+
+  - name: "examplecorp/network-soak-test"
+    tag: "1.4.2"
+    source_registry: "harbor"  # Logical registry name from docker config e.g. config/docker/files/default.json5.
