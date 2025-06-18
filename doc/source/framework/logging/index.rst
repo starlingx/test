@@ -44,7 +44,9 @@ Logging Conventions
 Log messages are tagged with a **source** code:
 
 - ``AUT`` – General automation logs
-- ``TST`` – Structured test steps
+- ``TST`` – Structured test execution steps
+- ``TSU`` – Structured setup steps
+- ``TTD`` – Structured teardown steps
 - ``SSH`` – SSH commands and output
 - ``KEY`` – Keyword-level trace logs
 - ``EXC`` – Exception logs (stack traces)
@@ -83,26 +85,46 @@ The following methods are available:
      - Logs SSH commands sent and received
      - SSH
    * - ``log_test_case_step()``
-     - Structured, numbered test steps
+     - Structured, numbered test execution step
      - TST
+   * - ``log_setup_step()``
+     - Structured, numbered setup step
+     - TSU
+   * - ``log_teardown_step()``
+     - Structured, numbered teardown step
+     - TTD
 
-Structured Test Step Logging
-=============================
 
-Use `log_test_case_step()` to structure your test case flow:
+Structured Step Logging
+=======================
 
-.. code-block:: python
+The test framework supports structured logging for each stage of test execution:
+Setup, Execution, and Teardown.
 
-   get_logger().log_test_case_step("Lock the host")
-   get_logger().log_test_case_step("Assign label foo=bar")
-   get_logger().log_test_case_step("Verify label is assigned")
+Each stage has a corresponding logger method:
 
-This automatically prints:
+- get_logger().log_setup_step("...")
+- get_logger().log_test_case_step("...")
+- get_logger().log_teardown_step("...")
 
-.. code-block::
+These methods log clearly formatted, numbered steps using a consistent visual layout.
+Each stage uses its own prefix (TSU, TST, TTD) to aid visual scanning and support
+machine parsing or grep-based analysis.
 
-   Test Step 1: Lock the host
-   Test Step 2: Assign label foo=bar
-   Test Step 3: Verify label is assigned
+Example usage:
+::
 
-Step numbers are reset between tests using `
+   get_logger().log_setup_step("Connecting to system")
+   get_logger().log_test_case_step("Create PVC")
+   get_logger().log_teardown_step("Disconnecting from system")
+
+Example log output:
+::
+
+   [2025-06-18 16:44:01] TSU INFO    ... :: -------------------- [ Setup Step 1: Connecting to system ] -------------------------------
+   [2025-06-18 16:44:01] TST INFO    ... :: -------------------- [ Test Step 1: Create PVC ] ------------------------------------------
+   [2025-06-18 16:44:01] TTD INFO    ... :: -------------------- [ Teardown Step 1: Disconnecting from system ] -----------------------
+
+Each step banner auto-increments a counter and maintains consistent alignment
+regardless of description length. Counters reset automatically at the beginning
+of each test case.
