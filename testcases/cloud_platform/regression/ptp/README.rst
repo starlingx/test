@@ -153,58 +153,6 @@ Prerequisites
 3. Confirm all nodes are up and running
 4. PTP services should be configured but not necessarily synchronized
 
-Test Execution
-------------
-
-To run all PTP tests:
-
-.. code-block:: bash
-
-    python -m pytest starlingx/testcases/cloud_platform/regression/ptp/test_ptp.py -v
-
-To run a specific test:
-
-.. code-block:: bash
-
-    python -m pytest starlingx/testcases/cloud_platform/regression/ptp/test_ptp.py::test_ptp_operation_gnss_disable -v
-
-Test Cases
-=========
-
-test_ptp_operation_gnss_disable
------------------------------
-
-**Purpose**: Verify PTP behavior when GNSS signal is lost and then restored.
-
-**Steps**:
-1. Turn off GNSS for Controller-0 NIC1 using GPIO control
-2. Verify alarms are triggered (100.119)
-3. Verify clock class degradation (248 for holdover mode)
-4. Verify PMC configuration with GNSS off
-5. Turn GNSS back on
-6. Verify alarms clear
-7. Verify clock class restoration (6 for normal operation)
-8. Verify PMC configuration after restoration
-
-**Expected Results**: 
-- When GNSS is off, system should enter holdover mode with appropriate alarms
-- When GNSS is restored, system should return to normal operation with alarms cleared
-
-test_ptp_operation_phc_ctl_time_change
-------------------------------------
-
-**Purpose**: Verify PTP behavior when hardware clocks are manually adjusted.
-
-**Steps**:
-1. Start phc_ctl loop on controller-0 NIC1 to introduce time drift
-2. Verify out-of-tolerance alarms are triggered
-3. Stop the adjustment and verify alarms clear
-4. Repeat the process for controller-1 NIC2
-
-**Expected Results**:
-- Manual clock adjustments should trigger out-of-tolerance alarms
-- When adjustments stop, system should recover and alarms should clear
-
 Common Alarms
 ============
 
@@ -293,7 +241,7 @@ Common Issues and Solutions
      - Check for proper delay mechanism configuration
 
 Diagnostic Commands and Interpretation
---------------------------------
+================================
 
 Below are essential commands for diagnosing PTP issues, along with explanations of what to look for in the output:
 
@@ -350,17 +298,68 @@ Below are essential commands for diagnosing PTP issues, along with explanations 
 
 **Understanding Clock Class Values:**
 
-- **6**: Synchronized to primary reference (GNSS) - Optimal
-- **7**: Synchronized to primary reference but holdover capable - Good
-- **13-14**: Synchronized to application-specific source - Acceptable
-- **52**: Degraded reference but synchronized - Warning
+- **6**: Synchronized to primary reference (GNSS) - Highest accuracy
+- **7**: Synchronized to primary reference but in holdover - Starting to drift
+- **13-14**: Synchronized to application-specific source - Alternative reference
+- **52**: Degraded reference but synchronized - Reduced accuracy
+- **165**: Clock in holdover mode after losing synchronization - Drifting
 - **187**: In holdover but within specifications - Warning
 - **193**: In holdover, out of specifications - Problem
-- **248**: Default/Holdover/Uncalibrated - Problem
-- **255**: Slave-only clock - Normal for slave devices
+- **248**: Default/uncalibrated clock - Worst quality, complete loss
+- **255**: Slave-only clock - Receives time, never provides it
+
+**Clock Accuracy Values:**
+- **0x20**: "±25 nanoseconds - Highest accuracy with GNSS lock",
+- **0x21**: "±100 nanoseconds - Very high accuracy",
+- **0x22**: "±250 nanoseconds - High accuracy",
+- **0xFE**: "Unknown - Accuracy cannot be determined (typically in holdover)",
+- **0xFF**: "Reserved/Invalid - Not used for synchronization"
+
+**Port States:**
+- **MASTER**: "Port provides timing to downstream devices",
+- **SLAVE**: "Port receives timing from an upstream master",
+- **PASSIVE**: "Port is not currently used for synchronization",
+- **LISTENING**: "Port is monitoring the network but not synchronized",
+- **FAULTY**: "Port has detected a fault condition",
+- **DISABLED**: "Port is administratively disabled",
+- **UNCALIBRATED**: "Port is in the process of calibrating",
+- **PRE_MASTER**: "Port is transitioning to MASTER state"
+}
+
+** Flag Values:**
+- **time_traceable_1**: "Time is traceable to a primary reference (GNSS/UTC)",
+- **time_traceable_0**: "Time is not traceable to a primary reference",
+- **frequency_traceable_1**: "Frequency is traceable to a primary reference",
+- **frequency_traceable_0**: "Frequency is not traceable to a primary reference",
+- **current_utc_offset_valid_1**: "The UTC offset is valid and can be trusted",
+- **current_utc_offset_valid_0**: "The UTC offset is not valid and cannot be trusted"
+
+## Clock Accuracy Values
+
+| Accuracy Value | Description | Meaning in Tests |
+|----------------|-------------|------------------|
+| 0x20 | ±25 nanoseconds | Highest accuracy, typically with GNSS lock |
+| 0x21 | ±100 nanoseconds | Very high accuracy |
+| 0x22 | ±250 nanoseconds | High accuracy |
+| 0xFE | Unknown | Accuracy cannot be determined (typically in holdover) |
+| 0xFF | Reserved/Invalid | Not used for synchronization |
+
+## Port States
+
+| Port State | Description | Test Implications |
+|------------|-------------|-------------------|
+| MASTER | Port provides timing to downstream devices | Device is acting as time source |
+| SLAVE | Port receives timing from an upstream master | Device is synchronizing to another clock |
+| PASSIVE | Port is not currently used for synchronization | Monitoring only, not active in timing path |
+| LISTENING | Port is monitoring the network but not synchronized | Initial state or recovering from error |
+| FAULTY | Port has detected a fault condition | Problem with timing or physical connection |
+| DISABLED | Port is administratively disabled | Not participating in PTP |
+| UNCALIBRATED | Port is in the process of calibrating | Transitional state during initialization |
+| PRE_MASTER | Port is transitioning to MASTER state | Temporary state before becoming MASTER |
+
 
 References and Learning Resources
-===========================
+================================
 
 Standards and Specifications
 --------------------------

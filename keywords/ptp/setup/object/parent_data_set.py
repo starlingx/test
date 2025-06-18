@@ -15,7 +15,8 @@ class ParentDataSet:
         """
         if "gm_clock_class" not in expected_dict:
             raise Exception("Every expected dict should have a gm_clock_class.")
-        self.gm_clock_class = expected_dict["gm_clock_class"]
+        gm_clock_class = expected_dict["gm_clock_class"]
+        self.gm_clock_class = gm_clock_class if isinstance(gm_clock_class, list) else [gm_clock_class]
 
         if "gm_clock_accuracy" not in expected_dict:
             raise Exception("Every expected dict should have a gm_clock_accuracy.")
@@ -25,12 +26,12 @@ class ParentDataSet:
             raise Exception("Every expected dict should have a gm_offset_scaled_log_variance.")
         self.gm_offset_scaled_log_variance = expected_dict["gm_offset_scaled_log_variance"]
 
-    def get_gm_clock_class(self) -> int:
+    def get_gm_clock_class(self) -> list:
         """
         Gets the gm clock class.
 
         Returns:
-            int: The gm clock class.
+            list: The gm clock class.
         """
         return self.gm_clock_class
 

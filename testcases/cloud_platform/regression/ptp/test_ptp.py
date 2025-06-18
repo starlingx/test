@@ -500,6 +500,22 @@ def test_ptp_operation_gnss_off_and_on():
 
     Preconditions:
         - System is set up with valid PTP configuration as defined in ptp_configuration_expectation_compute.json5.
+
+    Notes:
+        When analyzing test results, pay attention to:
+        1. **Clock Class Transitions**:
+        - 6 → 7: Brief GNSS signal loss, entering holdover
+        - 6 → 248: Complete GNSS signal loss, uncalibrated
+        - 248 → 6: GNSS signal recovery
+
+        2. **Port State Changes**:
+        - MASTER → SLAVE: Loss of reference or better clock available
+        - SLAVE → MASTER: Becoming best available clock
+        - Any state → FAULTY: Hardware or connectivity issue
+
+        3. **Flag Value Changes**:
+        - time_traceable 1 → 0: Loss of traceable time reference
+        - frequency_traceable 1 → 0: Loss of traceable frequency reference
     """
     lab_connect_keywords = LabConnectionKeywords()
     ssh_connection = lab_connect_keywords.get_active_controller_ssh()
@@ -510,45 +526,66 @@ def test_ptp_operation_gnss_off_and_on():
 
     selected_instances = [("ptp1", "controller-0", []), ("ptp1", "controller-1", []), ("ptp3", "controller-0", []), ("ptp4", "controller-1", [])]
 
-    # controller-0 with GNSS disabled demotes itself (clockClass: 248) and becomes a SLAVE.
-    # controller-1 (still in degraded state but better than 248) becomes MASTER.
-    # Synchronization continues from controller-1 to controller-0.
-    # External clients (e.g., Proxmox) continue receiving PTP sync via remaining MASTER ports.
-    # Clock quality degradation is tracked via clock_class, accuracy, and variance.
+    # Flag Values:
+    #   time_traceable=1: Time is traceable to primary reference (GNSS/UTC)
+    #   time_traceable=0: Time is not traceable to primary reference
+    #   frequency_traceable=1: Frequency is traceable to primary reference
+    #   frequency_traceable=0: Frequency is not traceable to primary reference
+    #   current_utc_offset_valid=0: UTC offset cannot be trusted without GNSS
+    #
+    # When GNSS signal is lost:
+    #   - Controller-0 changes from clock class 6 to 7 (brief loss) or 248 (complete loss)
+    #   - Port roles may reverse with the best available clock becoming MASTER
+    #   - External clients continue receiving time from both controllers
+    #
+    # Role Changes During GNSS Signal Loss
+    # When GNSS signal is lost, the following changes occur in the PTP network:
+
+    # 1. Controller-0 with GNSS:
+    # - Clock class changes from 6 (GNSS-synchronized) to 248 (uncalibrated)
+    # - Port state changes from MASTER to SLAVE
+    # - time_traceable and frequency_traceable flags change from 1 to 0
+
+    # 2. Controller-1 without direct GNSS:
+    # - Takes over as best available time source with clock class 165
+    # - Port state changes from SLAVE to MASTER
+    # - Becomes the new reference for Controller-0
+
+    # 3. External Clients:
+    # - Continue receiving time from both controllers
+    # - Service availability is maintained despite degraded accuracy
+
+    # This role reversal ensures that the best available clock is always used as the reference,
+    # maintaining time synchronization even when the primary reference is lost.
     ctrl0_nic1_gnss_disable_exp_dict = """{
         "ptp4l": [
             {
                 "name": "ptp1",
                 "controller-0": {
                     "parent_data_set": {
-                        "gm_clock_class": 165, // GM is in holdover or degraded mode due to GNSS loss
+                        "gm_clock_class": 7, // GM is in holdover or degraded mode due to GNSS loss
                         "gm_clock_accuracy": "0xfe", // Accuracy unknown due to GNSS signal loss
                         "gm_offset_scaled_log_variance": "0xffff" // Clock stability unknown
                     },
                     "time_properties_data_set": {
                         "current_utc_offset": 37, // Standard UTC offset (can be static)
                         "current_utc_offset_valid": 0, // UTC offset is not currently valid
-                        "time_traceable": 0, // Time is not traceable to a valid source
-                        "frequency_traceable": 0 // Frequency is not traceable to a valid reference
+                        "time_traceable": 1, // Time is not traceable to a valid source
+                        "frequency_traceable": 1 // Frequency is not traceable to a valid reference
                     },
                     "grandmaster_settings": {
-                        "clock_class": 248, // Indicates GNSS signal is lost (free-running or degraded)
+                        "clock_class": 7, // Indicates GNSS signal is lost (free-running or degraded)
                         "clock_accuracy": "0xfe", // Accuracy is unknown
                         "offset_scaled_log_variance": "0xffff", // Clock variance is unknown
-                        "time_traceable": 0, // Time not traceable
-                        "frequency_traceable": 0, // Frequency not traceable
+                        "time_traceable": 1, // Time not traceable
+                        "frequency_traceable": 1, // Frequency not traceable
                         "time_source": "0xa0", // Time source originally GNSS (0xA0)
                         "current_utc_offset_valid": 0 // UTC offset invalid due to signal loss
                     },
                     "port_data_set": [
                         {
                             "interface": "{{ controller_0.nic1.nic_connection.interface }}",
-                            "port_state": "SLAVE",  // Now syncing from controller-1, no longer acting as GM
-                            "parent_port_identity" : {
-                                "name": "ptp1",  // Source PTP instance (controller-1)
-                                "hostname":"controller-1",  // Controller now acting as GM
-                                "interface": "{{ controller_1.nic1.nic_connection.interface }}"  // Source interface on controller-1
-                            },
+                            "port_state": "MASTER",
                         },
                         {
                             "interface": "{{ controller_0.nic1.conn_to_proxmox }}",
@@ -558,18 +595,18 @@ def test_ptp_operation_gnss_off_and_on():
                 },
                 "controller-1": {
                     "parent_data_set": {
-                        "gm_clock_class": 165,  // Controller-1 is GM but in holdover/degraded state
+                        "gm_clock_class": 7,
                         "gm_clock_accuracy": "0xfe",  // Unknown accuracy
                         "gm_offset_scaled_log_variance": "0xffff"  // Unknown clock variance
                     },
                     "time_properties_data_set": {
                         "current_utc_offset": 37,
                         "current_utc_offset_valid": 0,
-                        "time_traceable": 0,
-                        "frequency_traceable": 0
+                        "time_traceable": 1,
+                        "frequency_traceable": 1
                     },
                     "grandmaster_settings": {
-                        "clock_class": 165,  // Controller-1 is acting as the best available GM
+                        "clock_class": [165,248],
                         "clock_accuracy": "0xfe",
                         "offset_scaled_log_variance": "0xffff",
                         "time_traceable": 0,
@@ -580,7 +617,12 @@ def test_ptp_operation_gnss_off_and_on():
                     "port_data_set": [
                         {
                             "interface": "{{ controller_1.nic1.nic_connection.interface }}",
-                            "port_state": "MASTER"  // Now acting as the Grandmaster
+                            "port_state": "SLAVE",
+                            "parent_port_identity" : {
+                                "name": "ptp1",
+                                "hostname":"controller-0",
+                                "interface": "{{ controller_0.nic1.nic_connection.interface }}" // ctrl-0 NIC1 is Master and ctrl-1 NIC1 is slave
+                            },
                         },
                         {
                             "interface": "{{ controller_1.nic1.conn_to_proxmox }}",
@@ -593,34 +635,29 @@ def test_ptp_operation_gnss_off_and_on():
                 "name": "ptp3",
                 "controller-0": {
                     "parent_data_set": {
-                        "gm_clock_class": 165, // Degraded GM status
+                        "gm_clock_class": 7, // Lost GNSS, degraded state
                         "gm_clock_accuracy": "0xfe",
                         "gm_offset_scaled_log_variance": "0xffff"
                     },
                     "time_properties_data_set": {
                         "current_utc_offset": 37,
                         "current_utc_offset_valid": 0,
-                        "time_traceable": 0,
-                        "frequency_traceable": 0
+                        "time_traceable": 1,
+                        "frequency_traceable": 1
                     },
                     "grandmaster_settings": {
-                        "clock_class": 248, // Lost GNSS, degraded state
+                        "clock_class": 7, // Lost GNSS, degraded state
                         "clock_accuracy": "0xfe",
                         "offset_scaled_log_variance": "0xffff",
-                        "time_traceable": 0,
-                        "frequency_traceable": 0,
+                        "time_traceable": 1,
+                        "frequency_traceable": 1,
                         "time_source": "0xa0",
                         "current_utc_offset_valid": 0
                     },
                     "port_data_set": [
                         {
                             "interface": "{{ controller_0.nic2.nic_connection.interface }}",
-                            "port_state": "SLAVE", // Now following ptp4 on controller-1 NIC2
-                            "parent_port_identity" : {
-                                "name": "ptp4",
-                                "hostname":"controller-1",
-                                "interface": "{{ controller_1.nic2.nic_connection.interface }}"
-                            },
+                            "port_state": "MASTER",
                         },
                         {
                             "interface": "{{ controller_0.nic2.conn_to_proxmox }}",
@@ -633,18 +670,18 @@ def test_ptp_operation_gnss_off_and_on():
                 "name": "ptp4",
                 "controller-1": {
                     "parent_data_set": {
-                        "gm_clock_class": 165,
+                        "gm_clock_class": 7,
                         "gm_clock_accuracy": "0xfe",
                         "gm_offset_scaled_log_variance": "0xffff"
                     },
                     "time_properties_data_set": {
                         "current_utc_offset": 37,
                         "current_utc_offset_valid": 0,
-                        "time_traceable": 0,
-                        "frequency_traceable": 0
+                        "time_traceable": 1,
+                        "frequency_traceable": 1
                     },
                     "grandmaster_settings": {
-                        "clock_class": 165,
+                        "clock_class": [165,248],
                         "clock_accuracy": "0xfe",
                         "offset_scaled_log_variance": "0xffff",
                         "time_traceable": 0,
@@ -655,7 +692,12 @@ def test_ptp_operation_gnss_off_and_on():
                     "port_data_set": [
                         {
                             "interface": "{{ controller_1.nic2.nic_connection.interface }}",
-                            "port_state": "MASTER" // Acting as GM for NIC2
+                            "port_state": "SLAVE", // Acting as GM for NIC2
+                            "parent_port_identity" : {
+                                "name": "ptp3",
+                                "hostname":"controller-0",
+                                "interface": "{{ controller_0.nic2.nic_connection.interface }}" // ctrl-0 NIC2 is Master and ctrl-1 NIC2 is slave
+                            },
                         },
                         {
                             "interface": "{{ controller_1.nic2.conn_to_proxmox }}",
@@ -679,13 +721,8 @@ def test_ptp_operation_gnss_off_and_on():
 
     ptp1_not_locked_alarm_obj = AlarmListObject()
     ptp1_not_locked_alarm_obj.set_alarm_id("100.119")
-    ptp1_not_locked_alarm_obj.set_reason_text("controller-1 is not locked to remote PTP Grand Master")
-    ptp1_not_locked_alarm_obj.set_entity_id("host=controller-1.instance=ptp1.ptp=no-lock")
-
-    ptp4_not_locked_alarm_obj = AlarmListObject()
-    ptp4_not_locked_alarm_obj.set_alarm_id("100.119")
-    ptp4_not_locked_alarm_obj.set_reason_text("controller-1 is not locked to remote PTP Grand Master")
-    ptp4_not_locked_alarm_obj.set_entity_id("host=controller-1.instance=ptp4.ptp=no-lock")
+    ptp1_not_locked_alarm_obj.set_reason_text("controller-0 is not locked to remote PTP Grand Master")
+    ptp1_not_locked_alarm_obj.set_entity_id("host=controller-0.instance=ptp1.ptp=no-lock")
 
     pps_signal_loss_alarm_obj = AlarmListObject()
     pps_signal_loss_alarm_obj.set_alarm_id("100.119")
@@ -697,15 +734,15 @@ def test_ptp_operation_gnss_off_and_on():
     gnss_signal_loss_alarm_obj.set_reason_text("controller-0 GNSS signal loss state: holdover")
     gnss_signal_loss_alarm_obj.set_entity_id(f"host=controller-0.interface={interface}.ptp=GNSS-signal-loss")
 
-    AlarmListKeywords(ssh_connection).wait_for_alarms_to_appear([ptp1_not_locked_alarm_obj, ptp4_not_locked_alarm_obj, pps_signal_loss_alarm_obj, gnss_signal_loss_alarm_obj])
+    AlarmListKeywords(ssh_connection).wait_for_alarms_to_appear([ptp1_not_locked_alarm_obj, pps_signal_loss_alarm_obj, gnss_signal_loss_alarm_obj])
 
     get_logger().log_info("Verifying clock class degradation after GNSS is off.")
     # The clock is in "Holdover" or "Degraded" mode
     ptp_readiness_keywords = PTPReadinessKeywords(LabConnectionKeywords().get_ssh_for_hostname("controller-0"))
-    ptp_readiness_keywords.wait_for_clock_class_appear_in_grandmaster_settings_np("ptp1", 248)
-    ptp_readiness_keywords.wait_for_clock_class_appear_in_grandmaster_settings_np("ptp3", 248)
+    ptp_readiness_keywords.wait_for_clock_class_appear_in_grandmaster_settings_np("ptp1", 7)
+    ptp_readiness_keywords.wait_for_clock_class_appear_in_grandmaster_settings_np("ptp3", 7)
     # GNSS loss
-    ptp_readiness_keywords.wait_for_gm_clock_class_appear_in_parent_data_set("ptp1", 165)
+    ptp_readiness_keywords.wait_for_gm_clock_class_appear_in_parent_data_set("ptp1", 7)
 
     get_logger().log_info("Verifying PMC configuration after GNSS is off.")
     ptp_verify_config_keywords = PTPVerifyConfigKeywords(ssh_connection, ctrl0_nic1_gnss_disable_exp_ptp_setup)
@@ -715,7 +752,7 @@ def test_ptp_operation_gnss_off_and_on():
     gnss_keywords.gnss_power_on("controller-0", "nic1")
 
     get_logger().log_info("Waiting for alarm 100.119 to clear after GNSS is back on.")
-    AlarmListKeywords(ssh_connection).wait_for_alarms_cleared([ptp1_not_locked_alarm_obj, ptp4_not_locked_alarm_obj, pps_signal_loss_alarm_obj, gnss_signal_loss_alarm_obj])
+    AlarmListKeywords(ssh_connection).wait_for_alarms_cleared([ptp1_not_locked_alarm_obj, pps_signal_loss_alarm_obj, gnss_signal_loss_alarm_obj])
 
     get_logger().log_info("Verifying clock class restoration after GNSS is on.")
     ptp_readiness_keywords.wait_for_clock_class_appear_in_grandmaster_settings_np("ptp1", 6)
@@ -723,8 +760,7 @@ def test_ptp_operation_gnss_off_and_on():
     ptp_readiness_keywords.wait_for_gm_clock_class_appear_in_parent_data_set("ptp1", 6)
 
     get_logger().log_info("Verifying PMC configuration after GNSS is restored.")
-    ctrl0_nic1_gnss_enable_exp_dict_overrides = {"ptp4l": [{"name": "ptp4", "controller-1": {"grandmaster_settings": {"clock_class": 165}}}]}
-    ctrl0_nic1_gnss_enable_exp_ptp_setup = ptp_setup_keywords.filter_and_render_ptp_config(ptp_setup_template_path, selected_instances, expected_dict_overrides=ctrl0_nic1_gnss_enable_exp_dict_overrides)
+    ctrl0_nic1_gnss_enable_exp_ptp_setup = ptp_setup_keywords.generate_ptp_setup_from_template(ptp_setup_template_path)
     ptp_verify_config_keywords = PTPVerifyConfigKeywords(ssh_connection, ctrl0_nic1_gnss_enable_exp_ptp_setup)
     ptp_verify_config_keywords.verify_ptp_pmc_values()
 

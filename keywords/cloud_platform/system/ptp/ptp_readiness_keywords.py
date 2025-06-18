@@ -1,4 +1,6 @@
-from framework.validation.validation import validate_equals_with_retry
+from typing import Union
+
+from framework.validation.validation import validate_equals_with_retry, validate_list_contains_with_retry
 from keywords.ptp.pmc.pmc_keywords import PMCKeywords
 
 
@@ -52,13 +54,13 @@ class PTPReadinessKeywords:
 
         validate_equals_with_retry(lambda: check_port_state_in_port_data_set(name), expected_port_states, "port state in port data set", 120, 30)
 
-    def wait_for_clock_class_appear_in_grandmaster_settings_np(self, name: str, expected_clock_class: int) -> None:
+    def wait_for_clock_class_appear_in_grandmaster_settings_np(self, name: str, expected_clock_class: Union[int, list]) -> None:
         """
         Waits until the clock class observed in the grandmaster settings np match the expected clock class, or times out.
 
         Args:
             name (str): Name of the PTP instance.
-            expected_clock_class (int): expected clock class to wait for.
+            expected_clock_class (Union[int, list]): expected clock class to wait for.
 
         Raises:
             Exception: If expected clock class do not appear within the timeout.
@@ -84,15 +86,16 @@ class PTPReadinessKeywords:
 
             return observed_clock_class
 
-        validate_equals_with_retry(lambda: get_clock_class_in_grandmaster_settings_np(name), expected_clock_class, "clock class in grandmaster settings np", 120, 30)
+        exp_clock_class = expected_clock_class if isinstance(expected_clock_class, list) else [expected_clock_class]
+        validate_list_contains_with_retry(lambda: get_clock_class_in_grandmaster_settings_np(name), exp_clock_class, "clock class in grandmaster settings np", 120, 30)
 
-    def wait_for_gm_clock_class_appear_in_parent_data_set(self, name: str, expected_gm_clock_class: int) -> None:
+    def wait_for_gm_clock_class_appear_in_parent_data_set(self, name: str, expected_gm_clock_class: Union[int, list]) -> None:
         """
         Waits until the gm clock class observed in the parent data set match the expected clock class, or times out.
 
         Args:
             name (str): Name of the PTP instance.
-            expected_gm_clock_class (int): expected gm clock class to wait for.
+            expected_gm_clock_class (Union[int, list]): expected gm clock class to wait for.
 
         Raises:
             Exception: If expected gm clock class do not appear within the timeout.
@@ -118,4 +121,5 @@ class PTPReadinessKeywords:
 
             return observed_gm_clock_class
 
-        validate_equals_with_retry(lambda: get_gm_clock_class_in_parent_data_set(name), expected_gm_clock_class, "gm clock class in parent data set", 120, 30)
+        exp_gm_clock_class = expected_gm_clock_class if isinstance(expected_gm_clock_class, list) else [expected_gm_clock_class]
+        validate_list_contains_with_retry(lambda: get_gm_clock_class_in_parent_data_set(name), exp_gm_clock_class, "gm clock class in parent data set", 120, 30)

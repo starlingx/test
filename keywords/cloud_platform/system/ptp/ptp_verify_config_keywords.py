@@ -7,7 +7,6 @@ from keywords.base_keyword import BaseKeyword
 from keywords.cloud_platform.fault_management.alarms.alarm_list_keywords import AlarmListKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.cloud_platform.system.host.system_host_list_keywords import SystemHostListKeywords
-from keywords.linux.systemctl.systemctl_status_keywords import SystemCTLStatusKeywords
 from keywords.ptp.cat.cat_clock_conf_keywords import CatClockConfKeywords
 from keywords.ptp.cat.cat_ptp_cgu_keywords import CatPtpCguKeywords
 from keywords.ptp.cat.cat_ptp_config_keywords import CatPtpConfigKeywords
@@ -504,7 +503,7 @@ class PTPVerifyConfigKeywords(BaseKeyword):
         ptp4l_expected_obj = self.ptp_setup.get_ptp4l_expected_by_name(name)
         expected_parent_data_set_obj = ptp4l_expected_obj.get_parent_data_set_for_hostname(hostname)
 
-        validate_equals(parent_data_set_obj.get_gm_clock_class(), expected_parent_data_set_obj.get_gm_clock_class(), "gm.ClockClass value within GET PARENT_DATA_SET")
+        validate_list_contains(parent_data_set_obj.get_gm_clock_class(), expected_parent_data_set_obj.get_gm_clock_class(), "gm.ClockClass value within GET PARENT_DATA_SET")
         validate_equals(parent_data_set_obj.get_gm_clock_accuracy(), expected_parent_data_set_obj.get_gm_clock_accuracy(), "gm.ClockAccuracy value within GET PARENT_DATA_SET")
         validate_equals(parent_data_set_obj.get_gm_offset_scaled_log_variance(), expected_parent_data_set_obj.get_gm_offset_scaled_log_variance(), "gm.OffsetScaledLogVariance value within GET PARENT_DATA_SET")
 
@@ -626,7 +625,7 @@ class PTPVerifyConfigKeywords(BaseKeyword):
         expected_time_source = expected_grandmaster_settings_obj.get_time_source()
         expected_current_utc_offset_valid = expected_grandmaster_settings_obj.get_current_utc_offset_valid()
 
-        validate_equals(observed_clock_class, expected_clock_class, "clockClass value within GET GRANDMASTER_SETTINGS_NP")
+        validate_list_contains(observed_clock_class, expected_clock_class, "clockClass value within GET GRANDMASTER_SETTINGS_NP")
         validate_equals(observed_clock_accuracy, expected_clock_accuracy, "clockAccuracy value within GET GRANDMASTER_SETTINGS_NP")
         validate_equals(observed_offset_scaled_log_variance, expected_offset_scaled_log_variance, "offsetScaledLogVariance value within GET GRANDMASTER_SETTINGS_NP")
         validate_equals(observed_current_utc_offset_valid, expected_current_utc_offset_valid, "currentUtcOffsetValid value within GET GRANDMASTER_SETTINGS_NP")

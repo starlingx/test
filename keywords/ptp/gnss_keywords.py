@@ -112,12 +112,16 @@ class GnssKeywords(BaseKeyword):
             raise Exception(f"GPIO switch port not configured for {hostname} {nic}")
 
         # Export GPIO pin if not already exported
-        export_cmd = f"if [ ! -d /sys/class/gpio/gpio{gpio_switch_port} ]; then echo {gpio_switch_port} > /sys/class/gpio/export; fi"
+        export_cmd = f"if [ ! -d /sys/class/gpio/gpio{gpio_switch_port} ]; then echo {gpio_switch_port} > /sys/class/gpio/export; sleep 0.5; fi"
         gnss_ssh_connection.send(export_cmd)
+        # sleep needed even with retry loop
+        time.sleep(1)
 
         # Set direction to output
         direction_cmd = f"echo out > /sys/class/gpio/gpio{gpio_switch_port}/direction"
         gnss_ssh_connection.send(direction_cmd)
+        # sleep needed even with retry loop
+        time.sleep(1)
 
         # Set GPIO value to 1 (power on GNSS)
         value_cmd = f"echo 1 > /sys/class/gpio/gpio{gpio_switch_port}/value"
@@ -147,12 +151,16 @@ class GnssKeywords(BaseKeyword):
             raise Exception(f"GPIO switch port not configured for {hostname} {nic}")
 
         # Export GPIO pin if not already exported
-        export_cmd = f"if [ ! -d /sys/class/gpio/gpio{gpio_switch_port} ]; then echo {gpio_switch_port} > /sys/class/gpio/export; fi"
+        export_cmd = f"if [ ! -d /sys/class/gpio/gpio{gpio_switch_port} ]; then echo {gpio_switch_port} > /sys/class/gpio/export; sleep 0.5; fi"
         gnss_ssh_connection.send(export_cmd)
+        # sleep needed even with retry loop
+        time.sleep(1)
 
         # Set direction to output
         direction_cmd = f"echo out > /sys/class/gpio/gpio{gpio_switch_port}/direction"
         gnss_ssh_connection.send(direction_cmd)
+        # sleep needed even with retry loop
+        time.sleep(1)
 
         # Set GPIO value to 0 (power off GNSS)
         value_cmd = f"echo 0 > /sys/class/gpio/gpio{gpio_switch_port}/value"
