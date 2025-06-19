@@ -1,10 +1,13 @@
 from pytest import mark
 
+from config.configuration_manager import ConfigurationManager
 from framework.logging.automation_logger import get_logger
 from framework.validation.validation import validate_equals, validate_equals_with_retry, validate_str_contains
 from keywords.ceph.ceph_osd_pool_ls_detail_keywords import CephOsdPoolLsDetailKeywords
 from keywords.ceph.ceph_status_keywords import CephStatusKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
+from keywords.cloud_platform.system.application.system_application_apply_keywords import SystemApplicationApplyKeywords
+from keywords.cloud_platform.system.application.system_application_list_keywords import SystemApplicationListKeywords
 from keywords.cloud_platform.system.host.system_host_fs_keywords import SystemHostFSKeywords
 from keywords.cloud_platform.system.host.system_host_list_keywords import SystemHostListKeywords
 from keywords.cloud_platform.system.host.system_host_lock_keywords import SystemHostLockKeywords
@@ -12,7 +15,7 @@ from keywords.cloud_platform.system.storage.system_storage_backend_keywords impo
 
 
 @mark.p2
-@mark.lab_ceph_rook
+@mark.lab_rook_ceph
 def test_ceph_rook_host_fs_operation():
     """
     Test case: [TC_34893] host-fs cmd operations testing. This TC was migrated from cgcs.
@@ -200,7 +203,7 @@ def test_ceph_rook_capabilities_testing_open_model(request):
     get_logger().log_test_case_step("\n\nIt should be rejected if modifying min_replication value great than replication value.\n")
     new_min_replication_value = curr_replication + 1
     msg = system_storage_backend_keywords.system_storage_backend_modify_with_error(backend="ceph-rook", min_replication=new_min_replication_value)
-    validate_str_contains(msg[0], "must be greater than", f"system backend modify should be failed: {msg[0]}")
+    validate_str_contains(msg, "must be greater than", f"system backend modify should be failed: {msg}")
 
     curr_min_replication = system_storage_backend_keywords.get_system_storage_backend_list().get_system_storage_backend("ceph-rook").get_capabilities().get_min_replication()
 
@@ -249,3 +252,289 @@ def test_lock_unlock_multiple_hosts():
 
     get_logger().log_test_case_step("Checking ceph health after Lock/Unlock nodes.")
     ceph_status_keywords.wait_for_ceph_health_status(expect_health_status=True)
+
+
+@mark.p2
+@mark.lab_rook_ceph
+@mark.lab_is_simplex
+def test_ceph_rook_backend_deployment_model_operation_sx():
+    """
+    Test case: ceph-rook backend deployment model testing (SX).
+
+    Test Steps:
+        - Make sure ceph-rook is storage backend
+        - Make sure the deployment model is "open"
+        - Modifying deployment model "open" to "dedicated" should be rejected
+        - change deployment model to "controller"
+        - Modifying deployment model "controller" to "dedicated" should be rejected
+        - Modifying deployment model to open if necessary
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    system_storage_backend_keywords = SystemStorageBackendKeywords(ssh_connection)
+
+    get_logger().log_test_case_step("Check whether rook-ceph is configured as storage backend.")
+
+    if not system_storage_backend_keywords.get_system_storage_backend_list().is_backend_configured("ceph-rook"):
+        get_logger().log_test_case_step("Add rook-ceph as storage backend.")
+        system_storage_backend_keywords.system_storage_backend_add(backend="ceph-rook", confirmed=True)
+
+    backend_name = system_storage_backend_keywords.get_system_storage_backend_list().get_system_storage_backend("ceph-rook").get_backend()
+    get_logger().log_info(f"Backend is: {backend_name}")
+
+    get_logger().log_test_case_step("Get original backend deployment model.")
+    original_deployment_model = system_storage_backend_keywords.get_system_storage_backend_list().get_system_storage_backend("ceph-rook").get_capabilities().get_deployment_model()
+    get_logger().log_info(f"Original Capabilities deployment model is: {original_deployment_model}")
+    if original_deployment_model == "controller":
+        get_logger().log_test_case_step(f"Modify deployment_model from '{original_deployment_model}' to 'open'.")
+        system_storage_backend_keywords.system_storage_backend_modify(backend="ceph-rook", deployment_model="open")
+        curr_deployment_model = system_storage_backend_keywords.get_system_storage_backend_list().get_system_storage_backend("ceph-rook").get_capabilities().get_deployment_model()
+        validate_equals(curr_deployment_model, "open", "Current deployment model should be open.")
+
+    get_logger().log_test_case_step("Modify deployment_model from 'open' to 'dedicated' should be rejected in SX system.")
+    msg = system_storage_backend_keywords.system_storage_backend_modify_with_error(backend="ceph-rook", deployment_model="dedicated")
+    validate_str_contains(msg, "OSDs deployed", f"system backend modify should be failed: {msg}")
+
+    get_logger().log_test_case_step("Modify deployment_model from 'open' to 'controller'.")
+    system_storage_backend_keywords.system_storage_backend_modify(backend="ceph-rook", deployment_model="controller")
+    curr_deployment_model = system_storage_backend_keywords.get_system_storage_backend_list().get_system_storage_backend("ceph-rook").get_capabilities().get_deployment_model()
+    validate_equals(curr_deployment_model, "controller", f"Current deployment model should be {curr_deployment_model}.")
+
+    get_logger().log_test_case_step("Modify deployment_model from 'controller' to 'dedicated' should be rejected in SX system.")
+    msg = system_storage_backend_keywords.system_storage_backend_modify_with_error(backend="ceph-rook", deployment_model="dedicated")
+    validate_str_contains(msg, "not supported", f"system backend modify should be failed: {msg}")
+
+    if original_deployment_model == "open":
+        get_logger().log_test_case_step("Modify deployment_model from 'controller' to 'open'.")
+        system_storage_backend_keywords.system_storage_backend_modify(backend="ceph-rook", deployment_model="open")
+        curr_deployment_model = system_storage_backend_keywords.get_system_storage_backend_list().get_system_storage_backend("ceph-rook").get_capabilities().get_deployment_model()
+        validate_equals(curr_deployment_model, "open", "Current deployment model should be 'open'.")
+
+
+@mark.p2
+@mark.lab_rook_ceph
+@mark.lab_is_duplex
+def test_ceph_rook_backend_deployment_model_operation_dx():
+    """
+    Test case: ceph-rook backend deployment model testing (DX).
+
+    Test Steps:
+        - Make sure ceph-rook is storage backend
+        - Make sure the deployment model is "open"
+        - Modifying deployment model "open" to "dedicated" should be rejected
+        - change deployment model to "controller"
+        - check whether rook-ceph app auto re-applied
+        - Modifying deployment model "controller" to "dedicated" should be rejected
+        - Modifying deployment model to open if necessary
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    system_storage_backend_keywords = SystemStorageBackendKeywords(ssh_connection)
+
+    get_logger().log_test_case_step("Check whether rook-ceph is configured as storage backend.")
+    if not system_storage_backend_keywords.get_system_storage_backend_list().is_backend_configured("ceph-rook"):
+        get_logger().log_test_case_step("Add rook-ceph as storage backend.")
+        system_storage_backend_keywords.system_storage_backend_add(backend="ceph-rook", confirmed=True)
+
+    backend_name = system_storage_backend_keywords.get_system_storage_backend_list().get_system_storage_backend("ceph-rook").get_backend()
+    get_logger().log_info(f"Backend is: {backend_name}")
+
+    get_logger().log_test_case_step("Get original backend deployment model.")
+    original_deployment_model = system_storage_backend_keywords.get_system_storage_backend_list().get_system_storage_backend("ceph-rook").get_capabilities().get_deployment_model()
+    get_logger().log_info(f"Original Capabilities deployment model is: {original_deployment_model}")
+
+    if original_deployment_model == "controller":
+        get_logger().log_test_case_step(f"Modify deployment_model from '{original_deployment_model}' to 'open'.")
+        system_storage_backend_keywords.system_storage_backend_modify(backend="ceph-rook", deployment_model="open")
+        curr_deployment_model = system_storage_backend_keywords.get_system_storage_backend_list().get_system_storage_backend("ceph-rook").get_capabilities().get_deployment_model()
+        validate_equals(curr_deployment_model, "open", "Current deployment model should be open.")
+        get_logger().log_info("Wait for rook-ceph app auto reapplied")
+        app_name = "rook-ceph"
+        app_status_list = ["applying"]
+        SystemApplicationListKeywords(ssh_connection).validate_app_status_in_list(app_name, app_status_list, timeout=360, polling_sleep_time=5)
+        app_status_list = ["applied"]
+        SystemApplicationListKeywords(ssh_connection).validate_app_status_in_list(app_name, app_status_list, timeout=360, polling_sleep_time=10)
+
+    get_logger().log_test_case_step("Modify deployment_model from 'open' to 'dedicated' should be rejected in DX system.")
+    msg = system_storage_backend_keywords.system_storage_backend_modify_with_error(backend="ceph-rook", deployment_model="dedicated")
+    validate_str_contains(msg, "OSDs deployed", f"system backend modify should be failed: {msg}")
+
+    get_logger().log_test_case_step("Modify deployment_model from 'open' to 'controller'.")
+    system_storage_backend_keywords.system_storage_backend_modify(backend="ceph-rook", deployment_model="controller")
+    curr_deployment_model = system_storage_backend_keywords.get_system_storage_backend_list().get_system_storage_backend("ceph-rook").get_capabilities().get_deployment_model()
+    validate_equals(curr_deployment_model, "controller", f"Current deployment model should be {curr_deployment_model}.")
+    get_logger().log_info("Wait for rook-ceph app auto reapplied")
+    app_name = "rook-ceph"
+    app_status_list = ["applying"]
+    SystemApplicationListKeywords(ssh_connection).validate_app_status_in_list(app_name, app_status_list, timeout=360, polling_sleep_time=5)
+    app_status_list = ["applied"]
+    SystemApplicationListKeywords(ssh_connection).validate_app_status_in_list(app_name, app_status_list, timeout=360, polling_sleep_time=10)
+
+    get_logger().log_test_case_step("Modify deployment_model from 'controller' to 'dedicated' should be rejected in DX system.")
+    msg = system_storage_backend_keywords.system_storage_backend_modify_with_error(backend="ceph-rook", deployment_model="dedicated")
+    validate_str_contains(msg, "Unable to change", f"system backend modify should be failed: {msg}")
+
+    if original_deployment_model == "open":
+        get_logger().log_test_case_step("Modify deployment_model from 'controller' to 'open'.")
+        system_storage_backend_keywords.system_storage_backend_modify(backend="ceph-rook", deployment_model="open")
+        curr_deployment_model = system_storage_backend_keywords.get_system_storage_backend_list().get_system_storage_backend("ceph-rook").get_capabilities().get_deployment_model()
+        validate_equals(curr_deployment_model, "open", "Current deployment model should be 'open'.")
+        get_logger().log_info("Wait for rook-ceph app auto reapplied")
+        app_name = "rook-ceph"
+        app_status_list = ["applying"]
+        SystemApplicationListKeywords(ssh_connection).validate_app_status_in_list(app_name, app_status_list, timeout=360, polling_sleep_time=5)
+        app_status_list = ["applied"]
+        SystemApplicationListKeywords(ssh_connection).validate_app_status_in_list(app_name, app_status_list, timeout=360, polling_sleep_time=10)
+
+
+@mark.p2
+@mark.lab_rook_ceph
+def test_ceph_rook_backend_services_operation():
+    """
+    Test case: ceph-rook backend services testing.
+
+    Test Steps:
+        - Make sure ceph-rook is storage backend
+        - Test service block and ecblock could exist one only
+        - Test take off service is not support
+        - Add service if possible
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    system_storage_backend_keywords = SystemStorageBackendKeywords(ssh_connection)
+
+    get_logger().log_test_case_step("Check whether rook-ceph is configured as storage backend.")
+
+    if not system_storage_backend_keywords.get_system_storage_backend_list().is_backend_configured("ceph-rook"):
+        get_logger().log_test_case_step("Add rook-ceph as storage backend.")
+        system_storage_backend_keywords.system_storage_backend_add(backend="ceph-rook", confirmed=True)
+
+    backend_name = system_storage_backend_keywords.get_system_storage_backend_list().get_system_storage_backend("ceph-rook").get_backend()
+    get_logger().log_info(f"Backend is: {backend_name}")
+
+    get_logger().log_test_case_step("Get current services.")
+    curr_services = system_storage_backend_keywords.get_system_storage_backend_list().get_system_storage_backend("ceph-rook").get_services()
+    get_logger().log_info(f"Current Services are {curr_services}")
+
+    get_logger().log_test_case_step("Testing service block and ecblock could only exist one in system.")
+    if "ecblock" in curr_services:
+        new_services = f"block,{curr_services}"
+    elif "block," in curr_services:
+        new_services = f"ecblock,{curr_services}"
+    else:
+        new_services = f"block,ecblock,{curr_services}"
+
+    msg = system_storage_backend_keywords.system_storage_backend_modify_with_error(backend="ceph-rook", services=new_services)
+    validate_str_contains(msg, "not supported for the ceph-rook backend in same time", f"system backend modify should be rejected: {msg}")
+
+    get_logger().log_test_case_step("Removing service is not supported.")
+    # finding any one of the existing services, and then attempting to remove it
+    if "," not in curr_services:
+        # there is only one service
+        sub_str = curr_services
+    elif "object," in curr_services:
+        sub_str = "object,"
+    elif "block," in curr_services:
+        sub_str = "block,"
+    elif "ecblock," in curr_services:
+        sub_str = "ecblock,"
+    elif "filesystem," in curr_services:
+        sub_str = "filesystem,"
+    else:
+        raise ValueError(f"invalid services {curr_services}")
+    # remove sub_str
+    new_services = curr_services.replace(sub_str, "")
+    msg = system_storage_backend_keywords.system_storage_backend_modify_with_error(backend="ceph-rook", services=new_services)
+    validate_str_contains(msg, "is not supported", f"system backend modify should be rejected: {msg}")
+
+    if "block" not in curr_services and "ecblock" not in curr_services:
+        new_service = "block"
+    elif "filesystem" not in curr_services:
+        new_service = "filesystem"
+    elif "object" not in curr_services:
+        new_service = "object"
+    else:
+        raise ValueError("This system just has no new service available to add for this testing and it is not an issue")
+
+    get_logger().log_info("Make sure rook-ceph app in applied status")
+    app_name = "rook-ceph"
+    app_status_list = ["applied"]
+    SystemApplicationListKeywords(ssh_connection).validate_app_status_in_list(app_name, app_status_list, timeout=360, polling_sleep_time=10)
+    get_logger().log_test_case_step(f"Add new service: {new_service}.")
+    new_services = f"{new_service},{curr_services}"
+    system_storage_backend_keywords.system_storage_backend_modify(backend="ceph-rook", services=new_services)
+    get_logger().log_info("Wait for rook-ceph app auto reapply starts")
+    app_status_list = ["applying"]
+    SystemApplicationListKeywords(ssh_connection).validate_app_status_in_list(app_name, app_status_list, timeout=360, polling_sleep_time=5)
+    app_status_list = ["applied"]
+    SystemApplicationListKeywords(ssh_connection).validate_app_status_in_list(app_name, app_status_list, timeout=360, polling_sleep_time=10)
+
+    curr_services = system_storage_backend_keywords.get_system_storage_backend_list().get_system_storage_backend("ceph-rook").get_services()
+    get_logger().log_info(f"Current Services are {curr_services}")
+
+
+@mark.p2
+@mark.lab_rook_ceph
+def test_ceph_rook_backend_delete_negative_testing():
+    """
+    Test case: ceph-rook backend delete cmd testing.
+
+    Test Steps:
+        - Make sure ceph-rook is storage backend
+        - storage-backend-delete cmd negative test
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    system_storage_backend_keywords = SystemStorageBackendKeywords(ssh_connection)
+
+    get_logger().log_test_case_step("Check whether rook-ceph is configured as storage backend.")
+
+    if not system_storage_backend_keywords.get_system_storage_backend_list().is_backend_configured("ceph-rook"):
+        get_logger().log_test_case_step("Add rook-ceph as storage backend.")
+        system_storage_backend_keywords.system_storage_backend_add(backend="ceph-rook", confirmed=True)
+
+    backend_name = system_storage_backend_keywords.get_system_storage_backend_list().get_system_storage_backend("ceph-rook").get_backend()
+    get_logger().log_info(f"Backend is: {backend_name}")
+
+    get_logger().log_test_case_step("backend delete cmd negative testing")
+    get_logger().log_info("storage-backend-delete --force should not delete backend when rook-ceph app is applied.")
+    msg = system_storage_backend_keywords.system_storage_backend_delete_with_error(backend="ceph-rook")
+    validate_str_contains(msg, "Cannot delete", f"storage-backend-delete --force should not delete backend when app is applied: {msg}")
+
+    get_logger().log_info("storage-backend-delete missing argument --force should be not supported.")
+    msg = system_storage_backend_keywords.system_storage_backend_delete_without_force(backend="ceph-rook")
+    validate_str_contains(msg, "not supported", f"storage-delete missing --force not supported: {msg}")
+
+
+@mark.p2
+@mark.lab_rook_ceph
+def test_rook_ceph_applying_host_lock_reject_testing():
+    """
+    Test case: rook-ceph app applying host-lock reject testing (SX).
+
+    Test Steps:
+        - Make sure rook-ceph app in applied status
+        - Apply rook-ceph application to make storage_backend task in "applying" status.
+        - host-lock should be rejected.
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    lab_type = ConfigurationManager.get_lab_config().get_lab_type()
+
+    get_logger().log_test_case_step("Check whether rook-ceph app in applied status")
+    app_name = "rook-ceph"
+    app_status_list = ["applied"]
+    SystemApplicationListKeywords(ssh_connection).validate_app_status_in_list(app_name, app_status_list, timeout=360, polling_sleep_time=10)
+
+    get_logger().log_test_case_step("Re-apply rook-ceph and make the app in 'applying' status.")
+    app_status_list = ["applying"]
+    SystemApplicationApplyKeywords(ssh_connection).system_application_apply(app_name, wait_for_applied=False)
+    app_status = SystemApplicationListKeywords(ssh_connection).validate_app_status_in_list(app_name, app_status_list, timeout=60, polling_sleep_time=5)
+
+    get_logger().log_test_case_step(f"Host-lock should be rejected when app in '{app_status}' status.")
+    if lab_type == "Simplex":
+        lock_host = SystemHostListKeywords(ssh_connection).get_active_controller()
+    else:
+        lock_host = SystemHostListKeywords(ssh_connection).get_standby_controller()
+    lock_host_name = lock_host.get_host_name()
+    msg = SystemHostLockKeywords(ssh_connection).lock_host_with_error(lock_host_name)
+    validate_str_contains(msg, "Rejected: The application rook-ceph is in transition", f"system host-lock rejected: {msg}")
+
+    # Wait for rook-ceph in applied status
+    app_status_list = ["applied"]
+    SystemApplicationListKeywords(ssh_connection).validate_app_status_in_list(app_name, app_status_list, timeout=360, polling_sleep_time=10)

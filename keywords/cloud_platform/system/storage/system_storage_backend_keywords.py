@@ -75,7 +75,7 @@ class SystemStorageBackendKeywords(BaseKeyword):
         self.ssh_connection.send(source_openrc(f"system storage-backend-modify {backend}-store {extra_args}"))
         self.validate_success_return_code(self.ssh_connection)
 
-    def system_storage_backend_modify_with_error(self, backend: str, services: str = None, deployment_model: str = None, replication: int = 0, min_replication: int = 0) -> list[str]:
+    def system_storage_backend_modify_with_error(self, backend: str, services: str = None, deployment_model: str = None, replication: int = 0, min_replication: int = 0) -> str:
         """
         Run the "system storage-backend-modify" command with invalid arguments
 
@@ -86,7 +86,7 @@ class SystemStorageBackendKeywords(BaseKeyword):
             replication (int): new replication value
             min_replication (int): min_replication value
         Returns:
-             list[str]: a list of error msg
+             str: a str of error msg
         """
         extra_args = ""
         if deployment_model:
@@ -99,4 +99,39 @@ class SystemStorageBackendKeywords(BaseKeyword):
             extra_args += f"min_replication={min_replication} "
 
         msg = self.ssh_connection.send(source_openrc(f"system storage-backend-modify {backend}-store {extra_args}"))
-        return msg
+        return msg[0]
+
+    def system_storage_backend_delete(self, backend: str):
+        """
+        Delete the storage backend
+
+        Args:
+            backend (str): the backend name ceph or ceph-rook
+
+        """
+        self.ssh_connection.send(source_openrc(f"system storage-backend-delete {backend}-store --force"))
+        self.validate_success_return_code(self.ssh_connection)
+
+    def system_storage_backend_delete_with_error(self, backend: str) -> str:
+        """
+        Run the "system storage-backend-delete" command while rook-ceph app is applied
+
+        Args:
+            backend (str): the backend name ceph or ceph-rook
+        Returns:
+             str: a str of error msg
+        """
+        msg = self.ssh_connection.send(source_openrc(f"system storage-backend-delete {backend}-store --force"))
+        return msg[0]
+
+    def system_storage_backend_delete_without_force(self, backend: str) -> str:
+        """
+        storage-backend-delete cmd negative testing, Delete the storage backend cmd missed argument --force
+
+        Args:
+            backend (str): the backend name ceph or ceph-rook
+        Returns:
+             str: a list of error msg
+        """
+        msg = self.ssh_connection.send(source_openrc(f"system storage-backend-delete {backend}-store"))
+        return msg[0]
