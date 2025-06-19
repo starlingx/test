@@ -18,11 +18,12 @@ class DcManagerSubcloudAddKeywords(BaseKeyword):
         """
         self.ssh_connection = ssh_connection
 
-    def dcmanager_subcloud_add(self, subcloud_name: str):
+    def dcmanager_subcloud_add(self, subcloud_name: str, release_id: str = None):
         """Adds the subcloud using 'dcmanager subcloud add '.
 
         Args:
             subcloud_name (str): a str name for the subcloud.
+            release_id (str): a str name for the release_id.
 
         """
         # Get the subcloud config
@@ -38,9 +39,9 @@ class DcManagerSubcloudAddKeywords(BaseKeyword):
         # Get the subcloud bootstrap address
         boot_add = sc_config.get_first_controller().get_ip()
         admin_creds = sc_config.get_admin_credentials()
-
+        release = "" if release_id is None else f"--release {release_id}"
         # Execute the command
-        cmd = f"dcmanager subcloud add --bootstrap-address {boot_add} --bootstrap-values {bootstrap_file} --deploy-config {deploy_file} --sysadmin-password {admin_creds.get_password()} --bmc-password {sc_config.get_bm_password()} --install-values {install_file}"
+        cmd = f"dcmanager subcloud add --bootstrap-address {boot_add} --bootstrap-values {bootstrap_file} --deploy-config {deploy_file} --sysadmin-password {admin_creds.get_password()} --bmc-password {sc_config.get_bm_password()} --install-values {install_file} {release}"
         self.ssh_connection.send(source_openrc(cmd))
         self.validate_success_return_code(self.ssh_connection)
 
@@ -78,7 +79,6 @@ class DcManagerSubcloudAddKeywords(BaseKeyword):
             install_values (str): Install values file name.
             deploy_config_file (str): Deployment config file name.
         """
-
         lab_config = ConfigurationManager.get_lab_config()
         subcloud_obj = lab_config.get_subcloud(subcloud_name)
 

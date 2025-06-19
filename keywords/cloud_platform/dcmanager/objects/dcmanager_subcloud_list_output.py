@@ -227,6 +227,9 @@ class DcManagerSubcloudListOutput:
 
         Returns:
             str: The name of the first subcloud that is not deployed or None.
+
+        Raises:
+            Exception: If no subclouds are found in the lab configuration for the given type.
         """
         # fetch all the subclouds from the system
         deployed_sc_names = [i.get_name() for i in self.dcmanager_subclouds]
@@ -235,15 +238,15 @@ class DcManagerSubcloudListOutput:
         # fetch all the subclouds from the lab config
         sc_names_from_config = lab_config.get_subclouds_name_by_type(lab_type)
 
-        # return None if there is no subcloud in the config for the given type
+        # raise if there is no subcloud in the config for the given type
         if not sc_names_from_config:
-            return None
+            raise Exception("No Subcloud in lab config")
 
         all_free_sc = set(sc_names_from_config).difference(set(deployed_sc_names))
 
         if not all_free_sc:
-            return None
-
+            raise Exception("No free subclouds available.")
+        get_logger().log_info(all_free_sc)
         return all_free_sc.pop()
 
     def get_healthy_subcloud_by_type(self, lab_type: str) -> DcManagerSubcloudListObject:
