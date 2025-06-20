@@ -95,3 +95,18 @@ class DcmanagerSwDeployStrategy(BaseKeyword):
             timeout=timeout,
             polling_sleep_time=check_interval,
         )
+
+    def dc_manager_sw_deploy_strategy_create_apply_delete(self, subcloud_name: str, release: str):
+        """
+        Runs dcmanager sw-deploy-strategy create / apply / delete commands.
+
+        Args:
+            subcloud_name (str): The subcloud name.
+            release (str): The software version to be deployed.
+        """
+        get_logger().log_test_case_step(f"Create the sw-deploy strategy for {subcloud_name} with {release}")
+        self.dcmanager_sw_deploy_strategy_create(subcloud_name, release)
+        get_logger().log_test_case_step("Apply the sw-deploy strategy")
+        self.dcmanager_sw_deploy_strategy_apply(subcloud_name)
+        get_logger().log_test_case_step("Delete the sw-deploy strategy")
+        self.dcmanager_sw_deploy_strategy_delete()
