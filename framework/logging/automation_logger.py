@@ -191,10 +191,10 @@ class AutomationLogger(logging.getLoggerClass()):
 
         Returns:
             str: A left-aligned banner like:
-                -------------------- [ Test Step 2: Validate throughput ] ---------------------
+                ----- [ Test Step 2: Validate throughput ] -----------
         """
         banner_char = "-"
-        total_width = 90
+        total_width = 60
 
         label = tag.title()
         if step_number is not None:
@@ -203,7 +203,7 @@ class AutomationLogger(logging.getLoggerClass()):
             content = f"[ {label}: {description} ]"
 
         padding = total_width - len(content) - 1  # -1 for the leading space
-        return banner_char * 20 + " " + content + " " + banner_char * max(padding - 20, 0)
+        return banner_char * 5 + " " + content + " " + banner_char * max(padding - 5, 0)
 
 
 @staticmethod

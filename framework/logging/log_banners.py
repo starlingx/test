@@ -72,7 +72,7 @@ def log_testcase_stage_banner(stage: str, test_name: str) -> None:
         stage (str): One of 'Setup', 'Execution', or 'Teardown'.
         test_name (str): The name of the test case.
     """
-    total_width = 90
+    total_width = 60
     banner_char = "="  # Change this to customize the banner character (e.g., '-', '#', '*')
 
     banner_text = f"Starting {stage}: {test_name}"
