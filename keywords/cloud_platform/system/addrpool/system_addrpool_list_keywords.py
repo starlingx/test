@@ -50,3 +50,21 @@ class SystemAddrpoolListKeywords(BaseKeyword):
             The gateway address for the name with management field.
         """
         return self.get_system_addrpool_list().get_gateway_address_by_name("management")
+
+    def get_admin_gateway_address(self) -> str:
+        """
+        Retrieves the gateway address for the addrpool with name 'admin'.
+
+        Args:
+            ipv4 (bool): If ipv4 is True, searches for <network>-ipv4,
+            if not, searches for <network>-ipv6.
+
+        Returns:
+            The gateway address for the name with management field.
+        """
+        lab_config = ConfigurationManager.get_lab_config()
+        if lab_config.is_ipv6():
+            net_type = "ipv6"
+        else:
+            net_type = "ipv4"
+        return self.get_system_addrpool_list().get_gateway_address_by_name(f"admin-{net_type}")
