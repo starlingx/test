@@ -1,0 +1,62 @@
+heat_template_version: wallaby
+
+description: >
+  Heat template to create OpenStack network segment ranges with project name lookup.
+
+parameters:
+  name:
+    type: string
+    default: "{{ name }}"
+    description: Name of the network segment range
+
+  network_type:
+    type: string
+    default: "{{ network_type }}"
+    description: Network type (e.g., vlan)
+
+  physical_network:
+    type: string
+    default: "{{ physical_network }}"
+    description: Physical network name
+
+  minimum:
+    type: number
+    default: "{{ minimum_range }}"
+    description: Minimum VLAN ID
+
+  maximum:
+    type: number
+    default: "{{ maximum_range }}"
+    description: Maximum VLAN ID
+
+  shared:
+    type: boolean
+    default: "{{ shared }}"
+    description: Whether the segment range is shared
+
+  project_name:
+    type: string
+    default: "{{ project_name }}"
+    description: Project name associated with the segment range (optional)
+
+resources:
+  project:
+    type: OS::Keystone::Project
+    properties:
+      name: { get_param: project_name }
+
+  network_segment:
+    type: OS::Neutron::Segment
+    properties:
+      name: { get_param: name }
+      network_type: { get_param: network_type }
+      physical_network: { get_param: physical_network }
+      minimum: { get_param: minimum_range }
+      maximum: { get_param: maximum_range }
+      shared: { get_param: shared }
+      project_id: { get_resource: project }
+
+outputs:
+  segment_range_id:
+    description: ID of the created network segment range
+    value: { get_resource: network_segment }
