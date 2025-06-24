@@ -120,3 +120,64 @@ class DockerSyncImagesKeywords(BaseKeyword):
 
         if failures:
             raise KeywordException(f"Image sync failed for manifest '{manifest_path}':\n  - " + "\n  - ".join(failures))
+
+    def remove_images_from_manifest(self, manifest_path: str) -> None:
+        """
+        Removes Docker images listed in the manifest from the local system.
+
+        Each image entry is removed using up to three tag formats to ensure all tag variants are cleared:
+        1. source_registry/image:tag   (skipped if source is docker.io; see note below)
+        2. local_registry/image:tag    (e.g., image pushed to registry.local)
+        3. image:tag                   (default short form used by Docker)
+
+        This ensures removal regardless of how the image was tagged during sync, supports
+        idempotency, and handles Docker's implicit normalization of tags.
+
+        Notes:
+            - docker.io-prefixed references are skipped because Docker stores these as image:tag.
+            - Removal is attempted even for images that were never successfully synced.
+
+        Args:
+            manifest_path (str): Path to the manifest YAML file containing image entries.
+
+        Raises:
+            KeywordException: If the manifest cannot be read, parsed, or is missing required fields.
+        """
+        docker_config = ConfigurationManager.get_docker_config()
+        local_registry = docker_config.get_registry("local_registry")
+
+        try:
+            with open(manifest_path, "r") as f:
+                manifest = yaml.safe_load(f)
+        except Exception as e:
+            raise KeywordException(f"Failed to load manifest '{manifest_path}': {e}")
+
+        if "images" not in manifest:
+            raise KeywordException(f"Manifest '{manifest_path}' missing required 'images' key")
+
+        for image in manifest["images"]:
+            name = image["name"]
+            tag = image["tag"]
+
+            source_registry_name = docker_config.get_effective_source_registry_name(image, manifest_path)
+            if not source_registry_name:
+                get_logger().log_debug(f"Skipping cleanup for image {name}:{tag} (no source registry resolved)")
+                continue
+
+            source_registry = docker_config.get_registry(source_registry_name)
+            source_url = source_registry.get_registry_url()
+
+            # Always try to remove these two references
+            refs = [
+                f"{local_registry.get_registry_url()}/{name}:{tag}",
+                f"{name}:{tag}",
+            ]
+
+            # Optionally add full source registry tag if not DockerHub
+            if "docker.io" not in source_url:
+                refs.insert(0, f"{source_url}/{name}:{tag}")
+            else:
+                get_logger().log_debug(f"Skipping full docker.io-prefixed tag for {source_url}/{name}:{tag}")
+
+            for ref in refs:
+                self.docker_images_keywords.remove_image(ref)
