@@ -60,53 +60,9 @@ def run_manifest_sync_test(request: FixtureRequest, manifest_filename: str) -> N
     docker_image_keywords = DockerImagesKeywords(ssh_connection)
 
     def cleanup():
-        """
-        Cleans up Docker images listed in the manifest from the local system.
-
-        For each image, up to three tag formats are removed from the local Docker cache:
-        1. source_registry/image:tag   (skipped if source is docker.io; see note below)
-        2. local_registry/image:tag    (e.g., image pushed to registry.local)
-        3. image:tag                   (default short form used by Docker)
-
-        Purpose:
-        - Ensures complete removal regardless of how the image was tagged during pull/push operations.
-        - Supports idempotent cleanup, avoiding reliance on a single canonical tag.
-        - Handles cases where Docker implicitly normalizes or aliases tag references.
-
-        Notes:
-        - Full `docker.io/...` references are skipped during cleanup, as Docker stores these as `image:tag`.
-        """
         get_logger().log_info(f"Cleaning up images listed in {manifest_filename}...")
-
         ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
-        docker_image_keywords_cleanup = DockerImagesKeywords(ssh_connection)
-
-        for image in manifest.get("images", []):
-            name = image["name"]
-            tag = image["tag"]
-
-            source_registry_name = docker_config.get_effective_source_registry_name(image, manifest_filename)
-            if not source_registry_name:
-                get_logger().log_debug(f"Skipping cleanup for image {name}:{tag} (no source registry resolved)")
-                continue
-
-            source_registry = docker_config.get_registry(source_registry_name)
-            source_url = source_registry.get_registry_url()
-
-            # Always try to remove these two references
-            refs = [
-                f"{local_registry.get_registry_url()}/{name}:{tag}",
-                f"{name}:{tag}",
-            ]
-
-            # Optionally add full source registry tag if not DockerHub
-            if "docker.io" not in source_url:
-                refs.insert(0, f"{source_url}/{name}:{tag}")
-            else:
-                get_logger().log_debug(f"Skipping full docker.io-prefixed tag for {source_url}/{name}:{tag}")
-
-            for ref in refs:
-                docker_image_keywords_cleanup.remove_image(ref)
+        DockerSyncImagesKeywords(ssh_connection).remove_images_from_manifest(manifest_path)
 
     request.addfinalizer(cleanup)
 
