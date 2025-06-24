@@ -8,7 +8,6 @@ from keywords.cloud_platform.dcmanager.dcmanager_prestage_strategy_keywords impo
 from keywords.cloud_platform.dcmanager.dcmanager_strategy_step_keywords import DcmanagerStrategyStepKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_list_keywords import DcManagerSubcloudListKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_prestage import DcmanagerSubcloudPrestage
-from keywords.cloud_platform.dcmanager.dcmanager_subcloud_show_keywords import DcManagerSubcloudShowKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_sw_deploy_strategy_keywords import DcmanagerSwDeployStrategy
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.cloud_platform.swmanager.swmanager_sw_deploy_strategy_keywords import SwManagerSwDeployStrategyKeywords
@@ -89,52 +88,17 @@ def swman_sw_deploy_strategy_create_apply(release: str):
     validate_equals(swman_obj.get_current_phase_completion(), "100%", "deploy strategy completed successfully.")
 
 
-def dcman_prestage_strategy_create_apply():
-    """Helper function to create and apply a prestage strategy."""
-    sysadmin_password = ConfigurationManager.get_lab_config().get_admin_credentials().get_password()
-    central_ssh = LabConnectionKeywords().get_active_controller_ssh()
-    dcman_prestage_kw = DcmanagerPrestageStrategyKeywords(central_ssh)
-
-    get_logger().log_test_case_step("Create the prestage strategy for the IN-service patch")
-    prestage_strategy_out = dcman_prestage_kw.get_dcmanager_prestage_strategy_create(sysadmin_password=sysadmin_password, sw_deploy=True)
-    get_logger().log_info(f"Created prestage strategy state: {prestage_strategy_out.get_dcmanager_prestage_strategy().get_state()}")
-    get_logger().log_test_case_step("Apply the strategy")
-    dcman_obj = dcman_prestage_kw.get_dcmanager_prestage_strategy_apply()
-    validate_equals(dcman_obj.get_state(), "complete", "prestage strategy applied successfully.")
-    dcman_prestage_kw.get_dcmanager_prestage_strategy_delete()
-
-
-def dcman_sw_deploy_strategy_create_apply(subcloud_name: str, release: str):
-    """Helper function to create and apply a software deploy strategy for a subcloud.
-
-    Args:
-        subcloud_name (str): The name of the subcloud.
-        release (str): The software release to be used for the strategy.
-    """
-    central_ssh = LabConnectionKeywords().get_active_controller_ssh()
-    dcman_sw_deploy_kw = DcmanagerSwDeployStrategy(central_ssh)
-
-    # before creating the strategy, waith for subcloud software_sync_status to out-of-sync
-    sc_show_obj = DcManagerSubcloudShowKeywords(central_ssh).wait_for_state(subcloud_name, field="software_sync_status", expected_status="in-sync")
-    validate_equals(sc_show_obj.get_software_sync_status(), "out-of-sync", "Ready to create the sw-deploy strategy.")
-    get_logger().log_test_case_step(f"Create the sw-deploy strategy for {subcloud_name} with {release}")
-    dcman_sw_deploy_kw.dcmanager_sw_deploy_strategy_create(subcloud_name=subcloud_name, sw_version=release)
-    get_logger().log_test_case_step("Apply the strategy")
-    dcman_sw_deploy_kw.dcmanager_sw_deploy_strategy_apply(subcloud_name=subcloud_name)
-    dcman_sw_deploy_kw.dcmanager_sw_deploy_strategy_delete()
-
-
-def fetch_sw_list(ssh_connection: SSHConnection, log_messgae: str) -> list:
+def fetch_sw_list(ssh_connection: SSHConnection, log_message: str) -> list:
     """Fetches the software list from the given SSH connection and logs the information.
 
     Args:
         ssh_connection (SSHConnection): The SSH connection to the system controller or subcloud.
-        log_messgae (str): Optional message to log before fetching the software list.
+        log_message (str): Optional message to log before fetching the software list.
 
     Returns:
         list: A list of software releases.
     """
-    get_logger().log_test_case_step(log_messgae)
+    get_logger().log_test_case_step(log_message)
     sw_list = SoftwareListKeywords(ssh_connection).get_software_list().get_software_lists()
     get_logger().log_info(f"Current software list: {[sw.get_release() for sw in sw_list]}")
     return sw_list
@@ -199,13 +163,15 @@ def test_in_service_patch(request):
     fetch_sw_list(subcloud_ssh, f"{msg} subcloud ==> {subcloud_name}")
 
     # dcmanager prestage-strategy create / apply / delete
-    dcman_prestage_strategy_create_apply()
+    dcman_prestage_kw = DcmanagerPrestageStrategyKeywords(central_ssh)
+    dcman_prestage_kw.dc_manager_prestage_strategy_create_apply_delete(sw_deploy=True)
     msg = "Fetch software list after dcmanager prestage-strategy on "
     fetch_sw_list(central_ssh, f"{msg} Systemcontroller")
     fetch_sw_list(subcloud_ssh, f"{msg} subcloud ==> {subcloud_name}")
 
     # dcmanager sw-deploy-strategy create / apply / delete
-    dcman_sw_deploy_strategy_create_apply(subcloud_name=subcloud_name, release=release)
+    dcman_sw_deploy_kw = DcmanagerSwDeployStrategy(central_ssh)
+    dcman_sw_deploy_kw.dc_manager_sw_deploy_strategy_create_apply_delete(subcloud_name, release)
     msg = "Fetch software list after dcmanager sw-deploy-strategy on "
     fetch_sw_list(central_ssh, f"{msg} Systemcontroller")
     sw_list = fetch_sw_list(subcloud_ssh, f"{msg} subcloud ==> {subcloud_name}")

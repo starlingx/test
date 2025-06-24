@@ -1,10 +1,13 @@
 import time
+from typing import List
 
 from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
 from framework.validation.validation import validate_equals_with_retry
 from keywords.base_keyword import BaseKeyword
 from keywords.cloud_platform.command_wrappers import source_openrc
+from keywords.cloud_platform.dcmanager.dcmanager_subcloud_show_keywords import DcManagerSubcloudShowKeywords
+from keywords.cloud_platform.dcmanager.objects.dcmanager_subcloud_list_object import DcManagerSubcloudListObject
 from keywords.cloud_platform.dcmanager.objects.dcmanager_subcloud_list_output import DcManagerSubcloudListOutput
 
 
@@ -112,3 +115,34 @@ class DcManagerSubcloudListKeywords(BaseKeyword):
             return actual_sync_status
 
         validate_equals_with_retry(get_sync, expected_sync_status, f"Sync status of {subcloud_name}", timeout=1200)
+
+    def get_all_subcloud_by_release(self, release: str) -> List[DcManagerSubcloudListObject]:
+        """Fetch all subclouds by release.
+
+        Args:
+            release (str): The release version to filter subclouds by.
+
+        Returns:
+            List[DcManagerSubcloudListObject]: A list of subcloud objects that match the specified release.
+        """
+        sc_list_with_n_1_release = []
+        # fetch all the subclouds from the system where the software version matches the release
+        for sc in self.get_dcmanager_subcloud_list().get_dcmanager_subcloud_list_objects():
+            subcloud_show_object = DcManagerSubcloudShowKeywords(self.ssh_connection).get_dcmanager_subcloud_show(sc.get_name()).get_dcmanager_subcloud_show_object()
+            if subcloud_show_object.get_software_version() == release:
+                sc_list_with_n_1_release.append(sc)
+        return sc_list_with_n_1_release
+
+    def get_one_subcloud_by_release(self, release: str) -> DcManagerSubcloudListObject:
+        """Fetch one subcloud by release.
+
+        Args:
+            release (str): The release version to filter subclouds by.
+
+        Returns:
+            DcManagerSubcloudListObject: A subcloud object that matches the specified release.
+        """
+        subclouds = self.get_all_subcloud_by_release(release)
+        if not subclouds:
+            raise Exception(f"No subclouds found with release {release}.")
+        return subclouds[0]
