@@ -64,29 +64,20 @@ def get_banner(banner_lines: List[str]) -> List[str]:
     return banner
 
 
-def log_testcase_stage_banner(stage: str, test_name: str) -> None:
+def log_testcase_stage_banner(stage: str, test_name: str, total_width: int = 60) -> None:
     """
-    Logs a standardized banner indicating the start of a test case stage, with a three-line format.
+    Logs a fixed-width, left-aligned banner for a test case stage.
 
     Args:
         stage (str): One of 'Setup', 'Execution', or 'Teardown'.
         test_name (str): The name of the test case.
+        total_width (int): Total banner width.
     """
-    total_width = 60
-    banner_char = "="  # Change this to customize the banner character (e.g., '-', '#', '*')
-
-    banner_text = f"Starting {stage}: {test_name}"
-    inner_line = f" {banner_text} "
-
-    padding = max((total_width - len(inner_line)) // 2, 0)
-    middle_line = banner_char * padding + inner_line + banner_char * padding
-
-    if len(middle_line) < total_width:
-        middle_line += banner_char
-
+    banner_char = "="
     border_line = banner_char * total_width
+    content_line = f"  Starting {stage}: {test_name}"
 
     get_logger().log_info("")  # clean line break
     get_logger().log_info(border_line)
-    get_logger().log_info(middle_line)
+    get_logger().log_info(content_line)
     get_logger().log_info(border_line)
