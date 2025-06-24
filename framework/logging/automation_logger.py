@@ -182,7 +182,11 @@ class AutomationLogger(logging.getLoggerClass()):
 
     def _format_step_tag(self, tag: str, step_number: int | None, description: str = "") -> str:
         """
-        Format a standardized left-aligned single-line banner.
+        Format a left-aligned, single-line banner for a test step.
+
+        This ensures a consistent prefix and trailing marker. If the total line
+        is shorter than the target width, it will be padded to align visually.
+        Otherwise, a fixed suffix is appended to preserve formatting.
 
         Args:
             tag (str): The stage label (e.g., "SETUP", "TEST", "TEARDOWN").
@@ -191,19 +195,25 @@ class AutomationLogger(logging.getLoggerClass()):
 
         Returns:
             str: A left-aligned banner like:
-                ----- [ Test Step 2: Validate throughput ] -----------
+                ------- [ Test Step 3: Validate throughput ] ---------------
         """
         banner_char = "-"
         total_width = 60
+        suffix_pad_len = 7
+        prefix = banner_char * 7
 
         label = tag.title()
+
         if step_number is not None:
             content = f"[ {label} Step {step_number}: {description} ]"
         else:
             content = f"[ {label}: {description} ]"
 
-        padding = total_width - len(content) - 1  # -1 for the leading space
-        return banner_char * 5 + " " + content + " " + banner_char * max(padding - 5, 0)
+        line = f"{prefix} {content} "
+
+        # Pad short lines to target width, otherwise append a fixed-length suffix
+        trailing = banner_char * max(total_width - len(line), suffix_pad_len)
+        return line + trailing
 
 
 @staticmethod
