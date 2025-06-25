@@ -130,7 +130,9 @@ def test_cert_manager_applied():
 
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
-    SystemApplicationShowKeywords(ssh_connection).validate_app_status(app_name="cert-manager", expected_status="applied", expected_active="True", expected_progress="completed")
+    system_application_show_output = SystemApplicationShowKeywords(ssh_connection).validate_app_progress_contains("cert-manager", "completed")
+    validate_equals(system_application_show_output.get_status(), "applied", "cert-manager's status is applied")
+    validate_equals(system_application_show_output.get_active(), "True", "cert-manager's active is True")
 
 
 @mark.p0
@@ -145,7 +147,9 @@ def test_nginx_ingress_controller_applied():
 
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
-    SystemApplicationShowKeywords(ssh_connection).validate_app_status(app_name="nginx-ingress-controller", expected_status="applied", expected_active="True", expected_progress="completed")
+    system_application_show_output = SystemApplicationShowKeywords(ssh_connection).validate_app_progress_contains("nginx-ingress-controller", "completed")
+    validate_equals(system_application_show_output.get_status(), "applied", "nginx-ingress-controller's status is applied")
+    validate_equals(system_application_show_output.get_active(), "True", "nginx-ingress-controller's active is True")
 
 
 @mark.p0
