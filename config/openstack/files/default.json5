@@ -14,6 +14,6 @@
   "custom": {
     "enabled": true,
     "file_location": "/home/sysadmin/",
-    "file_name": "helm-chart-manifest.tgz"
+    "file_name": "helm-charts-manifest.tgz"
   }
 }

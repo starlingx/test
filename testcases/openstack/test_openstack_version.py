@@ -1,5 +1,4 @@
-from config.configuration_file_locations_manager import ConfigurationFileLocationsManager
-from config.configuration_manager import ConfigurationManagerClass
+from config.configuration_manager import ConfigurationManager
 from framework.logging.automation_logger import get_logger
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 
@@ -14,10 +13,7 @@ def test_openstack_version():
         - retrieve the openstack version and log the important values like name, version & build date
 
     """
-    configuration_manager = ConfigurationManagerClass()
-    config_file_locations = ConfigurationFileLocationsManager()
-    configuration_manager.load_configs(config_file_locations)
-    cmd = configuration_manager.get_openstack_config().get_version_cmd()
+    cmd = ConfigurationManager.get_openstack_config().get_version_cmd()
 
     get_logger().log_info("Display App Version Step")
     lab_connect_keywords = LabConnectionKeywords()

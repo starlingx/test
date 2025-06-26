@@ -4,13 +4,14 @@ class CustomInstaller:
     """
 
     def __init__(self, custom_dict: []):
-        self.enabled_flag = custom_dict['enabled']
-        self.file_location = custom_dict['file_location']
-        self.file_name = custom_dict['file_location']
+        self.enabled_flag = custom_dict["enabled"]
+        self.file_location = custom_dict["file_location"]
+        self.file_name = custom_dict["file_name"]
 
     def get_enabled_flag(self) -> str:
         """
         Getter for custom enabled flag
+
         Returns: the enabled_flag
 
         """
@@ -19,6 +20,7 @@ class CustomInstaller:
     def get_file_location(self) -> str:
         """
         Getter for helm file location
+
         Returns: the file_location
 
         """
@@ -27,6 +29,7 @@ class CustomInstaller:
     def get_file_name(self) -> str:
         """
         Getter for helm file name
+
         Returns: the file_name
 
         """
@@ -35,6 +38,7 @@ class CustomInstaller:
     def get_file_path(self) -> str:
         """
         This function will return a single string representation of the file path of custom object
+
         Returns: str
 
         """

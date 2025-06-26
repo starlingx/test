@@ -1,5 +1,4 @@
-from config.configuration_file_locations_manager import ConfigurationFileLocationsManager
-from config.configuration_manager import ConfigurationManagerClass
+from config.configuration_manager import ConfigurationManager
 from framework.logging.automation_logger import get_logger
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.cloud_platform.system.application.object.system_application_status_enum import SystemApplicationStatusEnum
@@ -23,16 +22,13 @@ def test_openstack_install():
     get_logger().log_info("App Install Step")
     # Setups the upload input object.
     system_application_upload_input = SystemApplicationUploadInput()
-    configuration_manager = ConfigurationManagerClass()
-    config_file_locations = ConfigurationFileLocationsManager()
-    configuration_manager.load_configs(config_file_locations)
-    app_name = configuration_manager.get_openstack_config().get_app_name()
+    app_name = ConfigurationManager.get_openstack_config().get_app_name()
     system_application_upload_input.set_app_name(app_name)
-    if configuration_manager.get_openstack_config().get_remote_config().get_enabled_flag():
-        system_application_upload_input.set_app_version(configuration_manager.get_openstack_config().get_remote_config().get_app_version())
+    if ConfigurationManager.get_openstack_config().get_remote_config().get_enabled_flag():
+        system_application_upload_input.set_app_version(ConfigurationManager.get_openstack_config().get_remote_config().get_app_version())
         system_application_upload_input.set_automatic_installation(False)
-    elif configuration_manager.get_openstack_config().get_custom_config().get_enabled_flag():
-        system_application_upload_input.set_tar_file_path(configuration_manager.get_openstack_config().get_custom_config().get_file_path())
+    elif ConfigurationManager.get_openstack_config().get_custom_config().get_enabled_flag():
+        system_application_upload_input.set_tar_file_path(ConfigurationManager.get_openstack_config().get_custom_config().get_file_path())
         system_application_upload_input.set_force(True)
     # Setups app configs and lab connection
     lab_connect_keywords = LabConnectionKeywords()
@@ -56,7 +52,7 @@ def test_openstack_install():
 
     # Asserts that the applying process concluded successfully
     # Executes the application installation
-    system_application_apply_output = SystemApplicationApplyKeywords(ssh_connection).system_application_apply(app_name)
+    system_application_apply_output = SystemApplicationApplyKeywords(ssh_connection).system_application_apply(app_name, 3600, 30)
     system_application_object = system_application_apply_output.get_system_application_object()
     assert system_application_object is not None, f"Expecting 'system_application_object' as not None, Observed: {system_application_object}."
     assert system_application_object.get_name() == app_name, f"Expecting 'app_name' = {app_name}, Observed: {system_application_object.get_name()}."
