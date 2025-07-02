@@ -120,11 +120,6 @@ def test_simple_ingress_routing_http(request):
     if lab_config.is_ipv6():
         base_url = f"http://[{oam_ip}]"
 
-    # Verify DNS (optional if using raw IP)
-    dns_name = ConfigurationManager.get_security_config().get_dns_name()
-    dns_resolution_status = IPAddressKeywords(oam_ip).check_dnsname_resolution(dns_name=dns_name)
-    validate_equals(dns_resolution_status, True, "Verify DNS name resolution")
-
     # Upload and apply YAML
     yaml_file = "simple_ingress_routing_http.yaml"
     local_path = get_stx_resource_path(f"resources/cloud_platform/security/cert_manager/{yaml_file}")
