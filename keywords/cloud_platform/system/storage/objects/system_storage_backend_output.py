@@ -1,4 +1,6 @@
 from framework.exceptions.keyword_exception import KeywordException
+from framework.rest.rest_response import RestResponse
+from keywords.cloud_platform.system.host.objects.storage_capabilities_object import StorageCapabilities
 from keywords.cloud_platform.system.storage.objects.system_storage_backend_object import SystemStorageBackendObject
 from keywords.cloud_platform.system.system_table_parser import SystemTableParser
 
@@ -24,11 +26,19 @@ class SystemStorageBackendOutput:
 
         """
         self.system_storage_backends: [SystemStorageBackendObject] = []
-        system_table_parser = SystemTableParser(system_storage_backend_list_output)
-        output_values = system_table_parser.get_output_values_list()
+
+        if isinstance(system_storage_backend_list_output, RestResponse):  # came from REST and is already in dict format
+            json_object = system_storage_backend_list_output.get_json_content()
+            if "storage_backends" in json_object:
+                storage_backends = json_object["storage_backends"]
+            else:
+                storage_backends = [json_object]
+        else:
+            system_table_parser = SystemTableParser(system_storage_backend_list_output)
+            storage_backends = system_table_parser.get_output_values_list()
 
         system_storage_backend_object = None
-        for value in output_values:
+        for value in storage_backends:
 
             if "name" not in value:
                 raise KeywordException(f"The output line {value} was not valid because it is missing an 'name'.")
@@ -58,7 +68,18 @@ class SystemStorageBackendOutput:
                 system_storage_backend_object.set_services(value["services"])
 
             if "capabilities" in value:
-                system_storage_backend_object.add_capabilities(value["capabilities"])
+                storage_capabilities = value["capabilities"]
+                # if it's from REST, then we are already in dict format
+                if isinstance(storage_capabilities, dict):
+                    storage_capabilities_object = StorageCapabilities()
+                    if "replication" in storage_capabilities:
+                        storage_capabilities_object.set_replication(storage_capabilities["replication"])
+                    if "min_replication" in storage_capabilities:
+                        storage_capabilities_object.set_min_replication(storage_capabilities["min_replication"])
+                    if "deployment_model" in storage_capabilities:
+                        storage_capabilities_object.set_deployment_model(storage_capabilities["deployment_model"])
+                else:
+                    system_storage_backend_object.add_capabilities(storage_capabilities)
 
             self.system_storage_backends.append(system_storage_backend_object)
 

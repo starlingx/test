@@ -5,84 +5,42 @@ from optparse import OptionParser
 
 import json5
 
-from config.configuration_file_locations_manager import (
-    ConfigurationFileLocationsManager,
-)
+from config.configuration_file_locations_manager import ConfigurationFileLocationsManager
 from config.configuration_manager import ConfigurationManager
 from config.lab.objects.lab_config import LabConfig
 from config.lab.objects.node import Node
 from framework.database.objects.lab_capability import LabCapability
 from framework.database.operations.capability_operation import CapabilityOperation
-from framework.database.operations.lab_capability_operation import (
-    LabCapabilityOperation,
-)
+from framework.database.operations.lab_capability_operation import LabCapabilityOperation
 from framework.database.operations.lab_operation import LabOperation
 from framework.logging.automation_logger import get_logger
 from framework.ssh.prompt_response import PromptResponse
 from framework.ssh.ssh_connection import SSHConnection
 from keywords.bmc.ipmitool.is_ipmitool_keywords import IsIPMIToolKeywords
 from keywords.bmc.ipmitool.sensor.ipmitool_sensor_keywords import IPMIToolSensorKeywords
-from keywords.cloud_platform.dcmanager.dcmanager_subcloud_list_keywords import (
-    DcManagerSubcloudListKeywords,
-)
-from keywords.cloud_platform.dcmanager.objects.dcmanger_subcloud_list_availability_enum import (
-    DcManagerSubcloudListAvailabilityEnum,
-)
-from keywords.cloud_platform.dcmanager.objects.dcmanger_subcloud_list_management_enum import (
-    DcManagerSubcloudListManagementEnum,
-)
-from keywords.cloud_platform.openstack.endpoint.openstack_endpoint_list_keywords import (
-    OpenStackEndpointListKeywords,
-)
-from keywords.cloud_platform.rest.bare_metal.hosts.get_hosts_cpus_keywords import (
-    GetHostsCpusKeywords,
-)
-from keywords.cloud_platform.rest.bare_metal.hosts.get_hosts_keywords import (
-    GetHostsKeywords,
-)
-from keywords.cloud_platform.rest.bare_metal.memory.get_host_memory_keywords import (
-    GetHostMemoryKeywords,
-)
-from keywords.cloud_platform.rest.bare_metal.ports.get_host_ports_keywords import (
-    GetHostPortsKeywords,
-)
-from keywords.cloud_platform.rest.configuration.devices.system_host_device_keywords import (
-    GetHostDevicesKeywords,
-)
-from keywords.cloud_platform.rest.configuration.interfaces.get_interfaces_keywords import (
-    GetInterfacesKeywords,
-)
-from keywords.cloud_platform.rest.configuration.storage.get_storage_keywords import (
-    GetStorageKeywords,
-)
+from keywords.cloud_platform.dcmanager.dcmanager_subcloud_list_keywords import DcManagerSubcloudListKeywords
+from keywords.cloud_platform.dcmanager.objects.dcmanger_subcloud_list_availability_enum import DcManagerSubcloudListAvailabilityEnum
+from keywords.cloud_platform.dcmanager.objects.dcmanger_subcloud_list_management_enum import DcManagerSubcloudListManagementEnum
+from keywords.cloud_platform.rest.bare_metal.disks.get_host_disks_keywords import GetHostDisksKeywords
+from keywords.cloud_platform.rest.bare_metal.hosts.get_hosts_cpus_keywords import GetHostsCpusKeywords
+from keywords.cloud_platform.rest.bare_metal.hosts.get_hosts_keywords import GetHostsKeywords
+from keywords.cloud_platform.rest.bare_metal.memory.get_host_memory_keywords import GetHostMemoryKeywords
+from keywords.cloud_platform.rest.bare_metal.ports.get_host_ports_keywords import GetHostPortsKeywords
+from keywords.cloud_platform.rest.configuration.addresses.get_host_addresses_keywords import GetHostAddressesKeywords
+from keywords.cloud_platform.rest.configuration.devices.system_host_device_keywords import GetHostDevicesKeywords
+from keywords.cloud_platform.rest.configuration.interfaces.get_interfaces_keywords import GetInterfacesKeywords
+from keywords.cloud_platform.rest.configuration.storage.get_storage_backends_keyword import GetStorageBackendKeywords
+from keywords.cloud_platform.rest.configuration.storage.get_storage_keywords import GetStorageKeywords
+from keywords.cloud_platform.rest.configuration.system.get_system_keywords import GetSystemKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
-from keywords.cloud_platform.system.host.objects.system_host_if_output import (
-    SystemHostInterfaceOutput,
-)
-from keywords.cloud_platform.system.host.objects.system_host_show_output import (
-    SystemHostShowOutput,
-)
-from keywords.cloud_platform.system.host.system_host_disk_keywords import (
-    SystemHostDiskKeywords,
-)
-from keywords.cloud_platform.system.host.system_host_list_keywords import (
-    SystemHostListKeywords,
-)
-from keywords.cloud_platform.system.host.system_host_show_keywords import (
-    SystemHostShowKeywords,
-)
-from keywords.cloud_platform.system.oam.objects.system_oam_show_output import (
-    SystemOamShowOutput,
-)
-from keywords.cloud_platform.system.oam.system_oam_show_keywords import (
-    SystemOamShowKeywords,
-)
+from keywords.cloud_platform.system.host.objects.system_host_if_output import SystemHostInterfaceOutput
+from keywords.cloud_platform.system.oam.objects.system_oam_show_output import SystemOamShowOutput
+from keywords.cloud_platform.system.oam.system_oam_show_keywords import SystemOamShowKeywords
 from testcases.conftest import log_configuration
 
 
 def find_capabilities(lab_config: LabConfig) -> list[str]:
-    """
-    Finds the capabilities of the given lab.
+    """Find the capabilities of the given lab.
 
     Args:
         lab_config (LabConfig): The lab configuration object.
@@ -93,10 +51,12 @@ def find_capabilities(lab_config: LabConfig) -> list[str]:
     lab_config.lab_capabilities = []
 
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
-    endpoint_output = OpenStackEndpointListKeywords(ssh_connection).endpoint_list()
-    lab_config.set_horizon_url(endpoint_output.get_horizon_url())
+    lab_config.set_horizon_url(get_horizon_url())
 
-    is_dc_system = endpoint_output.is_endpoint("dcmanager")
+    # Check if this is a DC system by checking distributed_cloud_role
+    system_output = GetSystemKeywords().get_system()
+    system_object = system_output.get_system_object()
+    is_dc_system = system_object.get_distributed_cloud_role() == "systemcontroller"
     if is_dc_system:
         subclouds = retrieve_subclouds(lab_config, ssh_connection)
         lab_config.set_subclouds(subclouds[:])
@@ -113,8 +73,7 @@ def find_capabilities(lab_config: LabConfig) -> list[str]:
 
 
 def find_subclouds_capabilities(lab_config: LabConfig) -> list[str]:
-    """
-    Finds the capabilities of the subclouds from the given lab.
+    """Find the capabilities of the subclouds from the given lab.
 
     Args:
         lab_config (LabConfig): The lab configuration object.
@@ -149,8 +108,7 @@ def find_subclouds_capabilities(lab_config: LabConfig) -> list[str]:
 
 
 def get_subcloud_name_from_path(subcloud_config_file_path: str) -> str:
-    """
-    Returns the name of the cloud from a subcloud's config file path.
+    """Extract the subcloud name from a config file path.
 
     Args:
         subcloud_config_file_path (str): The subcloud config file path.
@@ -164,19 +122,15 @@ def get_subcloud_name_from_path(subcloud_config_file_path: str) -> str:
 
 
 def create_subcloud_config_file_if_needed(host: LabConfig, subcloud_name: str, subcloud_config_file_path: str) -> None:
-    """
-    Creates a new config file for the related subcloud in the given path.
+    """Create a new config file for the subcloud if it doesn't exist.
 
     Args:
         host (LabConfig): The host lab configuration.
         subcloud_name (str): The name of the subcloud.
         subcloud_config_file_path (str): The subcloud's config file path.
 
-    Returns:
-        None:
-
     Note:
-        The initial content of this created file is the main part of the host config file, but with the IP empty.
+        The initial content is based on the host config but with empty IP.
     """
     if os.path.isfile(subcloud_config_file_path):
         return
@@ -194,8 +148,7 @@ def create_subcloud_config_file_if_needed(host: LabConfig, subcloud_name: str, s
 
 
 def is_sriov(host_interface_list_output: SystemHostInterfaceOutput) -> bool:
-    """
-    Returns True if SR-IOV is enabled on the given node.
+    """Check if SR-IOV is enabled on the given node.
 
     Args:
         host_interface_list_output (SystemHostInterfaceOutput): Output of the system host interface list command.
@@ -209,41 +162,11 @@ def is_sriov(host_interface_list_output: SystemHostInterfaceOutput) -> bool:
     return False
 
 
-def has_min_space_30G(ssh_connection: SSHConnection, node: Node) -> bool:
-    """
-    Returns true if the node has at least 30 GB of free space in one of its disks.
-
-    Args:
-        ssh_connection (SSHConnection): The SSH connection to the node.
-        node (Node): the node
-
-    Returns:
-        bool: True if the node has at least 30 GB of free space in one of its disks,, False otherwise.
-    """
-    host_disk_output = SystemHostDiskKeywords(ssh_connection).get_system_host_disk_list(node.get_name())
-    return host_disk_output.has_minimum_disk_space_in_gb(30)
-
-
-def get_host_show_output(ssh_connection: SSHConnection, node: Node) -> SystemHostShowOutput:
-    """
-    Returns an object of SystemHostShowOutput. This object represents the output of the 'system host-show' command.
-
-    Args:
-        ssh_connection (SSHConnection): The SSH connection to execute the command.
-        node (Node): The node whose details are being retrieved.
-
-    Returns:
-        SystemHostShowOutput: An object representing the output of the 'system host-show' command.
-    """
-    return SystemHostShowKeywords(ssh_connection).get_system_host_show_output(node.get_name())
-
-
 def has_host_bmc_sensor(ssh_connection: SSHConnection) -> bool:
-    """
-    Returns True if the node has BMC sensors.
+    """Check if the node has BMC sensors.
 
     Args:
-        ssh_connection (SSHConnection): The SSH connection.
+        ssh_connection (SSHConnection): The SSH connection to the host.
 
     Returns:
         bool: True if the node has BMC sensors, False otherwise.
@@ -259,18 +182,16 @@ def has_host_bmc_sensor(ssh_connection: SSHConnection) -> bool:
 
 
 def retrieve_subclouds(lab_config: LabConfig, ssh_connection: SSHConnection) -> list[LabConfig]:
-    """
-    Gets the list of subclouds on this lab.
+    """Get the list of online and managed subclouds.
 
-    Subclouds whose 'availability' is different from 'online' and 'management' is different from 'managed' are not
-    considered.
+    Only subclouds with 'availability' = 'online' and 'management' = 'managed' are considered.
 
     Args:
         lab_config (LabConfig): The lab config object.
         ssh_connection (SSHConnection): Connection to the active controller of the central cloud.
 
     Returns:
-        list[LabConfig]: the list of LabConfig objects matching the online and available subclouds of this lab.
+        list[LabConfig]: List of LabConfig objects for online and managed subclouds.
     """
     subclouds: [LabConfig] = []
 
@@ -305,15 +226,14 @@ def retrieve_subclouds(lab_config: LabConfig, ssh_connection: SSHConnection) -> 
 
 
 def get_subcloud_ip(subcloud_name: str, central_cloud_ssh_connection: SSHConnection) -> str:
-    """
-    Gets the external IP associated with the 'subcloud_name'.
+    """Get the external IP address of a subcloud.
 
     Args:
-        subcloud_name (str): The name of the cloud from which one wants to obtain the IP.
-        central_cloud_ssh_connection (SSHConnection): The SSH connection to a central cloud.
+        subcloud_name (str): The name of the subcloud.
+        central_cloud_ssh_connection (SSHConnection): SSH connection to the central cloud.
 
     Returns:
-        str: subcloud's IP.
+        str: The subcloud's IP address.
     """
     # Executes the command 'system oam-show' on the subcloud to get the subcloud's IP.
     password_prompt = PromptResponse("password:", ConfigurationManager.get_lab_config().get_admin_credentials().get_password())
@@ -363,12 +283,13 @@ def scan_hosts(lab_config: LabConfig, ssh_connection: SSHConnection) -> list[Nod
     Raises:
         RuntimeError: If no controller node is found in the lab.
     """
-    hosts = SystemHostListKeywords(ssh_connection).get_system_host_with_extra_column(["subfunctions", "bm_ip", "bm_username"])
+    host_show_output = GetHostsKeywords().get_hosts()
+    hosts = host_show_output.get_all_system_host_show_objects()
     nodes = []
 
     # Count the controllers to decide if the lab is Simplex or not.
     controllers_count = 0
-    for host in hosts.get_hosts():
+    for host in hosts:
         if host.get_personality() == "controller":
             controllers_count += 1
 
@@ -380,22 +301,22 @@ def scan_hosts(lab_config: LabConfig, ssh_connection: SSHConnection) -> list[Nod
         raise RuntimeError("Failed to find at least one controller on this lab.")
 
     # Look at the Capabilities of each host individually.
-    for host in hosts.get_hosts():
+    for host in hosts:
 
-        name = host.get_host_name()
+        name = host.get_hostname()
         node_dict = {
-            "ip": get_controller_ip(ssh_connection, name),
+            "ip": get_controller_ip(host_show_output, name),
             "node_type": host.get_personality(),
             "node_capabilities": [],
         }
-        node = Node(host.get_host_name(), node_dict)
+        node = Node(host.get_hostname(), node_dict)
 
-        node.set_subfunctions(host.get_sub_functions())
+        node.set_subfunctions(host.get_subfunctions())
         node.set_bm_username(host.get_bm_username())
         node.set_bm_ip(host.get_bm_ip())
 
         # Gather data from the system into objects.
-        host_show_output = GetHostsKeywords().get_hosts()
+
         host_uuid = host_show_output.get_system_host_show_object(node.get_name()).get_uuid()
 
         host_cpu_output = GetHostsCpusKeywords().get_hosts_cpus(host_uuid)
@@ -404,6 +325,7 @@ def scan_hosts(lab_config: LabConfig, ssh_connection: SSHConnection) -> list[Nod
         host_port_output = GetHostPortsKeywords().get_ports(host_uuid)
         host_memory_output = GetHostMemoryKeywords().get_memory(host_uuid)
         host_storage_output = GetStorageKeywords().get_storage(host_uuid)
+        host_disk_output = GetHostDisksKeywords().get_disks(host_uuid)
 
         # Parse the data to define the lab's capabilities.
         if is_sriov(host_interface_list_output):
@@ -463,7 +385,7 @@ def scan_hosts(lab_config: LabConfig, ssh_connection: SSHConnection) -> list[Nod
             node.append_node_capability("lab_has_columbiaville")
             lab_config.add_lab_capability("lab_has_columbiaville")
 
-        if has_min_space_30G(ssh_connection, node):
+        if host_disk_output.has_minimum_disk_space_in_gb(30):
             node.append_node_capability("lab_has_min_space_30G")
             lab_config.add_lab_capability("lab_has_min_space_30G")
 
@@ -511,47 +433,48 @@ def scan_hosts(lab_config: LabConfig, ssh_connection: SSHConnection) -> list[Nod
     return nodes
 
 
-def get_controller_ip(ssh_connection: SSHConnection, controller_name: str) -> str | None:
-    """
-    Getter for controller ip.
+def get_controller_ip(host_show_output: object, controller_name: str) -> str | None:
+    """Get the IP address of a controller.
 
     Args:
-        ssh_connection (SSHConnection): The SSH connection to the lab.
+        host_show_output (object): The host show output object.
         controller_name (str): The name of the controller.
 
     Returns:
         str | None: The IP address of the controller, or None if not found.
     """
-    system_oam_output = SystemOamShowKeywords(ssh_connection).oam_show()
+    host_uuid = host_show_output.get_system_host_show_object(controller_name).get_uuid()
 
-    if controller_name == "controller-0":
-        return system_oam_output.get_oam_c0_ip()
-    elif controller_name == "controller-1":
-        return system_oam_output.get_oam_c1_ip()
-    else:
-        get_logger().log_error(f"GET IP for {controller_name} has not been implemented")
+    if host_uuid is None:
+        get_logger().log_error(f"Host {controller_name} not found")
+        return None
 
-    return None
+    host_addresses_output = GetHostAddressesKeywords().get_host_addresses(host_uuid)
+    return host_addresses_output.get_address_by_ifname("oam0")
 
 
 def get_horizon_url() -> str:
-    """
-    Getter for Horizon URL.
+    """Get the Horizon URL using system CLI commands.
 
     Returns:
         str: The formatted Horizon URL.
     """
+    # Get system capabilities to check if HTTPS is enabled
+    system_output = GetSystemKeywords().get_system()
+    system_capabilities = system_output.get_system_object().get_capabilities()
+    https_enabled = system_capabilities.get_https_enabled() if system_capabilities else False
+
+    # Get OAM IP information using system CLI
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
-    endpoint_output = OpenStackEndpointListKeywords(ssh_connection).endpoint_list()
+    oam_show_output = SystemOamShowKeywords(ssh_connection).oam_show()
 
-    # Remove port from orignal url and then add 8443 for https or 8080 for http
-    url = endpoint_output.get_endpoint("keystone", "public").get_url().rsplit(":", 1)[0]
-    if "https" in url:
-        url += ":8443/"
-    else:
-        url += ":8080/"
+    # Get the appropriate IP (oam_ip for vbox, oam_floating_ip for physical)
+    oam_ip = oam_show_output.get_oam_ip() or oam_show_output.get_oam_floating_ip()
 
-    return url
+    # Construct Horizon URL
+    protocol = "https" if https_enabled else "http"
+    port = "8443" if https_enabled else "8080"
+    return f"{protocol}://{oam_ip}:{port}/"
 
 
 def get_lab_type(lab_config: LabConfig) -> str:
@@ -585,6 +508,32 @@ def get_lab_type(lab_config: LabConfig) -> str:
         return "Standard"
     # more than 2 controller but no computes or storage == Duplex
     return "Duplex"
+
+
+def is_aio(lab_config: LabConfig) -> bool:
+    """Checks if the lab is AIO.
+
+    Args:
+        lab_config (LabConfig): The lab configuration object.
+
+    Returns:
+        bool: True if the lab is AIO, False otherwise.
+    """
+    nodes = lab_config.get_nodes()
+    worker_nodes = list(filter(lambda node: node.get_type() == "worker", nodes))
+
+    return len(worker_nodes) == 0
+
+
+def is_rook_ceph() -> bool:
+    """
+    Checks if the lab is using Rook Ceph.
+
+    Returns:
+        bool: True if the lab is using Rook Ceph, False otherwise.
+    """
+    backends = GetStorageBackendKeywords().get_storage_backends()
+    return backends.is_backend_configured("ceph-rook")
 
 
 def write_config(lab_config: LabConfig) -> None:
@@ -763,6 +712,14 @@ if __name__ == "__main__":
     # find the lab_type
     lab_type = get_lab_type(lab_config)
     lab_config.set_lab_type(lab_type)
+
+    # check if the lab is an aio
+    if is_aio(lab_config):
+        lab_config.add_lab_capability("lab_is_aio")
+
+    # check if the lab is using rook ceph
+    if is_rook_ceph():
+        lab_config.add_lab_capability("lab_has_rook_ceph")
 
     if ConfigurationManager.get_database_config().use_database():
         # insert lab into db if it doesn't already exist
