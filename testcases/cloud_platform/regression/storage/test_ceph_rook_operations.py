@@ -218,7 +218,6 @@ def test_ceph_rook_capabilities_testing_open_model(request):
         validate_equals(pool_update, True, "Replicated min_size is updated.")
 
 
-@mark.lab_standard
 @mark.lab_ceph_rook
 def test_lock_unlock_multiple_hosts():
     """
