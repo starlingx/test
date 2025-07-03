@@ -11,6 +11,7 @@ from keywords.cloud_platform.system.application.system_application_list_keywords
 from keywords.cloud_platform.system.host.system_host_fs_keywords import SystemHostFSKeywords
 from keywords.cloud_platform.system.host.system_host_list_keywords import SystemHostListKeywords
 from keywords.cloud_platform.system.host.system_host_lock_keywords import SystemHostLockKeywords
+from keywords.cloud_platform.system.host.system_host_swact_keywords import SystemHostSwactKeywords
 from keywords.cloud_platform.system.storage.system_storage_backend_keywords import SystemStorageBackendKeywords
 
 
@@ -538,3 +539,65 @@ def test_rook_ceph_applying_host_lock_reject_testing():
     # Wait for rook-ceph in applied status
     app_status_list = ["applied"]
     SystemApplicationListKeywords(ssh_connection).validate_app_status_in_list(app_name, app_status_list, timeout=360, polling_sleep_time=10)
+
+@mark.lab_ceph_rook
+@mark.lab_has_standby_controller
+def test_lock_unlock_then_swact_and_reverse_cycle():
+    """
+    Lock and unlock all nodes but active controller with swact cycle
+
+    Test Steps:
+        - If lab is DX:
+            - Lock and unlock only the standby controller
+        - If lab is STD:
+            - Lock and unlock all hosts (excluding active controller)
+        - Perform swact of the active controller
+        - Repeat the lock and unlock process according to the lab type
+        - Perform a final swact to restore original controller state
+    Args: None
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+
+    system_host_keywords = SystemHostListKeywords(ssh_connection)
+    full_host_list = system_host_keywords.get_system_host_with_extra_column(["capabilities"])
+    host_names = full_host_list.get_host_names_except_active_controller()
+
+    ceph_status_keywords = CephStatusKeywords(ssh_connection)
+
+    get_logger().log_test_case_step("Checking rook-ceph health before Lock/Unlock nodes.")
+    ceph_status_keywords.wait_for_ceph_health_status(expect_health_status=True)
+
+    get_logger().log_test_case_step("Locking all nodes but active controller.")
+    SystemHostLockKeywords.lock_multiple_hosts(ssh_connection, host_names)
+
+    get_logger().log_test_case_step("Unlocking all previously locked nodes.")
+    SystemHostLockKeywords.unlock_multiple_hosts(ssh_connection, host_names)
+
+    get_logger().log_test_case_step("Checking ceph health after Lock/Unlock nodes.")
+    ceph_status_keywords.wait_for_ceph_health_status(expect_health_status=True)
+
+    get_logger().log_test_case_step("Performing swact of the active controller")
+    system_host_swact_keywords = SystemHostSwactKeywords(ssh_connection)
+    system_host_swact_keywords.host_swact()
+    full_host_list_after_swact = system_host_keywords.get_system_host_with_extra_column(["capabilities"])
+    host_names_after_swaxt = full_host_list_after_swact.get_host_names_except_active_controller()
+
+    get_logger().log_test_case_step("Checking rook-ceph health after swact and before Lock/Unlock nodes.")
+    ceph_status_keywords.wait_for_ceph_health_status(expect_health_status=True)
+
+    get_logger().log_test_case_step("Locking all nodes but active controller.")
+    SystemHostLockKeywords.lock_multiple_hosts(ssh_connection, host_names_after_swaxt)
+
+    get_logger().log_test_case_step("Unlocking all previously locked nodes.")
+    SystemHostLockKeywords.unlock_multiple_hosts(ssh_connection, host_names_after_swaxt)
+
+    get_logger().log_test_case_step("Checking ceph health after Lock/Unlock nodes.")
+    ceph_status_keywords.wait_for_ceph_health_status(expect_health_status=True)
+
+    get_logger().log_test_case_step("Performing swact of the active controller")
+    system_host_swact_keywords = SystemHostSwactKeywords(ssh_connection)
+    system_host_swact_keywords.host_swact()
+
+    get_logger().log_test_case_step("Checking rook-ceph health after swact.")
+    ceph_status_keywords.wait_for_ceph_health_status(expect_health_status=True)
+
