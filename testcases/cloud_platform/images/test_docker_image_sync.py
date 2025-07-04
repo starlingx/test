@@ -62,7 +62,7 @@ def run_manifest_sync_test(request: FixtureRequest, manifest_filename: str) -> N
     def cleanup():
         get_logger().log_info(f"Cleaning up images listed in {manifest_filename}...")
         ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
-        DockerSyncImagesKeywords(ssh_connection).remove_images_from_manifest(manifest_path)
+        DockerSyncImagesKeywords(ssh_connection).remove_images_from_manifest(manifest_path=manifest_path)
 
     request.addfinalizer(cleanup)
 

@@ -42,22 +42,29 @@ class DockerSyncImagesKeywords(BaseKeyword):
         Registry credentials and mappings are resolved using ConfigurationManager.get_docker_config(),
         which loads config from `config/docker/files/default.json5` or a CLI override.
 
-        Registry resolution priority (from most to least specific):
-        1. "source_registry" field on the individual image entry (in the manifest)
-        2. "manifest_registry_map" entry matching the full manifest path (in config)
-        3. "default_source_registry" defined globally in config
+        Registry resolution behavior:
+
+        1) If a manifest entry exists in "manifest_registry_map":
+        - If "override" is true, all images in the manifest use the manifest "manifest_registry" (must be set).
+        - If "override" is false:
+            a. If an image defines "source_registry", it is used.
+            b. If no per-image "source_registry" is specified, but the manifest "manifest_registry" is set, it is used.
+            c. Otherwise, "default_source_registry" is used.
+        2) If no manifest entry exists:
+        - If an image defines "source_registry", it is used.
+        - Otherwise, "default_source_registry" is used.
 
         Expected manifest format:
         ```yaml
         images:
           - name: "starlingx/test-image"
             tag: "tag-x"
-            # Optional: source_registry: "dockerhub"
+            source_registry: "dockerhub"  # Optional
         ```
 
         Notes:
         - Registry URLs and credentials must be defined in config, not in the manifest.
-          Any such values in the manifest are ignored.
+        Any such values in the manifest are ignored.
         - Each image entry must include "name" and "tag".
 
         Args:
@@ -69,12 +76,9 @@ class DockerSyncImagesKeywords(BaseKeyword):
         """
         docker_config = ConfigurationManager.get_docker_config()
         local_registry = docker_config.get_registry("local_registry")
-        default_registry_name = docker_config.get_default_source_registry_name()
 
         with open(manifest_path, "r") as f:
             manifest = yaml.safe_load(f)
-
-        manifest_registry_name = docker_config.get_registry_for_manifest(manifest_path)
 
         if "images" not in manifest:
             raise ValueError(f"Manifest at {manifest_path} is missing required 'images' key")
@@ -85,14 +89,12 @@ class DockerSyncImagesKeywords(BaseKeyword):
             name = image["name"]
             tag = image["tag"]
 
-            # Resolve source registry in order of precedence:
-            # 1) per-image override ("source_registry" in manifest)
-            # 2) per-manifest default (manifest_registry_map in config)
-            # 3) global fallback (default_source_registry in config)
-            source_registry_name = image.get("source_registry") or manifest_registry_name or default_registry_name
+            # Resolve the source registry using the config resolution precedence
+            source_registry_name = docker_config.get_effective_source_registry_name(image, manifest_path)
 
             if not source_registry_name:
-                raise ValueError(f"Image '{name}:{tag}' has no 'source_registry' and no default_source_registry is set in config.")
+                raise ValueError(f"Image '{name}:{tag}' has no registry resolved (manifest: {manifest_path}).")
+
             try:
                 source_registry = docker_config.get_registry(source_registry_name)
 

@@ -33,9 +33,23 @@ class DockerConfig:
             print(f"Could not find the Docker config file: {config}")
             raise
 
+        # Validate manifest_registry_map entries
+        manifest_map = self._config_dict.get("manifest_registry_map", {})
+        for manifest_path, entry in manifest_map.items():
+            if isinstance(entry, dict):
+                override = entry.get("override", False)
+                manifest_registry = entry.get("manifest_registry", None)
+                if override and manifest_registry is None:
+                    raise ValueError(f"Invalid manifest_registry_map entry for '{manifest_path}': " "override=true requires 'manifest_registry' to be set (not null).")
+
         for registry_key in self._config_dict.get("registries", {}):
             registry_dict = self._config_dict["registries"][registry_key]
-            reg = Registry(registry_name=registry_dict["registry_name"], registry_url=registry_dict["registry_url"], user_name=registry_dict["user_name"], password=registry_dict["password"])
+            reg = Registry(
+                registry_name=registry_dict["registry_name"],
+                registry_url=registry_dict["registry_url"],
+                user_name=registry_dict["user_name"],
+                password=registry_dict["password"],
+            )
             self.registry_list.append(reg)
 
     def get_registry(self, registry_name: str) -> Registry:
@@ -82,24 +96,12 @@ class DockerConfig:
         """
         return self._config_dict.get("default_source_registry", "")
 
-    def get_registry_for_manifest(self, manifest_path: str) -> str:
-        """
-        Returns the default registry name for a given manifest path, if defined.
-
-        Args:
-            manifest_path (str): Full relative path to the manifest file.
-
-        Returns:
-            str: Logical registry name (e.g., 'dockerhub'), or empty string.
-        """
-        return self._config_dict.get("manifest_registry_map", {}).get(manifest_path, "")
-
     def get_manifest_registry_map(self) -> dict:
         """
-        Returns the mapping of manifest file paths to registry names.
+        Returns the mapping of manifest file paths to registry definitions.
 
         Returns:
-            dict: Mapping of manifest file path -> logical registry name.
+            dict: Mapping of manifest file path -> dict with 'manifest_registry' and 'override'.
         """
         return self._config_dict.get("manifest_registry_map", {})
 
@@ -107,22 +109,49 @@ class DockerConfig:
         """
         Resolves the source registry name for a given image using the following precedence:
 
-        1. The "source_registry" field in the image entry (if present).
-        2. A per-manifest registry mapping defined in "manifest_registry_map" in the config.
-        3. The global "default_source_registry" defined in the config.
+        1. If a manifest entry exists in "manifest_registry_map":
+            - If "override" is true, use the manifest's "manifest_registry" (must not be null).
+            - If "override" is false:
+                a. If the image has "source_registry", use it.
+                b. If the manifest's "manifest_registry" is set (not null), use it.
+                c. Otherwise, use "default_source_registry".
+        2. If no manifest entry exists:
+            - If the image has "source_registry", use it.
+            - Otherwise, use "default_source_registry".
 
         Args:
             image (dict): An image entry from the manifest.
-            manifest_filename (str): Filename of the manifest (e.g., 'stx-test-images.yaml').
+            manifest_filename (str): Filename of the manifest.
 
         Returns:
-            str: The resolved logical registry name (e.g., 'dockerhub').
+            str: The resolved logical registry name.
+
+        Raises:
+            ValueError: If "override" is true but "manifest_registry" is null.
         """
+        manifest_map = self.get_manifest_registry_map()
+        manifest_entry = manifest_map.get(manifest_filename)
+
+        if manifest_entry:
+            manifest_registry = manifest_entry.get("manifest_registry")
+            override = manifest_entry.get("override", False)
+
+            if override:
+                if manifest_registry is None:
+                    raise ValueError(f"Invalid manifest_registry_map entry for '{manifest_filename}': " "override=true requires 'manifest_registry' to be set (not null).")
+                return manifest_registry
+
+            # override == False
+            if "source_registry" in image:
+                return image["source_registry"]
+
+            if manifest_registry is not None:
+                return manifest_registry
+
+            return self.get_default_source_registry_name()
+
+        # No manifest entry
         if "source_registry" in image:
             return image["source_registry"]
-
-        manifest_map = self.get_manifest_registry_map()
-        if manifest_filename in manifest_map:
-            return manifest_map[manifest_filename]
 
         return self.get_default_source_registry_name()
