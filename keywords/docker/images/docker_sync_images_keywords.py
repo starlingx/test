@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import yaml
 
 from config.configuration_manager import ConfigurationManager
@@ -181,3 +183,60 @@ class DockerSyncImagesKeywords(BaseKeyword):
 
             for ref in refs:
                 self.docker_images_keywords.remove_image(ref)
+
+    def validate_manifest_images_exist(self, manifest_path: str, fail_on_missing: bool = True) -> bool:
+        """
+        Validates that all images listed in a manifest are present in the local Docker registry.
+
+        This is typically used after syncing images via `sync_images_from_manifest` to ensure that
+        each expected image was successfully pushed to the local registry (e.g., registry.local:9001).
+
+        If `fail_on_missing` is True, the method raises a `KeywordException` if any expected image
+        is missing. If False, it logs the error but does not raise, allowing non-blocking verification.
+
+        Args:
+            manifest_path (str): Path to the manifest YAML file containing image entries.
+            fail_on_missing (bool): Whether to raise an exception on missing images. Defaults to True.
+
+        Returns:
+            bool: True if all expected images were found, False if any were missing and `fail_on_missing` is False.
+
+        Raises:
+            KeywordException: If the manifest is invalid or, when `fail_on_missing` is True, one or more expected images are missing.
+        """
+        docker_config = ConfigurationManager.get_docker_config()
+        local_registry = docker_config.get_registry("local_registry")
+
+        try:
+            with open(manifest_path, "r") as f:
+                manifest = yaml.safe_load(f)
+        except Exception as e:
+            raise KeywordException(f"Failed to load manifest '{manifest_path}': {e}")
+
+        if "images" not in manifest:
+            raise KeywordException(f"Manifest '{manifest_path}' missing required 'images' key")
+
+        images = self.docker_images_keywords.list_images()
+        actual_repos = [img.get_repository() for img in images]
+        validation_errors = []
+
+        for image in manifest["images"]:
+            name = image["name"]
+            tag = image["tag"]
+            expected_ref = f"{local_registry.get_registry_url()}/{name}"
+
+            get_logger().log_info(f"Checking local registry for: {expected_ref}:{tag}")
+            if expected_ref not in actual_repos:
+                msg = f"[{Path(manifest_path).name}] Expected image not found: {expected_ref}"
+                get_logger().log_warning(msg)
+                validation_errors.append(msg)
+
+        if validation_errors:
+            message = "One or more expected images were not found in the local registry:\n  - " + "\n  - ".join(validation_errors)
+            if fail_on_missing:
+                raise KeywordException(message)
+            else:
+                get_logger().log_error(message)
+                return False
+
+        return True
