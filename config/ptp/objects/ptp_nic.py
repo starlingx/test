@@ -1,5 +1,6 @@
 from typing import Dict
 
+from config.host.objects.host_configuration import HostConfiguration
 from config.ptp.objects.ptp_nic_connection import PTPNicConnection
 from config.ptp.objects.sma_connector import SMAConnector
 from config.ptp.objects.ufl_connector import UFLConnector
@@ -31,6 +32,7 @@ class PTPNic:
         self.spirent_port = None
         self.conn_to_proxmox = None
         self.proxmox_port = None
+        self.proxmox_ptp_vm_config = None
 
         if "gpio_switch_port" in nic_dict and nic_dict["gpio_switch_port"]:
             self.gpio_switch_port = nic_dict["gpio_switch_port"]
@@ -52,6 +54,9 @@ class PTPNic:
 
         if "proxmox_port" in nic_dict and nic_dict["proxmox_port"]:
             self.proxmox_port = nic_dict["proxmox_port"]
+
+        if "proxmox_ptp_vm_config" in nic_dict and nic_dict["proxmox_ptp_vm_config"]:
+            self.proxmox_ptp_vm_config = HostConfiguration(nic_dict["proxmox_ptp_vm_config"])
 
     def __str__(self):
         """
@@ -105,6 +110,7 @@ class PTPNic:
             "spirent_port": self.spirent_port,
             "conn_to_proxmox": self.conn_to_proxmox,
             "proxmox_port": self.proxmox_port,
+            "proxmox_ptp_vm_config": self.proxmox_ptp_vm_config,
         }
         return ptp_nic_dictionary
 
@@ -265,3 +271,12 @@ class PTPNic:
             The proxmox port.
         """
         return self.proxmox_port
+
+    def get_proxmox_ptp_vm_config(self) -> HostConfiguration:
+        """
+        Gets the proxmox PTP VM config.
+
+        Returns (HostConfiguration):
+            The proxmox PTP VM configuration object.
+        """
+        return self.proxmox_ptp_vm_config

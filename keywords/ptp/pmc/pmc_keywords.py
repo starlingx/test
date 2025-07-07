@@ -128,7 +128,7 @@ class PMCKeywords(BaseKeyword):
         pmc_get_grandmaster_settings_np_output = PMCGetGrandmasterSettingsNpOutput(output)
         return pmc_get_grandmaster_settings_np_output
 
-    def pmc_get_time_properties_data_set(self, config_file: str, socket_file: str, unicast: bool = True, boundry_clock: int = 0) -> PMCGetTimePropertiesDataSetOutput:
+    def pmc_get_time_properties_data_set(self, config_file: str, socket_file: str = None, unicast: bool = True, boundry_clock: int = 0) -> PMCGetTimePropertiesDataSetOutput:
         """
         Gets the time_properties_data_set_object
 
@@ -144,7 +144,10 @@ class PMCKeywords(BaseKeyword):
         Example: PMCKeywords(ssh_connection).pmc_get_time_properties_data_set('/etc/linuxptp/ptpinstance/ptp4l-ptp5.conf', ' /var/run/ptp4l-ptp5')
 
         """
-        cmd = f"pmc {'-u' if unicast else ''} -b {boundry_clock} -f {config_file} -s {socket_file} 'GET TIME_PROPERTIES_DATA_SET'"
+        if socket_file:
+            cmd = f"pmc {'-u' if unicast else ''} -b {boundry_clock} -f {config_file} -s {socket_file} 'GET TIME_PROPERTIES_DATA_SET'"
+        else:
+            cmd = f"pmc {'-u' if unicast else ''} -b {boundry_clock} -f {config_file} 'GET TIME_PROPERTIES_DATA_SET'"
 
         output = self.ssh_connection.send_as_sudo(cmd)
         pmc_get_time_properties_data_set_output = PMCGetTimePropertiesDataSetOutput(output)
@@ -153,13 +156,13 @@ class PMCKeywords(BaseKeyword):
     def pmc_get_default_data_set(self, config_file: str, socket_file: str, unicast: bool = True, boundry_clock: int = 0) -> PMCGetDefaultDataSetOutput:
         """
         Gets the default data set
-        
+
         Args:
             config_file (str): the config file
             socket_file (str): the socket file
             unicast (bool): true to use unicast
             boundry_clock (int): the boundry clock
-        
+
         Returns:
             PMCGetDefaultDataSetOutput: the default data set output
 
@@ -171,22 +174,25 @@ class PMCKeywords(BaseKeyword):
         pmc_get_default_data_set_output = PMCGetDefaultDataSetOutput(output)
         return pmc_get_default_data_set_output
 
-    def pmc_get_port_data_set(self, config_file: str, socket_file: str, unicast: bool = True, boundry_clock: int = 0) -> PMCGetPortDataSetOutput:
+    def pmc_get_port_data_set(self, config_file: str, socket_file: str = None, unicast: bool = True, boundry_clock: int = 0) -> PMCGetPortDataSetOutput:
         """
         Gets the port data set
-        
+
         Args:
             config_file (str): the config file
             socket_file (str): the socket file
             unicast (bool): true to use unicast
             boundry_clock (int): the boundry clock
-        
+
         Returns:
             PMCGetPortDataSetOutput: the port data set output
 
         Example: PMCKeywords(ssh_connection).pmc_get_port_data_set('/etc/linuxptp/ptpinstance/ptp4l-ptp5.conf', ' /var/run/ptp4l-ptp5')
         """
-        cmd = f"pmc {'-u' if unicast else ''} -b {boundry_clock} -f {config_file} -s {socket_file} 'GET PORT_DATA_SET'"
+        if socket_file:
+            cmd = f"pmc {'-u' if unicast else ''} -b {boundry_clock} -f {config_file} -s {socket_file} 'GET PORT_DATA_SET'"
+        else:
+            cmd = f"pmc {'-u' if unicast else ''} -b {boundry_clock} -f {config_file} 'GET PORT_DATA_SET'"
 
         output = self.ssh_connection.send_as_sudo(cmd)
         pmc_get_port_data_set_output = PMCGetPortDataSetOutput(output)
@@ -214,7 +220,7 @@ class PMCKeywords(BaseKeyword):
         pmc_get_domain_output = PMCGetDomainOutput(output)
         return pmc_get_domain_output
 
-    def pmc_get_parent_data_set(self, config_file: str, socket_file: str, unicast: bool = True, boundry_clock: int = 0) -> PMCGetParentDataSetOutput:
+    def pmc_get_parent_data_set(self, config_file: str, socket_file: str = None, unicast: bool = True, boundry_clock: int = 0) -> PMCGetParentDataSetOutput:
         """
         Gets the parent data set
 
@@ -230,7 +236,10 @@ class PMCKeywords(BaseKeyword):
         Example: PMCKeywords(ssh_connection).pmc_get_parent_data_set('/etc/linuxptp/ptpinstance/ptp4l-ptp5.conf', '/var/run/ptp4l-ptp5')
 
         """
-        cmd = f"pmc {'-u' if unicast else ''} -b {boundry_clock} -f {config_file} -s {socket_file} 'GET PARENT_DATA_SET'"
+        if socket_file:
+            cmd = f"pmc {'-u' if unicast else ''} -b {boundry_clock} -f {config_file} -s {socket_file} 'GET PARENT_DATA_SET'"
+        else:
+            cmd = f"pmc {'-u' if unicast else ''} -b {boundry_clock} -f {config_file} 'GET PARENT_DATA_SET'"
 
         output = self.ssh_connection.send_as_sudo(cmd)
         pmc_get_parent_data_set_output = PMCGetParentDataSetOutput(output)

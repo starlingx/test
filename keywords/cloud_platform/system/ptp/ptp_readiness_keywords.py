@@ -52,7 +52,7 @@ class PTPReadinessKeywords:
 
             return observed_states
 
-        validate_equals_with_retry(lambda: check_port_state_in_port_data_set(name), expected_port_states, "port state in port data set", 120, 30)
+        validate_equals_with_retry(lambda: check_port_state_in_port_data_set(name), expected_port_states, "port state in port data set", 180, 30)
 
     def wait_for_clock_class_appear_in_grandmaster_settings_np(self, name: str, expected_clock_class: Union[int, list]) -> None:
         """

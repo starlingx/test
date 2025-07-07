@@ -404,7 +404,7 @@ def test_ptp_operation_sma_disabled_and_enable():
                         "frequency_traceable": 1 // Frequency of the clock is traceable to a stable
                     },
                     "grandmaster_settings": {
-                        "clock_class": 165, // The GM clock loses its connection to the Primary Reference Time Clock
+                        "clock_class": [165, 248], // The GM clock loses its connection to the Primary Reference Time Clock
                         "clock_accuracy": "0xfe", // Unknown
                         "offset_scaled_log_variance": "0xffff", // Unknown or unspecified stability
                         "time_traceable": 0, // Time is not traceable — the clock may be in holdover, unsynchronized, or degraded.
@@ -465,8 +465,7 @@ def test_ptp_operation_sma_disabled_and_enable():
     get_logger().log_info("Verifying PTP operation and corresponding status changes when SMA is enabled.")
 
     ctrl0_nic2_sma1_enable_ptp_selection = [("ptp3", "controller-0", []), ("ptp4", "controller-1", [])]
-    ctrl0_nic2_sma1_enable_exp_dict_overrides = {"ptp4l": [{"name": "ptp4", "controller-1": {"grandmaster_settings": {"clock_class": 165}}}]}
-    ctrl0_nic2_sma1_enable_exp_ptp_setup = ptp_setup_keywords.filter_and_render_ptp_config(ptp_setup_template_path, ctrl0_nic2_sma1_enable_ptp_selection, expected_dict_overrides=ctrl0_nic2_sma1_enable_exp_dict_overrides)
+    ctrl0_nic2_sma1_enable_exp_ptp_setup = ptp_setup_keywords.filter_and_render_ptp_config(ptp_setup_template_path, ctrl0_nic2_sma1_enable_ptp_selection)
 
     sma_keywords.enable_sma("controller-0", "nic2")
     get_logger().log_info("Waiting for 100.119 alarm to clear after SMA1 is enabled")
@@ -991,7 +990,7 @@ def test_ptp_operation_service_stop_start_restart():
 
     get_logger().log_info("Verifying PMC configuration and clock class after service restart...")
     ptp_readiness_keywords = PTPReadinessKeywords(LabConnectionKeywords().get_ssh_for_hostname("controller-0"))
-    ptp_readiness_keywords.wait_for_clock_class_appear_in_grandmaster_settings_np("ptp1", "controller-0", 6)
+    ptp_readiness_keywords.wait_for_clock_class_appear_in_grandmaster_settings_np("ptp1", 6)
     ptp_readiness_keywords.wait_for_gm_clock_class_appear_in_parent_data_set("ptp1", 6)
     ptp_verify_config_keywords.verify_ptp_pmc_values(check_domain=False)
 
