@@ -78,3 +78,4 @@ repos:
       entry: bash -c 'pytest unit_tests/'
       language: system
       pass_filenames: false
+      stages: [push]
