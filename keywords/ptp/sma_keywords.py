@@ -1,5 +1,6 @@
 from config.configuration_manager import ConfigurationManager
 from framework.ssh.prompt_response import PromptResponse
+from framework.ssh.ssh_connection import SSHConnection
 from keywords.base_keyword import BaseKeyword
 from keywords.ptp.gnss_keywords import GnssKeywords
 
@@ -8,16 +9,16 @@ class SmaKeywords(BaseKeyword):
     """
     Disabled and enable SMA using SSH connection.
 
-    Attributes:
-        ssh_connection: An instance of an SSH connection.
+    Inherits from:
+        BaseKeyword: to provide common functionality.
     """
 
-    def __init__(self, ssh_connection):
+    def __init__(self, ssh_connection: SSHConnection):
         """
         Initializes the SmaKeywords with an SSH connection.
 
         Args:
-            ssh_connection: An instance of an SSH connection.
+            ssh_connection (SSHConnection): An instance of an SSH connection.
         """
         self.ssh_connection = ssh_connection
 
@@ -29,7 +30,8 @@ class SmaKeywords(BaseKeyword):
             hostname (str): The name of the host.
             nic (str): The name of the NIC.
 
-        Returns : None
+        Returns :
+            None: This method does not return anything.
         """
         gnss_keywords = GnssKeywords()
 
@@ -68,7 +70,8 @@ class SmaKeywords(BaseKeyword):
             hostname (str): The name of the host.
             nic (str): The name of the NIC.
 
-        Returns : None
+        Returns :
+            None: This method does not return anything.
         """
         gnss_keywords = GnssKeywords()
 

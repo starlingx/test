@@ -37,6 +37,8 @@ class PMCTableParser:
         Returns:
             list[dict]: the output values dict
 
+        Raises:
+            KeywordException: if a line with values is not in the expected format.
         """
         output_values_dict = {}
         output_values_dict_list = []

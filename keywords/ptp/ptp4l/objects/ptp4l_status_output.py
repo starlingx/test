@@ -31,13 +31,14 @@ class PTP4LStatusOutput:
 
     """
 
-    def __init__(self, ptp4l_status_output: [str]):
+    def __init__(self, ptp4l_status_output: list[str]):
         """
         Constructor.
-            Create an internal RunTimeOptionsObject from the passed parameter.
+
+        Create an internal RunTimeOptionsObject from the passed parameter.
+
         Args:
             ptp4l_status_output (list[str]): a list of strings representing the ptp4l_status_output
-
         """
         ptp4l_status_parser = PTP4LStatusParser(ptp4l_status_output)
         output_values = ptp4l_status_parser.get_output_values_dict()
@@ -46,24 +47,24 @@ class PTP4LStatusOutput:
 
         for value in output_values:
             ptp4l_status_object = PTP4LStatusObject(value)
-            if 'Loaded' in output_values[value]:
-                ptp4l_status_object.set_loaded(output_values[value]['Loaded'])
-            if 'Active' in output_values[value]:
-                ptp4l_status_object.set_active(output_values[value]['Active'])
-            if 'Process' in output_values[value]:
-                ptp4l_status_object.set_process(output_values[value]['Process'])
-            if 'Main PID' in output_values[value]:
-                ptp4l_status_object.set_main_pid(output_values[value]['Main PID'])
-            if 'Tasks' in output_values[value]:
-                ptp4l_status_object.set_tasks(output_values[value]['Tasks'])
-            if 'Memory' in output_values[value]:
-                ptp4l_status_object.set_memory(output_values[value]['Memory'])
-            if 'CPU' in output_values[value]:
-                ptp4l_status_object.set_cpu(output_values[value]['CPU'])
-            if 'CGroup' in output_values[value]:
-                ptp4l_status_object.set_c_group(output_values[value]['CGroup'])
-            if 'command' in output_values[value]:
-                ptp4l_status_object.set_command(output_values[value]['command'])
+            if "Loaded" in output_values[value]:
+                ptp4l_status_object.set_loaded(output_values[value]["Loaded"])
+            if "Active" in output_values[value]:
+                ptp4l_status_object.set_active(output_values[value]["Active"])
+            if "Process" in output_values[value]:
+                ptp4l_status_object.set_process(output_values[value]["Process"])
+            if "Main PID" in output_values[value]:
+                ptp4l_status_object.set_main_pid(output_values[value]["Main PID"])
+            if "Tasks" in output_values[value]:
+                ptp4l_status_object.set_tasks(output_values[value]["Tasks"])
+            if "Memory" in output_values[value]:
+                ptp4l_status_object.set_memory(output_values[value]["Memory"])
+            if "CPU" in output_values[value]:
+                ptp4l_status_object.set_cpu(output_values[value]["CPU"])
+            if "CGroup" in output_values[value]:
+                ptp4l_status_object.set_c_group(output_values[value]["CGroup"])
+            if "command" in output_values[value]:
+                ptp4l_status_object.set_command(output_values[value]["command"])
             self.ptp4l_status_object_list.append(ptp4l_status_object)
 
     def get_ptp4l_objects(self) -> list[PTP4LStatusObject]:
@@ -71,19 +72,22 @@ class PTP4LStatusOutput:
         Getter for ptp4l status object.
 
         Returns:
-            A PTP4LStatusObject list
-
+            list[PTP4LStatusObject]: A PTP4LStatusObject list
         """
         return self.ptp4l_status_object_list
 
     def get_ptp4l_object(self, service_name: str) -> PTP4LStatusObject:
         """
         Getter for ptp4l object with the given service name
+
         Args:
             service_name (str): the name of the service (e.g., "phc1")
 
-        Returns: PTP4LStatusObject
+        Returns:
+            PTP4LStatusObject: the PTP4LStatusObject with the given service name
 
+        Raises:
+            KeywordException: if no service with the given name is found or if more than one service with the given name is found.
         """
         service_list = list(filter(lambda service: service.get_service_name() == service_name, self.ptp4l_status_object_list))
         if len(service_list) == 1:
