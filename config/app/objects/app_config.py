@@ -19,6 +19,10 @@ class AppConfig:
         self.metric_server_app_name = app_dict["metric_server_app_name"]
         self.oidc_app_name = app_dict["oidc_app_name"]
         self.power_metrics_app_name = app_dict["power_metrics_app_name"]
+        self.power_manager_app_name = app_dict["power_manager_app_name"]
+        self.node_feature_discovery_app_name = app_dict["node_feature_discovery_app_name"]
+        self.node_interface_metrics_exporter_app_name = app_dict[
+            "node_interface_metrics_exporter_app_name"]
 
     def get_base_application_path(self) -> str:
         """
@@ -49,7 +53,7 @@ class AppConfig:
 
         """
         return self.metric_server_app_name
-    
+
     def get_oidc_app_name(self) -> str:
         """
         Getter for oidc app name
@@ -59,7 +63,7 @@ class AppConfig:
 
         """
         return self.oidc_app_name
-    
+
     def get_power_metrics_app_name(self) -> str:
         """
         Getter for power metrics app name
@@ -69,3 +73,33 @@ class AppConfig:
 
         """
         return self.power_metrics_app_name
+
+    def get_power_manager_app_name(self) -> str:
+        """
+        Getter for power manager app name
+
+        Returns:
+            str: the power manager app name
+
+        """
+        return self.power_manager_app_name
+
+    def get_node_feature_discovery_app_name(self) -> str:
+        """
+        Getter for node feature discovery app name
+
+        Returns:
+            str: the node feature discovery app name
+
+        """
+        return self.node_feature_discovery_app_name
+
+    def get_node_interface_metrics_exporter_app_name(self) -> str:
+        """
+        Getter for node interface metrics exporter app name
+
+        Returns:
+            str: the node interface metrics exporter app name
+
+        """
+        return self.node_interface_metrics_exporter_app_name
