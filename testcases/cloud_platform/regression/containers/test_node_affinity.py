@@ -34,6 +34,7 @@ def copy_affinity_files(request: FixtureRequest, ssh_connection: SSHConnection):
     request.addfinalizer(teardown)
 
 
+@mark.lab_is_aio
 def test_node_affinity_controller(request: FixtureRequest):
     """
     Test the functionality of the node affinity to a  controller by applying
