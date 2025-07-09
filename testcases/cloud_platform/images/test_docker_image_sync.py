@@ -24,6 +24,7 @@ from pytest import FixtureRequest, fail, raises
 from config.configuration_manager import ConfigurationManager
 from framework.exceptions.keyword_exception import KeywordException
 from framework.logging.automation_logger import get_logger
+from framework.resources.resource_finder import get_stx_resource_path
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.docker.images.docker_images_keywords import DockerImagesKeywords
 from keywords.docker.images.docker_sync_images_keywords import DockerSyncImagesKeywords
@@ -187,3 +188,123 @@ def test_invalid_manifest_logging(request):
 #     Validates that images from a manifest with mixed registries (DockerHub and Harbor) can be pulled and synced into the local registry.
 #     """
 #     run_manifest_sync_test(request, "stx-test-images-mixed-registries.yaml")
+
+
+def test_sync_single_busybox_image(request: FixtureRequest):
+    """
+    Sync a single image (busybox:1.36.1) from the manifest to the local registry,
+    validate it exists, and clean up afterwards.
+
+    This test validates the sync_image_from_manifest() method which allows
+    selective syncing of individual images rather than entire manifests.
+    """
+    manifest_path = get_stx_resource_path("resources/image_manifests/stx-third-party-test-images.yaml")
+
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    docker_sync_keywords = DockerSyncImagesKeywords(ssh_connection)
+
+    def cleanup():
+        get_logger().log_teardown_step("Removing busybox image from local registry")
+        docker_sync_keywords.remove_image_from_manifest(image_name="busybox", image_tag="1.36.1", manifest_path=manifest_path)
+
+    request.addfinalizer(cleanup)
+
+    get_logger().log_test_case_step("Syncing busybox image from manifest")
+    docker_sync_keywords.sync_image_from_manifest(image_name="busybox", image_tag="1.36.1", manifest_path=manifest_path)
+
+    get_logger().log_test_case_step("Validating busybox image exists in local registry")
+    assert docker_sync_keywords.image_exists_in_local_registry(image_name="busybox", image_tag="1.36.1")
+
+
+def test_sync_third_party_images_to_local_registry(request: FixtureRequest):
+    """
+    Sync required 3rd party Docker images from source registries to local registry.
+
+    This test ensures all common sanity test images are preloaded into registry.local.
+    Uses the stx-third-party-test-images.yaml manifest which contains public images
+    from DockerHub, k8s.gcr.io, and other public registries.
+    """
+    manifest_path = get_stx_resource_path("resources/image_manifests/stx-third-party-test-images.yaml")
+
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    docker_keywords = DockerSyncImagesKeywords(ssh_connection)
+
+    def cleanup():
+        get_logger().log_teardown_step("Removing third-party images from manifest")
+        docker_keywords.remove_images_from_manifest(manifest_path)
+
+    request.addfinalizer(cleanup)
+
+    get_logger().log_test_case_step(f"Syncing Docker images from manifest: {manifest_path}")
+    docker_keywords.sync_images_from_manifest(manifest_path)
+
+    get_logger().log_test_case_step("Validating all images exist in local registry")
+    docker_keywords.manifest_images_exist_in_local_registry(manifest_path)
+
+    get_logger().log_info("Successfully synced all 3rd party test images")
+
+
+def test_remove_third_party_images_from_local_registry():
+    """
+    Remove third-party Docker images from registry.local that were synced from manifest.
+
+    This test ensures cleanup of common sanity/networking images after test execution.
+    Can be run independently or as part of test cleanup verification.
+    """
+    manifest_path = get_stx_resource_path("resources/image_manifests/stx-third-party-test-images.yaml")
+
+    get_logger().log_test_case_step("Connecting to active controller")
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+
+    get_logger().log_test_case_step(f"Removing Docker images listed in: {manifest_path}")
+    docker_keywords = DockerSyncImagesKeywords(ssh_connection=ssh_connection)
+    docker_keywords.remove_images_from_manifest(manifest_path)
+
+    get_logger().log_info("Successfully removed all third-party test images")
+
+
+def test_single_image_sync_and_removal_workflow(request: FixtureRequest):
+    """
+    Test the complete workflow of syncing and removing a single image.
+
+    This test validates:
+    1. Single image sync from manifest
+    2. Image validation in local registry
+    3. Single image removal from manifest
+    4. Cleanup verification
+    """
+    manifest_path = get_stx_resource_path("resources/image_manifests/stx-third-party-test-images.yaml")
+
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    docker_sync_keywords = DockerSyncImagesKeywords(ssh_connection)
+
+    # Test image: calico/ctl:v3.27.0 (from the third-party manifest)
+    test_image_name = "calico/ctl"
+    test_image_tag = "v3.27.0"
+
+    def cleanup():
+        get_logger().log_teardown_step(f"Final cleanup: removing {test_image_name}:{test_image_tag}")
+        try:
+            docker_sync_keywords.remove_image_from_manifest(image_name=test_image_name, image_tag=test_image_tag, manifest_path=manifest_path)
+        except Exception as e:
+            get_logger().log_warning(f"Cleanup failed (expected if test passed): {e}")
+
+    request.addfinalizer(cleanup)
+
+    # Step 1: Sync the single image
+    get_logger().log_test_case_step(f"Syncing {test_image_name}:{test_image_tag} from manifest")
+    docker_sync_keywords.sync_image_from_manifest(image_name=test_image_name, image_tag=test_image_tag, manifest_path=manifest_path)
+
+    # Step 2: Validate it exists in local registry
+    get_logger().log_test_case_step(f"Validating {test_image_name}:{test_image_tag} exists in local registry")
+    assert docker_sync_keywords.image_exists_in_local_registry(image_name=test_image_name, image_tag=test_image_tag), f"Image {test_image_name}:{test_image_tag} should exist in local registry after sync"
+
+    # Step 3: Remove the single image
+    get_logger().log_test_case_step(f"Removing {test_image_name}:{test_image_tag} from local registry")
+    docker_sync_keywords.remove_image_from_manifest(image_name=test_image_name, image_tag=test_image_tag, manifest_path=manifest_path)
+
+    # Step 4: Validate it no longer exists (optional verification)
+    get_logger().log_test_case_step(f"Verifying {test_image_name}:{test_image_tag} was removed")
+    assert not docker_sync_keywords.image_exists_in_local_registry(image_name=test_image_name, image_tag=test_image_tag), f"Image {test_image_name}:{test_image_tag} should not exist in local registry after removal"
+
+    get_logger().log_info(f"Successfully completed single image sync/removal workflow for {test_image_name}:{test_image_tag}")

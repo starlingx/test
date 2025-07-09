@@ -84,6 +84,7 @@
   "image_manifest_files": [
     "resources/image_manifests/stx-test-images.yaml",
     "resources/image_manifests/stx-test-images-invalid.yaml",
+    "resources/image_manifests/stx-third-party-images.yaml"
     // "resources/image_manifests/harbor-test-images.yaml",
     // "resources/stx-networking-images.yaml",
   ],
@@ -96,6 +97,10 @@
     },
     "resources/image_manifests/stx-test-images-invalid.yaml": {
       "manifest_registry": "dockerhub",
+      "override": false,
+    },
+    "resources/image_manifests/stx-third-party-images.yaml": {
+      "manifest_registry": "null", // No manifest fallback; each image uses its "source_registry" or "default_source_registry"
       "override": false,
     },
     // // Use Harbor as the default for images in this manifest that do not specify "source_registry"
