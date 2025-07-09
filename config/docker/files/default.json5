@@ -1,32 +1,82 @@
-// Example Docker registry configuration.
+// ============================================================================
+// Docker Registry Configuration
+// ============================================================================
 //
-// This file is used as the default by ConfigurationManager.get_docker_config(),
-// unless overridden via the --docker_config_file CLI option or programmatically.
+// This file defines how Docker images are pulled from source registries and
+// pushed to the local StarlingX registry for testing.
 //
-// Registry endpoints, credentials, and image manifest paths can be overridden at runtime
-// using --docker_config_file or set programmatically via ConfigurationManager.
+// Usage:
+// - This file is used as the default by ConfigurationManager.get_docker_config(),
+//   unless overridden via the --docker_config_file CLI option.
 //
+// - Registry endpoints, credentials, and manifest paths can be customized by
+//   editing this file or providing an alternate JSON5 file via --docker_config_file.
+//
+// ----------------------------------------------------------------------------
+// Fields:
+// ----------------------------------------------------------------------------
+// - "default_source_registry":
+//     The global fallback registry name if no per-image or manifest mapping applies.
+//
+// - "image_manifest_files":
+//     A list of YAML manifest files describing images, tags, and optional
+//     source registries. This allows modular organization of test images
+//     by domain, scenario, or team ownership.
+//
+// - "manifest_registry_map":
+//     Optional mapping of manifest filenames to registry resolution rules.
+//     Each entry can define:
+//       - "manifest_registry": A registry to apply to all images in this manifest
+//         if per-image definitions are not used.
+//       - "override": If true, all images in the manifest use "manifest_registry"
+//         regardless of any "source_registry" specified per image.
+//
+//     Although per-manifest mapping is optional, it is encouraged—even if
+//     "manifest_registry" is set to null—for clarity and visibility.
+//
+// - "registries":
+//     A dictionary of registry definitions including URLs and credentials.
+//
+// ----------------------------------------------------------------------------
 // Registry Resolution Behavior:
-// - The "source_registry" field (if present) on an individual image in the manifest takes highest precedence.
-//   This allows different images within the same manifest to pull from different source registries.
-// - Use "manifest_registry_map" to override the source registry per manifest.
-// - Use "default_source_registry" as a global fallback if neither of the above is set.
-//   This is useful when all your images come from a single upstream source like DockerHub.
-//   The resolution priority is:
-//     1. source_registry (per image)
-//     2. manifest_registry_map (per manifest)
-//     3. default_source_registry (global fallback)
+// ----------------------------------------------------------------------------
+// For each image, the registry is resolved in this order:
 //
+// 1) If a manifest entry exists in "manifest_registry_map":
+//    - If "override" is true:
+//         The "manifest_registry" is always used for all images.
+//    - If "override" is false:
+//         a. If the image defines "source_registry", that is used.
+//         b. Otherwise, if "manifest_registry" is defined (not null), it is used.
+//         c. Otherwise, "default_source_registry" is used.
+//
+// 2) If the manifest is listed in "image_manifest_files" but does not have a corresponding
+//    entry in "manifest_registry_map":
+//    - If the image defines "source_registry", that is used.
+//    - Otherwise, "default_source_registry" is used.
+//
+// ----------------------------------------------------------------------------
+// Rationale:
+// ----------------------------------------------------------------------------
+// This design allows declarative, centralized control over where images are
+// pulled from without requiring edits to the manifests themselves. It enables:
+//
+// - Reusing the same manifests across environments.
+// - Overriding all sources (e.g., to pull from an internal or mirrored registry).
+// - Per-image flexibility for mixed-registry scenarios.
+// - Simplified configuration for air-gapped or network-restricted deployments.
+//
+// ----------------------------------------------------------------------------
 // Notes:
+// ----------------------------------------------------------------------------
 // - Each registry must define a unique "registry_name", which acts as a logical key.
-//   This is referenced by:
-//   * the "source_registry" field in image manifests
-//   * the "manifest_registry_map" in this config file
-//   * the "default_source_registry" fallback below
-//
-// - "image_manifest_files" may include one or more YAML files.
-// - Each image listed in a manifest is pulled from its resolved source registry
-//   and pushed into the "local_registry" defined below.
+//   This key is referenced in "manifest_registry_map", per-image "source_registry",
+//   and "default_source_registry".
+// - Public registries (e.g., DockerHub, k8s, GCR) typically do not require credentials.
+//   Use empty strings for "user_name" and "password" in these cases.
+// - Private registries or internal mirrors (including "local_registry") must be configured
+//   with valid credentials if authentication is required.
+// ============================================================================
 
 {
   "default_source_registry": "dockerhub",
@@ -39,9 +89,25 @@
   ],
 
   "manifest_registry_map": {
-    "resources/image_manifests/stx-test-images.yaml": "dockerhub",
-    // "resources/image_manifests/stx-test-images-invalid.yaml": "dockerhub",
-    // "resources/image_manifests/harbor-test-images.yaml": "harbor",
+    // Force all images in this manifest to come from DockerHub
+    "resources/image_manifests/stx-test-images.yaml": {
+      "manifest_registry": "dockerhub",
+      "override": true,
+    },
+    "resources/image_manifests/stx-test-images-invalid.yaml": {
+      "manifest_registry": "dockerhub",
+      "override": false,
+    },
+    // // Use Harbor as the default for images in this manifest that do not specify "source_registry"
+    // "resources/image_manifests/stx-sanity-images.yaml": {
+    //   "manifest_registry": "harbor",
+    //   "override": false,
+    // },
+    // // No manifest fallback is defined; each image will use its "source_registry" if set, or "default_source_registry".
+    // "resources/stx-networking-images.yaml": {
+    //   "manifest_registry": null,
+    //   "override": false,
+    // },
   },
 
   "registries": {
@@ -52,13 +118,27 @@
       "password": "",
     },
 
+    "k8s": {
+      "registry_name": "k8s",
+      "registry_url": "registry.k8s.io",
+      "user_name": "",
+      "password": "",
+    },
+
+    "gcr": {
+      "registry_name": "gcr",
+      "registry_url": "gcr.io",
+      "user_name": "",
+      "password": "",
+    },
+
     // Example entry for a private registry such as Harbor:
     // "harbor": {
     //   "registry_name": "harbor",
     //   "registry_url": "harbor.example.org:5000",
     //   "user_name": "robot_user",
     //   "password": "robot_token",
-    // }
+    // },
 
     "local_registry": {
       "registry_name": "local_registry",
@@ -66,5 +146,5 @@
       "user_name": "test_user",
       "password": "test_password",
     },
-  }
+  },
 }
