@@ -13,6 +13,7 @@ from keywords.ptp.ptp4l.objects.ptp4l_status_output import PTP4LStatusOutput
 class PTPServiceStatusValidator(BaseKeyword):
     """
     A class to validate the status and parameters of PTP (Precision Time Protocol)
+
     services on a target host using systemctl.
     """
 
@@ -21,20 +22,21 @@ class PTPServiceStatusValidator(BaseKeyword):
         Initializes the PTPServiceStatusValidator with an SSH connection.
 
         Args:
-            ssh_connection: An instance of an SSH connection.
+            ssh_connection (SSHConnection): An instance of an SSH connection.
         """
         self.ssh_connection = ssh_connection
 
     def verify_status_on_hostname(self, hostname: str, name: str, service_name: str) -> None:
         """
-        verify systemctl ptp service status on hostname
+        Verify systemctl ptp service status on hostname
 
         Args:
             hostname (str): The name of the host
             name (str): name of instance (e.g., "phc1")
             service_name (str): service name (e.g., "phc2sys@phc1.service")
 
-        Returns: None
+        Returns:
+            None: This method does not return anything.
 
         Raises:
             Exception: raised when validate fails
@@ -51,7 +53,7 @@ class PTPServiceStatusValidator(BaseKeyword):
 
     def verify_status_and_instance_parameters_on_hostname(self, hostname: str, name: str, service_name: str, instance_parameters: str) -> None:
         """
-        verify systemctl service status and instance parameters on hostname
+        Verify systemctl service status and instance parameters on hostname
 
         Args:
             hostname (str): The name of the host
@@ -133,6 +135,7 @@ class PTPServiceStatusValidator(BaseKeyword):
     def verify_service_status_and_recent_event(self, service_name: str, instance_name: str, threshold_seconds: int, expected_service_status: str = "active (running)") -> None:
         """
         Verifies that the given PTP service is in the expected systemctl status and
+
         that its most recent state change occurred within the given threshold.
 
         Args:

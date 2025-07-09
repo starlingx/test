@@ -69,9 +69,9 @@ class PTPSetupKeywords(BaseKeyword):
             custom_expected_dict_template (Optional[str]):
                 Jinja2-formatted string representing an expected_dict override. If provided,
                 it replaces the auto-filtered expected_dict.
-            expected_dict_overrides: Optional[Dict[str, Any]]:
-                    A dictionary of specific overrides to apply on the generated or provided expected_dict.
-                    Supports nested structure (e.g. overriding grandmaster_settings -> clock_class).
+            expected_dict_overrides (Optional[Dict[str, Any]]):
+                A dictionary of specific overrides to apply on the generated or provided expected_dict.
+                Supports nested structure (e.g. overriding grandmaster_settings -> clock_class).
 
         Returns:
             PTPSetup: A PTPSetup object containing the filtered configuration.

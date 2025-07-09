@@ -16,6 +16,8 @@ class TS2PHCSetup:
             setup_dict (Dict[str, Any]): The dictionary read from the JSON setup template file associated with this ts2phc setup.
             ptp_host_ifs_dict (Dict[str, PTPHostInterfaceSetup]): The dictionary that maps the name of thePTPHostInterfaceSetup to its associated object.
 
+        Raises:
+            Exception: If the setup_dict does not contain required keys or if the ptp_host_ifs_dict does not contain required PTPHostInterfaceSetup entries.
         """
         if "name" not in setup_dict:
             raise Exception("Every ts2phc entry should have a name.")
@@ -39,13 +41,12 @@ class TS2PHCSetup:
             ptp_interfaces.append(ptp_host_ifs_dict[ptp_interface_name])
         self.ptp_interfaces = ptp_interfaces
 
-    def __str__(self):
+    def __str__(self) -> str:
         """
         String representation of this object.
 
         Returns:
             str: String representation of this object.
-
         """
         return self.get_name()
 
