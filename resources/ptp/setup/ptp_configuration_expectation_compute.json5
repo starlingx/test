@@ -247,7 +247,7 @@
      controller_0_interfaces: ["{{ controller_0.nic2.base_port }}", "{{ controller_0.nic1.conn_to_proxmox }}"],
      controller_1_interfaces: ["{{ controller_1.nic1.conn_to_proxmox }}"],
      compute_0_interfaces: ["{{ compute_0.nic1.nic_connection.interface }}", "{{ compute_0.nic2.nic_connection.interface }}"],
-     ptp_interface_parameter : "",
+     ptp_interface_parameter : "ts2phc.channel=1 ts2phc.pin_index=1",
     },
 
    {
