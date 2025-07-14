@@ -2,6 +2,7 @@ from typing import Dict, List
 
 from keywords.ptp.setup.object.clock_setup import ClockSetup
 from keywords.ptp.setup.object.phc2sys_setup import PHC2SysSetup
+from keywords.ptp.setup.object.ptp4l_expected_dict import PTP4LExpectedDict
 from keywords.ptp.setup.object.ptp4l_setup import PTP4LSetup
 from keywords.ptp.setup.object.ptp_host_interface_setup import PTPHostInterfaceSetup
 from keywords.ptp.setup.object.ts2phc_setup import TS2PHCSetup
@@ -25,6 +26,7 @@ class PTPSetup:
         self.ts2phc_setup_list: List[TS2PHCSetup] = []
         self.clock_setup_list: List[ClockSetup] = []
         self.host_ptp_if_dict: Dict[str, PTPHostInterfaceSetup] = {}  # Name -> PTPHostInterfaceSetup
+        self.ptp4l_expected_list: List[PTP4LExpectedDict] = []
 
         if "ptp_instances" not in setup_dict:
             raise Exception("You must define a ptp_instances section in your ptp setup_dict")
@@ -63,7 +65,10 @@ class PTPSetup:
                 clock_setup = ClockSetup(clock_entry_dict, self.host_ptp_if_dict)
                 self.clock_setup_list.append(clock_setup)
 
-    def __str__(self):
+        expected_dict = setup_dict.get("expected_dict", {})
+        self.ptp4l_expected_list.extend(PTP4LExpectedDict(item) for item in expected_dict.get("ptp4l", []))
+
+    def __str__(self) -> str:
         """
         String representation of this object.
 
@@ -82,6 +87,21 @@ class PTPSetup:
         """
         return self.ptp4l_setup_list
 
+    def get_ptp4l_setup(self, setup_name: str) -> PTP4LSetup:
+        """
+        Getter for the PTP4LSetup with the specified name.
+
+        Args:
+            setup_name (str): Name of the specified setup.
+
+        Returns:
+            PTP4LSetup: The setup matching that name.
+        """
+        for setup in self.ptp4l_setup_list:
+            if setup.get_name() == setup_name:
+                return setup
+        raise Exception(f"There is no ptp4l setup named {setup_name}")
+
     def get_phc2sys_setup_list(self) -> List[PHC2SysSetup]:
         """
         Getter for the list of phc2sys setups.
@@ -90,6 +110,21 @@ class PTPSetup:
             List[PHC2SysSetup]: list of phc2sys setups
         """
         return self.phc2sys_setup_list
+
+    def get_phc2sys_setup(self, setup_name: str) -> PHC2SysSetup:
+        """
+        Getter for the PHC2SysSetup with the specified name.
+
+        Args:
+            setup_name (str): Name of the specified setup.
+
+        Returns:
+            PHC2SysSetup: The setup matching that name.
+        """
+        for setup in self.phc2sys_setup_list:
+            if setup.get_name() == setup_name:
+                return setup
+        raise Exception(f"There is no phc2sys setup named {setup_name}")
 
     def get_ts2phc_setup_list(self) -> List[TS2PHCSetup]:
         """
@@ -100,6 +135,21 @@ class PTPSetup:
         """
         return self.ts2phc_setup_list
 
+    def get_ts2phc_setup(self, setup_name: str) -> TS2PHCSetup:
+        """
+        Getter for the TS2PHCSetup with the specified name.
+
+        Args:
+            setup_name (str): Name of the specified setup.
+
+        Returns:
+            TS2PHCSetup: The setup matching that name.
+        """
+        for setup in self.ts2phc_setup_list:
+            if setup.get_name() == setup_name:
+                return setup
+        raise Exception(f"There is no ts2phc setup named {setup_name}")
+
     def get_clock_setup_list(self) -> List[ClockSetup]:
         """
         Getter for the list of clock setups.
@@ -108,3 +158,42 @@ class PTPSetup:
             List[ClockSetup]: list of clock setups
         """
         return self.clock_setup_list
+
+    def get_clock_setup(self, setup_name: str) -> ClockSetup:
+        """
+        Getter for the ClockSetup with the specified name.
+
+        Args:
+            setup_name (str): Name of the specified setup.
+
+        Returns:
+            ClockSetup: The setup matching that name.
+        """
+        for setup in self.clock_setup_list:
+            if setup.get_name() == setup_name:
+                return setup
+        raise Exception(f"There is no clock setup named {setup_name}")
+
+    def get_expected_ptp4l_list(self) -> List[PTP4LExpectedDict]:
+        """
+        Getter for the list of expected ptp4l list.
+
+        Returns:
+            List[PTP4LExpectedDict]: list of ptp4l expected dict
+        """
+        return self.ptp4l_expected_list
+
+    def get_ptp4l_expected_by_name(self, name: str) -> PTP4LExpectedDict:
+        """
+        Getter for ptp4l expected by name.
+
+        Args:
+            name (str): The name of the instance.
+
+        Returns:
+            PTP4LExpectedDict: ptp4l expected by name
+        """
+        ptp4l_expected_obj = next((obj for obj in self.ptp4l_expected_list if obj.get_name() == name), None)
+        if not ptp4l_expected_obj:
+            raise ValueError(f"No expected PTP4L object found for name: {name}")
+        return ptp4l_expected_obj

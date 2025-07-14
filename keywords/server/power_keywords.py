@@ -21,32 +21,32 @@ class PowerKeywords(BaseKeyword):
     def power_on(self, host_name: str) -> bool:
         """
         Powers on the given host and waits for the host to be in a good state
+
         Args:
-            host_name (): the name of the host
+            host_name (str): the name of the host
 
         Returns:
+            bool: True if host powers on successfully
 
+        Raises:
+            KeywordException: if host fails to power on within the expected time
         """
         IPMIToolChassisPowerKeywords(self.ssh_connection, host_name).power_on()
         if not self.is_powered_on(host_name):
             host_value = SystemHostListKeywords(self.ssh_connection).get_system_host_list().get_host(host_name)
-            raise KeywordException(
-                "Power on host did not power on in the required time. Host values were: "
-                f"Operational: {host_value.get_operational()} "
-                f"Administrative: {host_value.get_administrative()} "
-                f"Availability: {host_value.get_availability()}"
-            )
+            raise KeywordException("Power on host did not power on in the required time. Host values were: " f"Operational: {host_value.get_operational()} " f"Administrative: {host_value.get_administrative()} " f"Availability: {host_value.get_availability()}")
         return True
 
-    def is_powered_on(self, host_name, power_on_wait_timeout: int = 1800):
+    def is_powered_on(self, host_name: str, power_on_wait_timeout: int = 1800) -> bool:
         """
         Checks that the host is powered on and in a good state
+
         Args:
-            host_name (): the name of the host
-            power_on_wait_timeout (): the time to wait for the host to be powered on
+            host_name (str): the name of the host
+            power_on_wait_timeout (int): the time to wait for the host to be powered on
 
         Returns:
-
+            bool: True if the host is powered on, healthy and has no failure alarms ; False otherwise
         """
         timeout = time.time() + power_on_wait_timeout
         refresh_time = 5
@@ -59,7 +59,7 @@ class PowerKeywords(BaseKeyword):
 
             try:
                 status = IPMIToolChassisStatusKeywords(self.ssh_connection, host_name).get_ipmi_chassis_status()
-                if status.system_power == 'on':
+                if status.system_power == "on":
                     get_logger().log_info("The host is powered on.")
                     is_power_on = True
 
@@ -71,7 +71,7 @@ class PowerKeywords(BaseKeyword):
                 alarms = AlarmListKeywords(self.ssh_connection).alarm_list()
                 is_alarms_list_ok = True
                 for alarm in alarms:
-                    if alarm.get_alarm_id() == "200.004" or alarm.get_alarm_id() == "200.005" or alarm.get_alarm_id() == '750.006':  #
+                    if alarm.get_alarm_id() == "200.004" or alarm.get_alarm_id() == "200.005" or alarm.get_alarm_id() == "750.006":  #
                         is_alarms_list_ok = False
                 if is_alarms_list_ok:
                     get_logger().log_info("There are no critical failures alarms")
@@ -90,31 +90,31 @@ class PowerKeywords(BaseKeyword):
     def power_off(self, host_name: str) -> bool:
         """
         Powers off the host
+
         Args:
-            host_name (): the name of the host
+            host_name (str): the name of the host
 
         Returns:
+            bool: True if powered off
 
+        Raises:
+            KeywordException: if host fails to power off within the expected time
         """
         IPMIToolChassisPowerKeywords(self.ssh_connection, host_name).power_off()
         if not self.is_powered_off(host_name):
             host_value = SystemHostListKeywords(self.ssh_connection).get_system_host_list().get_host(host_name)
-            raise KeywordException(
-                "Power off host did not power off in the required time. Host values were: "
-                f"Operational: {host_value.get_operational()} "
-                f"Administrative: {host_value.get_administrative()} "
-                f"Availability: {host_value.get_availability()}"
-            )
+            raise KeywordException("Power off host did not power off in the required time. Host values were: " f"Operational: {host_value.get_operational()} " f"Administrative: {host_value.get_administrative()} " f"Availability: {host_value.get_availability()}")
         return True
 
-    def is_powered_off(self, host_name):
+    def is_powered_off(self, host_name: str) -> bool:
         """
         Waits for the host to be powered off
+
         Args:
-            host_name (): the name of the host
+            host_name (str): the name of the host
 
         Returns:
-
+            bool: True if host powered off and host operations are disabled; False otherwise
         """
         timeout = time.time() + 600
         is_power_off = False
@@ -123,12 +123,12 @@ class PowerKeywords(BaseKeyword):
         while time.time() < timeout:
             try:
                 status = IPMIToolChassisStatusKeywords(self.ssh_connection, host_name).get_ipmi_chassis_status()
-                if status.system_power == 'off':
+                if status.system_power == "off":
                     get_logger().log_info("The host is powered off.")
                     is_power_off = True
 
                 host_value = SystemHostListKeywords(self.ssh_connection).get_system_host_list().get_host(host_name)
-                if host_value.get_availability() == 'offline' and host_value.get_operational() == 'disabled':
+                if host_value.get_availability() == "offline" and host_value.get_operational() == "disabled":
                     is_host_list_ok = True
 
                 if is_power_off and is_host_list_ok:

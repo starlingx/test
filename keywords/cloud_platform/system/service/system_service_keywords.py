@@ -2,6 +2,8 @@ from keywords.base_keyword import BaseKeyword
 from keywords.cloud_platform.command_wrappers import source_openrc
 from keywords.cloud_platform.system.service.objects.system_service_output import SystemServiceOutput
 from keywords.cloud_platform.system.service.objects.system_service_show_output import SystemServiceShowOutput
+from keywords.k8s.pods.kubectl_get_pods_keywords import KubectlGetPodsKeywords
+from time import sleep
 
 
 class SystemServiceKeywords(BaseKeyword):
@@ -49,3 +51,26 @@ class SystemServiceKeywords(BaseKeyword):
         self.validate_success_return_code(self.ssh_connection)
         system_service_show_output = SystemServiceShowOutput(output)
         return system_service_show_output
+    
+
+    def add_service_parameter(self, service: str, parameter: str, value: str):
+        """
+        Adds a service parameter.
+
+        Args:
+            service (str): The service name.
+            parameter (str): The parameter to add.
+            value (str): The value of the parameter.
+        """
+        command = source_openrc(f'system service-parameter-add {service} {parameter}={value}')
+        self.ssh_connection.send(command)
+        self.validate_success_return_code(self.ssh_connection)
+
+    def apply_kubernetes_service_parameters(self):
+        """
+        Applies kubernetes service parameters and waits for it to restart.
+        """
+        command = source_openrc(f'system service-parameter-apply kubernetes')
+        self.ssh_connection.send(command)
+        self.validate_success_return_code(self.ssh_connection)
+        KubectlGetPodsKeywords(self.ssh_connection).wait_for_kubernetes_to_restart()

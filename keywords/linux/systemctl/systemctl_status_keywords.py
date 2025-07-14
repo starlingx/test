@@ -14,12 +14,10 @@ class SystemCTLStatusKeywords(BaseKeyword):
         """
         Gets the status of the given service name
         Args:
-            service_name (): the service name
+            service_name (str): the service name
 
-        Returns: the output as a list of strings - this should be consumed by a parser for the given output type
-
+        Returns:
+            list[str]: the output as a list of strings - this should be consumed by a parser for the given output type
         """
-        output = self.ssh_connection.send(f'systemctl status {service_name}')
-        self.validate_success_return_code(self.ssh_connection)
+        output = self.ssh_connection.send(f"systemctl status {service_name}")
         return output
-

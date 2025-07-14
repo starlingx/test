@@ -8,10 +8,10 @@ class IsIPMIToolKeywords(BaseKeyword):
     """
 
     def __init__(self, ssh_connection: SSHConnection):
-        """
-        Constructor
+        """Constructor
+
         Args:
-            ssh_connection:
+            ssh_connection (SSHConnection): SSH connection object.
         """
         self.ssh_connection = ssh_connection
 
@@ -24,9 +24,8 @@ class IsIPMIToolKeywords(BaseKeyword):
         Returns: True if the ipmi tool is available, false otherwise.
 
         """
-        output = self.ssh_connection.send_as_sudo('ipmitool')
-
-        if "No command provided!" in output:
+        output = self.ssh_connection.send_as_sudo("ipmitool")
+        if len(output) > 1 and output[0].strip() == "No command provided!":
             return True
 
         # Output is either "ipmitool: command not found" or, if sudo isn't used:

@@ -58,34 +58,26 @@ class CatPtpCguParser:
                 - (.*): Captures any characters (phase offset).
 
         Returns:
-            PtpCguComponentObject - the PtpCguComponentObject.
+            PtpCguComponentObject: the PtpCguComponentObject.
         Raise:
-            KeywordException - if output is unable to be parsed.
+            KeywordException: if output is unable to be parsed.
 
         """
         cgu: PtpCguComponentObject = None
 
-        match = re.match(r"Found (\S+) CGU", self.cat_ptp_cgu_output[0])
+        match = re.search(r"Found (\S+) CGU", self.cat_ptp_cgu_output[0])
         if match:
             chip_model = match.group(1)
-            config_version_match = re.search(
-                r"DPLL Config ver: (.*)", self.cat_ptp_cgu_output[1]
-            )
-            fw_version_match = re.search(
-                r"DPLL FW ver: (.*)", self.cat_ptp_cgu_output[2]
-            )
+            config_version_match = re.search(r"DPLL Config ver: (.*)", self.cat_ptp_cgu_output[1])
+            fw_version_match = re.search(r"DPLL FW ver: (.*)", self.cat_ptp_cgu_output[2])
             if config_version_match and fw_version_match:
                 config_version = config_version_match.group(1)
                 fw_version = fw_version_match.group(1)
                 cgu = PtpCguComponentObject(config_version, fw_version, chip_model)
             else:
-                raise KeywordException(
-                    f"Unable to parse output. Got : {self.cat_ptp_cgu_output}"
-                )
+                raise KeywordException(f"Unable to parse output. Got : {self.cat_ptp_cgu_output}")
         else:
-            raise KeywordException(
-                f"Unexpected format: could not parse. Got: {self.cat_ptp_cgu_output}"
-            )
+            raise KeywordException(f"Unexpected format: could not parse. Got: {self.cat_ptp_cgu_output}")
 
         for i, line in enumerate(self.cat_ptp_cgu_output):
             # CGU Input Status
@@ -95,40 +87,22 @@ class CatPtpCguParser:
             )
             if match and cgu:
                 input_name, idx, state, eec, pps, esync_fail = match.groups()
-                cgu.append_cgu_input(
-                    PtpCguInputObject(
-                        input_name, int(idx), state, int(eec), int(pps), esync_fail
-                    )
-                )
+                cgu.append_cgu_input(PtpCguInputObject(input_name, int(idx), state, int(eec), int(pps), esync_fail))
 
             # EEC DPLL
             match = re.match(r"EEC DPLL:", line)
             if match and cgu:
-                current_ref_match = re.search(
-                    r"Current reference:\s*(.*)", self.cat_ptp_cgu_output[i + 1]
-                )
-                status_match = re.search(
-                    r"Status:\s*(.*)", self.cat_ptp_cgu_output[i + 2]
-                )
+                current_ref_match = re.search(r"Current reference:\s*(.*)", self.cat_ptp_cgu_output[i + 1])
+                status_match = re.search(r"Status:\s*(.*)", self.cat_ptp_cgu_output[i + 2])
                 if current_ref_match and status_match:
-                    cgu.set_eec_dpll(
-                        PtpCguEecDpllObject(
-                            current_ref_match.group(1), status_match.group(1)
-                        )
-                    )
+                    cgu.set_eec_dpll(PtpCguEecDpllObject(current_ref_match.group(1), status_match.group(1)))
 
             # PPS DPLL
             match = re.match(r"PPS DPLL:", line)
             if match and cgu:
-                current_ref_match = re.search(
-                    r"Current reference:\s*(.*)", self.cat_ptp_cgu_output[i + 1]
-                )
-                status_match = re.search(
-                    r"Status:\s*(.*)", self.cat_ptp_cgu_output[i + 2]
-                )
-                phase_offset_match = re.search(
-                    r"Phase offset \[ps]:\s*(.*)", self.cat_ptp_cgu_output[i + 3]
-                )
+                current_ref_match = re.search(r"Current reference:\s*(.*)", self.cat_ptp_cgu_output[i + 1])
+                status_match = re.search(r"Status:\s*(.*)", self.cat_ptp_cgu_output[i + 2])
+                phase_offset_match = re.search(r"Phase offset \[ps]:\s*(.*)", self.cat_ptp_cgu_output[i + 3])
 
                 if current_ref_match and status_match and phase_offset_match:
                     cgu.set_pps_dpll(

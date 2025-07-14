@@ -1,4 +1,5 @@
 {
 	// KUBECONFIG environment variable on the cloud_platform system.
 	"kubeconfig": "/etc/kubernetes/admin.conf",
+	"dashboard_port": "30000"
 }

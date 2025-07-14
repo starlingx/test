@@ -1,34 +1,34 @@
 {
-  "floating_ip": "10.2.3.130",
-  "lab_name": "Subcloud1",
-  "lab_type": "Standard",
-  "admin_credentials": {
-    "user_name": "fake_user",
-    "password": "fake_password"
+  floating_ip: "10.2.3.130",
+  lab_name: "Subcloud1",
+  lab_type: "Standard",
+  admin_credentials: {
+    user_name: "fake_user",
+    password: "fake_password"
   },
-  "bm_password": "",
-  "use_jump_server": false,
-  "lab_capabilities": [],
-  "nodes": {
+  bm_password: "",
+  use_jump_server: false,
+  lab_capabilities: [],
+  nodes: {
     "controller-0": {
-      "ip": "10.2.3.131",
-      "node_type": "Controller",
-      "node_capabilities": []
+      ip: "10.2.3.131",
+      node_type: "Controller",
+      node_capabilities: [],
     },
     "controller-1": {
-      "ip": "10.2.3.132",
-      "node_type": "Controller",
-      "node_capabilities": []
+      ip: "10.2.3.132",
+      node_type: "Controller",
+      node_capabilities: []
     },
     "compute-0": {
-      "ip": "10.2.3.133",
-      "node_type": "Compute",
-      "node_capabilities": []
+      ip: "10.2.3.133",
+      node_type: "Compute",
+      node_capabilities: []
     },
     "compute-1": {
-      "ip": "10.2.3.134",
-      "node_type": "Compute",
-      "node_capabilities": []
+      ip: "10.2.3.134",
+      node_type: "Compute",
+      node_capabilities: []
     }
   }
 }

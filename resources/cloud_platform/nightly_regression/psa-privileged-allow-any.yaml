@@ -1,0 +1,70 @@
+---
+apiVersion: v1
+kind: Pod
+metadata:
+ name: privileged-1
+ namespace: privileged-ns
+spec:
+ containers:
+ - name: pause
+   image: registry.local:9001/pause
+   securityContext:
+     privileged: false
+ imagePullSecrets:
+ - name: local-secret
+---
+apiVersion: v1
+kind: Pod
+metadata:
+ name: privileged-2
+ namespace: privileged-ns
+spec:
+ containers:
+ - name: pause
+   image: registry.local:9001/pause
+   securityContext:
+     privileged: true
+ imagePullSecrets:
+ - name: local-secret
+---
+apiVersion: v1
+kind: Pod
+metadata:
+ name: privileged-3
+ namespace: privileged-ns
+spec:
+  containers:
+    - name:  pause
+      image: registry.local:9001/pause
+      securityContext:
+        runAsUser: 1000
+        allowPrivilegeEscalation: false
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+        capabilities:
+          drop:
+           - ALL
+  imagePullSecrets:
+  - name: local-secret
+---
+apiVersion: v1
+kind: Pod
+metadata:
+ name: privileged-4
+ namespace: privileged-ns
+spec:
+  containers:
+    - name:  pause
+      image: registry.local:9001/pause
+      securityContext:
+        runAsUser: 1000
+        allowPrivilegeEscalation: false
+        runAsNonRoot: false
+        seccompProfile:
+          type: RuntimeDefault
+        capabilities:
+          drop:
+           - ALL
+  imagePullSecrets:
+  - name: local-secret

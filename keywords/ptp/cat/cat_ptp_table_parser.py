@@ -4,6 +4,7 @@ from framework.exceptions.keyword_exception import KeywordException
 class CatPtpTableParser:
     """
     Class for cat PTP table parsing
+
     Example:
         twoStepFlag             1
         slaveOnly               0
@@ -24,30 +25,36 @@ class CatPtpTableParser:
         maxStepsRemoved         255
     """
 
-    def __init__(self, cat_ptp_output):
+    def __init__(self, cat_ptp_output: list[str]):
         """
         Constructor
+
         Args:
             cat_ptp_output (list[str]): a list of strings representing the output of a 'cat ptp' command.
         """
         self.cat_ptp_output = cat_ptp_output
 
-    def get_output_values_dict(
-            self,
-    ):
+    def get_output_values_dict(self) -> {}:
         """
         Getter for output values dict
-        Returns: the output values dict
+
+        Returns:
+            {}: the output values dict
 
         """
-
         output_values_dict = {}
 
         for row in self.cat_ptp_output:
-            values = row.split(None, 1)  # split once
+            values = row.strip("\n").split(None, 1)  # split once
             if len(values) == 2:
                 key, value = values
                 output_values_dict[key.strip()] = value.strip()
             else:
-                raise KeywordException(f"Line with values: {row} was not in the expected format")
+                # just a newline -- continue
+                if not values or len(values) == 1:
+                    continue
+                elif len(values) == 1 and values[0].startswith("["):  # associated interfaces line, ignore
+                    continue
+                else:
+                    raise KeywordException(f"Line with values: {row} was not in the expected format")
         return output_values_dict

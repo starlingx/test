@@ -1,3 +1,4 @@
+import re
 import time
 
 from framework.logging.automation_logger import get_logger
@@ -30,7 +31,7 @@ class AlarmListKeywords(BaseKeyword):
         Returns: the list of alarms
 
         """
-        output = self._ssh_connection.send(source_openrc('fm alarm-list --nowrap'))
+        output = self._ssh_connection.send(source_openrc("fm alarm-list --nowrap"))
         self.validate_success_return_code(self._ssh_connection)
         alarms = AlarmListOutput(output)
 
@@ -62,9 +63,7 @@ class AlarmListKeywords(BaseKeyword):
                 get_logger().log_info(f"All alarms in this SSH connection ({self.get_ssh_connection()}) are now cleared.")
                 return
             alarm_ids = ", ".join([alarm.get_alarm_id() for alarm in alarms])
-            get_logger().log_info(
-                f"There are still some alarms active in this SSH connection ({self.get_ssh_connection()}). Active alarms IDs: {alarm_ids}. Waiting for {self.get_check_interval_in_seconds():.3f} more seconds. Remaining time: {(end_time - now):.3f} seconds."
-            )
+            get_logger().log_info(f"There are still some alarms active in this SSH connection ({self.get_ssh_connection()}). Active alarms IDs: {alarm_ids}. Waiting for {self.get_check_interval_in_seconds():.3f} more seconds. Remaining time: {(end_time - now):.3f} seconds.")
             time.sleep(self.get_check_interval_in_seconds())
             alarms = self.alarm_list()
             now = time.time()
@@ -110,14 +109,81 @@ class AlarmListKeywords(BaseKeyword):
                 get_logger().log_info(f"All alarms defined by the following IDs: {alarm_ids} are now cleared in this SSH connection ({self.get_ssh_connection()}).")
                 return
 
-            get_logger().log_info(
-                f"Not all alarms with the following IDs: {alarm_ids} have been cleared in this SSH connection ({self.get_ssh_connection()}). Waiting for {self.get_check_interval_in_seconds():.3f} more seconds. Remaining time: {(end_time - now):.3f} seconds."
-            )
+            get_logger().log_info(f"Not all alarms with the following IDs: {alarm_ids} have been cleared in this SSH connection ({self.get_ssh_connection()}). Waiting for {self.get_check_interval_in_seconds():.3f} more seconds. Remaining time: {(end_time - now):.3f} seconds.")
             time.sleep(self._check_interval_in_seconds)
             current_alarms = self.alarm_list()
             now = time.time()
 
         raise TimeoutError(f"The alarms identified by the following IDs: {alarm_ids} could not be cleared within a period of {self.get_timeout_in_seconds()} seconds.")
+
+    def wait_for_alarms_to_appear(self, alarms: list[AlarmListObject]) -> None:
+        """
+        Waits for the specified alarms to appear on the SSH connection within the timeout
+        period defined by 'get_timeout_in_seconds()'. Validates Alarm ID, Reason Text, and Entity ID.
+
+        Args:
+            alarms (list[AlarmListObject]): The list of alarms to wait for.
+
+        Returns: None
+
+        Raises:
+            TimeoutError: if alarms are not found within the timeout period.
+        """
+        check_interval = self.get_check_interval_in_seconds()
+        end_time = time.time() + self.get_timeout_in_seconds()
+
+        alarm_descriptions = ", ".join(str(alarm) for alarm in alarms)
+        while time.time() < end_time:
+            observed_alarms = self.alarm_list()
+            all_matched = True
+            for expected_alarm_obj in alarms:
+                match_found = any(self.alarms_match(observed_alarm_obj, expected_alarm_obj) for observed_alarm_obj in observed_alarms)
+                if not match_found:
+                    get_logger().log_info(f"Expected alarm not found yet: {expected_alarm_obj}")
+                    all_matched = False
+                    break
+
+            if all_matched:
+                get_logger().log_info(f"All expected alarms are now present: {alarm_descriptions}")
+                return
+
+            get_logger().log_info(f"Waiting for expected alarms. Retrying in {check_interval:.3f} seconds. Remaining time: {end_time - time.time():.3f} seconds.")
+            time.sleep(check_interval)
+
+        # Final check before raising
+        observed_alarms = self.alarm_list()
+        observed_alarm_str = [str(observed_alarm_obj) for observed_alarm_obj in observed_alarms]
+        raise TimeoutError(f"Timeout. Alarms not found:\nExpected: {alarm_descriptions}\nObserved alarms:\n" + "\n".join(observed_alarm_str))
+
+    def alarms_match(self, observed_alarm_object: AlarmListObject, expected_alarm_object: AlarmListObject) -> bool:
+        """
+        Compares two AlarmListObject instances for equality based on
+        alarm ID, reason text, and entity ID.
+
+        Args:
+            observed_alarm_object (AlarmListObject): The current alarm object to compare against.
+            expected_alarm_object (AlarmListObject): The expected alarm object.
+
+        Returns:
+            bool: True if all three fields (alarm ID, reason text, and entity ID) match exactly
+                (after stripping whitespace for text fields), False otherwise.
+        """
+        observed_id = observed_alarm_object.get_alarm_id()
+        expected_id = expected_alarm_object.get_alarm_id()
+
+        observed_reason_text = observed_alarm_object.get_reason_text()
+        expected_reason_text_pattern = expected_alarm_object.get_reason_text()
+
+        observed_entity_id = observed_alarm_object.get_entity_id()
+        expected_entity_id = expected_alarm_object.get_entity_id()
+
+        # Perform the comparisons, making each condition clear.
+        id_matches = observed_id == expected_id
+        reason_text_matches = re.fullmatch(expected_reason_text_pattern, observed_reason_text)
+        entity_id_matches = observed_entity_id == expected_entity_id
+
+        # Return True only if all three conditions are met.
+        return id_matches and reason_text_matches and entity_id_matches
 
     def get_timeout_in_seconds(self) -> int:
         """

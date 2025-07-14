@@ -5,8 +5,8 @@ from keywords.cloud_platform.system.system_table_parser import SystemTableParser
 
 
 class SystemApplicationListOutput:
-    """
-    This class parses the output of the command 'system application-list'
+    """This class parses the output of the command 'system application-list'.
+
     The parsing result is a 'SystemApplicationListObject' instance.
 
     Example:
@@ -27,11 +27,11 @@ class SystemApplicationListOutput:
 
     """
 
-    def __init__(self, system_application_list_output):
-        """
-        Constructor
+    def __init__(self, system_application_list_output: str) -> None:
+        """Initialize SystemApplicationListOutput with parsed application data.
+
         Args:
-            system_application_list_output: the output of the command 'system application-list'.
+            system_application_list_output (str): The output of the 'system application-list' command.
         """
         self.system_applications: [SystemApplicationListObject] = []
         system_table_parser = SystemTableParser(system_application_list_output)
@@ -41,33 +41,36 @@ class SystemApplicationListOutput:
             if self.is_valid_output(value):
                 self.system_applications.append(
                     SystemApplicationListObject(
-                        value['application'],
-                        value['version'],
-                        value['manifest name'],
-                        value['manifest file'],
-                        value['status'],
-                        value['progress'],
+                        value["application"],
+                        value["version"],
+                        value["manifest name"],
+                        value["manifest file"],
+                        value["status"],
+                        value["progress"],
                     )
                 )
             else:
                 raise KeywordException(f"The output line {value} was not valid")
 
-    def get_applications(self) -> [SystemApplicationListObject]:
-        """
-        Returns the list of applications objects
-        Returns:
+    def get_applications(self) -> list[SystemApplicationListObject]:
+        """Get the list of all application objects.
 
+        Returns:
+            list[SystemApplicationListObject]: List of SystemApplicationListObject instances.
         """
         return self.system_applications
 
     def get_application(self, application: str) -> SystemApplicationListObject:
-        """
-        Gets the given application
+        """Get a specific application by name.
+
         Args:
-            application (): the name of the application
+            application (str): The name of the application to retrieve.
 
-        Returns: the application object
+        Returns:
+            SystemApplicationListObject: The application object.
 
+        Raises:
+            KeywordException: If no application with the given name is found.
         """
         applications = list(filter(lambda app: app.get_application() == application, self.system_applications))
         if len(applications) == 0:
@@ -75,34 +78,46 @@ class SystemApplicationListOutput:
 
         return applications[0]
 
-    @staticmethod
-    def is_valid_output(value):
-        """
-        Checks to ensure the output has the correct keys
+    def application_exists(self, application: str) -> bool:
+        """Check if an application exists in the list.
+
         Args:
-            value (): the value to check
+            application (str): The name of the application to check.
 
         Returns:
+            bool: True if the application exists, False otherwise.
+        """
+        applications = list(filter(lambda app: app.get_application() == application, self.system_applications))
+        return len(applications) > 0
 
+    @staticmethod
+    def is_valid_output(value: dict) -> bool:
+        """Validate that output contains all required keys.
+
+        Args:
+            value (dict): The parsed output value to validate.
+
+        Returns:
+            bool: True if the output is valid, False otherwise.
         """
         valid = True
-        if 'application' not in value:
-            get_logger().log_error(f'application is not in the output value: {value}')
+        if "application" not in value:
+            get_logger().log_error(f"application is not in the output value: {value}")
             valid = False
-        if 'version' not in value:
-            get_logger().log_error(f'version is not in the output value: {value}')
+        if "version" not in value:
+            get_logger().log_error(f"version is not in the output value: {value}")
             valid = False
-        if 'manifest name' not in value:
-            get_logger().log_error(f'manifest name is not in the output value: {value}')
+        if "manifest name" not in value:
+            get_logger().log_error(f"manifest name is not in the output value: {value}")
             valid = False
-        if 'manifest file' not in value:
-            get_logger().log_error(f'manifest file is not in the output value: {value}')
+        if "manifest file" not in value:
+            get_logger().log_error(f"manifest file is not in the output value: {value}")
             valid = False
-        if 'status' not in value:
-            get_logger().log_error(f'status is not in the output value: {value}')
+        if "status" not in value:
+            get_logger().log_error(f"status is not in the output value: {value}")
             valid = False
-        if 'progress' not in value:
-            get_logger().log_error(f'progress is not in the output value: {value}')
+        if "progress" not in value:
+            get_logger().log_error(f"progress is not in the output value: {value}")
             valid = False
 
         return valid

@@ -1,0 +1,16 @@
+apiVersion: crd.projectcalico.org/v1
+kind: GlobalNetworkPolicy
+metadata:
+  name: gnp-oam-overrides
+spec:
+  ingress:
+  - action: Allow
+    destination:
+      ports:
+      - 80
+      - 443
+    protocol: TCP
+  order: 500
+  selector: has(iftype) && iftype == 'oam'
+  types:
+  - Ingress

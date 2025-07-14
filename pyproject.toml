@@ -1,6 +1,7 @@
 [tool.isort]
 py_version = "311"
 profile = "black"
+line_length = 200  # Allows longer imports without excessive wrapping
 
 [tool.black]
 target-version = ['py311']
@@ -12,4 +13,4 @@ line-length = 9999  # Prevents Black from arbitrarily wrapping lines
 style = "google"
 check-return-types = true
 allow-init-docstring = true
-ignore = ["DOC501"]  # Ignore Raises section requirement
+skip-checking-raises = true # Ignore Raises section requirement

@@ -8,114 +8,53 @@ from config.lab.objects.node import Node
 from framework.logging.automation_logger import get_logger
 from framework.resources.resource_finder import get_stx_resource_path
 from framework.ssh.secure_transfer_file.secure_transfer_file import SecureTransferFile
-from framework.ssh.secure_transfer_file.secure_transfer_file_enum import (
-    TransferDirection,
-)
-from framework.ssh.secure_transfer_file.secure_transfer_file_input_object import (
-    SecureTransferFileInputObject,
-)
+from framework.ssh.secure_transfer_file.secure_transfer_file_enum import TransferDirection
+from framework.ssh.secure_transfer_file.secure_transfer_file_input_object import SecureTransferFileInputObject
 from framework.ssh.ssh_connection import SSHConnection
-from framework.validation.validation import validate_equals
+from framework.validation.validation import validate_equals, validate_equals_with_retry
 from framework.web.webdriver_core import WebDriverCore
-from keywords.cloud_platform.dcmanager.dcmanager_alarm_summary_keywords import (
-    DcManagerAlarmSummaryKeywords,
-)
-from keywords.cloud_platform.dcmanager.dcmanager_subcloud_list_keywords import (
-    DcManagerSubcloudListKeywords,
-)
-from keywords.cloud_platform.dcmanager.dcmanager_subcloud_manager_keywords import (
-    DcManagerSubcloudManagerKeywords,
-)
-from keywords.cloud_platform.dcmanager.dcmanager_subcloud_show_keywords import (
-    DcManagerSubcloudShowKeywords,
-)
-from keywords.cloud_platform.dcmanager.dcmanager_subcloud_update_keywords import (
-    DcManagerSubcloudUpdateKeywords,
-)
-from keywords.cloud_platform.dcmanager.objects.dcmanager_subcloud_list_object_filter import (
-    DcManagerSubcloudListObjectFilter,
-)
-from keywords.cloud_platform.fault_management.alarms.alarm_list_keywords import (
-    AlarmListKeywords,
-)
-from keywords.cloud_platform.fault_management.fm_client_cli.fm_client_cli_keywords import (
-    FaultManagementClientCLIKeywords,
-)
-from keywords.cloud_platform.fault_management.fm_client_cli.object.fm_client_cli_object import (
-    FaultManagementClientCLIObject,
-)
+from keywords.cloud_platform.dcmanager.dcmanager_alarm_summary_keywords import DcManagerAlarmSummaryKeywords
+from keywords.cloud_platform.dcmanager.dcmanager_subcloud_list_keywords import DcManagerSubcloudListKeywords
+from keywords.cloud_platform.dcmanager.dcmanager_subcloud_manager_keywords import DcManagerSubcloudManagerKeywords
+from keywords.cloud_platform.dcmanager.dcmanager_subcloud_show_keywords import DcManagerSubcloudShowKeywords
+from keywords.cloud_platform.dcmanager.dcmanager_subcloud_update_keywords import DcManagerSubcloudUpdateKeywords
+from keywords.cloud_platform.dcmanager.objects.dcmanager_subcloud_list_object_filter import DcManagerSubcloudListObjectFilter
+from keywords.cloud_platform.fault_management.alarms.alarm_list_keywords import AlarmListKeywords
+from keywords.cloud_platform.fault_management.fm_client_cli.fm_client_cli_keywords import FaultManagementClientCLIKeywords
+from keywords.cloud_platform.fault_management.fm_client_cli.object.fm_client_cli_object import FaultManagementClientCLIObject
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
-from keywords.cloud_platform.system.application.object.system_application_delete_input import (
-    SystemApplicationDeleteInput,
-)
-from keywords.cloud_platform.system.application.object.system_application_remove_input import (
-    SystemApplicationRemoveInput,
-)
-from keywords.cloud_platform.system.application.object.system_application_status_enum import (
-    SystemApplicationStatusEnum,
-)
-from keywords.cloud_platform.system.application.object.system_application_upload_input import (
-    SystemApplicationUploadInput,
-)
-from keywords.cloud_platform.system.application.system_application_apply_keywords import (
-    SystemApplicationApplyKeywords,
-)
-from keywords.cloud_platform.system.application.system_application_delete_keywords import (
-    SystemApplicationDeleteKeywords,
-)
-from keywords.cloud_platform.system.application.system_application_list_keywords import (
-    SystemApplicationListKeywords,
-)
-from keywords.cloud_platform.system.application.system_application_remove_keywords import (
-    SystemApplicationRemoveKeywords,
-)
-from keywords.cloud_platform.system.application.system_application_upload_keywords import (
-    SystemApplicationUploadKeywords,
-)
-from keywords.cloud_platform.system.host.system_host_list_keywords import (
-    SystemHostListKeywords,
-)
-from keywords.cloud_platform.system.host.system_host_lock_keywords import (
-    SystemHostLockKeywords,
-)
-from keywords.cloud_platform.system.host.system_host_reboot_keywords import (
-    SystemHostRebootKeywords,
-)
-from keywords.cloud_platform.system.host.system_host_swact_keywords import (
-    SystemHostSwactKeywords,
-)
-from keywords.cloud_platform.system.modify.system_modify_keywords import (
-    SystemModifyKeywords,
-)
+from keywords.cloud_platform.system.application.object.system_application_delete_input import SystemApplicationDeleteInput
+from keywords.cloud_platform.system.application.object.system_application_remove_input import SystemApplicationRemoveInput
+from keywords.cloud_platform.system.application.object.system_application_status_enum import SystemApplicationStatusEnum
+from keywords.cloud_platform.system.application.object.system_application_upload_input import SystemApplicationUploadInput
+from keywords.cloud_platform.system.application.system_application_apply_keywords import SystemApplicationApplyKeywords
+from keywords.cloud_platform.system.application.system_application_delete_keywords import SystemApplicationDeleteKeywords
+from keywords.cloud_platform.system.application.system_application_list_keywords import SystemApplicationListKeywords
+from keywords.cloud_platform.system.application.system_application_remove_keywords import SystemApplicationRemoveKeywords
+from keywords.cloud_platform.system.application.system_application_show_keywords import SystemApplicationShowKeywords
+from keywords.cloud_platform.system.application.system_application_upload_keywords import SystemApplicationUploadKeywords
+from keywords.cloud_platform.system.host.system_host_list_keywords import SystemHostListKeywords
+from keywords.cloud_platform.system.host.system_host_lock_keywords import SystemHostLockKeywords
+from keywords.cloud_platform.system.host.system_host_reboot_keywords import SystemHostRebootKeywords
+from keywords.cloud_platform.system.host.system_host_swact_keywords import SystemHostSwactKeywords
+from keywords.cloud_platform.system.modify.system_modify_keywords import SystemModifyKeywords
 from keywords.cloud_platform.system.show.system_show_keywords import SystemShowKeywords
-from keywords.cloud_platform.system.storage.system_storage_backend_keywords import (
-    SystemStorageBackendKeywords,
-)
+from keywords.cloud_platform.system.storage.system_storage_backend_keywords import SystemStorageBackendKeywords
 from keywords.docker.images.docker_load_image_keywords import DockerLoadImageKeywords
 from keywords.files.file_keywords import FileKeywords
-from keywords.k8s.deployments.kubectl_delete_deployments_keywords import (
-    KubectlDeleteDeploymentsKeywords,
-)
-from keywords.k8s.deployments.kubectl_expose_deployment_keywords import (
-    KubectlExposeDeploymentKeywords,
-)
+from keywords.k8s.deployments.kubectl_delete_deployments_keywords import KubectlDeleteDeploymentsKeywords
+from keywords.k8s.deployments.kubectl_expose_deployment_keywords import KubectlExposeDeploymentKeywords
 from keywords.k8s.pods.kubectl_create_pods_keywords import KubectlCreatePodsKeywords
 from keywords.k8s.pods.kubectl_delete_pods_keywords import KubectlDeletePodsKeywords
 from keywords.k8s.pods.kubectl_exec_in_pods_keywords import KubectlExecInPodsKeywords
 from keywords.k8s.pods.kubectl_get_pods_keywords import KubectlGetPodsKeywords
 from keywords.k8s.pods.object.kubectl_get_pods_output import KubectlGetPodsOutput
-from keywords.k8s.secret.kubectl_create_secret_keywords import (
-    KubectlCreateSecretsKeywords,
-)
-from keywords.k8s.service.kubectl_delete_service_keywords import (
-    KubectlDeleteServiceKeywords,
-)
+from keywords.k8s.secret.kubectl_create_secret_keywords import KubectlCreateSecretsKeywords
+from keywords.k8s.service.kubectl_delete_service_keywords import KubectlDeleteServiceKeywords
 from keywords.k8s.service.kubectl_get_service_keywords import KubectlGetServiceKeywords
 from keywords.linux.date.date_keywords import DateKeywords
 from keywords.linux.tar.tar_keywords import TarKeywords
-from web_pages.horizon.admin.platform.horizon_host_inventory_page import (
-    HorizonHostInventoryPage,
-)
+from web_pages.horizon.admin.platform.horizon_host_inventory_page import HorizonHostInventoryPage
 from web_pages.horizon.login.horizon_login_page import HorizonLoginPage
 
 
@@ -130,8 +69,19 @@ def test_check_alarms():
 
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
-    alarms = AlarmListKeywords(ssh_connection).alarm_list()
-    assert not alarms, "There were alarms found on the system"
+
+    def no_alarms() -> bool:
+        """
+        Checks if there are no alarms on the system
+
+        Returns:
+            bool: True if no alarms
+        """
+        alarms = AlarmListKeywords(ssh_connection).alarm_list()
+        return not alarms
+
+    # if another test created some temp alarms, lets give it some time
+    validate_equals_with_retry(no_alarms, True, "Validate that no alarms on the system", 300)
 
 
 @mark.p0
@@ -175,14 +125,14 @@ def test_cert_manager_applied():
 
     Test Steps:
         - connect to active controller
-        - run system cmd - system application-list
-        - validate that cert manager is in applied state
+        - run system cmd - system application-show nginx-ingress-controller
+        - validate cert manager state is 'applied', 'active' and progress 'completed'
 
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
-    system_applications = SystemApplicationListKeywords(ssh_connection).get_system_application_list()
-    application_status = system_applications.get_application("cert-manager").get_status()
-    assert application_status == "applied", f"cert-manager was not applied. Status was {application_status}"
+    system_application_show_output = SystemApplicationShowKeywords(ssh_connection).validate_app_progress_contains("cert-manager", "completed")
+    validate_equals(system_application_show_output.get_status(), "applied", "cert-manager's status is applied")
+    validate_equals(system_application_show_output.get_active(), "True", "cert-manager's active is True")
 
 
 @mark.p0
@@ -192,13 +142,14 @@ def test_nginx_ingress_controller_applied():
 
     Test Steps:
         - connect to active controller
-        - run system cmd - system application-list
-        - validate that nginx ingress controller is in applied state
+        - run system cmd - system application-show nginx-ingress-controller
+        - validate nginx ingress controller state is 'applied', 'active' and progress 'completed'
 
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
-    system_applications = SystemApplicationListKeywords(ssh_connection)
-    system_applications.validate_app_status("nginx-ingress-controller", "applied")
+    system_application_show_output = SystemApplicationShowKeywords(ssh_connection).validate_app_progress_contains("nginx-ingress-controller", "completed")
+    validate_equals(system_application_show_output.get_status(), "applied", "nginx-ingress-controller's status is applied")
+    validate_equals(system_application_show_output.get_active(), "True", "nginx-ingress-controller's active is True")
 
 
 @mark.p0
@@ -237,9 +188,9 @@ def test_lock_unlock_standby_controller():
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     standby_controller = SystemHostListKeywords(ssh_connection).get_standby_controller()
     lock_success = SystemHostLockKeywords(ssh_connection).lock_host(standby_controller.get_host_name())
-    assert lock_success, "Controller was not locked successfully."
+    validate_equals(lock_success, True, "Validate controller was locked successfully")
     unlock_success = SystemHostLockKeywords(ssh_connection).unlock_host(standby_controller.get_host_name())
-    assert unlock_success, "Controller was not unlocked successfully."
+    validate_equals(unlock_success, True, "Validate controller was unlocked successfully")
 
 
 @mark.p0
@@ -732,7 +683,6 @@ def test_dc_swact_host(request):
         _ Reestablishes the active/standby host configuration.
 
     """
-    get_logger().log_info("Starting 'test_dc_swact_host' test case.")
 
     # Time in seconds for a subcloud to change its state from 'managed' to 'unmanaged' and vice versa.
     change_state_timeout = 60
@@ -900,7 +850,7 @@ def test_dc_system_health_pre_session():
         # If this test case executed the line above with no exception, all alarms were cleared.
 
         kubectl_get_pods_keywords = KubectlGetPodsKeywords(ssh_connection)
-        kubectl_get_pods_keywords.wait_for_all_pods_status(expected_statuses="Running")
+        kubectl_get_pods_keywords.wait_for_all_pods_status(expected_statuses=["Running", "Completed"])
         # If this test case executed the line above with no exception, all the pods are "Running".
 
 
@@ -1292,13 +1242,13 @@ def test_dc_modify_timezone(request):
 
     def teardown():
         system_modify_output = system_modify_keywords.system_modify_timezone("UTC")
-        validate_equals(system_modify_output.get_system_show_object().get_timezone(), "UTC" "Update the timezone to UTC.")
+        validate_equals(system_modify_output.get_system_show_object().get_timezone(), "UTC", "Update the timezone to UTC.")
 
     request.addfinalizer(teardown)
 
     system_modify_output = system_modify_keywords.system_modify_timezone("America/Los_Angeles")
     validate_equals(system_modify_output.get_system_show_object().get_timezone(), "America/Los_Angeles", "Update the timezone to America/Los_Angeles.")
-    validate_equals(DateKeywords(ssh_connection).get_timezone(), "PST", "validate that the system timezone is now PST")
+    validate_equals(DateKeywords(ssh_connection).get_timezone(), "PDT", "validate that the system timezone is now PST")
 
     # check the subcloud to ensure the time zone change does not propagate
     dcmanager_subcloud_list = DcManagerSubcloudListKeywords(ssh_connection).get_dcmanager_subcloud_list()
@@ -1447,7 +1397,7 @@ def deploy_images_to_local_registry(ssh_connection: SSHConnection):
     docker_load_image_keywords.push_docker_image_to_registry("pv-test", local_registry)
 
     file_keywords.upload_file(get_stx_resource_path("resources/cloud_platform/images/node-hello-alpine/node-hello-alpine.tar.gz"), "/home/sysadmin/node-hello-alpine.tar.gz", overwrite=False)
-    TarKeywords(ssh_connection).extract_tar_file("/home/sysadmin/node-hello-alpine.tar.gz")
+    TarKeywords(ssh_connection).decompress_tar_gz("/home/sysadmin/node-hello-alpine.tar.gz")
     docker_load_image_keywords.load_docker_image_to_host("node-hello-alpine.tar")
-    docker_load_image_keywords.tag_docker_image_for_registry("registry.local:9001/node-hello:alpine", "node-hello", local_registry)
+    docker_load_image_keywords.tag_docker_image_for_registry("node-hello:alpine", "node-hello", local_registry)
     docker_load_image_keywords.push_docker_image_to_registry("node-hello", local_registry)

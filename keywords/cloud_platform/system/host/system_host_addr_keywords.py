@@ -47,5 +47,3 @@ class SystemHostAddrKeywords(BaseKeyword):
         self.validate_success_return_code(self.ssh_connection)
         system_host_addr_output = SystemHostAddrShowOutput(output)
         return system_host_addr_output
-
-

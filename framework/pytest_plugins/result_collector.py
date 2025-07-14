@@ -1,6 +1,7 @@
 from datetime import datetime
 
 import pytest
+
 from config.configuration_manager import ConfigurationManager
 from framework.database.objects.test_case_result import TestCaseResult
 from framework.database.objects.testcase import TestCase
@@ -21,19 +22,18 @@ class ResultCollector:
         self.test_case_result_id = test_case_result_id
 
     @pytest.hookimpl(tryfirst=True, hookwrapper=True)
-    def pytest_runtest_makereport(self, item, call):
+    def pytest_runtest_makereport(self, item: any, call: any):
         """
         Called at the end of the pytest test, we then can append the test summary
-        Args:
-            item (): the test
-            call (): the stage of the test
 
-        Returns:
+        Args:
+            item (any): the test
+            call (any): the stage of the test
 
         """
         outcome = yield
         report = outcome.get_result()
-        if report.when == 'call':
+        if report.when == "call":
             self.test_executor_summary.increment_test_index()
             self.test_executor_summary.append_tests_summary(f"{report.outcome}      " f"{item.nodeid}")
             if ConfigurationManager.get_database_config().use_database():
@@ -41,21 +41,23 @@ class ResultCollector:
                     report.outcome.upper(),
                 )
 
-    def update_result_in_database(self, outcome):
+    def update_result_in_database(self, outcome: any):
         """
         Updates the result in the database
-        Args:
-            outcome (): the result of the test
 
-        Returns:
+        Args:
+            outcome (any): the result of the test
 
         """
+        # if the test crashes at the start, start time can be empty -- setting so we don't crash db update
+        if not self.start_time:
+            self.start_time = datetime.now()
 
         # set values to PASS or FAIL
-        if outcome == 'PASSED':
-            outcome = 'PASS'
+        if outcome == "PASSED":
+            outcome = "PASS"
         else:
-            outcome = 'FAIL'
+            outcome = "FAIL"
 
         # if we've been given a testcase result id, update the result and don't create a new one
         if self.test_case_result_id:

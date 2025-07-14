@@ -1,0 +1,19 @@
+{
+
+	// File used for unit testing.
+
+	"controller" : {
+		deployment_config_file: "Hooray!",
+	},
+
+	"subclouds" : {
+
+		"subcloud4": {
+			bootstrap_file: "StarlingX",
+			deployment_config_file: "Is",
+			install_file: "Awesome"
+		},
+
+	},
+
+}

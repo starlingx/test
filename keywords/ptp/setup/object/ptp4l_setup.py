@@ -39,7 +39,7 @@ class PTP4LSetup:
             ptp_interfaces.append(ptp_host_ifs_dict[ptp_interface_name])
         self.ptp_interfaces = ptp_interfaces
 
-    def __str__(self):
+    def __str__(self) -> str:
         """
         String representation of this object.
 
@@ -84,3 +84,18 @@ class PTP4LSetup:
             List[PTPHostInterfaceSetup]: The list of PTP interfaces.
         """
         return self.ptp_interfaces
+
+    def get_ptp_interface(self, interface_name: str) -> PTPHostInterfaceSetup:
+        """
+        Gets the PTP interface with the name specified
+
+        Args:
+            interface_name (str): Name of the interface that we are looking for
+
+        Returns:
+            PTPHostInterfaceSetup: the matching setup
+        """
+        for ptp_interface in self.ptp_interfaces:
+            if ptp_interface.get_name() == interface_name:
+                return ptp_interface
+        raise Exception(f"There is no ptp interface named {interface_name} in the ptp4l setup.")

@@ -13,6 +13,11 @@ class PTPHostInterfaceSetup:
         Args:
             setup_dict (Dict[str, Any]): The dictionary read from the JSON setup template file associated with this ptp host interface setup.
 
+        Raises:
+            Exception: If the setup_dict does not contain required keys.
+            Exception: If the setup_dict does not contain required PTPHostInterfaceSetup entries.
+            Exception: If the setup_dict does not contain required controller interfaces.
+            Exception: If the setup_dict does not contain required compute interfaces.
         """
         if "name" not in setup_dict:
             raise Exception("Every ptp host interface entry should have a name.")
@@ -28,15 +33,18 @@ class PTPHostInterfaceSetup:
 
         if "controller_1_interfaces" not in setup_dict:
             raise Exception(f"The ptp host interface entry {self.name} must have controller_1_interfaces defined.")
-        self.controller_0_interfaces = setup_dict["controller_1_interfaces"]
+        self.controller_1_interfaces = setup_dict["controller_1_interfaces"]
 
-    def __str__(self):
+        self.compute_0_interfaces = None
+        if "compute_0_interfaces" in setup_dict:
+            self.compute_0_interfaces = setup_dict.get("compute_0_interfaces")
+
+    def __str__(self) -> str:
         """
         String representation of this object.
 
         Returns:
             str: String representation of this object.
-
         """
         return self.get_name()
 
@@ -58,20 +66,19 @@ class PTPHostInterfaceSetup:
         """
         return self.ptp_interface_parameter
 
-    def get_controller_0_interfaces(self) -> List[str]:
+    def get_interfaces_for_hostname(self, hostname: str) -> List[str]:
         """
-        Gets the controller_0_interfaces of this ptp host interface setup.
+        Gets the interfaces for the given hostname in this PTP host interface setup.
+
+        Args:
+            hostname (str): The name of the host.
 
         Returns:
-            List[str]: The controller_0_interfaces of this ptp host interface setup.
+            List[str]: The interfaces for the given hostname in this PTP host interface setup.
         """
-        return self.controller_0_interfaces
-
-    def get_controller_1_interfaces(self) -> List[str]:
-        """
-        Gets the controller_1_interfaces of this ptp host interface setup.
-
-        Returns:
-            List[str]: The controller_1_interfaces of this ptp host interface setup.
-        """
-        return self.controller_1_interfaces
+        interfaces_to_hostname_mapping = {
+            "controller-0": self.controller_0_interfaces,
+            "controller-1": self.controller_1_interfaces,
+            "compute-0": self.compute_0_interfaces,
+        }
+        return interfaces_to_hostname_mapping.get(hostname)

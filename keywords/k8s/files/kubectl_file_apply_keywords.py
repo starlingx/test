@@ -4,23 +4,25 @@ from keywords.k8s.k8s_command_wrapper import export_k8s_config
 
 
 class KubectlFileApplyKeywords(BaseKeyword):
-    """_summary_
-
-    Args:
-        BaseKeyword (_type_): _description_
+    """
+    K8s file apply keywords
     """
 
     def __init__(self, ssh_connection: SSHConnection):
+        """
+        Initializes the class with an SSH connection.
+
+        Args:
+            ssh_connection (SSHConnection): An instance of SSHConnection to be used for SSH operations.
+        """
         self.ssh_connection = ssh_connection
 
-    def dashboard_apply_from_yaml(self, yaml_file: str):
+    def apply_resource_from_yaml(self, yaml_file: str):
         """
-        Does a dashboard apply using the given yaml file
+        Applies a Kubernetes resource using the given YAML file.
+
         Args:
-            yaml_file (): the yaml file to appy
-
-        Returns:
-
+            yaml_file (str): The path to the YAML file containing the resource definition.
         """
         self.ssh_connection.send(export_k8s_config(f"kubectl apply -f {yaml_file}"))
         self.validate_success_return_code(self.ssh_connection)

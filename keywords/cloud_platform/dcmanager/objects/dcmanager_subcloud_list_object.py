@@ -1,5 +1,6 @@
 class DcManagerSubcloudListObject:
-    """
+    """DcManagerSubcloudListObject.
+
     This class represents a subcloud summary as an object.
     This is typically a line in the 'dcmanager subcloud list' command output table, as shown below.
 
@@ -123,3 +124,12 @@ class DcManagerSubcloudListObject:
         Setter for the Subcloud Prestage Status
         """
         self.prestage_status = prestage_status
+
+    def __repr__(self) -> str:
+        """
+        Return the developer-facing representation of the object.
+
+        Returns:
+            str: Class name and row count.
+        """
+        return f"{self.__class__.__name__}(Name={self.name})"

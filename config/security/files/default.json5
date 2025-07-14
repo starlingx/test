@@ -1,0 +1,10 @@
+{
+    // dns name for the lab
+    "dns_name": "lab_dns_name",
+
+    // ACME server url
+    "stepca_server_url": "external_acme_server_url",
+
+    // ACME server issuer
+    "stepca_server_issuer": "external_acme_server_issuer"
+}

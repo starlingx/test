@@ -8,3 +8,6 @@ class SystemApplicationStatusEnum(Enum):
     APPLYING = "applying"
     APPLY_FAILED = "apply-failed"
     APPLIED = "applied"
+    REMOVING = 'removing'
+    REMOVE_FAILED = 'remove-failed'
+    DELETING = 'deleting'

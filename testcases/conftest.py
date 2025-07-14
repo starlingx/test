@@ -1,16 +1,10 @@
 import os
 from typing import Any
 
-from config.configuration_file_locations_manager import (
-    ConfigurationFileLocationsManager,
-)
+from config.configuration_file_locations_manager import ConfigurationFileLocationsManager
 from config.configuration_manager import ConfigurationManager
 from framework.logging import log_banners
-from framework.logging.automation_logger import (
-    configure_testcase_log_handler,
-    get_logger,
-    remove_testcase_handler,
-)
+from framework.logging.automation_logger import configure_testcase_log_handler, get_logger, remove_testcase_handler
 
 
 def pytest_addoption(parser: Any):
@@ -22,6 +16,7 @@ def pytest_addoption(parser: Any):
 
     """
     parser.addoption("--lab_config_file", action="store")
+    parser.addoption("--deployment_assets_config_file", action="store")
     parser.addoption("--k8s_config_file", action="store")
     parser.addoption("--ptp_config_file", action="store")
     parser.addoption("--logger_config_file", action="store")
@@ -29,6 +24,10 @@ def pytest_addoption(parser: Any):
     parser.addoption("--web_config_file", action="store")
     parser.addoption("--database_config_file", action="store")
     parser.addoption("--rest_api_config_file", action="store")
+    parser.addoption("--security_config_file", action="store")
+    parser.addoption("--usm_config_file", action="store")
+    parser.addoption("--app_config_file", action="store")
+    parser.addoption("--openstack_config_file", action="store")
 
 
 def pytest_sessionstart(session: Any):
@@ -67,9 +66,37 @@ def pytest_runtest_setup(item: Any):
         item(Any): The test case item that we are about to execute.
 
     """
+    # Reset all step counters for this test case
+    get_logger().reset_all_step_counters()
     # add testcase log handler at test start
     configure_testcase_log_handler(ConfigurationManager.get_logger_config(), item.name)
     log_banners.log_test_start_banner(item)
+    log_banners.log_testcase_stage_banner("Setup", item.name)
+
+
+def pytest_runtest_call(item: Any) -> None:
+    """
+    Built-in pytest hook called to execute the test function.
+
+    This hook runs after setup and before teardown during the pytest lifecycle.
+    This implementation adds to the hook without modifying core test execution behavior.
+
+    It logs a visual banner to mark the beginning of the test's execution phase.
+
+    Args:
+        item (Any): The test case item being executed.
+    """
+    log_banners.log_testcase_stage_banner("Execution", item.name)
+
+
+def pytest_runtest_teardown(item: Any) -> None:
+    """
+    This will run before the test case enters teardown.
+
+    Args:
+        item (Any): The test case item.
+    """
+    log_banners.log_testcase_stage_banner("Teardown", item.name)
 
 
 def pytest_runtest_makereport(item: Any, call: Any):

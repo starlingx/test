@@ -42,6 +42,24 @@ class DcManagerSubcloudListObjectFilter:
         healthy_filter.set_sync(DcManagerSubcloudListSyncEnum.IN_SYNC)
         return healthy_filter
 
+    @staticmethod
+    def get_out_of_sync_subcloud_filter():
+        """
+        Static method to create an instance of DcManagerSubcloudListFilter.
+
+        Args: None
+
+        Returns:
+            DcManagerSubcloudListObjectFilter: a configuration of this filter configured as managed, online,
+            deploy complete, and out-of-sync.
+        """
+        out_of_sync_filter = DcManagerSubcloudListObjectFilter()
+        out_of_sync_filter.set_management(DcManagerSubcloudListManagementEnum.MANAGED)
+        out_of_sync_filter.set_availability(DcManagerSubcloudListAvailabilityEnum.ONLINE)
+        out_of_sync_filter.set_deploy_status(DcManagerSubcloudListDeployEnum.COMPLETE)
+        out_of_sync_filter.set_sync(DcManagerSubcloudListSyncEnum.OUT_OF_SYNC)
+        return out_of_sync_filter
+
     def get_id(self) -> str:
         """
         Getter for the filter by Subcloud Id.

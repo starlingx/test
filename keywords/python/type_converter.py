@@ -4,27 +4,29 @@ class TypeConverter:
     """
 
     @staticmethod
-    def parse_string_to_dict(string: str, separator_char='=') -> dict[str, str]:
+    def parse_string_to_dict(string: str, separator_char: str = "=") -> dict[str, str]:
         """
-        This function converts a string in the format "key_1<separator_char>value_1,key_2<separator_char>value_2...
+        Converts a string representation of key-value pairs into a dictionary.
+
+        This function converts a string in the format "key_1<separator_char>value_1, key_2<separator_char>value_2,...
         key_n<separator_char>value_n" in a dictionary in the following format:
         {"key_1": value_1, "key_2": value_2 ... "key_n": value_n}.
+
         Note: this function will try to convert numeric and boolean values to its correct type.
 
         Args:
             string (str): a string in the following format: "key_1 <separator_char> value_1,
-            key_2 <separator_char> value_2 ... key_n <separator_char> value_n"
+                key_2 <separator_char> value_2, ... key_n <separator_char> value_n"
             separator_char (str): the character used to separate key from value in the <string>.
+                If not provided, the default value is '='.
 
         Returns:
-            dict in the following format: {"key_1": value_1, "key_2" = value_2 ... "key_n" = value_n}
-
+            dict[str, str]: a dictionary in the following format: {"key_1": value_1, "key_2": value_2 ... "key_n": value_n}
         """
-
         result = {}
 
-        clean_string = string.replace('{', '').replace('}', '').replace('\'', '')
-        pairs = clean_string.split(',')
+        clean_string = string.replace("{", "").replace("}", "").replace("'", "")
+        pairs = clean_string.split(",")
 
         for pair in pairs:
             key, value = pair.split(separator_char)
@@ -43,6 +45,8 @@ class TypeConverter:
     @staticmethod
     def parse_string_to_list(string: str) -> list[str]:
         """
+        Converts a string representation of a list into an actual list.
+
         This function converts a string in the format "['value_1, value_2 ... value_n']" in a list of string in
         the following format: ["value_1", "value_2" ... "value_n"].
 
@@ -50,10 +54,8 @@ class TypeConverter:
             string (str): a string in the following format: "['value_1, value_2 ... value_n']"
 
         Returns:
-            list of strings in the following format: ["value_1", "value_2" ... "value_n"]
-
+            list[str]: a list of string in the following format: ["value_1", "value_2" ... "value_n"]
         """
-
         if string is None or string == "[]":
             return []
 
@@ -62,7 +64,7 @@ class TypeConverter:
         if not cleaned_str:
             return []
 
-        items = [item.strip().strip("'\"") for item in cleaned_str.split(',')]
+        items = [item.strip().strip("'\"") for item in cleaned_str.split(",")]
 
         return items
 
@@ -72,11 +74,13 @@ class TypeConverter:
         This function verifies if <string> represents an integer number.
 
         Args:
-            string: a string that one wants to verify to see if it represents an integer number.
+            string (str): a string that one wants to verify to see if it represents an integer number.
 
         Returns:
-            True if <string> represents an integer number, and False otherwise.
+            bool: True if <string> represents an integer number, and False otherwise.
 
+        Raises:
+            TypeError: If the input is not a string.
         """
         if not isinstance(string, str):
             raise TypeError(f"The argument passed <{string}> is not of type str.")
@@ -89,16 +93,18 @@ class TypeConverter:
         This function verifies if <string> represents a float point number.
 
         Args:
-            string: a string that one wants to verify to see if it represents a floating-point number.
+            string (str): a string that one wants to verify to see if it represents a floating-point number.
 
         Returns:
-            True if <string> represents a float point number, and False otherwise.
+            bool: True if <string> represents a float point number, and False otherwise.
 
+        Raises:
+            TypeError: If the input is not a string.
         """
         if not isinstance(string, str):
             raise TypeError(f"The argument passed <{string}> is not of type str.")
 
-        return string.replace('.', '', 1).isdigit() and string.count('.') < 2
+        return string.replace(".", "", 1).isdigit() and string.count(".") < 2
 
     @staticmethod
     def is_number(string: str) -> bool:
@@ -106,11 +112,10 @@ class TypeConverter:
         This function verifies if <string> represents an integer or float point number.
 
         Args:
-            string: a string that one wants to verify to see if it represents an integer or a floating-point number.
+            string (str) : a string that one wants to verify to see if it represents an integer or a floating-point number.
 
         Returns:
-            True if <string> represents an integer or float point number, and False otherwise.
-
+            bool: True if <string> represents an integer or float point number, and False otherwise.
         """
         return TypeConverter.is_int(string) or TypeConverter.is_float(string)
 
@@ -120,11 +125,13 @@ class TypeConverter:
         This function verifies if <string> represents a boolean value.
 
         Args:
-            string: a string that one wants to verify to see if it represents a boolean value.
+            string (str) : a string that one wants to verify to see if it represents a boolean value.
 
         Returns:
-            True if <string> represents a boolean value, and False otherwise.
+            bool: True if <string> represents a boolean value, and False otherwise.
 
+        Raises:
+            TypeError: If the input is not a string.
         """
         if not isinstance(string, str):
             raise TypeError(f"The argument passed <{string}> is not of type str.")

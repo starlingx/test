@@ -1,4 +1,5 @@
 from config.docker.objects.registry import Registry
+from framework.logging.automation_logger import get_logger
 from framework.validation.validation import validate_str_contains
 from keywords.base_keyword import BaseKeyword
 from keywords.docker.login.docker_login_keywords import DockerLoginKeywords
@@ -41,7 +42,11 @@ class DockerLoadImageKeywords(BaseKeyword):
         Returns:
 
         """
-        self.ssh_connection.send_as_sudo(f"docker tag {image_name} {registry.get_registry_url()}/{tag_name}")
+        output = self.ssh_connection.send_as_sudo(f"docker tag {image_name} {registry.get_registry_url()}/{tag_name}")
+        if len(output) > 1: # If things go well, we get the prompt back. Otherwise, the first line returned is an Error.
+            get_logger().log_error(output[0])
+            raise Exception(f"Failed to tag docker image {image_name}")
+
 
     def push_docker_image_to_registry(self, tag_name: str, registry: Registry):
         """

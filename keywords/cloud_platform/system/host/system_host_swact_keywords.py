@@ -21,23 +21,40 @@ class SystemHostSwactKeywords(BaseKeyword):
         """
         self.ssh_connection = ssh_connection
 
-    def host_swact(self):
+    def host_swact(self) -> bool:
         """
-        Does a swact action.
-        Args:
+        Performs a controller switchover action (swact).
 
         Returns:
-
+            bool: True if swact was successful, raises exception otherwise.
         """
         active_controller = SystemHostListKeywords(self.ssh_connection).get_active_controller()
         standby_controller = SystemHostListKeywords(self.ssh_connection).get_standby_controller()
-        self.ssh_connection.send(source_openrc(f'system host-swact {active_controller.get_host_name()}'))
+        self.ssh_connection.send(source_openrc(f"system host-swact {active_controller.get_host_name()}"))
         self.validate_success_return_code(self.ssh_connection)
         is_swact_success = self.wait_for_swact(active_controller, standby_controller)
         if not is_swact_success:
             active_controller = SystemHostListKeywords(self.ssh_connection).get_active_controller()
             standby_controller = SystemHostListKeywords(self.ssh_connection).get_standby_controller()
             raise KeywordException(f"Swact was not successful. Current active controller is {active_controller} " f"and standby controller is {standby_controller}")
+        return True
+
+    def host_swact_force(self) -> bool:
+        """
+        Performs a controller force switchover action (swact).
+
+        Returns:
+            bool: True if swact --force was successful, raises exception otherwise.
+        """
+        active_controller = SystemHostListKeywords(self.ssh_connection).get_active_controller()
+        standby_controller = SystemHostListKeywords(self.ssh_connection).get_standby_controller()
+        self.ssh_connection.send(source_openrc(f"system host-swact --force {active_controller.get_host_name()}"))
+        self.validate_success_return_code(self.ssh_connection)
+        is_swact_success = self.wait_for_swact(active_controller, standby_controller)
+        if not is_swact_success:
+            active_controller = SystemHostListKeywords(self.ssh_connection).get_active_controller()
+            standby_controller = SystemHostListKeywords(self.ssh_connection).get_standby_controller()
+            raise KeywordException(f"Force swact was not successful. Current active controller is {active_controller} " f"and standby controller is {standby_controller}")
         return True
 
     def wait_for_swact(

@@ -6,8 +6,9 @@
 		"user_name": "fake_user",
 		"password": "fake_password"
 	},
-	bm_password: "",
+	"bm_password": "",
 	"use_jump_server": false,
+	"ssh_port": 22,
 	"lab_capabilities": [],
 	"nodes": {
 		"Controller-0": {

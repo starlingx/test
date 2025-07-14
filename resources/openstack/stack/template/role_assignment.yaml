@@ -1,0 +1,34 @@
+heat_template_version: wallaby
+
+description: >
+  Heat template to assign roles to users in a project.
+
+parameters:
+  project:
+    type: string
+    default: "{{ project }}"
+    description: Name of the project
+
+  user:
+    type: string
+    default: "{{ user }}"
+    description: Name of the user
+
+  role:
+    type: string
+    default: "{{ role }}"
+    description: Name of the role to assign
+
+resources:
+  role_assignment:
+    type: OS::Keystone::UserRoleAssignment
+    properties:
+      user: { get_param: user }
+      roles:
+        - project: { get_param: project }
+          role: { get_param: role }
+
+outputs:
+  role_assignment_id:
+    description: ID of the role assignment
+    value: { get_resource: role_assignment }
