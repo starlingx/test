@@ -27,75 +27,73 @@ class RunTimeOptionsOutput:
 
     """
 
-    def __init__(self, run_time_options_output: [str]):
+    def __init__(self, run_time_options_output: list[str]):
         """
-        Constructor.
-            Create an internal RunTimeOptionsObject from the passed parameter.
+        Create an internal RunTimeOptionsObject from the passed parameter.
+
         Args:
             run_time_options_output (list[str]): a list of strings representing the run time options output
-
         """
         cat_ptp_table_parser = CatPtpTableParser(run_time_options_output)
         output_values = cat_ptp_table_parser.get_output_values_dict()
         self.run_time_options_object = RunTimeOptionsObject()
 
-        if 'assume_two_step' in output_values:
-            self.run_time_options_object.set_assume_two_step(int(output_values['assume_two_step']))
+        if "assume_two_step" in output_values:
+            self.run_time_options_object.set_assume_two_step(int(output_values["assume_two_step"]))
 
-        if 'logging_level' in output_values:
-            self.run_time_options_object.set_logging_level(int(output_values['logging_level']))
+        if "logging_level" in output_values:
+            self.run_time_options_object.set_logging_level(int(output_values["logging_level"]))
 
-        if 'path_trace_enabled' in output_values:
-            self.run_time_options_object.set_path_trace_enabled(int(output_values['path_trace_enabled']))
+        if "path_trace_enabled" in output_values:
+            self.run_time_options_object.set_path_trace_enabled(int(output_values["path_trace_enabled"]))
 
-        if 'follow_up_info' in output_values:
-            self.run_time_options_object.set_follow_up_info(int(output_values['follow_up_info']))
+        if "follow_up_info" in output_values:
+            self.run_time_options_object.set_follow_up_info(int(output_values["follow_up_info"]))
 
-        if 'hybrid_e2e' in output_values:
-            self.run_time_options_object.set_hybrid_e2e(int(output_values['hybrid_e2e']))
+        if "hybrid_e2e" in output_values:
+            self.run_time_options_object.set_hybrid_e2e(int(output_values["hybrid_e2e"]))
 
-        if 'inhibit_multicast_service' in output_values:
-            self.run_time_options_object.set_inhibit_multicast_service(int(output_values['inhibit_multicast_service']))
+        if "inhibit_multicast_service" in output_values:
+            self.run_time_options_object.set_inhibit_multicast_service(int(output_values["inhibit_multicast_service"]))
 
-        if 'net_sync_monitor' in output_values:
-            self.run_time_options_object.set_net_sync_monitor(int(output_values['net_sync_monitor']))
+        if "net_sync_monitor" in output_values:
+            self.run_time_options_object.set_net_sync_monitor(int(output_values["net_sync_monitor"]))
 
-        if 'tc_spanning_tree' in output_values:
-            self.run_time_options_object.set_tc_spanning_tree(int(output_values['tc_spanning_tree']))
+        if "tc_spanning_tree" in output_values:
+            self.run_time_options_object.set_tc_spanning_tree(int(output_values["tc_spanning_tree"]))
 
-        if 'tx_timestamp_timeout' in output_values:
-            self.run_time_options_object.set_tx_timestamp_timeout(int(output_values['tx_timestamp_timeout']))
+        if "tx_timestamp_timeout" in output_values:
+            self.run_time_options_object.set_tx_timestamp_timeout(int(output_values["tx_timestamp_timeout"]))
 
-        if 'unicast_listen' in output_values:
-            self.run_time_options_object.set_unicast_listen(int(output_values['unicast_listen']))
+        if "unicast_listen" in output_values:
+            self.run_time_options_object.set_unicast_listen(int(output_values["unicast_listen"]))
 
-        if 'unicast_master_table' in output_values:
-            self.run_time_options_object.set_unicast_master_table(int(output_values['unicast_master_table']))
+        if "unicast_master_table" in output_values:
+            self.run_time_options_object.set_unicast_master_table(int(output_values["unicast_master_table"]))
 
-        if 'unicast_req_duration' in output_values:
-            self.run_time_options_object.set_unicast_req_duration(int(output_values['unicast_req_duration']))
+        if "unicast_req_duration" in output_values:
+            self.run_time_options_object.set_unicast_req_duration(int(output_values["unicast_req_duration"]))
 
-        if 'use_syslog' in output_values:
-            self.run_time_options_object.set_use_syslog(int(output_values['use_syslog']))
+        if "use_syslog" in output_values:
+            self.run_time_options_object.set_use_syslog(int(output_values["use_syslog"]))
 
-        if 'verbose' in output_values:
-            self.run_time_options_object.set_verbose(int(output_values['verbose']))
+        if "verbose" in output_values:
+            self.run_time_options_object.set_verbose(int(output_values["verbose"]))
 
-        if 'summary_interval' in output_values:
-            self.run_time_options_object.set_summary_interval(int(output_values['summary_interval']))
+        if "summary_interval" in output_values:
+            self.run_time_options_object.set_summary_interval(int(output_values["summary_interval"]))
 
-        if 'kernel_leap' in output_values:
-            self.run_time_options_object.set_kernel_leap(int(output_values['kernel_leap']))
+        if "kernel_leap" in output_values:
+            self.run_time_options_object.set_kernel_leap(int(output_values["kernel_leap"]))
 
-        if 'check_fup_sync' in output_values:
-            self.run_time_options_object.set_check_fup_sync(int(output_values['check_fup_sync']))
+        if "check_fup_sync" in output_values:
+            self.run_time_options_object.set_check_fup_sync(int(output_values["check_fup_sync"]))
 
     def get_run_time_options_object(self) -> RunTimeOptionsObject:
         """
         Getter for run_time_options_object object.
 
         Returns:
-            A RunTimeOptionsObject
-
+            RunTimeOptionsObject: The run time options object containing parsed values.
         """
         return self.run_time_options_object

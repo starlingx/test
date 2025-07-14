@@ -1,12 +1,15 @@
+from typing import Any, Dict
+
 from framework.exceptions.keyword_exception import KeywordException
 from framework.logging.automation_logger import get_logger
-from keywords.openstack.openstack.stack.object.openstack_stack_list_object import OpenstackStackListObject
 from keywords.openstack.openstack.openstack_json_parser import OpenstackJsonParser
+from keywords.openstack.openstack.stack.object.openstack_stack_list_object import OpenstackStackListObject
 
 
 class OpenstackStackListOutput:
     """
     This class parses the output of the command 'openstack stack list'
+
     The parsing result is a 'OpenstackStackListObject' instance.
 
     Example:
@@ -19,13 +22,14 @@ class OpenstackStackListOutput:
 
     """
 
-    def __init__(self, openstack_stack_list_output):
+    def __init__(self, openstack_stack_list_output: list[str]):
         """
-        Constructor
+        Constructor for OpenstackStackListOutput class.
+
         Args:
-            openstack_stack_list_output: the output of the command 'openstack stack list'.
+            openstack_stack_list_output (list[str]): the output of the command 'openstack stack list'.
         """
-        self.openstack_stacks: [OpenstackStackListObject] = []
+        self.openstack_stacks: list[OpenstackStackListObject] = []
         openstack_json_parser = OpenstackJsonParser(openstack_stack_list_output)
         output_values = openstack_json_parser.get_output_values_list()
 
@@ -33,33 +37,38 @@ class OpenstackStackListOutput:
             if self.is_valid_output(value):
                 self.openstack_stacks.append(
                     OpenstackStackListObject(
-                        value['ID'],
-                        value['Stack Name'],
-                        value['Project'],
-                        value['Stack Status'],
-                        value['Creation Time'],
-                        value['Updated Time'],
+                        value["ID"],
+                        value["Stack Name"],
+                        value["Project"],
+                        value["Stack Status"],
+                        value["Creation Time"],
+                        value["Updated Time"],
                     )
                 )
             else:
                 raise KeywordException(f"The output line {value} was not valid")
 
-    def get_stacks(self) -> [OpenstackStackListObject]:
+    def get_stacks(self) -> list[OpenstackStackListObject]:
         """
         Returns the list of stack objects
-        Returns:
 
+        Returns:
+            list[OpenstackStackListObject]: a list of OpenstackStackListObject instances representing the stacks
         """
         return self.openstack_stacks
 
     def get_stack(self, stack_name: str) -> OpenstackStackListObject:
         """
         Gets the given stack
+
         Args:
-            stack_name (): the name of the stack
+            stack_name (str): the name of the stack
 
-        Returns: the stack object
+        Returns:
+            OpenstackStackListObject: the OpenstackStackListObject instance representing the stack with the name 'stack_name'
 
+        Raises:
+            KeywordException: if no stack with the name 'stack_name' was found.
         """
         stacks = list(filter(lambda stack: stack.get_stack_name() == stack_name, self.openstack_stacks))
         if len(stacks) == 0:
@@ -68,30 +77,31 @@ class OpenstackStackListOutput:
         return stacks[0]
 
     @staticmethod
-    def is_valid_output(value):
+    def is_valid_output(value: Dict[str, Any]) -> bool:
         """
         Checks to ensure the output has the correct keys
+
         Args:
-            value (): the value to check
+            value (Dict[str, Any]): a dictionary representing a single row of the output
 
         Returns:
-
+            bool: True if the output has the required keys; False otherwise
         """
         valid = True
-        if 'ID' not in value:
-            get_logger().log_error(f'id is not in the output value: {value}')
+        if "ID" not in value:
+            get_logger().log_error(f"id is not in the output value: {value}")
             valid = False
-        if 'Stack Name' not in value:
-            get_logger().log_error(f'stack name is not in the output value: {value}')
+        if "Stack Name" not in value:
+            get_logger().log_error(f"stack name is not in the output value: {value}")
             valid = False
-        if 'Project' not in value:
-            get_logger().log_error(f'project is not in the output value: {value}')
+        if "Project" not in value:
+            get_logger().log_error(f"project is not in the output value: {value}")
             valid = False
-        if 'Stack Status' not in value:
-            get_logger().log_error(f'stack status is not in the output value: {value}')
+        if "Stack Status" not in value:
+            get_logger().log_error(f"stack status is not in the output value: {value}")
             valid = False
-        if 'Creation Time' not in value:
-            get_logger().log_error(f'creation time is not in the output value: {value}')
+        if "Creation Time" not in value:
+            get_logger().log_error(f"creation time is not in the output value: {value}")
             valid = False
 
         return valid

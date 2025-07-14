@@ -20,54 +20,52 @@ class DefaultInterfaceOptionsOutput:
 
     """
 
-    def __init__(self, default_interface_options_output: [str]):
+    def __init__(self, default_interface_options_output: list[str]):
         """
-        Constructor.
-            Create an internal DefaultInterfaceOptionsObject from the passed parameter.
+        Create an internal DefaultInterfaceOptionsObject from the passed parameter.
+
         Args:
             default_interface_options_output (list[str]): a list of strings representing the default interface options output
-
         """
         cat_ptp_table_parser = CatPtpTableParser(default_interface_options_output)
         output_values = cat_ptp_table_parser.get_output_values_dict()
         self.default_interface_options_object = DefaultInterfaceOptionsObject()
 
-        if 'clock_type' in output_values:
-            self.default_interface_options_object.set_clock_type(output_values['clock_type'])
+        if "clock_type" in output_values:
+            self.default_interface_options_object.set_clock_type(output_values["clock_type"])
 
-        if 'network_transport' in output_values:
-            self.default_interface_options_object.set_network_transport(output_values['network_transport'])
+        if "network_transport" in output_values:
+            self.default_interface_options_object.set_network_transport(output_values["network_transport"])
 
-        if 'delay_mechanism' in output_values:
-            self.default_interface_options_object.set_delay_mechanism(output_values['delay_mechanism'])
+        if "delay_mechanism" in output_values:
+            self.default_interface_options_object.set_delay_mechanism(output_values["delay_mechanism"])
 
-        if 'time_stamping' in output_values:
-            self.default_interface_options_object.set_time_stamping(output_values['time_stamping'])
+        if "time_stamping" in output_values:
+            self.default_interface_options_object.set_time_stamping(output_values["time_stamping"])
 
-        if 'tsproc_mode' in output_values:
-            self.default_interface_options_object.set_tsproc_mode(output_values['tsproc_mode'])
+        if "tsproc_mode" in output_values:
+            self.default_interface_options_object.set_tsproc_mode(output_values["tsproc_mode"])
 
-        if 'delay_filter' in output_values:
-            self.default_interface_options_object.set_delay_filter(output_values['delay_filter'])
+        if "delay_filter" in output_values:
+            self.default_interface_options_object.set_delay_filter(output_values["delay_filter"])
 
-        if 'delay_filter_length' in output_values:
-            self.default_interface_options_object.set_delay_filter_length(int(output_values['delay_filter_length']))
+        if "delay_filter_length" in output_values:
+            self.default_interface_options_object.set_delay_filter_length(int(output_values["delay_filter_length"]))
 
-        if 'egressLatency' in output_values:
-            self.default_interface_options_object.set_egress_latency(int(output_values['egressLatency']))
+        if "egressLatency" in output_values:
+            self.default_interface_options_object.set_egress_latency(int(output_values["egressLatency"]))
 
-        if 'ingressLatency' in output_values:
-            self.default_interface_options_object.set_ingress_latency(int(output_values['ingressLatency']))
+        if "ingressLatency" in output_values:
+            self.default_interface_options_object.set_ingress_latency(int(output_values["ingressLatency"]))
 
-        if 'boundary_clock_jbod' in output_values:
-            self.default_interface_options_object.set_boundary_clock_jbod(int(output_values['boundary_clock_jbod']))
+        if "boundary_clock_jbod" in output_values:
+            self.default_interface_options_object.set_boundary_clock_jbod(int(output_values["boundary_clock_jbod"]))
 
     def get_default_interface_options_object(self) -> DefaultInterfaceOptionsObject:
         """
         Getter for DefaultInterfaceOptionsObject object.
 
         Returns:
-            A DefaultInterfaceOptionsObject
-
+            DefaultInterfaceOptionsObject: The default interface options object containing parsed values.
         """
         return self.default_interface_options_object
