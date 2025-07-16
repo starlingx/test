@@ -4,12 +4,14 @@ from framework.logging.automation_logger import get_logger
 from framework.validation.validation import validate_equals
 from keywords.cloud_platform.ansible_playbook.ansible_playbook_keywords import AnsiblePlaybookKeywords
 from keywords.cloud_platform.ansible_playbook.backup_files_upload_keywords import BackUpFilesUploadKeywords
+from keywords.cloud_platform.health.health_keywords import HealthKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
-from keywords.files.file_keywords import FileKeywords
-from keywords.cloud_platform.version_info.cloud_platform_software_version import CloudPlatformSoftwareVersion
-from keywords.cloud_platform.version_info.cloud_platform_version_manager import CloudPlatformVersionManager
 from keywords.cloud_platform.sw_patch.software_patch_keywords import SwPatchQueryKeywords
 from keywords.cloud_platform.upgrade.software_list_keywords import SoftwareListKeywords
+from keywords.cloud_platform.version_info.cloud_platform_software_version import CloudPlatformSoftwareVersion
+from keywords.cloud_platform.version_info.cloud_platform_version_manager import CloudPlatformVersionManager
+from keywords.files.file_keywords import FileKeywords
+
 
 @mark.p0
 def test_backup():
@@ -39,7 +41,12 @@ def test_backup():
         info_list = [f"{patch.get_patch_id()}:{patch.get_state()}" for patch in sw_patch_output.get_patches()]
 
     FileKeywords(ssh_connection).create_file_with_echo("/tmp/pre_backup_software_list.txt", "\n".join(info_list))
-       
+
+    # Prechecks Before Back-Up:
+    get_logger().log_info("Performing pre-checks before back up")
+    obj_health = HealthKeywords(ssh_connection)
+    obj_health.validate_healty_cluster()  # Checks alarms, pods, app health
+
     get_logger().log_info("Delete old backup files if present in back up directory")
     backup_files = FileKeywords(ssh_connection).get_files_in_dir(backup_dir)
     for backup_file in backup_files:
@@ -54,7 +61,7 @@ def test_backup():
 
     # Copy software list to backup directory
     ssh_connection.send_as_sudo(f"cp /tmp/pre_backup_software_list.txt {backup_dir}/")
-    
+
     backup_file_upload_status = BackUpFilesUploadKeywords(ssh_connection).backup_file(backup_dir, local_backup_folder_path)
 
     validate_equals(backup_file_upload_status, True, "Backup file upload to local directory")
