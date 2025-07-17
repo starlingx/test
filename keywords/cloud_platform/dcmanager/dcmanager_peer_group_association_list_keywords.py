@@ -22,7 +22,7 @@ class DcManagerPeerGroupAssociationListKeywords(BaseKeyword):
             DcManagerPeerGroupAssociationListOutput: a DcManagerPeerGroupAssociationListOutput object representing
             the output of the command 'dcmanager peer group association list'.
         """
-        output = self.ssh_connection.send(source_openrc("dcmanager peer-group association list"))
+        output = self.ssh_connection.send(source_openrc("dcmanager peer-group-association list"))
         self.validate_success_return_code(self.ssh_connection)
         dcmanager_peer_group_association_list_output = DcManagerPeerGroupAssociationListOutput(output)
 

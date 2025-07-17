@@ -40,11 +40,14 @@ class DcManagerPeerGroupAssociationListOutput:
             if "system_peer_id" in value:
                 dcmanager_peer_group_association_object.set_system_peer_id(value["system_peer_id"])
 
-            if "peer_group_priority" in value:
-                dcmanager_peer_group_association_object.set_peer_group_priority(value["peer_group_priority"])
+            if "type" in value:
+                dcmanager_peer_group_association_object.set_type(value["type"])
 
             if "sync_status" in value:
                 dcmanager_peer_group_association_object.set_sync_status(value["sync_status"])
+
+            if "peer_group_priority" in value:
+                dcmanager_peer_group_association_object.set_peer_group_priority(value["peer_group_priority"])
 
             self.dcmanager_peer_group_association.append(dcmanager_peer_group_association_object)
 

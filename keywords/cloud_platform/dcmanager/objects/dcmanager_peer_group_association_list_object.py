@@ -4,20 +4,21 @@ class DcManagerPeerGroupAssociationListObject:
 
     Example output from 'dcmanager peer-group-association list' command:
     [sysadmin@controller-1 ~(keystone_admin)]$ dcmanager peer-group-association list
-    +----+---------------+----------------+---------------------+-------------+
-    | id | peer_group_id | system_peer_id | peer_group_priority | sync_status |
-    +----+---------------+----------------+---------------------+-------------+
-    |  4 |             8 |              2 | None                | disabled    |
-    |  5 |             9 |              2 | None                | disabled    |
-    +----+---------------+----------------+---------------------+-------------+
+    +----+---------------+----------------+---------+-------------+---------------------+
+    | id | peer_group_id | system_peer_id | type    | sync_status | peer_group_priority |
+    +----+---------------+----------------+---------+-------------+---------------------+
+    |  1 |             1 |              1 | primary |   in-sync   |                   1 |
+    +----+---------------+----------------+---------+-------------+---------------------+
+
     """
 
     def __init__(self, id: str):
         self.id = id
         self.peer_group_id = -1
         self.system_peer_id = -1
-        self.peer_group_priority = -1
+        self.type = None
         self.sync_status = None
+        self.peer_group_priority = -1
 
     def get_id(self) -> str:
         """Get the ID of the peer group association.
@@ -67,21 +68,21 @@ class DcManagerPeerGroupAssociationListObject:
         """
         self.system_peer_id = system_peer_id
 
-    def get_peer_group_priority(self) -> int:
-        """Get the peer group priority.
+    def get_type(self) -> str:
+        """Get the type.
 
         Returns:
-            int: Peer group priority.
+            str: Type (primary or non-primary).
         """
-        return self.peer_group_priority
+        return self.type
 
-    def set_peer_group_priority(self, peer_group_priority: int) -> None:
-        """Set the peer group priority.
+    def set_type(self, type: str) -> None:
+        """Set the Type
 
         Args:
-            peer_group_priority (int): Peer group priority.
+            type (str): Type (primary or non-primary).
         """
-        self.peer_group_priority = peer_group_priority
+        self.type = type
 
     def get_sync_status(self) -> str:
         """Get the synchronization status.
@@ -98,6 +99,22 @@ class DcManagerPeerGroupAssociationListObject:
             sync_status (str): Synchronization status.
         """
         self.sync_status = sync_status
+
+    def get_peer_group_priority(self) -> int:
+        """Get the peer group priority.
+
+        Returns:
+            int: Peer group priority.
+        """
+        return self.peer_group_priority
+
+    def set_peer_group_priority(self, peer_group_priority: int) -> None:
+        """Set the peer group priority.
+
+        Args:
+            peer_group_priority (int): Peer group priority.
+        """
+        self.peer_group_priority = peer_group_priority
 
     def __str__(self) -> str:
         """

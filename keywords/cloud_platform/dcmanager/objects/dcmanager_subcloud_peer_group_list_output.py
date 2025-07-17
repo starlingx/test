@@ -21,16 +21,16 @@ class DcManagerSubcloudPeerGroupListOutput:
         for value in self.output_values:
             if not self.is_valid_output(value):
                 raise KeywordException(f"The output line {value} was not valid")
-                peer_group_object = DcManagerSubcloudPeerGroupListObject(
-                    value.get("id"),
-                    value.get("peer_group_name"),
-                    value.get("group_priority"),
-                    value.get("group_state"),
-                    value.get("system_leader_id"),
-                    value.get("system_leader_name"),
-                    value.get("max_subcloud_rehoming"),
-                )
-                self.peer_group_list.append(peer_group_object)
+            peer_group_object = DcManagerSubcloudPeerGroupListObject(
+                value.get("id"),
+                value.get("peer_group_name"),
+                value.get("group_priority"),
+                value.get("group_state"),
+                value.get("system_leader_id"),
+                value.get("system_leader_name"),
+                value.get("max_subcloud_rehoming"),
+            )
+            self.peer_group_list.append(peer_group_object)
 
     def get_peer_group_list(self) -> List[DcManagerSubcloudPeerGroupListObject]:
         """Get all peer group objects.
