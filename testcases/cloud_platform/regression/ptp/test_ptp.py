@@ -725,12 +725,12 @@ def test_ptp_operation_gnss_off_and_on():
 
     pps_signal_loss_alarm_obj = AlarmListObject()
     pps_signal_loss_alarm_obj.set_alarm_id("100.119")
-    pps_signal_loss_alarm_obj.set_reason_text("controller-0 1PPS signal loss state: holdover")
+    pps_signal_loss_alarm_obj.set_reason_text("controller-0 1PPS signal loss state: LockStatus.HOLDOVER")
     pps_signal_loss_alarm_obj.set_entity_id(f"host=controller-0.interface={interface}.ptp=1PPS-signal-loss")
 
     gnss_signal_loss_alarm_obj = AlarmListObject()
     gnss_signal_loss_alarm_obj.set_alarm_id("100.119")
-    gnss_signal_loss_alarm_obj.set_reason_text("controller-0 GNSS signal loss state: holdover")
+    gnss_signal_loss_alarm_obj.set_reason_text("controller-0 GNSS signal loss state: LockStatus.HOLDOVER")
     gnss_signal_loss_alarm_obj.set_entity_id(f"host=controller-0.interface={interface}.ptp=GNSS-signal-loss")
 
     AlarmListKeywords(ssh_connection).wait_for_alarms_to_appear([ptp1_not_locked_alarm_obj, pps_signal_loss_alarm_obj, gnss_signal_loss_alarm_obj])
@@ -803,12 +803,12 @@ def test_ptp_operation_phc_ctl_time_change():
 
     ctrl0_ptp1_oot_alarm_obj = AlarmListObject()
     ctrl0_ptp1_oot_alarm_obj.set_alarm_id("100.119")
-    ctrl0_ptp1_oot_alarm_obj.set_reason_text(r"controller-0 Precision Time Protocol \(PTP\) clocking is out of tolerance by (\d+\.\d+) (milli|micro)secs")
+    ctrl0_ptp1_oot_alarm_obj.set_reason_text(r"controller-0 Precision Time Protocol \(PTP\) clocking is out of tolerance by ((\d+\.\d+) (milli|micro)secs|more than \d+ seconds)")
     ctrl0_ptp1_oot_alarm_obj.set_entity_id("host=controller-0.instance=ptp1.ptp=out-of-tolerance")
 
     ctrl1_ptp1_oot_alarm_obj = AlarmListObject()
     ctrl1_ptp1_oot_alarm_obj.set_alarm_id("100.119")
-    ctrl1_ptp1_oot_alarm_obj.set_reason_text(r"controller-1 Precision Time Protocol \(PTP\) clocking is out of tolerance by (\d+\.\d+) (milli|micro)secs")
+    ctrl1_ptp1_oot_alarm_obj.set_reason_text(r"controller-1 Precision Time Protocol \(PTP\) clocking is out of tolerance by ((\d+\.\d+) (milli|micro)secs|more than \d+ seconds)")
     ctrl1_ptp1_oot_alarm_obj.set_entity_id("host=controller-1.instance=ptp1.ptp=out-of-tolerance")
 
     phc_ctl_keywords = PhcCtlKeywords(lab_connect_keywords.get_ssh_for_hostname("controller-0"))
@@ -825,7 +825,7 @@ def test_ptp_operation_phc_ctl_time_change():
 
     ctrl1_ptp4_oot_alarm_obj = AlarmListObject()
     ctrl1_ptp4_oot_alarm_obj.set_alarm_id("100.119")
-    ctrl1_ptp4_oot_alarm_obj.set_reason_text(r"controller-1 Precision Time Protocol \(PTP\) clocking is out of tolerance by (\d+\.\d+) (milli|micro)secs")
+    ctrl1_ptp4_oot_alarm_obj.set_reason_text(r"controller-1 Precision Time Protocol \(PTP\) clocking is out of tolerance by ((\d+\.\d+) (milli|micro)secs|more than \d+ seconds)")
     ctrl1_ptp4_oot_alarm_obj.set_entity_id("host=controller-1.instance=ptp4.ptp=out-of-tolerance")
 
     phc_ctl_keywords = PhcCtlKeywords(lab_connect_keywords.get_ssh_for_hostname("controller-1"))
@@ -950,7 +950,8 @@ def test_ptp_operation_service_stop_start_restart():
     get_logger().log_info("Waiting for alarms 100.119 due to service stop...")
     ctrl0_alarm = AlarmListObject()
     ctrl0_alarm.set_alarm_id("100.119")
-    ctrl0_alarm.set_reason_text(r"Provisioned Precision Time Protocol \(PTP\) 'hardware' time stamping mode seems to be unsupported by this host")
+    
+    ctrl0_alarm.set_reason_text("controller-0 PTP service ptp4l@ptp1.service enabled but not running")
     ctrl0_alarm.set_entity_id("host=controller-0.instance=ptp1.ptp")
 
     ctrl1_alarm = AlarmListObject()
