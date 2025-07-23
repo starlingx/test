@@ -449,7 +449,7 @@ def test_ptp_operation_sma_disabled_and_enable():
 
     signal_loss_alarm_obj = AlarmListObject()
     signal_loss_alarm_obj.set_alarm_id("100.119")
-    signal_loss_alarm_obj.set_reason_text("controller-0 1PPS signal loss state: holdover")
+    signal_loss_alarm_obj.set_reason_text("controller-0 1PPS signal loss state: LockStatus.HOLDOVER")
     signal_loss_alarm_obj.set_entity_id(f"host=controller-0.interface={interface}.ptp=1PPS-signal-loss")
 
     AlarmListKeywords(ssh_connection).wait_for_alarms_to_appear([not_locked_alarm_obj, signal_loss_alarm_obj])
@@ -803,12 +803,12 @@ def test_ptp_operation_phc_ctl_time_change():
 
     ctrl0_ptp1_oot_alarm_obj = AlarmListObject()
     ctrl0_ptp1_oot_alarm_obj.set_alarm_id("100.119")
-    ctrl0_ptp1_oot_alarm_obj.set_reason_text(r"controller-0 Precision Time Protocol \(PTP\) clocking is out of tolerance by ((\d+\.\d+) (milli|micro)secs|more than \d+ seconds)")
+    ctrl0_ptp1_oot_alarm_obj.set_reason_text(r"controller-0 Precision Time Protocol \(PTP\) clocking is out of tolerance by ((\d+\.\d+) (milli|micro)secs")
     ctrl0_ptp1_oot_alarm_obj.set_entity_id("host=controller-0.instance=ptp1.ptp=out-of-tolerance")
 
     ctrl1_ptp1_oot_alarm_obj = AlarmListObject()
     ctrl1_ptp1_oot_alarm_obj.set_alarm_id("100.119")
-    ctrl1_ptp1_oot_alarm_obj.set_reason_text(r"controller-1 Precision Time Protocol \(PTP\) clocking is out of tolerance by ((\d+\.\d+) (milli|micro)secs|more than \d+ seconds)")
+    ctrl1_ptp1_oot_alarm_obj.set_reason_text(r"controller-1 Precision Time Protocol \(PTP\) clocking is out of tolerance by ((\d+\.\d+) (milli|micro)secs")
     ctrl1_ptp1_oot_alarm_obj.set_entity_id("host=controller-1.instance=ptp1.ptp=out-of-tolerance")
 
     phc_ctl_keywords = PhcCtlKeywords(lab_connect_keywords.get_ssh_for_hostname("controller-0"))
@@ -825,7 +825,7 @@ def test_ptp_operation_phc_ctl_time_change():
 
     ctrl1_ptp4_oot_alarm_obj = AlarmListObject()
     ctrl1_ptp4_oot_alarm_obj.set_alarm_id("100.119")
-    ctrl1_ptp4_oot_alarm_obj.set_reason_text(r"controller-1 Precision Time Protocol \(PTP\) clocking is out of tolerance by ((\d+\.\d+) (milli|micro)secs|more than \d+ seconds)")
+    ctrl1_ptp4_oot_alarm_obj.set_reason_text(r"controller-1 Precision Time Protocol \(PTP\) clocking is out of tolerance by ((\d+\.\d+) (milli|micro)secs")
     ctrl1_ptp4_oot_alarm_obj.set_entity_id("host=controller-1.instance=ptp4.ptp=out-of-tolerance")
 
     phc_ctl_keywords = PhcCtlKeywords(lab_connect_keywords.get_ssh_for_hostname("controller-1"))
