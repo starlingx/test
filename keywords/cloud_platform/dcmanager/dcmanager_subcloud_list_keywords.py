@@ -41,6 +41,22 @@ class DcManagerSubcloudListKeywords(BaseKeyword):
 
         return dcmanager_subcloud_list_output
 
+    def get_dcmanager_subcloud_list_all(self) -> DcManagerSubcloudListOutput:
+        """Gets the 'dcmanager subcloud list --all' output.
+
+        Args: None
+
+        Returns:
+            DcManagerSubcloudListOutput: a DcManagerSubcloudListOutput object representing
+            the output of the command 'dcmanager subcloud list --all'.
+
+        """
+        output = self.ssh_connection.send(source_openrc("dcmanager subcloud list --all"))
+        self.validate_success_return_code(self.ssh_connection)
+        dcmanager_subcloud_list_output = DcManagerSubcloudListOutput(output)
+
+        return dcmanager_subcloud_list_output
+
     def validate_subcloud_status(self, subcloud_name: str, status: str) -> bool:
         """Validates the status of specified subcloud until reaches the desired status.
 
