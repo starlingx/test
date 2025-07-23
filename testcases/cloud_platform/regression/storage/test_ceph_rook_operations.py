@@ -93,7 +93,7 @@ def test_ceph_rook_host_fs_operation():
 
 
 @mark.p2
-@mark.lab_ceph_rook
+@mark.lab_rook_ceph
 def test_ceph_rook_capabilities_testing_open_model(request):
     """
     Test case: [TC_34918] WRCPPV-1015 ceph-rook backend capabilities testing for open model
@@ -221,7 +221,7 @@ def test_ceph_rook_capabilities_testing_open_model(request):
         validate_equals(pool_update, True, "Replicated min_size is updated.")
 
 
-@mark.lab_ceph_rook
+@mark.lab_rook_ceph
 def test_lock_unlock_multiple_hosts():
     """
     Lock and unlock multiple nodes on a standard lab
