@@ -42,13 +42,15 @@ class SmaKeywords(BaseKeyword):
 
         # Disable SMA1 pin
         command = f"echo 0 1 > /sys/class/net/{interface}/device/ptp/ptp1/pins/SMA1"
+        additional_command = f"echo 2 > /sys/class/net/{interface}/device/SMA1"
 
-        # Setup expected prompts for password request and echo command
+        # Setup expected prompts for password request and echo commands
         password_prompt = PromptResponse("Password:", ConfigurationManager.get_lab_config().get_admin_credentials().get_password())
         root_cmd = PromptResponse("root@", command)
-        expected_prompts = [password_prompt, root_cmd]
+        root_cmd2 = PromptResponse("root@", additional_command)
+        expected_prompts = [password_prompt, root_cmd, root_cmd2]
 
-        # Run echo command to crash standby controller
+        # Run echo commands
         self.ssh_connection.send_expect_prompts("sudo su", expected_prompts)
 
         # Expected states for validation
@@ -82,13 +84,15 @@ class SmaKeywords(BaseKeyword):
 
         # Enable SMA1 pin
         command = f"echo 1 1 > /sys/class/net/{interface}/device/ptp/ptp1/pins/SMA1"
+        additional_command = f"echo 1 > /sys/class/net/{interface}/device/SMA1"
 
-        # Setup expected prompts for password request and echo command
+        # Setup expected prompts for password request and echo commands
         password_prompt = PromptResponse("Password:", ConfigurationManager.get_lab_config().get_admin_credentials().get_password())
         root_cmd = PromptResponse("root@", command)
-        expected_prompts = [password_prompt, root_cmd]
+        root_cmd2 = PromptResponse("root@", additional_command)
+        expected_prompts = [password_prompt, root_cmd, root_cmd2]
 
-        # Run echo command to crash standby controller
+        # Run echo commands
         self.ssh_connection.send_expect_prompts("sudo su", expected_prompts)
 
         # Construct CGU location path
