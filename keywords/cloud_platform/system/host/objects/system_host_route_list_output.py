@@ -62,6 +62,15 @@ class SystemHostRouteListOutput:
         gateway_list = [x.get_gateway() for x in self.system_host_route_list]
         return gateway_list
 
+    def get_gateway_address(self) -> str:
+        """
+        Returns the gateway address
+
+        Returns:
+            str: A string containing gateway addresses
+        """
+        return " ".join(self.get_gateway())
+
     def get_metrics(self) -> list:
         """
         Returns the list of system networks

@@ -40,6 +40,19 @@ class DcManagerSubcloudPeerGroupListOutput:
         """
         return self.peer_group_list
 
+    def get_latest_subcloud_peer_group_id(self) -> int:
+        """Returns the ID of the latest subcloud peer group.
+
+        Returns:
+            int: Latest subcloud peer group ID.
+
+        Raises:
+            Exception: If no subcloud peer groups are available.
+        """
+        if not self.peer_group_list:
+            raise Exception("No subcloud peer groups found.")
+        return self.peer_group_list[-1].get_id()
+
     def get_peer_group_by_name(self, group_name: str) -> DcManagerSubcloudPeerGroupListObject:
         """Get peer group by name.
 

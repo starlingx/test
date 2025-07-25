@@ -35,6 +35,19 @@ class DcManagerSystemPeerListOutput:
         """
         return self.dcmanager_sys_peer_list
 
+    def get_latest_system_peer_id(self) -> int:
+        """Returns the ID of the latest system peer.
+
+        Returns:
+            int: Latest system peer ID.
+
+        Raises:
+            Exception: If no system peers are found.
+        """
+        if not self.dcmanager_sys_peer_list:
+            raise Exception("No system peer found in site.")
+        return self.dcmanager_sys_peer_list[-1].get_id()
+
     def is_valid_output(self, value: dict) -> bool:
         """
         Validates that the output dictionary contains all required fields.
