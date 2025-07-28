@@ -46,19 +46,29 @@ class SystemHostLockKeywords(BaseKeyword):
             raise KeywordException("Lock host did not lock in the required time. Host values were: " f"Operational: {host_value.get_operational()} " f"Administrative: {host_value.get_administrative()} " f"Availability: {host_value.get_availability()}")
         return True
 
-    def lock_host_with_error(self, host_name: str) -> str:
+    def lock_host_with_error(self, host_name: str, confirm_flag: bool = False) -> str:
         """
         Locks the given host name. It's expected that the cmd returns error
 
         Args:
             host_name (str): the name of the host
+            confirm_flag (bool): whether to add --yes flag to bypass confirmation prompts
 
         Returns:
             str: a str of error message
 
         """
-        msg = self.ssh_connection.send(source_openrc(f"system host-lock {host_name}"))
-        return msg[0]
+        cmd = f"system host-lock {host_name}"
+        if confirm_flag:
+            cmd += " --yes"
+
+        output = self.ssh_connection.send(source_openrc(cmd))
+        # Handle empty output or return complete output
+        if not output:
+            return "No output received from lock command"
+
+        # Join all output lines to capture complete error message
+        return "\n".join(output) if isinstance(output, list) else str(output)
 
     def wait_for_host_locked(self, host_name: str) -> bool:
         """
