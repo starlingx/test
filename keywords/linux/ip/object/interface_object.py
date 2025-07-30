@@ -12,31 +12,35 @@ class InterfaceObject:
     def get_interface_name(self) -> str:
         """
         Getter for interface name
-        Returns:
 
+        Returns:
+            str: the interface name value
         """
         return self.interface_name
 
     def get_mtu(self) -> str:
         """
         Getter for mtu name
-        Returns:
 
+        Returns:
+            str: the mtu name value
         """
         return self.mtu
 
     def get_state(self) -> str:
         """
         Getter for state
-        Returns:
 
+        Returns:
+            str: the state value
         """
         return self.state
 
     def get_mode(self) -> str:
         """
         Getter for mode
-        Returns:
 
+        Returns:
+            str: the mode value
         """
         return self.mode

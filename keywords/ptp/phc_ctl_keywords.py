@@ -4,6 +4,7 @@ from typing import List
 
 from config.configuration_manager import ConfigurationManager
 from framework.ssh.prompt_response import PromptResponse
+from framework.ssh.ssh_connection import SSHConnection
 from keywords.base_keyword import BaseKeyword
 from keywords.cloud_platform.fault_management.alarms.alarm_list_keywords import AlarmListKeywords
 from keywords.cloud_platform.fault_management.alarms.objects.alarm_list_object import AlarmListObject
@@ -11,19 +12,14 @@ from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKey
 
 
 class PhcCtlKeywords(BaseKeyword):
-    """
-    Directly control PHC device clock using given SSH connection.
+    """Directly control PHC device clock using given SSH connection."""
 
-    Attributes:
-        ssh_connection: An instance of an SSH connection.
-    """
-
-    def __init__(self, ssh_connection):
+    def __init__(self, ssh_connection: SSHConnection):
         """
         Initializes the PhcCtlKeywords with an SSH connection.
 
         Args:
-            ssh_connection: An instance of an SSH connection.
+            ssh_connection (SSHConnection): An instance of an SSH connection.
         """
         self.ssh_connection = ssh_connection
 
@@ -120,17 +116,13 @@ class PhcCtlKeywords(BaseKeyword):
 
     def wait_for_phc_ctl_adjustment_alarm(self, interface: str, alarms: List[AlarmListObject], timeout: int = 120, polling_interval: int = 10) -> None:
         """
-        Run a remote phc_ctl adjustment loop on the controller as root,
-        and stop it once the specified PTP alarm(s) are detected or
-        a timeout occurs.
+        Run a remote phc_ctl adjustment loop on the controller as root, and stop it once the specified PTP alarm(s) are detected or a timeout occurs.
 
         Args:
             interface (str): The interface to apply phc_ctl adjustments to.
             alarms (List[AlarmListObject]): A list of expected alarm objects to wait for.
             timeout (int): Maximum wait time in seconds (default: 120).
             polling_interval (int): Interval in seconds between polling attempts (default: 10).
-
-        Returns: None
 
         Raises:
             TimeoutError: If the expected alarms are not observed within the timeout period.
@@ -145,9 +137,6 @@ class PhcCtlKeywords(BaseKeyword):
 
             Args:
                 command (str): The shell command to be executed with root privileges.
-
-            Returns:
-                None
             """
             root_prompt = PromptResponse("#", command)
             self.ssh_connection.send_expect_prompts("sudo su", [password_prompt, root_prompt])

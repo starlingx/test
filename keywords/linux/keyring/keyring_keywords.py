@@ -17,8 +17,9 @@ class KeyringKeywords(BaseKeyword):
         Args:
             service (str): keyring service
             identifier (str): keyring identifier
+
         Returns:
-            The value from the keyring.
+            str: The value from the keyring.
         """
         keyring_value = self.ssh_connection.send(f"keyring get {service} {identifier}")
         self.validate_success_return_code(self.ssh_connection)

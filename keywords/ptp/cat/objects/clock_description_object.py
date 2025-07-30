@@ -4,104 +4,98 @@ class ClockDescriptionObject:
     """
 
     def __init__(self):
-        self.product_description: str = ''
-        self.revision_data: str = ''
-        self.manufacturer_identity: str = ''
-        self.user_description: str = ''
-        self.time_source: str = ''
+        self.product_description: str = ""
+        self.revision_data: str = ""
+        self.manufacturer_identity: str = ""
+        self.user_description: str = ""
+        self.time_source: str = ""
 
     def get_product_description(self) -> str:
         """
         Getter for product_description
-        Returns: product_description
 
+        Returns:
+            str: the product_description value
         """
         return self.product_description
 
-    def set_product_description(self, product_description: str):
+    def set_product_description(self, product_description: str) -> None:
         """
         Setter for product_description
+
         Args:
-            product_description (): the product_description value
-
-        Returns:
-
+            product_description (str): the product_description value
         """
         self.product_description = product_description
 
     def get_revision_data(self) -> str:
         """
         Getter for revision_data
-        Returns: revision_data value
 
+        Returns:
+            str: the revision_data value
         """
         return self.revision_data
 
-    def set_revision_data(self, revision_data: str):
+    def set_revision_data(self, revision_data: str) -> None:
         """
         Setter for revision_data
+
         Args:
-            revision_data (): revision_data value
-
-        Returns:
-
+            revision_data (str): revision_data value
         """
         self.revision_data = revision_data
 
     def get_manufacturer_identity(self) -> str:
         """
         Getter for manufacturer_identity
-        Returns: manufacturer_identity value
 
+        Returns:
+            str: the manufacturer_identity value
         """
         return self.manufacturer_identity
 
-    def set_manufacturer_identity(self, manufacturer_identity: str):
+    def set_manufacturer_identity(self, manufacturer_identity: str) -> None:
         """
         Setter for manufacturer_identity
+
         Args:
-            manufacturer_identity (): manufacturer_identity value
-
-        Returns:
-
+            manufacturer_identity (str): manufacturer_identity value
         """
         self.manufacturer_identity = manufacturer_identity
 
     def get_user_description(self) -> str:
         """
         Getter for user_description
-        Returns: the user_description value
 
+        Returns:
+            str: the user_description value
         """
         return self.user_description
 
-    def set_user_description(self, user_description: str):
+    def set_user_description(self, user_description: str) -> None:
         """
         Setter for user_description
+
         Args:
-            user_description (): the user_description value
-
-        Returns:
-
+            user_description (str): the user_description value
         """
         self.user_description = user_description
 
     def get_time_source(self) -> str:
         """
         Getter for time_source
-        Returns: time_source value
 
+        Returns:
+            str: the time_source value
         """
         return self.time_source
 
-    def set_time_source(self, time_source: str):
+    def set_time_source(self, time_source: str) -> None:
         """
         Setter for time_source
+
         Args:
-            time_source (): the time_source value
-
-        Returns:
-
+            time_source (str): the time_source value
         """
         self.time_source = time_source
-
