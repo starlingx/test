@@ -2,9 +2,7 @@ from typing import List
 
 from framework.exceptions.keyword_exception import KeywordException
 from framework.rest.rest_response import RestResponse
-from keywords.cloud_platform.system.host.objects.system_host_cpu_object import (
-    SystemHostCPUObject,
-)
+from keywords.cloud_platform.system.host.objects.system_host_cpu_object import SystemHostCPUObject
 from keywords.cloud_platform.system.system_table_parser import SystemTableParser
 
 
@@ -200,3 +198,17 @@ class SystemHostCPUOutput:
 
         """
         return self.get_processor_count() >= min_num_processors
+
+    def get_function_count(self, assigned_function: str) -> int:
+        """
+        Count the number of CPUs assigned to a specific function.
+
+        Args:
+            assigned_function (str): The name of the function to filter CPUs by.
+                                     The comparison is case-insensitive.
+
+        Returns:
+            int: The total number of CPUs where `assigned_function` matches
+                 the given function name.
+        """
+        return sum(1 for item in self.system_host_cpus if item.assigned_function.lower() == assigned_function.lower())

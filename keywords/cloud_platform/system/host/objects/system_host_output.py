@@ -223,3 +223,21 @@ class SystemHostOutput:
         """
         active_controller_name = self.get_active_controller().get_host_name()
         return [host.get_host_name() for host in self.system_hosts if host.get_host_name() != active_controller_name]
+
+    def get_controller_names(self) -> list[str]:
+        """
+        Gets the hostnames of all controllers
+
+        Returns:
+            list[str]: list of controller hostnames
+        """
+        return [host.get_host_name() for host in self.get_controllers()]
+
+    def get_computer_names(self) -> list[str]:
+        """
+        Gets the hostnames of all computes
+
+        Returns:
+            list[str]: list of computes hostnames
+        """
+        return [host.get_host_name() for host in self.get_computes()]

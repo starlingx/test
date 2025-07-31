@@ -72,3 +72,20 @@ class SystemHostDiskOutput:
             bool: True if at least one disk has the minimum required free space, False otherwise.
         """
         return any(item.get_available_gib() >= minimum_disk_space_in_gb for item in self.system_host_disks)
+
+    def get_all_uuid(self) -> list | None:
+        """
+        Retrieve the UUIDs of all system host disks.
+
+        Iterates through the list of system host disks and collects their UUIDs
+        using the `get_uuid()` method.
+
+        Returns:
+            list | None: A list of UUID strings if any disks are present,
+            or None if there are no disks available.
+        """
+        uuids = []
+        for item in self.system_host_disks:
+            uuids.append(item.get_uuid())
+
+        return uuids

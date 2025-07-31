@@ -127,3 +127,12 @@ class SystemStorageBackendOutput:
         if len(backends) == 0:
             return False
         return True
+
+    def is_backend_empty(self) -> bool:
+        """
+        Verifies if the storage backend is not configured.
+
+        Returns:
+             bool: True if backend is not configured; False otherwise.
+        """
+        return all(item.get_backend() == "" for item in self.system_storage_backends)
