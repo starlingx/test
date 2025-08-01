@@ -3,20 +3,26 @@ from pytest import mark
 from config.configuration_manager import ConfigurationManager
 from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
+from framework.validation.validation import validate_equals, validate_not_equals, validate_str_contains
 from keywords.cloud_platform.dcmanager.dcmanager_peer_group_association_add_keywords import DcManagerPeerGroupAssociationAddKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_peer_group_association_list_keywords import DcManagerPeerGroupAssociationListKeywords
+from keywords.cloud_platform.dcmanager.dcmanager_peer_group_association_sync_keywords import DcManagerPeerGroupAssociationSyncKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_list_keywords import DcManagerSubcloudListKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_peer_group_add_keywords import DcManagerSubcloudPeerGroupAddKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_peer_group_list_keywords import DcManagerSubcloudPeerGroupListKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_peer_group_list_subclouds_keywords import DcManagerSubcloudPeerGroupListSubcloudsKeywords
+from keywords.cloud_platform.dcmanager.dcmanager_subcloud_peer_group_migrate_keywords import DcManagerSubcloudPeerGroupMigrateKeywords
+from keywords.cloud_platform.dcmanager.dcmanager_subcloud_peer_group_status_keywords import DcManagerSubcloudPeerGroupStatusKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_update_keywords import DcManagerSubcloudUpdateKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_system_peer_add_keywords import DcManagerSystemPeerAddKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_system_peer_list_keywords import DcManagerSystemPeerListKeywords
+from keywords.cloud_platform.fault_management.alarms.alarm_list_keywords import AlarmListKeywords
 from keywords.cloud_platform.openstack.endpoint.objects.openstack_endpoint_list_object_filter import OpenStackEndpointListObjectFilter
 from keywords.cloud_platform.openstack.endpoint.openstack_endpoint_list_keywords import OpenStackEndpointListKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.cloud_platform.system.host.system_host_route_keywords import SystemHostRouteKeywords
 from keywords.cloud_platform.system.show.system_show_keywords import SystemShowKeywords
+from keywords.server.power_keywords import PowerKeywords
 
 
 def configure_system_peer_site(origin_ssh_connection: SSHConnection, target_ssh_connection: SSHConnection) -> None:
@@ -110,20 +116,42 @@ def test_geo_redundancy():
     DcManagerSubcloudPeerGroupListKeywords(src_site_ssh_conn).get_dcmanager_subcloud_peer_group_list()
 
     get_logger().log_test_case_step("Source site: Retrieve subcloud peer group ID and Update subcloud with peer group ID")
-    subcloud_peer_group_id = DcManagerSubcloudPeerGroupListKeywords(src_site_ssh_conn).get_dcmanager_subcloud_peer_group_list().get_latest_subcloud_peer_group_id()
-    DcManagerSubcloudUpdateKeywords(src_site_ssh_conn).dcmanager_subcloud_update(subcloud_name, "peer-group", subcloud_peer_group_id)
+    src_subcloud_peer_group_id = DcManagerSubcloudPeerGroupListKeywords(src_site_ssh_conn).get_dcmanager_subcloud_peer_group_list().get_latest_subcloud_peer_group_id()
+    DcManagerSubcloudUpdateKeywords(src_site_ssh_conn).dcmanager_subcloud_update(subcloud_name, "peer-group", src_subcloud_peer_group_id)
 
     # Add peer group association using subcloud peer group ID, system peer ID, and peer group priority
     get_logger().log_test_case_step("Source site: Retrieve system peer ID, add peer group association with priority 1, and list peer group associations")
     system_peer_id = DcManagerSystemPeerListKeywords(src_site_ssh_conn).get_dcmanager_system_peer_list().get_latest_system_peer_id()
-    DcManagerPeerGroupAssociationAddKeywords(src_site_ssh_conn).dcmanager_peer_group_association_add(subcloud_peer_group_id, system_peer_id, 1)
-    DcManagerPeerGroupAssociationListKeywords(src_site_ssh_conn).get_dcmanager_peer_group_association_list()
+    DcManagerPeerGroupAssociationAddKeywords(src_site_ssh_conn).dcmanager_peer_group_association_add(src_subcloud_peer_group_id, system_peer_id, 1)
+    pga_id = DcManagerPeerGroupAssociationListKeywords(src_site_ssh_conn).get_dcmanager_peer_group_association_list().get_latest_peer_group_association_id()
+    DcManagerPeerGroupAssociationSyncKeywords(src_site_ssh_conn).dcmanager_peer_group_association_sync(pga_id)
 
     get_logger().log_test_case_step("Destination site: List subcloud peer groups, peer group associations, and all subclouds")
     DcManagerSubcloudPeerGroupListKeywords(dest_site_ssh_conn).get_dcmanager_subcloud_peer_group_list()
     DcManagerPeerGroupAssociationListKeywords(dest_site_ssh_conn).get_dcmanager_peer_group_association_list()
     DcManagerSubcloudListKeywords(dest_site_ssh_conn).get_dcmanager_subcloud_list_all()
 
-    get_logger().log_test_case_step("Destination site: Retrieve subcloud peer group ID and list associated subclouds")
-    subcloud_peer_group_id = DcManagerSubcloudPeerGroupListKeywords(dest_site_ssh_conn).get_dcmanager_subcloud_peer_group_list().get_latest_subcloud_peer_group_id()
-    DcManagerSubcloudPeerGroupListSubcloudsKeywords(dest_site_ssh_conn).get_dcmanager_subcloud_peer_group_list_subclouds(subcloud_peer_group_id)
+    get_logger().log_test_case_step("Destination site: Retrieve subcloud peer group ID and validate associated subclouds")
+    dest_subcloud_peer_group_id = DcManagerSubcloudPeerGroupListKeywords(dest_site_ssh_conn).get_dcmanager_subcloud_peer_group_list().get_latest_subcloud_peer_group_id()
+    validate_equals(src_subcloud_peer_group_id, dest_subcloud_peer_group_id, f"Subcloud peer group ID {dest_subcloud_peer_group_id} is present on the destination site after association")
+    spgs_list = DcManagerSubcloudPeerGroupListSubcloudsKeywords(dest_site_ssh_conn).get_dcmanager_subcloud_peer_group_list_subclouds(dest_subcloud_peer_group_id)
+    validate_str_contains("\n".join(spgs_list.dcmanager_output), subcloud_name, "Subclouds found under the subcloud peer group that was added in the source site and is now visible on the destination site after association")
+
+    get_logger().log_test_case_step("Power off source site and check for alarms generate in destination site")
+    PowerKeywords(src_site_ssh_conn).power_off("controller-0")
+    PowerKeywords(src_site_ssh_conn).power_off("controller-1")
+    AlarmListKeywords(dest_site_ssh_conn).alarm_list()
+
+    get_logger().log_test_case_step("Destination site: Migrate subcloud peer group and validate if the subcloud is rehomed")
+    password = ConfigurationManager.get_lab_config().get_secondary_system_controller_config().get_admin_credentials().get_password()
+    DcManagerSubcloudPeerGroupMigrateKeywords(dest_site_ssh_conn).dcmanager_subcloud_peer_group_migrate(dest_subcloud_peer_group_id, password)
+    DcManagerSubcloudPeerGroupStatusKeywords(dest_site_ssh_conn).get_dcmanager_subcloud_peer_group_status(dest_subcloud_peer_group_id)
+    DcManagerSubcloudListKeywords(dest_site_ssh_conn).get_dcmanager_subcloud_list()
+    DcManagerSubcloudListKeywords(dest_site_ssh_conn).validate_subcloud_status(subcloud_name, "rehoming")
+    DcManagerSubcloudListKeywords(dest_site_ssh_conn).validate_subcloud_status(subcloud_name, "complete")
+    DcManagerSubcloudListKeywords(dest_site_ssh_conn).validate_subcloud_availability_status(subcloud_name)
+    DcManagerSubcloudListKeywords(dest_site_ssh_conn).get_dcmanager_subcloud_list_all()
+    DcManagerSubcloudPeerGroupListSubcloudsKeywords(dest_site_ssh_conn).get_dcmanager_subcloud_peer_group_list_subclouds(dest_subcloud_peer_group_id)
+    spg_status = DcManagerSubcloudPeerGroupStatusKeywords(dest_site_ssh_conn).get_dcmanager_subcloud_peer_group_status(dest_subcloud_peer_group_id)
+
+    validate_not_equals(spg_status.get_dcmanager_subcloud_peer_group_status_object().get_complete(), 0, f"Subcloud peer group {dest_subcloud_peer_group_id} is migrated and subcloud is rehomed")
