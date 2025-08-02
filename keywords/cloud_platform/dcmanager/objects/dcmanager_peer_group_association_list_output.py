@@ -60,6 +60,19 @@ class DcManagerPeerGroupAssociationListOutput:
         """
         return self.dcmanager_peer_group_association
 
+    def get_latest_peer_group_association_id(self) -> int:
+        """Returns the ID of the latest peer group association.
+
+        Returns:
+            int: Latest peer group association ID.
+
+        Raises:
+            Exception: If no peer groups associations are available.
+        """
+        if not self.dcmanager_peer_group_association:
+            raise Exception("No peer group associations are found.")
+        return self.dcmanager_peer_group_association[-1].get_id()
+
     def is_valid_output(self, value: dict) -> bool:
         """
         Validates whether the required fields exist in the parsed row.
