@@ -1,0 +1,33 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: huge-1g-mixed
+  labels:
+    app: huge-1g-mixed
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: huge-1g-mixed
+  template:
+    metadata:
+      labels:
+        app: huge-1g-mixed
+    spec:
+      containers:
+      - image: registry.local:9001/gcr.io/kubernetes-e2e-test-images/resource-consumer:1.4
+        name: huge-1g-mixed
+        ports:
+        - containerPort: 8080
+        resources:
+          requests:
+            cpu: 1
+            memory: "1Gi"
+            hugepages-1Gi: 1Gi
+          limits:
+            cpu: 1
+            memory: "1Gi"
+            hugepages-1Gi: 1Gi
+      restartPolicy: Always
+      imagePullSecrets:
+      - name: regcred

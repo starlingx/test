@@ -1,0 +1,44 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sriov-small
+  annotations:
+    k8s.v1.cni.cncf.io/networks: sriov-data0
+  labels:
+    app: sriov-small
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: sriov-small
+  template:
+    metadata:
+      labels:
+        app: sriov-small
+        restart-on-reboot: 'true'
+    spec:
+      containers:
+      - name: sriov-small
+        image: registry.local:9001/centos/tools:latest
+        imagePullPolicy: IfNotPresent
+        command: [ "/bin/bash", "-c", "--" ]
+        args: [ "while true; do sleep 300000; done;" ]
+        volumeMounts:
+          - name: dummy
+            mountPath: /etc/dummy
+        resources:
+          requests:
+            cpu: 1
+            memory: "1Gi"
+            intel.com/pci_sriov_net_group0_data0: '1'
+          limits:
+            cpu: 1
+            memory: "1Gi"
+            intel.com/pci_sriov_net_group0_data0: '1'
+      restartPolicy: Always
+      imagePullSecrets:
+      - name: regcred
+      volumes:
+        - name: dummy
+          hostPath:
+            path: "/home/sysadmin"

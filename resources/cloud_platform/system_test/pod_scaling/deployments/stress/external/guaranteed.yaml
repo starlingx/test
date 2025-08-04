@@ -1,0 +1,72 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: guaranteed-cpu-stressor
+  labels:
+    app: guaranteed-cpu-stressor
+spec:
+  replicas: 5
+  selector:
+    matchLabels:
+      app: guaranteed-cpu-stressor
+
+  template:
+    metadata:
+      labels:
+        app: guaranteed-cpu-stressor
+    spec:
+      containers:
+      - name: guaranteed-cpu-stressor
+        image: alexeiled/stress-ng
+        command: ["/stress-ng"]
+        args: ["--cpu", "1", "--metrics-brief", "--timeout", "5m", "-v", "--log-file", "/output/$(POD_NAME)-$(NODE_NAME).log", "--yaml", "/output/$(POD_NAME)-$(NODE_NAME).yaml" ] 
+        volumeMounts:
+          - name: scratch-volume
+            mountPath: /scratch
+          - name: output-volume
+            mountPath: /output
+        resources:
+          requests:
+            cpu: "500m"
+            memory: "256Mi"
+          limits:
+            cpu: "500m"
+            memory: "256Mi"
+        env:
+          - name: NODE_NAME
+            valueFrom:
+              fieldRef:
+                fieldPath: spec.nodeName
+          - name: POD_NAME
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.name
+          - name: REQ_CPU
+            valueFrom:
+              resourceFieldRef:
+                containerName: guaranteed-cpu-stressor
+                resource: requests.cpu
+          - name: REQ_MEM
+            valueFrom:
+              resourceFieldRef:
+                containerName: guaranteed-cpu-stressor
+                resource: requests.memory
+          - name: LIM_CPU
+            valueFrom:
+              resourceFieldRef:
+                containerName: guaranteed-cpu-stressor
+                resource: limits.cpu
+          - name: LIM_MEM
+            valueFrom:
+              resourceFieldRef:
+                containerName: guaranteed-cpu-stressor
+                resource: limits.memory
+      restartPolicy: Always
+      volumes:
+        - name: scratch-volume
+          emptyDir:
+            medium: Memory
+            sizeLimit: 1Gi
+        - name: output-volume
+          hostPath:
+            path: "/home/sysadmin/stress"

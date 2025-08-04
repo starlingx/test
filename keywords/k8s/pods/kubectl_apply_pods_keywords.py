@@ -19,17 +19,18 @@ class KubectlApplyPodsKeywords(BaseKeyword):
         """
         self.ssh_connection = ssh_connection
 
-    def apply_from_yaml(self, yaml_file: str) -> None:
+    def apply_from_yaml(self, yaml_file: str, namespace: str = None) -> None:
         """
         Applies a pod yaml config
 
         Args:
             yaml_file (str): the yaml file
-
+            namespace (str, optional): the namespace to apply the yaml to
         Returns: None
 
         """
-        self.ssh_connection.send(export_k8s_config(f"kubectl apply -f {yaml_file}"))
+        ns_arg = f"-n {namespace}" if namespace else ""
+        self.ssh_connection.send(export_k8s_config(f"kubectl apply -f {yaml_file} {ns_arg}"))
         self.validate_success_return_code(self.ssh_connection)
 
     def fail_apply_from_yaml(self, yaml_file: str) -> None:

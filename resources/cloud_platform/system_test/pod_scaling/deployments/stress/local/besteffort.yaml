@@ -1,0 +1,26 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: besteffort
+  labels:
+    app: besteffort
+spec:
+  replicas: 5
+  selector:
+    matchLabels:
+      app: besteffort
+  template:
+    metadata:
+      labels:
+        app: besteffort
+    spec:
+      containers:
+      - image: registry.local:9001/gcr.io/kubernetes-e2e-test-images/resource-consumer:1.4
+        imagePullPolicy: IfNotPresent
+        name: besteffort
+        ports:
+        - containerPort: 8080
+        resources: {}
+      restartPolicy: Always
+      imagePullSecrets:
+      - name: regcred

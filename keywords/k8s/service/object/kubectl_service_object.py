@@ -1,4 +1,4 @@
-class KubectlServiceObject:
+class KubectlServicesObject:
     """
     Class to hold attributes of a 'kubectl get service' entry.
     """

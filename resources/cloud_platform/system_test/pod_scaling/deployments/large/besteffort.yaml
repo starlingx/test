@@ -1,0 +1,33 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: besteffort-large
+  labels:
+    app: besteffort-large
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: besteffort-large
+  template:
+    metadata:
+      labels:
+        app: besteffort-large
+    spec:
+      containers:
+      - name: besteffort-large
+        image: registry.local:9001/centos/tools:latest
+        imagePullPolicy: IfNotPresent
+        command: [ "/bin/bash", "-c", "--" ]
+        args: [ "while true; do sleep 300000; done;" ]
+        volumeMounts:
+          - name: dummy
+            mountPath: /etc/dummy
+        resources: {}
+      restartPolicy: Always
+      imagePullSecrets:
+      - name: regcred
+      volumes:
+        - name: dummy
+          hostPath:
+            path: "/home/sysadmin"
