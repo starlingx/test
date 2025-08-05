@@ -22,8 +22,7 @@ def test_restore():
 
     backup_dir = "/opt/platform-backup/localhost"
     local_backup_folder_path = "/tmp/bnr"
-    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
-    active_controller = SystemHostListKeywords(ssh_connection).get_active_controller()
+    ssh_connection = LabConnectionKeywords().get_ssh_for_hostname("controller-0")
 
     get_logger().log_info("Copy backup files from local to target controller")
     restore_file_status = RestoreFilesUploadKeywords(ssh_connection).restore_file(local_backup_folder_path, backup_dir)
@@ -35,7 +34,7 @@ def test_restore():
     validate_equals(ansible_playbook_restore_output, True, "Ansible restore command execution")
 
     get_logger().log_info("Unlocking controller host")    
-    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    ssh_connection = LabConnectionKeywords().get_ssh_for_hostname("controller-0")
     active_controller = SystemHostListKeywords(ssh_connection).get_active_controller()
     unlock_success = SystemHostLockKeywords(ssh_connection).unlock_host(active_controller.get_host_name())
     validate_equals(unlock_success, True, "Validate controller was unlocked successfully")
