@@ -245,7 +245,8 @@ class DcManagerSubcloudListOutput:
         all_free_sc = set(sc_names_from_config).difference(set(deployed_sc_names))
 
         if not all_free_sc:
-            raise Exception("No free subclouds available.")
+            get_logger().log_exception("No free subclouds available.")
+            return None
         get_logger().log_info(all_free_sc)
         return all_free_sc.pop()
 
