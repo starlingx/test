@@ -20,7 +20,7 @@ def test_restore():
       - Validate restore completion
     """
 
-    backup_dir = "/opt/platform-backup/localhost"
+    backup_dir = "/home/sysadmin"
     local_backup_folder_path = "/tmp/bnr"
     ssh_connection = LabConnectionKeywords().get_ssh_for_hostname("controller-0")
 
