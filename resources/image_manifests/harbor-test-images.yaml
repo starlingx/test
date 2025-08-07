@@ -18,11 +18,14 @@
 #     - Authentication details (username, password, etc.) are configured in
 #       `config/docker/files/default.json5` under the corresponding `registries` entry.
 #        - This file defaults to `config/docker/files/default.json5`, but can be overridden using `--docker_config_file`.
-# - Registry resolution is handled dynamically via `ConfigurationManager`.
-# - Resolution priority (from most to least specific):
-#     1. `source_registry` field on the image entry (optional)
-#     2. `manifest_registry_map` in `config/docker/files/default.json5`
-#     3. `default_source_registry` in `config/docker/files/default.json5`
+# - `source_registry` values must match a registry name defined in the Docker config file
+#   (e.g., "dockerhub", "k8s", "gcr" - not URLs like "docker.io")
+#
+# Registry resolution priority:
+#     1. `manifest_registry_map` with `override: true` (uses registry specified in manifest mapping in config, ignores source_registry in this file)
+#     2. `source_registry` field on individual image entry (if override=false or no manifest mapping exists, must match registry name in config)
+#     3. `manifest_registry_map` with `override: false` (fallback for images without source_registry)
+#     4. `default_source_registry` (final fallback)
 # ------------------------------------------------------------------------------
 
 images:
