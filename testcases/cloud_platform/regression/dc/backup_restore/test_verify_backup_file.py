@@ -15,6 +15,7 @@ from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKey
 from keywords.cloud_platform.version_info.cloud_platform_version_manager import CloudPlatformVersionManagerClass
 from keywords.files.file_keywords import FileKeywords
 from keywords.linux.date.date_keywords import DateKeywords
+from keywords.cloud_platform.health.health_keywords import HealthKeywords
 
 BACKUP_PATH = "/opt/dc-vault/backups/"
 
@@ -123,8 +124,16 @@ def test_verify_backup_central_simplex(request):
     central_ssh = LabConnectionKeywords().get_active_controller_ssh()
     dcm_sc_list_kw = DcManagerSubcloudListKeywords(central_ssh)
     subcloud = dcm_sc_list_kw.get_dcmanager_subcloud_list().get_healthy_subcloud_by_type(LabTypeEnum.SIMPLEX.value)
+    subcloud_name = subcloud.get_name()
+    # get subcloud ssh
+    subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
+    # Prechecks Before Back-Up:
+    get_logger().log_info(f"Performing pre-checks on {subcloud_name}")
+    obj_health = HealthKeywords(subcloud_ssh)
+    obj_health.validate_healty_cluster()  # Checks alarms, pods, app health
+
     request.addfinalizer(teardown_central)
-    verify_backup_central(subcloud.get_name())
+    verify_backup_central(subcloud_name)
 
 
 @mark.p0
