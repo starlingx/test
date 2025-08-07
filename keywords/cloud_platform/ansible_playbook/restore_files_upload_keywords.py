@@ -38,7 +38,6 @@ class RestoreFilesUploadKeywords(BaseKeyword):
             if "backup" in file_name:
                 local_path = os.path.join(local_backup_folder_path, file_name)
                 remote_path = os.path.join(remote_backup_dir, file_name)
-                upload_status = FileKeywords(self.ssh_connection).upload_file(local_path, remote_path)
-                
+                upload_status = FileKeywords(self.ssh_connection).upload_file(local_path, remote_path)                
         return upload_status
 
