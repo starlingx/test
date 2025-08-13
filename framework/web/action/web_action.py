@@ -1,6 +1,8 @@
 from abc import abstractmethod
 from typing import List
 
+from selenium.webdriver import ActionChains
+
 from framework.web.condition.web_condition import WebCondition
 from framework.web.web_locator import WebLocator
 
@@ -22,6 +24,7 @@ class WebAction:
         self.webdriver = webdriver
         self.web_locator = web_locator
         self.web_conditions = web_conditions
+        self.actions = ActionChains(self.webdriver)
         self.timeout = 30
 
     def get_webdriver(self):

@@ -136,7 +136,6 @@ class WebActionExecutor:
                         state = "NOT_FOUND"
 
             except Exception as e:
-                get_logger().log_debug(e)
                 get_logger().log_debug("Exception occurred during action, moving to UNKNOWN state")
                 state = "UNKNOWN"
 
