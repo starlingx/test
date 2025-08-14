@@ -8,10 +8,10 @@
         "controller-0" : {
             "deployment_config_file": "/home/sysadmin/deployment-config.yaml",
             "docker_ca_file": "",
-			"deploy_playbook_file": "/home/sysadmin/starlingx-cloud-platform-deployment-manager.yaml",
-			"deploy_overrides_file": "/home/sysadmin/starlingx-cloud-platform-deployment-manager-overrides-subcloud.yaml",
-			"deploy_chart_file": "/home/sysadmin/starlingx-cloud-platform-deployment-manager-x.x.x.tgz",
-			"prestage_images_file": "/home/sysadmin/xx.xx_images.lst"
+            "deploy_playbook_file": "/home/sysadmin/starlingx-cloud-platform-deployment-manager.yaml",
+            "deploy_overrides_file": "/home/sysadmin/starlingx-cloud-platform-deployment-manager-overrides-subcloud.yaml",
+            "deploy_chart_file": "/home/sysadmin/starlingx-cloud-platform-deployment-manager-x.x.x.tgz",
+            "prestage_images_file": "/home/sysadmin/xx.xx_images.lst"
         }
     },
 	"subclouds" : {
