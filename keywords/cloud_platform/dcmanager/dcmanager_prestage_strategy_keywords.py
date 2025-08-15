@@ -44,18 +44,19 @@ class DcmanagerPrestageStrategyKeywords(BaseKeyword):
         # wait for apply to complete
         return self.wait_for_state(["complete", "failed"])
 
-    def get_dcmanager_prestage_strategy_create(self, sysadmin_password: str, sw_deploy: bool = True, subcloud_name: str = None) -> DcmanagerPrestageStrategyShowOutput:
+    def get_dcmanager_prestage_strategy_create(self, sw_deploy: bool = True, subcloud_name: str = None) -> DcmanagerPrestageStrategyShowOutput:
         """Gets the prestage-strategy create.
 
         Args:
-            sysadmin_password (str): The password for the sysadmin user.
-            sw_deploy (bool): If True, include the --for-sw-deploy argument in the command.
+            sw_deploy (bool): If True, include the --for-sw-deploy argument in the command,
+             if False include --for-install argument.
             subcloud_name (str): The subcloud name.
 
         Returns:
             DcmanagerPrestageStrategyShowOutput: The output of the prestage strategy.
         """
-        sw_deploy_arg = "--for-sw-deploy" if sw_deploy else ""
+        sysadmin_password = ConfigurationManager.get_lab_config().get_admin_credentials().get_password()
+        sw_deploy_arg = "--for-sw-deploy" if sw_deploy else "--for-install"
         subcloud_name_arg = subcloud_name if subcloud_name else ""
         command = source_openrc(f"dcmanager prestage-strategy create {sw_deploy_arg} --sysadmin-password {sysadmin_password} {subcloud_name_arg}")
         output = self.ssh_connection.send(command)
@@ -120,9 +121,8 @@ class DcmanagerPrestageStrategyKeywords(BaseKeyword):
             subcloud_name (str): The subcloud name.
         """
         get_logger().log_info("Starting the prestage strategy creation, application, and deletion process.")
-        sysadmin_password = ConfigurationManager.get_lab_config().get_admin_credentials().get_password()
         get_logger().log_test_case_step("Create the prestage strategy")
-        prestage_strategy_out = self.get_dcmanager_prestage_strategy_create(sysadmin_password=sysadmin_password, sw_deploy=sw_deploy, subcloud_name=subcloud_name)
+        prestage_strategy_out = self.get_dcmanager_prestage_strategy_create(sw_deploy=sw_deploy, subcloud_name=subcloud_name)
         get_logger().log_info(f"Created prestage strategy state: {prestage_strategy_out.get_dcmanager_prestage_strategy().get_state()}")
         get_logger().log_test_case_step("Apply the strategy")
         dcman_obj = self.get_dcmanager_prestage_strategy_apply()

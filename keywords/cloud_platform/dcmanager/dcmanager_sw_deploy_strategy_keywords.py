@@ -20,15 +20,17 @@ class DcmanagerSwDeployStrategy(BaseKeyword):
         """
         self.ssh_connection = ssh_connection
 
-    def dcmanager_sw_deploy_strategy_create(self, subcloud_name: str, sw_version: str):
+    def dcmanager_sw_deploy_strategy_create(self, subcloud_name: str, sw_version: str, with_delete: bool = False):
         """
         Runs dcmanager sw-deploy-strategy create command.
 
         Args:
             subcloud_name (str): The subcloud name.
             sw_version (str): The software version to be deployed.
+            with_delete (bool): If true, adds parameter --with-delete
         """
-        command = source_openrc(f"dcmanager sw-deploy-strategy create {subcloud_name} {sw_version}")
+        delete = "--with-delete" if with_delete else ""
+        command = source_openrc(f"dcmanager sw-deploy-strategy create {subcloud_name} {sw_version} {delete}")
 
         self.ssh_connection.send(command)
         self.validate_success_return_code(self.ssh_connection)
