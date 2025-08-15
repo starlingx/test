@@ -41,7 +41,7 @@ class AnsiblePlaybookKeywords(BaseKeyword):
         backup_output = AnsiblePlaybookBackUpRestoreOutput(cmd_out)
         return backup_output.validate_ansible_playbook_backup_restore_result()
 
-    def ansible_playbook_restore(self, backup_dir: str, restore_mode: str = "optimized", restore_registry: bool = True) -> bool:
+    def ansible_playbook_restore(self, backup_dir: str, restore_mode: str = "optimized", restore_registry: bool = False) -> bool:
         """
         Executes the ansible-playbook restore command
 
