@@ -49,6 +49,7 @@ class DockerConfig:
                 registry_url=registry_dict["registry_url"],
                 user_name=registry_dict["user_name"],
                 password=registry_dict["password"],
+                path_prefix=registry_dict.get("path_prefix"),
             )
             self.registry_list.append(reg)
 

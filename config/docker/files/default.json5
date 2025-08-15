@@ -35,7 +35,14 @@
 //     "manifest_registry" is set to null—for clarity and visibility.
 //
 // - "registries":
-//     A dictionary of registry definitions including URLs and credentials.
+//     A dictionary of registry definitions including URLs, credentials, and optional path prefixes.
+//     Each registry can define:
+//       - "path_prefix": Optional path prefix prepended to image names during sync.
+//         Enables organizational separation within the same registry host.
+//         Trailing slash is optional and will be normalized automatically.
+//         Examples:
+//           - Harbor projects: "project-x/test" -> harbor.com/project-x/test/busybox
+//           - Private registry namespaces: "team-a" -> registry.com/team-a/my-image
 //
 // ----------------------------------------------------------------------------
 // Registry Resolution Behavior:
@@ -76,6 +83,9 @@
 //   Use empty strings for "user_name" and "password" in these cases.
 // - Private registries or internal mirrors (including "local_registry") must be configured
 //   with valid credentials if authentication is required.
+// - "path_prefix" is optional and only used when the registry organizes images using
+//   path-based hierarchies (Harbor projects, private registry namespaces, etc.).
+//   Public registries like DockerHub, k8s.io typically don't need path prefixes.
 // ============================================================================
 
 {
@@ -100,8 +110,7 @@
       "override": false,
     },
     "resources/image_manifests/stx-third-party-images.yaml": {
-      "manifest_registry": "null", // No manifest fallback; each image uses its "source_registry" or "default_source_registry"
-      "override": false,
+      "manifest_registry": null, // No manifest fallback; each image uses its "source_registry" or "default_source_registry"
     },
     // // Use Harbor as the default for images in this manifest that do not specify "source_registry"
     // "resources/image_manifests/stx-sanity-images.yaml": {
@@ -111,7 +120,7 @@
     // // No manifest fallback is defined; each image will use its "source_registry" if set, or "default_source_registry".
     // "resources/stx-networking-images.yaml": {
     //   "manifest_registry": null,
-    //   "override": false,
+    //   // "override": false,  // Not needed when manifest_registry is null (nothing to override with)
     // },
   },
 
@@ -137,12 +146,33 @@
       "password": "",
     },
 
-    // Example entry for a private registry such as Harbor:
-    // "harbor": {
-    //   "registry_name": "harbor",
+    // Examples of registries with path_prefix for organizational separation:
+
+    // Harbor with project-based organization
+    // "harbor_project_x": {
+    //   "registry_name": "harbor_project_x",
     //   "registry_url": "harbor.example.org:5000",
+    //   "path_prefix": "project-x/test",
     //   "user_name": "robot_user",
     //   "password": "robot_token",
+    // },
+
+    // Same Harbor host, different project
+    // "harbor_user": {
+    //   "registry_name": "harbor_user",
+    //   "registry_url": "harbor.example.org:5000",
+    //   "path_prefix": "user-project", # Trailing slash is optional and will be normalized automatically
+    //   "user_name": "harbor_username",
+    //   "password": "harbor_password",
+    // },
+
+    // Private registry with namespace organization
+    // "private_team_a": {
+    //   "registry_name": "private_team_a",
+    //   "registry_url": "registry.company.com:5000",
+    // "path_prefix": "team-a/projects/",   # Trailing slash is optional and will be normalized automatically
+    //   "user_name": "team_user",
+    //   "password": "team_token",
     // },
 
     "local_registry": {

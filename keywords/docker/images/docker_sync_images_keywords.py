@@ -108,7 +108,14 @@ class DockerSyncImagesKeywords(BaseKeyword):
 
         source_registry = docker_config.get_registry(source_registry_name)
 
-        source_image = f"{source_registry.get_registry_url()}/{name}:{tag}"
+        registry_url = source_registry.get_registry_url()
+        path_prefix = source_registry.get_path_prefix()
+        if path_prefix:
+            # Normalize path_prefix to ensure proper slash formatting
+            normalized_prefix = path_prefix.strip("/") + "/"
+            source_image = f"{registry_url}/{normalized_prefix}{name}:{tag}"
+        else:
+            source_image = f"{registry_url}/{name}:{tag}"
         target_image = f"{local_registry.get_registry_url()}/{name}:{tag}"
 
         get_logger().log_info(f"Pulling {source_image}")
@@ -150,6 +157,7 @@ class DockerSyncImagesKeywords(BaseKeyword):
 
         source_registry = docker_config.get_registry(source_registry_name)
         source_url = source_registry.get_registry_url()
+        path_prefix = source_registry.get_path_prefix()
 
         # Always try to remove these two references
         refs = [
@@ -159,9 +167,14 @@ class DockerSyncImagesKeywords(BaseKeyword):
 
         # Optionally add full source registry tag if not DockerHub
         if "docker.io" not in source_url:
-            refs.insert(0, f"{source_url}/{image_name}:{image_tag}")
+            if path_prefix:
+                # Normalize path_prefix to ensure proper slash formatting
+                normalized_prefix = path_prefix.strip("/") + "/"
+                refs.insert(0, f"{source_url}/{normalized_prefix}{image_name}:{image_tag}")
+            else:
+                refs.insert(0, f"{source_url}/{image_name}:{image_tag}")
         else:
-            get_logger().log_debug(f"Skipping full docker.io-prefixed tag for {source_url}/{image_name}:{image_tag}")
+            get_logger().log_debug(f"Skipping full docker.io-prefixed tag for {source_url}/{path_prefix}{image_name}:{image_tag}")
 
         return refs
 

@@ -13,11 +13,14 @@
 # - Image names must include their full namespace (e.g., `google-samples/node-hello`).
 # - Registry URLs and credentials are defined in:
 #     `config/docker/files/default.json5`
+# - `source_registry` values must match a registry name defined in the Docker config file
+#   (e.g., "dockerhub", "k8s", "gcr" - not URLs like "docker.io")
 #
-# Registry resolution priority (from most to least specific):
-#     1. `source_registry` field on the individual image entry (recommended)
-#     2. `manifest_registry_map` in the Docker config
-#     3. `default_source_registry` fallback
+# Registry resolution priority:
+#     1. `manifest_registry_map` with `override: true` (uses registry specified in manifest mapping in config, ignores source_registry in this file)
+#     2. `source_registry` field on individual image entry (if override=false or no manifest mapping exists, must match registry name in config)
+#     3. `manifest_registry_map` with `override: false` (fallback for images without source_registry)
+#     4. `default_source_registry` (final fallback)
 # ------------------------------------------------------------------------------
 
 images:
