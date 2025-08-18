@@ -1,46 +1,36 @@
 import os
 from typing import Any
 
+from pytest import Parser
+
 from config.configuration_file_locations_manager import ConfigurationFileLocationsManager
 from config.configuration_manager import ConfigurationManager
 from framework.logging import log_banners
 from framework.logging.automation_logger import configure_testcase_log_handler, get_logger, remove_testcase_handler
+from framework.options.safe_option_parser import SafeOptionParser
 
 
-def pytest_addoption(parser: Any):
+def pytest_addoption(parser: Parser):
     """
     Adds the pytest options
 
     Args:
-        parser (Any): the parser
+        parser (Parser): the parser
 
     """
-    parser.addoption("--lab_config_file", action="store")
-    parser.addoption("--deployment_assets_config_file", action="store")
-    parser.addoption("--k8s_config_file", action="store")
-    parser.addoption("--ptp_config_file", action="store")
-    parser.addoption("--logger_config_file", action="store")
-    parser.addoption("--docker_config_file", action="store")
-    parser.addoption("--web_config_file", action="store")
-    parser.addoption("--database_config_file", action="store")
-    parser.addoption("--rest_api_config_file", action="store")
-    parser.addoption("--security_config_file", action="store")
-    parser.addoption("--usm_config_file", action="store")
-    parser.addoption("--app_config_file", action="store")
-    parser.addoption("--openstack_config_file", action="store")
+    safe_parser = SafeOptionParser(parser)
+    ConfigurationFileLocationsManager.add_options(safe_parser)
 
 
 def pytest_sessionstart(session: Any):
     """
-    This is run once at test start up.
+    This is run once at test start up.`
 
     Args:
         session (Any): the session
     """
     configuration_locations_manager = ConfigurationFileLocationsManager()
-
     configuration_locations_manager.set_configs_from_pytest_args(session)
-
     ConfigurationManager.load_configs(configuration_locations_manager)
     log_configuration()
 

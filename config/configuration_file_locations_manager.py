@@ -2,6 +2,8 @@ from optparse import OptionParser
 
 from _pytest.main import Session
 
+from framework.options.safe_option_parser import SafeOptionParser
+
 
 class ConfigurationFileLocationsManager:
     """
@@ -29,8 +31,6 @@ class ConfigurationFileLocationsManager:
 
         Args:
             session (Session): the pytest session
-
-        Returns: None
 
         """
         lab_config_file = session.config.getoption("--lab_config_file")
@@ -97,7 +97,9 @@ class ConfigurationFileLocationsManager:
         Returns: None
 
         """
-        options = self._add_options(parser)
+        safe_option_parser = SafeOptionParser(parser)
+        self.add_options(safe_option_parser)
+        options, args = parser.parse_args()
 
         lab_config_file = options.lab_config_file
         if lab_config_file:
@@ -151,123 +153,28 @@ class ConfigurationFileLocationsManager:
         if openstack_config_file:
             self.set_openstack_config_file(openstack_config_file)
 
-    def _add_options(self, parser: OptionParser):
+    @staticmethod
+    def add_options(safe_parser: SafeOptionParser):
         """
-        Adds the command line options we can expect.
+        This function will add the configuration file locations options to the safe_parser passed in.
 
-        Returns: None
+        Args:
+            safe_parser (SafeOptionParser): The SafeOptionParser
 
         """
-        if not parser:
-            parser = OptionParser()
-
-        parser.add_option(
-            "--lab_config_file",
-            action="store",
-            type="str",
-            dest="lab_config_file",
-            help="the lab file used for scanning",
-        )
-
-        parser.add_option(
-            "--deployment_assets_config_file",
-            action="store",
-            type="str",
-            dest="deployment_assets_config_file",
-            help="The location of the files used to deploy the lab",
-        )
-
-        parser.add_option(
-            "--k8s_config_file",
-            action="store",
-            type="str",
-            dest="k8s_config_file",
-            help="the k8s config file",
-        )
-
-        parser.add_option(
-            "--ptp_config_file",
-            action="store",
-            type="str",
-            dest="ptp_config_file",
-            help="the PTP config file",
-        )
-
-        parser.add_option(
-            "--logger_config_file",
-            action="store",
-            type="str",
-            dest="logger_config_file",
-            help="the logger config file",
-        )
-
-        parser.add_option(
-            "--docker_config_file",
-            action="store",
-            type="str",
-            dest="docker_config_file",
-            help="the docker config file",
-        )
-
-        parser.add_option(
-            "--web_config_file",
-            action="store",
-            type="str",
-            dest="web_config_file",
-            help="The Web config file",
-        )
-
-        parser.add_option(
-            "--database_config_file",
-            action="store",
-            type="str",
-            dest="database_config_file",
-            help="The database config file",
-        )
-
-        parser.add_option(
-            "--rest_api_config_file",
-            action="store",
-            type="str",
-            dest="rest_api_config_file",
-            help="The rest api config file",
-        )
-
-        parser.add_option(
-            "--security_config_file",
-            action="store",
-            type="str",
-            dest="security_config_file",
-            help="The security config file",
-        )
-
-        parser.add_option(
-            "--usm_config_file",
-            action="store",
-            type="str",
-            dest="usm_config_file",
-            help="The USM config file",
-        )
-
-        parser.add_option(
-            "--app_config_file",
-            action="store",
-            type="str",
-            dest="app_config_file",
-            help="The app config file",
-        )
-
-        parser.add_option(
-            "--openstack_config_file",
-            action="store",
-            type="str",
-            dest="openstack_config_file",
-            help="The openstack config file",
-        )
-
-        options, args = parser.parse_args()
-
-        return options
+        safe_parser.add_option("--lab_config_file", action="store", dest="lab_config_file", help="the lab file used for scanning")
+        safe_parser.add_option("--deployment_assets_config_file", action="store", dest="deployment_assets_config_file", help="The location of the files used to deploy the lab")
+        safe_parser.add_option("--k8s_config_file", action="store", dest="k8s_config_file", help="the k8s config file")
+        safe_parser.add_option("--ptp_config_file", action="store", dest="ptp_config_file", help="the PTP config file")
+        safe_parser.add_option("--logger_config_file", action="store", dest="logger_config_file", help="the logger config file")
+        safe_parser.add_option("--docker_config_file", action="store", dest="docker_config_file", help="the docker config file")
+        safe_parser.add_option("--web_config_file", action="store", dest="web_config_file", help="The Web config file")
+        safe_parser.add_option("--database_config_file", action="store", dest="database_config_file", help="The database config file")
+        safe_parser.add_option("--rest_api_config_file", action="store", dest="rest_api_config_file", help="The rest api config file")
+        safe_parser.add_option("--security_config_file", action="store", dest="security_config_file", help="The security config file")
+        safe_parser.add_option("--usm_config_file", action="store", dest="usm_config_file", help="The USM config file")
+        safe_parser.add_option("--app_config_file", action="store", dest="app_config_file", help="The app config file")
+        safe_parser.add_option("--openstack_config_file", action="store", dest="openstack_config_file", help="The openstack config file")
 
     def set_lab_config_file(self, lab_config_file: str):
         """
