@@ -3,6 +3,7 @@ from framework.ssh.ssh_connection import SSHConnection
 from keywords.base_keyword import BaseKeyword
 from keywords.cloud_platform.command_wrappers import source_openrc
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_list_keywords import DcManagerSubcloudListKeywords
+from keywords.cloud_platform.dcmanager.objects.dcmanager_subcloud_deploy_show_output import DcManagerSubcloudDeployShowOutput
 
 
 class DCManagerSubcloudDeployKeywords(BaseKeyword):
@@ -178,3 +179,67 @@ class DCManagerSubcloudDeployKeywords(BaseKeyword):
             success_status = "complete"
             dc_manager_sc_list_kw = DcManagerSubcloudListKeywords(self.ssh_connection)
             dc_manager_sc_list_kw.validate_subcloud_status(subcloud_name, success_status)
+
+    def dcmanager_subcloud_deploy_upload(self, update_deploy_params: bool = False, prestaging_images: bool = False, release_version: str = None) -> DcManagerSubcloudDeployShowOutput:
+        """Uploads deployment files using dcmanager subcloud deploy upload command.
+
+        Args:
+            update_deploy_params (bool): Whether to update deploy parameters.
+            prestaging_images (bool): Whether to include prestaging images file.
+            release_version (str): The release version to use.
+
+        Returns:
+            DcManagerSubcloudDeployShowOutput: The output object containing the deployment upload details.
+
+        Raises:
+            Exception: If none of the parameters are provided.
+        """
+        if not update_deploy_params and not prestaging_images:
+            raise Exception("At least one parameter must be provided: update_deploy_params, prestaging_images")
+
+        cmd_parts = ["dcmanager subcloud deploy upload"]
+        controller_deployment_assets = ConfigurationManager.get_deployment_assets_config().get_controller_deployment_assets()
+
+        if update_deploy_params:
+            cmd_parts.extend(["--deploy-playbook", controller_deployment_assets.get_deploy_playbook_file(), "--deploy-overrides", controller_deployment_assets.get_deploy_overrides_file(), "--deploy-chart", controller_deployment_assets.get_deploy_chart_file()])
+
+        if prestaging_images:
+            cmd_parts.extend(["--prestage-images", controller_deployment_assets.get_prestage_images_file()])
+
+        if release_version:
+            cmd_parts.extend(["--release", release_version])
+
+        cmd = " ".join(cmd_parts)
+        output = self.ssh_connection.send(source_openrc(cmd))
+        self.validate_success_return_code(self.ssh_connection)
+        return DcManagerSubcloudDeployShowOutput(output)
+
+    def dcmanager_subcloud_deploy_upload_with_error(self, update_deploy_params: bool = False, prestaging_images: bool = False, release_version: str = None) -> str:
+        """
+        Upload deployment files using dcmanager subcloud deploy upload command (error handling version).
+
+        Args:
+            update_deploy_params (bool): Whether to update deploy parameters.
+            prestaging_images (bool): Whether to include prestaging images file.
+            release_version (str): The release version to use.
+
+        Returns:
+            str: Raw command output (for error validation).
+        """
+        cmd_parts = ["dcmanager subcloud deploy upload"]
+        controller_deployment_assets = ConfigurationManager.get_deployment_assets_config().get_controller_deployment_assets()
+
+        if update_deploy_params:
+            cmd_parts.extend(["--deploy-playbook", controller_deployment_assets.get_deploy_playbook_file(), "--deploy-overrides", controller_deployment_assets.get_deploy_overrides_file(), "--deploy-chart", controller_deployment_assets.get_deploy_chart_file()])
+
+        if prestaging_images:
+            cmd_parts.extend(["--prestage-images", controller_deployment_assets.get_prestage_images_file()])
+
+        if release_version:
+            cmd_parts.extend(["--release", release_version])
+
+        cmd = " ".join(cmd_parts)
+        output = self.ssh_connection.send(source_openrc(cmd))
+        if isinstance(output, list) and len(output) > 0:
+            return "\n".join(line.strip() for line in output)
+        return output.strip() if isinstance(output, str) else str(output)
