@@ -17,11 +17,11 @@ class DcManagerSubcloudDeployShowObject:
 
     def __init__(self):
         """Constructor for the DcManagerSubcloudDeployShowObject class."""
-        self.deploy_playbook: str
-        self.deploy_overrides: str
-        self.deploy_chart: str
-        self.prestage_images: str
-        self.software_version: str
+        self.deploy_playbook: str = None
+        self.deploy_overrides: str = None
+        self.deploy_chart: str = None
+        self.prestage_images: str = None
+        self.software_version: str = None
 
     def get_deploy_playbook(self) -> str:
         """Getter for the Deploy Playbook.

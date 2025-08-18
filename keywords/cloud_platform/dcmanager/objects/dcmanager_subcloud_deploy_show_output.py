@@ -17,11 +17,20 @@ class DcManagerSubcloudDeployShowOutput:
 
         dcmanager_subcloud_deploy_show_object = DcManagerSubcloudDeployShowObject()
 
-        dcmanager_subcloud_deploy_show_object.set_deploy_playbook(output_values.get("deploy_playbook"))
-        dcmanager_subcloud_deploy_show_object.set_deploy_overrides(output_values.get("deploy_overrides"))
-        dcmanager_subcloud_deploy_show_object.set_deploy_chart(output_values.get("deploy_chart"))
-        dcmanager_subcloud_deploy_show_object.set_prestage_images(output_values.get("prestage_images"))
-        dcmanager_subcloud_deploy_show_object.set_software_version(output_values.get("software_version"))
+        if "deploy_playbook" in output_values:
+            dcmanager_subcloud_deploy_show_object.set_deploy_playbook(output_values["deploy_playbook"])
+
+        if "deploy_overrides" in output_values:
+            dcmanager_subcloud_deploy_show_object.set_deploy_overrides(output_values["deploy_overrides"])
+
+        if "deploy_chart" in output_values:
+            dcmanager_subcloud_deploy_show_object.set_deploy_chart(output_values["deploy_chart"])
+
+        if "prestage_images" in output_values:
+            dcmanager_subcloud_deploy_show_object.set_prestage_images(output_values["prestage_images"])
+
+        if "software_version" in output_values:
+            dcmanager_subcloud_deploy_show_object.set_software_version(output_values["software_version"])
 
         self.dcmanager_subcloud_deploy_show_object = dcmanager_subcloud_deploy_show_object
 
