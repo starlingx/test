@@ -1,34 +1,56 @@
 import pytest
+
 from config.lab.objects.lab_config import LabConfig
 from framework.database.objects.testcase import TestCase
 from framework.database.operations.lab_capability_operation import LabCapabilityOperation
 from framework.database.operations.lab_operation import LabOperation
 from framework.database.operations.run_content_operation import RunContentOperation
 from framework.pytest_plugins.collection_plugin import CollectionPlugin
+from framework.resources.resource_finder import get_stx_repo_root
 
 
 class TestCapabilityMatcher:
     """
-    Class to hold matches for a set of tests given a lab config
+    Class to hold matches for a set of tests given a lab config.
     """
 
-    priority_marker_list = ['p0', 'p1', 'p2', 'p3']
+    priority_marker_list = ["p0", "p1", "p2", "p3"]
 
     def __init__(self, lab_config: LabConfig):
+        """
+        Constructor
+
+        Args:
+            lab_config (LabConfig): Config for the lab
+        """
         self.lab_config = lab_config
 
-    def get_list_of_tests(self, test_case_folder: str) -> []:
+    def get_list_of_tests(self, test_case_folder: str) -> list[TestCase]:
         """
-        Getter for the list of tests that this lab can run
-        Returns: the list of tests
+        Getter for the list of tests that this lab can run.
 
+        Args:
+            test_case_folder (str): Path to the folder containing test cases.
+
+        Returns:
+            list[TestCase]: List of tests that can be run.
         """
         tests = self._get_all_tests_in_folder(test_case_folder)
         capabilities = self.lab_config.get_lab_capabilities()
 
         return self._filter_tests(tests, capabilities)
 
-    def get_list_of_tests_from_db(self, run_id: int) -> []:
+    def get_list_of_tests_from_db(self, run_id: int) -> list[TestCase]:
+        """
+        This function will return the list of test cases matching the run_id from the database.
+
+        Args:
+            run_id (int): Run Id
+
+        Returns:
+            list[TestCase]:
+        """
+
         run_content_operation = RunContentOperation()
         tests = run_content_operation.get_tests_from_run_content(run_id)
 
@@ -40,15 +62,16 @@ class TestCapabilityMatcher:
 
         return self._filter_tests(tests, capabilities)
 
-    def _filter_tests(self, tests: [TestCase], capabilities: [str]) -> [TestCase]:
+    def _filter_tests(self, tests: list[TestCase], capabilities: list[str]) -> list[TestCase]:
         """
-        Filters out the tests that can run on the given lab
+        Filters out the tests that can run on the given lab.
+
         Args:
-            tests (): the list of tests
-            capabilities (): the capabilities
+            tests (list[TestCase]): The list of tests.
+            capabilities (list[str]): The capabilities.
 
         Returns:
-
+            list[TestCase]: List of tests that can run on the lab based on capabilities.
         """
         tests_to_run = []
         for test in tests:
@@ -57,24 +80,30 @@ class TestCapabilityMatcher:
                 tests_to_run.append(test)
         return tests_to_run
 
-    def _get_all_tests_in_folder(self, test_case_folder: str) -> [TestCase]:
+    def _get_all_tests_in_folder(self, test_case_folder: str) -> list[TestCase]:
         """
-        Gerts all tests in the testcase folder
-        Returns:
+        Gets all tests in the testcase folder.
 
+        Args:
+            test_case_folder (str): Path to the folder containing test cases.
+
+        Returns:
+            list[TestCase]: List of test cases found in the folder.
         """
-        collection_plugin = CollectionPlugin()
+        repo_root = get_stx_repo_root()
+        collection_plugin = CollectionPlugin(repo_root)
         pytest.main(["--collect-only", test_case_folder], plugins=[collection_plugin])
         return collection_plugin.get_tests()
 
-    def _get_markers(self, test: TestCase):
+    def _get_markers(self, test: TestCase) -> list[str]:
         """
-        Gets the markers for the given test
+        Gets the markers for the given test.
+
         Args:
-            test (): the test
+            test (TestCase): The test case to get markers from.
 
         Returns:
-
+            list[str]: List of markers associated with the test.
         """
         markers = []
         for marker in test.get_markers():
