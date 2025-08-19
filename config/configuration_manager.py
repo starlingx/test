@@ -253,7 +253,6 @@ class ConfigurationManagerClass:
         """
         return self.app_config
 
-
     def get_openstack_config(self) -> OpenstackConfig:
         """
         Getter for openstack config
@@ -282,7 +281,7 @@ class ConfigurationManagerClass:
         if self.configuration_locations_manager.get_ptp_config_file():
             pytest_config_args.append(f"--ptp_config_file={self.configuration_locations_manager.get_ptp_config_file()}")
         if self.configuration_locations_manager.logger_config_file:
-            pytest_config_args.append(f"--logger_config_file{self.configuration_locations_manager.get_logger_config_file()}")
+            pytest_config_args.append(f"--logger_config_file={self.configuration_locations_manager.get_logger_config_file()}")
         if self.configuration_locations_manager.docker_config_file:
             pytest_config_args.append(f"--docker_config_file={self.configuration_locations_manager.get_docker_config_file()}")
         if self.configuration_locations_manager.web_config_file:
