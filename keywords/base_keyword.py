@@ -44,7 +44,7 @@ class BaseKeyword:
             pretty_print_dict = pretty_print_dict.rstrip(", ")
             return "{" + pretty_print_dict + "}"
 
-        if hasattr(value, '__str__'):
+        if hasattr(value, "__str__"):
             return value.__str__()
 
         return "?UNKNOWN?"
@@ -118,10 +118,23 @@ class BaseKeyword:
 
         """
         rc = ssh_connection.get_return_code()
-        assert 0 == rc, f'Return code was {rc}'
+        assert 0 == rc, f"Return code was {rc}"
 
-    
-    def validate_success_status_code(self, rest_response: RestResponse, expected_status_code: int=200):
+    def validate_cmd_rejection_return_code(self, ssh_connection: SSHConnection):
+        """
+        Validates a command rejection return code was received
+        Args:
+            ssh_connection (): the ssh connection
+
+        Returns:
+            bool: True if command was correctly rejected, False if it wasn't.
+
+        """
+        rc = ssh_connection.get_return_code()
+        assert rc != 0, f"Return code was {rc}, command was rejected successfully."
+        return True
+
+    def validate_success_status_code(self, rest_response: RestResponse, expected_status_code: int = 200):
         """
         Validates a successful status code was received
         Args:
@@ -132,5 +145,4 @@ class BaseKeyword:
 
         """
         rc = rest_response.get_status_code()
-        assert expected_status_code == rc, f'Status code was {rc}'
-        
+        assert expected_status_code == rc, f"Status code was {rc}"

@@ -213,6 +213,29 @@ class DcManagerSubcloudListOutput:
 
         return min(subclouds, key=lambda subcloud: int(subcloud.get_id()))
 
+    def get_lower_id_unmanaged_subcloud(self) -> DcManagerSubcloudListObject:
+        """Gets an instance of DcManagerSubcloudListObject with the lowest ID and that satisfies the criteria:
+
+            _ Unmanaged;
+            _ Online;
+            _ Deploy completed;
+            _ out-of-sync
+
+        Returns:
+            DcManagerSubcloudListObject: the instance of DcManagerSubcloudListObject with the lowest ID that satisfies
+            the above criteria.
+
+        """
+        dcmanager_subcloud_list_obj_filter = DcManagerSubcloudListObjectFilter.get_unmanaged_subcloud_filter()
+        subclouds = self.get_dcmanager_subcloud_list_objects_filtered(dcmanager_subcloud_list_obj_filter)
+
+        if not subclouds:
+            error_message = "In this DC system, there is no subcloud unmanaged, online and with deploy completed, and out-of-sync."
+            get_logger().log_exception(error_message)
+            raise ValueError(error_message)
+
+        return min(subclouds, key=lambda subcloud: int(subcloud.get_id()))
+
     def get_undeployed_subcloud_name(self, lab_type: str = None) -> str:
         """
         Fetch the name of the first subcloud that is not deployed.

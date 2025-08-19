@@ -1,7 +1,7 @@
 from typing import Optional
 
 from framework.ssh.ssh_connection import SSHConnection
-from framework.validation.validation import validate_equals_with_retry
+from framework.validation.validation import validate_equals, validate_equals_with_retry
 from keywords.base_keyword import BaseKeyword
 from keywords.cloud_platform.command_wrappers import source_openrc
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_show_keywords import DcManagerSubcloudShowKeywords
@@ -42,15 +42,15 @@ class DcManagerSubcloudBackupKeywords(BaseKeyword):
         return f"/opt/dc-vault/backups/{subcloud_name}/{release}/"
 
     def create_subcloud_backup_expect_fail(
-        self,
-        sysadmin_password: str,
-        con_ssh: SSHConnection,
-        subcloud: Optional[str] = None,
-        local_only: bool = False,
-        backup_yaml: Optional[str] = None,
-        group: Optional[str] = None,
-        registry: bool = False,
-        subcloud_list: Optional[list] = None,
+            self,
+            sysadmin_password: str,
+            con_ssh: SSHConnection,
+            subcloud: Optional[str] = None,
+            local_only: bool = False,
+            backup_yaml: Optional[str] = None, group: Optional[str] = None,
+            registry: bool = False,
+            subcloud_list: Optional[list] = None,
+            expect_cmd_rejection: Optional[bool] = False
     ) -> None:
         """
         Runs backup creation command expecting it to fail.
@@ -64,6 +64,7 @@ class DcManagerSubcloudBackupKeywords(BaseKeyword):
             group (Optional[str]): Subcloud group name to create backup. Defaults to None.
             registry (bool): Option to add the registry backup in the same task. Defaults to False.
             subcloud_list (Optional[list]): List of subcloud names when backing up a group. Defaults to None.
+            expect_cmd_rejection (Optional[bool]): Expect backup command to be rejected if True. Default to False
 
         Returns:
             None:
@@ -82,16 +83,20 @@ class DcManagerSubcloudBackupKeywords(BaseKeyword):
             cmd += " --registry-images"
 
         self.ssh_connection.send(source_openrc(cmd))
-        self.validate_success_return_code(self.ssh_connection)
-
-        if group:
-            for subcloud_name in subcloud_list:
-                ssh_connection = LabConnectionKeywords().get_subcloud_ssh(subcloud_name) if local_only else con_ssh
-
-                self.wait_for_backup_failure(ssh_connection, subcloud_name)
+        if expect_cmd_rejection:
+            rejected = self.validate_cmd_rejection_return_code(self.ssh_connection)
+            validate_equals(rejected, True, "Validate backup command was rejected.")
 
         else:
-            self.wait_for_backup_failure(con_ssh, subcloud)
+            self.validate_success_return_code(self.ssh_connection)
+            if group:
+                for subcloud_name in subcloud_list:
+                    ssh_connection = LabConnectionKeywords().get_subcloud_ssh(subcloud_name) if local_only else con_ssh
+
+                    self.wait_for_backup_failure(ssh_connection, subcloud_name)
+
+            else:
+                self.wait_for_backup_failure(con_ssh, subcloud)
 
     def wait_for_backup_failure(
         self,
@@ -126,7 +131,13 @@ class DcManagerSubcloudBackupKeywords(BaseKeyword):
             else:
                 return False
 
-        validate_equals_with_retry(function_to_execute=check_for_failure, expected_value=True, validation_description="Backup creation failed.", timeout=timeout, polling_sleep_time=check_interval)
+        validate_equals_with_retry(
+            function_to_execute=check_for_failure,
+            expected_value=True,
+            validation_description="Backup creation failed.",
+            timeout=timeout,
+            polling_sleep_time=check_interval
+        )
 
     def create_subcloud_backup(
         self,
