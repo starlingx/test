@@ -1,6 +1,7 @@
 from typing import List
 
 import pytest
+
 from framework.database.objects.testcase import TestCase
 from framework.database.operations.capability_operation import CapabilityOperation
 from framework.database.operations.test_capability_operation import TestCapabilityOperation
@@ -16,15 +17,17 @@ class TestScannerUploader:
     def __init__(self, test_folders: List[str]):
         self.test_folders = test_folders
 
-    def scan_and_upload_tests(self):
+    def scan_and_upload_tests(self, repo_root: str):
         """
-        Scan code base and upload/update tests
-        Returns:
+        Scans the repo and uploads the new tests to the database.
+
+        Args:
+            repo_root (str): The full path to the root of the repo.
 
         """
 
         test_info_operation = TestInfoOperation()
-        scanned_tests = self.scan_for_tests()
+        scanned_tests = self.scan_for_tests(repo_root)
 
         # Filter to find only the test cases in the desired folders.
         filtered_test_cases = []
@@ -47,22 +50,28 @@ class TestScannerUploader:
             self.update_pytest_node_id(test, database_testcase)
             self.update_capability(test, database_testcase.get_test_info_id())
 
-    def scan_for_tests(self) -> [TestCase]:
+    def scan_for_tests(self, repo_root: str) -> [TestCase]:
         """
         Scan for tests
-        Returns: list of Testcases
+
+        Args:
+            repo_root (str): The full path to the root of the repo.
+
+        Returns:
+            [TestCase]: list of Testcases
 
         """
-        collection_plugin = CollectionPlugin()
+        collection_plugin = CollectionPlugin(repo_root)
         pytest.main(["--collect-only"], plugins=[collection_plugin])
         return collection_plugin.get_tests()
 
     def update_priority(self, test: TestCase, database_testcase: TestCase):
         """
         Checks the current priority of the test, if it's changed, update it
+
         Args:
-            test: the Test in the Repo Scan
-            database_testcase: the Test in the Database
+            test (TestCase): the Test in the Repo Scan
+            database_testcase (TestCase): the Test in the Database
 
         """
         database_priority = database_testcase.get_priority()
@@ -74,9 +83,10 @@ class TestScannerUploader:
     def update_test_path(self, test: TestCase, database_testcase: TestCase):
         """
         Checks the current test_path of the test, if it's changed, update it
+
         Args:
-            test: the Test in the Repo Scan
-            database_testcase: the Test in the Database
+            test (TestCase): the Test in the Repo Scan
+            database_testcase (TestCase): the Test in the Database
         """
         database_test_path = database_testcase.get_test_path()
         actual_test_path = test.get_test_path().replace("\\", "/")
@@ -88,9 +98,10 @@ class TestScannerUploader:
     def update_pytest_node_id(self, test: TestCase, database_testcase: TestCase):
         """
         Checks the current pytest_node_id of the test, if it's changed, update it
+
         Args:
-            test: the Test in the Repo Scan
-            database_testcase: the Test in the Database
+            test (TestCase): the Test in the Repo Scan
+            database_testcase (TestCase): the Test in the Database
         """
         current_pytest_node_id = database_testcase.get_pytest_node_id()
         if not current_pytest_node_id or current_pytest_node_id is not test.get_pytest_node_id():
@@ -100,9 +111,10 @@ class TestScannerUploader:
     def update_capability(self, test: TestCase, test_info_id: int):
         """
         Updates the test in the db with any capabilities it has
+
         Args:
-            test: the test
-            test_info_id: the id of the test to check.
+            test (TestCase): the test
+            test_info_id (int): the id of the test to check.
         """
         capability_operation = CapabilityOperation()
         capability_test_operation = TestCapabilityOperation()
@@ -126,13 +138,13 @@ class TestScannerUploader:
 
         self.check_for_capabilities_to_remove(test_info_id, capabilities)
 
-    def check_for_capabilities_to_remove(self, test_info_id, capabilities):
+    def check_for_capabilities_to_remove(self, test_info_id: int, capabilities: [str]):
         """
-        Checks for capabilities in the db that no longer exist on the test
-        Args:
-            test_info_id: the test_info_id
-            capabilities: the capabilities on the test
-
+                Checks for capabilities in the db that no longer exist on the test
+                Args:
+                    test_info_id (int): the test_info_id
+                    capabilities ([str]): the capabilities on the test
+        v
         """
         capability_test_operation = TestCapabilityOperation()
         # next we need to remove capabilities that are in the database but no longer on the test

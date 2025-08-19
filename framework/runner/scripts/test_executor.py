@@ -1,12 +1,9 @@
-import os
 from optparse import OptionParser
 from typing import Optional
 
 import pytest
 
-from config.configuration_file_locations_manager import (
-    ConfigurationFileLocationsManager,
-)
+from config.configuration_file_locations_manager import ConfigurationFileLocationsManager
 from config.configuration_manager import ConfigurationManager
 from framework.database.objects.testcase import TestCase
 from framework.database.operations.run_content_operation import RunContentOperation
@@ -14,7 +11,6 @@ from framework.database.operations.run_operation import RunOperation
 from framework.database.operations.test_plan_operation import TestPlanOperation
 from framework.logging.automation_logger import get_logger
 from framework.pytest_plugins.result_collector import ResultCollector
-from framework.resources.resource_finder import get_stx_resource_path
 from framework.runner.objects.test_capability_matcher import TestCapabilityMatcher
 from framework.runner.objects.test_executor_summary import TestExecutorSummary
 from testcases.conftest import log_configuration
@@ -32,16 +28,7 @@ def execute_test(test: TestCase, test_executor_summary: TestExecutorSummary, tes
     """
     result_collector = ResultCollector(test_executor_summary, test, test_case_result_id)
     pytest_args = ConfigurationManager.get_config_pytest_args()
-
-    node_id = test.get_pytest_node_id().lstrip("/")  # Normalize node_id
-
-    # Ensure we do not prepend "testcases/" for unit tests
-    if node_id.startswith("unit_tests/"):
-        resolved_path = get_stx_resource_path(node_id)
-    else:
-        resolved_path = get_stx_resource_path(os.path.join("testcases", node_id))
-
-    pytest_args.append(resolved_path)
+    pytest_args.append(test.get_pytest_node_id())
 
     pytest.main(pytest_args, plugins=[result_collector])
 
