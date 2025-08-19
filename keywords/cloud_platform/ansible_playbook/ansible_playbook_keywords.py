@@ -63,7 +63,7 @@ class AnsiblePlaybookKeywords(BaseKeyword):
 
         command = f"ansible-playbook {restore_playbook_path} " f'-e "ansible_become_pass={admin_password}" ' f'-e "admin_password={admin_password}" ' f'-e "initial_backup_dir={backup_dir}" ' f'-e "backup_filename={backup_filename}" ' f'-e "restore_mode={restore_mode}" ' f"{restore_registry_arg}"
 
-        cmd_out = self.ssh_connection.send(command, reconnect_timeout=3600)
+        cmd_out = self.ssh_connection.send(command, reconnect_timeout=7200)
         self.validate_success_return_code(self.ssh_connection)
         get_logger().log_info("get ansible playbook restore output")
         restore_output = AnsiblePlaybookBackUpRestoreOutput(cmd_out)
