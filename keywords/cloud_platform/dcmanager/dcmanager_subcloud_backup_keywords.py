@@ -41,6 +41,93 @@ class DcManagerSubcloudBackupKeywords(BaseKeyword):
 
         return f"/opt/dc-vault/backups/{subcloud_name}/{release}/"
 
+    def create_subcloud_backup_expect_fail(
+        self,
+        sysadmin_password: str,
+        con_ssh: SSHConnection,
+        subcloud: Optional[str] = None,
+        local_only: bool = False,
+        backup_yaml: Optional[str] = None,
+        group: Optional[str] = None,
+        registry: bool = False,
+        subcloud_list: Optional[list] = None,
+    ) -> None:
+        """
+        Runs backup creation command expecting it to fail.
+
+        Args:
+            sysadmin_password (str): Subcloud sysadmin password needed for backup creation.
+            con_ssh (SSHConnection): SSH connection to execute the command (central_ssh or subcloud_ssh).
+            subcloud (Optional[str]): The name of the subcloud to backup. Defaults to None.
+            local_only (bool): If True, backup will be stored only in the subcloud. Defaults to False.
+            backup_yaml (Optional[str]): path to use the yaml file. Defaults to None.
+            group (Optional[str]): Subcloud group name to create backup. Defaults to None.
+            registry (bool): Option to add the registry backup in the same task. Defaults to False.
+            subcloud_list (Optional[list]): List of subcloud names when backing up a group. Defaults to None.
+
+        Returns:
+            None:
+        """
+        # Command construction
+        cmd = f"dcmanager subcloud-backup create --sysadmin-password {sysadmin_password}"
+        if subcloud:
+            cmd += f" --subcloud {subcloud}"
+        if local_only:
+            cmd += " --local-only"
+        if backup_yaml:
+            cmd += f" --backup-values {backup_yaml}"
+        if group:
+            cmd += f" --group {group}"
+        if registry:
+            cmd += " --registry-images"
+
+        self.ssh_connection.send(source_openrc(cmd))
+        self.validate_success_return_code(self.ssh_connection)
+
+        if group:
+            for subcloud_name in subcloud_list:
+                ssh_connection = LabConnectionKeywords().get_subcloud_ssh(subcloud_name) if local_only else con_ssh
+
+                self.wait_for_backup_failure(ssh_connection, subcloud_name)
+
+        else:
+            self.wait_for_backup_failure(con_ssh, subcloud)
+
+    def wait_for_backup_failure(
+        self,
+        con_ssh: SSHConnection,
+        subcloud: Optional[str],
+        check_interval: int = 3,
+        timeout: int = 10,
+    ) -> None:
+        """
+        Waits for backup operation to fail
+
+        Args:
+            con_ssh (SSHConnection): SSH connection to execute the command (central_ssh or subcloud_ssh).
+            subcloud (Optional[str]): The name of the subcloud to check.
+            check_interval (int): Time interval (in seconds) to check for file creation. Defaults to 30.
+            timeout (int): Maximum time (in seconds) to wait for file creation. Defaults to 600.
+
+        Returns:
+            None:
+        """
+
+        def check_for_failure() -> bool:
+            """
+            Checks if the backup creation has failed.
+
+            Returns:
+                bool: True if operation failed, False if didn't.
+            """
+            bckp_status = DcManagerSubcloudShowKeywords(con_ssh).get_dcmanager_subcloud_show(subcloud_name=subcloud).get_dcmanager_subcloud_show_object().get_backup_status()
+            if bckp_status == "failed":
+                return True
+            else:
+                return False
+
+        validate_equals_with_retry(function_to_execute=check_for_failure, expected_value=True, validation_description="Backup creation failed.", timeout=timeout, polling_sleep_time=check_interval)
+
     def create_subcloud_backup(
         self,
         sysadmin_password: str,
@@ -72,34 +159,6 @@ class DcManagerSubcloudBackupKeywords(BaseKeyword):
         Returns:
             None:
         """
-        # Command construction
-        cmd = f"dcmanager subcloud-backup create --sysadmin-password {sysadmin_password}"
-        if subcloud:
-            cmd += f" --subcloud {subcloud}"
-        if local_only:
-            cmd += " --local-only"
-        if backup_yaml:
-            cmd += f" --backup-values {backup_yaml}"
-        if group:
-            cmd += f" --group {group}"
-        if registry:
-            cmd += " --registry-images"
-
-        self.ssh_connection.send(source_openrc(cmd))
-        self.validate_success_return_code(self.ssh_connection)
-
-        if group:
-            for subcloud_name in subcloud_list:
-                ssh_connection = LabConnectionKeywords().get_subcloud_ssh(subcloud_name) if local_only else con_ssh
-                backup_path = self.get_backup_path(subcloud_name, release, local_only)
-
-                if local_only:
-                    backup_path = f"{backup_path}{subcloud_name}_platform_backup_*.tgz"
-
-                self.wait_for_backup_creation(ssh_connection, backup_path, subcloud_name)
-
-        else:
-            self.wait_for_backup_creation(con_ssh, path, subcloud)
 
     def wait_for_backup_creation(
         self,
