@@ -140,14 +140,15 @@ class TestScannerUploader:
 
     def check_for_capabilities_to_remove(self, test_info_id: int, capabilities: [str]):
         """
-                Checks for capabilities in the db that no longer exist on the test
-                Args:
-                    test_info_id (int): the test_info_id
-                    capabilities ([str]): the capabilities on the test
-        v
+        Checks for capabilities in the db that no longer exist on the test
+
+        Args:
+            test_info_id (int): the test_info_id
+            capabilities ([str]): the capabilities on the test
         """
-        capability_test_operation = TestCapabilityOperation()
+
         # next we need to remove capabilities that are in the database but no longer on the test
+        capability_test_operation = TestCapabilityOperation()
         db_capabilities = capability_test_operation.get_capabilities_for_test(test_info_id)
 
         # get just the marker names to match with test capabilities
