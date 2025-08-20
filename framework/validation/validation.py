@@ -262,3 +262,27 @@ def validate_list_contains_with_retry(
                 # Move on to the next iteration
             else:
                 raise TimeoutError(f"Timeout performing validation - {validation_description}")
+
+
+def validate_greater_than(observed_value: int, baseline_value: int, validation_description: str) -> None:
+    """
+    This function will validate if the observed value is greater then the baseline value.
+
+    Args:
+        observed_value (int): Value that we see on the system.
+        baseline_value (int): Value that we want to see if the observed value is greater than
+        validation_description (str): Description of this validation for logging purposes.
+
+    Returns: None
+
+    Raises:
+        Exception: raised when validate fails
+
+    """
+    if observed_value > baseline_value:
+        get_logger().log_info(f"Validation Successful - {validation_description}")
+    else:
+        get_logger().log_error(f"Validation Failed - {validation_description}")
+        get_logger().log_error(f"Baseline: {baseline_value}")
+        get_logger().log_error(f"Observed: {observed_value}")
+        raise Exception("Validation Failed")
