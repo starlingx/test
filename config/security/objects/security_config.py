@@ -15,18 +15,18 @@ class SecurityConfig:
             raise
 
         security_dict = json5.load(json_data)
-        self.dns_name = security_dict["dns_name"]
+        self.domain_name = security_dict["domain_name"]
         self.stepca_server_url = security_dict["stepca_server_url"]
         self.stepca_server_issuer = security_dict["stepca_server_issuer"]
 
-    def get_dns_name(self) -> str:
+    def get_domain_name(self) -> str:
         """
         Getter for the dns name
 
         Returns:
             str: the dns name
         """
-        return self.dns_name
+        return self.domain_name
 
     def get_stepca_server_url(self) -> str:
         """
