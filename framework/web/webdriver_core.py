@@ -9,6 +9,7 @@ from framework.logging.automation_logger import get_logger
 from framework.web.action.web_action_click import WebActionClick
 from framework.web.action.web_action_get_text import WebActionGetText
 from framework.web.action.web_action_hover import WebActionHover
+from framework.web.action.web_action_is_exists import WebActionIsExists
 from framework.web.action.web_action_send_keys import WebActionSendKeys
 from framework.web.action.web_action_set_text import WebActionSetText
 from framework.web.condition.web_condition import WebCondition
@@ -31,6 +32,8 @@ class WebDriverCore:
         chrome_options.add_argument("--ignore-certificate-errors")
         if ConfigurationManager.get_web_config().get_run_headless():
             chrome_options.add_argument("--headless")
+        if ConfigurationManager.get_web_config().get_start_maximized():
+            chrome_options.add_argument("--start-maximized")
         self.driver = webdriver.Chrome(options=chrome_options)
 
     def close(self) -> None:
@@ -41,6 +44,15 @@ class WebDriverCore:
 
         """
         self.driver.close()
+
+    def quit(self) -> None:
+        """
+        Quit the WebDriver
+
+        Returns: None
+
+        """
+        self.driver.quit()
 
     def navigate_to_url(self, url: str, conditions: List[WebCondition] = []) -> None:
         """
@@ -177,3 +189,17 @@ class WebDriverCore:
         action = WebActionGetText(self.driver, locator, conditions)
         action_executor = WebActionExecutor(action)
         return action_executor.execute_mass_action()
+
+    def is_exists(self, locator: WebLocator) -> bool:
+        """
+        Checks for existence of the locator
+        Args:
+            locator (WebLocator): the locator
+
+        Returns:
+            bool: Returns True if the element exists, False otherwise
+
+        """
+        action = WebActionIsExists(self.driver, locator)
+        action_executor = WebActionExecutor(action)
+        return action_executor.execute_action()
