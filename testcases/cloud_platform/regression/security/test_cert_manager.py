@@ -7,6 +7,7 @@ from framework.resources.resource_finder import get_stx_resource_path
 from framework.validation.validation import validate_equals, validate_equals_with_retry, validate_list_contains, validate_str_contains, validate_str_contains_with_retry
 from keywords.cloud_platform.rest.cloud_rest_client import CloudRestClient
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
+from keywords.cloud_platform.ssh.lab_info_keywords import LabInfoKeywords
 from keywords.cloud_platform.system.application.object.system_application_status_enum import SystemApplicationStatusEnum
 from keywords.cloud_platform.system.application.system_application_apply_keywords import SystemApplicationApplyKeywords
 from keywords.cloud_platform.system.helm.system_helm_override_keywords import SystemHelmOverrideKeywords
@@ -43,7 +44,7 @@ def test_app_using_nginx_controller(request):
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     lab_config = ConfigurationManager.get_lab_config()
     oam_ip = lab_config.get_floating_ip()
-    dns_name = ConfigurationManager.get_security_config().get_dns_name()
+    dns_name = LabInfoKeywords().get_fully_qualified_name()
     dns_resolution_status = IPAddressKeywords(oam_ip).check_dnsname_resolution(dns_name=dns_name)
     validate_equals(dns_resolution_status, True, "Verify the dns name resolution")
     stepca_url = ConfigurationManager.get_security_config().get_stepca_server_url()

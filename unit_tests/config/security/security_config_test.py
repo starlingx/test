@@ -13,7 +13,7 @@ def test_default_security_config():
     configuration_manager.load_configs(config_file_locations)
     default_config = configuration_manager.get_security_config()
     assert default_config is not None, "Default security config wasn't loaded successfully"
-    assert default_config.get_dns_name() == "lab_dns_name", "default dns name was incorrect"
+    assert default_config.get_domain_name() == "lab_domain_name", "default domain name was incorrect"
 
 
 def test_custom_security_config():
@@ -28,4 +28,4 @@ def test_custom_security_config():
 
     custom_config = configuration_manager.get_security_config()
     assert custom_config is not None, "Custom security config wasn't loaded successfully"
-    assert custom_config.get_dns_name() == "fake_dns_name", "Custom dns name was incorrect"
+    assert custom_config.get_domain_name() == "fake_domain_name", "Custom dns name was incorrect"
