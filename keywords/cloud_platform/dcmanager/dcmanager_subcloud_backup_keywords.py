@@ -159,6 +159,34 @@ class DcManagerSubcloudBackupKeywords(BaseKeyword):
         Returns:
             None:
         """
+        # Command construction
+        cmd = f"dcmanager subcloud-backup create --sysadmin-password {sysadmin_password}"
+        if subcloud:
+            cmd += f" --subcloud {subcloud}"
+        if local_only:
+            cmd += " --local-only"
+        if backup_yaml:
+            cmd += f" --backup-values {backup_yaml}"
+        if group:
+            cmd += f" --group {group}"
+        if registry:
+            cmd += " --registry-images"
+
+        self.ssh_connection.send(source_openrc(cmd))
+        self.validate_success_return_code(self.ssh_connection)
+
+        if group:
+            for subcloud_name in subcloud_list:
+                ssh_connection = LabConnectionKeywords().get_subcloud_ssh(subcloud_name) if local_only else con_ssh
+                backup_path = self.get_backup_path(subcloud_name, release, local_only)
+
+                if local_only:
+                    backup_path = f"{backup_path}{subcloud_name}_platform_backup_*.tgz"
+
+                self.wait_for_backup_creation(ssh_connection, backup_path, subcloud_name)
+
+        else:
+            self.wait_for_backup_creation(con_ssh, path, subcloud)
 
     def wait_for_backup_creation(
         self,
