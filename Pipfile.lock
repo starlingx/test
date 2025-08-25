@@ -865,6 +865,14 @@
             "markers": "python_version >= '3.8'",
             "version": "==8.1.1"
         },
+        "python-redfish": {
+            "hashes": [
+                "sha256:6c37652481dcd5b391e3741234b34f80ece3bcb62b07d9169f6ee3d6495c9e2f",
+                "sha256:ef5fbbf62cd8d474075c9844a369182c4e1b10dac2e7d4bd461f52c6f1e89ce8"
+            ],
+            "index": "pypi",
+            "version": "==0.4.4"
+        },
         "pyyaml": {
             "hashes": [
                 "sha256:01179a4a8559ab5de078078f37e5c1a30d76bb88519906844fd7bdea1b7729ff",
