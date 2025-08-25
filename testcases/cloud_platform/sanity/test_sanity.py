@@ -426,6 +426,7 @@ def test_dc_alarm_aggregation_managed():
 
         # Raises the alarm on subcloud.
         fm_client_cli_object = FaultManagementClientCLIObject()
+        fm_client_cli_object.set_alarm_id("100.106")
         fm_client_cli_object.set_entity_id(f"name={subcloud_name}")
         get_logger().log_info(f"Raise alarm on subcloud: {subcloud_name}")
         fm_client_cli_keywords.raise_alarm(fm_client_cli_object)
