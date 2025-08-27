@@ -117,9 +117,11 @@ def main():
 
     log_summary(test_executor_summary)
 
+    return 0
+
 
 if __name__ == "__main__":
     """
     Main Launcher
     """
-    main()
+    exit(main())
