@@ -6,6 +6,7 @@ from framework.database.objects.testcase import TestCase
 from framework.database.operations.capability_operation import CapabilityOperation
 from framework.database.operations.test_capability_operation import TestCapabilityOperation
 from framework.database.operations.test_info_operation import TestInfoOperation
+from framework.logging.automation_logger import get_logger
 from framework.pytest_plugins.collection_plugin import CollectionPlugin
 
 
@@ -120,14 +121,15 @@ class TestScannerUploader:
         capability_test_operation = TestCapabilityOperation()
 
         # get all the capabilities associated with this test
-        capabilities = test.get_markers()
-        for capability in capabilities:
+        capability_markers = test.get_markers()
+        for capability_marker in capability_markers:
 
-            capability_object = capability_operation.get_capability_by_marker(capability)
+            capability_object = capability_operation.get_capability_by_marker(capability_marker)
 
-            # If capability does not exist, raise an exception
+            # If capability does not exist, insert it in the database and update the capability_object with the returned capability_id.
             if capability_object == -1:
-                raise ValueError(f"No capability with name {capability} exists")
+                get_logger().log_info(f"Inserting a new Capability in the database for marker: {capability_marker}")
+                capability_object = capability_operation.insert_capability(capability_marker, capability_marker)
 
             capability_id = capability_object.get_capability_id()
 
@@ -136,15 +138,15 @@ class TestScannerUploader:
             if mapping_id == -1:
                 capability_test_operation.create_new_mapping(capability_id, test_info_id)
 
-        self.check_for_capabilities_to_remove(test_info_id, capabilities)
+        self.check_for_capabilities_to_remove(test_info_id, capability_markers)
 
-    def check_for_capabilities_to_remove(self, test_info_id: int, capabilities: [str]):
+    def check_for_capabilities_to_remove(self, test_info_id: int, capability_markers: [str]):
         """
         Checks for capabilities in the db that no longer exist on the test
 
         Args:
             test_info_id (int): the test_info_id
-            capabilities ([str]): the capabilities on the test
+            capability_markers ([str]): the capability markers on the test
         """
 
         # next we need to remove capabilities that are in the database but no longer on the test
@@ -155,7 +157,7 @@ class TestScannerUploader:
         db_marker_names = map(lambda db_capability: db_capability.get_capability_marker(), db_capabilities)
 
         # this will get the capabilities that exist in the db but not on the test itself
-        capabilities_to_be_removed = list(set(db_marker_names).difference(capabilities))
+        capabilities_to_be_removed = list(set(db_marker_names).difference(capability_markers))
 
         for marker_name in capabilities_to_be_removed:
             # find the correct db_capability
