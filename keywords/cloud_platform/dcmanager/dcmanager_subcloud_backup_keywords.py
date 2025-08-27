@@ -242,6 +242,44 @@ class DcManagerSubcloudBackupKeywords(BaseKeyword):
             polling_sleep_time=check_interval,
         )
 
+    def reject_delete_subcloud_backup(
+        self,
+        con_ssh: SSHConnection,
+        release: str,
+        subcloud: Optional[str] = None,
+        local_only: bool = False,
+        group: Optional[str] = None,
+        sysadmin_password: str = None,
+    ) -> None:
+        """
+        Sends the command to delete the backup of the specified subcloud and expects a command rejection.
+
+        Args:
+            con_ssh (SSHConnection): SSH connection to execute the command (central_ssh or subcloud_ssh).
+            release (str): Required to delete a release backup.
+            subcloud (Optional[str]): The name of the subcloud to delete the backup. Defaults to None.
+            local_only (bool): If True, only deletes the local backup in the subcloud. Defaults to False.
+            group (Optional[str]): Subcloud group name to delete backup. Defaults to None.
+            sysadmin_password (str): Subcloud sysadmin password needed for deletion on local_path. Defaults to None.
+
+        Returns:
+            None:
+        """
+        # Command construction for backup deletion
+        cmd = f"dcmanager subcloud-backup delete {release}"
+        if subcloud:
+            cmd += f" --subcloud {subcloud}"
+        if local_only:
+            cmd += " --local-only"
+        if group:
+            cmd += f" --group {group}"
+        if sysadmin_password:
+            cmd += f" --sysadmin-password {sysadmin_password}"
+
+        self.ssh_connection.send(source_openrc(cmd))
+        rejected = self.validate_cmd_rejection_return_code(self.ssh_connection)
+        validate_equals(rejected, True, "Validate backup command was rejected.")
+
     def delete_subcloud_backup(
         self,
         con_ssh: SSHConnection,
