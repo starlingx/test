@@ -155,6 +155,18 @@ class FileKeywords(BaseKeyword):
 
         return total_output
 
+    def read_file(self, file_path: str) -> list[str]:
+        """
+        Read the contents of a file.
+
+        Args:
+            file_path (str): The absolute path to the file.
+
+        Returns:
+            list[str]: The lines of the file.
+        """
+        return self.ssh_connection.send(f"cat {file_path}")
+
     def validate_file_exists_with_sudo(self, path: str) -> bool:
         """
         Validates whether a file or directory exists at the specified path using sudo.
