@@ -13,7 +13,7 @@ class KubectlDeleteDeploymentsKeywords(BaseKeyword):
         """
         self.ssh_connection = ssh_connection
 
-    def delete_deployment(self, deployment_name: str) -> str:
+    def delete_deployment(self, deployment_name: str, namespace: str = None) -> str:
         """
         Deletes the given deployment
         Args:
@@ -22,7 +22,10 @@ class KubectlDeleteDeploymentsKeywords(BaseKeyword):
         Returns: the output
 
         """
-        output = self.ssh_connection.send(export_k8s_config(f"kubectl delete deployment {deployment_name}"))
+        cmd = f"kubectl delete deployment {deployment_name}"
+        if namespace:
+            cmd = f"{cmd} -n {namespace}"
+        output = self.ssh_connection.send(export_k8s_config(cmd))
         self.validate_success_return_code(self.ssh_connection)
 
         return output

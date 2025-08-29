@@ -3,6 +3,7 @@ from framework.logging.automation_logger import get_logger
 from framework.validation.validation import validate_str_contains
 from keywords.base_keyword import BaseKeyword
 from keywords.docker.login.docker_login_keywords import DockerLoginKeywords
+import re
 
 
 class DockerLoadImageKeywords(BaseKeyword):
@@ -25,11 +26,18 @@ class DockerLoadImageKeywords(BaseKeyword):
             image_file_name (): the image file name
 
         Returns:
+            The loaded image name (str)
 
         """
         output = self.ssh_connection.send_as_sudo(f"docker load -i {image_file_name}")
         string_output = "".join(output)
         validate_str_contains(string_output, "Loaded image", "Image")
+
+        for line in output:
+            match = re.search(r"Loaded image:\s*(\S+)", line)
+            if match:
+                return match.group(1)
+            
 
     def tag_docker_image_for_registry(self, image_name: str, tag_name: str, registry: Registry):
         """
@@ -56,7 +64,6 @@ class DockerLoadImageKeywords(BaseKeyword):
             registry (): the registry
 
         Returns:
-
         """
         DockerLoginKeywords(self.ssh_connection).login(registry.get_user_name(), registry.get_password(), registry.get_registry_url())
         self.ssh_connection.send_as_sudo(f'docker push {registry.get_registry_url()}/{tag_name}')
