@@ -546,6 +546,7 @@ def test_rook_ceph_applying_host_lock_reject_testing():
     app_status_list = ["applied"]
     SystemApplicationListKeywords(ssh_connection).validate_app_status_in_list(app_name, app_status_list, timeout=360, polling_sleep_time=10)
 
+
 @mark.lab_ceph_rook
 @mark.lab_has_standby_controller
 def test_lock_unlock_then_swact_and_reverse_cycle():
@@ -606,6 +607,7 @@ def test_lock_unlock_then_swact_and_reverse_cycle():
 
     get_logger().log_test_case_step("Checking rook-ceph health after swact.")
     ceph_status_keywords.wait_for_ceph_health_status(expect_health_status=True)
+
 
 def _setup_rook_ceph():
     """
@@ -814,3 +816,45 @@ def test_rook_ceph_installation_model_controller():
     SystemHostFSKeywords(ssh_connection).system_host_fs_add(host_computes[0], "ceph", 20)
 
     _add_ceph_monitor_osd()
+
+
+@mark.lab_ceph_rook
+@mark.lab_has_standby_controller
+def test_rook_ceph_swact():
+    """
+    Test case: rook-ceph swact
+
+    Setup:
+        - Ensure rook-ceph storage backend is already configured
+        - Ensure there is an active and a standby controller available
+
+    Test Steps:
+        - Check rook-ceph health before swact
+        - Perform swact from active to standby controller
+        - Validate swact completed successfully
+        - Perform swact back to the original controller
+        - Validate swact completed successfully
+        - Check rook-ceph health after swact
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    system_host_list_keywords = SystemHostListKeywords(ssh_connection)
+    ceph_status_keywords = CephStatusKeywords(ssh_connection)
+    system_host_swact_keywords = SystemHostSwactKeywords(ssh_connection)
+    active_controller = system_host_list_keywords.get_active_controller()
+    standby_controller = system_host_list_keywords.get_standby_controller()
+
+    get_logger().log_test_case_step("Checking rook-ceph health before swact.")
+    ceph_status_keywords.wait_for_ceph_health_status(expect_health_status=True)
+
+    get_logger().log_info("Performing controller swact operation")
+    system_host_swact_keywords.host_swact()
+    swact_success = system_host_swact_keywords.wait_for_swact(active_controller, standby_controller)
+    validate_equals(swact_success, True, "Host swact")
+
+    get_logger().log_info("Performing controller swact back operation")
+    system_host_swact_keywords.host_swact()
+    swact_success = system_host_swact_keywords.wait_for_swact(standby_controller, active_controller)
+    validate_equals(swact_success, True, "Host swact")
+
+    get_logger().log_test_case_step("Checking rook-ceph health after swact.")
+    ceph_status_keywords.wait_for_ceph_health_status(expect_health_status=True)
