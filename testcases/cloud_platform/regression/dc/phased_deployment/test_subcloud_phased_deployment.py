@@ -43,6 +43,11 @@ def get_undeployed_subcloud_name(ssh_connection: SSHConnection) -> str:
         # poweroff the subcloud.
         get_logger().log_test_case_step(f"Poweroff subcloud={subcloud_name}.")
         dcm_sc_manager_kw.set_subcloud_poweroff(subcloud_name)
+        # Unmanage the subcloud.
+        if lowest_subcloud.get_management() == "managed":
+            get_logger().log_test_case_step(f"Unmanage subcloud={subcloud_name}.")
+            dcm_sc_manage_output = dcm_sc_manager_kw.get_dcmanager_subcloud_unmanage(subcloud_name, timeout=10)
+            get_logger().log_info(f"The management state of the subcloud {subcloud_name} was changed to {dcm_sc_manage_output.get_dcmanager_subcloud_manage_object().get_management()}.")
         # delete the subcloud.
         dcm_sc_del_kw = DcManagerSubcloudDeleteKeywords(ssh_connection)
         dcm_sc_del_kw.dcmanager_subcloud_delete(subcloud_name)
