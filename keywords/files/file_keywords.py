@@ -169,6 +169,21 @@ class FileKeywords(BaseKeyword):
         """
         return self.ssh_connection.send(f"cat {file_path}")
 
+    def find_in_tgz(self, file_path: str, grep_pattern: str) -> int:
+        """
+        Searches for a string in tgz file
+
+        Args:
+            file_path (str): The absolute path to the file.
+            grep_pattern (str): Pattern to be searched.
+
+        Returns:
+            matches (int): Number of matches found.
+        """
+
+        matches = int(self.ssh_connection.send(f"tar -tf {file_path} | grep {grep_pattern} | wc -l")[0].strip("\n"))
+        return matches
+
     def validate_file_exists_with_sudo(self, path: str) -> bool:
         """
         Validates whether a file or directory exists at the specified path using sudo.
