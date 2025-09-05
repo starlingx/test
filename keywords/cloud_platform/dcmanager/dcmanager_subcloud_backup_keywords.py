@@ -102,8 +102,8 @@ class DcManagerSubcloudBackupKeywords(BaseKeyword):
         self,
         con_ssh: SSHConnection,
         subcloud: Optional[str],
-        check_interval: int = 3,
-        timeout: int = 10,
+        check_interval: int = 30,
+        timeout: int = 120,
     ) -> None:
         """
         Waits for backup operation to fail
@@ -112,7 +112,7 @@ class DcManagerSubcloudBackupKeywords(BaseKeyword):
             con_ssh (SSHConnection): SSH connection to execute the command (central_ssh or subcloud_ssh).
             subcloud (Optional[str]): The name of the subcloud to check.
             check_interval (int): Time interval (in seconds) to check for file creation. Defaults to 30.
-            timeout (int): Maximum time (in seconds) to wait for file creation. Defaults to 600.
+            timeout (int): Maximum time (in seconds) to wait for file creation. Defaults to 120.
 
         Returns:
             None:
