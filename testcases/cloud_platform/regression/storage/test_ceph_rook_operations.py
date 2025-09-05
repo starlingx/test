@@ -16,6 +16,7 @@ from keywords.cloud_platform.system.host.system_host_disk_keywords import System
 from keywords.cloud_platform.system.host.system_host_fs_keywords import SystemHostFSKeywords
 from keywords.cloud_platform.system.host.system_host_list_keywords import SystemHostListKeywords
 from keywords.cloud_platform.system.host.system_host_lock_keywords import SystemHostLockKeywords
+from keywords.cloud_platform.system.host.system_host_reboot_keywords import SystemHostRebootKeywords
 from keywords.cloud_platform.system.host.system_host_stor_keywords import SystemHostStorageKeywords
 from keywords.cloud_platform.system.host.system_host_swact_keywords import SystemHostSwactKeywords
 from keywords.cloud_platform.system.storage.system_storage_backend_keywords import SystemStorageBackendKeywords
@@ -857,4 +858,41 @@ def test_rook_ceph_swact():
     validate_equals(swact_success, True, "Host swact")
 
     get_logger().log_test_case_step("Checking rook-ceph health after swact.")
+    ceph_status_keywords.wait_for_ceph_health_status(expect_health_status=True)
+
+
+@mark.lab_ceph_rook
+@mark.lab_has_standby_controller
+def test_reboot_active_controller_rook_ceph():
+    """
+    Reboot the active controller and verify rook-ceph health before and after.
+
+    Test Steps:
+        - Get the active controller and record its uptime
+        - Check rook-ceph health before reboot
+        - Reboot the active controller
+        - Wait until the active controller finishes rebooting
+        - Perform a swact to return control to the original controller
+        - Check rook-ceph health after reboot
+
+    Args: None
+    """
+    active_controller_ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    system_host_swact_keywords = SystemHostSwactKeywords(active_controller_ssh_connection)
+    system_host_list_keywords = SystemHostListKeywords(active_controller_ssh_connection)
+    active_controller = system_host_list_keywords.get_active_controller()
+    active_controller_host_name = active_controller.get_host_name()
+    prev_uptime = SystemHostListKeywords(active_controller_ssh_connection).get_uptime(active_controller_host_name)
+    ceph_status_keywords = CephStatusKeywords(active_controller_ssh_connection)
+
+    get_logger().log_test_case_step("Checking rook-ceph health before reboot.")
+    ceph_status_keywords.wait_for_ceph_health_status(expect_health_status=True)
+
+    active_controller_ssh_connection.send_as_sudo("sudo reboot -f")
+    SystemHostRebootKeywords(active_controller_ssh_connection).wait_for_force_reboot(active_controller_host_name, prev_uptime)
+
+    get_logger().log_info("Performing controller swact back operation")
+    system_host_swact_keywords.host_swact()
+
+    get_logger().log_test_case_step("Checking rook-ceph health after reboot.")
     ceph_status_keywords.wait_for_ceph_health_status(expect_health_status=True)
