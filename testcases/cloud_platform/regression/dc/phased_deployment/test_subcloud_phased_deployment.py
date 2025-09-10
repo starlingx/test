@@ -70,10 +70,12 @@ def test_phased_deployment(request):
         - execute the phased deployment bootstrap
         - execute the phased deployment config
         - execute the phased deployment complete
+        - execute the subcloud manage
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     subcloud_name = get_undeployed_subcloud_name(ssh_connection)
     dcm_sc_deploy_kw = DCManagerSubcloudDeployKeywords(ssh_connection)
+    dcm_sc_manager_kw = DcManagerSubcloudManagerKeywords(ssh_connection)
 
     # dcmanager subcloud deploy create
     time_kpi_start_create = TimeKPI(time.time())
@@ -99,6 +101,12 @@ def test_phased_deployment(request):
     dcm_sc_deploy_kw.dcmanager_subcloud_deploy_config(subcloud_name)
     time_kpi_start_config.log_elapsed_time(time.time(), "time taken subcloud deploy config")
 
+    # dcmanager subcloud manage
+    get_logger().log_info(f"dcmanager subcloud manage {subcloud_name}.")
+    dcmanager_subcloud_manage_output = dcm_sc_manager_kw.get_dcmanager_subcloud_manage(subcloud_name, timeout=60)
+    manage_status = dcmanager_subcloud_manage_output.get_dcmanager_subcloud_manage_object().get_management()
+    get_logger().log_info(f"The management state of the subcloud {subcloud_name} is {manage_status}")
+
 
 @mark.p0
 @mark.lab_has_min_2_subclouds
@@ -115,10 +123,13 @@ def test_subcloud_deploy_abort_resume(request):
         - execute the phased deployment bootstrap
         - execute the phased deployment abort in some between 10 to 15 mins
         - execute the phased deployment resume
+        - execute the subcloud manage
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     subcloud_name = get_undeployed_subcloud_name(ssh_connection)
     dcm_sc_deploy_kw = DCManagerSubcloudDeployKeywords(ssh_connection)
+    dcm_sc_manager_kw = DcManagerSubcloudManagerKeywords(ssh_connection)
+
     # dcmanager subcloud deploy create
     get_logger().log_info(f"dcmanager subcloud deploy create {subcloud_name}.")
     dcm_sc_deploy_kw.dcmanager_subcloud_deploy_create(subcloud_name)
@@ -145,6 +156,12 @@ def test_subcloud_deploy_abort_resume(request):
     dcm_sc_deploy_kw.dcmanager_subcloud_deploy_resume(subcloud_name)
     time_kpi_start_resume.log_elapsed_time(time.time(), "time taken subcloud deploy resume")
 
+    # dcmanager subcloud manage
+    get_logger().log_info(f"dcmanager subcloud manage {subcloud_name}.")
+    dcmanager_subcloud_manage_output = dcm_sc_manager_kw.get_dcmanager_subcloud_manage(subcloud_name, timeout=60)
+    manage_status = dcmanager_subcloud_manage_output.get_dcmanager_subcloud_manage_object().get_management()
+    get_logger().log_info(f"The management state of the subcloud {subcloud_name} is {manage_status}")
+
 
 def test_bootstrap_failure_replay():
     """Test bootstrap failure and resume
@@ -163,6 +180,7 @@ def test_bootstrap_failure_replay():
         - wait for bootstrap to fail
         - restore original bootstrap values yaml file
         - execute the phased deployment resume
+        - execute the subcloud manage
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     subcloud_name = get_undeployed_subcloud_name(ssh_connection)
@@ -186,6 +204,7 @@ def test_bootstrap_failure_replay():
 
     # deploy the subcloud with wrong values
     dcm_sc_deploy_kw = DCManagerSubcloudDeployKeywords(ssh_connection)
+    dcm_sc_manager_kw = DcManagerSubcloudManagerKeywords(ssh_connection)
 
     # dcmanager subcloud deploy create
     get_logger().log_info(f"dcmanager subcloud deploy create {subcloud_name}.")
@@ -213,3 +232,9 @@ def test_bootstrap_failure_replay():
     dcm_sc_deploy_kw.dcmanager_subcloud_deploy_config(subcloud_name)
     sc_status = dc_manager_sc_list_kw.get_dcmanager_subcloud_list().get_subcloud_by_name(subcloud_name).get_deploy_status()
     validate_equals(sc_status, "complete", "Validate that subcloud is now deployed")
+
+    # dcmanager subcloud manage
+    get_logger().log_info(f"dcmanager subcloud manage {subcloud_name}.")
+    dcmanager_subcloud_manage_output = dcm_sc_manager_kw.get_dcmanager_subcloud_manage(subcloud_name, timeout=60)
+    manage_status = dcmanager_subcloud_manage_output.get_dcmanager_subcloud_manage_object().get_management()
+    get_logger().log_info(f"The management state of the subcloud {subcloud_name} is {manage_status}")
