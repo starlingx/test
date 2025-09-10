@@ -33,12 +33,23 @@ class ResultCollector:
         """
         outcome = yield
         report = outcome.get_result()
-        if report.when == "call":
+
+        if report.when == "setup":
+            self.test_executor_summary.set_last_result(None)
+        elif report.when == "call":
+            self.test_executor_summary.set_last_result(report.outcome.upper())
+        # create final test result and update db if needed
+        elif report.when == "teardown":
+            # if the teardown failed, update the result of the test
+            if report.outcome.upper() == "FAILED":
+                self.test_executor_summary.set_last_result(report.outcome.upper())
             self.test_executor_summary.increment_test_index()
-            self.test_executor_summary.append_tests_summary(f"{report.outcome}      " f"{item.nodeid}")
+            self.test_executor_summary.append_tests_summary(f"{self.test_executor_summary.get_last_result()}      " f"{item.nodeid}")
+
+            # update db if configured
             if ConfigurationManager.get_database_config().use_database():
                 self.update_result_in_database(
-                    report.outcome.upper(),
+                    self.test_executor_summary.get_tests_summary(),
                 )
 
     def update_result_in_database(self, outcome: any):
