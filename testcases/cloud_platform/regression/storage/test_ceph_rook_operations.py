@@ -548,7 +548,7 @@ def test_rook_ceph_applying_host_lock_reject_testing():
     SystemApplicationListKeywords(ssh_connection).validate_app_status_in_list(app_name, app_status_list, timeout=360, polling_sleep_time=10)
 
 
-@mark.lab_ceph_rook
+@mark.lab_rook_ceph
 @mark.lab_has_standby_controller
 def test_lock_unlock_then_swact_and_reverse_cycle():
     """
@@ -819,7 +819,7 @@ def test_rook_ceph_installation_model_controller():
     _add_ceph_monitor_osd()
 
 
-@mark.lab_ceph_rook
+@mark.lab_rook_ceph
 @mark.lab_has_standby_controller
 def test_rook_ceph_swact():
     """
@@ -861,7 +861,7 @@ def test_rook_ceph_swact():
     ceph_status_keywords.wait_for_ceph_health_status(expect_health_status=True)
 
 
-@mark.lab_ceph_rook
+@mark.lab_rook_ceph
 @mark.lab_has_standby_controller
 def test_reboot_active_controller_rook_ceph():
     """
