@@ -156,3 +156,14 @@ class KubectlSecretObject:
         decoded_cert = base64.b64decode(encoded_cert)
         cert = x509.load_pem_x509_certificate(decoded_cert, default_backend())
         return cert.issuer.rfc4514_string()
+
+    def get_certificate_subject(self) -> str | None:
+        """
+        Retrieves the Subject information from the 'tls.crt' data of the parsed secret.
+        """
+        encoded_cert = self.get_tls_crt()
+        if not encoded_cert:
+            return None
+        decoded_cert = base64.b64decode(encoded_cert)
+        cert = x509.load_pem_x509_certificate(decoded_cert, default_backend())
+        return cert.subject.rfc4514_string()

@@ -176,3 +176,33 @@ class LabConnectionKeywords(BaseKeyword):
         )
 
         return connection
+
+    def ping_host(self, hostname: str, count: int = 3) -> bool:
+        """Ping a host by hostname or IP address.
+
+        Args:
+            hostname (str): The hostname or IP address to ping.
+            count (int): Number of ping packets.
+
+        Returns:
+            bool: True if ping succeeds, False otherwise.
+        """
+        connection = self.get_active_controller_ssh()
+        cmd = f"ping -c {count} {hostname}"
+        connection.send(cmd)
+        return connection.get_return_code() == 0
+
+    def test_ssh_connectivity(self, hostname: str) -> bool:
+        """Test SSH connectivity to a host using lab credentials.
+
+        Args:
+            hostname (str): The hostname to test SSH connectivity to.
+
+        Returns:
+            bool: True if SSH connection succeeds, False otherwise.
+        """
+        connection = self.get_active_controller_ssh()
+        lab_config = ConfigurationManager.get_lab_config()
+        connection.setup_ssh_pass(hostname, lab_config.get_admin_credentials().get_user_name(), lab_config.get_admin_credentials().get_password())
+        connection.send("echo 'connection_test'")
+        return connection.get_return_code() == 0
