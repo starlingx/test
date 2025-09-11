@@ -48,9 +48,7 @@ class ResultCollector:
 
             # update db if configured
             if ConfigurationManager.get_database_config().use_database():
-                self.update_result_in_database(
-                    self.test_executor_summary.get_tests_summary(),
-                )
+                self.update_result_in_database(self.test_executor_summary.get_last_result())
 
     def update_result_in_database(self, outcome: any):
         """
