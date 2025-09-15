@@ -5,6 +5,7 @@ from framework.logging.automation_logger import get_logger
 from framework.validation.validation import validate_equals, validate_equals_with_retry, validate_str_contains
 from keywords.ceph.ceph_osd_pool_ls_detail_keywords import CephOsdPoolLsDetailKeywords
 from keywords.ceph.ceph_status_keywords import CephStatusKeywords
+from keywords.cloud_platform.fault_management.alarms.alarm_list_keywords import AlarmListKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.cloud_platform.system.application.system_application_apply_keywords import SystemApplicationApplyKeywords
 from keywords.cloud_platform.system.application.system_application_list_keywords import SystemApplicationListKeywords
@@ -12,6 +13,7 @@ from keywords.cloud_platform.system.host.system_host_fs_keywords import SystemHo
 from keywords.cloud_platform.system.host.system_host_list_keywords import SystemHostListKeywords
 from keywords.cloud_platform.system.host.system_host_lock_keywords import SystemHostLockKeywords
 from keywords.cloud_platform.system.host.system_host_reboot_keywords import SystemHostRebootKeywords
+from keywords.cloud_platform.system.host.system_host_reinstall_keywords import SystemHostReinstallKeywords
 from keywords.cloud_platform.system.host.system_host_swact_keywords import SystemHostSwactKeywords
 from keywords.cloud_platform.system.storage.system_storage_backend_keywords import SystemStorageBackendKeywords
 
@@ -709,10 +711,10 @@ def test_monitor_operations_rook_ceph():
     Args: None
     """
     active_controller_ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
-    ceph_status_keywords = CephStatusKeywords(active_controller_ssh_connection)
     system_host_fs_keywords = SystemHostFSKeywords(active_controller_ssh_connection)
     system_application_apply_keywords = SystemApplicationApplyKeywords(active_controller_ssh_connection)
     system_application_list_keywords = SystemApplicationListKeywords(active_controller_ssh_connection)
+    ceph_status_keywords = CephStatusKeywords(active_controller_ssh_connection)
     app_status_list = ["applied"]
     app_name = "rook-ceph"
     no_monitor_hosts = []
@@ -761,4 +763,48 @@ def test_monitor_operations_rook_ceph():
     system_application_apply_keywords.system_application_apply(app_name, timeout=500)
 
     get_logger().log_test_case_step("Verify final rook-ceph health.")
+    ceph_status_keywords.wait_for_ceph_health_status(expect_health_status=True)
+
+
+@mark.lab_has_standby_controller
+def test_reinstall_standby_host():
+    """
+    Test to validate standby controller reinstallation and ceph health.
+
+    Test Steps:
+        - Lock standby controller
+        - Reinstall standby controller
+        - Unlock standby controller
+        - Checking if there are any active alarms
+        - Checking rook-ceph health after reinstall.
+
+    Args: None
+    """
+
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    system_host_list_keywords = SystemHostListKeywords(ssh_connection)
+    standby_controller = system_host_list_keywords.get_standby_controller().get_host_name()
+    system_host_lock_keywords = SystemHostLockKeywords(ssh_connection)
+    system_host_reinstall_keywords = SystemHostReinstallKeywords(ssh_connection)
+    ceph_status_keywords = CephStatusKeywords(ssh_connection)
+    alarm_list_keyword = AlarmListKeywords(ssh_connection)
+
+    get_logger().log_test_case_step("Checking if there are any active alarms")
+    alarms = alarm_list_keyword.alarm_list()
+    validate_equals(alarms, [], "No active alarms")
+
+    get_logger().log_test_case_step("Lock standby controller")
+    system_host_lock_keywords.lock_host(standby_controller)
+
+    get_logger().log_test_case_step("Reinstall standby controller")
+    system_host_reinstall_keywords.reinstall_host(standby_controller)
+
+    get_logger().log_test_case_step("Unlock standby controller")
+    system_host_lock_keywords.unlock_host(standby_controller)
+
+    get_logger().log_test_case_step("Checking if there are any active alarms")
+    alarms = alarm_list_keyword.alarm_list()
+    validate_equals(alarms, [], "No active alarms")
+
+    get_logger().log_test_case_step("Checking rook-ceph health after reinstall.")
     ceph_status_keywords.wait_for_ceph_health_status(expect_health_status=True)

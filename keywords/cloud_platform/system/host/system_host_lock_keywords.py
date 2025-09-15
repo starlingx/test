@@ -106,12 +106,13 @@ class SystemHostLockKeywords(BaseKeyword):
             return True
         return False
 
-    def unlock_host(self, host_name: str) -> bool:
+    def unlock_host(self, host_name: str, unlock_accepted_timeout: int = 300) -> bool:
         """
         Unlocks the given host
 
         Args:
             host_name (str): the host name
+            unlock_accepted_timeout (int): unlock_accepted_timeout to wait to try unlock the host
 
         Returns:
             bool: True if the unlock is successful
@@ -122,6 +123,20 @@ class SystemHostLockKeywords(BaseKeyword):
         """
         self.unlock_host_pre_check()
         self.ssh_connection.send(source_openrc(f"system host-unlock {host_name}"))
+
+        # Checking whether the host can be unlocked; if not, the process will retry until the timeout is reached.
+        start = time.time()
+        while time.time() - start < unlock_accepted_timeout:
+            if self.ssh_connection.get_return_code() == 1:
+                get_logger().log_info("Fail to unlock, trying again in 5 seconds")
+                time.sleep(5)
+                self.ssh_connection.send(source_openrc(f"system host-unlock {host_name}"))
+            else:
+                get_logger().log_info(f"The unlock of host {host_name} was started")
+                break
+        else:
+            raise KeywordException(f"Timeout: failed to unlock host {host_name}")
+
         self.validate_success_return_code(self.ssh_connection)
         is_host_unlocked = self.wait_for_host_unlocked(host_name)
         if not is_host_unlocked:
