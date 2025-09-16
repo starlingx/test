@@ -394,8 +394,8 @@ class SSHConnection:
                 get_logger().log_warning("SSH output read timed out — buffer may be incomplete or prompt unmatched.")
                 return -1, "Timeout Exceeded"
 
-        # Read some of the output
-        current_buffer = ssh_channel.recv(1024)
+        # Read some of the output - increased buffer size for large outputs
+        current_buffer = ssh_channel.recv(8192)
 
         # If we have an empty buffer, then the SSH session has been closed
         if len(current_buffer) == 0:
