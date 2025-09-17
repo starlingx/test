@@ -896,3 +896,84 @@ def test_reboot_active_controller_rook_ceph():
 
     get_logger().log_test_case_step("Checking rook-ceph health after reboot.")
     ceph_status_keywords.wait_for_ceph_health_status(expect_health_status=True)
+
+
+@mark.p2
+@mark.lab_rook_ceph
+@mark.lab_has_min_3_compute
+def test_monitor_operations_rook_ceph():
+    """
+    Test case: Add and remove rook-ceph monitors.
+
+    Test Steps:
+        -Identify hosts without monitors.
+        -Ensure at least 2 nodes are available for monitor addition.
+        -Add 2 monitors to the selected nodes.
+        -Apply rook-ceph and validate the application status.
+        -Verify rook-ceph health after adding monitors.
+        -Remove the previously added monitors.
+        -Lock the target nodes for monitor removal.
+        -Wait for rook-ceph auto-apply and validate status.
+        -Apply rook-ceph manually to complete monitor removal.
+        -Delete host-fs entries for the target nodes.
+        -Unlock all previously locked nodes.
+        -Validate rook-ceph application status again.
+        -Apply rook-ceph one final time.
+        -Verify rook-ceph health after monitor removal.
+
+    Args: None
+    """
+    active_controller_ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    ceph_status_keywords = CephStatusKeywords(active_controller_ssh_connection)
+    system_host_fs_keywords = SystemHostFSKeywords(active_controller_ssh_connection)
+    system_application_apply_keywords = SystemApplicationApplyKeywords(active_controller_ssh_connection)
+    system_application_list_keywords = SystemApplicationListKeywords(active_controller_ssh_connection)
+    app_status_list = ["applied"]
+    app_name = "rook-ceph"
+    no_monitor_hosts = []
+
+    get_logger().log_test_case_step("Identifying hosts without monitors.")
+    no_monitor_hosts = system_host_fs_keywords.get_hosts_without_monitor()
+
+    if len(no_monitor_hosts) < 2:
+        raise AssertionError("Insufficient free nodes: at least 2 nodes are required to add monitors.")
+
+    target_hosts = no_monitor_hosts[:2]
+    get_logger().log_test_case_step(f"Adding monitors to nodes: {target_hosts}")
+    for host in target_hosts:
+        system_host_fs_keywords.system_host_fs_add(hostname=host, fs_name="ceph", fs_size=20)
+
+    get_logger().log_test_case_step("Wait for rook-ceph auto-apply after monitor addition.")
+    system_application_list_keywords.validate_app_status_in_list(app_name, app_status_list, timeout=360, polling_sleep_time=10)
+    get_logger().log_test_case_step("Reapply rook-ceph after adding monitor.")
+    system_application_apply_keywords.system_application_apply(app_name, timeout=500)
+
+    get_logger().log_test_case_step("Validate rook-ceph application status after addition")
+    system_application_list_keywords.validate_app_status_in_list(app_name, app_status_list, timeout=360, polling_sleep_time=10)
+    get_logger().log_test_case_step(f"Removing monitors from nodes: {target_hosts}")
+    for host in target_hosts:
+        system_host_fs_keywords.system_host_fs_modify(hostname=host, fs_name="ceph", functions="")
+    get_logger().log_test_case_step("Lock nodes for monitor removal.")
+    SystemHostLockKeywords.lock_multiple_hosts(active_controller_ssh_connection, target_hosts)
+
+    get_logger().log_test_case_step("Wait for rook-ceph auto-apply after monitor removal.")
+    system_application_list_keywords.validate_app_status_in_list(app_name, app_status_list, timeout=360, polling_sleep_time=20)
+    get_logger().log_test_case_step("Reapply rook-ceph to complete monitor removal")
+    system_application_apply_keywords.system_application_apply(app_name, timeout=500)
+
+    get_logger().log_test_case_step("Deleting host-fs entries from target hosts.")
+    for host in target_hosts:
+        system_host_fs_keywords.wait_for_fs_ready(hostname=host, fs_name="ceph")
+        system_host_fs_keywords.system_host_fs_delete(hostname=host, fs_name="ceph")
+
+    get_logger().log_test_case_step("Unlock all previously locked nodes.")
+    SystemHostLockKeywords.unlock_multiple_hosts(active_controller_ssh_connection, target_hosts)
+
+    get_logger().log_test_case_step("Validate rook-ceph application status after unlocking nodes")
+    system_application_list_keywords.validate_app_status_in_list(app_name, app_status_list, timeout=360, polling_sleep_time=10)
+
+    get_logger().log_test_case_step("Reapply rook-ceph after unlock.")
+    system_application_apply_keywords.system_application_apply(app_name, timeout=500)
+
+    get_logger().log_test_case_step("Verify final rook-ceph health.")
+    ceph_status_keywords.wait_for_ceph_health_status(expect_health_status=True)

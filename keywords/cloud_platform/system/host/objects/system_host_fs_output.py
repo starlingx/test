@@ -106,3 +106,27 @@ class SystemHostFSOutput:
         if len(fs_lists) == 0:
             return False
         return True
+
+    def get_host_fs(self, fs_name: str) -> SystemHostFSObject | None:
+        """
+        Return the FS object with the given name, or None if not found.
+
+        Args:
+            fs_name (str): Name of the filesystem to retrieve
+
+        Returns:
+            SystemHostFSObject | None: The filesystem object if found, else None
+        """
+        for fs in self.system_host_fs:
+            if fs.get_name() == fs_name:
+                return fs
+        return None
+
+    def has_monitor(self) -> bool:
+        """
+        Check whether a monitor is configured on the host.
+
+        Returns:
+            bool: True if at least one FS has 'monitor' in its functions; False otherwise
+        """
+        return any("monitor" in (fs.get_capabilities().get_functions() or []) for fs in self.system_host_fs if fs.get_capabilities() is not None)
