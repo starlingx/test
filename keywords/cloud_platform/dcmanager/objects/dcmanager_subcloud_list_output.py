@@ -302,3 +302,20 @@ class DcManagerSubcloudListOutput:
             get_logger().log_exception(error_message)
             raise ValueError(error_message)
         return max(subclouds_by_type, key=lambda subcloud: int(subcloud.get_id()))
+
+    def get_subcloud_with_lowest_id(self) -> DcManagerSubcloudListObject:
+        """Gets an instance of DcManagerSubcloudListObject with the lowest ID regardless of its state.
+
+        Returns:
+            DcManagerSubcloudListObject: the instance of DcManagerSubcloudListObject with the lowest ID.
+
+        """
+        subclouds = self.get_dcmanager_subcloud_list_objects_filtered(None)
+
+        if not subclouds:
+            error_message = "In this DC system, there are no subclouds."
+            get_logger().log_exception(error_message)
+            raise ValueError(error_message)
+
+        lowest_subcloud = min(subclouds, key=lambda subcloud: int(subcloud.get_id()))
+        return lowest_subcloud

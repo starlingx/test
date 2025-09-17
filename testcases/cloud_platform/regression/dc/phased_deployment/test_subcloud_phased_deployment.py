@@ -36,7 +36,7 @@ def get_undeployed_subcloud_name(ssh_connection: SSHConnection) -> str:
         get_logger().log_info("No Undeployed Subcloud found deleting existing one")
         # Gets the lowest subcloud (the subcloud with the lowest id).
         get_logger().log_info("Obtaining subcloud with the lowest ID.")
-        lowest_subcloud = dcm_sc_list_kw.get_dcmanager_subcloud_list().get_healthy_subcloud_with_lowest_id()
+        lowest_subcloud = dcm_sc_list_kw.get_dcmanager_subcloud_list().get_subcloud_with_lowest_id()
         get_logger().log_info(f"Subcloud with the lowest ID obtained: ID={lowest_subcloud.get_id()}, Name={lowest_subcloud.get_name()}, Management state={lowest_subcloud.get_management()}")
         subcloud_name = lowest_subcloud.get_name()
         dcm_sc_manager_kw = DcManagerSubcloudManagerKeywords(ssh_connection)
