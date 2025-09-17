@@ -229,7 +229,6 @@ class PTPSetupExecutorKeywords(BaseKeyword):
         validate_equals_with_retry(check_ptp4l_status, True, "systemctl status for ptp4l", 120, 30)
 
         # wait for SMA status
-        check_sma_status = False
         for clock_instance_obj in self.clock_setup_list:
 
             ifaces_to_check = [(host, iface) for host in clock_instance_obj.get_instance_hostnames() for ptp_host_if in clock_instance_obj.get_ptp_interfaces() if "input" in ptp_host_if.get_ptp_interface_parameter() for iface in filter(None, ptp_host_if.get_interfaces_for_hostname(host))]
@@ -238,14 +237,8 @@ class PTPSetupExecutorKeywords(BaseKeyword):
                 pci_address = gnss_keywords.get_pci_slot_name(host, interface)
                 cgu_location = f"/sys/kernel/debug/ice/{pci_address}/cgu"
                 gnss_keywords.validate_sma1_and_gnss_1pps_eec_pps_dpll_status_with_retry(host, cgu_location, "SMA1", timeout=180, polling_interval=30)
-                check_sma_status = True
-                break
-
-            if check_sma_status:
-                break
 
         # wait for GNSS status
-        check_gnss_status = False
         for ts2phc_instance_obj in self.ts2phc_setup_list:
             expected_gnss_port = gnss_keywords.extract_gnss_port(ts2phc_instance_obj.get_instance_parameters())
             if not expected_gnss_port:
@@ -264,8 +257,3 @@ class PTPSetupExecutorKeywords(BaseKeyword):
                 pci_address = gnss_keywords.get_pci_slot_name(host, interface)
                 cgu_location = f"/sys/kernel/debug/ice/{pci_address}/cgu"
                 gnss_keywords.validate_sma1_and_gnss_1pps_eec_pps_dpll_status_with_retry(host, cgu_location, timeout=180, polling_interval=30)
-                check_gnss_status = True
-                break
-
-            if check_gnss_status:
-                break

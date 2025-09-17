@@ -114,7 +114,7 @@ class PhcCtlKeywords(BaseKeyword):
         else:
             raise "output_str.split() is expected to be a List with five elements."
 
-    def wait_for_phc_ctl_adjustment_alarm(self, interface: str, alarms: List[AlarmListObject], timeout: int = 120, polling_interval: int = 10) -> None:
+    def wait_for_phc_ctl_adjustment_alarm(self, interface: str, alarms: List[AlarmListObject], timeout: int = 180, polling_interval: int = 10) -> None:
         """
         Run a remote phc_ctl adjustment loop on the controller as root, and stop it once the specified PTP alarm(s) are detected or a timeout occurs.
 

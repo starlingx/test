@@ -803,12 +803,12 @@ def test_ptp_operation_phc_ctl_time_change():
 
     ctrl0_ptp1_oot_alarm_obj = AlarmListObject()
     ctrl0_ptp1_oot_alarm_obj.set_alarm_id("100.119")
-    ctrl0_ptp1_oot_alarm_obj.set_reason_text(r"controller-0 Precision Time Protocol \(PTP\) clocking is out of tolerance by ((\d+\.\d+) (milli|micro)secs")
+    ctrl0_ptp1_oot_alarm_obj.set_reason_text(r"controller-0 Precision Time Protocol \(PTP\) clocking is out of tolerance by (\d+\.\d+) (milli|micro)secs")
     ctrl0_ptp1_oot_alarm_obj.set_entity_id("host=controller-0.instance=ptp1.ptp=out-of-tolerance")
 
     ctrl1_ptp1_oot_alarm_obj = AlarmListObject()
     ctrl1_ptp1_oot_alarm_obj.set_alarm_id("100.119")
-    ctrl1_ptp1_oot_alarm_obj.set_reason_text(r"controller-1 Precision Time Protocol \(PTP\) clocking is out of tolerance by ((\d+\.\d+) (milli|micro)secs")
+    ctrl1_ptp1_oot_alarm_obj.set_reason_text(r"controller-1 Precision Time Protocol \(PTP\) clocking is out of tolerance by (\d+\.\d+) (milli|micro)secs")
     ctrl1_ptp1_oot_alarm_obj.set_entity_id("host=controller-1.instance=ptp1.ptp=out-of-tolerance")
 
     phc_ctl_keywords = PhcCtlKeywords(lab_connect_keywords.get_ssh_for_hostname("controller-0"))
@@ -825,7 +825,7 @@ def test_ptp_operation_phc_ctl_time_change():
 
     ctrl1_ptp4_oot_alarm_obj = AlarmListObject()
     ctrl1_ptp4_oot_alarm_obj.set_alarm_id("100.119")
-    ctrl1_ptp4_oot_alarm_obj.set_reason_text(r"controller-1 Precision Time Protocol \(PTP\) clocking is out of tolerance by ((\d+\.\d+) (milli|micro)secs")
+    ctrl1_ptp4_oot_alarm_obj.set_reason_text(r"controller-1 Precision Time Protocol \(PTP\) clocking is out of tolerance by (\d+\.\d+) (milli|micro)secs")
     ctrl1_ptp4_oot_alarm_obj.set_entity_id("host=controller-1.instance=ptp4.ptp=out-of-tolerance")
 
     phc_ctl_keywords = PhcCtlKeywords(lab_connect_keywords.get_ssh_for_hostname("controller-1"))
@@ -950,7 +950,7 @@ def test_ptp_operation_service_stop_start_restart():
     get_logger().log_info("Waiting for alarms 100.119 due to service stop...")
     ctrl0_alarm = AlarmListObject()
     ctrl0_alarm.set_alarm_id("100.119")
-    
+
     ctrl0_alarm.set_reason_text("controller-0 PTP service ptp4l@ptp1.service enabled but not running")
     ctrl0_alarm.set_entity_id("host=controller-0.instance=ptp1.ptp")
 
