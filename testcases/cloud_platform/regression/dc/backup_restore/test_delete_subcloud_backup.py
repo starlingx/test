@@ -13,6 +13,7 @@ from keywords.cloud_platform.dcmanager.objects.dcmanager_subcloud_list_object_fi
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.cloud_platform.version_info.cloud_platform_version_manager import CloudPlatformVersionManagerClass
 from keywords.files.file_keywords import FileKeywords
+from keywords.cloud_platform.health.health_keywords import HealthKeywords
 
 
 @mark.p2
@@ -37,6 +38,11 @@ def test_delete_backup_central(request):
     subcloud_name = lowest_subcloud.get_name()
     subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
 
+    # Prechecks Before Back-Up:
+    get_logger().log_info(f"Performing pre-checks on {subcloud_name}")
+    obj_health = HealthKeywords(subcloud_ssh)
+    obj_health.validate_healty_cluster()  # Checks alarms, pods, app health
+
     # Gets the lowest subcloud sysadmin password needed for backup creation.
     lab_config = ConfigurationManager.get_lab_config().get_subcloud(subcloud_name)
     subcloud_password = lab_config.get_admin_credentials().get_password()
@@ -56,6 +62,9 @@ def test_delete_backup_central(request):
     # Create a sbcloud backup
     get_logger().log_info(f"Create {subcloud_name} backup on Central Cloud")
     dc_manager_backup.create_subcloud_backup(subcloud_password, central_ssh, path=central_path, subcloud=subcloud_name)
+
+    get_logger().log_info("Checking if backup was created on Central")
+    DcManagerSubcloudBackupKeywords(central_ssh).wait_for_backup_status_complete(subcloud_name, expected_status="complete-central")
 
     # Delete the backup created
     get_logger().log_info(f"Delete {subcloud_name} backup on Central Cloud")
@@ -84,6 +93,11 @@ def test_delete_backup_local(request):
     subcloud_name = lowest_subcloud.get_name()
     subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
 
+    # Prechecks Before Back-Up:
+    get_logger().log_info(f"Performing pre-checks on {subcloud_name}")
+    obj_health = HealthKeywords(subcloud_ssh)
+    obj_health.validate_healty_cluster()  # Checks alarms, pods, app health
+
     # Gets the lowest subcloud sysadmin password needed for backup backup creation and deletion on local_path.
     lab_config = ConfigurationManager.get_lab_config().get_subcloud(subcloud_name)
     subcloud_password = lab_config.get_admin_credentials().get_password()
@@ -108,6 +122,9 @@ def test_delete_backup_local(request):
         subcloud=subcloud_name,
         local_only=True,
     )
+
+    get_logger().log_info(f"Checking if backup was created on {subcloud_name}")
+    DcManagerSubcloudBackupKeywords(central_ssh).wait_for_backup_status_complete(subcloud_name, expected_status="complete-local")
 
     # path where the backup directory should be checked for deletion.
     path = f"/opt/platform-backup/backups/{release}/"
@@ -188,6 +205,13 @@ def test_delete_backup_group_on_central(request):
         get_logger().log_info("At least two subclouds managed are required to run the test")
         fail("At least two subclouds managed are required to run the test")
 
+    for subcloud_name in subcloud_list:
+        # Prechecks Before Back-Up:
+        subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
+        get_logger().log_info(f"Performing pre-checks on {subcloud_name}")
+        obj_health = HealthKeywords(subcloud_ssh)
+        obj_health.validate_healty_cluster()  # Checks alarms, pods, app health
+
     # Gets the subcloud sysadmin password needed for backup creation.
     subcloud_password = ConfigurationManager.get_lab_config().get_subcloud(subcloud_list[0]).get_admin_credentials().get_password()
 
@@ -214,6 +238,10 @@ def test_delete_backup_group_on_central(request):
     # Create a subcloud backup
     get_logger().log_info(f"Create backup on Central Cloud for subcloud group: {group_name}")
     dc_manager_backup.create_subcloud_backup(subcloud_password, central_ssh, group=group_name, release=release, subcloud_list=subcloud_list)
+
+    for subcloud_name in subcloud_list:
+        get_logger().log_info("Checking if backup was created on Central")
+        DcManagerSubcloudBackupKeywords(central_ssh).wait_for_backup_status_complete(subcloud_name, expected_status="complete-central")
 
     # Delete the backup created
     get_logger().log_info(f"Delete backup on Central Cloud for subcloud group: {group_name}")
@@ -250,6 +278,13 @@ def test_delete_backup_group_on_local(request):
         get_logger().log_info("At least two subclouds managed are required to run the test")
         fail("At least two subclouds managed are required to run the test")
 
+    for subcloud_name in subcloud_list:
+        # Prechecks Before Back-Up:
+        subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
+        get_logger().log_info(f"Performing pre-checks on {subcloud_name}")
+        obj_health = HealthKeywords(subcloud_ssh)
+        obj_health.validate_healty_cluster()  # Checks alarms, pods, app health
+
     # Gets the subcloud sysadmin password needed for backup creation.
     subcloud_password = ConfigurationManager.get_lab_config().get_subcloud(subcloud_list[0]).get_admin_credentials().get_password()
 
@@ -277,6 +312,10 @@ def test_delete_backup_group_on_local(request):
     # Create a subcloud backup and check it on local path
     get_logger().log_info(f"Create and check if backup was was created on Central Cloud for subcloud group: {group_name}")
     dc_manager_backup.create_subcloud_backup(subcloud_password, central_ssh, local_only=True, group=group_name, release=release, subcloud_list=subcloud_list)
+
+    for subcloud_name in subcloud_list:
+        get_logger().log_info(f"Checking if backup was created on {subcloud_name}")
+        DcManagerSubcloudBackupKeywords(central_ssh).wait_for_backup_status_complete(subcloud_name, expected_status="complete-local")
 
     # Delete the backup created and verify the backup is deleted
     get_logger().log_info(f"Delete and check if backup was removed on SubClouds for subcloud group: {group_name}")
