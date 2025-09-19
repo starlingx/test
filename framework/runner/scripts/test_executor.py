@@ -1,3 +1,6 @@
+import os
+import threading
+import time
 from optparse import OptionParser
 from typing import Optional
 
@@ -116,6 +119,15 @@ def main():
         execute_test(test, test_executor_summary, test_case_result_id)
 
     log_summary(test_executor_summary)
+
+    # Force exit after 10 seconds if process doesn't terminate naturally
+    def force_exit_timer():
+        time.sleep(10)
+        get_logger().log_warning("Process did not exit naturally, forcing exit...")
+        os._exit(0)
+
+    timer_thread = threading.Thread(target=force_exit_timer, daemon=True)
+    timer_thread.start()
 
     return 0
 
