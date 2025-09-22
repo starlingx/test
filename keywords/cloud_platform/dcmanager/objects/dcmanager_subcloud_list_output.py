@@ -149,6 +149,30 @@ class DcManagerSubcloudListOutput:
         lowest_subcloud = min(subclouds, key=lambda subcloud: int(subcloud.get_id()))
         return lowest_subcloud
 
+    def get_different_healthy_subcloud(self, exclude_subcloud_name: str) -> DcManagerSubcloudListObject:
+        """
+        Gets a healthy subcloud whose name is different from the argument 'exclude_subcloud_name'.
+
+        Args:
+            exclude_subcloud_name (str): The name of the subcloud to exclude.
+
+        Returns:
+            DcManagerSubcloudListObject: An instance of DcManagerSubcloudListObject representing a healthy subcloud
+            (Managed, Online, Deploy completed, Synchronized) whose name is different from 'exclude_subcloud_name'.
+
+        Raises:
+            ValueError: If no eligible healthy subcloud is found excluding 'exclude_subcloud_name'.
+        """
+        dcmanager_subcloud_list_object_filter = DcManagerSubcloudListObjectFilter.get_healthy_subcloud_filter()
+        subclouds = self.get_dcmanager_subcloud_list_objects_filtered(dcmanager_subcloud_list_object_filter)
+        eligible_subclouds = [sc for sc in subclouds if sc.get_name() != exclude_subcloud_name]
+
+        if not eligible_subclouds:
+            error_message = f"No healthy subcloud found excluding '{exclude_subcloud_name}'."
+            raise ValueError(error_message)
+
+        return min(eligible_subclouds, key=lambda sc: int(sc.get_id()))
+
     def get_subcloud_by_name(self, subcloud_name: str) -> DcManagerSubcloudListObject:
         """
         Gets an instance of DcManagerSubcloudListObject whose name attribute is equal to the argument 'subcloud_name'.
