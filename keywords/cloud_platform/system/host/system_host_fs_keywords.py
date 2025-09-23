@@ -1,7 +1,10 @@
+import time
+
 from framework.ssh.ssh_connection import SSHConnection
 from keywords.base_keyword import BaseKeyword
 from keywords.cloud_platform.command_wrappers import source_openrc
 from keywords.cloud_platform.system.host.objects.system_host_fs_output import SystemHostFSOutput
+from keywords.cloud_platform.system.host.system_host_list_keywords import SystemHostListKeywords
 
 
 class SystemHostFSKeywords(BaseKeyword):
@@ -48,18 +51,27 @@ class SystemHostFSKeywords(BaseKeyword):
         self.ssh_connection.send(source_openrc(f"system host-fs-add {hostname} {fs_name}={fs_size}"))
         self.validate_success_return_code(self.ssh_connection)
 
-    def system_host_fs_modify(self, hostname: str, fs_name: str, fs_size: int):
+    def system_host_fs_modify(self, hostname: str, fs_name: str, fs_size: int = None, functions: str = None):
         """
         Run the "system host-fs-modify" command with the specified arguments.
 
         Args:
             hostname (str): Name of the host to modify.
             fs_name (str): Name of FS Name to be modified
-            fs_size (int): Size of FS Name to be modified
+            fs_size (int, optional): Size of FS Name to be modified
+            functions (str, optional): Functions to set for the filesystem
 
         Returns: None
         """
-        self.ssh_connection.send(source_openrc(f"system host-fs-modify {hostname} {fs_name}={fs_size}"))
+        command = f"system host-fs-modify {hostname} {fs_name}"
+
+        if fs_size is not None:
+            command += f" {fs_size}"
+
+        if functions is not None:
+            command += f" --functions={functions}"
+
+        self.ssh_connection.send(source_openrc(command))
         self.validate_success_return_code(self.ssh_connection)
 
     def system_host_fs_modify_with_error(self, hostname: str, fs_name: str, fs_size: int) -> list[str]:
@@ -89,3 +101,46 @@ class SystemHostFSKeywords(BaseKeyword):
         """
         self.ssh_connection.send(source_openrc(f"system host-fs-delete {hostname} {fs_name}"))
         self.validate_success_return_code(self.ssh_connection)
+
+    def wait_for_fs_ready(self, hostname: str, fs_name: str, timeout: int = 300, sleep_time: int = 30) -> None:
+        """
+        Wait until the given FS on the host reaches state 'Ready'.
+
+        Args:
+            hostname (str): Host name to check
+            fs_name (str): FS name to wait for
+            timeout (int): Max time in seconds to wait
+            sleep_time (int): Interval between checks
+
+        Raises:
+            TimeoutError: If FS does not reach 'Ready' state within timeout
+
+        Returns:
+            None: This function does not return any value
+        """
+        end_time = time.time() + timeout
+        while time.time() < end_time:
+            fs_output = self.get_system_host_fs_list(hostname)
+            fs = fs_output.get_host_fs(fs_name)
+            if fs and fs.get_state() == "Ready":
+                return
+            time.sleep(sleep_time)
+        raise TimeoutError(f"FS '{fs_name}' on host '{hostname}' did not reach 'Ready' state within {timeout} seconds")
+
+    def get_hosts_without_monitor(self) -> list[str]:
+        """
+        Return a list of hosts that do NOT have a monitor.
+
+        Returns:
+            list[str]: List of hostnames without monitor
+        """
+        no_monitor_hosts = []
+
+        all_hosts = SystemHostListKeywords(self.ssh_connection).get_system_host_list().get_controllers_and_computes()
+
+        for host in all_hosts:
+            fs_output = self.get_system_host_fs_list(host.get_host_name())
+            if not fs_output.has_monitor():
+                no_monitor_hosts.append(host.get_host_name())
+
+        return no_monitor_hosts
