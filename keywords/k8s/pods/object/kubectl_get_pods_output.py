@@ -117,3 +117,15 @@ class KubectlGetPodsOutput:
         if len(pods) == 0:
             raise ValueError(f"No pods found starting with '{starts_with}'.")
         return pods[0].get_name()
+
+    def get_pods_with_status(self, status: str) -> [KubectlPodObject]:
+        """
+        Returns list of pods with the specified status.
+
+        Args:
+            status (str): The status to filter by (e.g., "Running", "Pending").
+
+        Returns:
+            [KubectlPodObject]: List of pods with the specified status.
+        """
+        return [pod for pod in self.kubectl_pod if pod.get_status() == status]

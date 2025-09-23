@@ -1,0 +1,11 @@
+apiVersion: portieris.cloud.ibm.com/v1
+kind: ClusterImagePolicy
+metadata:
+  name: clusterpolicy
+spec:
+  repositories:
+    - name: "*"
+      policy:
+        trust:
+          enabled: true
+          trustServer: "{{ trust_server }}"

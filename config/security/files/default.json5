@@ -6,5 +6,19 @@
     "stepca_server_url": "external_acme_server_url",
 
     // ACME server issuer
-    "stepca_server_issuer": "external_acme_server_issuer"
+    "stepca_server_issuer": "external_acme_server_issuer",
+
+    // Portieris configuration
+    "portieris": {
+        "registry_server_hostname": "registry_server_hostname",
+        "registry_server_port": "registry_server_port",
+        "trust_server": "https://registry_server_hostname:trust_port",
+        "signed_image_name": "registry_server_hostname:registry_server_port/signed_repo/image:tag",
+        "unsigned_image_name": "registry_server_hostname:registry_server_port/unsigned_repo/image:tag",
+        "registry_credentials": {
+            "username": "registry_username",
+            "password": "registry_password"
+        },
+        "registry_ca_cert": "registry_ca_cert"
+    }
 }
