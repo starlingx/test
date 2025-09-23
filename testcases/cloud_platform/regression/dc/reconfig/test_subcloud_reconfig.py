@@ -1,7 +1,7 @@
 from pytest import mark
 
 from config.configuration_manager import ConfigurationManager
-from framework.validation.validation import validate_equals
+from framework.validation.validation import validate_not_equals
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_deploy_keywords import DCManagerSubcloudDeployKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_list_keywords import DcManagerSubcloudListKeywords
 from keywords.cloud_platform.dcmanager.objects.dcmanager_subcloud_deploy_object import DcManagerSubcloudDeployObject
@@ -36,14 +36,12 @@ def test_reconfig_one_subcloud(request):
     deployment_file = deployment_assets_config.get_subcloud_deployment_assets(subcloud_name).get_deployment_config_file()
     hostname = SystemHostListKeywords(system_controller_ssh).get_active_controller().get_host_name()
 
-    HostProfileYamlKeywords(system_controller_ssh).edit_yaml_spec_storage(searched_metadata=f"{hostname}-profile", fs="docker", size=32, remote_filename=deployment_file)
+    HostProfileYamlKeywords(system_controller_ssh).edit_yaml_spec_storage(searched_metadata=f"{hostname}-profile", fs="docker", size=48, remote_filename=deployment_file)
     old_fs_size = SystemHostFSKeywords(subcloud_ssh).get_system_host_fs_list(host_name=hostname).get_system_host_fs("docker").get_size()
-    sysadmin_password = ConfigurationManager.get_lab_config().get_admin_credentials().get_password()
 
-    deploy_params = DcManagerSubcloudDeployObject(subcloud=subcloud_name, deploy_config=deployment_file, bmc_password=sysadmin_password)
-    DCManagerSubcloudDeployKeywords(system_controller_ssh).deploy_config_subcloud(deploy_params=deploy_params)
+    DCManagerSubcloudDeployKeywords(system_controller_ssh).dcmanager_subcloud_deploy_config(subcloud_name=subcloud_name)
 
     new_fs_size = SystemHostFSKeywords(subcloud_ssh).get_system_host_fs_list(host_name=hostname).get_system_host_fs("docker").get_size()
 
     dcmanager_subcloud_list_keywords.validate_subcloud_availability_status(subcloud_name)
-    validate_equals(old_fs_size, new_fs_size, "Validate that filesystem size for docker changed.")
+    validate_not_equals(old_fs_size, new_fs_size, "Validate that filesystem size for docker changed.")
