@@ -12,6 +12,14 @@ from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKey
 from keywords.cloud_platform.sync_files.sync_deployment_assets import SyncDeploymentAssets
 from keywords.cloud_platform.system.host.system_host_list_keywords import SystemHostListKeywords
 from keywords.cloud_platform.system.host.system_host_swact_keywords import SystemHostSwactKeywords
+from keywords.cloud_platform.system.application.object.system_application_upload_input import SystemApplicationUploadInput
+from keywords.cloud_platform.system.application.system_application_apply_keywords import SystemApplicationApplyKeywords
+from keywords.cloud_platform.system.application.system_application_list_keywords import SystemApplicationListKeywords
+from keywords.cloud_platform.system.application.system_application_upload_keywords import SystemApplicationUploadKeywords
+from keywords.cloud_platform.system.application.system_application_delete_keywords import SystemApplicationDeleteKeywords
+from keywords.cloud_platform.system.application.system_application_remove_keywords import SystemApplicationRemoveKeywords
+from keywords.cloud_platform.system.application.object.system_application_delete_input import SystemApplicationDeleteInput
+from keywords.cloud_platform.system.application.object.system_application_remove_input import SystemApplicationRemoveInput
 
 
 def subcloud_add(subcloud_name: str):
@@ -177,3 +185,157 @@ def test_dc_subcloud_delete_duplex():
     """
     subcloud_name = "subcloud2"
     subcloud_delete(subcloud_name)
+
+
+def get_test_app_config():
+    """Get test application configuration.
+
+    Returns:
+        tuple: (app_name, app_path) for test application.
+    """
+    app_name = "node-interface-metrics-exporter"
+    app_path = "/usr/local/share/applications/helm/"
+    return app_name, app_path
+
+
+def get_subcloud_connection(deployment_type: str):
+    """Get SSH connection to subcloud.
+
+    Args:
+        deployment_type (str): Type of subcloud deployment (Simplex/Duplex).
+
+    Returns:
+        SSH connection to subcloud.
+    """
+    controller_ssh = LabConnectionKeywords().get_active_controller_ssh()
+    subcloud_name = DcManagerSubcloudListKeywords(controller_ssh).get_dcmanager_subcloud_list().get_healthy_subcloud_by_type(deployment_type).get_name()
+    return LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
+
+
+def setup_application_install(ssh_connection, app_name: str, app_path: str):
+    """Set up application installation.
+
+    Args:
+        ssh_connection: SSH connection to target system.
+        app_name (str): Name of the application to install.
+        app_path (str): Path to application files.
+    """
+    get_logger().log_info(f"Setting up application install for {app_name}")
+
+    upload_input = SystemApplicationUploadInput()
+    upload_input.set_app_name(app_name)
+    upload_input.set_force(True)
+    upload_input.set_tar_file_path(app_path + app_name + "*")
+
+    return upload_input
+
+
+def install_application(ssh_connection, app_name: str, app_path: str):
+    """Install application on target system.
+
+    Args:
+        ssh_connection: SSH connection to target system.
+        app_name (str): Name of the application to install.
+        app_path (str): Path to application files.
+    """
+    upload_input = setup_application_install(ssh_connection, app_name, app_path)
+
+    # Upload application
+    upload_output = SystemApplicationUploadKeywords(ssh_connection).system_application_upload(upload_input)
+    app_object = upload_output.get_system_application_object()
+
+    validate_equals(app_object.get_name(), app_name, f"App name should be {app_name}")
+    validate_equals(app_object.get_status(), "uploaded", f"App {app_name} should be uploaded")
+
+    # Apply application
+    apply_output = SystemApplicationApplyKeywords(ssh_connection).system_application_apply(app_name, 3600, 30)
+    app_object = apply_output.get_system_application_object()
+
+    validate_equals(app_object.get_name(), app_name, f"App name should be {app_name}")
+    validate_equals(app_object.get_status(), "applied", f"App {app_name} should be applied")
+
+
+def remove_application(ssh_connection, app_name: str):
+    """Remove application from target system.
+
+    Args:
+        ssh_connection: SSH connection to target system.
+        app_name (str): Name of the application to remove.
+    """
+    get_logger().log_info(f"Removing application {app_name}")
+
+    # Remove (uninstall) application
+    remove_input = SystemApplicationRemoveInput()
+    remove_input.set_app_name(app_name)
+    remove_input.set_force_removal(True)
+
+    SystemApplicationRemoveKeywords(ssh_connection).system_application_remove(remove_input)
+
+    # Delete application
+    delete_input = SystemApplicationDeleteInput()
+    delete_input.set_app_name(app_name)
+    delete_input.set_force_deletion(True)
+
+    SystemApplicationDeleteKeywords(ssh_connection).get_system_application_delete(delete_input)
+
+
+@mark.p0
+def test_app_lifecycle_sys_controller():
+    """Test application install and remove lifecycle on system controller.
+
+    Test Steps:
+        - Get system controller SSH connection
+        - Upload application to system controller
+        - Validate application is uploaded
+        - Apply application on system controller
+        - Validate application is applied
+        - Remove application from system controller
+        - Delete application from system controller
+    """
+    app_name, app_path = get_test_app_config()
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+
+    install_application(ssh_connection, app_name, app_path)
+    remove_application(ssh_connection, app_name)
+
+
+@mark.p0
+@mark.subcloud_lab_is_simplex
+def test_app_lifecycle_simplex():
+    """Test application install and remove lifecycle on simplex subcloud.
+
+    Test Steps:
+        - Get simplex subcloud SSH connection
+        - Upload application to subcloud
+        - Validate application is uploaded
+        - Apply application on subcloud
+        - Validate application is applied
+        - Remove application from subcloud
+        - Delete application from subcloud
+    """
+    app_name, app_path = get_test_app_config()
+    subcloud_ssh = get_subcloud_connection("Simplex")
+
+    install_application(subcloud_ssh, app_name, app_path)
+    remove_application(subcloud_ssh, app_name)
+
+
+@mark.p0
+@mark.subcloud_lab_is_duplex
+def test_app_lifecycle_duplex():
+    """Test application install and remove lifecycle on duplex subcloud.
+
+    Test Steps:
+        - Get duplex subcloud SSH connection
+        - Upload application to subcloud
+        - Validate application is uploaded
+        - Apply application on subcloud
+        - Validate application is applied
+        - Remove application from subcloud
+        - Delete application from subcloud
+    """
+    app_name, app_path = get_test_app_config()
+    subcloud_ssh = get_subcloud_connection("Duplex")
+
+    install_application(subcloud_ssh, app_name, app_path)
+    remove_application(subcloud_ssh, app_name)
