@@ -16,6 +16,24 @@ from keywords.cloud_platform.system.host.system_host_list_keywords import System
 from keywords.cloud_platform.system.host.system_host_route_keywords import SystemHostRouteKeywords
 from keywords.cloud_platform.version_info.cloud_platform_version_manager import CloudPlatformVersionManagerClass
 from keywords.files.file_keywords import FileKeywords
+from keywords.k8s.pods.kubectl_get_pods_keywords import KubectlGetPodsKeywords
+
+
+def count_pods_on_subcloud(subcloud_ssh: SSHConnection) -> int:
+    """
+    Count the total number of pods running on a subcloud.
+
+    Args:
+        subcloud_ssh (SSHConnection): SSH connection to the subcloud.
+
+    Returns:
+        int: Total number of pods on the subcloud.
+    """
+    kubectl_keywords = KubectlGetPodsKeywords(subcloud_ssh)
+    pods_output = kubectl_keywords.get_pods_all_namespaces()
+    pod_count = len(pods_output.get_pods())
+    get_logger().log_info(f"Total pods on subcloud: {pod_count}")
+    return pod_count
 
 
 def verify_software_release(ssh_connection: SSHConnection) -> None:
@@ -158,6 +176,13 @@ def test_rehome_one_subcloud(request):
     subcloud_bootstrap_values = deployment_assets_config.get_subcloud_deployment_assets(subcloud_name).get_bootstrap_file()
     subcloud_install_values = deployment_assets_config.get_subcloud_deployment_assets(subcloud_name).get_install_file()
 
+    # All Validation before rehome operation
+
+    # Count pods before rehoming
+    subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
+    get_logger().log_info("Counting pods before rehoming")
+    pods_before_rehome = count_pods_on_subcloud(subcloud_ssh)
+
     # Perform rehome operation
     get_logger().log_info(f"Rehoming subcloud {subcloud_name} from {origin_system_controller_ssh} to {destination_system_controller_ssh}")
     perform_rehome_operation(origin_system_controller_ssh, destination_system_controller_ssh, subcloud_name, subcloud_bootstrap_values, subcloud_install_values)
@@ -168,3 +193,9 @@ def test_rehome_one_subcloud(request):
     validate_equals(rehomed_subcloud.get_availability(), "online", f"Subcloud {subcloud_name} is online.")
     validate_equals(rehomed_subcloud.get_sync(), "in-sync", f"Subcloud {subcloud_name} is in-sync.")
     get_logger().log_info(f"Rehome operation of subcloud {subcloud_name} completed successfully.")
+
+    # Count pods after rehoming
+    get_logger().log_info("Counting pods after rehoming")
+    pods_after_rehome = count_pods_on_subcloud(subcloud_ssh)
+    # Validate pod counts are the same
+    validate_equals(pods_before_rehome, pods_after_rehome, "Pod count should be the same before and after rehoming")
