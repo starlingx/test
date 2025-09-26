@@ -207,7 +207,7 @@ def test_dcmanager_subcloud_rename_negative_invalid_name(request) -> None:
     error_message, sc_name_original = dcmanager_subcloud_rename_negative(ssh_connection, sc_name_new)
 
     # Validate expected error message
-    validate_str_contains(error_message, "must contain alphabetic characters", f"Error message for invalid subcloud name: {sc_name_new}")
+    validate_str_contains(error_message, "must consist of lowercase alphanumeric characters", f"Error message for invalid subcloud name: {sc_name_new}")
 
     def teardown():
         dcm_sc_list_kw = DcManagerSubcloudListKeywords(ssh_connection)
