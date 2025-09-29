@@ -77,3 +77,39 @@ class HostProfileYamlKeywords:
         """
         FileKeywords(self.ssh_connection).upload_file(local_file, remote_file)
         os.remove(local_file)
+
+    def update_yaml_key(self, yaml_file: str, key: str, new_value: str) -> None:
+        """
+        Update a key in a YAML file.
+
+        Args:
+            yaml_file (str): Path to the YAML file.
+            key (str): The key to update.
+            new_value (str): New value to assign to the key.
+        """
+        with open(yaml_file, "r") as f:
+            data = yaml.safe_load(f)
+
+        if key not in data:
+            raise KeyError(f"Key '{key}' not found in {yaml_file}")
+
+        data[key] = new_value
+
+        with open(yaml_file, "w") as f:
+            yaml.safe_dump(data, f, default_flow_style=False)
+
+    def remove_yaml_key(self, yaml_file: str, key: str) -> None:
+        """
+        Remove a key from a YAML file if it exists.
+
+        Args:
+            yaml_file (str): Path to the YAML file.
+            key (str): The key to remove.
+        """
+        with open(yaml_file, "r") as f:
+            data = yaml.safe_load(f)
+
+        data.pop(key, None)
+
+        with open(yaml_file, "w") as f:
+            yaml.safe_dump(data, f, default_flow_style=False)
