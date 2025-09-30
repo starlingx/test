@@ -49,3 +49,7 @@ class IPMIToolChassisPowerKeywords(BaseKeyword):
         for controller in controllers:
             self._power_off(controller.get_bm_ip(), controller.get_bm_username(), bm_password)
             self.bm_ip = controller.get_bm_ip()
+
+    def power_cycle(self):
+        """Powers off/on the host"""
+        self.ssh_connection.send(f"ipmitool -I lanplus -H {self.bm_ip} -U {self.bm_username} -P {self.bm_password} chassis power cycle")

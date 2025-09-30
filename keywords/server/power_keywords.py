@@ -139,3 +139,12 @@ class PowerKeywords(BaseKeyword):
             time.sleep(5)
 
         return False
+
+    def power_cycle(self, host_name: str):
+        """
+        Powers cycle the host
+
+        Args:
+            host_name (str): the name of the host
+        """
+        IPMIToolChassisPowerKeywords(self.ssh_connection, host_name).power_cycle()
