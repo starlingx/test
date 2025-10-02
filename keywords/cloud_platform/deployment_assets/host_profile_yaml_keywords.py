@@ -34,11 +34,20 @@ class HostProfileYamlKeywords:
             list_doc = list(yaml.safe_load_all(stream))
 
         for document in list_doc:
-            metadata_name = document["metadata"]["name"]
-            if metadata_name == searched_metadata:
-                for item in document["spec"]["storage"]["filesystems"]:
-                    if item["name"] == fs:
-                        item["size"] = size
+            if "metadata" in document.keys():
+                try:
+                    metadata = document["metadata"]
+                    if "name" in metadata.keys():
+                        metadata_name = document["metadata"]["name"]
+                        if metadata_name == searched_metadata:
+                            for item in document["spec"]["storage"]["filesystems"]:
+                                if item["name"] == fs:
+                                    item["size"] = size
+                except TypeError:
+                    pass
+
+        if "status" not in list_doc[-1].keys():
+            list_doc[-1]["status"] = {"deploymentScope": "principal"}
 
         self.write_yaml(list(list_doc), local_filename)
         self.upload_file(local_filename, remote_filename)
