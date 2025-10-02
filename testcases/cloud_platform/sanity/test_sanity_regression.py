@@ -250,6 +250,7 @@ def test_upload_charts_via_helm_upload_simplex():
     file_keywords = FileKeywords(ssh_connection)
     if file_keywords.file_exists(f"{helm_chart_location}/{helm_file}"):
         file_keywords.delete_file(f"{helm_chart_location}/{helm_file}")
+        HelmKeywords(ssh_connection).helm_repo_index(f"{helm_chart_location}")
 
     # upload file to lab
     file_keywords.upload_file(get_stx_resource_path(f"resources/cloud_platform/containers/{helm_file}"), f"/home/sysadmin/{helm_file}", overwrite=True)
@@ -283,6 +284,7 @@ def test_upload_charts_via_helm_upload_standby_controller(request):
     file_keywords = FileKeywords(ssh_connection)
     if file_keywords.file_exists(f"{helm_chart_location}/{helm_file}"):
         file_keywords.delete_file(f"{helm_chart_location}/{helm_file}")
+        HelmKeywords(ssh_connection).helm_repo_index(f"{helm_chart_location}")
 
     # upload file to lab
     file_keywords.upload_file(get_stx_resource_path(f"resources/cloud_platform/containers/{helm_file}"), f"/home/sysadmin/{helm_file}", overwrite=True)
