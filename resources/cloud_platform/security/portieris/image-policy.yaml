@@ -1,0 +1,12 @@
+apiVersion: portieris.cloud.ibm.com/v1
+kind: ImagePolicy
+metadata:
+  name: allow-custom
+  namespace: {{ namespace }}
+spec:
+  repositories:
+    - name: "{{ registry_server }}:{{ registry_port }}/{{ signed_repo }}/*"
+      policy:
+        trust:
+          enabled: true
+          trustServer: "{{ trust_server }}"
