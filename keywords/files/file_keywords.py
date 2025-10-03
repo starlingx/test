@@ -1,10 +1,10 @@
-import time
 import math
+import time
 
 from framework.exceptions.keyword_exception import KeywordException
 from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
-from framework.validation.validation import validate_greater_than, validate_equals
+from framework.validation.validation import validate_equals
 from keywords.base_keyword import BaseKeyword
 
 
@@ -178,9 +178,8 @@ class FileKeywords(BaseKeyword):
             grep_pattern (str): Pattern to be searched.
 
         Returns:
-            matches (int): Number of matches found.
+            int: Number of matches found.
         """
-
         matches = int(self.ssh_connection.send(f"tar -tf {file_path} | grep {grep_pattern} | wc -l")[0].strip("\n"))
         return matches
 
@@ -209,6 +208,29 @@ class FileKeywords(BaseKeyword):
         except Exception as e:
             get_logger().log_error(f"Failed to check file existence at {path}: {e}")
             raise KeywordException(f"Failed to check file existence at {path}: {e}")
+
+    def concatenate_files_with_sudo(self, file1_path: str, file2_path: str, output_path: str) -> bool:
+        """
+        Concatenate two files and store the result in a specified location using sudo.
+
+        Args:
+            file1_path (str): Path to the first file.
+            file2_path (str): Path to the second file.
+            output_path (str): Path where the concatenated result should be stored.
+
+        Returns:
+            bool: True if concatenation is successful, False otherwise.
+
+        Raises:
+            KeywordException: If there is an error executing the command.
+        """
+        try:
+            cmd = f"cat {file1_path} {file2_path} > {output_path}"
+            self.ssh_connection.send_as_sudo(cmd)
+            return self.validate_file_exists_with_sudo(output_path)
+        except Exception as e:
+            get_logger().log_error(f"Failed to concatenate files {file1_path} and {file2_path} to {output_path}: {e}")
+            raise KeywordException(f"Failed to concatenate files {file1_path} and {file2_path} to {output_path}: {e}")
 
     def create_directory(self, dir_path: str) -> bool:
         """
@@ -362,14 +384,14 @@ class FileKeywords(BaseKeyword):
         """
         self.ssh_connection.send(f"cp {src_file} {dest_file}")
 
-    def create_file_to_fill_disk_space(self, dest_dir: str = "/home/sysadmin"):
+    def create_file_to_fill_disk_space(self, dest_dir: str = "/home/sysadmin") -> str:
         """Creates a file with the available space of the desired directory.
 
         Args:
             dest_dir (str): Directory where the file is created. Default to home dir.
 
         Returns:
-            path_to_file (str): Created file path.
+            str: Created file path.
         """
         available_space = self.ssh_connection.send(f"echo $(($(stat -f --format=\"%a*%S\" {dest_dir})))| awk '{{print $1 / (1024*1024*1024) }}'")[0].strip("\n")
         rounded_size = math.ceil(float(available_space))

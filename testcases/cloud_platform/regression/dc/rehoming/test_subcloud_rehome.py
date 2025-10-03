@@ -4,6 +4,7 @@ from config.configuration_manager import ConfigurationManager
 from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
 from framework.validation.validation import validate_equals
+from keywords.cloud_platform.dcmanager.dcmanager_kube_rootca_update_strategy_keywords import DcmanagerKubeRootcaUpdateStrategyKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_add_keywords import DcManagerSubcloudAddKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_delete_keywords import DcManagerSubcloudDeleteKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_list_keywords import DcManagerSubcloudListKeywords
@@ -17,7 +18,7 @@ from keywords.cloud_platform.version_info.cloud_platform_version_manager import 
 from keywords.files.file_keywords import FileKeywords
 
 
-def verify_software_release(ssh_connection: SSHConnection):
+def verify_software_release(ssh_connection: SSHConnection) -> None:
     """
     Verify that the software release image is available on the given system controller.
 
@@ -34,7 +35,7 @@ def verify_software_release(ssh_connection: SSHConnection):
     validate_equals(is_sig_exist, True, f"Sig file exists in path {path}.")
 
 
-def update_subcloud_assets(ssh_connection: SSHConnection, subcloud_bootstrap_values: str, subcloud_install_values: str, systemcontroller_gateway_address: str):
+def update_subcloud_assets(ssh_connection: SSHConnection, subcloud_bootstrap_values: str, subcloud_install_values: str, systemcontroller_gateway_address: str) -> None:
     """
     Update the subcloud assets files before rehome.
 
@@ -53,7 +54,7 @@ def update_subcloud_assets(ssh_connection: SSHConnection, subcloud_bootstrap_val
     yaml_file.upload_file(file, subcloud_install_values)
 
 
-def sync_deployment_assets_between_system_controllers(origin_ssh_connection: SSHConnection, destination_ssh_connection: SSHConnection, subcloud_name: str, subcloud_bootstrap_values: str, subcloud_install_values: str):
+def sync_deployment_assets_between_system_controllers(origin_ssh_connection: SSHConnection, destination_ssh_connection: SSHConnection, subcloud_name: str, subcloud_bootstrap_values: str, subcloud_install_values: str) -> None:
     """
     Synchronize deployment assets files for a given subcloud between two system controllers.
 
@@ -71,7 +72,29 @@ def sync_deployment_assets_between_system_controllers(origin_ssh_connection: SSH
     update_subcloud_assets(destination_ssh_connection, subcloud_bootstrap_values, subcloud_install_values, systemcontroller_gateway_address)
 
 
-def perform_rehome_operation(origin_ssh_connection: SSHConnection, destination_ssh_connection: SSHConnection, subcloud_name: str, subcloud_bootstrap_values: str, subcloud_install_values: str):
+def get_subcloud_in_sync(ssh_connection: SSHConnection, subcloud_name: str) -> None:
+    """
+    Ensure that the specified subcloud reaches 'in-sync' status.
+
+    Args:
+        ssh_connection (SSHConnection): SSH connection to the target system controller.
+        subcloud_name (str): Name of the subcloud to make it in-sync.
+    """
+    file_keywords = FileKeywords(ssh_connection)
+    path1 = "/etc/kubernetes/pki/ca.crt"
+    path2 = "/etc/kubernetes/pki/ca.key"
+    is_crt_exist = file_keywords.validate_file_exists_with_sudo(path1)
+    validate_equals(is_crt_exist, True, f"Crt file exists in path {path1}.")
+    is_key_exist = file_keywords.validate_file_exists_with_sudo(path2)
+    validate_equals(is_key_exist, True, f"Key file exists in path {path2}.")
+    file_keywords.concatenate_files_with_sudo(path1, path2, "/tmp/ca.pem")
+    dcm_krc_update_strategy = DcmanagerKubeRootcaUpdateStrategyKeywords(ssh_connection)
+    dcm_krc_update_strategy.dcmanager_kube_rootca_update_strategy_create(cert_file="/tmp/ca.pem")
+    dcm_krc_update_strategy.dcmanager_kube_rootca_update_strategy_apply()
+    DcManagerSubcloudListKeywords(ssh_connection).validate_subcloud_sync_status(subcloud_name, expected_sync_status="in-sync")
+
+
+def perform_rehome_operation(origin_ssh_connection: SSHConnection, destination_ssh_connection: SSHConnection, subcloud_name: str, subcloud_bootstrap_values: str, subcloud_install_values: str) -> None:
     """
     Rehome a subcloud from the origin system controller to the destination system controller.
 
@@ -82,7 +105,6 @@ def perform_rehome_operation(origin_ssh_connection: SSHConnection, destination_s
         subcloud_bootstrap_values (str): Path to the subcloud bootstrap values file.
         subcloud_install_values (str): Path to the subcloud install values file.
     """
-
     # Ensure software image load is available on destination system controller.
     verify_software_release(destination_ssh_connection)
 
@@ -102,6 +124,9 @@ def perform_rehome_operation(origin_ssh_connection: SSHConnection, destination_s
 
     get_logger().log_info(f"Deleting subcloud from {origin_ssh_connection}")
     DcManagerSubcloudDeleteKeywords(origin_ssh_connection).dcmanager_subcloud_delete(subcloud_name)
+
+    get_logger().log_info(f"Getting subcloud {subcloud_name} in-sync on {destination_ssh_connection}")
+    get_subcloud_in_sync(destination_ssh_connection, subcloud_name)
 
 
 @mark.p2
