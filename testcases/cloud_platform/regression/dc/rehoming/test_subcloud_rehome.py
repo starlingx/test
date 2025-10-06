@@ -12,11 +12,79 @@ from keywords.cloud_platform.dcmanager.dcmanager_subcloud_manager_keywords impor
 from keywords.cloud_platform.deployment_assets.host_profile_yaml_keywords import HostProfileYamlKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.cloud_platform.sync_files.sync_deployment_assets import SyncDeploymentAssets
+from keywords.cloud_platform.system.application.object.system_application_upload_input import SystemApplicationUploadInput
+from keywords.cloud_platform.system.application.system_application_apply_keywords import SystemApplicationApplyKeywords
+from keywords.cloud_platform.system.application.system_application_list_keywords import SystemApplicationListKeywords
+from keywords.cloud_platform.system.application.system_application_upload_keywords import SystemApplicationUploadKeywords
 from keywords.cloud_platform.system.host.system_host_list_keywords import SystemHostListKeywords
 from keywords.cloud_platform.system.host.system_host_route_keywords import SystemHostRouteKeywords
 from keywords.cloud_platform.version_info.cloud_platform_version_manager import CloudPlatformVersionManagerClass
 from keywords.files.file_keywords import FileKeywords
 from keywords.k8s.pods.kubectl_get_pods_keywords import KubectlGetPodsKeywords
+
+
+def ensure_oidc_app_installed(subcloud_ssh: SSHConnection) -> bool:
+    """
+    Ensure OIDC app is installed on subcloud. Install if not present.
+
+    Args:
+        subcloud_ssh (SSHConnection): SSH connection to the subcloud.
+
+    Returns:
+        bool: True if app was already installed, False if newly installed.
+    """
+    app_name = "oidc-auth-apps"
+    app_path = "/usr/local/share/applications/helm/"
+
+    # Check if OIDC app is already installed
+    app_list_keywords = SystemApplicationListKeywords(subcloud_ssh)
+    app_list = app_list_keywords.get_system_application_list()
+
+    if app_list.is_application_in_output(app_name):
+        app = app_list.get_application_by_name(app_name)
+        if app.get_status() == "applied":
+            get_logger().log_info(f"OIDC app {app_name} is already installed and applied")
+            return True
+
+    # Install OIDC app if not present or not applied
+    get_logger().log_info(f"Installing OIDC app {app_name} on subcloud")
+
+    upload_input = SystemApplicationUploadInput()
+    upload_input.set_app_name(app_name)
+    upload_input.set_force(True)
+    upload_input.set_tar_file_path(app_path + app_name + "*")
+
+    # Upload application
+    upload_output = SystemApplicationUploadKeywords(subcloud_ssh).system_application_upload(upload_input)
+    app_object = upload_output.get_system_application_object()
+    validate_equals(app_object.get_status(), "uploaded", f"OIDC app {app_name} should be uploaded")
+
+    # Apply application
+    apply_output = SystemApplicationApplyKeywords(subcloud_ssh).system_application_apply(app_name, 3600, 30)
+    app_object = apply_output.get_system_application_object()
+    validate_equals(app_object.get_status(), "applied", f"OIDC app {app_name} should be applied")
+
+    return False
+
+
+def validate_oidc_app_installed(subcloud_ssh: SSHConnection) -> None:
+    """
+    Validate that OIDC app is installed and applied on subcloud.
+
+    Args:
+        subcloud_ssh (SSHConnection): SSH connection to the subcloud.
+    """
+    app_name = "oidc-auth-apps"
+
+    app_list_keywords = SystemApplicationListKeywords(subcloud_ssh)
+    app_list = app_list_keywords.get_system_application_list()
+
+    validate_equals(app_list.is_application_in_output(app_name), True, f"OIDC app {app_name} should be present")
+
+    app = app_list.get_application_by_name(app_name)
+    validate_equals(app.get_status(), "applied", f"OIDC app {app_name} should be applied after rehoming")
+
+    get_logger().log_info(f"OIDC app {app_name} validation successful")
 
 
 def count_pods_on_subcloud(subcloud_ssh: SSHConnection) -> int:
@@ -155,11 +223,13 @@ def test_rehome_one_subcloud(request):
     Verify rehome one subcloud between two system controllers.
 
     Test Steps:
-        - Get the lowest subcloud (the subcloud with the lowest id).
-        - Get the subcloud bootstrap and install values files.
-        - Synchronize the deployment assets files between both system controllers.
-        - Rehome subcloud from origin to destination system controller.
-        - Validate that the system host route list only has one route.
+        - Get the lowest subcloud (the subcloud with the lowest id)
+        - Ensure OIDC app is installed on subcloud before rehoming
+        - Count pods on subcloud before rehoming
+        - Perform rehoming operation between system controllers
+        - Validate OIDC app is still installed after rehoming
+        - Count pods on subcloud after rehoming
+        - Validate pod counts are the same before and after rehoming
     """
     origin_system_controller_ssh = LabConnectionKeywords().get_active_controller_ssh()
     destination_system_controller_ssh = LabConnectionKeywords().get_secondary_active_controller_ssh()
@@ -177,9 +247,13 @@ def test_rehome_one_subcloud(request):
     subcloud_install_values = deployment_assets_config.get_subcloud_deployment_assets(subcloud_name).get_install_file()
 
     # All Validation before rehome operation
+    subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
+
+    # Ensure OIDC app is installed before rehoming
+    get_logger().log_info("Ensuring OIDC app is installed before rehoming")
+    ensure_oidc_app_installed(subcloud_ssh)
 
     # Count pods before rehoming
-    subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
     get_logger().log_info("Counting pods before rehoming")
     pods_before_rehome = count_pods_on_subcloud(subcloud_ssh)
 
@@ -193,6 +267,10 @@ def test_rehome_one_subcloud(request):
     validate_equals(rehomed_subcloud.get_availability(), "online", f"Subcloud {subcloud_name} is online.")
     validate_equals(rehomed_subcloud.get_sync(), "in-sync", f"Subcloud {subcloud_name} is in-sync.")
     get_logger().log_info(f"Rehome operation of subcloud {subcloud_name} completed successfully.")
+
+    # Validate OIDC app is still installed after rehoming
+    get_logger().log_info("Validating OIDC app is installed after rehoming")
+    validate_oidc_app_installed(subcloud_ssh)
 
     # Count pods after rehoming
     get_logger().log_info("Counting pods after rehoming")
