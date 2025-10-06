@@ -1,6 +1,7 @@
 from pytest import mark
 
 from config.configuration_manager import ConfigurationManager
+from config.lab.objects.lab_type_enum import LabTypeEnum
 from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
 from framework.validation.validation import validate_equals
@@ -216,14 +217,14 @@ def perform_rehome_operation(origin_ssh_connection: SSHConnection, destination_s
 
 
 @mark.p2
-@mark.lab_has_subcloud
+@mark.subcloud_lab_is_duplex
 @mark.lab_has_secondary_system_controller
-def test_rehome_one_subcloud(request):
+def test_rehome_duplex_subcloud(request):
     """
     Verify rehome one subcloud between two system controllers.
 
     Test Steps:
-        - Get the lowest subcloud (the subcloud with the lowest id)
+        - Get the duplex subcloud.
         - Ensure OIDC app is installed on subcloud before rehoming
         - Count pods on subcloud before rehoming
         - Perform rehoming operation between system controllers
@@ -237,8 +238,8 @@ def test_rehome_one_subcloud(request):
 
     # Gets the lowest subcloud (the subcloud with the lowest id).
     get_logger().log_info("Getting subcloud with the lowest id")
-    lowest_subcloud = dcm_sc_list_kw_origin.get_dcmanager_subcloud_list().get_healthy_subcloud_with_lowest_id()
-    subcloud_name = lowest_subcloud.get_name()
+    duplex_subcloud = dcm_sc_list_kw_origin.get_dcmanager_subcloud_list().get_healthy_subcloud_by_type(LabTypeEnum.DUPLEX.value)
+    subcloud_name = duplex_subcloud.get_name()
 
     # Gets the subcloud bootstrap and install values files
     get_logger().log_info(f"Getting deployment assets for subcloud {subcloud_name}")
