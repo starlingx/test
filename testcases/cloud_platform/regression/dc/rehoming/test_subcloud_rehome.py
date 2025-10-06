@@ -11,6 +11,7 @@ from keywords.cloud_platform.dcmanager.dcmanager_subcloud_delete_keywords import
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_list_keywords import DcManagerSubcloudListKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_manager_keywords import DcManagerSubcloudManagerKeywords
 from keywords.cloud_platform.deployment_assets.host_profile_yaml_keywords import HostProfileYamlKeywords
+from keywords.cloud_platform.health.health_keywords import HealthKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.cloud_platform.sync_files.sync_deployment_assets import SyncDeploymentAssets
 from keywords.cloud_platform.system.application.object.system_application_upload_input import SystemApplicationUploadInput
@@ -22,6 +23,7 @@ from keywords.cloud_platform.system.host.system_host_route_keywords import Syste
 from keywords.cloud_platform.version_info.cloud_platform_version_manager import CloudPlatformVersionManagerClass
 from keywords.files.file_keywords import FileKeywords
 from keywords.k8s.pods.kubectl_get_pods_keywords import KubectlGetPodsKeywords
+from testcases.cloud_platform.regression.dc.backup_restore.test_verify_backup_file import teardown_central, verify_backup_central
 
 
 def ensure_oidc_app_installed(subcloud_ssh: SSHConnection) -> bool:
@@ -216,6 +218,20 @@ def perform_rehome_operation(origin_ssh_connection: SSHConnection, destination_s
     get_subcloud_in_sync(destination_ssh_connection, subcloud_name)
 
 
+def verify_backup_central_duplex(central_ssh: SSHConnection, subcloud_ssh: SSHConnection, subcloud_name: str):
+    """
+    Verify backup of a subcloud on Central Cloud.
+
+    Args:
+        central_ssh (SSHConnection): SSH connection to the active controller.
+        subcloud_ssh (SSHConnection): SSH connection to the subcloud.
+        subcloud_name (str): subcloud name to backup.
+    """
+    get_logger().log_info(f"Create {subcloud_name} backup on Central Cloud")
+    HealthKeywords(subcloud_ssh).validate_healty_cluster()
+    verify_backup_central(central_ssh, subcloud_name)
+
+
 @mark.p2
 @mark.subcloud_lab_is_duplex
 @mark.lab_has_secondary_system_controller
@@ -278,3 +294,7 @@ def test_rehome_duplex_subcloud(request):
     pods_after_rehome = count_pods_on_subcloud(subcloud_ssh)
     # Validate pod counts are the same
     validate_equals(pods_before_rehome, pods_after_rehome, "Pod count should be the same before and after rehoming")
+
+    # Verify backup on Central Cloud after rehoming
+    request.addfinalizer(teardown_central)
+    verify_backup_central_duplex(destination_system_controller_ssh, subcloud_ssh, subcloud_name)
