@@ -26,8 +26,13 @@ class DcmanagerKubeRootcaUpdateStrategyShowOutput:
 
         if self.is_valid_output(output_values):
             self.dcmanager_kube_rootca_update_strategy_step = DcmanagerKubeRootcaUpdateStrategyShowObject()
+            self.dcmanager_kube_rootca_update_strategy_step.set_strategy_type(output_values["strategy type"])
+            self.dcmanager_kube_rootca_update_strategy_step.set_subcloud_apply_type(output_values["subcloud apply type"])
+            self.dcmanager_kube_rootca_update_strategy_step.set_max_parallel_subclouds(int(output_values["max parallel subclouds"]))
             self.dcmanager_kube_rootca_update_strategy_step.set_state(output_values["state"])
-
+            self.dcmanager_kube_rootca_update_strategy_step.set_stop_on_failure(output_values["stop on failure"])
+            self.dcmanager_kube_rootca_update_strategy_step.set_created_at(output_values["created_at"])
+            self.dcmanager_kube_rootca_update_strategy_step.set_updated_at(output_values["updated_at"])
         else:
             raise KeywordException(f"The output line {output_values} was not valid")
 
