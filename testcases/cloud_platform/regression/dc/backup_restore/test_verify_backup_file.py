@@ -80,15 +80,14 @@ def teardown_local(subcloud_name: str):
     FileKeywords(subcloud_ssh).delete_folder_with_sudo(f"{subcloud_name}_platform_backup_*.tgz")
 
 
-def verify_backup_local_custom_path(subcloud_name: str):
+def verify_backup_local_custom_path(central_ssh: SSHConnection, subcloud_ssh: SSHConnection, subcloud_name: str):
     """Verify backup files are stored locally to custom directory
 
     Args:
+        central_ssh (SSHConnection): SSH connection to the active controller
+        subcloud_ssh (SSHConnection): SSH connection to the subcloud
         subcloud_name (str): subcloud name to backup
     """
-    central_ssh = LabConnectionKeywords().get_active_controller_ssh()
-    subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
-
     # Gets the lowest subcloud sysadmin password needed for backup creation.
     lab_config = ConfigurationManager.get_lab_config().get_subcloud(subcloud_name)
     subcloud_password = lab_config.get_admin_credentials().get_password()
@@ -194,7 +193,7 @@ def test_verify_backup_local_simplex(request):
         teardown_local(subcloud.get_name())
 
     request.addfinalizer(teardown)
-    verify_backup_local_custom_path(subcloud.get_name())
+    verify_backup_local_custom_path(central_ssh, subcloud_ssh, subcloud.get_name())
 
 
 @mark.p0
@@ -223,7 +222,7 @@ def test_verify_backup_local_duplex(request):
         teardown_local(subcloud.get_name())
 
     request.addfinalizer(teardown)
-    verify_backup_local_custom_path(subcloud.get_name())
+    verify_backup_local_custom_path(central_ssh, subcloud_ssh, subcloud.get_name())
 
 
 @mark.lab_has_subcloud

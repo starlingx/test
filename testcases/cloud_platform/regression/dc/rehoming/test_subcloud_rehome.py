@@ -23,7 +23,7 @@ from keywords.cloud_platform.system.host.system_host_route_keywords import Syste
 from keywords.cloud_platform.version_info.cloud_platform_version_manager import CloudPlatformVersionManagerClass
 from keywords.files.file_keywords import FileKeywords
 from keywords.k8s.pods.kubectl_get_pods_keywords import KubectlGetPodsKeywords
-from testcases.cloud_platform.regression.dc.backup_restore.test_verify_backup_file import teardown_central, verify_backup_central
+from testcases.cloud_platform.regression.dc.backup_restore.test_verify_backup_file import teardown_central, teardown_local, verify_backup_central, verify_backup_local_custom_path
 
 
 def ensure_oidc_app_installed(subcloud_ssh: SSHConnection) -> bool:
@@ -232,6 +232,20 @@ def verify_backup_central_duplex(central_ssh: SSHConnection, subcloud_ssh: SSHCo
     verify_backup_central(central_ssh, subcloud_name)
 
 
+def verify_backup_local_duplex(central_ssh: SSHConnection, subcloud_ssh: SSHConnection, subcloud_name: str):
+    """
+    Verify backup of a subcloud on Local Cloud.
+
+    Args:
+        central_ssh (SSHConnection): SSH connection to the active controller.
+        subcloud_ssh (SSHConnection): SSH connection to the subcloud.
+        subcloud_name (str): subcloud name to backup.
+    """
+    get_logger().log_info(f"Create {subcloud_name} backup on Local Cloud")
+    HealthKeywords(subcloud_ssh).validate_healty_cluster()
+    verify_backup_local_custom_path(central_ssh, subcloud_ssh, subcloud_name)
+
+
 @mark.p2
 @mark.subcloud_lab_is_duplex
 @mark.lab_has_secondary_system_controller
@@ -298,3 +312,7 @@ def test_rehome_duplex_subcloud(request):
     # Verify backup on Central Cloud after rehoming
     request.addfinalizer(teardown_central)
     verify_backup_central_duplex(destination_system_controller_ssh, subcloud_ssh, subcloud_name)
+
+    # Verify backup on Local Cloud after rehoming
+    request.addfinalizer(teardown_local)
+    verify_backup_local_duplex(destination_system_controller_ssh, subcloud_ssh, subcloud_name)
