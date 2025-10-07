@@ -28,13 +28,30 @@ class TestScannerUploader:
         """
 
         test_info_operation = TestInfoOperation()
-        scanned_tests = self.scan_for_tests(repo_root)
+        scanned_tests: List[TestCase] = self.scan_for_tests(repo_root)
 
         # Filter to find only the test cases in the desired folders.
         filtered_test_cases = []
         for test in scanned_tests:
             if any(test.get_pytest_node_id().startswith(test_folder) for test_folder in self.test_folders):
                 filtered_test_cases.append(test)
+
+        tests_in_db = test_info_operation.get_all_active_tests()
+
+        # get all tests in the repo, then compare with db list to get a list of tests that are not in the repo
+        tests_not_in_repo = []
+        for db_test in tests_in_db:
+            is_test_in_repo = False
+            for repo_test in filtered_test_cases:
+                if (db_test.get_test_name() == repo_test.get_test_name()
+                        and db_test.get_test_suite() == repo_test.get_test_suite()):
+                    is_test_in_repo = True
+                    break
+            if not is_test_in_repo:
+                tests_not_in_repo.append(db_test)
+
+        # mark all tests that do not appear in the repo as inactive
+        test_info_operation.set_tests_inactive(list(map(lambda inactive_test: inactive_test.get_test_info_id(), tests_not_in_repo)))
 
         # Upload/Update the test cases in the database
         for test in filtered_test_cases:
@@ -51,7 +68,7 @@ class TestScannerUploader:
             self.update_pytest_node_id(test, database_testcase)
             self.update_capability(test, database_testcase.get_test_info_id())
 
-    def scan_for_tests(self, repo_root: str) -> [TestCase]:
+    def scan_for_tests(self, repo_root: str) -> List[TestCase]:
         """
         Scan for tests
 
