@@ -363,6 +363,7 @@ class DcManagerSubcloudBackupKeywords(BaseKeyword):
             function_to_execute=check_backup_deleted,
             expected_value=f"Backup successfully deleted from {path} for {subcloud}",
             validation_description=f"Backup deletion for subcloud {subcloud} completed.",
+            timeout=60
         )
 
     def wait_for_backup_status_complete(
