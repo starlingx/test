@@ -20,6 +20,7 @@ from keywords.cloud_platform.system.application.system_application_list_keywords
 from keywords.cloud_platform.system.application.system_application_upload_keywords import SystemApplicationUploadKeywords
 from keywords.cloud_platform.system.host.system_host_list_keywords import SystemHostListKeywords
 from keywords.cloud_platform.system.host.system_host_route_keywords import SystemHostRouteKeywords
+from keywords.cloud_platform.system.host.system_host_swact_keywords import SystemHostSwactKeywords
 from keywords.cloud_platform.version_info.cloud_platform_version_manager import CloudPlatformVersionManagerClass
 from keywords.files.file_keywords import FileKeywords
 from keywords.k8s.pods.kubectl_get_pods_keywords import KubectlGetPodsKeywords
@@ -218,7 +219,21 @@ def perform_rehome_operation(origin_ssh_connection: SSHConnection, destination_s
     get_subcloud_in_sync(destination_ssh_connection, subcloud_name)
 
 
-def verify_backup_central_duplex(central_ssh: SSHConnection, subcloud_ssh: SSHConnection, subcloud_name: str):
+def verify_subcloud_healthy(ssh_connection: SSHConnection, subcloud_name: str) -> None:
+    """
+    Verify that the specified subcloud is healthy.
+
+    Args:
+        ssh_connection (SSHConnection): SSH connection to the system controller.
+        subcloud_name (str): Name of the subcloud.
+    """
+    subcloud = DcManagerSubcloudListKeywords(ssh_connection).get_dcmanager_subcloud_list().get_subcloud_by_name(subcloud_name)
+    validate_equals(subcloud.get_management(), "managed", f"Subcloud {subcloud_name} is managed.")
+    validate_equals(subcloud.get_availability(), "online", f"Subcloud {subcloud_name} is online.")
+    validate_equals(subcloud.get_sync(), "in-sync", f"Subcloud {subcloud_name} is in-sync.")
+
+
+def verify_backup_central_duplex(central_ssh: SSHConnection, subcloud_ssh: SSHConnection, subcloud_name: str) -> None:
     """
     Verify backup of a subcloud on Central Cloud.
 
@@ -232,7 +247,7 @@ def verify_backup_central_duplex(central_ssh: SSHConnection, subcloud_ssh: SSHCo
     verify_backup_central(central_ssh, subcloud_name)
 
 
-def verify_backup_local_duplex(central_ssh: SSHConnection, subcloud_ssh: SSHConnection, subcloud_name: str):
+def verify_backup_local_duplex(central_ssh: SSHConnection, subcloud_ssh: SSHConnection, subcloud_name: str) -> None:
     """
     Verify backup of a subcloud on Local Cloud.
 
@@ -244,6 +259,27 @@ def verify_backup_local_duplex(central_ssh: SSHConnection, subcloud_ssh: SSHConn
     get_logger().log_info(f"Create {subcloud_name} backup on Local Cloud")
     HealthKeywords(subcloud_ssh).validate_healty_cluster()
     verify_backup_local_custom_path(central_ssh, subcloud_ssh, subcloud_name)
+
+
+def dc_swact(ssh_connection: SSHConnection) -> None:
+    """
+    Perform a swact operation between active and standby controllers on subcloud.
+
+    Args:
+        ssh_connection (SSHConnection): SSH connection to the active controller.
+    """
+    system_host_list_keywords = SystemHostListKeywords(ssh_connection)
+    active_controller = system_host_list_keywords.get_active_controller()
+    standby_controller = system_host_list_keywords.get_standby_controller()
+    get_logger().log_info(f"A 'swact' operation is about to be executed in {ssh_connection}. Current controllers' configuration before this operation: Active controller = {active_controller.get_host_name()}, Standby controller = {standby_controller.get_host_name()}.")
+    system_host_swact_keywords = SystemHostSwactKeywords(ssh_connection)
+    system_host_swact_keywords.host_swact()
+
+    active_controller_after_swact = system_host_list_keywords.get_active_controller()
+    standby_controller_after_swact = system_host_list_keywords.get_standby_controller()
+
+    validate_equals(active_controller.get_id(), standby_controller_after_swact.get_id(), "Validate that active controller is now standby")
+    validate_equals(standby_controller.get_id(), active_controller_after_swact.get_id(), "Validate that standby controller is now active")
 
 
 @mark.p2
@@ -266,8 +302,8 @@ def test_rehome_duplex_subcloud(request):
     destination_system_controller_ssh = LabConnectionKeywords().get_secondary_active_controller_ssh()
     dcm_sc_list_kw_origin = DcManagerSubcloudListKeywords(origin_system_controller_ssh)
 
-    # Gets the lowest subcloud (the subcloud with the lowest id).
-    get_logger().log_info("Getting subcloud with the lowest id")
+    # Gets the duplex subcloud.
+    get_logger().log_info("Getting duplex subcloud")
     duplex_subcloud = dcm_sc_list_kw_origin.get_dcmanager_subcloud_list().get_healthy_subcloud_by_type(LabTypeEnum.DUPLEX.value)
     subcloud_name = duplex_subcloud.get_name()
 
@@ -293,10 +329,8 @@ def test_rehome_duplex_subcloud(request):
     perform_rehome_operation(origin_system_controller_ssh, destination_system_controller_ssh, subcloud_name, subcloud_bootstrap_values, subcloud_install_values)
 
     # Validations after rehome operation
-    rehomed_subcloud = DcManagerSubcloudListKeywords(destination_system_controller_ssh).get_dcmanager_subcloud_list().get_subcloud_by_name(subcloud_name)
-    validate_equals(rehomed_subcloud.get_management(), "managed", f"Subcloud {subcloud_name} is managed.")
-    validate_equals(rehomed_subcloud.get_availability(), "online", f"Subcloud {subcloud_name} is online.")
-    validate_equals(rehomed_subcloud.get_sync(), "in-sync", f"Subcloud {subcloud_name} is in-sync.")
+    get_logger().log_info(f"Validating subcloud {subcloud_name} is healthy after rehome")
+    verify_subcloud_healthy(destination_system_controller_ssh, subcloud_name)
     get_logger().log_info(f"Rehome operation of subcloud {subcloud_name} completed successfully.")
 
     # Validate OIDC app is still installed after rehoming
@@ -316,3 +350,12 @@ def test_rehome_duplex_subcloud(request):
     # Verify backup on Local Cloud after rehoming
     request.addfinalizer(teardown_local)
     verify_backup_local_duplex(destination_system_controller_ssh, subcloud_ssh, subcloud_name)
+
+    # Validate swact in both directions (controller-0 -> controller-1 and controller-1 -> controller-0)
+    get_logger().log_info("Performing swact operation on rehomed duplex subcloud")
+    dc_swact(subcloud_ssh)
+    verify_subcloud_healthy(destination_system_controller_ssh, subcloud_name)
+
+    # Validate swact back to original state
+    dc_swact(subcloud_ssh)
+    verify_subcloud_healthy(destination_system_controller_ssh, subcloud_name)
