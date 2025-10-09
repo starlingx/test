@@ -309,6 +309,7 @@ class DcManagerSubcloudListOutput:
         dcmanager_subcloud_list_object_filter = DcManagerSubcloudListObjectFilter.get_healthy_subcloud_filter()
         subclouds = self.get_dcmanager_subcloud_list_objects_filtered(dcmanager_subcloud_list_object_filter)
         subclouds_by_type = []
+        sc_defined_in_ace_config = [sc.get_lab_name() for sc in ConfigurationManager.get_lab_config().get_subclouds()]
 
         if not subclouds:
             error_message = "In this DC system, there is no subcloud managed, online, deploy completed, and out-of-sync."
@@ -316,6 +317,10 @@ class DcManagerSubcloudListOutput:
             raise ValueError(error_message)
 
         for sc in subclouds:
+            if sc.get_name() not in sc_defined_in_ace_config:
+                get_logger().log_debug(f"Skipping subcloud {sc.get_name()} as it is not defined in ACE config")
+                continue
+
             lab_config = ConfigurationManager.get_lab_config()
             sc_config = lab_config.get_subcloud(sc.get_name())
             if sc_config.get_lab_type() == lab_type:
@@ -334,12 +339,13 @@ class DcManagerSubcloudListOutput:
             DcManagerSubcloudListObject: the instance of DcManagerSubcloudListObject with the lowest ID.
 
         """
+        sc_defined_in_ace_config = [sc.get_lab_name() for sc in ConfigurationManager.get_lab_config().get_subclouds()]
         subclouds = self.get_dcmanager_subcloud_list_objects_filtered(None)
 
         if not subclouds:
             error_message = "In this DC system, there are no subclouds."
             get_logger().log_exception(error_message)
             raise ValueError(error_message)
-
-        lowest_subcloud = min(subclouds, key=lambda subcloud: int(subcloud.get_id()))
+        ace_subclouds = [sc for sc in subclouds if sc.get_name() in sc_defined_in_ace_config]
+        lowest_subcloud = min(ace_subclouds, key=lambda subcloud: int(subcloud.get_id()))
         return lowest_subcloud
