@@ -58,6 +58,15 @@ class DcManagerSubcloudShowOutput:
 
         self.dcmanager_subcloud_show_object = dcmanager_subcloud_show_object
 
+    def get_management_network(self) -> str:
+        """
+        Returns only the network address of the management subnet (without prefix length).
+
+        Returns:
+            str: the management network address of the subcloud.
+        """
+        return self.dcmanager_subcloud_show_object.get_management_subnet().split("/")[0]
+
     def get_dcmanager_subcloud_show_object(self) -> DcManagerSubcloudShowObject:
         """DcManagerSubcloudShowObject.
 

@@ -1,3 +1,6 @@
+from typing import Dict
+
+from config.configuration_manager import ConfigurationManager
 from framework.exceptions.keyword_exception import KeywordException
 from framework.logging.automation_logger import get_logger
 from keywords.cloud_platform.system.addrpool.object.system_addrpool_list_object import SystemAddrpoolListObject
@@ -7,8 +10,9 @@ from keywords.cloud_platform.system.system_table_parser import SystemTableParser
 class SystemAddrpoolListOutput:
     """
     This class parses the output of the command 'system addrpool-list'
-    The parsing result is a 'SystemAddrpoolListObject' instance.
 
+    The parsing result is a 'SystemAddrpoolListObject' instance.
+    
     Example:
         'system addrpool-list'
         +--------------------------------------+-----------------------------+----------+--------+--------+---------------------------+------------------+---------------------+---------------------+-----------------+
@@ -39,11 +43,12 @@ class SystemAddrpoolListOutput:
 
     """
 
-    def __init__(self, system_addrpool_list_output):
+    def __init__(self, system_addrpool_list_output: list[str]) -> None:
         """
         Constructor
+
         Args:
-            system_addrpool_list_output: the output of the command 'system addrpool-list'
+            system_addrpool_list_output (list[str]): the output of the command 'system addrpool-list'
         """
         self.system_addrpool: [SystemAddrpoolListObject] = []
         system_table_parser = SystemTableParser(system_addrpool_list_output)
@@ -70,17 +75,21 @@ class SystemAddrpoolListOutput:
     def get_addrpool(self) -> [SystemAddrpoolListObject]:
         """
         Returns the list of addrpool objects
+
+        Returns:
+            [SystemAddrpoolListObject]: the list of addrpool objects
         """
         return self.system_addrpool
 
     def get_floating_address_by_name(self, name: str) -> str:
         """
         Gets the floating address for the given name.
+
         Args:
-            name: the name of the desired addrpool
+            name (str): the name of the desired addrpool
 
         Returns:
-            The floating address of the addrpool with the specified name.
+            str: The floating address of the addrpool with the specified name.
         """
         addrpools = list(filter(lambda pool: name in pool.get_name(), self.system_addrpool))
         if not addrpools:
@@ -92,19 +101,95 @@ class SystemAddrpoolListOutput:
         Gets the gateway address for the given name.
 
         Args:
-            name: the name of the desired addrpool
+            name (str): the name of the desired addrpool
 
         Returns:
-            The floating address of the addrpool with the specified name.
-
+            str: The floating address of the addrpool with the specified name.
         """
         addrpools = list(filter(lambda pool: name in pool.get_name(), self.system_addrpool))
         if not addrpools:
             raise KeywordException(f"No addrpool with name {name} was found.")
         return addrpools[0].get_gateway_address()
 
+    def get_management_floating_address(self) -> str:
+        """
+        Retrieves the floating address for the addrpool with name 'management'.
+
+        Returns:
+            str: The floating address for the addrpool with name 'management'.
+        """
+        return self.get_floating_address_by_name("management")
+
+    def get_management_gateway_address(self) -> str:
+        """
+        Retrieves the gateway address for the addrpool with name 'management'.
+
+        Returns:
+            str: The gateway address for the addrpool with name 'management'.
+        """
+        return self.get_gateway_address_by_name("management")
+
+    def get_oam_floating_address(self) -> str:
+        """
+        Retrieves the floating address for the addrpool with name 'oam'.
+
+        Returns:
+            str: The floating address for the addrpool with name 'oam'.
+        """
+        return self.get_floating_address_by_name("oam")
+
+    def get_oam_gateway_address(self) -> str:
+        """
+        Retrieves the gateway address for the addrpool with name 'oam'.
+
+        Returns:
+            str: The gateway address for the addrpool with name 'oam'.
+        """
+        return self.get_gateway_address_by_name("oam")
+
+    def get_system_controller_management_floating_address_from_subcloud(self) -> str:
+        """
+        Retrieves the system controller management floating address from subcloud.
+
+        Returns:
+            str: The floating address for the addrpool with name 'system-controller-subnet'.
+        """
+        return self.get_floating_address_by_name("system-controller-subnet")
+
+    def get_system_controller_oam_floating_address_from_subcloud(self) -> str:
+        """
+        Retrieves the system controller OAM floating address from subcloud.
+
+        Returns:
+            str: The floating address for the addrpool with name 'system-controller-oam-subnet'.
+        """
+        return self.get_floating_address_by_name("system-controller-oam-subnet")
+
+    def get_admin_gateway_address(self) -> str:
+        """
+        Retrieves the gateway address for the addrpool with name 'admin'.
+
+        Returns:
+            str: The gateway address for the name with management field.
+        """
+        lab_config = ConfigurationManager.get_lab_config()
+        if lab_config.is_ipv6():
+            net_type = "ipv6"
+        else:
+            net_type = "ipv4"
+        return self.get_gateway_address_by_name(f"admin-{net_type}")
+
     @staticmethod
-    def is_valid_output(value):
+    def is_valid_output(value: Dict[str, str]) -> bool:
+        """
+        Validates that the output line contains all the required keys.
+
+        Args:
+            value (Dict[str, str]): a dictionary representing a line of the command output.
+
+        Returns:
+            bool: True if the output line is valid, False otherwise.
+        """
         required_keys = ["uuid", "name", "network", "order", "ranges", "floating_address", "controller0_address", "controller1_address", "gateway_address"]
         for key in required_keys:
             if key not in value:

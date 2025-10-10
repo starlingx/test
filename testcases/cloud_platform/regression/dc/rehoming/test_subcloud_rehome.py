@@ -4,16 +4,18 @@ from config.configuration_manager import ConfigurationManager
 from config.lab.objects.lab_type_enum import LabTypeEnum
 from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
-from framework.validation.validation import validate_equals
+from framework.validation.validation import validate_equals, validate_not_equals
 from keywords.cloud_platform.dcmanager.dcmanager_kube_rootca_update_strategy_keywords import DcmanagerKubeRootcaUpdateStrategyKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_add_keywords import DcManagerSubcloudAddKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_delete_keywords import DcManagerSubcloudDeleteKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_list_keywords import DcManagerSubcloudListKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_manager_keywords import DcManagerSubcloudManagerKeywords
+from keywords.cloud_platform.dcmanager.dcmanager_subcloud_show_keywords import DcManagerSubcloudShowKeywords
 from keywords.cloud_platform.deployment_assets.host_profile_yaml_keywords import HostProfileYamlKeywords
 from keywords.cloud_platform.health.health_keywords import HealthKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.cloud_platform.sync_files.sync_deployment_assets import SyncDeploymentAssets
+from keywords.cloud_platform.system.addrpool.system_addrpool_list_keywords import SystemAddrpoolListKeywords
 from keywords.cloud_platform.system.application.object.system_application_upload_input import SystemApplicationUploadInput
 from keywords.cloud_platform.system.application.system_application_apply_keywords import SystemApplicationApplyKeywords
 from keywords.cloud_platform.system.application.system_application_list_keywords import SystemApplicationListKeywords
@@ -233,6 +235,50 @@ def verify_subcloud_healthy(ssh_connection: SSHConnection, subcloud_name: str) -
     validate_equals(subcloud.get_sync(), "in-sync", f"Subcloud {subcloud_name} is in-sync.")
 
 
+def validate_updated_host_route(ssh_connection: SSHConnection, subcloud_ssh: SSHConnection, subcloud_name: str, mgmt_floating_address_before_rehome: str, oam_floating_address_before_rehome: str) -> None:
+    """
+    Validate that the host route and floating addresses are updated after rehome.
+
+    Args:
+        ssh_connection (SSHConnection): SSH connection to the destination system controller.
+        subcloud_ssh (SSHConnection): SSH connection to the subcloud.
+        subcloud_name (str): Name of the subcloud.
+        mgmt_floating_address_before_rehome (str): Management floating address before rehome.
+        oam_floating_address_before_rehome (str): OAM floating address before rehome.
+    """
+    # Get subcloud's management subnet and system controller gateway ip from destination system controller after rehome
+    get_logger().log_info(f"Getting subcloud {subcloud_name} management subnet and system controller gateway ip from destination system controller after rehome")
+    subcloud_show = DcManagerSubcloudShowKeywords(ssh_connection).get_dcmanager_subcloud_show(subcloud_name)
+    mgmt_subnet = subcloud_show.get_management_network()
+    gateway_ip = subcloud_show.get_dcmanager_subcloud_show_object().get_systemcontroller_gateway_ip()
+
+    # Validate new gateway exists after rehome
+    mgmt_subnet = mgmt_subnet.split("/")[0]
+    get_logger().log_info(f"Validating system host route for management subnet {mgmt_subnet} has gateway {gateway_ip}")
+    host_name = SystemHostListKeywords(ssh_connection).get_active_controller().get_host_name()
+    host_route_list = SystemHostRouteKeywords(ssh_connection).get_system_host_route_list(host_name)
+    validate_equals(host_route_list.get_gateway_by_network(mgmt_subnet), gateway_ip, f"System host route for management subnet {mgmt_subnet} should have new gateway {gateway_ip}")
+
+    get_logger().log_info("Validating updated floating addresses after rehome")
+    # Get system controller's management and oam floating addresses from subcloud after rehome
+    sys_addrpool_output = SystemAddrpoolListKeywords(subcloud_ssh).get_system_addrpool_list()
+    mgmt_floating_address_after_rehome = sys_addrpool_output.get_system_controller_management_floating_address_from_subcloud()
+    oam_floating_address_after_rehome = sys_addrpool_output.get_system_controller_oam_floating_address_from_subcloud()
+
+    # Get management and oam floating addresses from destination system controller after rehome
+    sys_addrpool_output = SystemAddrpoolListKeywords(ssh_connection).get_system_addrpool_list()
+    mgmt_floating_address_destination = sys_addrpool_output.get_management_floating_address()
+    oam_floating_address_destination = sys_addrpool_output.get_oam_floating_address()
+
+    # Validate system controller management and oam floating address is the different before and after rehome
+    validate_not_equals(mgmt_floating_address_before_rehome, mgmt_floating_address_after_rehome, "System controller management floating address should change in subcloud after rehoming")
+    validate_not_equals(oam_floating_address_before_rehome, oam_floating_address_after_rehome, "System controller OAM floating address should change in subcloud after rehoming")
+
+    # Validate system controller management and oam floating address on subcloud is same as destination system controller after rehome
+    validate_equals(mgmt_floating_address_after_rehome, mgmt_floating_address_destination, "System controller management floating address on subcloud should match destination system controller after rehoming")
+    validate_equals(oam_floating_address_after_rehome, oam_floating_address_destination, "System controller OAM floating address on subcloud should match destination system controller after rehoming")
+
+
 def verify_backup_central_duplex(central_ssh: SSHConnection, subcloud_ssh: SSHConnection, subcloud_name: str) -> None:
     """
     Verify backup of a subcloud on Central Cloud.
@@ -324,6 +370,11 @@ def test_rehome_duplex_subcloud(request):
     get_logger().log_info("Counting pods before rehoming")
     pods_before_rehome = count_pods_on_subcloud(subcloud_ssh)
 
+    # Get system controller's management and oam floating addresses from subcloud before rehome
+    sys_addrpool_output = SystemAddrpoolListKeywords(subcloud_ssh).get_system_addrpool_list()
+    mgmt_floating_address_before_rehome = sys_addrpool_output.get_system_controller_management_floating_address_from_subcloud()
+    oam_floating_address_before_rehome = sys_addrpool_output.get_system_controller_oam_floating_address_from_subcloud()
+
     # Perform rehome operation
     get_logger().log_info(f"Rehoming subcloud {subcloud_name} from {origin_system_controller_ssh} to {destination_system_controller_ssh}")
     perform_rehome_operation(origin_system_controller_ssh, destination_system_controller_ssh, subcloud_name, subcloud_bootstrap_values, subcloud_install_values)
@@ -332,6 +383,10 @@ def test_rehome_duplex_subcloud(request):
     get_logger().log_info(f"Validating subcloud {subcloud_name} is healthy after rehome")
     verify_subcloud_healthy(destination_system_controller_ssh, subcloud_name)
     get_logger().log_info(f"Rehome operation of subcloud {subcloud_name} completed successfully.")
+
+    # Validate updated host route and floating addresses after rehome
+    get_logger().log_info("Validating updated host route and floating addresses after rehome")
+    validate_updated_host_route(destination_system_controller_ssh, subcloud_ssh, subcloud_name, mgmt_floating_address_before_rehome, oam_floating_address_before_rehome)
 
     # Validate OIDC app is still installed after rehoming
     get_logger().log_info("Validating OIDC app is installed after rehoming")
