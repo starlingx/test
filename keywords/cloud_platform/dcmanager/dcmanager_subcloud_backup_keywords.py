@@ -403,3 +403,104 @@ class DcManagerSubcloudBackupKeywords(BaseKeyword):
             timeout=timeout,
             polling_sleep_time=check_interval,
         )
+
+    def restore_subcloud_backup(
+        self,
+        sysadmin_password: str,
+        con_ssh: SSHConnection,
+        with_install: Optional[bool] = False,
+        subcloud: str = None,
+        local_only: Optional[bool] = False,
+        restore_values_path: Optional[str] = None,
+        group: Optional[str] = None,
+        registry: bool = False,
+        release: Optional[str] = None,
+        subcloud_list: Optional[list] = None,
+    ):
+        """
+        Sends the command to restore a subcloud backup.
+
+        Args:
+            sysadmin_password (str): Subcloud sysadmin password needed for backup creation.
+            con_ssh (SSHConnection): SSH connection to execute the command (central_ssh or subcloud_ssh).
+            with_install (Optional[bool]): If included, the subcloud will be reinstalled prior to being restored from backup data.
+            subcloud (Optional[str]): The name of the subcloud to backup. Defaults to None.
+            local_only (bool): If True, backup will be retrieved from file stored in the subcloud. Defaults to False.
+            restore_values_path (Optional[str]): Reference to the restore playbook overrides yaml file,
+             as listed in the product documentation for the ansible restore. Default as None
+            group (Optional[str]): Subcloud group name to create backup. Defaults to None.
+            registry (bool): Option to add the registry backup in the same task. Defaults to False.
+            release (Optional[str]): Release version required to check backup. Defaults to None.
+            subcloud_list (Optional[list]): List of subcloud names when restoring a group backup. Defaults to None.
+
+        Returns:
+            None:
+        """
+        # Command construction
+        cmd = f"dcmanager subcloud-backup restore --subcloud {subcloud} --sysadmin-password {sysadmin_password}"
+        if local_only:
+            cmd += " --local-only"
+        if with_install:
+            cmd += " --with-install"
+        if restore_values_path:
+            cmd += f" --restore-values {restore_values_path}"
+        if group:
+            cmd += f" --group {group}"
+        if registry:
+            cmd += " --registry-images"
+        if release:
+            cmd += f" --release {release}"
+
+        self.ssh_connection.send(source_openrc(cmd))
+        self.validate_success_return_code(self.ssh_connection)
+
+        if group:
+            for subcloud_name in subcloud_list:
+
+                self.wait_for_backup_restore(con_ssh, subcloud_name)
+
+        else:
+            self.wait_for_backup_restore(con_ssh, subcloud)
+
+    def wait_for_backup_restore(
+        self,
+        con_ssh: SSHConnection,
+        subcloud: Optional[str],
+        check_interval: int = 60,
+        timeout: int = 3600,
+    ) -> None:
+        """
+        Waits for the restore operation to be completed.
+
+        Args:
+            con_ssh (SSHConnection): SSH connection to execute the command (central_ssh or subcloud_ssh).
+            subcloud (Optional[str]): The name of the subcloud to check.
+            check_interval (int): Time interval (in seconds) to check for file creation. Defaults to 30.
+            timeout (int): Maximum time (in seconds) to wait for file creation. Defaults to 600.
+
+        Returns:
+            None:
+        """
+
+        def check_restore_completed() -> str:
+            """
+            Checks if restore has been completed.
+
+            Returns:
+                str: A message indicating whether the backup has been successfully created or not.
+            """
+
+            deploy_status = DcManagerSubcloudShowKeywords(con_ssh).get_dcmanager_subcloud_show(subcloud).get_dcmanager_subcloud_show_object().get_deploy_status()
+
+            if deploy_status == "complete":
+                return f"{subcloud} backup restored."
+            else:
+                return "Restore not done yet."
+
+        validate_equals_with_retry(
+            function_to_execute=check_restore_completed,
+            expected_value=f"{subcloud} backup restored.",
+            validation_description=f"Backup restore operation for {subcloud} completed.",
+            timeout=timeout,
+            polling_sleep_time=check_interval,
+        )
