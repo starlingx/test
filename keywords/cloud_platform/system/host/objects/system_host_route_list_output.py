@@ -81,6 +81,24 @@ class SystemHostRouteListOutput:
         metrics_list = [x.get_metric() for x in self.system_host_route_list]
         return metrics_list
 
+    def get_gateway_by_network(self, network: str) -> str:
+        """
+        Returns the gateway corresponding to a given network from the system host route list.
+
+        Args:
+            network (str): Network/subnet string to search for (must match exactly as in system host-route-list).
+
+        Returns:
+            str: Gateway IP corresponding to the given network.
+
+        Raises:
+            KeywordException: If the network is not found in the system host route list.
+        """
+        for host_route in self.system_host_route_list:
+            if host_route.get_network() == network:
+                return host_route.get_gateway()
+        raise KeywordException(f"Gateway not found for network '{network}'")
+
     @staticmethod
     def is_valid_output(value: str) -> bool:
         """
