@@ -1,5 +1,8 @@
+import time
+
 from pytest import mark
 
+from framework.kpi.time_kpi import TimeKPI
 from framework.logging.automation_logger import get_logger
 from framework.validation.validation import validate_equals
 from keywords.cloud_platform.ansible_playbook.ansible_playbook_keywords import AnsiblePlaybookKeywords
@@ -55,9 +58,11 @@ def test_backup():
             file_exists_post_deletion = FileKeywords(ssh_connection).delete_file(f"{backup_dir}/{backup_file}")
             validate_equals(file_exists_post_deletion, False, "Old Back up file deletion")
 
+    time_kpi_backup = TimeKPI(time.time())
     get_logger().log_info("Run backup ansible playbook")
     ansible_playbook_backup_output = AnsiblePlaybookKeywords(ssh_connection).ansible_playbook_backup(backup_dir)
     validate_equals(ansible_playbook_backup_output, True, "Ansible backup command execution")
+    time_kpi_backup.log_elapsed_time(time.time(), "time taken for system backup")
 
     # Copy software list to backup directory
     ssh_connection.send_as_sudo(f"cp /tmp/pre_backup_software_list.txt {backup_dir}/")

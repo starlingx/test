@@ -1,5 +1,8 @@
+import time
+
 from pytest import mark
 
+from framework.kpi.time_kpi import TimeKPI
 from framework.logging.automation_logger import get_logger
 from framework.validation.validation import validate_equals
 from keywords.cloud_platform.ansible_playbook.ansible_playbook_keywords import AnsiblePlaybookKeywords
@@ -35,6 +38,7 @@ def test_restore():
     validate_equals(restore_file_status, True, "Backup file copy to controller")
     get_logger().log_info("Backup file copy to controller completed successfully")
 
+    time_kpi_restore = TimeKPI(time.time())
     get_logger().log_info("Run restore ansible playbook")
     ansible_playbook_restore_output = AnsiblePlaybookKeywords(ssh_connection).ansible_playbook_restore(backup_dir)
     validate_equals(ansible_playbook_restore_output, True, "Ansible restore command execution")
@@ -44,6 +48,7 @@ def test_restore():
     active_controller = SystemHostListKeywords(ssh_connection).get_active_controller()
     unlock_success = SystemHostLockKeywords(ssh_connection).unlock_host(active_controller.get_host_name())
     validate_equals(unlock_success, True, "Validate controller was unlocked successfully")
+    time_kpi_restore.log_elapsed_time(time.time(), "time taken for system restore")
 
     # Verify software state matches pre-backup state
     get_logger().log_info("Verifying software state post-restore")
