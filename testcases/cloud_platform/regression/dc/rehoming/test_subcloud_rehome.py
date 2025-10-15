@@ -4,7 +4,7 @@ from config.configuration_manager import ConfigurationManager
 from config.lab.objects.lab_type_enum import LabTypeEnum
 from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
-from framework.validation.validation import validate_equals, validate_not_equals
+from framework.validation.validation import validate_equals, validate_none, validate_not_equals, validate_not_none
 from keywords.cloud_platform.dcmanager.dcmanager_kube_rootca_update_strategy_keywords import DcmanagerKubeRootcaUpdateStrategyKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_add_keywords import DcManagerSubcloudAddKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_delete_keywords import DcManagerSubcloudDeleteKeywords
@@ -12,6 +12,9 @@ from keywords.cloud_platform.dcmanager.dcmanager_subcloud_list_keywords import D
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_manager_keywords import DcManagerSubcloudManagerKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_show_keywords import DcManagerSubcloudShowKeywords
 from keywords.cloud_platform.deployment_assets.host_profile_yaml_keywords import HostProfileYamlKeywords
+from keywords.cloud_platform.fault_management.alarms.alarm_list_keywords import AlarmListKeywords
+from keywords.cloud_platform.fault_management.fm_client_cli.fm_client_cli_keywords import FaultManagementClientCLIKeywords
+from keywords.cloud_platform.fault_management.fm_client_cli.object.fm_client_cli_object import FaultManagementClientCLIObject
 from keywords.cloud_platform.health.health_keywords import HealthKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.cloud_platform.sync_files.sync_deployment_assets import SyncDeploymentAssets
@@ -414,3 +417,122 @@ def test_rehome_duplex_subcloud(request):
     # Validate swact back to original state
     dc_swact(subcloud_ssh)
     verify_subcloud_healthy(destination_system_controller_ssh, subcloud_name)
+
+
+@mark.p2
+@mark.subcloud_lab_is_simplex
+@mark.lab_has_secondary_system_controller
+def test_rehome_simplex_subcloud_alarm_recovery_scenario(request):
+    """
+    Verify rehome simplex subcloud with fault injection and recovery between two system controllers.
+
+    This test validates the rehoming process resilience by injecting a fault (alarm) that causes
+    the initial rehome operation to fail, then clearing the fault and successfully completing
+    the rehome operation on retry.
+
+    Test Steps:
+        1. Get a healthy simplex subcloud from the origin system controller
+        2. Count total pods on subcloud before rehoming (baseline measurement)
+        3. Inject fault by raising an alarm on subcloud to simulate failure condition
+        4. Validate alarm is present and properly configured on subcloud
+        5. Attempt rehome operation and verify it fails due to the alarm
+        6. Clear the injected alarm to remove failure condition
+        7. Retry rehome operation and verify it succeeds
+        8. Validate subcloud is healthy and properly managed after successful rehome
+        9. Count pods after rehoming and verify count matches baseline
+        10. Validate pod counts are identical before and after rehoming
+
+    Expected Results:
+        - Initial rehome fails with alarm present (rehome-failed status)
+        - Rehome succeeds after alarm is cleared
+        - Subcloud maintains same pod count after successful rehome
+        - Subcloud is healthy and in-sync after rehome completion
+    """
+    # Initialize SSH connections to both system controllers
+    origin_system_controller_ssh = LabConnectionKeywords().get_active_controller_ssh()
+    destination_system_controller_ssh = LabConnectionKeywords().get_secondary_active_controller_ssh()
+
+    # Initialize DC manager keywords for both controllers
+    origin_dcm_list_kw = DcManagerSubcloudListKeywords(origin_system_controller_ssh)
+    destination_dcm_list_kw = DcManagerSubcloudListKeywords(destination_system_controller_ssh)
+
+    origin_dcm_sc_kw = DcManagerSubcloudManagerKeywords(origin_system_controller_ssh)
+
+    # Get a healthy simplex subcloud for testing
+    get_logger().log_info("Selecting healthy simplex subcloud for rehoming test")
+    simplex_subcloud = origin_dcm_list_kw.get_dcmanager_subcloud_list().get_healthy_subcloud_by_type(LabTypeEnum.SIMPLEX.value)
+    subcloud_name = simplex_subcloud.get_name()
+
+    # Retrieve deployment assets (bootstrap and install files) for the subcloud
+    get_logger().log_info(f"Retrieving deployment assets for subcloud {subcloud_name}")
+    deployment_assets_config = ConfigurationManager.get_deployment_assets_config()
+    subcloud_bootstrap_values = deployment_assets_config.get_subcloud_deployment_assets(subcloud_name).get_bootstrap_file()
+    subcloud_install_values = deployment_assets_config.get_subcloud_deployment_assets(subcloud_name).get_install_file()
+
+    # Establish SSH connection to the target subcloud
+    subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
+
+    # Baseline measurement: count pods before any rehoming operations
+    get_logger().log_info("Establishing baseline pod count before rehoming")
+    pods_before_rehome = count_pods_on_subcloud(subcloud_ssh)
+
+    # Fault injection phase: prepare and inject alarm to simulate failure condition
+    fm_client_cli_keywords = FaultManagementClientCLIKeywords(subcloud_ssh)
+    alarm_list_keywords = AlarmListKeywords(subcloud_ssh)
+
+    # Verify no conflicting alarms exist before injection
+    get_logger().log_info("Verifying no conflicting alarms exist on subcloud")
+    subcloud_alarms = alarm_list_keywords.alarm_list()
+    existing_alarm = next((alarm for alarm in subcloud_alarms if alarm.alarm_id == FaultManagementClientCLIObject.DEFAULT_ALARM_ID), None)
+    validate_none(existing_alarm, f"Alarm with ID {FaultManagementClientCLIObject.DEFAULT_ALARM_ID} should not exist before test injection")
+
+    # Create and inject test alarm to simulate failure condition
+    fm_client_cli_object = FaultManagementClientCLIObject()
+    fm_client_cli_object.set_alarm_id(FaultManagementClientCLIObject.DEFAULT_ALARM_ID)
+    fm_client_cli_object.set_entity_id(f"name={subcloud_name}")
+
+    get_logger().log_info(f"Injecting test alarm on subcloud {subcloud_name} to simulate failure condition")
+    fm_client_cli_keywords.raise_alarm(fm_client_cli_object)
+
+    # Verify alarm injection was successful
+    get_logger().log_info("Verifying alarm injection was successful")
+    subcloud_alarms = alarm_list_keywords.alarm_list()
+    injected_alarm = next((alarm for alarm in subcloud_alarms if alarm.alarm_id == fm_client_cli_object.get_alarm_id()), None)
+    validate_not_none(injected_alarm, f"Injected alarm with ID {fm_client_cli_object.get_alarm_id()} should be present on subcloud")
+    validate_equals(injected_alarm.get_entity_id(), fm_client_cli_object.get_entity_id(), "Injected alarm entity ID should match subcloud name")
+
+    # Prepare for rehoming: synchronize deployment assets between system controllers
+    get_logger().log_info(f"Synchronizing deployment assets for subcloud {subcloud_name} between system controllers")
+    sync_deployment_assets_between_system_controllers(origin_system_controller_ssh, destination_system_controller_ssh, subcloud_name, subcloud_bootstrap_values, subcloud_install_values)
+
+    # First rehome attempt: expect failure due to injected alarm
+    get_logger().log_info(f"Attempting initial rehome of {subcloud_name} (expecting failure due to alarm)")
+    origin_dcm_sc_kw.get_dcmanager_subcloud_unmanage(subcloud_name, 30)
+    DcManagerSubcloudAddKeywords(destination_system_controller_ssh).dcmanager_subcloud_add_migrate(subcloud_name, bootstrap_values=subcloud_bootstrap_values, install_values=subcloud_install_values)
+
+    # Verify rehome failed as expected
+    destination_dcm_list_kw.validate_subcloud_status(subcloud_name, status="rehome-failed")
+    get_logger().log_info(f"Rehome failed as expected due to alarm on subcloud {subcloud_name}")
+
+    # Cleanup failed rehome attempt: re-manage on origin and delete from destination
+    origin_dcm_sc_kw.get_dcmanager_subcloud_manage(subcloud_name, timeout=30)
+    origin_dcm_list_kw.validate_subcloud_sync_status(subcloud_name, "in-sync")
+    DcManagerSubcloudDeleteKeywords(destination_system_controller_ssh).dcmanager_subcloud_delete(subcloud_name)
+
+    # Recovery phase: clear injected alarm to remove failure condition
+    get_logger().log_info(f"Clearing injected alarm from subcloud {subcloud_name} to enable successful rehome")
+    fm_client_cli_keywords.delete_alarm(fm_client_cli_object)
+
+    # Second rehome attempt: expect success after alarm clearance
+    get_logger().log_info(f"Retrying rehome of {subcloud_name} after alarm clearance (expecting success)")
+    perform_rehome_operation(origin_system_controller_ssh, destination_system_controller_ssh, subcloud_name, subcloud_bootstrap_values, subcloud_install_values)
+
+    # Post-rehome validation: verify subcloud health and functionality
+    get_logger().log_info(f"Validating subcloud {subcloud_name} health after successful rehome")
+    verify_subcloud_healthy(destination_system_controller_ssh, subcloud_name)
+    get_logger().log_info(f"Rehome operation for subcloud {subcloud_name} completed successfully")
+
+    # Final validation: verify pod count consistency
+    get_logger().log_info("Performing final pod count validation")
+    pods_after_rehome = count_pods_on_subcloud(subcloud_ssh)
+    validate_equals(pods_before_rehome, pods_after_rehome, "Pod count must remain consistent before and after successful rehoming")

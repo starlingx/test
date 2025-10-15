@@ -286,3 +286,49 @@ def validate_greater_than(observed_value: int, baseline_value: int, validation_d
         get_logger().log_error(f"Baseline: {baseline_value}")
         get_logger().log_error(f"Observed: {observed_value}")
         raise Exception("Validation Failed")
+
+
+def validate_none(observed_value: Any, validation_description: str) -> None:
+    """
+    This function will validate if the observed value is none.
+
+    Args:
+        observed_value (Any): Value that we see on the system.
+        validation_description (str): Description of this validation for logging purposes.
+
+    Returns: None
+
+    Raises:
+        Exception: raised when validate fails
+
+    """
+    if observed_value is None:
+        get_logger().log_info(f"Validation Successful - {validation_description}")
+    else:
+        get_logger().log_error(f"Validation Failed - {validation_description}")
+        get_logger().log_error("Expected: None")
+        get_logger().log_error(f"Observed: {observed_value}")
+        raise Exception("Validation Failed")
+
+
+def validate_not_none(observed_value: Any, validation_description: str) -> None:
+    """
+    This function will validate if the observed value is not none.
+
+    Args:
+        observed_value (Any): Value that we see on the system.
+        validation_description (str): Description of this validation for logging purposes.
+
+    Returns: None
+
+    Raises:
+        Exception: raised when validate fails
+
+    """
+    if observed_value is not None:
+        get_logger().log_info(f"Validation Successful - {validation_description}")
+    else:
+        get_logger().log_error(f"Validation Failed - {validation_description}")
+        get_logger().log_error("Expected: Not None")
+        get_logger().log_error(f"Observed: {observed_value}")
+        raise Exception("Validation Failed")
