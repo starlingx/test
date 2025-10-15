@@ -43,8 +43,8 @@ def test_install_oidc():
     file_keywords = FileKeywords(ssh_connection)
     helm_keywords = SystemHelmKeywords(ssh_connection)
     oam_ip = ConfigurationManager.get_lab_config().get_floating_ip()
-    addrpool_keywords = SystemAddrpoolListKeywords(ssh_connection)
-    mgmt_ip = addrpool_keywords.get_management_floating_address()
+    addrpool_output = SystemAddrpoolListKeywords(ssh_connection).get_system_addrpool_list()
+    mgmt_ip = addrpool_output.get_management_floating_address()
     bind_pw = KeyringKeywords(ssh_connection).get_keyring(service="ldap", identifier="ldapadmin")
     lab_ipv6 = ConfigurationManager.get_lab_config().is_ipv6()
     oam_ip = f"[{oam_ip}]" if lab_ipv6 else oam_ip
