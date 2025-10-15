@@ -44,7 +44,7 @@ class DcmanagerKubeRootcaUpdateStrategyKeywords(BaseKeyword):
             polling_sleep_time=check_interval,
         )
 
-    def dcmanager_kube_rootca_update_strategy_create(self, subcloud_apply_type: Optional[str] = None, max_parallel_subclouds: Optional[str] = None, stop_on_failure: Optional[bool] = None, group: Optional[str] = None, subject: Optional[str] = None, expiry_date: Optional[str] = None, cert_file: Optional[str] = None, force: Optional[bool] = None) -> DcmanagerKubeRootcaUpdateStrategyShowOutput:
+    def dcmanager_kube_rootca_update_strategy_create(self, subcloud_apply_type: Optional[str] = None, max_parallel_subclouds: Optional[str] = None, stop_on_failure: Optional[bool] = None, group: Optional[str] = None, subject: Optional[str] = None, expiry_date: Optional[str] = None, cert_file: Optional[str] = None, force: Optional[bool] = None, subcloud_name: Optional[str] = None) -> DcmanagerKubeRootcaUpdateStrategyShowOutput:
         """
         Create kube-rootca-update-strategy
 
@@ -57,6 +57,7 @@ class DcmanagerKubeRootcaUpdateStrategyKeywords(BaseKeyword):
             expiry_date (Optional[str]): Expiry date.
             cert_file (Optional[str]): Certificate file path.
             force (Optional[bool]): Force flag.
+            subcloud_name (Optional[str]): subloud name.
 
         Returns:
             DcmanagerKubeRootcaUpdateStrategyShowOutput: An object containing details of the kubernetes strategy .
@@ -79,6 +80,8 @@ class DcmanagerKubeRootcaUpdateStrategyKeywords(BaseKeyword):
             cmd += f" --cert-file {cert_file}"
         if force:
             cmd += " --force"
+        if subcloud_name:
+            cmd += f" {subcloud_name}"
 
         output = self.ssh_connection.send(source_openrc(cmd))
         self.validate_success_return_code(self.ssh_connection)

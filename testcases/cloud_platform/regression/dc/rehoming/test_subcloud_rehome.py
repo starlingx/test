@@ -181,7 +181,7 @@ def get_subcloud_in_sync(ssh_connection: SSHConnection, subcloud_name: str) -> N
     validate_equals(is_key_exist, True, f"Key file exists in path {path2}.")
     file_keywords.concatenate_files_with_sudo(path1, path2, "/tmp/ca.pem")
     dcm_krc_update_strategy = DcmanagerKubeRootcaUpdateStrategyKeywords(ssh_connection)
-    dcm_krc_update_strategy.dcmanager_kube_rootca_update_strategy_create(cert_file="/tmp/ca.pem")
+    dcm_krc_update_strategy.dcmanager_kube_rootca_update_strategy_create(cert_file="/tmp/ca.pem", subcloud_name=subcloud_name)
     dcm_krc_update_strategy.dcmanager_kube_rootca_update_strategy_apply()
     DcManagerSubcloudListKeywords(ssh_connection).validate_subcloud_sync_status(subcloud_name, expected_sync_status="in-sync")
 
