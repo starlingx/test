@@ -215,6 +215,7 @@ def perform_rehome_operation(origin_ssh_connection: SSHConnection, destination_s
     DcManagerSubcloudAddKeywords(destination_ssh_connection).dcmanager_subcloud_add_migrate(subcloud_name, bootstrap_values=subcloud_bootstrap_values, install_values=subcloud_install_values)
     dcm_sc_list_kw_destination.validate_subcloud_status(subcloud_name, status="rehoming")
     dcm_sc_list_kw_destination.validate_subcloud_status(subcloud_name, status="complete")
+    dcm_sc_list_kw_destination.validate_subcloud_availability_status(subcloud_name)
     dcm_sc_kw_destination.get_dcmanager_subcloud_manage(subcloud_name, timeout=30)
 
     get_logger().log_info(f"Deleting subcloud from {origin_ssh_connection}")
