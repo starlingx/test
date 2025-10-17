@@ -7,6 +7,6 @@
 	// Acceptable values are: ERROR, WARNING, INFO, or DEBUG
 	"console_log_level": "DEBUG",	// Level of Logs displayed in the console.
 	"file_log_level": "DEBUG",      // Level of Logs included in log files.
-
+	"testcase_log_index": 1         // Starting index for test case folder numbering (optional, defaults to 1)
 
 }

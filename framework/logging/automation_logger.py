@@ -276,8 +276,13 @@ def configure_testcase_log_handler(logger_config: LoggerConfig, log_file: str) -
         logger_config (LoggerConfig): The logger config.
         log_file (str): The log file name.
     """
+    # Get current index and increment for next test case
+    folder_number = logger_config.get_testcase_log_index()
+    logger_config.increment_testcase_log_index()
+    numbered_folder_name = f"{folder_number:03d}_{log_file}"
+
     log_formatter = logging.Formatter(_LOGGER.GENERAL_LOGGER_FORMAT, datefmt="%Y-%m-%d %H:%M:%S")
-    _LOGGER.test_case_log_dir = os.path.join(_LOGGER.get_log_folder(), f"{log_file}")
+    _LOGGER.test_case_log_dir = os.path.join(_LOGGER.get_log_folder(), numbered_folder_name)
     os.makedirs(_LOGGER.test_case_log_dir, exist_ok=True)
     full_log_file_path = os.path.join(_LOGGER.test_case_log_dir, "log.txt")
 
@@ -303,7 +308,7 @@ def remove_testcase_handler(test_name: str) -> None:
         test_name (str): The test name whose log handler should be removed.
     """
     for handler in _LOGGER.handlers:
-        if hasattr(handler, "baseFilename") and f"{test_name}" in handler.baseFilename:
+        if hasattr(handler, "baseFilename") and test_name in handler.baseFilename:
             _LOGGER.removeHandler(handler)
 
 
