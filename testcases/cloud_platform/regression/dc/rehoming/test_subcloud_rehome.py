@@ -7,6 +7,7 @@ from framework.ssh.ssh_connection import SSHConnection
 from framework.validation.validation import validate_equals, validate_none, validate_not_equals, validate_not_none
 from keywords.cloud_platform.dcmanager.dcmanager_kube_rootca_update_strategy_keywords import DcmanagerKubeRootcaUpdateStrategyKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_add_keywords import DcManagerSubcloudAddKeywords
+from keywords.cloud_platform.dcmanager.dcmanager_subcloud_backup_keywords import DcManagerSubcloudBackupKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_delete_keywords import DcManagerSubcloudDeleteKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_list_keywords import DcManagerSubcloudListKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_manager_keywords import DcManagerSubcloudManagerKeywords
@@ -537,3 +538,106 @@ def test_rehome_simplex_subcloud_alarm_recovery_scenario(request):
     get_logger().log_info("Performing final pod count validation")
     pods_after_rehome = count_pods_on_subcloud(subcloud_ssh)
     validate_equals(pods_before_rehome, pods_after_rehome, "Pod count must remain consistent before and after successful rehoming")
+
+
+@mark.p2
+@mark.subcloud_lab_is_simplex
+@mark.lab_has_secondary_system_controller
+def test_rehome_simplex_subcloud_with_local_restore(request):
+    """
+    Validate local restore functionality on simplex subcloud after rehoming.
+
+    This test verifies that local backup and restore operations work correctly
+    on a subcloud after it has been rehomed to a different system controller.
+
+    Test Steps:
+        1. Select a healthy simplex subcloud
+        2. Count pods and validate health before rehoming
+        3. Perform rehome operation to destination system controller
+        4. Count pods and validate health after rehoming
+        5. Create local backup on rehomed subcloud
+        6. Restore from local backup
+        7. Validate health and pod count consistency after restore
+
+    Expected Results:
+        - Subcloud maintains health throughout rehoming process
+        - Local backup creation succeeds on rehomed subcloud
+        - Local restore completes successfully
+        - Pod count remains consistent after restore operation
+    """
+    # Initialize SSH connections
+    origin_system_controller_ssh = LabConnectionKeywords().get_active_controller_ssh()
+    destination_system_controller_ssh = LabConnectionKeywords().get_secondary_active_controller_ssh()
+
+    # Get healthy simplex subcloud
+    get_logger().log_info("Selecting healthy simplex subcloud for rehoming and restore test")
+    origin_dcm_list_kw = DcManagerSubcloudListKeywords(origin_system_controller_ssh)
+    simplex_subcloud = origin_dcm_list_kw.get_dcmanager_subcloud_list().get_healthy_subcloud_by_type(LabTypeEnum.SIMPLEX.value)
+    subcloud_name = simplex_subcloud.get_name()
+
+    # Get deployment assets
+    get_logger().log_info(f"Retrieving deployment assets for subcloud {subcloud_name}")
+    deployment_assets_config = ConfigurationManager.get_deployment_assets_config()
+    subcloud_bootstrap_values = deployment_assets_config.get_subcloud_deployment_assets(subcloud_name).get_bootstrap_file()
+    subcloud_install_values = deployment_assets_config.get_subcloud_deployment_assets(subcloud_name).get_install_file()
+
+    # Establish subcloud SSH connection
+    subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
+
+    # Pre-rehome validation: count pods and check health
+    get_logger().log_info("Validating subcloud health and counting pods before rehoming")
+    pods_before_rehome = count_pods_on_subcloud(subcloud_ssh)
+    HealthKeywords(subcloud_ssh).validate_healty_cluster()
+
+    # Perform rehome operation
+    get_logger().log_info(f"Rehoming subcloud {subcloud_name} to destination system controller")
+    perform_rehome_operation(origin_system_controller_ssh, destination_system_controller_ssh, subcloud_name, subcloud_bootstrap_values, subcloud_install_values)
+
+    # Post-rehome validation: count pods and check health
+    get_logger().log_info("Validating subcloud health and counting pods after rehoming")
+    verify_subcloud_healthy(destination_system_controller_ssh, subcloud_name)
+    pods_after_rehome = count_pods_on_subcloud(subcloud_ssh)
+    validate_equals(pods_before_rehome, pods_after_rehome, "Pod count should remain consistent after rehoming")
+
+    # Get subcloud credentials for backup operations
+    lab_config = ConfigurationManager.get_lab_config().get_subcloud(subcloud_name)
+    subcloud_password = lab_config.get_admin_credentials().get_password()
+
+    # Setup backup path and teardown
+    release = CloudPlatformVersionManagerClass().get_sw_version()
+    local_path = f"/opt/platform-backup/backups/{release}/{subcloud_name}_platform_backup_*.tgz"
+
+    def teardown_backup():
+        get_logger().log_info("Cleaning up backup files during teardown")
+        FileKeywords(subcloud_ssh).delete_folder_with_sudo("/opt/platform-backup/backups/")
+
+    request.addfinalizer(teardown_backup)
+
+    # Create local backup on rehomed subcloud
+    get_logger().log_info(f"Creating local backup on rehomed subcloud {subcloud_name}")
+    dc_manager_backup = DcManagerSubcloudBackupKeywords(destination_system_controller_ssh)
+    dc_manager_backup.create_subcloud_backup(subcloud_password, subcloud_ssh, path=local_path, subcloud=subcloud_name, local_only=True)
+
+    # Wait for backup completion
+    get_logger().log_info("Waiting for backup creation to complete")
+    DcManagerSubcloudBackupKeywords(destination_system_controller_ssh).wait_for_backup_status_complete(subcloud_name, expected_status="complete-local")
+
+    # Unmanage subcloud before restore
+    get_logger().log_info(f"Unmanaging subcloud {subcloud_name} before restore")
+    DcManagerSubcloudManagerKeywords(destination_system_controller_ssh).get_dcmanager_subcloud_unmanage(subcloud_name, 30)
+
+    # Restore from local backup
+    get_logger().log_info(f"Restoring subcloud {subcloud_name} from local backup")
+    dc_manager_backup.restore_subcloud_backup(subcloud_password, destination_system_controller_ssh, subcloud=subcloud_name, local_only=True, with_install=True)
+
+    # Post-restore validation: check health and pod count
+    get_logger().log_info("Validating subcloud health after restore operation")
+    verify_subcloud_healthy(destination_system_controller_ssh, subcloud_name)
+    HealthKeywords(subcloud_ssh).validate_healty_cluster()
+
+    # Final pod count validation
+    get_logger().log_info("Performing final pod count validation after restore")
+    pods_after_restore = count_pods_on_subcloud(subcloud_ssh)
+    validate_equals(pods_before_rehome, pods_after_restore, "Pod count should remain consistent after backup and restore operations")
+
+    get_logger().log_info(f"Local restore functionality validated successfully on rehomed subcloud {subcloud_name}")
