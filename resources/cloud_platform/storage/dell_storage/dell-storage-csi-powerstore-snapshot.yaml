@@ -1,0 +1,9 @@
+apiVersion: snapshot.storage.k8s.io/v1
+kind: VolumeSnapshot
+metadata:
+  name: csi-powerstore-pvc-snapshot
+  namespace: dell-storage
+spec:
+  volumeSnapshotClassName: csi-powerstore-snapshot
+  source:
+    persistentVolumeClaimName: pvol0
