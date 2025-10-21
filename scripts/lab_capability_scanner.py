@@ -474,7 +474,12 @@ def get_horizon_url() -> str:
     # Construct Horizon URL
     protocol = "https" if https_enabled else "http"
     port = "8443" if https_enabled else "8080"
-    return f"{protocol}://{oam_ip}:{port}/"
+
+    wrapped_ip = oam_ip
+    if ":" in oam_ip:
+        wrapped_ip = f"[{oam_ip}]"
+
+    return f"{protocol}://{wrapped_ip}:{port}/"
 
 
 def get_lab_type(lab_config: LabConfig) -> str:
