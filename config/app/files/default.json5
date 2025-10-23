@@ -6,5 +6,6 @@
   power_metrics_app_name: "power-metrics",
   power_manager_app_name: "kubernetes-power-manager",
   node_feature_discovery_app_name: "node-feature-discovery",
-  node_interface_metrics_exporter_app_name: "node-interface-metrics-exporter"
+  node_interface_metrics_exporter_app_name: "node-interface-metrics-exporter",
+  platform_integ_apps_app_name: "platform-integ-apps"
 }
