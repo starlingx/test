@@ -46,7 +46,7 @@ def test_rehome_one_subcloud_admin_network_subcloud(request):
     subcloud_install_values = deployment_assets_config.get_subcloud_deployment_assets(subcloud_name).get_install_file()
 
     network_list = SystemHostRouteKeywords(subcloud_ssh).get_system_host_route_list_networks(subcloud_hostname)
-    subcloud_admin_gateway_address = SystemAddrpoolListKeywords(subcloud_ssh).get_admin_gateway_address()
+    subcloud_admin_gateway_address = SystemAddrpoolListKeywords(subcloud_ssh).get_system_addrpool_list().get_admin_gateway_address()
     old_subcloud_oam_subnet = SystemAddrpoolListKeywords(subcloud_ssh).get_system_addrpool_list().get_floating_address_by_name("system-controller-oam-subnet")
     old_subcloud_subnet = SystemAddrpoolListKeywords(subcloud_ssh).get_system_addrpool_list().get_floating_address_by_name("system-controller-subnet")
 
