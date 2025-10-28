@@ -1,6 +1,7 @@
 import time
 from typing import List
 
+from config.configuration_manager import ConfigurationManager
 from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
 from framework.validation.validation import validate_equals_with_retry
@@ -8,6 +9,7 @@ from keywords.base_keyword import BaseKeyword
 from keywords.cloud_platform.command_wrappers import source_openrc
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_show_keywords import DcManagerSubcloudShowKeywords
 from keywords.cloud_platform.dcmanager.objects.dcmanager_subcloud_list_object import DcManagerSubcloudListObject
+from keywords.cloud_platform.dcmanager.objects.dcmanager_subcloud_list_object_filter import DcManagerSubcloudListObjectFilter
 from keywords.cloud_platform.dcmanager.objects.dcmanager_subcloud_list_output import DcManagerSubcloudListOutput
 
 
@@ -161,4 +163,60 @@ class DcManagerSubcloudListKeywords(BaseKeyword):
         subclouds = self.get_all_subcloud_by_release(release)
         if not subclouds:
             raise Exception(f"No subclouds found with release {release}.")
+        return subclouds[0]
+
+    def get_all_healthy_subclouds_by_type_and_release(self, lab_type: str, version: str) -> List[DcManagerSubcloudListObject]:
+        """Fetch all healthy subclouds by type and software version.
+
+        Args:
+            lab_type (str): The type of the lab (e.g., 'simplex', 'duplex').
+            version (str): The software version version to filter subclouds by.
+
+        Returns:
+            List[DcManagerSubcloudListObject]: A list of healthy subclouds matching the given type and version.
+        """
+        # Get all healthy subclouds using filter
+        dcmanager_subcloud_list_object_filter = DcManagerSubcloudListObjectFilter.get_healthy_subcloud_filter()
+        subclouds = self.get_dcmanager_subcloud_list().get_dcmanager_subcloud_list_objects_filtered(dcmanager_subcloud_list_object_filter)
+
+        if not subclouds:
+            raise ValueError("No healthy subclouds found in the system.")
+
+        # Get all subclouds defined in lab config
+        lab_config = ConfigurationManager.get_lab_config()
+        sc_defined_in_ace_config = [sc.get_lab_name() for sc in lab_config.get_subclouds()]
+
+        matching_subclouds = []
+
+        for sc in subclouds:
+            # Skip subclouds not defined in ACE config
+            if sc.get_name() not in sc_defined_in_ace_config:
+                continue
+
+            sc_config = lab_config.get_subcloud(sc.get_name())
+            subcloud_show_object = DcManagerSubcloudShowKeywords(self.ssh_connection).get_dcmanager_subcloud_show(sc.get_name()).get_dcmanager_subcloud_show_object()
+            subcloud_version = subcloud_show_object.get_software_version()
+
+            if sc_config.get_lab_type() == lab_type and subcloud_version == version:
+                matching_subclouds.append(sc)
+
+        if not matching_subclouds:
+            raise ValueError(f"No healthy subclouds found for type {lab_type} and version {version}.")
+
+        return matching_subclouds
+
+    def get_healthy_subcloud_by_type_and_release(self, lab_type: str, version: str) -> DcManagerSubcloudListObject:
+        """
+        Fetch one healthy subcloud by type and software version.
+
+        Args:
+            lab_type (str): The type of the lab (e.g., 'simplex', 'duplex').
+            version (str): The software version version to filter subclouds by.
+
+        Returns:
+            DcManagerSubcloudListObject: A healthy subcloud matching the given type and version.
+        """
+        subclouds = self.get_all_healthy_subclouds_by_type_and_release(lab_type, version)
+        if not subclouds:
+            raise Exception(f"No healthy subclouds found with type {lab_type} and release {version}.")
         return subclouds[0]
