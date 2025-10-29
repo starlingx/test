@@ -60,3 +60,49 @@ def test_central_backup_standard_subcloud_inactive_load(request):
 
     get_logger().log_info(f"Checking if backup was created on {subcloud_name}")
     DcManagerSubcloudBackupKeywords(central_ssh).wait_for_backup_status_complete(subcloud_name, expected_status="complete-central")
+
+
+@mark.p2
+@mark.lab_has_subcloud
+def test_local_backup_standard_subcloud_inactive_load(request):
+    """
+    Verify local backup restore on an already deployed subcloud with n-1 release.
+
+    Test Steps:
+        - Create a local subcloud backup for n-1 release.
+        - Verify the local backup completion status.
+
+    Teardown:
+        - Remove files created while the TC was running.
+    """
+    central_ssh = LabConnectionKeywords().get_active_controller_ssh()
+    release = CloudPlatformVersionManagerClass().get_last_major_release()
+
+    # Gets the lowest subcloud (the subcloud with the lowest id).
+    dcmanager_subcloud_list_keywords = DcManagerSubcloudListKeywords(central_ssh)
+    standard_subcloud = dcmanager_subcloud_list_keywords.get_healthy_subcloud_by_type_and_release(LabTypeEnum.STANDARD.value, version=str(release))
+    subcloud_name = standard_subcloud.get_name()
+
+    subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
+
+    # Get subcloud credentials for backup operations
+    lab_config = ConfigurationManager.get_lab_config().get_subcloud(subcloud_name)
+    subcloud_password = lab_config.get_admin_credentials().get_password()
+
+    # Setup local backup path and teardown
+    local_path = f"/opt/platform-backup/backups/{release}/{subcloud_name}_platform_backup_*.tgz"
+
+    def teardown_backup():
+        get_logger().log_info("Cleaning up backup files during teardown")
+        FileKeywords(subcloud_ssh).delete_folder_with_sudo("/opt/platform-backup/backups/")
+
+    request.addfinalizer(teardown_backup)
+
+    # Create local backup on rehomed subcloud
+    get_logger().log_info(f"Creating local backup on rehomed subcloud {subcloud_name}")
+    dc_manager_backup = DcManagerSubcloudBackupKeywords(central_ssh)
+    dc_manager_backup.create_subcloud_backup(subcloud_password, subcloud_ssh, path=local_path, subcloud=subcloud_name, local_only=True)
+
+    # Wait for local backup completion
+    get_logger().log_info("Waiting for local backup creation to complete")
+    DcManagerSubcloudBackupKeywords(central_ssh).wait_for_backup_status_complete(subcloud_name, expected_status="complete-local")
