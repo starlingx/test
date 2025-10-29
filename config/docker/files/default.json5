@@ -173,6 +173,7 @@
 
   "named_manifests": {
     "stx-sanity": "resources/image_manifests/stx-sanity-images.yaml",
+    "container-tests": "resources/image_manifests/container-test-images.yaml",
     // Add custom manifests:
     // "my-images": "path/to/my-manifest.yaml"
   }
