@@ -137,3 +137,26 @@ class SystemApplicationUploadKeywords(BaseKeyword):
         cmd = f'system application-upload {app_name_as_param} {app_version_as_param} {automatic_installation_as_param} {tar_file_path}'
 
         return cmd
+
+    def system_application_upload_and_apply_app(self, app_name: str, tar_file_path: str):
+        """
+        Upload and apply a system application.
+
+        Args:
+            app_name (str): Application name
+            base_path (str): Path where .tgz files are stored
+            tar_file_path (str): Full path to the .tgz file
+
+        Returns:
+            tuple: (upload_status, system_application_apply)
+        """
+
+        upload_input = SystemApplicationUploadInput()
+        upload_input.set_app_name(app_name)
+        upload_input.set_tar_file_path(f"{tar_file_path}")
+
+        self.system_application_upload(upload_input)
+
+        apply_output = SystemApplicationApplyKeywords(self.ssh_connection).system_application_apply(app_name)
+
+        return apply_output
