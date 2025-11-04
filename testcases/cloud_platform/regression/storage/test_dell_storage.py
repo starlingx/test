@@ -21,6 +21,61 @@ from keywords.k8s.pods.kubectl_get_pods_keywords import KubectlGetPodsKeywords
 from keywords.k8s.volumesnapshots.kubectl_get_volumesnapshots_keywords import KubectlGetVolumesnapshotsKeywords
 
 
+def make_sure_dell_storage_application_applied():
+    """
+    To make sure dell-storage application is applied before testing start
+
+    Test Steps:
+        - Check if dell-storage was upload. Uploading dell-storage app.
+        - Check if only CSI-Powerstore is activated.
+        - Create powerstoreOverrides.yaml file to use as user-overrides (ISCSI)
+        - Update user-overrides for CSI-Powerstore chart.
+        - Apply dell-storage.
+
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    dell_storage_app_name = "dell-storage"
+    namespace = "dell-storage"
+
+    get_logger().log_test_case_step(f"Check {dell_storage_app_name} app status.")
+    system_applications = SystemApplicationListKeywords(ssh_connection).get_system_application_list()
+    dell_storage_app_status = system_applications.get_application(dell_storage_app_name).get_status()
+    get_logger().log_info(f"{dell_storage_app_name} application is: {dell_storage_app_status}")
+
+    if dell_storage_app_status == SystemApplicationStatusEnum.APPLY_FAILED:
+        get_logger().log_test_case_step(f"Remove {dell_storage_app_name} application.")
+        dell_storage_remove_input = SystemApplicationRemoveInput()
+        dell_storage_remove_input.set_app_name(dell_storage_app_name)
+        dell_storage_remove_input.set_force_removal(False)
+        dell_app_output = SystemApplicationRemoveKeywords(ssh_connection).system_application_remove(dell_storage_remove_input)
+        dell_storage_app_status = dell_app_output.get_system_application_object().get_status()
+        validate_equals(dell_storage_app_status, SystemApplicationStatusEnum.UPLOADED.value, "dell-storage removal status validation")
+        get_logger().log_info(f"{dell_storage_app_name} application is: {dell_storage_app_status}")
+
+    if dell_storage_app_status == SystemApplicationStatusEnum.UPLOADED.value:
+        chart_name = "csi-powerstore"
+        helm_chart_attribute_modify_keywords = SystemHelmChartAttributeModifyKeywords(ssh_connection)
+        get_logger().log_test_case_step(f"Set {dell_storage_app_name} helm override attributes is true")
+        helm_chart_attribute_modify_keywords.helm_chart_attribute_modify_enabled("true", dell_storage_app_name, chart_name, namespace)
+
+        get_logger().log_test_case_step("Update user-overrides for CSI-Powerstore chart")
+        yaml_file = "dell-storage-powerstoreOverrides.yaml"
+        rest_credentials = ConfigurationManager.get_lab_config().get_rest_credentials()
+        username = rest_credentials.get_user_name()
+        password = rest_credentials.get_password()
+        template_file = get_stx_resource_path(f"resources/cloud_platform/storage/dell_storage/{yaml_file}")
+        replacement_dictionary = {"username": username, "password": password}
+        remote_yaml = YamlKeywords(ssh_connection).generate_yaml_file_from_template(template_file, replacement_dictionary, yaml_file, "/home/sysadmin")
+        SystemHelmOverrideKeywords(ssh_connection).update_helm_override(remote_yaml, dell_storage_app_name, chart_name, namespace)
+
+        get_logger().log_test_case_step(f"Apply {dell_storage_app_name}.")
+        SystemApplicationApplyKeywords(ssh_connection).system_application_apply(dell_storage_app_name)
+
+    app_status_list = ["applied"]
+    SystemApplicationListKeywords(ssh_connection).validate_app_status_in_list(dell_storage_app_name, app_status_list, timeout=360, polling_sleep_time=10)
+    get_logger().log_info(f"{dell_storage_app_name} application is: applied")
+
+
 @mark.p2
 @mark.lab_dell_storage
 def test_dell_storage_powerstore_procedure(request):
@@ -46,14 +101,7 @@ def test_dell_storage_powerstore_procedure(request):
         - Remove test stuff.
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
-
-    dell_storage_app_name = "dell-storage"
     namespace = "dell-storage"
-
-    get_logger().log_test_case_step(f"Check {dell_storage_app_name} app status.")
-    system_applications = SystemApplicationListKeywords(ssh_connection).get_system_application_list()
-    dell_storage_app_status = system_applications.get_application(dell_storage_app_name).get_status()
-    get_logger().log_info(f"{dell_storage_app_name} application is: {dell_storage_app_status}")
 
     get_logger().log_test_case_step("Copy dell-storage test files to target.")
     snapshot_pod_yaml = "dell-storage-powerstoretest-snapshot.yaml"
@@ -95,38 +143,7 @@ def test_dell_storage_powerstore_procedure(request):
 
     request.addfinalizer(teardown)
 
-    if dell_storage_app_status == SystemApplicationStatusEnum.APPLY_FAILED:
-        get_logger().log_test_case_step(f"Remove {dell_storage_app_name} application.")
-        dell_storage_remove_input = SystemApplicationRemoveInput()
-        dell_storage_remove_input.set_app_name(dell_storage_app_name)
-        dell_storage_remove_input.set_force_removal(False)
-        dell_app_output = SystemApplicationRemoveKeywords(ssh_connection).system_application_remove(dell_storage_remove_input)
-        dell_storage_app_status = dell_app_output.get_system_application_object().get_status()
-        validate_equals(dell_storage_app_status, SystemApplicationStatusEnum.UPLOADED.value, "dell-storage removal status validation")
-        get_logger().log_info(f"{dell_storage_app_name} application is: {dell_storage_app_status}")
-
-    if dell_storage_app_status == SystemApplicationStatusEnum.UPLOADED.value:
-        chart_name = "csi-powerstore"
-        helm_chart_attribute_modify_keywords = SystemHelmChartAttributeModifyKeywords(ssh_connection)
-        get_logger().log_test_case_step(f"Set {dell_storage_app_name} helm override attributes is true")
-        helm_chart_attribute_modify_keywords.helm_chart_attribute_modify_enabled("true", dell_storage_app_name, chart_name, namespace)
-
-        get_logger().log_test_case_step("Update user-overrides for CSI-Powerstore chart")
-        yaml_file = "dell-storage-powerstoreOverrides.yaml"
-        rest_credentials = ConfigurationManager.get_lab_config().get_rest_credentials()
-        username = rest_credentials.get_user_name()
-        password = rest_credentials.get_password()
-        template_file = get_stx_resource_path(f"resources/cloud_platform/storage/dell_storage/{yaml_file}")
-        replacement_dictionary = {"username": username, "password": password}
-        remote_yaml = YamlKeywords(ssh_connection).generate_yaml_file_from_template(template_file, replacement_dictionary, yaml_file, "/home/sysadmin")
-        SystemHelmOverrideKeywords(ssh_connection).update_helm_override(remote_yaml, dell_storage_app_name, chart_name, namespace)
-
-        get_logger().log_test_case_step(f"Apply {dell_storage_app_name}.")
-        SystemApplicationApplyKeywords(ssh_connection).system_application_apply(dell_storage_app_name)
-
-    app_status_list = ["applied"]
-    SystemApplicationListKeywords(ssh_connection).validate_app_status_in_list(dell_storage_app_name, app_status_list, timeout=360, polling_sleep_time=10)
-    get_logger().log_info(f"{dell_storage_app_name} application is: applied")
+    make_sure_dell_storage_application_applied()
 
     get_logger().log_test_case_step("Check if all dell-storage pods are running")
     pod_prefix = "csi-powerstore"
@@ -189,3 +206,31 @@ def test_dell_storage_powerstore_procedure(request):
     cmd = "bash -c 'test -f /data0/test.txt'"
     kubectl_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
     validate_equals(ssh_connection.get_return_code(), 0, f"test.txt is on {pod_name} pod.")
+
+
+@mark.p2
+@mark.lab_dell_storage
+def test_remove_dell_storage_app():
+    """
+    Remove and apply the dell-storage application.
+
+    Test Steps:
+        - Run this command "system application-remove dell-storage"
+        - The status of the application should change to uploaded
+        - Run this command "system application-apply"
+        - The dell-storage application was applied
+
+    Args: None
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    dell_storage_app_name = "dell-storage"
+
+    make_sure_dell_storage_application_applied()
+
+    get_logger().log_test_case_step("Remove dell-storage application")
+    system_application_remove_input = SystemApplicationRemoveInput()
+    system_application_remove_input.set_app_name(dell_storage_app_name)
+    SystemApplicationRemoveKeywords(ssh_connection).system_application_remove(system_application_remove_input)
+
+    get_logger().log_test_case_step("Re-Apply dell-storage")
+    SystemApplicationApplyKeywords(ssh_connection).system_application_apply(app_name=dell_storage_app_name)
