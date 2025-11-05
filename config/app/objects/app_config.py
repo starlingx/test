@@ -21,8 +21,8 @@ class AppConfig:
         self.power_metrics_app_name = app_dict["power_metrics_app_name"]
         self.power_manager_app_name = app_dict["power_manager_app_name"]
         self.node_feature_discovery_app_name = app_dict["node_feature_discovery_app_name"]
-        self.node_interface_metrics_exporter_app_name = app_dict[
-            "node_interface_metrics_exporter_app_name"]
+        self.node_interface_metrics_exporter_app_name = app_dict["node_interface_metrics_exporter_app_name"]
+        self.platform_integ_apps_app_name = app_dict["platform_integ_apps_app_name"]
 
     def get_base_application_path(self) -> str:
         """
@@ -103,3 +103,13 @@ class AppConfig:
 
         """
         return self.node_interface_metrics_exporter_app_name
+
+    def get_platform_integ_apps_app_name(self) -> str:
+        """
+        Getter for platform integ apps app name
+
+        Returns:
+            str: the platform integ apps app name path
+
+        """
+        return self.platform_integ_apps_app_name
