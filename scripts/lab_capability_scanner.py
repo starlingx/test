@@ -37,7 +37,7 @@ from keywords.cloud_platform.system.host.objects.system_host_if_output import Sy
 from keywords.cloud_platform.system.oam.objects.system_oam_show_output import SystemOamShowOutput
 from keywords.cloud_platform.system.oam.system_oam_show_keywords import SystemOamShowKeywords
 from testcases.conftest import log_configuration
-
+from keywords.linux.lspci.lspci_keywords import LspciKeywords
 
 def find_capabilities(lab_config: LabConfig) -> list[str]:
     """Find the capabilities of the given lab.
@@ -181,9 +181,23 @@ def has_host_bmc_sensor(ssh_connection: SSHConnection) -> bool:
     return len(ipmitool_sensor_output) > 0
 
 
+def has_qat_device(ssh_connection: SSHConnection) -> bool:
+    """Verify:
+     - that the QAT Device exists: 4940|4942|0b40
+     - Raise Error If Above Devices are not present.
+    Args:
+        ssh_connection: SSHConnection object
+    Return:
+        bool: True if a matching device is found, otherwise False
+    """
+    lspci_keywords = LspciKeywords(ssh_connection)
+    qat_patterns = ("4940", "4942", "0b40")
+
+    return lspci_keywords.has_pci_device(qat_patterns)
+
+
 def retrieve_subclouds(lab_config: LabConfig, ssh_connection: SSHConnection) -> list[LabConfig]:
     """Get the list of online and managed subclouds.
-
     Only subclouds with 'availability' = 'online' and 'management' = 'managed' are considered.
 
     Args:
@@ -428,6 +442,10 @@ def scan_hosts(lab_config: LabConfig, ssh_connection: SSHConnection) -> list[Nod
         if has_host_bmc_sensor(ssh_connection):
             node.append_node_capability("lab_bmc_sensor")
             lab_config.add_lab_capability("lab_bmc_sensor")
+
+        if has_qat_device(ssh_connection):
+            node.append_node_capability("lab_has_qat")
+            lab_config.add_lab_capability("lab_has_qat")
 
         nodes.append(node)
     return nodes
