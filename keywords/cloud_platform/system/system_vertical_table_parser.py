@@ -125,8 +125,16 @@ class SystemVerticalTableParser:
         data_row_number = 0
         previous_key = None
         for row in self.system_output[3:last_row]:  # Ignore the first three rows and the last row.
+            # Detect regex syntax patterns
+            regex_indicators = [
+                'regexp:', 'regex:',           # Explicit regex keywords
+                r'\^/',                        # Start anchor with path
+                r'\$\|/',                      # End anchor with pipe
+                r'\([^)]*\|[^)]*\)'           # Parentheses containing pipes
+            ]
 
-            if str(row).count('|') != 3:
+            has_regex = any(re.search(pattern, str(row)) for pattern in regex_indicators)
+            if not has_regex and str(row).count('|') != 3:
                 raise KeywordException("It is expected that a table have exactly two columns.")
 
             parts = row.split('|')
