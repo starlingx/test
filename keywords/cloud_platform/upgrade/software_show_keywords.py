@@ -1,3 +1,4 @@
+from framework.logging.automation_logger import get_logger
 from keywords.base_keyword import BaseKeyword
 from keywords.cloud_platform.command_wrappers import source_openrc
 from keywords.cloud_platform.upgrade.objects.software_show_output import SoftwareShowOutput
@@ -5,29 +6,28 @@ from keywords.cloud_platform.upgrade.objects.software_show_output import Softwar
 
 class SoftwareShowKeywords(BaseKeyword):
     """
-    This class contains all the keywords related to the
-    'software show <rel-id>' commands.
-
-    Attributes:
-        ssh_connection: An instance of an SSH connection.
+    This class contains all the keywords related to the 'software show <rel-id>' commands.
     """
 
-    def __init__(self, ssh_connection):
+    def __init__(self, ssh_connection: object) -> None:
         """
         Instance of the class.
 
         Args:
-            ssh_connection: An instance of an SSH connection.
+            ssh_connection (object): An instance of an SSH connection.
         """
         self.ssh_connection = ssh_connection
 
-    def get_software_show(self, sudo=False, release_id=None) -> SoftwareShowOutput:
+    def get_software_show(self, sudo: bool = False, release_id: str = None) -> SoftwareShowOutput:
         """
         Get the software show.
 
         Args:
-            sudo: True or False
-            release_id: Release Name
+            sudo (bool): True or False
+            release_id (str): Release Name
+
+        Returns:
+            SoftwareShowOutput: The software show output object.
         """
         if sudo:
             output = self.ssh_connection.send_as_sudo(f"software show {release_id}")
@@ -49,4 +49,5 @@ class SoftwareShowKeywords(BaseKeyword):
             str: The state string (e.g., "available", "deployed", etc.)
         """
         output = self.get_software_show(sudo=True, release_id=release_id)
-        return output.get_property_value("State")
+        get_logger().log_info(f"Deploy show output: {output.output_values}")
+        return output.get_property_value("state")

@@ -25,21 +25,25 @@ class USMConfig:
         except FileNotFoundError:
             raise FileNotFoundError(f"Could not find USM config file: {config_path}")
 
-        self.usm_operation_type = usm_dict.get("usm_operation_type")
-        self.requires_reboot = usm_dict.get("requires_reboot")
-        self.copy_from_remote = usm_dict.get("copy_from_remote")
-        self.iso_path = usm_dict.get("iso_path")
-        self.sig_path = usm_dict.get("sig_path")
-        self.patch_path = usm_dict.get("patch_path")
-        self.patch_dir = usm_dict.get("patch_dir")
-        self.dest_dir = usm_dict.get("dest_dir")
-        self.to_release_ids = usm_dict.get("to_release_ids")
-        self.remote_server = usm_dict.get("remote_server")
-        self.remote_server_username = usm_dict.get("remote_server_username")
-        self.remote_server_password = usm_dict.get("remote_server_password")
-        self.upgrade_arguments = usm_dict.get("upgrade_arguments")
-        self.upload_poll_interval_sec = usm_dict.get("upload_poll_interval_sec")
-        self.upload_timeout_sec = usm_dict.get("upload_timeout_sec")
+        self.usm_operation_type = usm_dict.get("usm_operation_type", "upgrade")
+        self.requires_reboot = usm_dict.get("requires_reboot", False)
+        self.copy_from_remote = usm_dict.get("copy_from_remote", False)
+        self.iso_path = usm_dict.get("iso_path", "")
+        self.sig_path = usm_dict.get("sig_path", "")
+        self.patch_path = usm_dict.get("patch_path", "")
+        self.patch_dir = usm_dict.get("patch_dir", "")
+        self.dest_dir = usm_dict.get("dest_dir", "/scratch/usm_files/")
+        self.to_release_ids = usm_dict.get("to_release_ids", [])
+        self.remote_server = usm_dict.get("remote_server", "")
+        self.remote_username = usm_dict.get("remote_username", "")
+        self.remote_password = usm_dict.get("remote_password", "")
+        self.snapshot = usm_dict.get("snapshot", False)
+        self.rollback = usm_dict.get("rollback", False)
+        self.deployment_timeout_sec = usm_dict.get("deployment_timeout_sec", 7200)
+        self.activation_timeout_sec = usm_dict.get("activation_timeout_sec", 3600)
+        self.upgrade_arguments = usm_dict.get("upgrade_arguments", "")
+        self.upload_poll_interval_sec = usm_dict.get("upload_poll_interval_sec", 30)
+        self.upload_timeout_sec = usm_dict.get("upload_timeout_sec", 1800)
 
         self.validate_config()
 
@@ -52,6 +56,7 @@ class USMConfig:
         - Ensuring expected release IDs are present.
         - Validating required fields for remote copy.
         - Confirming ISO/SIG or patch fields based on operation type.
+        - Validating timeout values are positive integers.
 
         Raises:
             ValueError: If any config field is missing or inconsistent.
@@ -63,16 +68,26 @@ class USMConfig:
             raise ValueError("to_release_ids must be a non-empty list")
 
         if self.copy_from_remote:
-            if not (self.remote_server and self.remote_server_username and self.remote_server_password):
+            if not (self.remote_server and self.remote_username and self.remote_password):
                 raise ValueError("Remote server credentials required when copy_from_remote is true")
 
         if self.usm_operation_type == "upgrade":
             if not self.iso_path or not self.sig_path:
-                raise ValueError("Upgrade requires source_iso_path and source_sig_path")
+                raise ValueError("Upgrade requires iso_path and sig_path")
 
         if self.usm_operation_type == "patch":
             if not self.patch_path and not self.patch_dir:
                 raise ValueError("Patch requires either patch_path or patch_dir")
+
+        # Validate timeout values
+        if self.deployment_timeout_sec <= 0:
+            raise ValueError("deployment_timeout_sec must be positive")
+        if self.activation_timeout_sec <= 0:
+            raise ValueError("activation_timeout_sec must be positive")
+        if self.upload_timeout_sec <= 0:
+            raise ValueError("upload_timeout_sec must be positive")
+        if self.upload_poll_interval_sec <= 0:
+            raise ValueError("upload_poll_interval_sec must be positive")
 
     def get_usm_operation_type(self) -> str:
         """Get the USM operation type.
@@ -234,37 +249,101 @@ class USMConfig:
         """
         self.remote_server = value
 
-    def get_remote_server_username(self) -> str:
-        """Get the remote server username.
+    def get_remote_username(self) -> str:
+        """Get the remote username.
 
         Returns:
             str: Username for authenticating with the remote server.
         """
-        return self.remote_server_username
+        return self.remote_username
 
-    def set_remote_server_username(self, value: str) -> None:
-        """Set the remote server username.
+    def set_remote_username(self, value: str) -> None:
+        """Set the remote username.
 
         Args:
             value (str): Username for authenticating with the remote server.
         """
-        self.remote_server_username = value
+        self.remote_username = value
 
-    def get_remote_server_password(self) -> str:
-        """Get the remote server password.
+    def get_remote_password(self) -> str:
+        """Get the remote password.
 
         Returns:
             str: Password for authenticating with the remote server.
         """
-        return self.remote_server_password
+        return self.remote_password
 
-    def set_remote_server_password(self, value: str) -> None:
-        """Set the remote server password.
+    def set_remote_password(self, value: str) -> None:
+        """Set the remote password.
 
         Args:
             value (str): Password for authenticating with the remote server.
         """
-        self.remote_server_password = value
+        self.remote_password = value
+
+    def get_snapshot(self) -> bool:
+        """Check if snapshot is enabled.
+
+        Returns:
+            bool: True if snapshot enabled, False otherwise.
+        """
+        return self.snapshot
+
+    def set_snapshot(self, value: bool) -> None:
+        """Set if snapshot is enabled.
+
+        Args:
+            value (bool): True if snapshot enabled, False otherwise.
+        """
+        self.snapshot = value
+
+    def get_rollback(self) -> bool:
+        """Check if rollback is enabled.
+
+        Returns:
+            bool: True if rollback enabled, False otherwise.
+        """
+        return self.rollback
+
+    def set_rollback(self, value: bool) -> None:
+        """Set if rollback is enabled.
+
+        Args:
+            value (bool): True if rollback enabled, False otherwise.
+        """
+        self.rollback = value
+
+    def get_deployment_timeout_sec(self) -> int:
+        """Get the deployment timeout in seconds.
+
+        Returns:
+            int: Deployment timeout in seconds.
+        """
+        return self.deployment_timeout_sec
+
+    def set_deployment_timeout_sec(self, value: int) -> None:
+        """Set the deployment timeout in seconds.
+
+        Args:
+            value (int): Deployment timeout in seconds.
+        """
+        self.deployment_timeout_sec = value
+
+    def get_activation_timeout_sec(self) -> int:
+        """Get the activation timeout in seconds.
+
+        Returns:
+            int: Activation timeout in seconds.
+        """
+        return self.activation_timeout_sec
+
+    def set_activation_timeout_sec(self, value: int) -> None:
+        """Set the activation timeout in seconds.
+
+        Args:
+            value (int): Activation timeout in seconds.
+        """
+        self.activation_timeout_sec = value
 
     def get_upgrade_arguments(self) -> str:
         """Get optional CLI arguments for upload or upgrade.
