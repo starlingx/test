@@ -5,6 +5,7 @@ from config.configuration_manager import ConfigurationManager
 from framework.logging.automation_logger import get_logger
 from framework.resources.resource_finder import get_stx_resource_path
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
+from keywords.docker.images.docker_images_keywords import DockerImagesKeywords
 from keywords.docker.images.docker_load_image_keywords import DockerLoadImageKeywords
 from keywords.docker.login.docker_login_keywords import DockerLoginKeywords
 from keywords.files.file_keywords import FileKeywords
@@ -23,9 +24,10 @@ from keywords.k8s.pods.kubectl_get_pods_keywords import KubectlGetPodsKeywords
 from framework.validation.validation import validate_equals
 
 IMAGES = [
-    "kubernetes-e2e-test-images.tar",
-    "stress-ng.tar",
-    "resource-consumer.tar"
+    "gcr.io/kubernetes-e2e-test-images/resource-consumer:1.4",
+    "alexeiled/stress-ng",
+    "centos/tools:latest",
+    "datawiseio/fio:latest"
 ]
 SCALE_FACTOR = 30
 SERVICES_PATH = "resources/cloud_platform/system_test/pod_scaling/services"
@@ -86,11 +88,9 @@ def deploy_benchmark_pods(request, benchmark):
     local_deployments_dir = get_stx_resource_path(f"{DEPLOYMENTS_PATH}/{benchmark}")
     remote_deployments_dir = f"/tmp/system_test/deployments/{benchmark}"
 
-    setup_docker_registry(ssh_connection, file_keywords, namespace, IMAGES)
-
     setup_upload_files(local_services_dir, remote_services_dir, local_deployments_dir, remote_deployments_dir)
 
-    get_logger().log_info(f"Creating namespace '{namespace}'...")
+    get_logger().log_test_case_step(f"Creating namespace '{namespace}'...)")
     ns_creator = KubectlCreateNamespacesKeywords(ssh_connection)
     raw_namespace_obj = KubectlGetNamespacesKeywords(ssh_connection).get_namespaces()
     namespace_objs = raw_namespace_obj.get_namespaces()
@@ -100,37 +100,37 @@ def deploy_benchmark_pods(request, benchmark):
         ns_destroyer.delete_namespace(namespace)
     ns_creator.create_namespaces(namespace)
 
+    setup_docker_registry(ssh_connection, file_keywords, namespace, IMAGES)
 
-    get_logger().log_info(f"Apply services YAMLs....")
+    get_logger().log_test_case_step(f"Apply service yaml files...)")
     service_files = file_keywords.get_files_in_dir(remote_services_dir)
     pod_applier = KubectlApplyPodsKeywords(ssh_connection)
     for svc_yaml in service_files:
         pod_applier.apply_from_yaml(f"{remote_services_dir}/{svc_yaml}",namespace=namespace)
 
-    get_logger().log_info(f"Apply deployment YAMLs and calculate time....")
+    get_logger().log_test_case_step(f"Apply deployment YAMLs and calculate time....")
     pod_getter = KubectlGetPodsKeywords(ssh_connection)
     deployment_files = file_keywords.get_files_in_dir(remote_deployments_dir)
     start_deploy = time()
     for dep_yaml in deployment_files:
         pod_applier.apply_from_yaml(f"{remote_deployments_dir}/{dep_yaml}",namespace=namespace)
-        validate_equals(
+
+    validate_equals(
             pod_getter.wait_for_all_pods_status(expected_statuses=["Running", "Completed"]),
             True,
             'Logs reached expected state')
     deploy_time = time() - start_deploy
     get_logger().log_info(f"Time to deploy pods for the first time: {deploy_time:.2f} seconds")
 
-    
-    get_logger().log_info("Scaling up all deployments and calculating time...")
+
+    get_logger().log_test_case_step("Scaling up all deployments and calculating time...")
     scale_up_time = scale_deployments(ssh_connection, SCALE_FACTOR, namespace)
     get_logger().log_info(f"Time to scale up pods: {scale_up_time:.2f} seconds")
 
-
-    get_logger().log_info("Scaling down all deployments tand calculating time...")
+    get_logger().log_test_case_step("Scaling down all deployments tand calculating time...")
     scale_down_time = scale_deployments(ssh_connection, 0, namespace)
     get_logger().log_info(f"Time to scale down pods: {scale_down_time:.2f} seconds")
 
-    
     def teardown():
         deployments_output = KubectlGetDeploymentsKeywords(ssh_connection).get_deployments(namespace=namespace)
         deployments_objs = deployments_output.get_deployments()
@@ -191,7 +191,7 @@ def setup_upload_files(
 def setup_docker_registry(ssh_connection, file_keywords, namespace, images):
 
     """
-    Sets up the local Docker registry by logging in and pushing necessary images.
+    Sets up the local Docker registry by pulling, tagging, and pushing necessary images.
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     docker_config = ConfigurationManager.get_docker_config()
@@ -200,36 +200,24 @@ def setup_docker_registry(ssh_connection, file_keywords, namespace, images):
     registry_user = local_registry.get_user_name()
     registry_pass = local_registry.get_password()
 
-    docker_login = DockerLoginKeywords(ssh_connection)
-    docker_login.login(registry_user, registry_pass, registry_url)
-
-    # Step 1: Load, tag, and push images to local registry
-    image_folder = get_stx_resource_path("resources/images")
-    docker_login = DockerLoginKeywords(ssh_connection)
-    docker_login.login(registry_user, registry_pass, registry_url)
-
-    docker_loader = DockerLoadImageKeywords(ssh_connection)
-
-    for image_file in images:
-        local_path = f"{image_folder}/{image_file}"
-        remote_path = f"/home/sysadmin/{image_file}"
-        file_keywords.upload_file(local_path, remote_path, overwrite=False)
-        image_name = docker_loader.load_docker_image_to_host(image_file)
-        tagged_image = f"{local_registry.get_registry_url()}/{image_name}"
-        get_logger().log_info(f"image name {image_name} and tagged name {tagged_image} ...")
-        docker_loader.tag_docker_image_for_registry(
-            image_name,
-            image_name,
-            local_registry
-        )
-        docker_loader.push_docker_image_to_registry(image_name, local_registry)
-
-    # Step 3: Create docker registry secret for the selected namespace
-    get_logger().log_info(f"Creating secrets ")
+    get_logger().log_test_case_step(f"Creating secrets for namespace {namespace}")
     secret_creator = KubectlCreateSecretsKeywords(ssh_connection)
     secret_creator.create_secret_for_registry(local_registry, "regcred", namespace=namespace)
 
+    docker_login = DockerLoginKeywords(ssh_connection)
+    docker_login.login(registry_user, registry_pass, registry_url)
 
+    docker_images = DockerImagesKeywords(ssh_connection)
+    docker_loader = DockerLoadImageKeywords(ssh_connection)
+
+    get_logger().log_test_case_step(f"Pull, tag and push images to {registry_url}")
+    for image in images:
+        get_logger().log_info(f"Processing image: {image}")
+        docker_images.pull_image(image)
+        tagged_image = f"{registry_url}/{image}"
+        docker_loader.tag_docker_image_for_registry(image, image, local_registry)
+        docker_loader.push_docker_image_to_registry(image, local_registry)
+        get_logger().log_info(f"Successfully pushed {image} to {tagged_image}")
 
 def scale_deployments(ssh_connection, replicas, namespace):
     """
