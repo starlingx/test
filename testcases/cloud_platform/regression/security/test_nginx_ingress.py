@@ -5,7 +5,6 @@ from framework.resources.resource_finder import get_stx_resource_path
 from framework.validation.validation import validate_equals
 from keywords.cloud_platform.rest.cloud_rest_client import CloudRestClient
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
-from keywords.cloud_platform.ssh.lab_info_keywords import LabInfoKeywords
 from keywords.files.file_keywords import FileKeywords
 from keywords.files.yaml_keywords import YamlKeywords
 from keywords.k8s.certificate.kubectl_get_certificate_keywords import KubectlGetCertStatusKeywords
@@ -38,7 +37,7 @@ def test_app_using_nginx_controller(request):
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     lab_config = ConfigurationManager.get_lab_config()
     oam_ip = lab_config.get_floating_ip()
-    dns_name = LabInfoKeywords().get_fully_qualified_name().lower()
+    dns_name = ConfigurationManager.get_security_config().get_domain_name()
     dns_resolution_status = IPAddressKeywords(oam_ip).check_dnsname_resolution(dns_name=dns_name)
     validate_equals(dns_resolution_status, True, "Verify the dns name resolution")
     stepca_url = ConfigurationManager.get_security_config().get_stepca_server_url()

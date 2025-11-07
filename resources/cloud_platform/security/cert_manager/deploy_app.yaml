@@ -50,10 +50,13 @@ spec:
     spec:
       containers:
       - name: kuard
-        image: gcr.io/kuar-demo/kuard-amd64:blue
+        image: hashicorp/http-echo
         imagePullPolicy: Always
+        args:
+        - "-text=Hello World"
+        - "-listen=:5678"
         ports:
-        - containerPort: 8080
+        - containerPort: 5678
           protocol: TCP
 ---
 apiVersion: v1
@@ -66,7 +69,7 @@ metadata:
 spec:
   ports:
     - port: 80
-      targetPort: 8080
+      targetPort: 5678
       protocol: TCP
   selector:
     app: kuard
