@@ -433,6 +433,20 @@ def scan_hosts(lab_config: LabConfig, ssh_connection: SSHConnection) -> list[Nod
     return nodes
 
 
+def _matches_ip_version(ip_address: str, is_ipv6_lab: bool) -> bool:
+    """Check if IP address matches the lab's IP version configuration.
+
+    Args:
+        ip_address (str): The IP address to check.
+        is_ipv6_lab (bool): Whether the lab is configured for IPv6.
+
+    Returns:
+        bool: True if IP version matches lab configuration.
+    """
+    is_ipv6_address = ":" in ip_address
+    return is_ipv6_lab == is_ipv6_address
+
+
 def get_controller_ip(host_show_output: object, controller_name: str) -> str | None:
     """Get the IP address of a controller.
 
@@ -443,14 +457,48 @@ def get_controller_ip(host_show_output: object, controller_name: str) -> str | N
     Returns:
         str | None: The IP address of the controller, or None if not found.
     """
-    host_uuid = host_show_output.get_system_host_show_object(controller_name).get_uuid()
+    host_object = host_show_output.get_system_host_show_object(controller_name)
+    host_uuid = host_object.get_uuid()
 
     if host_uuid is None:
         get_logger().log_error(f"Host {controller_name} not found")
         return None
 
+    host_interface_list_output = GetInterfacesKeywords().get_interfaces(host_uuid)
     host_addresses_output = GetHostAddressesKeywords().get_host_addresses(host_uuid)
-    return host_addresses_output.get_address_by_ifname("oam0")
+    lab_config = ConfigurationManager.get_lab_config()
+    is_ipv6_lab = lab_config.is_ipv6()
+
+    if host_object.get_personality() == "controller":
+        # For controllers, get OAM interface from all platform interfaces
+        platform_interfaces = host_interface_list_output.get_interfaces_by_class("platform")
+        if not platform_interfaces:
+            raise RuntimeError(f"No platform interfaces found for controller {controller_name}")
+
+        # First try OAM interfaces specifically
+        for interface in platform_interfaces:
+            if "oam" in interface.get_name():
+                controller_ip = host_addresses_output.get_address_by_ifname(interface.get_name())
+                if controller_ip and _matches_ip_version(controller_ip, is_ipv6_lab):
+                    return controller_ip
+
+        # Fallback to any platform interface with matching IP version
+        for interface in platform_interfaces:
+            controller_ip = host_addresses_output.get_address_by_ifname(interface.get_name())
+            if controller_ip and _matches_ip_version(controller_ip, is_ipv6_lab):
+                return controller_ip
+
+        raise RuntimeError(f"No matching IP address found for controller {controller_name}")
+    else:
+        # For compute nodes, get management interface
+        platform_interfaces = host_interface_list_output.get_interfaces_by_class("platform")
+        for interface in platform_interfaces:
+            if interface.get_name().startswith("mgmt"):
+                mgmt_ip = host_addresses_output.get_address_by_ifname(interface.get_name())
+                if mgmt_ip and _matches_ip_version(mgmt_ip, is_ipv6_lab):
+                    return mgmt_ip
+
+        return None
 
 
 def get_horizon_url() -> str:
