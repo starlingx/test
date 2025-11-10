@@ -12,7 +12,7 @@ class HelmOverrideShowObject:
         self.attributes: dict = None
         self.combined_overrides: dict = None
         self.system_overrides: dict = None
-        self.user_overrides: dict = None
+        self.user_overrides: str = None
 
     def set_name(self, name: str):
         """
@@ -113,11 +113,11 @@ class HelmOverrideShowObject:
         """
         self.user_overrides = user_overrides
 
-    def get_user_overrides(self) -> dict:
+    def get_user_overrides(self) -> str:
         """
         Gets the user-defined overrides for the chart.
 
         Returns:
-            dict: User override values.
+            str: User override values.
         """
         return self.user_overrides

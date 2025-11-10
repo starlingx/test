@@ -26,7 +26,6 @@ class SystemHelmOverrideOutput:
             self.helm_override = HelmOverrideObject()
             self.helm_override.set_name(output_values["name"])
             self.helm_override.set_namespace(output_values["namespace"])
-            self.helm_override.set_user_overrides(output_values["user_overrides"])
         else:
             raise KeywordException(f"The output line {output_values} was not valid")
 
@@ -50,7 +49,7 @@ class SystemHelmOverrideOutput:
         Returns:
             bool: True if the output contains all required fields, False otherwise.
         """
-        required_fields = ["name", "namespace", "user_overrides"]
+        required_fields = ["name", "namespace"]
         valid = True
         for field in required_fields:
             if field not in value:

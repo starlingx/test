@@ -5,7 +5,8 @@ from framework.exceptions.keyword_exception import KeywordException
 
 class SystemVerticalTableParser:
     """
-    Class for System vertical table parsing
+    Class for System vertical table parsing.
+
     In a vertical table, attributes and their corresponding values are arranged in adjacent columns,
     with each attribute listed alongside its value.
 
@@ -60,11 +61,12 @@ class SystemVerticalTableParser:
 
     _MIN_ROWS = 5
 
-    def __init__(self, system_output):
+    def __init__(self, system_output: list[str] | str):
         """
-        Constructor
+        Constructor.
+
         Args:
-            system_output (list[str]): a list of strings representing the output of a 'system <*>' command.
+            system_output (list[str] | str): a list of strings or a string representing the output of a 'system <*>' command.
         """
         self.system_output = system_output
 
@@ -72,12 +74,13 @@ class SystemVerticalTableParser:
         self,
     ):
         """
-        Getter for output values dict
+        Getter for output values dict.
+
         Returns: the output values dict
 
         """
         # Regex to validate the pattern "+---+---+", with varying dashes
-        pattern = r'^\+\-+\+\-+\+$'
+        pattern = r"^\+\-+\+\-+\+$"
 
         # Get the total number of rows.
         total_rows = len(self.system_output)
@@ -99,7 +102,7 @@ class SystemVerticalTableParser:
         second_last_row_valid = re.match(pattern, self.system_output[total_rows - 2])
 
         # Check if there is some text in the last different from the pattern.
-        has_text_in_last_row = True if not last_row_valid and self.system_output[total_rows - 1].strip() != '' else False
+        has_text_in_last_row = True if not last_row_valid and self.system_output[total_rows - 1].strip() != "" else False
 
         # There are cases in which the last row is a message that is not part of the table.
         # Refer to the header comment of this class for an example.
@@ -125,19 +128,19 @@ class SystemVerticalTableParser:
         data_row_number = 0
         previous_key = None
         for row in self.system_output[3:last_row]:  # Ignore the first three rows and the last row.
+
             # Detect regex syntax patterns
-            regex_indicators = [
-                'regexp:', 'regex:',           # Explicit regex keywords
-                r'\^/',                        # Start anchor with path
-                r'\$\|/',                      # End anchor with pipe
-                r'\([^)]*\|[^)]*\)'           # Parentheses containing pipes
-            ]
+            regex_indicators = ["regexp:", "regex:", r"\^/", r"\$\|/", r"\([^)]*\|[^)]*\)"]  # Explicit regex keywords  # Start anchor with path  # End anchor with pipe  # Parentheses containing pipes
+
+            if "!!binary" in row:
+                row = row.replace("!!binary |", "")
 
             has_regex = any(re.search(pattern, str(row)) for pattern in regex_indicators)
-            if not has_regex and str(row).count('|') != 3:
+            if not has_regex and str(row).count("|") != 3:
                 raise KeywordException("It is expected that a table have exactly two columns.")
 
-            parts = row.split('|')
+            parts = row.split("|")
+
             if len(parts) > 2:
                 key = parts[1].strip()
                 value = parts[2].strip()
@@ -148,7 +151,7 @@ class SystemVerticalTableParser:
                     # This 'else' block handles cases where the property name spans multiple lines, ensuring proper parsing.
                     if data_row_number == 0:
                         raise KeywordException("The property name in the first data row cannot be empty.")
-                    output_values_dict[previous_key] = output_values_dict[previous_key] + ' ' + value
+                    output_values_dict[previous_key] = output_values_dict[previous_key] + " " + value
             data_row_number += 1
 
         return output_values_dict
