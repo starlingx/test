@@ -76,7 +76,7 @@ def test_usm_upload_release_from_local():
     iso_path = usm_config.get_iso_path()
     sig_path = usm_config.get_sig_path()
     release_id = usm_config.get_to_release_ids()[0]
-    timeout = usm_config.get_upload_timeout_sec()
+    timeout = usm_config.get_upload_release_timeout_sec()
     poll_interval = usm_config.get_upload_poll_interval_sec()
 
     get_logger().log_test_case_step(f"Uploading software release: ISO={iso_path}, SIG={sig_path}")
@@ -87,6 +87,7 @@ def test_usm_upload_release_from_local():
         expected_release_id=release_id,
         timeout=timeout,
         poll_interval=poll_interval,
+        sudo=False
     )
 
     get_logger().log_info(f"Upload verification complete for release: {release_id}")
@@ -109,7 +110,7 @@ def test_usm_upload_patch_from_local():
 
     patch_file_path = usm_config.get_patch_path()
     expected_release_id = usm_config.get_to_release_ids()[0]
-    timeout = usm_config.get_upload_timeout_sec()
+    timeout = usm_config.get_upload_patch_timeout_sec()
     poll_interval = usm_config.get_upload_poll_interval_sec()
 
     get_logger().log_test_case_step(f"Uploading patch file: {patch_file_path}")
@@ -119,6 +120,7 @@ def test_usm_upload_patch_from_local():
         expected_release_id=expected_release_id,
         timeout=timeout,
         poll_interval=poll_interval,
+        sudo=False
     )
 
     get_logger().log_info(f"Upload verification complete for patch release: {expected_release_id}")

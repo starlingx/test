@@ -43,7 +43,8 @@ class USMConfig:
         self.activation_timeout_sec = usm_dict.get("activation_timeout_sec", 3600)
         self.upgrade_arguments = usm_dict.get("upgrade_arguments", "")
         self.upload_poll_interval_sec = usm_dict.get("upload_poll_interval_sec", 30)
-        self.upload_timeout_sec = usm_dict.get("upload_timeout_sec", 1800)
+        self.upload_patch_timeout_sec = usm_dict.get("upload_patch_timeout_sec", 1800)
+        self.upload_release_timeout_sec = usm_dict.get("upload_release_timeout_sec", 1800)
 
         self.validate_config()
 
@@ -84,8 +85,10 @@ class USMConfig:
             raise ValueError("deployment_timeout_sec must be positive")
         if self.activation_timeout_sec <= 0:
             raise ValueError("activation_timeout_sec must be positive")
-        if self.upload_timeout_sec <= 0:
-            raise ValueError("upload_timeout_sec must be positive")
+        if self.upload_patch_timeout_sec <= 0:
+            raise ValueError("upload_patch_timeout_sec must be positive")
+        if self.upload_release_timeout_sec <= 0:
+            raise ValueError("upload_release_timeout_sec must be positive")
         if self.upload_poll_interval_sec <= 0:
             raise ValueError("upload_poll_interval_sec must be positive")
 
@@ -377,18 +380,34 @@ class USMConfig:
         """
         self.upload_poll_interval_sec = value
 
-    def get_upload_timeout_sec(self) -> int:
-        """Get timeout duration for upload completion.
+    def get_upload_patch_timeout_sec(self) -> int:
+        """Get timeout duration for patch upload completion.
 
         Returns:
-            int: Maximum seconds to wait for upload to complete.
+            int: Maximum seconds to wait for patch upload to complete.
         """
-        return self.upload_timeout_sec
+        return self.upload_patch_timeout_sec
 
-    def set_upload_timeout_sec(self, value: int) -> None:
-        """Set timeout duration for upload completion.
+    def set_upload_patch_timeout_sec(self, value: int) -> None:
+        """Set timeout duration for patch upload completion.
 
         Args:
-            value (int): Maximum seconds to wait for upload to complete.
+            value (int): Maximum seconds to wait for patch upload to complete.
         """
-        self.upload_timeout_sec = value
+        self.upload_patch_timeout_sec = value
+    
+    def get_upload_release_timeout_sec(self) -> int:
+        """Get timeout duration for release upload completion.
+
+        Returns:
+            int: Maximum seconds to wait for release upload to complete.
+        """
+        return self.upload_release_timeout_sec
+
+    def set_upload_release_timeout_sec(self, value: int) -> None:
+        """Set timeout duration for release upload completion.
+
+        Args:
+            value (int): Maximum seconds to wait for release upload to complete.
+        """
+        self.upload_release_timeout_sec = value
