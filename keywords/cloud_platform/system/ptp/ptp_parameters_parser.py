@@ -47,3 +47,34 @@ class PTPParametersParser:
             output_str = parameters_str
 
         return output_str
+
+    def process_parameters(self) -> str:
+        """
+        Processes all PTP parameters, handling both string and list inputs,
+        to ensure values are properly quoted.
+
+        Returns:
+            str: The modified string with parameter values properly quoted.
+        """
+        if isinstance(self.parameters, list):
+            parameters_str = " ".join(self.parameters)  # Convert list to string
+        else:
+            parameters_str = self.parameters
+
+        # Process devices parameter
+        devices_match = re.search(r"(devices=)(.*?)(?=\s+\w+=|$)", parameters_str)
+        if devices_match:
+            prefix, value = devices_match.group(1), devices_match.group(2).strip()
+            if " " in value and not (value.startswith("'") and value.endswith("'")):
+                value = f"'{value}'"
+            parameters_str = parameters_str.replace(devices_match.group(0), f"{prefix}{value}")
+
+        # Process cmdline_opts parameter
+        cmdline_match = re.search(r"(cmdline_opts=)(.*?)(?=\s+\w+=|$)", parameters_str)
+        if cmdline_match:
+            prefix, value = cmdline_match.group(1), cmdline_match.group(2).strip()
+            if not (value.startswith("'") and value.endswith("'")):
+                value = f"'{value}'"
+            parameters_str = parameters_str.replace(cmdline_match.group(0), f"{prefix}{value}")
+
+        return parameters_str
