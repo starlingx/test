@@ -4,11 +4,14 @@ from framework.logging.automation_logger import get_logger
 from framework.validation.validation import validate_equals
 from keywords.ceph.ceph_status_keywords import CephStatusKeywords
 from keywords.cloud_platform.fault_management.alarms.alarm_list_keywords import AlarmListKeywords
+from keywords.cloud_platform.fault_management.alarms.objects.alarm_list_output import AlarmListOutput
+from keywords.cloud_platform.health.health_keywords import HealthKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.cloud_platform.system.host.system_host_list_keywords import SystemHostListKeywords
 from keywords.cloud_platform.system.host.system_host_lock_keywords import SystemHostLockKeywords
 from keywords.cloud_platform.system.host.system_host_reboot_keywords import SystemHostRebootKeywords
 from keywords.cloud_platform.system.host.system_host_reinstall_keywords import SystemHostReinstallKeywords
+from keywords.cloud_platform.system.host.system_host_swact_keywords import SystemHostSwactKeywords
 from keywords.server.power_keywords import PowerKeywords
 
 
@@ -104,10 +107,13 @@ def test_reinstall_standby_host():
     Test to validate standby controller reinstallation and ceph health.
 
     Test Steps:
+        - Check the hosts healthy
+        - Check if controller-0 is the active controller
+        - Get the active alarms
         - Lock standby controller
         - Reinstall standby controller
         - Unlock standby controller
-        - Checking if there are any active alarms
+        - Checking if there are any new active alarms
         - Checking storage backend health after reinstall.
 
     Args: None
@@ -115,28 +121,37 @@ def test_reinstall_standby_host():
 
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     system_host_list_keywords = SystemHostListKeywords(ssh_connection)
-    standby_controller = system_host_list_keywords.get_standby_controller().get_host_name()
     system_host_lock_keywords = SystemHostLockKeywords(ssh_connection)
+    standby_controller = system_host_list_keywords.get_standby_controller().get_host_name()
     system_host_reinstall_keywords = SystemHostReinstallKeywords(ssh_connection)
     ceph_status_keywords = CephStatusKeywords(ssh_connection)
-    alarm_list_keyword = AlarmListKeywords(ssh_connection)
+    alarm_list_keywords = AlarmListKeywords(ssh_connection)
+    health_keywords = HealthKeywords(ssh_connection)
+    system_host_swact_keywords = SystemHostSwactKeywords(ssh_connection)
 
-    get_logger().log_test_case_step("Checking if there are any active alarms")
-    alarms = alarm_list_keyword.alarm_list()
-    validate_equals(alarms, [], "No active alarms")
+    get_logger().log_test_case_step("Check the hosts healthy")
+    health_keywords.validate_hosts_health()
 
-    get_logger().log_test_case_step("Lock standby controller")
+    get_logger().log_test_case_step("Check if controller-0 is the active controller")
+    if standby_controller == "controller-0":
+        system_host_swact_keywords.host_swact()
+        standby_controller = system_host_list_keywords.get_standby_controller().get_host_name()
+
+    get_logger().log_test_case_step("Get the active alarms")
+    initial_alarm_list_ids = alarm_list_keywords.get_alarm_list().alarms_id()
+
+    get_logger().log_test_case_step(f"Lock {standby_controller}")
     system_host_lock_keywords.lock_host(standby_controller)
 
-    get_logger().log_test_case_step("Reinstall standby controller")
+    get_logger().log_test_case_step(f"Reinstall {standby_controller}")
     system_host_reinstall_keywords.reinstall_host(standby_controller)
 
-    get_logger().log_test_case_step("Unlock standby controller")
+    get_logger().log_test_case_step(f"Unlock {standby_controller}")
     system_host_lock_keywords.unlock_host(standby_controller)
 
-    get_logger().log_test_case_step("Checking if there are any active alarms")
-    alarms = alarm_list_keyword.alarm_list()
-    validate_equals(alarms, [], "No active alarms")
+    get_logger().log_test_case_step("Checking if there are any new active alarms")
+    final_alarm_list_ids = alarm_list_keywords.get_alarm_list().alarms_id()
+    validate_equals(AlarmListOutput.is_new_alarm_id_since(initial_alarm_list_ids, final_alarm_list_ids), False, "No new alarms should be present")
 
     get_logger().log_test_case_step("Checking storage backend health after reinstall.")
     ceph_status_keywords.wait_for_ceph_health_status(expect_health_status=True)

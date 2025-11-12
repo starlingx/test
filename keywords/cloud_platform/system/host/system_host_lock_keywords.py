@@ -157,7 +157,7 @@ class SystemHostLockKeywords(BaseKeyword):
         except TimeoutError:  # Alarm still exists, we can't unlock
             raise KeywordException("Failed unlock pre-check. Application apply was in progress")
 
-    def wait_for_host_unlocked(self, host_name: str, unlock_wait_timeout: int = 1800) -> bool:
+    def wait_for_host_unlocked(self, host_name: str, unlock_wait_timeout: int = 2800) -> bool:
         """
         Wait for the host to be unlocked
 

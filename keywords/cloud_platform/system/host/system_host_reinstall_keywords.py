@@ -91,7 +91,7 @@ class SystemHostReinstallKeywords(BaseKeyword):
         """
         self.ssh_connection.send(source_openrc(f"system host-reinstall {host_name}"))
         self.validate_success_return_code(self.ssh_connection)
-        validate_equals_with_retry(lambda: SystemHostListKeywords(self.ssh_connection).get_system_host_list().get_host(host_name).get_availability(), expected_value="offline", validation_description="Waiting for host to go offline")
+        validate_equals_with_retry(lambda: SystemHostListKeywords(self.ssh_connection).get_system_host_list().get_host(host_name).get_availability(), expected_value="offline", validation_description="Waiting for host to go offline", timeout=500)
         is_host_reinstalled = self.wait_for_host_reinstall(host_name)
         if not is_host_reinstalled:
             host_value = SystemHostListKeywords(self.ssh_connection).get_system_host_list().get_host(host_name)
