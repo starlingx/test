@@ -16,6 +16,12 @@ class SecurityConfig:
         self.stepca_server_url = security_dict["stepca_server_url"]
         self.stepca_server_issuer = security_dict["stepca_server_issuer"]
 
+        # Nginx ingress configuration
+        nginx_config = security_dict.get("nginx_ingress", {})
+        self.nginx_https_test = nginx_config.get("https_test", {})
+        self.nginx_http_test = nginx_config.get("http_test", {})
+        self.nginx_external_ca_test = nginx_config.get("external_ca_test", {})
+
         # Portieris configuration
         portieris_config = security_dict.get("portieris", {})
         self.portieris_registry_hostname = portieris_config.get("registry_server_hostname", "")
@@ -121,3 +127,115 @@ class SecurityConfig:
             str: Registry CA certificate content.
         """
         return self.portieris_registry_ca_cert
+
+    def get_nginx_https_host_name(self) -> str:
+        """Getter for nginx HTTPS test host name.
+
+        Returns:
+            str: Host name for HTTPS test.
+        """
+        return self.nginx_https_test.get("host_name", "konoha.rei")
+
+    def get_nginx_https_key_file(self) -> str:
+        """Getter for nginx HTTPS test key file.
+
+        Returns:
+            str: Key file name.
+        """
+        return self.nginx_https_test.get("key_file", "key.crt")
+
+    def get_nginx_https_cert_file(self) -> str:
+        """Getter for nginx HTTPS test cert file.
+
+        Returns:
+            str: Certificate file name.
+        """
+        return self.nginx_https_test.get("cert_file", "cert.crt")
+
+    def get_nginx_https_tls_secret_name(self) -> str:
+        """Getter for nginx HTTPS test TLS secret name.
+
+        Returns:
+            str: TLS secret name.
+        """
+        return self.nginx_https_test.get("tls_secret_name", "kanoha-secret")
+
+    def get_nginx_https_namespace(self) -> str:
+        """Getter for nginx HTTPS test namespace.
+
+        Returns:
+            str: Namespace for HTTPS test.
+        """
+        return self.nginx_https_test.get("namespace", "pvtest")
+
+    def get_nginx_http_namespace(self) -> str:
+        """Getter for nginx HTTP test namespace.
+
+        Returns:
+            str: Namespace for HTTP test.
+        """
+        return self.nginx_http_test.get("namespace", "pvtest")
+
+    def get_nginx_external_ca_stepca_issuer(self) -> str:
+        """Getter for nginx external CA test stepca issuer.
+
+        Returns:
+            str: StepCA issuer name.
+        """
+        return self.nginx_external_ca_test.get("stepca_issuer", "stepca-issuer")
+
+    def get_nginx_external_ca_pod_name(self) -> str:
+        """Getter for nginx external CA test pod name.
+
+        Returns:
+            str: Pod name.
+        """
+        return self.nginx_external_ca_test.get("pod_name", "kuard")
+
+    def get_nginx_external_ca_cert(self) -> str:
+        """Getter for nginx external CA test certificate name.
+
+        Returns:
+            str: Certificate name.
+        """
+        return self.nginx_external_ca_test.get("cert", "kuard-ingress-tls")
+
+    def get_nginx_external_ca_deploy_app_file_name(self) -> str:
+        """Getter for nginx external CA test deploy app file name.
+
+        Returns:
+            str: Deploy app file name.
+        """
+        return self.nginx_external_ca_test.get("deploy_app_file_name", "deploy_app.yaml")
+
+    def get_nginx_external_ca_global_policy_file_name(self) -> str:
+        """Getter for nginx external CA test global policy file name.
+
+        Returns:
+            str: Global policy file name.
+        """
+        return self.nginx_external_ca_test.get("global_policy_file_name", "global_policy.yaml")
+
+    def get_nginx_external_ca_kuard_file_name(self) -> str:
+        """Getter for nginx external CA test kuard file name.
+
+        Returns:
+            str: Kuard file name.
+        """
+        return self.nginx_external_ca_test.get("kuard_file_name", "kuard.yaml")
+
+    def get_nginx_external_ca_namespace(self) -> str:
+        """Getter for nginx external CA test namespace.
+
+        Returns:
+            str: Namespace for external CA test.
+        """
+        return self.nginx_external_ca_test.get("namespace", "pvtest")
+
+    def get_nginx_external_ca_tls_secret_name(self) -> str:
+        """Getter for nginx external CA test TLS secret name.
+
+        Returns:
+            str: TLS secret name.
+        """
+        return self.nginx_external_ca_test.get("tls_secret_name", "kuard-ingress-tls")

@@ -1,3 +1,4 @@
+import json
 import time
 
 from framework.exceptions.keyword_exception import KeywordException
@@ -27,12 +28,11 @@ class KubectlGetPodsKeywords(BaseKeyword):
         Gets the k8s pods that are available using '-o wide'.
 
         Args:
-            namespace(str, optional): The namespace to search for pods. If None, it will search in all namespaces.
+            namespace (str, optional): The namespace to search for pods. If None, it will search in all namespaces.
             label (str, optional): The label to search for pods.
 
         Returns:
             KubectlGetPodsOutput: An object containing the parsed output of the command.
-
         """
         arg_namespace = ""
 
@@ -52,14 +52,14 @@ class KubectlGetPodsKeywords(BaseKeyword):
 
     def get_pods_no_validation(self, namespace: str = None) -> KubectlGetPodsOutput:
         """
-        Gets the k8s pods that are available using '-o wide'.
+        Get the k8s pods that are available using '-o wide'.
 
         Args:
-            namespace(str, optional): The namespace to search for pods. If None, it will search in all namespaces.
+            namespace (str, optional): The namespace to search for pods. If None, it will search in
+        all namespaces.
 
         Returns:
             KubectlGetPodsOutput: An object containing the parsed output of the command.
-
         """
         arg_namespace = ""
         if namespace:
@@ -75,7 +75,7 @@ class KubectlGetPodsKeywords(BaseKeyword):
 
     def get_pods_all_namespaces(self) -> KubectlGetPodsOutput:
         """
-        Gets the k8s pods that are available using '-o wide' for all namespaces.
+        Get the k8s pods that are available using '-o wide' for all namespaces.
 
         Returns:
             KubectlGetPodsOutput: An object containing the parsed output of the command.
@@ -88,17 +88,17 @@ class KubectlGetPodsKeywords(BaseKeyword):
 
     def wait_for_pod_max_age(self, pod_name: str, max_age: int, namespace: str = None, timeout: int = 600, check_interval: int = 20) -> bool:
         """
-        Waits for the pod to be in a certain max_age.
+        Wait for the pod to be in a certain max_age.
 
         Args:
-            pod_name (str): the pod name
-            max_age (int): the max age in minutes
-            namespace (str): the namespace
-            timeout (int): the timeout in seconds
-            check_interval (int): the interval between checks in seconds
+            pod_name (str): the pod name.
+            max_age (int): the max age in minutes.
+            namespace (str): the namespace.
+            timeout (int): the timeout in seconds.
+            check_interval (int): the interval between checks in seconds.
 
         Returns:
-            bool: True if the pod's age became max_age
+            bool: True if the pod's age became max_age.
         """
         end_time = time.time() + timeout
 
@@ -115,18 +115,16 @@ class KubectlGetPodsKeywords(BaseKeyword):
         raise Exception(f"The pod {pod_name} did not reach the age {max_age}")
 
     def wait_for_pod_status(self, pod_name: str, expected_status: str, namespace: str = None, timeout: int = 600) -> bool:
-        """
-        Waits timeout amount of time for the given pod to be in the given status
+        """Wait timeout amount of time for the given pod to be in the given status.
 
         Args:
-            pod_name (str): the pod name
-            expected_status (str): the expected status
-            namespace (str): the namespace
-            timeout (int): the timeout in secs
+            pod_name (str): The pod name.
+            expected_status (str): The expected status.
+            namespace (str): The namespace.
+            timeout (int): The timeout in seconds.
 
         Returns:
-            bool: True if the pod is in the expected status
-
+            bool: True if the pod is in the expected status.
         """
         pod_status_timeout = time.time() + timeout
 
@@ -145,12 +143,11 @@ class KubectlGetPodsKeywords(BaseKeyword):
         Wait for all pods to be in the given status(s)
 
         Args:
-            expected_statuses ([str]): list of expected statuses ex. ['Completed' , 'Running']
+            expected_statuses ([str]): list of expected statuses ex. ['Completed', 'Running']
             timeout (int): the amount of time in seconds to wait
 
         Returns:
             bool: True if all expected statuses are met
-
         """
         pod_status_timeout = time.time() + timeout
 
@@ -165,18 +162,17 @@ class KubectlGetPodsKeywords(BaseKeyword):
 
     def wait_for_pods_to_reach_status(self, expected_status: str, pod_names: list = None, namespace: str = None, poll_interval: int = 5, timeout: int = 180) -> bool:
         """
-        Waits timeout amount of time for the given pod in a namespace to be in the given status
+        Wait timeout amount of time for the given pod in a namespace to be in the given status.
 
         Args:
-            expected_status (str): the expected status
+            expected_status (str): the expected status.
             pod_names (list): the pod names to look for. If left as None, we will check for all the pods.
-            namespace (str): the namespace
-            poll_interval (int): the interval in secs to poll for status
-            timeout (int): the timeout in secs
+            namespace (str): the namespace.
+            poll_interval (int): the interval in seconds to poll for status.
+            timeout (int): the timeout in seconds.
 
         Returns:
-            bool: True if pod is in expected status else False
-
+            bool: True if pod is in expected status else False.
         """
         pod_status_timeout = time.time() + timeout
 
@@ -196,6 +192,29 @@ class KubectlGetPodsKeywords(BaseKeyword):
         pods_in_incorrect_status_names = [pod.get_name() for pod in pods_in_incorrect_status]
         pods_in_incorrect_status_names = ", ".join(pods_in_incorrect_status_names)
         raise KeywordException(f"Pods {pods_in_incorrect_status_names} in namespace {namespace} did not reach status {expected_status} within {timeout} seconds")
+
+    def get_pod_labels(self, pod_name: str, namespace: str = None) -> dict:
+        """Get pod labels using kubectl JSONPath output.
+
+        Args:
+            pod_name (str): Name of the pod.
+            namespace (str, optional): Namespace of the pod.
+
+        Returns:
+            dict: Pod labels as key-value pairs.
+        """
+        cmd = f"kubectl get pod {pod_name} -o jsonpath='{{.metadata.labels}}'"
+        if namespace:
+            cmd += f" -n {namespace}"
+
+        output = self.ssh_connection.send(export_k8s_config(cmd))
+        self.validate_success_return_code(self.ssh_connection)
+
+        content = "\n".join(output) if isinstance(output, list) else output
+        if not content.strip():
+            return {}
+
+        return json.loads(content)
 
     def wait_for_kubernetes_to_restart(self, timeout: int = 600, check_interval: int = 20) -> bool:
         """
