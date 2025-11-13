@@ -22,6 +22,8 @@ from keywords.k8s.deployments.kubectl_get_deployments_keywords import KubectlGet
 import os
 from keywords.k8s.pods.kubectl_get_pods_keywords import KubectlGetPodsKeywords
 from framework.validation.validation import validate_equals
+from keywords.system_test.timing_logger import TimingLogger
+from keywords.docker.images.docker_images_keywords import DockerImagesKeywords
 
 IMAGES = [
     "gcr.io/kubernetes-e2e-test-images/resource-consumer:1.4",
@@ -74,7 +76,7 @@ def test_deploy_benchmark_pods_large(request):
 def deploy_benchmark_pods(request, benchmark):
     """
     Deploys pods for the selected benchmark type.
-    Scale up and down the deployments and mea'sures the time taken for each operation.
+    Scale up and down the deployments and measures the time taken for each operation.
 
     Args:
         request: pytest request object
@@ -87,6 +89,7 @@ def deploy_benchmark_pods(request, benchmark):
     remote_services_dir = "/tmp/system_test/services"
     local_deployments_dir = get_stx_resource_path(f"{DEPLOYMENTS_PATH}/{benchmark}")
     remote_deployments_dir = f"/tmp/system_test/deployments/{benchmark}"
+    timing_logger = TimingLogger(f"{benchmark}_container_deployment")
 
     setup_upload_files(local_services_dir, remote_services_dir, local_deployments_dir, remote_deployments_dir)
 
@@ -127,9 +130,12 @@ def deploy_benchmark_pods(request, benchmark):
     scale_up_time = scale_deployments(ssh_connection, SCALE_FACTOR, namespace)
     get_logger().log_info(f"Time to scale up pods: {scale_up_time:.2f} seconds")
 
-    get_logger().log_test_case_step("Scaling down all deployments tand calculating time...")
+    get_logger().log_test_case_step("Scaling down all deployments and calculating time...")
     scale_down_time = scale_deployments(ssh_connection, 0, namespace)
     get_logger().log_info(f"Time to scale down pods: {scale_down_time:.2f} seconds")
+
+    # Log all timings to CSV and HTML files
+    timing_logger.log_timings(deploy_time, scale_up_time, scale_down_time)
 
     def teardown():
         deployments_output = KubectlGetDeploymentsKeywords(ssh_connection).get_deployments(namespace=namespace)
