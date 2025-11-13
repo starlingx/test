@@ -5,10 +5,13 @@ from framework.logging.automation_logger import get_logger
 from framework.resources.resource_finder import get_stx_resource_path
 from framework.validation.validation import validate_equals
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
+from keywords.cloud_platform.system.application.object.system_application_delete_input import SystemApplicationDeleteInput
 from keywords.cloud_platform.system.application.object.system_application_status_enum import SystemApplicationStatusEnum
 from keywords.cloud_platform.system.application.system_application_apply_keywords import SystemApplicationApplyKeywords
+from keywords.cloud_platform.system.application.system_application_delete_keywords import SystemApplicationDeleteKeywords
 from keywords.cloud_platform.system.application.system_application_list_keywords import SystemApplicationListKeywords
 from keywords.cloud_platform.system.application.system_application_remove_keywords import SystemApplicationRemoveInput, SystemApplicationRemoveKeywords
+from keywords.cloud_platform.system.application.system_application_upload_keywords import SystemApplicationUploadInput, SystemApplicationUploadKeywords
 from keywords.cloud_platform.system.helm.system_helm_chart_attribute_modify_keywords import SystemHelmChartAttributeModifyKeywords
 from keywords.cloud_platform.system.helm.system_helm_override_keywords import SystemHelmOverrideKeywords
 from keywords.files.file_keywords import FileKeywords
@@ -231,6 +234,57 @@ def test_remove_dell_storage_app():
     system_application_remove_input = SystemApplicationRemoveInput()
     system_application_remove_input.set_app_name(dell_storage_app_name)
     SystemApplicationRemoveKeywords(ssh_connection).system_application_remove(system_application_remove_input)
+
+    get_logger().log_test_case_step("Re-Apply dell-storage")
+    SystemApplicationApplyKeywords(ssh_connection).system_application_apply(app_name=dell_storage_app_name)
+
+
+@mark.p2
+@mark.lab_dell_storage
+def test_delete_dell_storage_app():
+    """
+    Testing remove, delete, upload and apply the dell-storage application.
+
+    Test Steps:
+        - make sure dell-storage is applied
+        - Run command "system application-remove dell-storage"
+        - The status of the application should change to uploaded
+        - Run command "system application-delete dell-storage"
+        - make sure dell-storage is deleted
+        - run command "system application-upload dell-storage*.tgz"
+        - make sure the status of the application should change to uploaded
+        - Run this command "system application-apply"
+        - The dell-storage application was applied
+
+    Args: None
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    dell_storage_app_name = "dell-storage"
+
+    make_sure_dell_storage_application_applied()
+
+    get_logger().log_test_case_step("Remove dell-storage application")
+    system_application_remove_input = SystemApplicationRemoveInput()
+    system_application_remove_input.set_app_name(dell_storage_app_name)
+    SystemApplicationRemoveKeywords(ssh_connection).system_application_remove(system_application_remove_input)
+
+    get_logger().log_test_case_step("Delete dell-storage application")
+    system_application_delete_input = SystemApplicationDeleteInput()
+    system_application_delete_input.set_app_name(dell_storage_app_name)
+    system_application_delete_input.set_force_deletion(False)
+    delete_msg = SystemApplicationDeleteKeywords(ssh_connection).get_system_application_delete(system_application_delete_input)
+    validate_equals(delete_msg, f"Application {dell_storage_app_name} deleted.\n", "Application deletion message validation")
+
+    get_logger().log_test_case_step("Upload dell-storage application")
+    app_config = ConfigurationManager.get_app_config()
+    base_path = app_config.get_base_application_path()
+    system_application_upload_input = SystemApplicationUploadInput()
+    system_application_upload_input.set_app_name(dell_storage_app_name)
+    system_application_upload_input.set_tar_file_path(f"{base_path}{dell_storage_app_name}*.tgz")
+    SystemApplicationUploadKeywords(ssh_connection).system_application_upload(system_application_upload_input)
+    system_applications = SystemApplicationListKeywords(ssh_connection).get_system_application_list()
+    oidc_app_status = system_applications.get_application(dell_storage_app_name).get_status()
+    validate_equals(oidc_app_status, "uploaded", f"{dell_storage_app_name} upload status validation")
 
     get_logger().log_test_case_step("Re-Apply dell-storage")
     SystemApplicationApplyKeywords(ssh_connection).system_application_apply(app_name=dell_storage_app_name)
