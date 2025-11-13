@@ -45,8 +45,6 @@ class USMConfig:
         self.upload_poll_interval_sec = usm_dict.get("upload_poll_interval_sec", 30)
         self.upload_timeout_sec = usm_dict.get("upload_timeout_sec", 1800)
 
-        self.validate_config()
-
     def validate_config(self) -> None:
         """
         Validate config values for logical consistency.
