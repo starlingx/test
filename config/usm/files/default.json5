@@ -1,60 +1,40 @@
 {
+  // Default USM Configuration
+  // This file contains default settings for USM upgrade and patch operations
+
   // Type of operation: "upgrade" or "patch"
   "usm_operation_type": "upgrade",
+
+  // Software release paths
+  "iso_path": "/opt/software/starlingx.iso",
+  "sig_path": "/opt/software/starlingx.sig", 
+  "patch_path": "/opt/software/starlingx.patch",
+  
+  // Target release configuration
+  "to_release_ids": ["starlingx-10.0.1"],
 
   // Whether a reboot is required after the operation
   "requires_reboot": false,
 
-  // If true, copy files from a remote build server to the controller
-  "copy_from_remote": false,
-
-  // ISO and SIG source paths
-  // Required if usm_operation_type = "upgrade"
-  // If copy_from_remote=true, these must be full remote paths
-  // If copy_from_remote=false, these are assumed to already exist on the controller
-  "iso_path": "/home/sysadmin/usm_test/starlingx-10.0.0.iso",
-  "sig_path": "/home/sysadmin/usm_test/starlingx-10.0.0.sig",
-
-  // Patch file paths
-  // Required if usm_operation_type = "patch"
-  // Exactly one of the following must be set:
-  // - patch_path: to upload a single patch file
-  // - patch_dir: to upload a directory containing multiple .patch files
-  // Leave both empty for upgrade operations
-  //
-  // Examples:
-  // "patch_path": "/home/sysadmin/starlingx-10.0.0.patch"
-  // "patch_dir": "/home/sysadmin/patches/"
-  "patch_path": "",
-  "patch_dir": "",
-
-  // Destination directory on the controller where files will be copied
-  "dest_dir": "/home/sysadmin/usm_test/",
-
-  // Expected release IDs to validate a successful software upload or patching.
-  //
-  // This should always be a list of one or more version strings.
-  // In most upgrade workflows, this will contain a single release ID.
-  // For example:
-  //   "to_release_ids": ["starlingx-10.0.0"]
-  //
-  // In some patch workflows, especially when applying multiple patches,
-  // this list can contain multiple target release IDs expected after upload.
-  // For example:
-  //   "to_release_ids": ["starlingx-10.0.0", "starlingx-10.0.1"]
-  "to_release_ids": ["starlingx-10.0.0"],
-
-  // Remote build server credentials (only used if copy_from_remote = true)
-  "remote_server": "",
-  "remote_server_username": "",
-  "remote_server_password": "",
+  // Operation type flags
+  "snapshot": false,
+  "rollback": false,
 
   // Optional CLI arguments passed to the 'software upload' or 'software upgrade' command
   // Example: "--force"
   "upgrade_arguments": "",
 
-
-  // Polling configuration for checking upload success
+  // Timeout configurations (in seconds)
+  "upload_timeout_sec": 1800,
   "upload_poll_interval_sec": 30,
-  "upload_timeout_sec": 1800
+  "deployment_timeout_sec": 7200,
+  "activation_timeout_sec": 3600,
+  
+  // Remote copy settings
+  "copy_from_remote": true,
+  "remote_server": "",
+  "remote_username": "",
+  "remote_password": "",
+  "dest_dir": "/scratch/usm_files/"
 }
+
