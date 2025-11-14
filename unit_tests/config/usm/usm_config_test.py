@@ -13,7 +13,7 @@ def test_default_usm_config():
     configuration_manager.load_configs(config_file_locations)
     default_config = configuration_manager.get_usm_config()
     assert default_config is not None, "Default usm config wasn't loaded successfully"
-    assert default_config.get_iso_path() == "/home/sysadmin/usm_test/starlingx-10.0.0.iso", "ISO path was incorrect"
+    assert default_config.get_iso_path() == "/opt/software/starlingx.iso", "ISO path was incorrect"
 
 
 def test_custom_usm_config():
@@ -28,4 +28,4 @@ def test_custom_usm_config():
 
     custom_config = configuration_manager.get_usm_config()
     assert custom_config is not None, "Custom usm config wasn't loaded successfully"
-    assert custom_config.get_iso_path() == "/home/sysadmin/usm_test/starlingx-10.0.0.iso", "ISO path was incorrect"
+    assert custom_config.get_iso_path() == "/opt/software/starlingx.iso", "ISO path was incorrect"
