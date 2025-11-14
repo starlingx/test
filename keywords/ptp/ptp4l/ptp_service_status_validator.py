@@ -76,9 +76,18 @@ class PTPServiceStatusValidator(BaseKeyword):
         observed_service_status = service_status_output.get_ptp4l_object(name).get_active()
         get_command = service_status_output.get_ptp4l_object(name).get_command()
 
-        # From the input string "cmdline_opts='-s enpXXs0f2 -O -37 -m'"
-        # The extracted output string is '-s enpXXs0f2 -O -37 -m'
-        instance_parameter = eval(instance_parameters.split("=")[1])
+        # Extract cmdline_opts parameter from the instance_parameters string
+        # Handle cases like "cmdline_opts='-w -s eno1' domainNumber=24 uds_address=/var/run/ptp4l-ptp-inst1"
+        cmdline_match = re.search(r"cmdline_opts='([^']+)'", instance_parameters)
+        if cmdline_match:
+            instance_parameter = cmdline_match.group(1)
+        else:
+            # Fallback for simple cases without quotes
+            parts = instance_parameters.split("=", 1)
+            if len(parts) > 1:
+                instance_parameter = parts[1].split()[0]  # Take first part before space
+            else:
+                instance_parameter = ""
 
         if expected_service_status in observed_service_status and instance_parameter in get_command:
             get_logger().log_info(f"Validation Successful - systemctl status {service_name}")

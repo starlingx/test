@@ -55,4 +55,4 @@ class SystemPTPInstanceOutput:
         Returns:
             str: ptp instance parameters
         """
-        return PTPParametersParser(self.system_ptp_instance_object.get_parameters()).process_cmdline_opts()
+        return PTPParametersParser(self.system_ptp_instance_object.get_parameters()).process_parameters()

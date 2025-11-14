@@ -81,6 +81,10 @@ class PTPVerifyConfigKeywords(BaseKeyword):
                 get_logger().log_info("Validation skipped as expected; GNSS port is None")
                 continue
 
+            if expected_gnss_port == "ttyACM0":
+                get_logger().log_info(f"Skipping CGU debug validation for {expected_gnss_port} - not valid for USB serial device type")
+                return
+
             for ptp_host_if in ts2phc_instance_obj.get_ptp_interfaces():
                 for host in hosts:
                     interfaces = ptp_host_if.get_interfaces_for_hostname(host.get_host_name())

@@ -1,5 +1,7 @@
 from typing import Any, Dict, List
 
+from config.configuration_manager import ConfigurationManager
+
 
 class PTPHostInterfaceSetup:
     """
@@ -19,6 +21,8 @@ class PTPHostInterfaceSetup:
             Exception: If the setup_dict does not contain required controller interfaces.
             Exception: If the setup_dict does not contain required compute interfaces.
         """
+        lab_type = ConfigurationManager.get_lab_config().get_lab_type()
+
         if "name" not in setup_dict:
             raise Exception("Every ptp host interface entry should have a name.")
         self.name = setup_dict["name"]
@@ -31,9 +35,9 @@ class PTPHostInterfaceSetup:
             raise Exception(f"The ptp host interface entry {self.name} must have controller_0_interfaces defined.")
         self.controller_0_interfaces = setup_dict["controller_0_interfaces"]
 
-        if "controller_1_interfaces" not in setup_dict:
+        if "controller_1_interfaces" not in setup_dict and lab_type != "Simplex":
             raise Exception(f"The ptp host interface entry {self.name} must have controller_1_interfaces defined.")
-        self.controller_1_interfaces = setup_dict["controller_1_interfaces"]
+        self.controller_1_interfaces = setup_dict.get("controller_1_interfaces")
 
         self.compute_0_interfaces = None
         if "compute_0_interfaces" in setup_dict:
