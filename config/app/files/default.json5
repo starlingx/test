@@ -1,5 +1,7 @@
 {
   base_application_path: "/usr/local/share/applications/helm/",
+  base_application_localhost: "fake_path",
+
   istio_app_name: "istio",
   metric_server_app_name: "metrics-server",
   oidc_app_name: "oidc-auth-apps",
@@ -8,4 +10,5 @@
   node_feature_discovery_app_name: "node-feature-discovery",
   node_interface_metrics_exporter_app_name: "node-interface-metrics-exporter",
   platform_integ_apps_app_name: "platform-integ-apps"
+
 }

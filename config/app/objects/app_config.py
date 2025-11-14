@@ -3,7 +3,7 @@ import json5
 
 class AppConfig:
     """
-    Class to hold App config
+    Class to hold App config.
     """
 
     def __init__(self, config: str):
@@ -15,6 +15,7 @@ class AppConfig:
 
         app_dict = json5.load(json_data)
         self.base_application_path = app_dict["base_application_path"]
+        self.base_application_localhost = app_dict["base_application_localhost"]
         self.istio_app_name = app_dict["istio_app_name"]
         self.metric_server_app_name = app_dict["metric_server_app_name"]
         self.oidc_app_name = app_dict["oidc_app_name"]
@@ -113,3 +114,13 @@ class AppConfig:
 
         """
         return self.platform_integ_apps_app_name
+
+    def get_base_application_localhost(self) -> str:
+        """
+        Getter for base application path
+
+        Returns:
+            str: the base application localhost
+
+        """
+        return self.base_application_localhost

@@ -22,6 +22,7 @@ def test_default_app_config():
     assert default_config.get_node_feature_discovery_app_name() == "node-feature-discovery", "node feature discovery default app name was incorrect"
     assert default_config.get_node_interface_metrics_exporter_app_name() == "node-interface-metrics-exporter", "node interface metrics exporter default app name was incorrect"
     assert default_config.get_platform_integ_apps_app_name() == "platform-integ-apps", "platform integ apps default app name was incorrect"
+    assert default_config.get_base_application_localhost() == "fake_path", "default base path localhost was incorrect"
 
 
 def test_custom_app_config():
@@ -45,3 +46,4 @@ def test_custom_app_config():
     assert custom_config.get_node_feature_discovery_app_name() == "node-feature-discovery_custom", "node feature discovery custom name was incorrect"
     assert custom_config.get_node_interface_metrics_exporter_app_name() == "node-interface-metrics-exporter_custom", "node interface metrics exporter custom name was incorrect"
     assert custom_config.get_platform_integ_apps_app_name() == "platform-integ-apps_custom", "platform integ apps custom name was incorrect"
+    assert custom_config.get_base_application_localhost() == "fake_path", "custom base path localhost was incorrect"
