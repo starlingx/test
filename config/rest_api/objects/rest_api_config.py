@@ -14,43 +14,19 @@ class RestAPIConfig:
             raise
 
         rest_dict = json5.load(json_data)
-        self.all_base_urls = []
 
         self.keystone_base = rest_dict["keystone_base"]
-        self.all_base_urls.append(self.keystone_base)
-
         self.bare_metal_base = rest_dict["bare_metal_base"]
-        self.all_base_urls.append(self.bare_metal_base)
-
         self.configuration_base = rest_dict["configuration_base"]
-        self.all_base_urls.append(self.configuration_base)
-
         self.fm_base = rest_dict["fm_base"]
-        self.all_base_urls.append(self.fm_base)
-
         self.dc_base = rest_dict["dc_base"]
-        self.all_base_urls.append(self.dc_base)
-
         self.node_interface_metrics_exporter_base = rest_dict["node_interface_metrics_exporter_base"]
-        self.all_base_urls.append(self.node_interface_metrics_exporter_base)
-
         self.nfv_base = rest_dict["nfv_base"]
-        self.all_base_urls.append(self.nfv_base)
-
         self.barbican_base = rest_dict["barbican_base"]
-        self.all_base_urls.append(self.barbican_base)
-
         self.software_update_base = rest_dict["software_update_base"]
-        self.all_base_urls.append(self.software_update_base)
-
         self.usm_base = rest_dict["usm_base"]
-        self.all_base_urls.append(self.usm_base)
-
         self.vim_base = rest_dict["vim_base"]
-        self.all_base_urls.append(self.vim_base)
-
         self.high_availability_base = rest_dict["high_availability_base"]
-        self.all_base_urls.append(self.high_availability_base)
 
     def get_keystone_base(self) -> str:
         """
@@ -156,24 +132,3 @@ class RestAPIConfig:
             str: the high_availability_base
         """
         return self.high_availability_base
-
-    def get_all_ports(self) -> list[int]:
-        """
-        Extract all port numbers from the REST API configuration
-
-        Returns:
-            list[int]: List of unique port numbers from all API endpoints
-        """
-        ports = set()
-
-        # Extract port from each base URL
-        for base_url in self.all_base_urls:
-            # Extract port number (everything before the first '/')
-            port_part = base_url.split("/")[0]
-            try:
-                ports.add(int(port_part))
-            except ValueError:
-                # Skip if not a valid port number
-                continue
-
-        return sorted(list(ports))
