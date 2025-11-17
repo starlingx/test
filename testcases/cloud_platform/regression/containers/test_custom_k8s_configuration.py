@@ -55,6 +55,12 @@ def volume_for_kube_api_server_list() -> list[SystemServiceParameterObject]:
         ),
         SystemServiceParameterObject(
             service="kubernetes",
+            section="kube_apiserver_volumes",
+            name="admission-control-config",
+            value="hostPath:/etc/kubernetes/admission-control-config-file.yaml",
+        ),
+        SystemServiceParameterListObject(
+            service="kubernetes",
             section="kube_apiserver",
             name="admission-control-config-file",
             value="/etc/kubernetes/admission-control-config-file.yaml",
@@ -266,9 +272,9 @@ def test_add_valid_parameter_turn_on_audit_policy_logs_to_k8s_simplex():
 
 
 @mark.p2
-@mark.lab_is_duplex
-def test_add_valid_parameter_volume_for_kube_apiserver_to_k8s_duplex():
-    """Verify adding, applying, swacting, and deleting kube_apiserver volume parameters on a duplex system.
+@mark.lab_has_standby_controller
+def test_add_valid_parameter_volume_for_kube_apiserver_to_k8s_multinode():
+    """Verify adding, applying, swacting, and deleting kube_apiserver volume parameters on a multinode system.
 
     Test Steps:
         Clean up any existing parameters and prepare configuration files.
@@ -327,9 +333,9 @@ def test_add_valid_parameter_volume_for_kube_apiserver_to_k8s_duplex():
 
 
 @mark.p2
-@mark.lab_is_duplex
-def test_add_valid_parameter_turn_on_audit_policy_logs_to_k8s_duplex():
-    """Verify adding, applying, swacting, and deleting audit policy log parameters on a duplex system.
+@mark.lab_has_standby_controller
+def test_add_valid_parameter_turn_on_audit_policy_logs_to_k8s_multinode():
+    """Verify adding, applying, swacting, and deleting audit policy log parameters on a multinode system.
 
     Test Steps:
         Clean up any existing parameters and prepare configuration files.
