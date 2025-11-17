@@ -75,7 +75,7 @@ class ConfigurationFileLocationsManager:
 
         usm_config_file = session.config.getoption("--usm_config_file")
         if usm_config_file:
-            self.set_security_config_file(usm_config_file)
+            self.set_usm_config_file(usm_config_file)
 
         app_config_file = session.config.getoption("--app_config_file")
         if app_config_file:
