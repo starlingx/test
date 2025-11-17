@@ -3,15 +3,26 @@ class SystemServiceParameterListObject:
     Class to represent a single service parameter from the service parameter list output.
     """
 
-    def __init__(self):
+    def __init__(
+        self,
+        uuid=None,
+        service=None,
+        section=None,
+        name=None,
+        value=None,
+        personality=None,
+        resource=None,
+    ):
         """
         Constructor.
         """
-        self.uuid = None
-        self.service = None
-        self.section = None
-        self.name = None
-        self.value = None
+        self.uuid = uuid
+        self.service = service
+        self.section = section
+        self.name = name
+        self.value = value
+        self.personality = personality
+        self.resource = resource
 
     def set_uuid(self, uuid: str):
         """Setter for uuid"""
@@ -52,3 +63,19 @@ class SystemServiceParameterListObject:
     def get_value(self) -> str:
         """Getter for value"""
         return self.value
+
+    def get_personality(self) -> str:
+        """Getter for personality"""
+        return self.personality
+
+    def set_personality(self, personality: str):
+        """Setter for personality"""
+        self.personality = personality
+
+    def get_resource(self) -> str:
+        """Getter for resource"""
+        return self.resource
+
+    def set_resource(self, resource: str):
+        """Setter for resource"""
+        self.resource = resource

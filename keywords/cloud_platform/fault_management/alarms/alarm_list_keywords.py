@@ -248,6 +248,19 @@ class AlarmListKeywords(BaseKeyword):
         """
         return self._check_interval_in_seconds
 
+    def is_alarm_present(self, alarm_id: str) -> bool:
+        """
+        Checks if a specific alarm is present in the alarm list.
+
+        Args:
+            alarm_id (str): The alarm ID to check for (e.g., '250.001').
+
+        Returns:
+            bool: True if the alarm is present, False otherwise.
+        """
+        alarm_ids = [alarm.get_alarm_id() for alarm in self.alarm_list()]
+        return alarm_id in alarm_ids
+
     def get_ssh_connection(self) -> SSHConnection:
         """
         Gets the SSH connection of this AlarmListKeywords instance.

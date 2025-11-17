@@ -1,3 +1,5 @@
+from typing import Optional
+
 from framework.exceptions.keyword_exception import KeywordException
 from framework.logging.automation_logger import get_logger
 from keywords.cloud_platform.system.service.objects.system_service_parameter_list_object import SystemServiceParameterListObject
@@ -55,15 +57,14 @@ class SystemServiceParameterListOutput:
         """
         return self.parameters
 
-    def get_parameter_by_name(self, name: str):
+    def get_parameter_by_name(self, name: str) -> Optional[SystemServiceParameterListObject]:
         """
         Get parameter by name.
-        
+
         Args:
             name (str): Parameter name to search for
-            
         Returns:
-            SystemServiceParameterListObject or None: Parameter object if found, None otherwise
+            Optional[SystemServiceParameterListObject]: Parameter object if found, None otherwise
         """
         for param in self.parameters:
             if param.get_name() == name:
@@ -103,11 +104,11 @@ class SystemServiceParameterListOutput:
             bool: True if the output is valid, False otherwise
         """
         output_str = "\n".join(output) if isinstance(output, list) else output
-        
+
         # Empty output (just whitespace/newlines) is valid for empty sections
         if not output_str.strip():
             return True
-            
+
         # If there's content, it should have proper table structure
         if "uuid" not in output_str or "value" not in output_str:
             get_logger().log.log_error("Required uuid/value table structure not found in output")
