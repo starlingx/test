@@ -49,6 +49,12 @@ def volume_for_kube_api_server_list() -> List[SystemServiceParameterListObject]:
         ),
         SystemServiceParameterListObject(
             service="kubernetes",
+            section="kube_apiserver_volumes",
+            name="admission-control-config",
+            value="hostPath:/etc/kubernetes/admission-control-config-file.yaml",
+        ),
+        SystemServiceParameterListObject(
+            service="kubernetes",
             section="kube_apiserver",
             name="admission-control-config-file",
             value="/etc/kubernetes/admission-control-config-file.yaml",
@@ -151,11 +157,12 @@ def test_add_valid_parameter_volume_for_kube_apiserver_to_k8s_simplex():
 
     Test Steps:
         Clean up any existing parameters and prepare configuration files.
+        Upload admission-control-config-file.yaml and eventconfig.yaml.
         Add kube_apiserver volume parameters and apply to Kubernetes.
         Assert out-of-date alarm is present at hosts.
         Apply Kubernetes service parameters and wait for stabilization.
         Verify the new configuration is applied.
-        Delete parameters and verify deletion was successful.
+        Delete parameters, configuration files, and verify deletion was successful.
         Apply Kubernetes service parameters after deletion.
     """
 
@@ -166,6 +173,9 @@ def test_add_valid_parameter_volume_for_kube_apiserver_to_k8s_simplex():
 
     get_logger().log_test_case_step("Uploading admission-control-config-file.yaml")
     upload_file_with_sudo(ssh_connection, get_stx_resource_path(VOLUME_FOR_KUBE_API_SERVER_LOCAL_FILE_PATH), VOLUME_FOR_KUBE_API_SERVER_REMOTE_FILE_PATH)
+
+    get_logger().log_test_case_step("Uploading eventconfig.yaml")
+    upload_file_with_sudo(ssh_connection, get_stx_resource_path(AUDIT_POLICY_LOGS_LOCAL_FILE_PATH), AUDIT_POLICY_LOGS_REMOTE_FILE_PATH)
 
     get_logger().log_test_case_step("Adding kube_apiserver volume parameters")
     for param in volume_for_kube_api_server_list():
@@ -182,6 +192,9 @@ def test_add_valid_parameter_volume_for_kube_apiserver_to_k8s_simplex():
 
     get_logger().log_test_case_step("Deleting parameters")
     delete_parameters_and_files(ssh_connection, volume_for_kube_api_server_list(), VOLUME_FOR_KUBE_API_SERVER_REMOTE_FILE_PATH)
+
+    get_logger().log_test_case_step("Deleting eventconfig.yaml")
+    FileKeywords(ssh_connection).delete_file(AUDIT_POLICY_LOGS_REMOTE_FILE_PATH)
 
     get_logger().log_test_case_step("Applying parameters for Kubernetes after deletion")
     SystemServiceKeywords(ssh_connection).apply_kubernetes_service_parameters()
@@ -243,13 +256,14 @@ def test_add_valid_parameter_volume_for_kube_apiserver_to_k8s_duplex():
 
     Test Steps:
         Clean up any existing parameters and prepare configuration files.
+        Upload admission-control-config-file.yaml and eventconfig.yaml.
         Add kube_apiserver volume parameters and apply to Kubernetes.
         Assert out-of-date alarm is present at hosts.
         Apply Kubernetes service parameters and wait for stabilization.
         Verify the new configuration is applied.
         Apply host-swact between controllers.
         Verify the synced configuration between controllers.
-        Delete parameters and verify deletion was successful.
+        Delete parameters, configuration files, and verify deletion was successful.
         Apply Kubernetes service parameters after deletion.
     """
 
@@ -260,6 +274,9 @@ def test_add_valid_parameter_volume_for_kube_apiserver_to_k8s_duplex():
 
     get_logger().log_test_case_step("Uploading admission-control-config-file.yaml")
     upload_file_with_sudo(ssh_connection, get_stx_resource_path(VOLUME_FOR_KUBE_API_SERVER_LOCAL_FILE_PATH), VOLUME_FOR_KUBE_API_SERVER_REMOTE_FILE_PATH)
+
+    get_logger().log_test_case_step("Uploading eventconfig.yaml")
+    upload_file_with_sudo(ssh_connection, get_stx_resource_path(AUDIT_POLICY_LOGS_LOCAL_FILE_PATH), AUDIT_POLICY_LOGS_REMOTE_FILE_PATH)
 
     get_logger().log_test_case_step("Adding kube_apiserver volume parameters")
     for param in volume_for_kube_api_server_list():
@@ -282,6 +299,9 @@ def test_add_valid_parameter_volume_for_kube_apiserver_to_k8s_duplex():
 
     get_logger().log_test_case_step("Deleting parameters")
     delete_parameters_and_files(ssh_connection, volume_for_kube_api_server_list(), VOLUME_FOR_KUBE_API_SERVER_REMOTE_FILE_PATH)
+
+    get_logger().log_test_case_step("Deleting eventconfig.yaml")
+    FileKeywords(ssh_connection).delete_file(AUDIT_POLICY_LOGS_REMOTE_FILE_PATH)
 
     get_logger().log_test_case_step("Applying parameters for Kubernetes after deletion")
     SystemServiceKeywords(ssh_connection).apply_kubernetes_service_parameters()
