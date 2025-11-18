@@ -7,6 +7,7 @@ from framework.validation.validation import validate_equals
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.cloud_platform.system.application.object.system_application_delete_input import SystemApplicationDeleteInput
 from keywords.cloud_platform.system.application.object.system_application_status_enum import SystemApplicationStatusEnum
+from keywords.cloud_platform.system.application.system_application_abort_keywords import SystemApplicationAbortKeywords
 from keywords.cloud_platform.system.application.system_application_apply_keywords import SystemApplicationApplyKeywords
 from keywords.cloud_platform.system.application.system_application_delete_keywords import SystemApplicationDeleteKeywords
 from keywords.cloud_platform.system.application.system_application_list_keywords import SystemApplicationListKeywords
@@ -285,6 +286,49 @@ def test_delete_dell_storage_app():
     system_applications = SystemApplicationListKeywords(ssh_connection).get_system_application_list()
     oidc_app_status = system_applications.get_application(dell_storage_app_name).get_status()
     validate_equals(oidc_app_status, "uploaded", f"{dell_storage_app_name} upload status validation")
+
+    get_logger().log_test_case_step("Re-Apply dell-storage")
+    SystemApplicationApplyKeywords(ssh_connection).system_application_apply(app_name=dell_storage_app_name)
+
+
+@mark.p2
+@mark.lab_dell_storage
+def test_abort_dell_storage_app():
+    """
+    Testing apply, abort, remove and apply the dell-storage application.
+
+    Test Steps:
+        - make sure dell-storage is applied
+        - Run command "system application-apply dell-storage && system application-abort dell-storage"
+        - make sure dell-storage status is apply-failed and the progess is "operation aborted by user"
+        - run command "system application-remove dell-storage"
+        - make sure the status of the application should change to uploaded
+        - Run this command "system application-apply"
+        - The dell-storage application was applied
+
+    Args: None
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    dell_storage_app_name = "dell-storage"
+
+    make_sure_dell_storage_application_applied()
+
+    get_logger().log_test_case_step("Abort dell-storage application")
+    SystemApplicationAbortKeywords(ssh_connection).system_application_apply_and_abort(dell_storage_app_name, False)
+
+    get_logger().log_test_case_step(f"Check if {dell_storage_app_name} abort is success")
+    system_applications = SystemApplicationListKeywords(ssh_connection).get_system_application_list()
+    app_status = system_applications.get_application(dell_storage_app_name).get_status()
+    validate_equals(app_status, "apply-failed", f"{dell_storage_app_name} abort status validation")
+
+    expected_progress_msg = "operation aborted by user"
+    app_progress = system_applications.get_application(dell_storage_app_name).get_progress()
+    validate_equals(app_progress, expected_progress_msg, f"{dell_storage_app_name} abort progress validation")
+
+    get_logger().log_test_case_step("Remove dell-storage application")
+    system_application_remove_input = SystemApplicationRemoveInput()
+    system_application_remove_input.set_app_name(dell_storage_app_name)
+    SystemApplicationRemoveKeywords(ssh_connection).system_application_remove(system_application_remove_input)
 
     get_logger().log_test_case_step("Re-Apply dell-storage")
     SystemApplicationApplyKeywords(ssh_connection).system_application_apply(app_name=dell_storage_app_name)
