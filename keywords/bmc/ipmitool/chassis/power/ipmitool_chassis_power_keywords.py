@@ -1,3 +1,5 @@
+import ipaddress
+
 from config.configuration_manager import ConfigurationManager
 from framework.ssh.ssh_connection import SSHConnection
 from keywords.base_keyword import BaseKeyword
@@ -17,6 +19,13 @@ class IPMIToolChassisPowerKeywords(BaseKeyword):
             node = lab_config.get_node(host_name)
             self.bm_ip = node.get_bm_ip()
             self.bm_username = node.get_bm_username()
+
+            if not self.bm_ip or self.bm_ip == "None":
+                raise ValueError("BMC IP address is not configured or is None")
+            try:
+                ipaddress.ip_address(self.bm_ip)
+            except ValueError:
+                raise ValueError(f"Invalid BMC IP address format: {self.bm_ip}")
 
     def _power_off(self, bm_ip: str, bm_username: str, bm_password: str):
         """Powers off the host using IPMI tool
