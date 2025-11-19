@@ -133,7 +133,7 @@ class FileKeywords(BaseKeyword):
 
         Args:
             file_name (str): the full path and filename ex. /var/log/user.log.
-            grep_pattern (str): the pattern to use to filter lines ex. 'ptp4l\|phc2sys'.
+            grep_pattern (str): the pattern to use to filter lines ex. 'ptp4l\\|phc2sys'.
 
         Returns:
             list[str]: The output of the file.
@@ -288,6 +288,21 @@ class FileKeywords(BaseKeyword):
             new_file_name (str): path to be set for renamed file
         """
         self.ssh_connection.send_as_sudo(f"mv {old_file_name} {new_file_name}")
+
+    def move_file(self, source: str, destination: str, sudo: bool = False) -> None:
+        """
+        Move file or directory from source to destination.
+
+        Args:
+            source (str): Source file or directory path.
+            destination (str): Destination file or directory path.
+            sudo (bool): Whether to use sudo privileges. Defaults to False.
+        """
+        if sudo:
+            self.ssh_connection.send_as_sudo(f"mv {source} {destination}")
+        else:
+            self.ssh_connection.send(f"mv {source} {destination}")
+        self.validate_success_return_code(self.ssh_connection)
 
     def rsync_to_remote_server(self, local_dest_path: str, remote_server: str, remote_user: str, remote_password: str, remote_path: str, recursive: bool = False, rsync_options: str = "") -> None:
         """
