@@ -15,7 +15,8 @@ class AppConfig:
 
         app_dict = json5.load(json_data)
         self.base_application_path = app_dict["base_application_path"]
-        self.base_application_localhost = app_dict["base_application_localhost"]
+        self.platform_integ_app_tarball = app_dict["platform_integ_app_tarball"]
+        self.metrics_server_app_tarball = app_dict["metrics_server_app_tarball"]
         self.istio_app_name = app_dict["istio_app_name"]
         self.metric_server_app_name = app_dict["metric_server_app_name"]
         self.oidc_app_name = app_dict["oidc_app_name"]
@@ -115,12 +116,22 @@ class AppConfig:
         """
         return self.platform_integ_apps_app_name
 
-    def get_base_application_localhost(self) -> str:
+    def get_platform_integ_app_tarball(self) -> str:
         """
-        Getter for base application path
+        Getter for platform integ app tarball
 
         Returns:
-            str: the base application localhost
+            str: the platform integ app tarball
 
         """
-        return self.base_application_localhost
+        return self.platform_integ_app_tarball
+
+    def get_metrics_server_app_tarball(self) -> str:
+        """
+        Getter for metrics server app tarball
+
+        Returns:
+            str: the metrics server app tarball
+
+        """
+        return self.metrics_server_app_tarball

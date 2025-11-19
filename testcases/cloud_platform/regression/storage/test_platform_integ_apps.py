@@ -169,9 +169,9 @@ def test_rollback_platform_integ_app(request: FixtureRequest):
     # Transfer tarball from local machine to /home/sysadmin
     get_logger().log_test_case_step("Transfer rollback tarball from local machine to /home/sysadmin")
     app_config = ConfigurationManager.get_app_config()
-    tarball_filename = app_config.get_base_application_localhost().split("/")[-1]
+    tarball_filename = app_config.get_platform_integ_app_tarball().split("/")[-1]
     temp_remote_path = f"/home/sysadmin/{tarball_filename}"
-    FileKeywords(active_ssh_connection).upload_file(app_config.get_base_application_localhost(), temp_remote_path)
+    FileKeywords(active_ssh_connection).upload_file(app_config.get_platform_integ_app_tarball(), temp_remote_path)
 
     # Mount /usr to be able to write the tarball
     get_logger().log_test_case_step("Mount /usr with read-write permissions")
@@ -267,9 +267,9 @@ def test_update_platform_integ_app(request: FixtureRequest):
     # Transfer tarball from local machine to /home/sysadmin
     get_logger().log_test_case_step("Transfer rollback tarball from local machine to /home/sysadmin")
     app_config = ConfigurationManager.get_app_config()
-    tarball_filename = app_config.get_base_application_localhost().split("/")[-1]
+    tarball_filename = app_config.get_platform_integ_app_tarball().split("/")[-1]
     temp_remote_path = f"/home/sysadmin/{tarball_filename}"
-    FileKeywords(active_ssh_connection).upload_file(app_config.get_base_application_localhost(), temp_remote_path)
+    FileKeywords(active_ssh_connection).upload_file(app_config.get_platform_integ_app_tarball(), temp_remote_path)
 
     # Mount /usr to be able to write the tarball
     get_logger().log_test_case_step("Mount /usr with read-write permissions")

@@ -1,6 +1,12 @@
 {
   base_application_path: "/usr/local/share/applications/helm/",
-  base_application_localhost: "fake_path",
+
+  // Paths to tarballs of the applications that are in the previous version, to test application upgrade.
+  // The paths should be accessible from the location of the agent running the test cases.
+  // Example: resources/images/app.tgz
+  
+  platform_integ_app_tarball: "fake_path",
+  metrics_server_app_tarball: "fake_path",
 
   istio_app_name: "istio",
   metric_server_app_name: "metrics-server",
@@ -10,5 +16,4 @@
   node_feature_discovery_app_name: "node-feature-discovery",
   node_interface_metrics_exporter_app_name: "node-interface-metrics-exporter",
   platform_integ_apps_app_name: "platform-integ-apps"
-
 }

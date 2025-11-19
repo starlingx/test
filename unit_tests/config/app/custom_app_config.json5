@@ -8,5 +8,6 @@
   node_feature_discovery_app_name: "node-feature-discovery_custom",
   node_interface_metrics_exporter_app_name: "node-interface-metrics-exporter_custom",
   platform_integ_apps_app_name: "platform-integ-apps_custom",
-  base_application_localhost: "fake_path"
+  platform_integ_app_tarball: "fake_path",
+  metrics_server_app_tarball: "fake_path"
 }
