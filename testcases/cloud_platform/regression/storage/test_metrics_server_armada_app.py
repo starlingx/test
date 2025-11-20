@@ -63,6 +63,43 @@ def test_remove_apply_metrics_server_app(request):
 
 
 @mark.p2
+def test_delete_metrics_server_app(request):
+    """
+    Delete platform-integ-apps application.
+    Test Steps:
+        - Run this command "system application-remove metrics_server-app"
+        - The status of the application should change to uploaded
+        - Run this command "system application-delete"
+        - The platform-integ-apps application was deleted
+    Args: None
+    """
+    active_ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    metrics_server_app_name = setup(request, active_ssh_connection)
+
+    def teardown():
+        get_logger().log_teardown_step("Test- Testdown: Upload metrics-server-app")
+        app_config = ConfigurationManager.get_app_config()
+        base_path = app_config.get_base_application_path()
+        system_application_upload_input = SystemApplicationUploadInput()
+        system_application_upload_input.set_app_name(metrics_server_app_name)
+        system_application_upload_input.set_tar_file_path(f"{base_path}{metrics_server_app_name}*.tgz")
+        SystemApplicationUploadKeywords(active_ssh_connection).system_application_upload(system_application_upload_input)
+        get_logger().log_teardown_step("Apply metrics_server-app")
+        SystemApplicationApplyKeywords(active_ssh_connection).system_application_apply(app_name=metrics_server_app_name)
+
+    request.addfinalizer(teardown)
+    get_logger().log_test_case_step("Remove metrics_server-app")
+    system_application_remove_input = SystemApplicationRemoveInput()
+    system_application_remove_input.set_app_name(metrics_server_app_name)
+    SystemApplicationRemoveKeywords(active_ssh_connection).system_application_remove(system_application_remove_input)
+    get_logger().log_test_case_step("Delete metrics_server-app")
+    system_application_delete_input = SystemApplicationDeleteInput()
+    system_application_delete_input.set_app_name(metrics_server_app_name)
+    app_delete_response = SystemApplicationDeleteKeywords(active_ssh_connection).get_system_application_delete(system_application_delete_input)
+    validate_equals(app_delete_response.rstrip(), "Application metrics-server deleted.", "Application deletion.")
+
+
+@mark.p2
 def test_rollback_metrics_server_app(request: FixtureRequest):
     """
     Rollback metrics-server application to a previous version.
