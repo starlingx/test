@@ -9,6 +9,7 @@ from keywords.cloud_platform.system.application.object.system_application_delete
 from keywords.cloud_platform.system.application.object.system_application_remove_input import SystemApplicationRemoveInput
 from keywords.cloud_platform.system.application.object.system_application_update_input import SystemApplicationUpdateInput
 from keywords.cloud_platform.system.application.object.system_application_upload_input import SystemApplicationUploadInput
+from keywords.cloud_platform.system.application.system_application_abort_keywords import SystemApplicationAbortKeywords
 from keywords.cloud_platform.system.application.system_application_apply_keywords import SystemApplicationApplyKeywords
 from keywords.cloud_platform.system.application.system_application_delete_keywords import SystemApplicationDeleteKeywords
 from keywords.cloud_platform.system.application.system_application_list_keywords import SystemApplicationListKeywords
@@ -97,6 +98,50 @@ def test_delete_platform_integ_app(request):
     system_application_delete_input.set_app_name(platform_integ_apps_name)
     app_delete_response = SystemApplicationDeleteKeywords(active_ssh_connection).get_system_application_delete(system_application_delete_input)
     validate_equals(app_delete_response.rstrip(), "Application platform-integ-apps deleted.", "Application deletion.")
+
+
+@mark.p2
+def test_abort_platform_integ_app(request: FixtureRequest):
+    """
+    Abort platform-integ-apps application during apply process.
+
+    Test Steps:
+        - Run this command "system application-remove platform-integ-apps"
+        - The status of the application should change to uploaded
+        - Run this command "system application-apply"
+        - Run this command "system application-abort platform-integ-apps"
+
+    Args:
+        request (FixtureRequest): pytest request fixture for test setup and teardown
+    """
+    active_ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    platform_integ_apps_name = setup(request, active_ssh_connection)
+
+    def teardown():
+        get_logger().log_teardown_step("Check if application status is not applied and apply if needed")
+        app_list_keywords = SystemApplicationListKeywords(active_ssh_connection)
+        if app_list_keywords.is_app_present(platform_integ_apps_name):
+            system_applications = app_list_keywords.get_system_application_list()
+            current_status = system_applications.get_application(platform_integ_apps_name).get_status()
+            if current_status != "applied":
+                get_logger().log_teardown_step("Apply platform-integ-apps")
+                SystemApplicationApplyKeywords(active_ssh_connection).system_application_apply(app_name=platform_integ_apps_name)
+
+    request.addfinalizer(teardown)
+
+    get_logger().log_test_case_step("Remove platform-integ-apps")
+    system_application_remove_input = SystemApplicationRemoveInput()
+    system_application_remove_input.set_app_name(platform_integ_apps_name)
+    SystemApplicationRemoveKeywords(active_ssh_connection).system_application_remove(system_application_remove_input)
+
+    get_logger().log_test_case_step("Apply platform-integ-apps")
+    SystemApplicationApplyKeywords(active_ssh_connection).system_application_apply(app_name=platform_integ_apps_name, wait_for_applied=False)
+
+    get_logger().log_test_case_step("Abort platform-integ-apps")
+    SystemApplicationAbortKeywords(active_ssh_connection).system_application_abort(app_name=platform_integ_apps_name)
+
+    get_logger().log_test_case_step("Validate application status changed to apply-failed")
+    SystemApplicationListKeywords(active_ssh_connection).validate_app_status(platform_integ_apps_name, "apply-failed")
 
 
 @mark.p2
