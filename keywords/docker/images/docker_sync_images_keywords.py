@@ -1,4 +1,4 @@
-from pathlib import Path
+import os
 
 import yaml
 
@@ -9,17 +9,47 @@ from framework.ssh.ssh_connection import SSHConnection
 from keywords.base_keyword import BaseKeyword
 from keywords.docker.images.docker_images_keywords import DockerImagesKeywords
 from keywords.docker.images.docker_load_image_keywords import DockerLoadImageKeywords
+from keywords.docker.login.docker_login_keywords import DockerLoginKeywords
 
 
 class DockerSyncImagesKeywords(BaseKeyword):
     """
-    Provides functionality for Docker image synchronization across registries.
+    Provides functionality for Docker image synchronization to local registry.
 
-    Supports pulling from source, tagging, and pushing to the local registry
-    based on manifest-driven configuration.
+    This keyword provides manifest-based Docker image synchronization, allowing tests
+    to pull images from public or private registries and push them to a local registry.
+
+    Key Features:
+    - Manifest-driven: Images are defined in YAML manifests with full registry paths
+    - Flexible: Supports DockerHub, Quay, GCR, K8s registries, Harbor mirrors, and custom registries
+    - Automatic authentication: Handles registry login based on configuration
+    - Automatic normalization: Handles Docker's image name normalization (e.g., docker.io/busybox -> busybox)
+    - Config-driven: Manifest paths can be resolved via configuration, enabling environment-specific image sources
+
+    Manifest Format:
+    - Images must be specified as tag-based references (image:tag)
+    - Digest references (image@sha256:...) are not supported and will raise KeywordException
+
+    Workflow:
+    1. Pull image from source registry (specified in manifest)
+    2. Tag image for local registry
+    3. Push image to local registry
+    4. Return local registry reference for use in tests
     """
 
-    def __init__(self, ssh_connection: SSHConnection):
+    # Public registry patterns for canonical name extraction
+    # These registries preserve namespace information (e.g., docker.io/calico/ctl -> calico/ctl)
+    # Custom registry patterns are loaded from config and combined with these at runtime.
+    PUBLIC_REGISTRY_PATTERNS = [
+        "docker.io/",  # DockerHub
+        "docker.io/library/",  # DockerHub official with explicit library
+        "quay.io/",  # Quay
+        "gcr.io/",  # Google Container Registry
+        "ghcr.io/",  # GitHub Container Registry
+        "registry.k8s.io/",  # Kubernetes registry
+    ]
+
+    def __init__(self, ssh_connection: SSHConnection) -> None:
         """
         Initialize DockerSyncImagesKeywords with an SSH connection.
 
@@ -29,375 +59,544 @@ class DockerSyncImagesKeywords(BaseKeyword):
         self.ssh_connection = ssh_connection
         self.docker_images_keywords = DockerImagesKeywords(ssh_connection)
         self.docker_load_keywords = DockerLoadImageKeywords(ssh_connection)
+        self.docker_config = ConfigurationManager.get_docker_config()
 
-    def _load_and_validate_manifest(self, manifest_path: str) -> dict:
-        """
-        Load and validate manifest structure.
+        # Build registry patterns for canonical name extraction
+        # Start with public registry patterns (baseline)
+        patterns = list(self.PUBLIC_REGISTRY_PATTERNS)
 
-        Args:
-            manifest_path (str): Path to the manifest YAML file.
+        if self.docker_config is not None:
+            # Add custom registry patterns from config (for namespaced mirrors)
+            custom_patterns = self.docker_config.get_custom_registry_patterns()
+            for pattern in custom_patterns:
+                # Ensure pattern ends with / for consistent matching
+                normalized_pattern = pattern if pattern.endswith("/") else f"{pattern}/"
+                if normalized_pattern not in patterns:
+                    patterns.append(normalized_pattern)
+
+        # Sort patterns by length (longest first) to ensure more specific patterns match first
+        # This is critical for cases like "docker.io/library/" vs "docker.io/"
+        # Without sorting: "docker.io/library/busybox" matches "docker.io/" -> "library/busybox" (wrong!)
+        # With sorting: "docker.io/library/busybox" matches "docker.io/library/" -> "busybox" (correct!)
+        self.registry_patterns = sorted(patterns, key=len, reverse=True)
+
+    def get_registry_patterns(self) -> list:
+        """Get the configured registry patterns for canonical name extraction.
 
         Returns:
-            dict: Loaded manifest data.
+            list: List of registry patterns (sorted longest first)
+        """
+        return self.registry_patterns
+
+    def _resolve_manifest_path(self, manifest: str) -> str:
+        """Resolve manifest name or path to file path.
+
+        Supports both:
+        1. Logical names from docker config JSON5 (e.g., "sanity", "harbor-prod")
+        2. Direct file paths (absolute or relative) to manifest YAML files
+
+        Args:
+            manifest (str): Either a logical name from config or a file path
+
+        Returns:
+            str: Absolute path to manifest file
 
         Raises:
-            KeywordException: If the manifest cannot be loaded or is missing required fields.
+            KeywordException: If manifest cannot be resolved or file doesn't exist
+        """
+        # Try treating as direct file path first (absolute or relative)
+        if os.path.isfile(manifest):
+            return os.path.abspath(manifest)
+
+        # Not a file path, try resolving as logical name from config
+        try:
+            path = self.docker_config.get_named_manifest(manifest)
+            return os.path.abspath(path)
+        except ValueError as e:
+            raise KeywordException(f"Failed to resolve manifest '{manifest}': {e}. " "Provide either a logical name defined in docker config JSON5 or a valid file path.") from e
+
+    def sync_image_from_manifest(self, image_name: str, image_tag: str, manifest: str) -> str:
+        """
+        Syncs a single Docker image from a manifest to the local registry.
+
+        This is the primary API for tests. The manifest can be either a logical name from config
+        or a direct path to a manifest YAML file. The manifest specifies full source registry paths
+        for all images.
+
+        The method searches the manifest for an image matching the provided name and tag,
+        then extracts the canonical name from the found entry to ensure correct tagging.
+
+        Args:
+            image_name (str): Image name without registry prefix (e.g., "busybox", "calico/ctl", "myorg/myapp").
+                            The manifest is searched for an image with this canonical name.
+            image_tag (str): Image tag (e.g., "1.36.1", "v3.27.0")
+            manifest (str): Either a logical name from docker config JSON5 (e.g., "sanity", "harbor-prod")
+                          or a file path to a manifest YAML (e.g., "/path/to/custom-images.yaml")
+
+        Returns:
+            str: Local registry reference (e.g., "registry.local:9001/busybox:1.36.1")
+
+        Raises:
+            KeywordException: If manifest not found or image sync fails
+
+        Example:
+            >>> # Using logical name from config
+            >>> sync_keywords.sync_image_from_manifest("busybox", "1.36.1", "sanity")
+            "registry.local:9001/busybox:1.36.1"
+            >>> # Namespace is preserved from manifest
+            >>> sync_keywords.sync_image_from_manifest("myorg/myapp", "latest", "path/to/manifest.yaml")
+            "registry.local:9001/myorg/myapp:latest"
+        """
+        # 1. Resolve manifest (logical name or file path)
+        manifest_path = self._resolve_manifest_path(manifest)
+
+        get_logger().log_info(f"Using manifest: {manifest_path}")
+
+        # 2. Load manifest
+        manifest_data = self._load_manifest(manifest_path)
+
+        # 3. Find image in manifest
+        full_image_ref = self._find_image_in_manifest(manifest_data, image_name, image_tag)
+
+        if not full_image_ref:
+            available_images = "\n  ".join(manifest_data.get("images", []))
+            raise KeywordException(f"Image '{image_name}:{image_tag}' not found in manifest '{manifest_path}'.\n" f"Available images:\n  {available_images}")
+
+        get_logger().log_info(f"Found image in manifest: {full_image_ref}")
+
+        # 4. Extract canonical name from the found reference for consistent tagging
+        ref_name, _ = self._parse_image_reference(full_image_ref)
+        canonical_name = self._get_canonical_image_name(ref_name)
+
+        # 5. Sync image (pull, tag, push)
+        local_ref = self._sync_image(full_image_ref, canonical_name, image_tag)
+
+        get_logger().log_info(f"Successfully synced image to: {local_ref}")
+        return local_ref
+
+    def sync_all_images_from_manifest(self, manifest: str) -> list[str]:
+        """
+        Syncs all images from a manifest to the local registry.
+
+        Args:
+            manifest (str): Either a logical name from docker config JSON5 (e.g., "sanity") or a file path to a manifest YAML
+
+        Returns:
+            list[str]: List of local registry references
+
+        Raises:
+            KeywordException: If manifest not found or any image sync fails
+        """
+        # Resolve manifest (logical name or file path)
+        manifest_path = self._resolve_manifest_path(manifest)
+
+        get_logger().log_info(f"Syncing all images from manifest: {manifest_path}")
+
+        # Load manifest
+        manifest = self._load_manifest(manifest_path)
+
+        # Sync all images
+        local_refs = []
+        for full_image_ref in manifest.get("images", []):
+            # Parse image name and tag from full reference
+            ref_name, image_tag = self._parse_image_reference(full_image_ref)
+            # Extract canonical name (without registry) for local tagging
+            canonical_name = self._get_canonical_image_name(ref_name)
+
+            try:
+                local_ref = self._sync_image(full_image_ref, canonical_name, image_tag)
+                local_refs.append(local_ref)
+            except Exception as e:
+                get_logger().log_error(f"Failed to sync {full_image_ref}: {e}")
+                raise KeywordException(f"Image sync failed for {full_image_ref}: {e}") from e
+
+        get_logger().log_info(f"Successfully synced {len(local_refs)} images")
+        return local_refs
+
+    def _load_manifest(self, manifest_path: str) -> dict:
+        """
+        Load and validate manifest file.
+
+        Manifest images must be tag-based references (e.g., "image:tag").
+        Digest references (e.g., "image@sha256:...") are rejected during parsing.
+
+        Args:
+            manifest_path (str): Path to manifest YAML file
+
+        Returns:
+            dict: Loaded manifest data
+
+        Raises:
+            KeywordException: If manifest cannot be loaded
         """
         try:
             with open(manifest_path, "r") as f:
                 manifest = yaml.safe_load(f)
+        except FileNotFoundError:
+            raise KeywordException(f"Manifest file not found: {manifest_path}")
         except Exception as e:
-            raise KeywordException(f"Failed to load manifest '{manifest_path}': {e}")
+            raise KeywordException(f"Failed to load manifest '{manifest_path}': {e}") from e
 
-        if "images" not in manifest:
-            raise KeywordException(f"Manifest '{manifest_path}' missing required 'images' key")
+        if not manifest or "images" not in manifest:
+            raise KeywordException(f"Manifest '{manifest_path}' is invalid or missing 'images' key")
+
+        if not isinstance(manifest["images"], list):
+            raise KeywordException(f"Manifest '{manifest_path}' 'images' must be a list")
 
         return manifest
 
-    def _find_image_in_manifest(self, manifest: dict, image_name: str, image_tag: str, manifest_path: str) -> dict:
+    def _get_canonical_image_name(self, ref_name: str) -> str:
         """
-        Find and validate a specific image entry in manifest.
+        Extract the canonical image name from a full image reference.
+
+        This is the "logical" image name used for matching and local registry tagging,
+        with registry hostname stripped but namespace preserved.
+
+        **Namespace Preservation:**
+        Namespaces are ALWAYS preserved to avoid name collisions:
+        - docker.io/calico/ctl -> calico/ctl
+        - customregistry.io/project/myapp -> project/myapp
+        - privateregistry.com:5000/team/tool -> team/tool
+
+        For known registries (built-in public registries + custom patterns from config),
+        the registry pattern is matched and stripped intelligently.
+
+        For unknown registries (not in built-in patterns or config), only the registry
+        hostname (first path component) is stripped, preserving the full namespace path.
+
+        **Name Collision Prevention:**
+        By preserving namespaces, images like "team-a/scanner" and "team-b/scanner"
+        remain distinct and won't collide in manifests.
 
         Args:
-            manifest (dict): Loaded manifest data.
-            image_name (str): Name of the image to find.
-            image_tag (str): Tag of the image to find.
-            manifest_path (str): Path to manifest file (for error messages).
+            ref_name (str): Full image name without tag (e.g., "docker.io/busybox")
 
         Returns:
-            dict: The matching image entry.
+            str: Canonical image name without registry (e.g., "busybox", "calico/ctl", "project/myapp")
 
-        Raises:
-            KeywordException: If image is not found or duplicate entries exist.
+        Examples:
+            >>> self._get_canonical_image_name("docker.io/library/busybox")
+            "busybox"
+            >>> self._get_canonical_image_name("docker.io/calico/ctl")
+            "calico/ctl"
+            >>> self._get_canonical_image_name("registry.k8s.io/pause")
+            "pause"
+            >>> self._get_canonical_image_name("harbor.local/project1/docker.io/calico/ctl")
+            "calico/ctl"
+            >>> self._get_canonical_image_name("customregistry.io/project/myapp")
+            "project/myapp"
+            >>> self._get_canonical_image_name("unknown.io/myorg/scanner")
+            "myorg/scanner"
         """
-        matches = [img for img in manifest["images"] if img["name"] == image_name and img["tag"] == image_tag]
+        # Check for known registry patterns (public + custom from config)
+        # Note: Using 'in' instead of 'startswith' allows Harbor mirrors like
+        # "harbor.local/project1/docker.io/calico/ctl" to match the "docker.io/" pattern
+        # and correctly extract "calico/ctl" instead of "project1/docker.io/calico/ctl"
+        for pattern in self.registry_patterns:
+            if pattern in ref_name:
+                # Extract everything after this registry marker
+                # This preserves namespace (e.g., docker.io/calico/ctl -> calico/ctl)
+                return ref_name.split(pattern, 1)[1]
 
-        if not matches:
-            raise KeywordException(f"Image '{image_name}:{image_tag}' not found in manifest '{manifest_path}'")
+        # For unknown registries (not in public or custom patterns), preserve namespace to avoid collisions
+        # Strip only the registry hostname (first path component)
+        if "/" in ref_name:
+            parts = ref_name.split("/", 1)
+            if len(parts) > 1:
+                # Return everything after first / (includes namespace)
+                # e.g., unknown.registry.io/project/myapp -> project/myapp
+                return parts[1]
 
-        if len(matches) > 1:
-            base_message = f"Duplicate entries found for '{image_name}:{image_tag}' in manifest '{manifest_path}'. Each image:tag combination must be unique."
-            duplicate_entries_details = "\n".join([str(entry) for entry in matches])
-            get_logger().log_error(f"{base_message}\n{duplicate_entries_details}")
-            raise KeywordException(base_message)
+        # No slashes - already canonical
+        return ref_name
 
-        return matches[0]
-
-    def _sync_single_image_from_manifest(self, image: dict, manifest_path: str) -> None:
+    def _find_image_in_manifest(self, manifest: dict, canonical_name: str, image_tag: str) -> str | None:
         """
-        Sync a single image using the pull/tag/push pattern.
+        Find an image in manifest by canonical name and tag.
+
+        Matches images where BOTH the canonical name and tag match exactly. Canonical names
+        are extracted from full image references (e.g., "docker.io/busybox:1.36.1" -> "busybox").
+
+        If multiple images have the same canonical name and tag (e.g., different source registries
+        for the same image), the FIRST match is returned.
 
         Args:
-            image (dict): Image entry from manifest with 'name' and 'tag' keys.
-            manifest_path (str): Path to manifest file (for registry resolution).
-
-        Raises:
-            KeywordException: If no registry can be resolved or sync operations fail.
-        """
-        docker_config = ConfigurationManager.get_docker_config()
-        local_registry = docker_config.get_registry("local_registry")
-
-        name = image["name"]
-        tag = image["tag"]
-
-        # Resolve the source registry using the config resolution precedence
-        source_registry_name = docker_config.get_effective_source_registry_name(image, manifest_path)
-
-        if not source_registry_name:
-            raise KeywordException(f"Image '{name}:{tag}' has no registry resolved (manifest: {manifest_path}).")
-
-        source_registry = docker_config.get_registry(source_registry_name)
-
-        registry_url = source_registry.get_registry_url()
-        path_prefix = source_registry.get_path_prefix()
-        if path_prefix:
-            # Normalize path_prefix to ensure proper slash formatting
-            normalized_prefix = path_prefix.strip("/") + "/"
-            source_image = f"{registry_url}/{normalized_prefix}{name}:{tag}"
-        else:
-            source_image = f"{registry_url}/{name}:{tag}"
-        target_image = f"{local_registry.get_registry_url()}/{name}:{tag}"
-
-        get_logger().log_info(f"Pulling {source_image}")
-        self.docker_images_keywords.pull_image(source_image)
-
-        get_logger().log_info(f"Tagging {source_image} -> {target_image}")
-        self.docker_load_keywords.tag_docker_image_for_registry(
-            image_name=source_image,
-            tag_name=f"{name}:{tag}",
-            registry=local_registry,
-        )
-
-        get_logger().log_info(f"Pushing {target_image}")
-        self.docker_load_keywords.push_docker_image_to_registry(
-            tag_name=f"{name}:{tag}",
-            registry=local_registry,
-        )
-
-    def _build_image_references_for_removal(self, image_name: str, image_tag: str, manifest_path: str) -> list:
-        """
-        Build list of image references to attempt removal for.
-
-        Args:
-            image_name (str): Name of the image.
-            image_tag (str): Tag of the image.
-            manifest_path (str): Path to manifest file (for registry resolution).
+            manifest (dict): Loaded manifest data
+            canonical_name (str): Canonical image name without registry (e.g., "busybox", "calico/ctl", "myorg/myapp")
+            image_tag (str): Image tag (e.g., "1.36.1")
 
         Returns:
-            list: List of image references to try removing.
+            str | None: Full image reference (e.g., "docker.io/busybox:1.36.1") if found, None otherwise.
         """
-        docker_config = ConfigurationManager.get_docker_config()
-        local_registry = docker_config.get_registry("local_registry")
+        images = manifest.get("images", [])
 
-        source_registry_name = docker_config.get_effective_source_registry_name({"name": image_name, "tag": image_tag}, manifest_path)
+        for full_ref in images:
+            # Parse the full reference
+            ref_name, ref_tag = self._parse_image_reference(full_ref)
 
-        if not source_registry_name:
-            get_logger().log_debug(f"Skipping cleanup for image {image_name}:{image_tag} (no source registry resolved)")
-            return []
+            # Match on both name and tag
+            # Tags must match exactly
+            if ref_tag != image_tag:
+                continue
 
-        source_registry = docker_config.get_registry(source_registry_name)
-        source_url = source_registry.get_registry_url()
-        path_prefix = source_registry.get_path_prefix()
+            # Extract canonical image name and compare
+            # This handles:
+            #   - Public registries: docker.io/busybox -> busybox
+            #   - Namespaced: docker.io/calico/ctl -> calico/ctl
+            #   - Paths with known patterns: mirror.com/project/docker.io/busybox -> busybox
+            #   - Unknown registries: custom.registry.io/project/myapp -> project/myapp
+            extracted_canonical = self._get_canonical_image_name(ref_name)
 
-        # Always try to remove these two references
-        refs = [
-            f"{local_registry.get_registry_url()}/{image_name}:{image_tag}",
-            f"{image_name}:{image_tag}",
-        ]
+            if extracted_canonical == canonical_name:
+                return full_ref
 
-        # Optionally add full source registry tag if not DockerHub
-        if "docker.io" not in source_url:
-            if path_prefix:
-                # Normalize path_prefix to ensure proper slash formatting
-                normalized_prefix = path_prefix.strip("/") + "/"
-                refs.insert(0, f"{source_url}/{normalized_prefix}{image_name}:{image_tag}")
-            else:
-                refs.insert(0, f"{source_url}/{image_name}:{image_tag}")
-        else:
-            get_logger().log_debug(f"Skipping full docker.io-prefixed tag for {source_url}/{path_prefix}{image_name}:{image_tag}")
+        return None
 
-        return refs
-
-    def sync_images_from_manifest(self, manifest_path: str) -> None:
+    def _parse_image_reference(self, full_ref: str) -> tuple[str, str]:
         """
-        Syncs Docker images listed in a YAML manifest from a source registry into the local registry.
-
-        For each image:
-        - Pull from the resolved source registry.
-        - Tag for the local registry (e.g., registry.local:9001).
-        - Push to the local registry.
-
-        Registry credentials and mappings are resolved using ConfigurationManager.get_docker_config(),
-        which loads config from `config/docker/files/default.json5` or a CLI override.
-
-        Registry resolution behavior:
-
-        1) If a manifest entry exists in "manifest_registry_map":
-        - If "override" is true, all images in the manifest use the manifest "manifest_registry" (must be set).
-        - If "override" is false:
-            a. If an image defines "source_registry", it is used.
-            b. If no per-image "source_registry" is specified, but the manifest "manifest_registry" is set, it is used.
-            c. Otherwise, "default_source_registry" is used.
-        2) If no manifest entry exists:
-        - If an image defines "source_registry", it is used.
-        - Otherwise, "default_source_registry" is used.
-
-        Expected manifest format:
-        ```yaml
-        images:
-          - name: "starlingx/test-image"
-            tag: "tag-x"
-            source_registry: "dockerhub"  # Optional
-        ```
-
-        Notes:
-        - Registry URLs and credentials must be defined in config, not in the manifest.
-        Any such values in the manifest are ignored.
-        - Each image entry must include "name" and "tag".
+        Parse a full image reference into name and tag.
 
         Args:
-            manifest_path (str): Full path to the YAML manifest file.
+            full_ref (str): Full image reference (e.g., "docker.io/busybox:1.36.1")
+
+        Returns:
+            tuple[str, str]: (image_name, image_tag)
 
         Raises:
-            KeywordException: If one or more image sync operations fail, or if no registry can be resolved for an image.
-        """
-        manifest = self._load_and_validate_manifest(manifest_path)
-        failures = []
+            KeywordException: If reference is malformed (missing tag, contains digest, empty, etc.)
 
-        for image in manifest["images"]:
+        Example:
+            >>> _parse_image_reference("docker.io/busybox:1.36.1")
+            ("docker.io/busybox", "1.36.1")
+        """
+        try:
+            if not full_ref or not full_ref.strip():
+                raise KeywordException("Image reference cannot be empty")
+
+            if "@" in full_ref:
+                raise KeywordException(f"Digest references are not supported: {full_ref}. " "Please use tag-based references (e.g., 'image:tag')")
+
+            # Split on last colon to separate image name from tag
+            # rsplit(":", 1) handles registry ports correctly:
+            #   - "myregistry.io:5000/busybox:1.36.1" -> ["myregistry.io:5000/busybox", "1.36.1"]
+            #   - "docker.io/busybox:1.36.1" -> ["docker.io/busybox", "1.36.1"]
+            parts = full_ref.rsplit(":", 1)
+            image_name = parts[0].strip()
+            image_tag = parts[1].strip() if len(parts) > 1 else ""
+
+            if not image_name:
+                raise KeywordException(f"Invalid image reference (empty name): {full_ref}")
+
+            if not image_tag:
+                raise KeywordException(f"Invalid image reference (missing tag): {full_ref}")
+
+            # Tags cannot contain '/' - if we see one, we split on the wrong colon (likely a registry port)
+            # This catches cases like: "myregistry.io:5000/busybox" -> tag="5000/busybox"
+            if "/" in image_tag:
+                raise KeywordException(f"Invalid image reference (expected tag after last colon, found path separator): {full_ref}")
+
+            return image_name, image_tag
+
+        except KeywordException:
+            raise
+        except Exception as e:
+            raise KeywordException(f"Failed to parse image reference '{full_ref}': {str(e)}") from e
+
+    def _sync_image(self, full_image_ref: str, canonical_name: str, image_tag: str) -> str:
+        """
+        Sync a single image: pull from source, tag for local registry, push.
+
+        This method includes automatic authentication for source registries.
+        If the image's source registry is configured in docker config JSON5 source_registries,
+        it will authenticate using the configured credentials before pulling.
+        Public registries (not in source_registries) are accessed anonymously.
+
+        Args:
+            full_image_ref (str): Full image reference to pull (e.g., "docker.io/busybox:1.36.1")
+            canonical_name (str): Canonical image name without registry (e.g., "busybox", "calico/ctl", "myorg/myapp")
+            image_tag (str): Image tag (e.g., "1.36.1")
+
+        Returns:
+            str: Local registry reference
+
+        Raises:
+            KeywordException: If authentication, pull, tag, or push fails
+        """
+        local_registry = self.docker_config.get_local_registry()
+
+        # Build destination image reference (preserves namespaces like "calico/ctl", "myorg/scanner")
+        dest_image_with_tag = f"{canonical_name}:{image_tag}"
+        local_ref = f"{local_registry.get_registry_url()}/{dest_image_with_tag}"
+
+        try:
+            # Check if we need to authenticate to source registry
+            source_registry = self.docker_config.get_source_registry_for_image(full_image_ref)
+            if source_registry:
+                get_logger().log_info(f"Authenticating to source registry: {source_registry.get_registry_url()}")
+                login_keywords = DockerLoginKeywords(self.ssh_connection)
+                login_keywords.login(source_registry.get_user_name(), source_registry.get_password(), source_registry.get_registry_url())
+                get_logger().log_info(f"Successfully authenticated to {source_registry.get_registry_url()}")
+
+            # Pull from source
+            get_logger().log_info(f"Pulling {full_image_ref}")
+            self.docker_images_keywords.pull_image(full_image_ref)
+
+            # Docker normalizes image names when pulling:
+            # - docker.io/busybox:1.36.1 -> busybox:1.36.1
+            # - docker.io/library/busybox:1.36.1 -> busybox:1.36.1
+            # - registry.k8s.io/pause:3.9 -> registry.k8s.io/pause:3.9 (non-DockerHub stays as-is)
+            # We need to tag from the normalized name Docker actually stored
+            normalized_source = self._get_normalized_source_ref(full_image_ref)
+
+            # Tag for local registry
+            # Note: tag_docker_image_for_registry() has confusing parameter names:
+            #   - image_name: actually the SOURCE image ref (what docker tag uses as source)
+            #   - tag_name: actually the DEST name:tag (what goes after registry/)
+            get_logger().log_info(f"Tagging {normalized_source} -> {local_ref}")
+            self.docker_load_keywords.tag_docker_image_for_registry(image_name=normalized_source, tag_name=dest_image_with_tag, registry=local_registry)
+
+            # Push to local registry
+            get_logger().log_info(f"Pushing {local_ref}")
+            self.docker_load_keywords.push_docker_image_to_registry(tag_name=dest_image_with_tag, registry=local_registry)
+
+            return local_ref
+
+        except Exception as e:
+            raise KeywordException(f"Failed to sync image '{full_image_ref}': {e}") from e
+
+    def _get_normalized_source_ref(self, full_image_ref: str) -> str:
+        """
+        Get the normalized image name that Docker uses when storing the image locally.
+
+        Docker normalizes DockerHub images:
+        - docker.io/busybox:1.36.1 -> busybox:1.36.1
+        - docker.io/library/busybox:1.36.1 -> busybox:1.36.1
+        - docker.io/calico/ctl:v3.27.0 -> calico/ctl:v3.27.0
+
+        Non-DockerHub images keep full path:
+        - registry.k8s.io/pause:3.9 -> registry.k8s.io/pause:3.9
+
+        Args:
+            full_image_ref (str): Full image reference (e.g., "docker.io/busybox:1.36.1")
+
+        Returns:
+            str: Normalized image name Docker uses locally
+        """
+        if not full_image_ref.startswith("docker.io/"):
+            # Non-DockerHub registries keep their full path
+            return full_image_ref
+
+        # DockerHub image - strip docker.io/ prefix
+        without_registry = full_image_ref[len("docker.io/") :]
+
+        # Also strip "library/" for official images
+        if without_registry.startswith("library/"):
+            without_registry = without_registry[len("library/") :]
+
+        return without_registry
+
+    def remove_image_from_manifest(self, image_name: str, image_tag: str, manifest: str) -> None:
+        """
+        Remove an image from the local system using manifest reference.
+
+        This handles cleanup of both:
+        - The local registry copy (registry.local:9001/image:tag)
+        - The source image copy (normalized Docker name)
+
+        Like sync_image_from_manifest(), this method searches the manifest and extracts
+        the canonical name from the found entry to ensure consistent cleanup.
+
+        Args:
+            image_name (str): Image name without registry prefix (e.g., "busybox", "calico/ctl", "myorg/myapp").
+                            Must match the image name used when syncing.
+            image_tag (str): Image tag (e.g., "1.36.1", "v3.27.0")
+            manifest (str): Either a logical name from docker config JSON5 (e.g., "sanity")
+                          or a file path to a manifest YAML
+
+        Raises:
+            KeywordException: If manifest not found or removal fails
+
+        Example:
+            >>> # After syncing busybox:
+            >>> sync_keywords.sync_image_from_manifest("busybox", "1.36.1", "sanity")
+            >>> # Clean it up (uses same search term):
+            >>> sync_keywords.remove_image_from_manifest("busybox", "1.36.1", "sanity")
+        """
+        try:
+            # Resolve manifest (logical name or file path)
+            manifest_path = self._resolve_manifest_path(manifest)
+
+            # Load manifest to get full source reference
+            manifest_data = self._load_manifest(manifest_path)
+            full_image_ref = self._find_image_in_manifest(manifest_data, image_name, image_tag)
+
+            if not full_image_ref:
+                get_logger().log_warning(f"Image '{image_name}:{image_tag}' not found in manifest '{manifest_path}', skipping removal")
+                return
+
+            # Extract canonical name from found reference (matches how we tagged during sync)
+            ref_name, _ = self._parse_image_reference(full_image_ref)
+            canonical_name = self._get_canonical_image_name(ref_name)
+
+            # Get normalized source name (what Docker actually stored)
+            normalized_source = self._get_normalized_source_ref(full_image_ref)
+
+            # Build local registry reference using canonical name
+            local_registry = self.docker_config.get_local_registry()
+            local_ref = f"{local_registry.get_registry_url()}/{canonical_name}:{image_tag}"
+
+            # Remove local registry copy
+            get_logger().log_info(f"Removing local registry image: {local_ref}")
+            self.docker_images_keywords.remove_image(local_ref)
+
+            # Remove source copy (using normalized name)
+            get_logger().log_info(f"Removing source image: {normalized_source}")
+            self.docker_images_keywords.remove_image(normalized_source)
+
+        except Exception as e:
+            raise KeywordException(f"Failed to remove image '{image_name}:{image_tag}': {e}") from e
+
+    def remove_images_from_manifest(self, manifest: str) -> None:
+        """
+        Removes all images from a manifest from the local system.
+
+        Useful for cleanup after tests. Failures removing individual images are logged
+        as warnings and do not stop processing of remaining images.
+
+        Args:
+            manifest (str): Either a logical name from docker config JSON5 (e.g., "sanity") or a file path to a manifest YAML
+
+        Raises:
+            KeywordException: If manifest not found
+        """
+        manifest_path = self._resolve_manifest_path(manifest)
+
+        get_logger().log_info(f"Removing images from manifest: {manifest_path}")
+
+        manifest = self._load_manifest(manifest_path)
+        local_registry = self.docker_config.get_local_registry()
+
+        for full_ref in manifest.get("images", []):
+            ref_name, image_tag = self._parse_image_reference(full_ref)
+            # Extract canonical name (matches how we tagged during sync)
+            canonical_name = self._get_canonical_image_name(ref_name)
+
+            # Build local registry reference
+            local_ref = f"{local_registry.get_registry_url()}/{canonical_name}:{image_tag}"
+
+            # Get normalized source name (what Docker actually stored)
+            normalized_source = self._get_normalized_source_ref(full_ref)
+
+            # Remove local registry copy
             try:
-                self._sync_single_image_from_manifest(image, manifest_path)
+                get_logger().log_info(f"Removing local registry image: {local_ref}")
+                self.docker_images_keywords.remove_image(local_ref)
             except Exception as e:
-                error_msg = f"Failed to sync image {image['name']}:{image['tag']}: {e}"
-                get_logger().log_error(error_msg)
-                failures.append(error_msg)
+                get_logger().log_warning(f"Failed to remove local registry image {local_ref}: {e}")
 
-        if failures:
-            raise KeywordException(f"Image sync failed for manifest '{manifest_path}':\n  - " + "\n  - ".join(failures))
-
-    def remove_images_from_manifest(self, manifest_path: str) -> None:
-        """
-        Removes Docker images listed in the manifest from the local system.
-
-        Each image entry is removed using up to three tag formats to ensure all tag variants are cleared:
-        1. source_registry/image:tag   (skipped if source is docker.io; see note below)
-        2. local_registry/image:tag    (e.g., image pushed to registry.local)
-        3. image:tag                   (default short form used by Docker)
-
-        This ensures removal regardless of how the image was tagged during sync, supports
-        idempotency, and handles Docker's implicit normalization of tags.
-
-        Notes:
-            - docker.io-prefixed references are skipped because Docker stores these as image:tag.
-            - Removal is attempted even for images that were never successfully synced.
-
-        Args:
-            manifest_path (str): Path to the manifest YAML file containing image entries.
-
-        Raises:
-            KeywordException: If the manifest cannot be read, parsed, or is missing required fields.
-        """
-        manifest = self._load_and_validate_manifest(manifest_path)
-
-        for image in manifest["images"]:
-            name = image["name"]
-            tag = image["tag"]
-
-            refs = self._build_image_references_for_removal(name, tag, manifest_path)
-
-            for ref in refs:
-                self.docker_images_keywords.remove_image(ref)
-
-    def manifest_images_exist_in_local_registry(self, manifest_path: str, fail_on_missing: bool = True) -> bool:
-        """
-        Checks that all images listed in a manifest are present in the local Docker registry.
-
-        This is typically used after syncing images via `sync_images_from_manifest` to ensure that
-        each expected image was successfully pushed to the local registry (e.g., registry.local:9001).
-
-        If `fail_on_missing` is True, the method raises a `KeywordException` if any expected image
-        is missing. If False, it logs the error but does not raise, allowing non-blocking verification.
-
-        Args:
-            manifest_path (str): Path to the manifest YAML file containing image entries.
-            fail_on_missing (bool): Whether to raise an exception on missing images. Defaults to True.
-
-        Returns:
-            bool: True if all expected images were found, False if any were missing and `fail_on_missing` is False.
-
-        Raises:
-            KeywordException: If the manifest is invalid or, when `fail_on_missing` is True, one or more expected images are missing.
-        """
-        docker_config = ConfigurationManager.get_docker_config()
-        local_registry = docker_config.get_registry("local_registry")
-
-        manifest = self._load_and_validate_manifest(manifest_path)
-
-        images = self.docker_images_keywords.list_images()
-        actual_repos = [img.get_repository() for img in images]
-        validation_errors = []
-
-        for image in manifest["images"]:
-            name = image["name"]
-            tag = image["tag"]
-            expected_ref = f"{local_registry.get_registry_url()}/{name}"
-
-            get_logger().log_info(f"Checking local registry for: {expected_ref}:{tag}")
-            if expected_ref not in actual_repos:
-                msg = f"[{Path(manifest_path).name}] Expected image not found: {expected_ref}"
-                get_logger().log_warning(msg)
-                validation_errors.append(msg)
-
-        if validation_errors:
-            message = "One or more expected images were not found in the local registry:\n  - " + "\n  - ".join(validation_errors)
-            if fail_on_missing:
-                raise KeywordException(message)
-            else:
-                get_logger().log_error(message)
-                return False
-
-        return True
-
-    def sync_image_from_manifest(self, image_name: str, image_tag: str, manifest_path: str) -> None:
-        """
-        Syncs a single Docker image listed in a manifest from a source registry into the local registry.
-
-        This is similar to sync_images_from_manifest(), but only processes the specified image.
-
-        Args:
-            image_name (str): Name of the image to sync (without registry).
-            image_tag (str): Tag of the image to sync.
-            manifest_path (str): Path to the manifest YAML file.
-
-        Raises:
-            KeywordException: If the image is not found in the manifest, if multiple entries are found,
-                            or if the sync operation fails.
-        """
-        manifest = self._load_and_validate_manifest(manifest_path)
-        target_image_entry = self._find_image_in_manifest(manifest, image_name, image_tag, manifest_path)
-
-        self._sync_single_image_from_manifest(target_image_entry, manifest_path)
-        get_logger().log_info(f"Successfully synced '{image_name}:{image_tag}' from manifest")
-
-    def remove_image_from_manifest(self, image_name: str, image_tag: str, manifest_path: str) -> None:
-        """
-        Removes a single Docker image listed in a manifest from the local system.
-
-        This is similar to remove_images_from_manifest(), but only processes the specified image.
-
-        For each image, removal is attempted for:
-        1. source_registry/image:tag   (skipped if source is docker.io; see note below)
-        2. local_registry/image:tag
-        3. image:tag
-
-        Notes:
-            - docker.io-prefixed references are skipped because Docker stores these as image:tag.
-            - Removal is attempted even for images that were never successfully synced.
-
-        Args:
-            image_name (str): Name of the image to remove (without registry).
-            image_tag (str): Tag of the image to remove.
-            manifest_path (str): Path to the manifest YAML file.
-
-        Raises:
-            KeywordException: If the image is not found in the manifest, if multiple entries are found,
-                            or if the removal operation fails.
-        """
-        manifest = self._load_and_validate_manifest(manifest_path)
-        self._find_image_in_manifest(manifest, image_name, image_tag, manifest_path)
-
-        refs = self._build_image_references_for_removal(image_name, image_tag, manifest_path)
-
-        for ref in refs:
-            self.docker_images_keywords.remove_image(ref)
-
-        get_logger().log_info(f"Successfully removed '{image_name}:{image_tag}' from local Docker images.")
-
-    def image_exists_in_local_registry(self, image_name: str, image_tag: str) -> bool:
-        """
-        Checks that a Docker image with the specified name and tag exists in the local registry.
-
-        This is typically used after syncing a single image to confirm it was pushed successfully.
-
-        Args:
-            image_name (str): Name of the image to check (without registry prefix).
-            image_tag (str): Tag of the image to check.
-
-        Returns:
-            bool: True if the image exists, False otherwise.
-        """
-        docker_config = ConfigurationManager.get_docker_config()
-        local_registry = docker_config.get_registry("local_registry")
-        local_registry_url = local_registry.get_registry_url()
-
-        images = self.docker_images_keywords.list_images()
-
-        expected_repo = f"{local_registry_url}/{image_name}"
-        matches = [img for img in images if img.get_repository() == expected_repo and img.get_tag() == image_tag]
-
-        if matches:
-            get_logger().log_info(f"Image '{expected_repo}:{image_tag}' was found in the local registry.")
-            return True
-        else:
-            get_logger().log_warning(f"Image '{expected_repo}:{image_tag}' was NOT found in the local registry.")
-            return False
+            # Remove source copy
+            try:
+                get_logger().log_info(f"Removing source image: {normalized_source}")
+                self.docker_images_keywords.remove_image(normalized_source)
+            except Exception as e:
+                get_logger().log_warning(f"Failed to remove source image {normalized_source}: {e}")

@@ -1,0 +1,40 @@
+# ==============================================================================
+# StarlingX Sanity Test Images Manifest (Public/Opensource)
+# ==============================================================================
+#
+# This manifest defines Docker images used in StarlingX sanity regression tests.
+# Images are specified with full registry paths for direct pulling from public
+# registries.
+#
+#
+# Usage in tests:
+#   # Using logical name:
+#   sync_keywords.sync_image_from_named_manifest(
+#       image_name="busybox",
+#       image_tag="1.36.1",
+#       manifest_name="stx-sanity"  # Logical name from docker config
+#   )
+#
+#   # Using direct file path:
+#   sync_keywords.sync_image_from_named_manifest(
+#       image_name="busybox",
+#       image_tag="1.36.1",
+#       manifest_name="resources/image_manifests/stx-sanity-images.yaml"
+#   )
+#
+# You can map a logical name like "stx-sanity" to this manifest file using the
+# docker JSON5 config (e.g., config/docker/files/default.json5).
+#
+# Image Format:
+#   Full registry path with tag: registry.io/namespace/image:tag
+#
+# ==============================================================================
+
+images:
+  # DockerHub images
+  - docker.io/busybox:1.36.1
+  - docker.io/calico/ctl:v3.27.0
+
+  # Kubernetes registry images
+  - registry.k8s.io/pause:3.9
+  - registry.k8s.io/e2e-test-images/resource-consumer:1.10
