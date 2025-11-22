@@ -41,7 +41,12 @@ class SwManagerSwDeployStrategyShowOutput:
             self.swmanager_sw_deploy_strategy.set_state(sw_deploy_strat.get("state"))
             self.swmanager_sw_deploy_strategy.set_inprogress(sw_deploy_strat.get("inprogress"))
         else:
-            raise KeywordException(f"The output line {output_values} was not valid")
+            # Check if this is a connection error (empty dict) - if so, raise a more specific exception
+            output_str = "".join(swmanager_sw_deploy)
+            if "Connection refused" in output_str or "<urlopen error" in output_str or len(output_values) == 0:
+                raise KeywordException(f"Connection error or temporary issue: {output_str.strip()}")
+            else:
+                raise KeywordException(f"The output line {output_values} was not valid")
 
     def get_swmanager_sw_deploy_strategy_show(self) -> SwManagerSwDeployStrategyObject:
         """
@@ -63,6 +68,11 @@ class SwManagerSwDeployStrategyShowOutput:
         Returns:
             bool: True if all required fields are present, False otherwise.
         """
+        # Check for connection errors first - these should not be treated as invalid output
+        if isinstance(value, dict) and len(value) == 0:
+            get_logger().log_debug("Empty output received, likely due to connection issues")
+            return False
+            
         required_fields = ["strategy-uuid", "release-id", "controller-apply-type", "storage-apply-type", "worker-apply-type", "default-instance-action", "alarm-restrictions", "current-phase", "current-phase-completion", "state"]
         if "Strategy Software Deploy Strategy" not in value:
             get_logger().log_error("Strategy Software Deploy Strategy is not in the output value")

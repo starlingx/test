@@ -39,6 +39,7 @@ class USMConfig:
         self.remote_password = usm_dict.get("remote_password", "")
         self.snapshot = usm_dict.get("snapshot", False)
         self.rollback = usm_dict.get("rollback", False)
+        self.deploy_delete = usm_dict.get("deploy_delete", False)
         self.deployment_timeout_sec = usm_dict.get("deployment_timeout_sec", 7200)
         self.activation_timeout_sec = usm_dict.get("activation_timeout_sec", 3600)
         self.upgrade_arguments = usm_dict.get("upgrade_arguments", "")
@@ -314,6 +315,22 @@ class USMConfig:
         """
         self.rollback = value
 
+    def get_deploy_delete(self) -> bool:
+        """Check if deploy delete flag is enabled.
+
+        Returns:
+            bool: True if deploy delete is enabled, False otherwise.
+        """
+        return self.deploy_delete
+
+    def set_deploy_delete(self, value: bool) -> None:
+        """Set if deploy delete flag is enabled.
+
+        Args:
+            value (bool): True if deploy delete is enabled, False otherwise.
+        """
+        self.deploy_delete = value
+
     def get_deployment_timeout_sec(self) -> int:
         """Get the deployment timeout in seconds.
 
@@ -393,7 +410,7 @@ class USMConfig:
             value (int): Maximum seconds to wait for patch upload to complete.
         """
         self.upload_patch_timeout_sec = value
-    
+
     def get_upload_release_timeout_sec(self) -> int:
         """Get timeout duration for release upload completion.
 
