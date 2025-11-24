@@ -197,6 +197,85 @@ system_host_if_ptp_remove_wrapped_output = [
     '+--------------------------------------+---------+-----------+---------------+\n',
 ]
 
+system_helm_overrides_with_regex = [
+    "+----------------+------------------------------------------------------------------------------------+\n",
+    "| Property       | Value                                                                              |\n",
+    "+----------------+------------------------------------------------------------------------------------+\n",
+    "| name           | metricbeat                                                                         |\n",
+    "| namespace      | monitor                                                                            |\n",
+    "| user_overrides | daemonset:                                                                         |\n",
+    "|                |   moduleConfig:                                                                    |\n",
+    "|                |     system:                                                                        |\n",
+    "|                |       core:                                                                        |\n",
+    "|                |         core.metrics:                                                              |\n",
+    "|                |         - percentages                                                              |\n",
+    "|                |         metricsets:                                                                |\n",
+    "|                |         - core                                                                     |\n",
+    "|                |         module: system                                                             |\n",
+    "|                |       cpu:                                                                         |\n",
+    "|                |         cpu.metrics:                                                               |\n",
+    "|                |         - normalized_percentages                                                   |\n",
+    "|                |         metricsets:                                                                |\n",
+    "|                |         - cpu                                                                      |\n",
+    "|                |         module: system                                                             |\n",
+    "|                |       diskio:                                                                      |\n",
+    "|                |         cpu.metrics:                                                               |\n",
+    "|                |         - normalized_percentages                                                   |\n",
+    "|                |         metricsets:                                                                |\n",
+    "|                |         - diskio                                                                   |\n",
+    "|                |         module: system                                                             |\n",
+    "|                |         period: 30s                                                                |\n",
+    "|                |       filesystem:                                                                  |\n",
+    "|                |         metricsets:                                                                |\n",
+    "|                |         - filesystem                                                               |\n",
+    "|                |         module: system                                                             |\n",
+    "|                |         period: 5m                                                                 |\n",
+    "|                |         processors:                                                                |\n",
+    "|                |         - drop_event.when:                                                         |\n",
+    "|                |             regexp:                                                                |\n",
+    "|                |               system.filesystem.mount_point: ^/(sys|cgroup|proc|dev|host|lib)($|/) |\n",
+    "|                |       load:                                                                        |\n",
+    "|                |         metricsets:                                                                |\n",
+    "|                |         - load                                                                     |\n",
+    "|                |         module: system                                                             |\n",
+    "|                |       memory:                                                                      |\n",
+    "|                |         cpu.metrics:                                                               |\n",
+    "|                |         - normalized_percentages                                                   |\n",
+    "|                |         metricsets:                                                                |\n",
+    "|                |         - memory                                                                   |\n",
+    "|                |         module: system                                                             |\n",
+    "|                |       network:                                                                     |\n",
+    "|                |         metricsets:                                                                |\n",
+    "|                |         - network                                                                  |\n",
+    "|                |         module: system                                                             |\n",
+    "|                |         period: 30s                                                                |\n",
+    "|                |         processors:                                                                |\n",
+    "|                |         - drop_event.when:                                                         |\n",
+    "|                |             or:                                                                    |\n",
+    "|                |             - regexp:                                                              |\n",
+    "|                |                 system.network.name: ^(docker0|cali.*)$                            |\n",
+    "|                |             - and:                                                                 |\n",
+    "|                |               - equals:                                                            |\n",
+    "|                |                   system.network.in.packets: 0                                     |\n",
+    "|                |               - equals:                                                            |\n",
+    "|                |                   system.network.out.packets: 0                                    |\n",
+    "|                |       process:                                                                     |\n",
+    "|                |         metricsets:                                                                |\n",
+    "|                |         - process                                                                  |\n",
+    "|                |         module: system                                                             |\n",
+    "|                |         period: 30s                                                                |\n",
+    "|                |         process.include_top_n.enabled: false                                       |\n",
+    "|                |         processes:                                                                 |\n",
+    "|                |         - .*                                                                       |\n",
+    "|                |         processors:                                                                |\n",
+    "|                |         - drop_event.when:                                                         |\n",
+    "|                |             range:                                                                 |\n",
+    "|                |               system.process.cpu.total.pct.lte: 0                                  |\n",
+    "|                |                                                                                    |\n",
+    "+----------------+------------------------------------------------------------------------------------+\n",
+]
+
+
 def test_system_parser():
     """
     Tests the system parser
@@ -560,3 +639,18 @@ def test_system_vertical_table_parser_with_valid_table_with_a_text_in_the_end():
     assert output_dict.get("progress") == "None"
     assert output_dict.get("status") == "removing"
     assert output_dict.get("updated_at") == "2024-10-16T15:50:59.902779+00:00"
+
+
+def test_system_helm_overrides_with_regex():
+    """
+    Tests the system vertical parser with regex values
+    Returns:
+    """
+    system_vertical_table_parser = SystemVerticalTableParser(
+        system_helm_overrides_with_regex
+    )
+    output_dict = system_vertical_table_parser.get_output_values_dict()
+    assert "system.filesystem.mount_point" in output_dict
+    assert "^/(sys" in output_dict
+    assert "system.network.name" in output_dict
+    assert "^(docker0" in output_dict
