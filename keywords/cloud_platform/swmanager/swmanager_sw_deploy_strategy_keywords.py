@@ -2,12 +2,14 @@ import time
 
 from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
-from framework.validation.validation import validate_equals_with_retry
 from keywords.base_keyword import BaseKeyword
 from keywords.cloud_platform.command_wrappers import source_openrc
-from keywords.cloud_platform.dcmanager.objects.dcmanager_prestage_strategy_object import DcmanagerPrestageStrategyObject
-from keywords.cloud_platform.swmanager.objects.swmanager_sw_deploy_strategy_object import SwManagerSwDeployStrategyObject
-from keywords.cloud_platform.swmanager.objects.swmanager_sw_deploy_strategy_show_output import SwManagerSwDeployStrategyShowOutput
+from keywords.cloud_platform.swmanager.objects.swmanager_sw_deploy_strategy_show_output import (
+    SwManagerSwDeployStrategyShowOutput
+)
+from keywords.cloud_platform.swmanager.objects.swmanager_sw_deploy_strategy_create_config import (
+    SwManagerSwDeployStrategyCreateConfig
+)
 
 
 class SwManagerSwDeployStrategyKeywords(BaseKeyword):
@@ -23,84 +25,194 @@ class SwManagerSwDeployStrategyKeywords(BaseKeyword):
         """
         self.ssh_connection = ssh_connection
 
-    def get_sw_deploy_strategy_abort(self):
-        """Gets the sw-deploy-strategy abort."""
+    def get_sw_deploy_strategy_abort(self) -> bool:
+        """Aborts the sw-deploy-strategy.
+        
+        Returns:
+            bool: True if abort was successful, False otherwise.
+        """
         command = source_openrc("sw-manager sw-deploy-strategy abort")
         self.ssh_connection.send(command)
-        self.validate_success_return_code(self.ssh_connection)
+        try:
+            self.validate_success_return_code(self.ssh_connection)
+            return True
+        except AssertionError:
+            return False
 
-    def get_sw_deploy_strategy_apply(self) -> DcmanagerPrestageStrategyObject:
-        """Gets the sw-deploy-strategy apply.
-
+    def get_sw_deploy_strategy_apply(self) -> bool:
+        """Applies the sw-deploy-strategy.
+        
         Returns:
-            DcmanagerPrestageStrategyObject: An object containing details of the sw-deploy strategy.
+            bool: True if apply command was successful, False otherwise.
         """
         command = source_openrc("sw-manager sw-deploy-strategy apply")
         self.ssh_connection.send(command)
-        self.validate_success_return_code(self.ssh_connection)
-        # wait for apply to complete
-        return self.wait_for_state(["applied", "apply-failed"])
+        try:
+            self.validate_success_return_code(self.ssh_connection)
+            return True
+        except AssertionError:
+            return False
 
-    def get_sw_deploy_strategy_create(self, release: str, delete: bool) -> DcmanagerPrestageStrategyObject:
-        """Gets the sw-deploy-strategy create.
-
+    def get_sw_deploy_strategy_create(self, config: SwManagerSwDeployStrategyCreateConfig) -> bool:
+        """Creates the sw-deploy-strategy.
+        
         Args:
-            release (str): The release to be deployed.
-            delete (bool): If True, include the --delete argument in the command.
-
+            config (SwManagerSwDeployStrategyCreateConfig): Configuration object containing all create parameters.
+        
         Returns:
-            DcmanagerPrestageStrategyObject: The output of the sw-deploy strategy.
+            bool: True if create command was successful, False otherwise.
         """
-        delete_arg = "--delete" if delete else ""
-
-        command = source_openrc(f"sw-manager sw-deploy-strategy create {delete_arg} {release}")
+        args_str = config.build_command_args()
+        command = source_openrc(f"sw-manager sw-deploy-strategy create {args_str} {config.release}")
         self.ssh_connection.send(command)
-        self.validate_success_return_code(self.ssh_connection)
-        # wait for build to complete
-        return self.wait_for_state(["ready-to-apply", "build-failed"])
+        try:
+            self.validate_success_return_code(self.ssh_connection)
+            return True
+        except AssertionError:
+            return False
 
-    def get_sw_deploy_strategy_show(self) -> SwManagerSwDeployStrategyShowOutput:
+    def get_sw_deploy_strategy_show(self, timeout: int = 60) -> SwManagerSwDeployStrategyShowOutput:
         """Gets the sw-deploy-strategy show.
-
+        
+        Args:
+            timeout (int): Timeout in seconds (default: 60).
+        
         Returns:
-            SwManagerSwDeployStrategyShowOutput: An object containing details of the prestage strategy .
+            SwManagerSwDeployStrategyShowOutput: An object containing details of the prestage strategy.
         """
         command = source_openrc("sw-manager sw-deploy-strategy show")
-        output = self.ssh_connection.send(command)
-        return SwManagerSwDeployStrategyShowOutput(output)
+        timeout_time = time.time() + timeout
+        retry_interval = 10
+        connection_retry_count = 0
+        max_connection_retries = 3
+        
+        while time.time() < timeout_time:
+            try:
+                output = self.ssh_connection.send(command)
+                return SwManagerSwDeployStrategyShowOutput(output)
+            except Exception as e:
+                error_msg = str(e).lower()
+                if "connection" in error_msg or "timeout" in error_msg or "nonetype" in error_msg:
+                    connection_retry_count += 1
+                    if connection_retry_count <= max_connection_retries:
+                        get_logger().log_info(f"Connection issue during system operation (attempt {connection_retry_count}/{max_connection_retries}), retrying in {retry_interval} seconds...")
+                        time.sleep(retry_interval)
+                        continue
+                    else:
+                        get_logger().log_warning(f"Max connection retries reached, continuing with longer interval...")
+                        connection_retry_count = 0
+                        time.sleep(30)
+                else:
+                    get_logger().log_debug(f"Non-connection error: {e}, retrying in {retry_interval} seconds...")
+                    time.sleep(retry_interval)
+        
+        # Final attempt after timeout
+        try:
+            output = self.ssh_connection.send(command)
+            return SwManagerSwDeployStrategyShowOutput(output)
+        except Exception as e:
+            get_logger().log_error(f"Final attempt failed: {e}")
+            raise
 
-    def check_sw_deploy_strategy_delete(self) -> bool:
-        """Checks the output of the sw-deploy-strategy delete command.
-
+    def get_sw_deploy_strategy_show_details(self) -> list:
+        """Gets the sw-deploy-strategy show --details.
+        
         Returns:
-            bool: True if no strategy exists to be deleted, False if a strategy is in the process of being deleted.
+            list: Raw output of the sw-deploy-strategy show --details command.
+        """
+        command = source_openrc("sw-manager sw-deploy-strategy show --details")
+        output = self.ssh_connection.send(command)
+        return output
+
+    def check_sw_deploy_strategy_exists(self) -> bool:
+        """Checks if a sw-deploy-strategy exists without deleting it.
+        
+        Returns:
+            bool: True if a strategy exists, False if no strategy exists.
+        """
+        try:
+            output = self.get_sw_deploy_strategy_show()
+            return True
+        except Exception:
+            return False
+
+    def get_sw_deploy_strategy_delete(self) -> bool:
+        """Starts sw-deploy-strategy deletion.
+        
+        Returns:
+            bool: True if delete command was successful, False otherwise.
         """
         command = source_openrc("sw-manager sw-deploy-strategy delete")
         output = self.ssh_connection.send(command)
-        if "Nothing to delete" in "".join(output):
-            get_logger().log_info("No sw-deploy-strategy to be deleted, moving on...")
+        try:
+            self.validate_success_return_code(self.ssh_connection)
+            self.log_delete_result(output)
             return True
-        return False
+        except AssertionError:
+            return False
 
-    def get_sw_deploy_strategy_delete(self) -> None:
-        """Starts sw-deploy-strategy deletion process if there is a strategy in progress and waits for its deletion."""
-        validate_equals_with_retry(function_to_execute=self.check_sw_deploy_strategy_delete, expected_value=True, validation_description="Waits for strategy deletion", timeout=600, polling_sleep_time=10)
-
-    def wait_for_state(self, state: list, timeout: int = 1800) -> SwManagerSwDeployStrategyObject:
+    def wait_for_state(self, state: list, timeout: int = 1800) -> bool:
         """Waits for the sw-deploy-strategy to reach a specific state.
-
+        
         Args:
             state (list): The desired state to wait for.
             timeout (int): The maximum time to wait in seconds.
-
+        
         Returns:
-            SwManagerSwDeployStrategyObject: The output of the sw-deploy-strategy show command when the desired state is reached.
+            bool: True if desired state is reached, False if timeout.
         """
-        interval = 10
-        start_time = time.time()
-        while time.time() - start_time < timeout:
-            output = self.get_sw_deploy_strategy_show().get_swmanager_sw_deploy_strategy_show()
-            if output.get_state() in state:
-                return output
-            time.sleep(interval)
-        raise TimeoutError(f"Timed out waiting for sw-deploy-strategy to reach state '{state}' after {timeout} seconds.")
+        end_time = time.time() + timeout
+        retry_interval = 15
+        connection_issues = 0
+        
+        while time.time() < end_time:
+            try:
+                output = self.get_sw_deploy_strategy_show(timeout=120).get_swmanager_sw_deploy_strategy_show()
+                if output.get_state() in state:
+                    return True
+                connection_issues = 0  # Reset counter on successful connection
+            except Exception as e:
+                connection_issues += 1
+                error_msg = str(e).lower()
+                if "connection" in error_msg or "timeout" in error_msg:
+                    if connection_issues <= 5:
+                        get_logger().log_info(f"Connection issue during state monitoring (#{connection_issues}), system may be rebooting. Retrying...")
+                    else:
+                        get_logger().log_warning(f"Extended connection issues detected, continuing to monitor...")
+                else:
+                    get_logger().log_debug(f"Error getting strategy status: {e}. Retrying...")
+            
+            # Only sleep if we haven't reached timeout
+            if time.time() + retry_interval < end_time:
+                time.sleep(retry_interval)
+        
+        return False
+
+    def is_delete_completed(self, output: list) -> bool:
+        """Checks if delete operation is completed based on output.
+        
+        Args:
+            output (list): Command output to check.
+            
+        Returns:
+            bool: True if deletion is completed or nothing to delete.
+        """
+        output_str = "".join(output)
+        if "Nothing to delete" in output_str or "Strategy deleted" in output_str:
+            get_logger().log_info("Strategy deletion completed or no strategy to delete")
+            return True
+        return False
+
+    def log_delete_result(self, output: list) -> None:
+        """Logs the result of delete operation.
+        
+        Args:
+            output (list): Command output to analyze.
+        """
+        output_str = "".join(output)
+        if "Nothing to delete" in output_str:
+            get_logger().log_info("No strategy to delete")
+        elif "Strategy deleted" in output_str:
+            get_logger().log_info("Strategy deleted successfully")
+        else:
+            get_logger().log_warning(f"Unexpected deletion output: {output_str}")

@@ -11,6 +11,7 @@ from keywords.cloud_platform.dcmanager.dcmanager_subcloud_prestage import Dcmana
 from keywords.cloud_platform.dcmanager.dcmanager_sw_deploy_strategy_keywords import DcmanagerSwDeployStrategy
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.cloud_platform.swmanager.swmanager_sw_deploy_strategy_keywords import SwManagerSwDeployStrategyKeywords
+from keywords.cloud_platform.swmanager.objects.swmanager_sw_deploy_strategy_create_config import SwManagerSwDeployStrategyCreateConfig
 from keywords.cloud_platform.upgrade.software_list_keywords import SoftwareListKeywords
 from keywords.cloud_platform.upgrade.usm_keywords import USMKeywords
 
@@ -76,7 +77,11 @@ def swman_sw_deploy_strategy_create_apply(release: str):
     swman_deploy_kw = SwManagerSwDeployStrategyKeywords(central_ssh)
 
     get_logger().log_test_case_step("Through the VIM orchestration deploy the patch in the system controller")
-    swman_obj = swman_deploy_kw.get_sw_deploy_strategy_create(release=release, delete=True)
+    config = SwManagerSwDeployStrategyCreateConfig(release=release, delete=True)
+    create_success = swman_deploy_kw.get_sw_deploy_strategy_create(config)
+    assert create_success, "Failed to create sw-deploy strategy"
+    swman_obj = swman_deploy_kw.wait_for_state(["ready-to-apply", "build-failed"])
+    assert swman_obj, "Strategy did not reach ready-to-apply state"
     get_logger().log_info(f"Created sw-deploy strategy: {swman_obj.get_strategy_uuid()} for release {swman_obj.get_release_id()}")
     get_logger().log_info(f"release = {release}  get_release_id = {swman_obj.get_release_id()}")
     get_logger().log_test_case_step("Apply the strategy")
