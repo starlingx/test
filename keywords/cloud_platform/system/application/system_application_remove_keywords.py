@@ -5,6 +5,8 @@ from keywords.cloud_platform.system.application.object.system_application_output
 from keywords.cloud_platform.system.application.object.system_application_remove_input import SystemApplicationRemoveInput
 from keywords.cloud_platform.system.application.object.system_application_status_enum import SystemApplicationStatusEnum
 from keywords.cloud_platform.system.application.system_application_list_keywords import SystemApplicationListKeywords
+from keywords.cloud_platform.system.application.system_application_delete_keywords import SystemApplicationDeleteInput
+from keywords.cloud_platform.system.application.system_application_delete_keywords import SystemApplicationDeleteKeywords
 
 
 class SystemApplicationRemoveKeywords(BaseKeyword):
@@ -69,3 +71,18 @@ class SystemApplicationRemoveKeywords(BaseKeyword):
 
         cmd = f'system application-remove {force_as_param} {system_application_remove_input.get_app_name()}'
         return cmd
+
+    def system_application_remove_and_delete_app(self, app_name: str, force_removal: bool = False, force_deletion: bool = False):
+
+        remove_input = SystemApplicationRemoveInput()
+        remove_input.set_app_name(app_name)
+        remove_input.set_force_removal(force_removal)
+
+        remove_output = self.system_application_remove(remove_input)
+
+        delete_input = SystemApplicationDeleteInput()
+        delete_input.set_app_name(app_name)
+        delete_input.set_force_deletion(force_deletion)
+        delete_message = SystemApplicationDeleteKeywords(self.ssh_connection).get_system_application_delete(delete_input)
+
+        return delete_message

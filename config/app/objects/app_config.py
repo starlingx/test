@@ -22,6 +22,7 @@ class AppConfig:
         self.oidc_app_name = app_dict["oidc_app_name"]
         self.power_metrics_app_name = app_dict["power_metrics_app_name"]
         self.power_manager_app_name = app_dict["power_manager_app_name"]
+        self.intel_device_plugins_app_name = app_dict["intel_device_plugins_app_name"]
         self.node_feature_discovery_app_name = app_dict["node_feature_discovery_app_name"]
         self.node_interface_metrics_exporter_app_name = app_dict["node_interface_metrics_exporter_app_name"]
         self.platform_integ_apps_app_name = app_dict["platform_integ_apps_app_name"]
@@ -85,6 +86,17 @@ class AppConfig:
 
         """
         return self.power_manager_app_name
+
+    def get_intel_device_plugins_app_name(self) -> str:
+        """
+        Getter for Intel Device Plugin app name
+
+        Returns:
+            str: the intel device plugin app name
+
+        """
+        return self.intel_device_plugins_app_name
+
 
     def get_node_feature_discovery_app_name(self) -> str:
         """
