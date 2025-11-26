@@ -4,6 +4,7 @@ from framework.validation.validation import validate_equals_with_retry
 from keywords.base_keyword import BaseKeyword
 from keywords.cloud_platform.command_wrappers import source_openrc
 from keywords.cloud_platform.dcmanager.dcmanager_strategy_step_keywords import DcmanagerStrategyStepKeywords
+from config.configuration_manager import ConfigurationManager
 
 
 class DcmanagerSwDeployStrategy(BaseKeyword):
@@ -19,6 +20,7 @@ class DcmanagerSwDeployStrategy(BaseKeyword):
             ssh_connection (SSHConnection): The SSH connection object used for executing commands.
         """
         self.ssh_connection = ssh_connection
+        self.usm_config = ConfigurationManager.get_usm_config()
 
     def dcmanager_sw_deploy_strategy_create(self, subcloud_name: str, sw_version: str, with_delete: bool = False):
         """
@@ -30,7 +32,7 @@ class DcmanagerSwDeployStrategy(BaseKeyword):
             with_delete (bool): If true, adds parameter --with-delete
         """
         delete = "--with-delete" if with_delete else ""
-        command = source_openrc(f"dcmanager sw-deploy-strategy create {subcloud_name} {sw_version} {delete}")
+        command = source_openrc(f"dcmanager sw-deploy-strategy create {subcloud_name} --release-id {sw_version} {delete}")
 
         self.ssh_connection.send(command)
         self.validate_success_return_code(self.ssh_connection)
@@ -48,7 +50,15 @@ class DcmanagerSwDeployStrategy(BaseKeyword):
 
         self.ssh_connection.send(command)
         self.validate_success_return_code(self.ssh_connection)
-        self.wait_sw_deployment(subcloud=subcloud_name, expected_status="complete", timeout=600, check_interval=30)
+
+        deployment_timeout = self.usm_config.get_deployment_timeout_sec()
+        poll_interval = self.usm_config.get_upload_poll_interval_sec()
+        self.wait_sw_deployment(
+            subcloud=subcloud_name,
+            expected_status="complete",
+            timeout=deployment_timeout,
+            check_interval=poll_interval,
+        )
 
     def check_sw_deploy_strategy_delete_output(self):
         """

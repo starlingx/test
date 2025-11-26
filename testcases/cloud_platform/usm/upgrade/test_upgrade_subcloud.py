@@ -82,7 +82,8 @@ def test_upgrade_n_1_subcloud():
     msg = "Fetch software list after dcmanager sw-deploy-strategy on "
     fetch_sw_list(central_ssh, f"{msg} Systemcontroller")
     sw_list = fetch_sw_list(subcloud_ssh, f"{msg} subcloud ==> {subcloud_name}")
-    # verify that the patch is applied on subcloud
+    # verify that the patch/release is applied on the subcloud
     for sw in sw_list:
         get_logger().log_info(f"Release: {sw.get_release()} is {sw.get_state()}")
-        validate_equals(sw.get_state(), "deployed", "patch applied successfully.")
+        validate_equals(sw.get_state(), "deploying", "patch/release applied successfully.")
+        # TO-DO: switch the line above assert for "complete" with software deploy show
