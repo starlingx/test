@@ -410,7 +410,7 @@ class DcManagerSubcloudBackupKeywords(BaseKeyword):
         sysadmin_password: str,
         con_ssh: SSHConnection,
         with_install: Optional[bool] = False,
-        subcloud: str = None,
+        subcloud: Optional[str] = None,
         local_only: Optional[bool] = False,
         restore_values_path: Optional[str] = None,
         group: Optional[str] = None,
@@ -438,9 +438,11 @@ class DcManagerSubcloudBackupKeywords(BaseKeyword):
             None:
         """
         # Command construction
-        cmd = f"dcmanager subcloud-backup restore --subcloud {subcloud} --sysadmin-password {sysadmin_password}"
+        cmd = f"dcmanager subcloud-backup restore --sysadmin-password {sysadmin_password}"
         if local_only:
             cmd += " --local-only"
+        if subcloud:
+            cmd += f" --subcloud {subcloud}"
         if with_install:
             cmd += " --with-install"
         if restore_values_path:
