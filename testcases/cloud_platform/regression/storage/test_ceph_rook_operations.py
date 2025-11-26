@@ -294,7 +294,7 @@ def test_ceph_rook_backend_deployment_model_operation_sx():
 
     get_logger().log_test_case_step("Modify deployment_model from 'open' to 'dedicated' should be rejected in SX system.")
     msg = system_storage_backend_keywords.system_storage_backend_modify_with_error(backend="ceph-rook", deployment_model="dedicated")
-    validate_str_contains(msg, "OSDs deployed", f"system backend modify should be failed: {msg}")
+    validate_str_contains(msg, "Deployment model dedicated is not supported on AIO-SX", f"system backend modify should be failed: {msg}")
 
     get_logger().log_test_case_step("Modify deployment_model from 'open' to 'controller'.")
     system_storage_backend_keywords.system_storage_backend_modify(backend="ceph-rook", deployment_model="controller")
