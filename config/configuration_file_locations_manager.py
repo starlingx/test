@@ -21,6 +21,7 @@ class ConfigurationFileLocationsManager:
         self.database_config_file = None
         self.rest_api_config_file = None
         self.security_config_file = None
+        self.snmp_config_file = None
         self.usm_config_file = None
         self.app_config_file = None
         self.openstack_config_file = None
@@ -72,6 +73,10 @@ class ConfigurationFileLocationsManager:
         security_config_file = session.config.getoption("--security_config_file")
         if security_config_file:
             self.set_security_config_file(security_config_file)
+
+        snmp_config_file = session.config.getoption("--snmp_config_file")
+        if snmp_config_file:
+            self.set_snmp_config_file(snmp_config_file)
 
         usm_config_file = session.config.getoption("--usm_config_file")
         if usm_config_file:
@@ -141,6 +146,10 @@ class ConfigurationFileLocationsManager:
         if security_config_file:
             self.set_security_config_file(security_config_file)
 
+        snmp_config_file = options.snmp_config_file
+        if snmp_config_file:
+            self.set_snmp_config_file(snmp_config_file)
+
         usm_config_file = options.usm_config_file
         if usm_config_file:
             self.set_usm_config_file(usm_config_file)
@@ -172,6 +181,7 @@ class ConfigurationFileLocationsManager:
         safe_parser.add_option("--database_config_file", action="store", dest="database_config_file", help="The database config file")
         safe_parser.add_option("--rest_api_config_file", action="store", dest="rest_api_config_file", help="The rest api config file")
         safe_parser.add_option("--security_config_file", action="store", dest="security_config_file", help="The security config file")
+        safe_parser.add_option("--snmp_config_file", action="store", dest="snmp_config_file", help="The SNMP config file")
         safe_parser.add_option("--usm_config_file", action="store", dest="usm_config_file", help="The USM config file")
         safe_parser.add_option("--app_config_file", action="store", dest="app_config_file", help="The app config file")
         safe_parser.add_option("--openstack_config_file", action="store", dest="openstack_config_file", help="The openstack config file")
@@ -384,6 +394,26 @@ class ConfigurationFileLocationsManager:
 
         """
         self.security_config_file = security_config_file
+
+    def get_snmp_config_file(self) -> str:
+        """
+        Getter for snmp config file
+
+        Returns:
+            str: the snmp config file
+
+        """
+        return self.snmp_config_file
+
+    def set_snmp_config_file(self, snmp_config_file: str):
+        """
+        Setter for snmp config file
+
+        Args:
+            snmp_config_file (str): the snmp config file
+
+        """
+        self.snmp_config_file = snmp_config_file
 
     def get_usm_config_file(self) -> str:
         """

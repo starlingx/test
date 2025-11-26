@@ -1,0 +1,17 @@
+apiVersion: crd.projectcalico.org/v1
+kind: GlobalNetworkPolicy
+metadata:
+  name: snmp
+spec:
+  applyOnForward: false
+  ingress:
+  - action: Allow
+    destination:
+      ports:
+      - 161
+    ipVersion: 4
+    protocol: UDP
+  order: 200
+  selector: has(iftype) && iftype == 'oam'
+  types:
+  - Ingress
