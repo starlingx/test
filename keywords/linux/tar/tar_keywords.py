@@ -1,5 +1,12 @@
+import shlex
+from typing import Optional
+
+from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
 from keywords.base_keyword import BaseKeyword
+from keywords.files.file_keywords import FileKeywords
+
+
 
 
 class TarKeywords(BaseKeyword):
@@ -8,7 +15,14 @@ class TarKeywords(BaseKeyword):
     """
 
     def __init__(self, ssh_connection: SSHConnection):
+        """Initialize tar keywords.
+
+        Args:
+            ssh_connection (SSHConnection): SSH connection for file operations.
+        """
+        super().__init__()
         self.ssh_connection = ssh_connection
+        self.file_ops = FileKeywords(ssh_connection)
 
     def extract_tar_file(self, file_name: str) -> None:
         """
@@ -34,4 +48,38 @@ class TarKeywords(BaseKeyword):
             raise ValueError("File must be a .tar.gz archive.")
 
         self.ssh_connection.send(f"gunzip -f {file_name}")
+
+    def extract_tar_archive(self, tar_path: str, extract_to: Optional[str] = None) -> str:
+        """Extract tar.gz archive to specified directory.
+
+        Args:
+            tar_path (str): Path to tar.gz archive file.
+            extract_to (Optional[str]): Directory to extract to. Defaults to same directory as tar file.
+
+        Returns:
+            str: Path to extracted directory.
+        """
+        safe_tar_path = shlex.quote(tar_path)
+        
+        # Verify tar file exists
+        if not self.file_ops.file_exists(tar_path):
+            raise FileNotFoundError(f"Tar file not found: {tar_path}")
+
+        # Determine extraction directory and command
+        if extract_to is None:
+            extract_dir = tar_path.replace('.tar.gz', '')
+            extract_cmd = f"cd $(dirname {safe_tar_path}) && tar -xzf $(basename {safe_tar_path})"
+        else:
+            extract_dir = extract_to
+            safe_extract_dir = shlex.quote(extract_dir)
+            self.file_ops.create_directory(safe_extract_dir)
+            extract_cmd = f"tar -xzf {safe_tar_path} -C {safe_extract_dir}"
+        
+        get_logger().log_info(f"Extracting {tar_path} to {extract_dir}")
+        self.ssh_connection.send(extract_cmd)
         self.validate_success_return_code(self.ssh_connection)
+        
+        get_logger().log_info(f"Archive extracted successfully to {extract_dir}")
+        return extract_dir
+
+

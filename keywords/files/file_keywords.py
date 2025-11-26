@@ -110,6 +110,18 @@ class FileKeywords(BaseKeyword):
         """
         self.ssh_connection.send_as_sudo(f"rm {file_name}")
         return self.file_exists(file_name)
+    
+    def delete_directory(self, directory_path: str) -> None:
+        """Remove directory and all its contents.
+
+        Args:
+            directory_path (str): Directory path to remove.
+
+        Returns:
+            None
+        """
+        cleanup_cmd = f"rm -rf {directory_path}"
+        self.ssh_connection.send(cleanup_cmd)
 
     def get_files_in_dir(self, file_dir: str) -> list[str]:
         """

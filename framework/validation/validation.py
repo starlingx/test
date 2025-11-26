@@ -332,3 +332,74 @@ def validate_not_none(observed_value: Any, validation_description: str) -> None:
         get_logger().log_error("Expected: Not None")
         get_logger().log_error(f"Observed: {observed_value}")
         raise Exception("Validation Failed")
+
+
+def validate_is_digit(observed_value: str, validation_description: str) -> None:
+    """
+    This function will validate if the observed value is a digit string.
+
+    Args:
+        observed_value (str): Value that we see on the system.
+        validation_description (str): Description of this validation for logging purposes.
+
+    Returns: None
+
+    Raises:
+        Exception: raised when validate fails
+
+    """
+    if observed_value.isdigit():
+        get_logger().log_info(f"Validation Successful - {validation_description}")
+    else:
+        get_logger().log_error(f"Validation Failed - {validation_description}")
+        get_logger().log_error("Expected: Digit string")
+        get_logger().log_error(f"Observed: {observed_value}")
+        raise Exception("Validation Failed")
+
+
+def validate_greater_than_or_equal(observed_value: int, baseline_value: int, validation_description: str) -> None:
+    """
+    This function will validate if the observed value is greater than or equal to the baseline value.
+
+    Args:
+        observed_value (int): Value that we see on the system.
+        baseline_value (int): Value that we want to see if the observed value is greater than or equal to
+        validation_description (str): Description of this validation for logging purposes.
+
+    Returns: None
+
+    Raises:
+        Exception: raised when validate fails
+
+    """
+    if observed_value >= baseline_value:
+        get_logger().log_info(f"Validation Successful - {validation_description}")
+    else:
+        get_logger().log_error(f"Validation Failed - {validation_description}")
+        get_logger().log_error(f"Baseline: {baseline_value}")
+        get_logger().log_error(f"Observed: {observed_value}")
+        raise Exception("Validation Failed")
+
+
+def validate_less_than_or_equal(observed_value: int, baseline_value: int, validation_description: str) -> None:
+    """
+    This function will validate if the observed value is less than or equal to the baseline value.
+
+    Args:
+        observed_value (int): Value that we see on the system.
+        baseline_value (int): Value that we want to see if the observed value is less than or equal to
+        validation_description (str): Description of this validation for logging purposes.
+
+    Returns: None
+
+    Raises:
+        Exception: raised when validate fails
+
+    """
+    if observed_value <= baseline_value:
+        get_logger().log_info(f"Validation Successful - {validation_description}")
+    else:
+        get_logger().log_error(f"Validation Failed - {validation_description}")
+        get_logger().log_error(f"Baseline: {baseline_value}")
+        get_logger().log_error(f"Observed: {observed_value}")
+        raise Exception("Validation Failed")
