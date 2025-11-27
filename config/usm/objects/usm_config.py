@@ -46,6 +46,7 @@ class USMConfig:
         self.upload_poll_interval_sec = usm_dict.get("upload_poll_interval_sec", 30)
         self.upload_patch_timeout_sec = usm_dict.get("upload_patch_timeout_sec", 1800)
         self.upload_release_timeout_sec = usm_dict.get("upload_release_timeout_sec", 1800)
+        self.precheck_timeout_sec = usm_dict.get("precheck_timeout_sec", 300)
 
     def validate_config(self) -> None:
         """
@@ -426,3 +427,19 @@ class USMConfig:
             value (int): Maximum seconds to wait for release upload to complete.
         """
         self.upload_release_timeout_sec = value
+
+    def get_precheck_timeout_sec(self) -> int:
+        """Get timeout duration for deploy precheck completion.
+
+        Returns:
+            int: Maximum seconds to wait for deploy precheck to complete.
+        """
+        return self.precheck_timeout_sec
+
+    def set_precheck_timeout_sec(self, value: int) -> None:
+        """Set timeout duration for release upload completion.
+
+        Args:
+            value (int): Maximum seconds to wait for release upload to complete.
+        """
+        self.precheck_timeout_sec = value
