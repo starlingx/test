@@ -10,6 +10,7 @@ from config.openstack.objects.openstack_config import OpenstackConfig
 from config.ptp.objects.ptp_config import PTPConfig
 from config.rest_api.objects.rest_api_config import RestAPIConfig
 from config.security.objects.security_config import SecurityConfig
+from config.snmp.objects.snmp_config import SNMPConfig
 from config.usm.objects.usm_config import USMConfig
 from config.web.objects.web_config import WebConfig
 from framework.resources.resource_finder import get_stx_resource_path
@@ -32,6 +33,7 @@ class ConfigurationManagerClass:
         self.database_config: DatabaseConfig = None
         self.rest_api_config: RestAPIConfig = None
         self.security_config: SecurityConfig = None
+        self.snmp_config: SNMPConfig = None
         self.usm_config: USMConfig = None
         self.app_config: AppConfig = None
         self.configuration_locations_manager = None
@@ -102,6 +104,10 @@ class ConfigurationManagerClass:
         if not security_config_file:
             security_config_file = get_stx_resource_path("config/security/files/default.json5")
 
+        snmp_config_file = config_file_locations.get_snmp_config_file()
+        if not snmp_config_file:
+            snmp_config_file = get_stx_resource_path("config/snmp/files/default.json5")
+
         usm_config_file = config_file_locations.get_usm_config_file()
         if not usm_config_file:
             usm_config_file = get_stx_resource_path("config/usm/files/default.json5")
@@ -126,6 +132,7 @@ class ConfigurationManagerClass:
                 self.database_config = DatabaseConfig(database_config_file)
                 self.rest_api_config = RestAPIConfig(rest_api_config_file)
                 self.security_config = SecurityConfig(security_config_file)
+                self.snmp_config = SNMPConfig(snmp_config_file)
                 self.usm_config = USMConfig(usm_config_file)
                 self.app_config = AppConfig(app_config_file)
                 self.openstack_config = OpenstackConfig(openstack_config_file)
@@ -234,6 +241,15 @@ class ConfigurationManagerClass:
         """
         return self.security_config
 
+    def get_snmp_config(self) -> SNMPConfig:
+        """
+        Getter for snmp config
+
+        Returns:
+            SNMPConfig: the snmp config
+        """
+        return self.snmp_config
+
     def get_usm_config(self) -> USMConfig:
         """
         Getter for usm config
@@ -292,6 +308,8 @@ class ConfigurationManagerClass:
             pytest_config_args.append(f"--rest_api_config_file={self.configuration_locations_manager.get_rest_api_config_file()}")
         if self.configuration_locations_manager.security_config_file:
             pytest_config_args.append(f"--security_config_file={self.configuration_locations_manager.get_security_config_file()}")
+        if self.configuration_locations_manager.snmp_config_file:
+            pytest_config_args.append(f"--snmp_config_file={self.configuration_locations_manager.get_snmp_config_file()}")
         if self.configuration_locations_manager.usm_config_file:
             pytest_config_args.append(f"--usm_config_file={self.configuration_locations_manager.get_usm_config_file()}")
         if self.configuration_locations_manager.app_config_file:
