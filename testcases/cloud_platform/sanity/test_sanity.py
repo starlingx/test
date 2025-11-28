@@ -419,6 +419,7 @@ def test_dc_alarm_aggregation_managed():
         assert subcloud_alarm is None
 
         # Gets the summarized list of alarms in the dc cloud. Maybe there is some alarm for the subclouds there.
+        get_logger().log_info(f"Alarm summary for subcloud: {subcloud_name}")
         dc_manager_alarm_summary_keywords = DcManagerAlarmSummaryKeywords(LabConnectionKeywords().get_active_controller_ssh())
         alarm_summary_list = dc_manager_alarm_summary_keywords.get_alarm_summary_list()
         alarm_summary = next((alarm for alarm in alarm_summary_list if alarm.subcloud_name == subcloud_name), None)
@@ -450,7 +451,8 @@ def test_dc_alarm_aggregation_managed():
                 break
             time.sleep(check_interval)
         assert alarm_summary is not None
-        assert alarm_summary.get_major_alarms() - num_previous_alarm == 1
+        # here the alram count will num_previous_alarm + 1 (the alarm generated)
+        assert alarm_summary.get_major_alarms() == num_previous_alarm + 1
 
         # Delete the alarm from the subcloud.
         get_logger().log_info(f"Delete the alarm from subcloud: {subcloud_name}")
