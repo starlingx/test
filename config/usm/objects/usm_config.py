@@ -40,6 +40,7 @@ class USMConfig:
         self.snapshot = usm_dict.get("snapshot", False)
         self.rollback = usm_dict.get("rollback", False)
         self.deploy_delete = usm_dict.get("deploy_delete", False)
+        self.record_kpi = usm_dict.get("record_kpi", False)
         self.deployment_timeout_sec = usm_dict.get("deployment_timeout_sec", 7200)
         self.activation_timeout_sec = usm_dict.get("activation_timeout_sec", 3600)
         self.upgrade_arguments = usm_dict.get("upgrade_arguments", "")
@@ -330,6 +331,22 @@ class USMConfig:
             value (bool): True if deploy delete is enabled, False otherwise.
         """
         self.deploy_delete = value
+
+    def get_record_kpi(self) -> bool:
+        """Check if KPI recording is enabled.
+
+        Returns:
+            bool: True if KPI recording is enabled, False otherwise.
+        """
+        return self.record_kpi
+
+    def set_record_kpi(self, value: bool) -> None:
+        """Set if KPI recording is enabled.
+
+        Args:
+            value (bool): True if KPI recording is enabled, False otherwise.
+        """
+        self.record_kpi = value
 
     def get_deployment_timeout_sec(self) -> int:
         """Get the deployment timeout in seconds.
