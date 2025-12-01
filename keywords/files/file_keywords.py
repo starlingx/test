@@ -110,15 +110,13 @@ class FileKeywords(BaseKeyword):
         """
         self.ssh_connection.send_as_sudo(f"rm {file_name}")
         return self.file_exists(file_name)
-    
+
     def delete_directory(self, directory_path: str) -> None:
         """Remove directory and all its contents.
 
         Args:
             directory_path (str): Directory path to remove.
 
-        Returns:
-            None
         """
         cleanup_cmd = f"rm -rf {directory_path}"
         self.ssh_connection.send(cleanup_cmd)
@@ -410,6 +408,15 @@ class FileKeywords(BaseKeyword):
             dest_file (str): The destination file path.
         """
         self.ssh_connection.send(f"cp {src_file} {dest_file}")
+
+    def make_executable(self, file_path: str) -> None:
+        """Make file executable.
+
+        Args:
+            file_path (str): Path to file to make executable.
+        """
+        self.ssh_connection.send(f"chmod +x {file_path}")
+        self.validate_success_return_code(self.ssh_connection)
 
     def create_file_to_fill_disk_space(self, dest_dir: str = "/home/sysadmin") -> str:
         """Creates a file with the available space of the desired directory.
