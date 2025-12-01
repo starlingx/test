@@ -40,5 +40,24 @@ class SwManagerVerticalTableParser:
         Returns:
             dict: A dictionary representation of the parsed YAML content.
         """
-        output_values_dict = yaml.safe_load("".join(self.swmanager_output))
-        return output_values_dict
+        try:
+            output_values_dict = yaml.safe_load("".join(self.swmanager_output))
+            return output_values_dict
+        except yaml.scanner.ScannerError:
+            # Handle cases where values contain colons that break YAML parsing
+            # Eg: abort-reason:                           Unexpected state: upgrade-aborting
+            sanitized_output = []
+            for line in self.swmanager_output:
+                if ":" in line and not line.strip().endswith(":"):
+                    # Quote values that contain colons
+                    parts = line.split(":", 2)
+                    if len(parts) >= 2:
+                        key_part = parts[0] + ":"
+                        value_part = ":".join(parts[1:])
+                        sanitized_line = key_part + f' "{value_part.strip()}"\n'
+                        sanitized_output.append(sanitized_line)
+                    else:
+                        sanitized_output.append(line)
+                else:
+                    sanitized_output.append(line)
+            return yaml.safe_load("".join(sanitized_output))

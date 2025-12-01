@@ -23,7 +23,7 @@ class SystemKubernetesListKeywords(BaseKeyword):
 
         Returns:
             KubernetesVersionListOutput: a KubernetesVersionListOutput object representing
-            the output of the command 'dcmanager kube-version-list list'.
+            the output of the command 'system kube-version-list list'.
 
         """
         output = self.ssh_connection.send(source_openrc("system kube-version-list"))

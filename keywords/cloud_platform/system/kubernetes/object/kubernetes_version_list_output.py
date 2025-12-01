@@ -57,6 +57,15 @@ class KubernetesVersionListOutput:
             raise KeywordException(f"No version with state {state} was found.")
         return k8s_versions
 
+    def get_active_kubernetes_version(self) -> str:
+        """
+        Gets the active kubernetes version.
+
+        Returns:
+            str: The active kubernetes version.
+        """
+        return self.get_version_by_state("active")[0]
+
     @staticmethod
     def is_valid_output(value: Dict[str, str]) -> bool:
         """

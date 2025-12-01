@@ -17,6 +17,7 @@ class K8sConfig:
         k8s_dict = json5.load(json_data)
         self.kubeconfig = k8s_dict["kubeconfig"]
         self.dashboard_port = k8s_dict["dashboard_port"]
+        self.k8_target_version = k8s_dict["k8_target_version"]
 
     def get_kubeconfig(self) -> str:
         """
@@ -29,3 +30,9 @@ class K8sConfig:
         Getter for the port on which the K8s dashboard is running.
         """
         return self.dashboard_port
+
+    def get_k8_target_version(self) -> str:
+        """
+        Getter for the Kubernetes version to upgrade to.
+        """
+        return self.k8_target_version
