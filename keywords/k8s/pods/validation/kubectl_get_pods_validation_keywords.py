@@ -43,8 +43,8 @@ class KubectlPodValidationKeywords(BaseKeyword):
 
             for pod in get_pods_output.get_pods():
 
-                # 'audit-' and 'init-' pods should be COMPLETED
-                if 'audit-' in pod.get_name() or 'init-' in pod.get_name():
+                # 'audit-', 'init-' and 'secret-observer-cron-job-' pods should be COMPLETED
+                if 'audit-' in pod.get_name() or 'init-' in pod.get_name() or 'secret-observer-cron-job-' in pod.get_name():
                     if pod.get_status() != "Completed":
                         is_validation_success = False
                         get_logger().log_error(f"Pod {pod.get_name()} in wrong status. Expected: 'Completed', Observed: '{pod.get_status()}'")
