@@ -18,7 +18,7 @@ class KubectlGetGlobalNetworkPolicyKeywords(BaseKeyword):
         """
         self.ssh_connection = ssh_connection
 
-    def list_globalnetworkpolicies(self) -> KubectlGetGlobalNetworkPolicyOutput:
+    def get_globalnetworkpolicies(self) -> KubectlGetGlobalNetworkPolicyOutput:
         """Gets the Calico GlobalNetworkPolicies available.
 
         Returns:
@@ -43,7 +43,7 @@ class KubectlGetGlobalNetworkPolicyKeywords(BaseKeyword):
         Raises:
             ValueError: If the GlobalNetworkPolicy is not found.
         """
-        globalnetworkpolicy_output = self.list_globalnetworkpolicies()
+        globalnetworkpolicy_output = self.get_globalnetworkpolicies()
         return globalnetworkpolicy_output.get_globalnetworkpolicy_by_name(policy_name)
 
     def has_globalnetworkpolicy(self, policy_name: str) -> bool:
@@ -59,7 +59,7 @@ class KubectlGetGlobalNetworkPolicyKeywords(BaseKeyword):
             bool: True if the policy exists, False otherwise.
         """
         try:
-            globalnetworkpolicy_output = self.list_globalnetworkpolicies()
+            globalnetworkpolicy_output = self.get_globalnetworkpolicies()
             return globalnetworkpolicy_output.has_globalnetworkpolicy(policy_name)
         except Exception:
             return False
