@@ -1,3 +1,4 @@
+import os
 import shlex
 from typing import Optional
 
@@ -5,8 +6,6 @@ from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
 from keywords.base_keyword import BaseKeyword
 from keywords.files.file_keywords import FileKeywords
-
-
 
 
 class TarKeywords(BaseKeyword):
@@ -60,26 +59,32 @@ class TarKeywords(BaseKeyword):
             str: Path to extracted directory.
         """
         safe_tar_path = shlex.quote(tar_path)
-        
-        # Verify tar file exists
+
+        # Verify tar file exists and has valid extension
         if not self.file_ops.file_exists(tar_path):
             raise FileNotFoundError(f"Tar file not found: {tar_path}")
 
+        if not (tar_path.endswith(".tar.gz") or tar_path.endswith(".tgz")):
+            raise ValueError("File must be a .tar.gz or .tgz archive.")
+
         # Determine extraction directory and command
         if extract_to is None:
-            extract_dir = tar_path.replace('.tar.gz', '')
-            extract_cmd = f"cd $(dirname {safe_tar_path}) && tar -xzf $(basename {safe_tar_path})"
+            if tar_path.endswith(".tar.gz"):
+                extract_dir = tar_path.replace(".tar.gz", "")
+            else:  # .tgz
+                extract_dir = tar_path.replace(".tgz", "")
+            dir_path = shlex.quote(os.path.dirname(tar_path))
+            file_name = shlex.quote(os.path.basename(tar_path))
+            extract_cmd = f"cd {dir_path} && tar -xzf {file_name}"
         else:
             extract_dir = extract_to
             safe_extract_dir = shlex.quote(extract_dir)
             self.file_ops.create_directory(safe_extract_dir)
             extract_cmd = f"tar -xzf {safe_tar_path} -C {safe_extract_dir}"
-        
+
         get_logger().log_info(f"Extracting {tar_path} to {extract_dir}")
         self.ssh_connection.send(extract_cmd)
         self.validate_success_return_code(self.ssh_connection)
-        
+
         get_logger().log_info(f"Archive extracted successfully to {extract_dir}")
         return extract_dir
-
-

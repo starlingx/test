@@ -3,10 +3,10 @@
 import shlex
 from typing import Optional
 
-from framework.ssh.ssh_connection import SSHConnection
-from framework.validation.validation import validate_not_none, validate_is_digit, validate_greater_than_or_equal, validate_less_than_or_equal
-from keywords.base_keyword import BaseKeyword
 from framework.logging.automation_logger import get_logger
+from framework.ssh.ssh_connection import SSHConnection
+from framework.validation.validation import validate_is_digit, validate_not_none
+from keywords.base_keyword import BaseKeyword
 
 
 class FindKeywords(BaseKeyword):
@@ -21,9 +21,7 @@ class FindKeywords(BaseKeyword):
         super().__init__()
         self.ssh_connection = ssh_connection
 
-    def count_files_in_directory(self, directory_path: str, file_pattern: str = '*', 
-                                max_depth: int = 1, min_depth: int = 0, 
-                                file_type: str = 'f', exclude_pattern: Optional[str] = None) -> int:
+    def count_files_in_directory(self, directory_path: str, file_pattern: str = "*", max_depth: int = 1, min_depth: int = 0, file_type: str = "f", exclude_pattern: Optional[str] = None) -> int:
         """Count files/directories matching pattern in directory.
 
         Args:
@@ -37,30 +35,30 @@ class FindKeywords(BaseKeyword):
         Returns:
             int: Number of matching files/directories.
         """
-            
         safe_directory_path = shlex.quote(directory_path)
+        safe_file_pattern = shlex.quote(file_pattern)
         find_cmd = f"find {safe_directory_path}"
-        
+
         if min_depth > 0:
             find_cmd += f" -mindepth {min_depth}"
-        find_cmd += f" -maxdepth {max_depth} -type {file_type} -name '{file_pattern}'"
-        
+        find_cmd += f" -maxdepth {max_depth} -type {file_type} -name {safe_file_pattern}"
+
         if exclude_pattern:
-            find_cmd += f" | grep -v '{exclude_pattern}'"
+            safe_exclude_pattern = shlex.quote(exclude_pattern)
+            find_cmd += f" | grep -v {safe_exclude_pattern}"
         find_cmd += " | wc -l"
-        
+
         get_logger().log_info(f"DEBUG: Executing find command: {find_cmd}")
-        
+
         result = self.ssh_connection.send(find_cmd)
         self.validate_success_return_code(self.ssh_connection)
-        
+
         validate_not_none(result, f"file count command response for pattern {file_pattern}")
         count_str = result[0].strip()
         validate_is_digit(count_str, f"file count string for pattern {file_pattern}")
         return int(count_str)
 
-    def find_most_recent_file(self, directory_path: str, file_pattern: str = '*', 
-                             max_depth: int = 1, min_depth: int = 0) -> Optional[str]:
+    def find_most_recent_file(self, directory_path: str, file_pattern: str = "*", max_depth: int = 1, min_depth: int = 0) -> Optional[str]:
         """Find most recent file matching pattern in directory.
 
         Args:
@@ -74,14 +72,15 @@ class FindKeywords(BaseKeyword):
         """
         safe_directory_path = shlex.quote(directory_path)
         find_cmd = f"find {safe_directory_path}"
-        
+
         if min_depth > 0:
             find_cmd += f" -mindepth {min_depth}"
-        find_cmd += f" -maxdepth {max_depth} -type f -name '{file_pattern}' -printf '%T@ %p\n' | sort -n | tail -1 | cut -d' ' -f2-"
-        
+        safe_file_pattern = shlex.quote(file_pattern)
+        find_cmd += f" -maxdepth {max_depth} -type f -name {safe_file_pattern} -printf '%T@ %p\n' | sort -n | tail -1 | cut -d' ' -f2-"
+
         result = self.ssh_connection.send(find_cmd)
         self.validate_success_return_code(self.ssh_connection)
-        
+
         if result and result[0].strip():
             return result[0].strip()
         return None

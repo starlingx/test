@@ -1,4 +1,5 @@
 import math
+import shlex
 import time
 
 from framework.exceptions.keyword_exception import KeywordException
@@ -111,15 +112,18 @@ class FileKeywords(BaseKeyword):
         self.ssh_connection.send_as_sudo(f"rm {file_name}")
         return self.file_exists(file_name)
 
-    def delete_directory(self, directory_path: str) -> None:
+    def delete_directory(self, directory_path: str) -> bool:
         """Remove directory and all its contents.
 
         Args:
             directory_path (str): Directory path to remove.
 
+        Returns:
+            bool: True if delete successful, False otherwise.
         """
-        cleanup_cmd = f"rm -rf {directory_path}"
+        cleanup_cmd = f"rm -rf {shlex.quote(directory_path)}"
         self.ssh_connection.send(cleanup_cmd)
+        return not self.file_exists(directory_path)
 
     def get_files_in_dir(self, file_dir: str) -> list[str]:
         """
