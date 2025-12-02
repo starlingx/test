@@ -2,6 +2,7 @@ from framework.ssh.ssh_connection import SSHConnection
 from keywords.base_keyword import BaseKeyword
 from keywords.cloud_platform.command_wrappers import source_openrc
 from keywords.cloud_platform.system.service.objects.system_service_output import SystemServiceOutput
+from keywords.cloud_platform.system.service.objects.system_service_parameter_list_output import SystemServiceParameterListOutput
 from keywords.cloud_platform.system.service.objects.system_service_parameter_output import SystemServiceParameterOutput
 from keywords.cloud_platform.system.service.objects.system_service_show_output import SystemServiceShowOutput
 from keywords.k8s.pods.kubectl_get_pods_keywords import KubectlGetPodsKeywords
@@ -33,6 +34,19 @@ class SystemServiceKeywords(BaseKeyword):
         self.validate_success_return_code(self.ssh_connection)
         system_service_output = SystemServiceOutput(output)
         return system_service_output
+
+    def get_system_service_parameter_list(self) -> SystemServiceParameterListOutput:
+        """
+        Gets the system service-parameter-list.
+
+        Returns:
+            SystemServiceParameterListOutput: Object with the list of service Parameters.
+        """
+        command = source_openrc("system service-parameter-list")
+        output = self.ssh_connection.send(command)
+        self.validate_success_return_code(self.ssh_connection)
+        system_service_parameter_output = SystemServiceParameterListOutput(output)
+        return system_service_parameter_output
 
     def get_system_service_show(self, service_id: str) -> SystemServiceShowOutput:
         """
