@@ -9,12 +9,12 @@ class KubectlGetGlobalNetworkPolicyOutput:
     Class for 'kubectl get globalnetworkpolicies.crd.projectcalico.org output' keywords
     """
 
-    def __init__(self, kubectl_get_globalnetworkpolicy_output: str):
+    def __init__(self, kubectl_get_globalnetworkpolicy_output: List[str]):
         """
         Constructor
 
         Args:
-            kubectl_get_globalnetworkpolicy_output (str): Raw string output from running a "kubectl get globalnetworkpolicies.crd.projectcalico.org" command.
+            kubectl_get_globalnetworkpolicy_output (List[str]): Raw output lines from running a "kubectl get globalnetworkpolicies.crd.projectcalico.org" command.
 
         """
         self.kubectl_globalnetworkpolicies: List[KubectlGlobalNetworkPolicyObject] = []
