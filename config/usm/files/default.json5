@@ -19,6 +19,8 @@
   // Operation type flags
   "snapshot": false,
   "rollback": false,
+  "deploy_delete": false,
+  "record_kpi": false,
 
   // Optional CLI arguments passed to the 'software upload' or 'software upgrade' command
   // Example: "--force"
