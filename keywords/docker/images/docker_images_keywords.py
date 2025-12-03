@@ -1,3 +1,4 @@
+from config.docker.objects.registry import Registry
 from framework.ssh.ssh_connection import SSHConnection
 from keywords.base_keyword import BaseKeyword
 from keywords.docker.images.object.docker_images_output import DockerImagesOutput
@@ -54,3 +55,16 @@ class DockerImagesKeywords(BaseKeyword):
         Prunes all dangling Docker images to free disk space.
         """
         self.ssh_connection.send_as_sudo("docker image prune -f")
+
+    def exists_image(self, registry: Registry, image: str, tag: str):
+        """
+        Verifies if image and tag exist in registry.
+
+        Args:
+            registry (str): Target registry.
+            image (str): Desired image to be searched.
+            tag (str): Searched image tag.
+        """
+
+        output = self.ssh_connection.send_as_sudo(f"docker manifest inspect {registry.get_registry_url()}/{image}:{tag}")
+        return "no such manifest" not in output
