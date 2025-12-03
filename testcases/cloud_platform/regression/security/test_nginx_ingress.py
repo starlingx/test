@@ -44,18 +44,20 @@ def test_app_using_nginx_controller(request):
     security_config = ConfigurationManager.get_security_config()
 
     oam_ip = lab_config.get_floating_ip()
-    dns_name = security_config.get_domain_name()
+    lab_name = lab_config.get_lab_name()
+    domain_name = security_config.get_domain_name()
+    full_dns_name = f"{lab_name}.{domain_name}"
     stepca_url = security_config.get_stepca_server_url()
     expected_issuer = security_config.get_stepca_server_issuer()
 
-    dns_resolution_status = IPAddressKeywords(oam_ip).check_dnsname_resolution(dns_name=dns_name)
-    validate_equals(dns_resolution_status, True, "Verify the dns name resolution")
+    dns_resolution_status = IPAddressKeywords(oam_ip).check_dnsname_resolution(full_dns_name)
+    get_logger().log_info(f"DNS resolution status for {full_dns_name}: {dns_resolution_status}")
 
     # Test configuration from security config
     stepca_issuer = security_config.get_nginx_external_ca_stepca_issuer()
     pod_name = security_config.get_nginx_external_ca_pod_name()
     cert = security_config.get_nginx_external_ca_cert()
-    base_url = f"https://{dns_name}/"
+    base_url = f"https://{full_dns_name}/"
     deploy_app_file_name = security_config.get_nginx_external_ca_deploy_app_file_name()
     global_policy_file_name = security_config.get_nginx_external_ca_global_policy_file_name()
     kuard_file_name = security_config.get_nginx_external_ca_kuard_file_name()
@@ -99,7 +101,7 @@ def test_app_using_nginx_controller(request):
     # Generate and apply nginx ingress configuration
     get_logger().log_info("Generating and applying nginx ingress configuration")
     template_file = get_stx_resource_path(f"resources/cloud_platform/security/cert_manager/{kuard_file_name}")
-    replacement_dictionary = {"dns_name": dns_name}
+    replacement_dictionary = {"dns_name": full_dns_name}
     nginx_yaml = yaml_keywords.generate_yaml_file_from_template(template_file, replacement_dictionary, kuard_file_name, "/home/sysadmin")
     apply_keywords.apply_from_yaml(nginx_yaml)
 

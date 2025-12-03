@@ -2,7 +2,6 @@ import ipaddress
 import socket
 from typing import Optional
 
-from config.configuration_manager import ConfigurationManager
 from framework.logging.automation_logger import get_logger
 from keywords.base_keyword import BaseKeyword
 
@@ -156,18 +155,16 @@ class IPAddressKeywords(BaseKeyword):
 
     def check_dnsname_resolution(self, dns_name: str) -> bool:
         """
-        Method to verify the dnsname resolution of the lab
+        Method to verify the DNS name resolution.
 
         Args:
-            dns_name (str): a supposed valid dns name.
+            dns_name (str): DNS name to resolve.
 
         Returns:
             bool: True if the DNS name resolves to an IP address, False otherwise.
         """
         family = socket.AF_INET
-        lab_config = ConfigurationManager.get_lab_config()
-        oam_fip = lab_config.get_floating_ip()
-        if self.check_ip_version(oam_fip) == "IPv6":
+        if self.check_ip_version(self.ip) == "IPv6":
             family = socket.AF_INET6
         try:
             socket.getaddrinfo(dns_name, None, family)
