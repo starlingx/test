@@ -86,6 +86,20 @@ class KubectlGetPodsKeywords(BaseKeyword):
 
         return pods_list_output
 
+    def get_unhealthy_pods(self) -> KubectlGetPodsOutput:
+        """
+        Get the k8s pods that are unhealthy
+
+        Returns:
+            KubectlGetPodsOutput: An object containing the parsed output of the command.
+        """
+        field_selector = "status.phase!=Running,status.phase!=Succeeded"
+        kubectl_get_pods_output = self.ssh_connection.send(export_k8s_config(f"kubectl get pods --all-namespaces --field-selector={field_selector}"))
+        self.validate_success_return_code(self.ssh_connection)
+        pods_list_output = KubectlGetPodsOutput(kubectl_get_pods_output)
+
+        return pods_list_output
+
     def wait_for_pod_max_age(self, pod_name: str, max_age: int, namespace: str = None, timeout: int = 600, check_interval: int = 20) -> bool:
         """
         Wait for the pod to be in a certain max_age.

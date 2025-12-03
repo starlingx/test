@@ -1,12 +1,12 @@
+from config.configuration_manager import ConfigurationManager
 from framework.exceptions.keyword_exception import KeywordException
 from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
 from framework.validation.validation import validate_equals_with_retry
 from keywords.base_keyword import BaseKeyword
-from keywords.cloud_platform.upgrade.objects.software_upload_output import SoftwareUploadOutput
 from keywords.cloud_platform.command_wrappers import source_openrc
+from keywords.cloud_platform.upgrade.objects.software_upload_output import SoftwareUploadOutput
 from keywords.cloud_platform.upgrade.software_show_keywords import SoftwareShowKeywords
-from config.configuration_manager import ConfigurationManager
 
 
 class USMKeywords(BaseKeyword):
@@ -20,14 +20,14 @@ class USMKeywords(BaseKeyword):
         self.ssh_connection = ssh_connection
         self.usm_config = ConfigurationManager.get_usm_config()
 
-    def upload_patch_file(self, patch_file_path: str, sudo: bool = False, os_region_name: str = "" ) -> SoftwareUploadOutput:
+    def upload_patch_file(self, patch_file_path: str, sudo: bool = False, os_region_name: str = "") -> SoftwareUploadOutput:
         """
         Upload a single patch file using 'software upload'.
 
         Args:
             patch_file_path (str): Absolute path to a .patch file.
             sudo (bool): Option to pass the command with sudo.
-            os_region_name: Use Os region name option for upload if it is specified
+            os_region_name (str): Use Os region name option for upload if it is specified
 
         Raises:
             KeywordException: On failure to upload.
@@ -57,7 +57,7 @@ class USMKeywords(BaseKeyword):
         Args:
             patch_dir_path (str): Absolute path to a directory of .patch files.
             sudo (bool): Option to pass the command with sudo.
-            os_region_name: OS region name option for upload if it is specified
+            os_region_name (str): OS region name option for upload if it is specified
 
         Raises:
             KeywordException: On failure to upload.
@@ -105,7 +105,7 @@ class USMKeywords(BaseKeyword):
             iso_path (str): Absolute path to the .iso file.
             sig_path (str): Absolute path to the corresponding .sig file.
             sudo (bool): Option to pass the command with sudo.
-            os_region_name: Use Os region name option for upload if it is specified
+            os_region_name (str): Use Os region name option for upload if it is specified
 
         Raises:
             KeywordException: On failure to upload.
@@ -124,7 +124,7 @@ class USMKeywords(BaseKeyword):
         self.validate_success_return_code(self.ssh_connection)
         get_logger().log_info("Release upload completed:\n" + "\n".join(output))
 
-    def upload_and_verify_patch_file(self, patch_file_path: str, expected_release_id: str, timeout: int, poll_interval: int, sudo: bool = False, os_region_name: str="") -> None:
+    def upload_and_verify_patch_file(self, patch_file_path: str, expected_release_id: str, timeout: int, poll_interval: int, sudo: bool = False, os_region_name: str = "") -> None:
         """Upload a patch and verify that it becomes available.
 
         This method is used for USM patching operations. It uploads a `.patch` file
@@ -137,7 +137,8 @@ class USMKeywords(BaseKeyword):
             timeout (int): Maximum number of seconds to wait for the release to appear.
             poll_interval (int): Interval (in seconds) between poll attempts.
             sudo (bool): Option to pass the command with sudo.
-            os_region_name: Use Os region name option for upload if it is specified
+            os_region_name (str): Use Os region name option for upload if it is specified
+
 
         Raises:
             KeywordException: If upload fails or release does not become available in time.
@@ -166,7 +167,7 @@ class USMKeywords(BaseKeyword):
             timeout (int): Maximum number of seconds to wait for the release to appear.
             poll_interval (int): Interval (in seconds) between poll attempts.
             sudo (bool): Option to pass the command with sudo.
-            os_region_name (str): Region name used when upload to the DC Systems
+            os_region_name (str): Use Os region name option for upload if it is specified
 
         Raises:
             KeywordException: If upload fails or release does not become available in time.

@@ -30,6 +30,7 @@
   "upload_poll_interval_sec": 30,
   "deployment_timeout_sec": 7200,
   "activation_timeout_sec": 3600,
+  "precheck_timeout_sec": 300,
   
   // Remote copy settings
   "copy_from_remote": true,
