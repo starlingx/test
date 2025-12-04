@@ -1,7 +1,9 @@
 from framework.ssh.ssh_connection import SSHConnection
+from framework.validation.validation import validate_equals
 from keywords.base_keyword import BaseKeyword
 from keywords.cloud_platform.fault_management.alarms.alarm_list_keywords import AlarmListKeywords
 from keywords.cloud_platform.system.application.system_application_list_keywords import SystemApplicationListKeywords
+from keywords.cloud_platform.system.host.system_host_list_keywords import SystemHostListKeywords
 from keywords.k8s.pods.kubectl_get_pods_keywords import KubectlGetPodsKeywords
 
 
@@ -45,3 +47,12 @@ class HealthKeywords(BaseKeyword):
         """Function to validate all apps are healthy and applied"""
         healthy_status = ["applied", "uploaded"]
         SystemApplicationListKeywords(self.ssh_connection).validate_all_apps_status(healthy_status)
+
+    def validate_hosts_health(self):
+        """Function to validate all hosts are healthy"""
+        host_values = SystemHostListKeywords(self.ssh_connection).get_system_host_list().get_hosts()
+
+        for host_value in host_values:
+            validate_equals(host_value.get_availability(), "available", f"The host {host_value.get_host_name()} availability is {host_value.get_availability()}")
+            validate_equals(host_value.get_administrative(), "unlocked", f"The host {host_value.get_host_name()} administrative is {host_value.get_administrative()}")
+            validate_equals(host_value.get_operational(), "enabled", f"The host {host_value.get_host_name()} operational is {host_value.get_operational()}")

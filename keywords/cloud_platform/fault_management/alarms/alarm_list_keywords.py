@@ -2,6 +2,7 @@ import re
 import time
 
 from framework.logging.automation_logger import get_logger
+from framework.ssh.ssh_connection import SSHConnection
 from keywords.base_keyword import BaseKeyword
 from keywords.cloud_platform.command_wrappers import source_openrc
 from keywords.cloud_platform.fault_management.alarms.objects.alarm_list_object import AlarmListObject
@@ -13,23 +14,36 @@ class AlarmListKeywords(BaseKeyword):
     Class for alarm list keywords
     """
 
-    def __init__(self, ssh_connection):
+    def __init__(self, ssh_connection: SSHConnection) -> None:
         """
-        Constructor
+        Constructor.
+
         Args:
-            ssh_connection:
+            ssh_connection (SSHConnection): Active SSH connection used for remote operations.
         """
         self._ssh_connection = ssh_connection
         self._check_interval_in_seconds = 3
         self._timeout_in_seconds = 600
 
-    def alarm_list(self) -> [AlarmListObject]:
+    def get_alarm_list(self) -> AlarmListOutput:
         """
-        Keyword to get all alarms
-        Args:
+        Keyword to get all alarms.
 
-        Returns: the list of alarms
+        Returns:
+            AlarmListOutput: List of alarm objects retrieved from the system.
+        """
+        output = self._ssh_connection.send(source_openrc("fm alarm-list --nowrap"))
+        self.validate_success_return_code(self._ssh_connection)
+        alarms_output = AlarmListOutput(output)
 
+        return alarms_output
+
+    def alarm_list(self) -> AlarmListObject:
+        """
+        Keyword to get all alarms.
+
+        Returns:
+            AlarmListObject: List of alarm objects retrieved from the system.
         """
         output = self._ssh_connection.send(source_openrc("fm alarm-list --nowrap"))
         self.validate_success_return_code(self._ssh_connection)
@@ -37,20 +51,21 @@ class AlarmListKeywords(BaseKeyword):
 
         return alarms.get_alarms()
 
-    def wait_for_all_alarms_cleared(self):
+    def wait_for_all_alarms_cleared(self) -> None:
         """
+        Wait for all alarms to be cleared.
+
         This method waits for all alarms to be cleared in this SSH connection within the period defined by
-        'get_timeout_in_seconds()'. Otherwise, this method raises TimeoutError exception.
+        get_timeout_in_seconds(). Otherwise, this method raises TimeoutError exception.
 
         Notes:
-            The alarms in this SSH connection are checked every 'get_check_interval_in_seconds()' seconds.
+            The alarms in this SSH connection are checked every get_check_interval_in_seconds() seconds.
 
-        Returns:
-           None
+        Returns: None
 
         Raises:
-            TimeoutError: if some alarm can not be cleared within a period defined by
-            'get_timeout_in_seconds()' seconds; False otherwise.
+         TimeoutError: if some alarm can not be cleared within a period defined by
+             the `get_timeout_in_seconds()` seconds; False otherwise.
 
         """
         # Retrieves the current alarms on this SSH connection
@@ -71,8 +86,10 @@ class AlarmListKeywords(BaseKeyword):
         alarm_ids = ", ".join([alarm.get_alarm_id() for alarm in alarms])
         raise TimeoutError(f"The alarms with the following IDs: {alarm_ids} could not be cleared within {self.get_timeout_in_seconds()} seconds.")
 
-    def wait_for_alarms_cleared(self, alarms: list[AlarmListObject]):
+    def wait_for_alarms_cleared(self, alarms: list[AlarmListObject]) -> None:
         """
+        Wait for alarms be cleared
+
         This method waits for the alarms defined in 'alarms' to be cleared in this SSH connection within the period
         defined by 'get_timeout_in_seconds()'. Otherwise, a TimeoutError exception is raised.
 
@@ -80,16 +97,14 @@ class AlarmListKeywords(BaseKeyword):
             The alarms in this SSH connection are checked every 'get_check_interval_in_seconds()' seconds.
 
         Args:
-            alarms (list[AlarmListObject]): The list of alarms to be checked to see if they have been cleared in this
-            SSH connection.
+            alarms (list[AlarmListObject]): The list of alarms to be checked to see if they have been cleared
+                in this SSH connection.
 
-        Returns:
-            None
+        Returns: None
 
         Raises:
             TimeoutError: if some alarm can not be cleared within a period defined by
-            'get_timeout_in_seconds()' seconds; False otherwise.
-
+                the `get_timeout_in_seconds()` seconds; False otherwise.
         """
         current_alarms = self.alarm_list()
         alarm_ids = ", ".join([alarm.get_alarm_id() for alarm in alarms])
@@ -118,6 +133,8 @@ class AlarmListKeywords(BaseKeyword):
 
     def wait_for_alarms_to_appear(self, alarms: list[AlarmListObject]) -> None:
         """
+        Wait for an alarm to appear
+
         Waits for the specified alarms to appear on the SSH connection within the timeout
         period defined by 'get_timeout_in_seconds()'. Validates Alarm ID, Reason Text, and Entity ID.
 
@@ -157,8 +174,7 @@ class AlarmListKeywords(BaseKeyword):
 
     def alarms_match(self, observed_alarm_object: AlarmListObject, expected_alarm_object: AlarmListObject) -> bool:
         """
-        Compares two AlarmListObject instances for equality based on
-        alarm ID, reason text, and entity ID.
+        Compares two AlarmListObject instances for equality based on alarm ID, reason text, and entity ID.
 
         Args:
             observed_alarm_object (AlarmListObject): The current alarm object to compare against.
@@ -187,17 +203,17 @@ class AlarmListKeywords(BaseKeyword):
 
     def get_timeout_in_seconds(self) -> int:
         """
-        Gets an integer representing the maximum time in seconds to wait for the alarms to be cleared.
-        Default value: 600.
+        Gets an integer representing the maximum time in seconds to wait for the alarms to be cleared, default value: 600.
 
         Returns:
-            (int): An integer representing the maximum time in seconds to wait for the alarms to be cleared.
+            int: An integer representing the maximum time in seconds to wait for the alarms to be cleared.
         """
         return self._timeout_in_seconds
 
     def set_timeout_in_seconds(self, timeout_in_seconds: int):
         """
         Sets the integer representation of the maximum time in seconds to wait for the alarms to be cleared.
+
         Args:
             timeout_in_seconds (int): An integer representing the maximum time to wait for the alarms to be cleared.
         """
@@ -205,29 +221,30 @@ class AlarmListKeywords(BaseKeyword):
 
     def get_check_interval_in_seconds(self) -> int:
         """
-        Gets an integer representing the interval in seconds at which this instance will check the alarms again.
-        Default value: 3.
+        Gets an integer representing the interval in seconds at which this instance will check the alarms again, default value: 3.
 
         Returns:
-            (int): An integer representing the interval in seconds at which this instance will check the alarms again.
+            int: An integer representing the interval in seconds at which this instance will check the alarms again.
 
         """
         return self._check_interval_in_seconds
 
     def set_check_interval_in_seconds(self, check_interval_in_seconds: int) -> int:
         """
-        Sets the integer representation of the interval in seconds at which this instance will check the alarms again.
-        Default value: 3.
+        Sets the integer representation of the interval in seconds at which this instance will check the alarms again, default value: 3.
+
+        Args:
+            check_interval_in_seconds (int): An integer representing the interval in seconds to check the alarms again.
 
         Returns:
-            (int): An integer representing the interval in seconds at which this instance will check the alarms again.
-
+            int: An integer representing the interval in seconds at which this instance will check the alarms again.
         """
         return self._check_interval_in_seconds
 
-    def get_ssh_connection(self):
+    def get_ssh_connection(self) -> SSHConnection:
         """
         Gets the SSH connection of this AlarmListKeywords instance.
+
         Returns:
             SSHConnection: the SSH connection of this AlarmListKeywords instance.
 
