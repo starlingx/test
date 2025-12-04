@@ -152,12 +152,13 @@ class KubectlGetPodsKeywords(BaseKeyword):
 
         return False
 
-    def wait_for_all_pods_status(self, expected_statuses: [str], timeout: int = 600) -> bool:
+    def wait_for_all_pods_status(self, expected_statuses: list[str], timeout: int = 600) -> bool:
         """
         Wait for all pods to be in the given status(s)
 
         Args:
-            expected_statuses ([str]): list of expected statuses ex. ['Completed', 'Running']
+
+            expected_statuses (list[str]): list of expected statuses ex. ['Completed' , 'Running']
             timeout (int): the amount of time in seconds to wait
 
         Returns:
@@ -174,12 +175,12 @@ class KubectlGetPodsKeywords(BaseKeyword):
 
         raise KeywordException("All pods are not in the expected status")
 
-    def wait_for_pods_to_reach_status(self, expected_status: str, pod_names: list = None, namespace: str = None, poll_interval: int = 5, timeout: int = 180) -> bool:
+    def wait_for_pods_to_reach_status(self, expected_status: str | list, pod_names: list = None, namespace: str = None, poll_interval: int = 5, timeout: int = 180) -> bool:
         """
         Wait timeout amount of time for the given pod in a namespace to be in the given status.
 
         Args:
-            expected_status (str): the expected status.
+            expected_status (str | list): the expected status.
             pod_names (list): the pod names to look for. If left as None, we will check for all the pods.
             namespace (str): the namespace.
             poll_interval (int): the interval in seconds to poll for status.
@@ -190,6 +191,11 @@ class KubectlGetPodsKeywords(BaseKeyword):
         """
         pod_status_timeout = time.time() + timeout
 
+        if isinstance(expected_status, str):
+            expected_statuses = [expected_status]
+        else:
+            expected_statuses = expected_status
+
         while time.time() < pod_status_timeout:
 
             pods = self.get_pods(namespace).get_pods()
@@ -198,11 +204,12 @@ class KubectlGetPodsKeywords(BaseKeyword):
             if pod_names:
                 pods = [pod for pod in pods if pod.get_name() in pod_names]
 
-            pods_in_incorrect_status = [pod for pod in pods if pod.get_status() != expected_status]
-
+            pods_in_incorrect_status = list(filter(lambda pod: pod.get_status() not in expected_statuses, pods))
             if len(pods_in_incorrect_status) == 0:
                 return True
+
             time.sleep(poll_interval)
+
         pods_in_incorrect_status_names = [pod.get_name() for pod in pods_in_incorrect_status]
         pods_in_incorrect_status_names = ", ".join(pods_in_incorrect_status_names)
         raise KeywordException(f"Pods {pods_in_incorrect_status_names} in namespace {namespace} did not reach status {expected_status} within {timeout} seconds")

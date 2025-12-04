@@ -11,7 +11,6 @@ class HelmOverrideObject:
         """
         self.name: str = None
         self.namespace: str = None
-        self.user_overrides: str = None
 
     def set_name(self, name: str):
         """
@@ -48,21 +47,3 @@ class HelmOverrideObject:
             str: The Kubernetes namespace.
         """
         return self.namespace
-
-    def set_user_overrides(self, user_overrides: str):
-        """
-        Set the user-defined overrides.
-
-        Args:
-            user_overrides (str): string of user overrides.
-        """
-        self.user_overrides = user_overrides
-
-    def get_user_overrides(self) -> str:
-        """
-        Get the user-defined overrides.
-
-        Returns:
-            str: string of user overrides.
-        """
-        return self.user_overrides

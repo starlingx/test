@@ -34,10 +34,17 @@ class HealthKeywords(BaseKeyword):
         # Validate all apps are healthy and applied
         self.validate_apps_health_and_applied()
 
-    def validate_pods_health(self):
-        """Function to validate the health of all pods in the cluster"""
+    def validate_pods_health(self, namespace: str | None = None) -> bool:
+        """Function to validate the health of all pods in the cluster
+
+        Args:
+           namespace (str | None): Namespace to check the pods in. If None, the default namespace will be used.
+
+        Returns:
+            bool: True if pod is in expected status else False.
+        """
         healthy_status = ["Running", "Succeeded", "Completed"]
-        KubectlGetPodsKeywords(self.ssh_connection).wait_for_all_pods_status(healthy_status, timeout=300)
+        return KubectlGetPodsKeywords(self.ssh_connection).wait_for_pods_to_reach_status(expected_status=healthy_status, namespace=namespace, timeout=300)
 
     def validate_no_alarms(self):
         """Function to validate no alarms are present in the cluster"""

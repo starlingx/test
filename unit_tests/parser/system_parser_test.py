@@ -196,6 +196,19 @@ system_host_if_ptp_remove_wrapped_output = [
     "|                                      |         |           |               |\n",
     "+--------------------------------------+---------+-----------+---------------+\n",
 ]
+system_helm_override_show_output = [
+    "+--------------------+--------------------------------------------------------------+\n",
+    "| Property           | Value                                                        |\n",
+    "+--------------------+--------------------------------------------------------------+\n",
+    "| attributes         | enabled: true                                                |\n",
+    "|                    |   mon_hosts:                                                 |\n",
+    "|                    |   - !!binary |                                               |\n",
+    "|                    |     Y29udHJvbGxlci0w                                         |\n",
+    "|                    |   - !!binary |                                               |\n",
+    "|                    |     Y29udHJvbGxlci0x                                         |\n",
+    "+--------------------+--------------------------------------------------------------+\n",
+]
+
 
 system_helm_overrides_with_regex = [
     "+----------------+------------------------------------------------------------------------------------+\n",
@@ -607,7 +620,6 @@ def test_system_vertical_table_parser_with_valid_table_with_a_text_in_the_end():
     assert output_dict.get("status") == "removing"
     assert output_dict.get("updated_at") == "2024-10-16T15:50:59.902779+00:00"
 
-
 def test_system_helm_overrides_with_regex():
     """
     Tests the system vertical parser with regex values.
@@ -621,3 +633,13 @@ def test_system_helm_overrides_with_regex():
     assert "^/(sys" in output_dict["user_overrides"]
     assert "system.network.name" in output_dict["user_overrides"]
     assert "^(docker0" in output_dict["user_overrides"]
+
+def test_system_vertical_table_parser_handles_binary_lines():
+    """
+    Tests the system vertical table parser with lines containing '!!binary'.
+    """
+    system_vertical_table_parser = SystemVerticalTableParser(system_helm_override_show_output)
+    output_dict = system_vertical_table_parser.get_output_values_dict()
+
+    assert "attributes" in output_dict
+    assert "!!binary" not in output_dict["attributes"]

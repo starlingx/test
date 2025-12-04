@@ -5,9 +5,11 @@ from framework.logging.automation_logger import get_logger
 from framework.validation.validation import validate_equals, validate_equals_with_retry, validate_str_contains
 from keywords.ceph.ceph_osd_pool_ls_detail_keywords import CephOsdPoolLsDetailKeywords
 from keywords.ceph.ceph_status_keywords import CephStatusKeywords
+from keywords.cloud_platform.health.health_keywords import HealthKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.cloud_platform.system.application.system_application_apply_keywords import SystemApplicationApplyKeywords
 from keywords.cloud_platform.system.application.system_application_list_keywords import SystemApplicationListKeywords
+from keywords.cloud_platform.system.helm.system_helm_override_keywords import SystemHelmOverrideKeywords
 from keywords.cloud_platform.system.host.system_host_fs_keywords import SystemHostFSKeywords
 from keywords.cloud_platform.system.host.system_host_list_keywords import SystemHostListKeywords
 from keywords.cloud_platform.system.host.system_host_lock_keywords import SystemHostLockKeywords
@@ -761,4 +763,58 @@ def test_monitor_operations_rook_ceph():
     system_application_apply_keywords.system_application_apply(app_name, timeout=500)
 
     get_logger().log_test_case_step("Verify final rook-ceph health.")
+    ceph_status_keywords.wait_for_ceph_health_status(expect_health_status=True)
+
+
+@mark.p2
+@mark.lab_rook_ceph
+def test_helm_overrides_operations():
+    """
+    Test case: test helm overrides operations
+
+    Test Steps:
+        - Check the storage backend is rook-ceph
+        - Check the healthy before start the update
+        - Update the helm overrides
+        - Validate the update of helm override
+        - Delete the helm overrides
+        - Check the healthy after delete the update
+
+    Args: None
+    """
+
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    system_storage_backend_keywords = SystemStorageBackendKeywords(ssh_connection)
+    ceph_status_keywords = CephStatusKeywords(ssh_connection)
+    health_keywords = HealthKeywords(ssh_connection)
+    system_helm_override_keywords = SystemHelmOverrideKeywords(ssh_connection)
+
+    storage_backend = "ceph-rook"
+    chart_name = "rook-ceph-cluster"
+    namespace = "rook-ceph"
+    app_name = namespace
+
+    ceph_block_pools = "cephBlockPools.0.spec.replicated.size=3"
+
+    get_logger().log_test_case_step("Check the storage backend is rook-ceph")
+    validate_equals(system_storage_backend_keywords.get_system_storage_backend_list().is_backend_configured(storage_backend), True, "Checking storage backend")
+
+    get_logger().log_test_case_step("Check the healthy before start the update")
+    health_keywords.validate_pods_health(namespace)
+    ceph_status_keywords.wait_for_ceph_health_status(expect_health_status=True)
+
+    get_logger().log_test_case_step("Update the helm overrides")
+    system_helm_override_keywords.update_helm_override_via_set(ceph_block_pools, app_name, chart_name, namespace)
+
+    get_logger().log_test_case_step("Validate the update of helm override")
+    user_override = system_helm_override_keywords.get_system_helm_override_show(app_name, chart_name, namespace).get_helm_override_show().get_user_overrides()
+    validate_str_contains(user_override, 'size: "3"', "Validate if the helm override was updated")
+
+    get_logger().log_test_case_step("Delete the helm overrides")
+    system_helm_override_keywords.delete_system_helm_override(app_name, chart_name, namespace)
+    user_override = system_helm_override_keywords.get_system_helm_override_show(app_name, chart_name, namespace).get_helm_override_show().get_user_overrides()
+    validate_equals(user_override, "None", "Validate if the helm override was deleted")
+
+    get_logger().log_test_case_step("Check the healthy after delete the update")
+    health_keywords.validate_pods_health(namespace)
     ceph_status_keywords.wait_for_ceph_health_status(expect_health_status=True)
