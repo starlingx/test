@@ -140,8 +140,7 @@ class SystemHostLockKeywords(BaseKeyword):
         self.validate_success_return_code(self.ssh_connection)
         is_host_unlocked = self.wait_for_host_unlocked(host_name)
         if not is_host_unlocked:
-            host_value = SystemHostListKeywords(self.ssh_connection).get_system_host_list().get_host(host_name)
-            raise KeywordException("Unlock host did not unlock in the required time. Host values were: " f"Operational: {host_value.get_operational()} " f"Administrative: {host_value.get_administrative()} " f"Availability: {host_value.get_availability()}")
+            raise KeywordException("Unlock host did not unlock in the required time.")
         return True
 
     def unlock_host_pre_check(self):
@@ -208,6 +207,7 @@ class SystemHostLockKeywords(BaseKeyword):
         for alarm in alarms:
             # Configuration is out-of-date or apps need re-apply or app being reapplied
             if alarm.get_alarm_id() == "250.001" or alarm.get_alarm_id() == "750.006" or alarm.get_alarm_id() == "750.004":
+                get_logger().log_info("The host failed the is_host_unlocked alarm check.")
                 is_alarms_list_ok = False
         if is_alarms_list_ok:
             get_logger().log_info("There are no Config-out-of-date alarms")
