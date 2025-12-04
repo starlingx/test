@@ -10,6 +10,7 @@ from keywords.k8s.namespace.kubectl_delete_namespace_keywords import KubectlDele
 from keywords.k8s.deployments.kubectl_get_deployments_keywords import KubectlGetDeploymentsKeywords
 from keywords.system_test.timing_logger import TimingLogger
 from keywords.system_test.setup_stress_pods import SetupStressPods
+from keywords.system_test.metric_reporter_keywords import MetricReporterKeywords
 
 
 @mark.p0
@@ -62,15 +63,30 @@ def deploy_benchmark_pods(request, benchmark):
     namespace = f"{benchmark}-benchmark"
     timing_logger = TimingLogger(f"{benchmark}_container_deployment")
 
+    start_time = datetime.utcnow()
     stress_pods = SetupStressPods(ssh_connection)
     deploy_time, scale_up_time = stress_pods.setup_stress_pods(benchmark=benchmark)
 
     get_logger().log_test_case_step("Scaling down all deployments and calculating time...")
     scale_down_time = stress_pods.scale_deployments(0, namespace)
     get_logger().log_info(f"Time to scale down pods: {scale_down_time:.2f} seconds")
+    end_time = datetime.utcnow()
 
-    # Log all timings to CSV and HTML files
+    get_logger().log_test_case_step("Logging timings for deployment operations...")
     timing_logger.log_timings(deploy_time, scale_up_time, scale_down_time)
+
+    get_logger().log_test_case_step("Running metric reporter to collect system metrics...")
+    metric_reporter = MetricReporterKeywords(ssh_connection)
+    local_metrics_dir = metric_reporter.run_metric_reporter(start_time, end_time)
+
+    get_logger().log_test_case_step(f"Downloading collectd logs to {local_metrics_dir}")
+    sftp_client = ssh_connection.get_sftp_client()
+    for filename in sftp_client.listdir("/var/log"):
+        if filename.startswith("collectd"):
+            remote_file = f"/var/log/{filename}"
+            local_file = f"{local_metrics_dir}/{filename}"
+            sftp_client.get(remote_file, local_file)
+            get_logger().log_info(f"Downloaded {filename}")
 
     def teardown():
         deployments_output = KubectlGetDeploymentsKeywords(ssh_connection).get_deployments(namespace=namespace)
