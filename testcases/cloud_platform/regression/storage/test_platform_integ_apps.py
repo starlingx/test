@@ -2,7 +2,7 @@ from pytest import FixtureRequest, mark
 
 from config.configuration_manager import ConfigurationManager
 from framework.logging.automation_logger import get_logger
-from framework.validation.validation import validate_equals, validate_not_equals
+from framework.validation.validation import validate_equals, validate_not_equals, validate_str_contains
 from keywords.ceph.ceph_status_keywords import CephStatusKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.cloud_platform.system.application.object.system_application_delete_input import SystemApplicationDeleteInput
@@ -17,6 +17,8 @@ from keywords.cloud_platform.system.application.system_application_remove_keywor
 from keywords.cloud_platform.system.application.system_application_show_keywords import SystemApplicationShowKeywords
 from keywords.cloud_platform.system.application.system_application_update_keywords import SystemApplicationUpdateKeywords
 from keywords.cloud_platform.system.application.system_application_upload_keywords import SystemApplicationUploadKeywords
+from keywords.cloud_platform.system.helm.system_helm_chart_attribute_modify_keywords import SystemHelmChartAttributeModifyKeywords
+from keywords.cloud_platform.system.helm.system_helm_override_keywords import SystemHelmOverrideKeywords
 from keywords.files.file_keywords import FileKeywords
 from keywords.linux.mount.mount_keywords import MountKeywords
 
@@ -363,3 +365,169 @@ def test_update_platform_integ_app(request: FixtureRequest):
     upgraded_version = upgraded_app_info.get_system_application_object().get_version()
     validate_equals(upgraded_version, current_version, "Application version should match original version after upgrade")
     get_logger().log_info(f"Application status after upgrade: {upgraded_app_info.get_system_application_object()}")
+
+
+@mark.p2
+def test_update_helm_chart_user_overrides_platform_integ_app(request: FixtureRequest):
+    """
+    Update helm chart user overrides for platform-integ-apps application.
+
+    Test Steps:
+        - Show initial helm override properties and values
+        - Set user_overrides default debug to true
+        - Verify the update was applied correctly
+        - Clean up by deleting the helm override
+
+    Args:
+        request (FixtureRequest): pytest request fixture for test setup and teardown
+    """
+    active_ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    platform_integ_apps_name = setup(request, active_ssh_connection)
+    helm_override_keywords = SystemHelmOverrideKeywords(active_ssh_connection)
+
+    chart_name = "ceph-pools-audit"
+    namespace = "kube-system"
+
+    def teardown():
+        get_logger().log_teardown_step("Delete helm override")
+        helm_override_keywords.delete_system_helm_override(platform_integ_apps_name, chart_name, namespace)
+
+        get_logger().log_teardown_step("Verify helm override was deleted")
+        final_override_show = helm_override_keywords.get_system_helm_override_show(platform_integ_apps_name, chart_name, namespace)
+        final_user_overrides = final_override_show.get_helm_override_show().get_user_overrides()
+        validate_equals(final_user_overrides, "None", "User overrides should be None after deletion")
+
+    request.addfinalizer(teardown)
+
+    # Show initial helm override properties and values
+    get_logger().log_test_case_step("Show initial helm override properties and values")
+    initial_override_show = helm_override_keywords.get_system_helm_override_show(platform_integ_apps_name, chart_name, namespace)
+    initial_user_overrides = initial_override_show.get_helm_override_show().get_user_overrides()
+    get_logger().log_info(f"Initial user overrides: {initial_user_overrides}")
+
+    # Set user_overrides default debug to true
+    get_logger().log_test_case_step("Set user_overrides default debug to true")
+    override_values = "conf.kube-system.DEFAULT.DEBUG=true"
+    helm_override_keywords.update_helm_override_via_set(override_values, platform_integ_apps_name, chart_name, namespace)
+
+    # Verify the update was applied correctly
+    get_logger().log_test_case_step("Verify the update was applied correctly")
+    updated_override_show = helm_override_keywords.get_system_helm_override_show(platform_integ_apps_name, chart_name, namespace)
+    updated_user_overrides = updated_override_show.get_helm_override_show().get_user_overrides()
+
+    validate_str_contains(updated_user_overrides, "DEBUG: true", "User overrides should contain DEBUG: true")
+    validate_str_contains(updated_user_overrides, "kube-system", "User overrides should contain kube-system namespace")
+    get_logger().log_info(f"Updated user overrides: {updated_user_overrides}")
+
+
+@mark.p2
+def test_delete_helm_chart_user_overrides_platform_integ_app(request: FixtureRequest):
+    """
+    Delete helm chart user overrides for platform-integ-apps application.
+
+    Test Steps:
+        - Show initial helm override properties and values
+        - Set user_overrides default debug to true
+        - Delete the user-overrides configuration
+        - Verify the delete was successful
+
+    Args:
+        request (FixtureRequest): pytest request fixture for test setup and teardown
+    """
+    active_ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    platform_integ_apps_name = setup(request, active_ssh_connection)
+    helm_override_keywords = SystemHelmOverrideKeywords(active_ssh_connection)
+
+    chart_name = "ceph-pools-audit"
+    namespace = "kube-system"
+
+    def teardown():
+        get_logger().log_teardown_step("Check and delete helm override if needed")
+        current_override_show = helm_override_keywords.get_system_helm_override_show(platform_integ_apps_name, chart_name, namespace)
+        current_user_overrides = current_override_show.get_helm_override_show().get_user_overrides()
+        if current_user_overrides != "None":
+            helm_override_keywords.delete_system_helm_override(platform_integ_apps_name, chart_name, namespace)
+
+    request.addfinalizer(teardown)
+
+    # Show initial helm override properties and values
+    get_logger().log_test_case_step("Show initial helm override properties and values")
+    initial_override_show = helm_override_keywords.get_system_helm_override_show(platform_integ_apps_name, chart_name, namespace)
+    get_logger().log_info(f"Initial user overrides: {initial_override_show.get_helm_override_show().get_user_overrides()}")
+
+    # Set user_overrides default debug to true
+    get_logger().log_test_case_step("Set user_overrides default debug to true")
+    override_values = "conf.kube-system.DEFAULT.DEBUG=true"
+    helm_override_keywords.update_helm_override_via_set(override_values, platform_integ_apps_name, chart_name, namespace)
+
+    # Delete the user-overrides configuration
+    get_logger().log_test_case_step("Delete the user-overrides configuration")
+    helm_override_keywords.delete_system_helm_override(platform_integ_apps_name, chart_name, namespace)
+
+    # Verify the delete was successful
+    get_logger().log_test_case_step("Verify the delete was successful")
+    final_override_show = helm_override_keywords.get_system_helm_override_show(platform_integ_apps_name, chart_name, namespace)
+    final_user_overrides = final_override_show.get_helm_override_show().get_user_overrides()
+    validate_equals(final_user_overrides, "None", "User overrides should be None after deletion")
+    get_logger().log_info(f"Final user overrides: {final_user_overrides}")
+
+
+@mark.p2
+def test_modify_helm_chart_attribute_platform_integ_app(request: FixtureRequest):
+    """
+    Modify helm chart attribute for platform-integ-apps application.
+
+    Test Steps:
+        - Show initial helm override properties and values
+        - Set the enabled parameter to true
+        - Verify it was enabled
+        - Set the enabled parameter to false
+        - Verify it was disabled
+
+    Args:
+        request (FixtureRequest): pytest request fixture for test setup and teardown
+    """
+    active_ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    platform_integ_apps_name = setup(request, active_ssh_connection)
+    helm_override_keywords = SystemHelmOverrideKeywords(active_ssh_connection)
+    helm_attribute_keywords = SystemHelmChartAttributeModifyKeywords(active_ssh_connection)
+
+    chart_name = "ceph-pools-audit"
+    namespace = "kube-system"
+
+    def teardown():
+        get_logger().log_teardown_step("Check and set enabled attribute to false if needed")
+        current_override_show = helm_override_keywords.get_system_helm_override_show(platform_integ_apps_name, chart_name, namespace)
+        current_attributes = current_override_show.get_helm_override_show().get_attributes()
+        if "enabled: true" in str(current_attributes):
+            helm_attribute_keywords.helm_chart_attribute_modify_enabled("false", platform_integ_apps_name, chart_name, namespace)
+
+    request.addfinalizer(teardown)
+
+    # Show initial helm override properties and values
+    get_logger().log_test_case_step("Show initial helm override properties and values")
+    initial_override_show = helm_override_keywords.get_system_helm_override_show(platform_integ_apps_name, chart_name, namespace)
+    initial_attributes = initial_override_show.get_helm_override_show().get_attributes()
+    get_logger().log_info(f"Initial attributes: {initial_attributes}")
+
+    # Set the enabled parameter to true
+    get_logger().log_test_case_step("Set the enabled parameter to true")
+    helm_attribute_keywords.helm_chart_attribute_modify_enabled("true", platform_integ_apps_name, chart_name, namespace)
+
+    # Verify it was enabled
+    get_logger().log_test_case_step("Verify it was enabled")
+    enabled_override_show = helm_override_keywords.get_system_helm_override_show(platform_integ_apps_name, chart_name, namespace)
+    enabled_attributes = enabled_override_show.get_helm_override_show().get_attributes()
+    validate_str_contains(str(enabled_attributes), "enabled: true", "Attributes should contain enabled: true")
+    get_logger().log_info(f"Enabled attributes: {enabled_attributes}")
+
+    # Set the enabled parameter to false
+    get_logger().log_test_case_step("Set the enabled parameter to false")
+    helm_attribute_keywords.helm_chart_attribute_modify_enabled("false", platform_integ_apps_name, chart_name, namespace)
+
+    # Verify it was disabled
+    get_logger().log_test_case_step("Verify it was disabled")
+    disabled_override_show = helm_override_keywords.get_system_helm_override_show(platform_integ_apps_name, chart_name, namespace)
+    disabled_attributes = disabled_override_show.get_helm_override_show().get_attributes()
+    validate_str_contains(str(disabled_attributes), "enabled: false", "Attributes should contain enabled: false")
+    get_logger().log_info(f"Disabled attributes: {disabled_attributes}")
