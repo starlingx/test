@@ -107,12 +107,13 @@ class PTPServiceStatusValidator(BaseKeyword):
             status_line (str): A line like:
                 'active (running) since Wed 2025-05-28 13:00:00 UTC; 10s ago'
                 'inactive (dead) since Wed 2025-05-28 12:22:49 UTC; 52min ago'
+                'active (running) since Tue 2025-12-09 14:13:50 UTC; 36ms ago'
             threshold_seconds (int): Time threshold in seconds.
 
         Returns:
             bool: True if the event occurred within the threshold.
         """
-        match = re.search(r"since (.+? UTC);\s+(\d+)(s|min|h) ago", status_line)
+        match = re.search(r"since (.+? UTC);\s+(\d+)(ms|s|min|h) ago", status_line)
         if not match:
             raise ValueError(f"Could not parse systemctl status line: {status_line}")
 
@@ -123,9 +124,11 @@ class PTPServiceStatusValidator(BaseKeyword):
         except ValueError:
             raise ValueError(f"Could not parse timestamp: {datetime_str.strip()}")
 
-        # Convert "52min" or "10s" into timedelta
+        # Convert "52min" or "10s" or "36ms" into timedelta
         value = int(value_str)
-        if unit == "s":
+        if unit == "ms":
+            delta = timedelta(milliseconds=value)
+        elif unit == "s":
             delta = timedelta(seconds=value)
         elif unit == "min":
             delta = timedelta(minutes=value)

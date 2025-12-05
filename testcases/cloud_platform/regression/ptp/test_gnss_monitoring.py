@@ -40,7 +40,7 @@ def test_delete_and_add_all_ptp_configuration() -> None:
     ptp_teardown_keywords.delete_all_ptp_configurations()
 
     get_logger().log_info("Add all PTP configuration")
-    ptp_setup_template_path = get_stx_resource_path("resources/ptp/setup/ptp_configuration_expectation_gnr_d.json5")
+    ptp_setup_template_path = get_stx_resource_path("resources/ptp/ptp_data_gnr_d_sx_gnss_monitoring.json5")
     ptp_setup_executor_keywords = PTPSetupExecutorKeywords(ssh_connection, ptp_setup_template_path)
     ptp_setup_executor_keywords.add_all_ptp_configurations()
 
@@ -88,7 +88,7 @@ def test_gnss_environment_setup_verification(request) -> None:
     validate_str_contains(module_check, "zl3073x", "zl3073x module should be loaded")
 
     get_logger().log_test_case_step("Verifying network interface")
-    ptp_setup_template_path = get_stx_resource_path("resources/ptp/setup/ptp_configuration_expectation_gnr_d.json5")
+    ptp_setup_template_path = get_stx_resource_path("resources/ptp/ptp_data_gnr_d_sx_gnss_monitoring.json5")
     ptp_setup_keywords = PTPSetupKeywords()
     ptp_setup = ptp_setup_keywords.generate_ptp_setup_from_template(ptp_setup_template_path)
 

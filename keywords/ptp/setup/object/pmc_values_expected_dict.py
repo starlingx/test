@@ -6,9 +6,9 @@ from keywords.ptp.setup.object.port_data_set import PortDataSet
 from keywords.ptp.setup.object.time_properties_data_set import TimePropertiesDataSet
 
 
-class PTP4LExpectedDict:
+class PMCValuesExpectedDict:
     """
-    Class models a ptp4l expected dict
+    Class models a PMC values expected dict
     """
 
     def __init__(self, expected_dict: Dict[str, Any]):
@@ -22,7 +22,7 @@ class PTP4LExpectedDict:
         self.expected_dict = expected_dict
 
         if "name" not in expected_dict:
-            raise Exception("Every PTP4L expected dict should have a name.")
+            raise Exception("Every PMC values expected dict should have a name.")
         self.name = expected_dict["name"]
 
     def __str__(self) -> str:
@@ -37,10 +37,10 @@ class PTP4LExpectedDict:
 
     def get_name(self) -> str:
         """
-        Gets the name of this ptp4l expected dict.
+        Gets the name of this PMC values expected dict.
 
         Returns:
-            str: The name of this ptp4l expected dict.
+            str: The name of this PMC values expected dict.
         """
         return self.name
 

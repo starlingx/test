@@ -12,7 +12,7 @@ def test_generate_ptp_setup_from_template():
     config_file_locations = ConfigurationFileLocationsManager()
     ConfigurationManager.load_configs(config_file_locations)
 
-    ptp_setup_template_path = get_stx_resource_path("resources/ptp/setup/ptp_setup_template.json5")
+    ptp_setup_template_path = get_stx_resource_path("resources/ptp/ptp_data_unittest_template.json5")
     ptp_setup_keywords = PTPSetupKeywords()
     ptp_setup = ptp_setup_keywords.generate_ptp_setup_from_template(ptp_setup_template_path)
 

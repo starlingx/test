@@ -13,6 +13,9 @@ class ParentDataSet:
         Args:
             expected_dict (Dict[str, Any]): The dictionary read from the JSON setup template file associated with this parent data set
         """
+        if not isinstance(expected_dict, dict):
+            raise Exception(f"Expected a dictionary for parent_data_set but received: {type(expected_dict).__name__} with value: {expected_dict}. This may indicate an unresolved template variable.")
+
         if "gm_clock_class" not in expected_dict:
             raise Exception("Every expected dict should have a gm_clock_class.")
         gm_clock_class = expected_dict["gm_clock_class"]
