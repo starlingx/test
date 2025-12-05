@@ -1,185 +1,179 @@
 // ============================================================================
-// Docker Registry Configuration
+// Default Open-Source Docker Configuration for StarlingX Test
 // ============================================================================
 //
-// This file defines how Docker images are pulled from source registries and
-// pushed to the local StarlingX registry for testing.
+// This is the default configuration for public / open-source testing.
+// It is intended to work without requiring authentication when using manifests
+// that reference publicly available images on registries such as DockerHub,
+// Quay, GHCR, and registry.k8s.io.
 //
 // Usage:
-// - This file is used as the default by ConfigurationManager.get_docker_config(),
-//   unless overridden via the --docker_config_file CLI option.
+//   python framework/runner/scripts/test_executor.py \
+//     --tests_location=testcases/cloud_platform/sanity/ \
+//     --lab_config_file=config/lab/files/<lab_config>.json5 \
+//     --docker_config_file=config/docker/files/default.json5
 //
-// - Registry endpoints, credentials, and manifest paths can be customized by
-//   editing this file or providing an alternate JSON5 file via --docker_config_file.
+// This Config Includes:
+// - Empty source_registries (anonymous access to public registries)
+// - Empty custom_registry_patterns (built-in registry patterns are sufficient)
+// - Manifest pointing to public registry images (stx-sanity-images.yaml)
+// - Works out-of-the-box for open-source testing
 //
-// ----------------------------------------------------------------------------
-// Fields:
-// ----------------------------------------------------------------------------
-// - "default_source_registry":
-//     The global fallback registry name if no per-image or manifest mapping applies.
+// Three Independent Configuration Concerns:
+// 1. Authentication (source_registries) - Credentials for docker login
+// 2. Pattern Matching (custom_registry_patterns) - Canonical name extraction
+// 3. Manifest Mapping (named_manifests) - Logical names to manifest files
 //
-// - "image_manifest_files":
-//     A list of YAML manifest files describing images, tags, and optional
-//     source registries. This allows modular organization of test images
-//     by domain, scenario, or team ownership.
+// Each section serves a distinct purpose and can be configured independently.
 //
-// - "manifest_registry_map":
-//     Optional mapping of manifest filenames to registry resolution rules.
-//     Each entry can define:
-//       - "manifest_registry": A registry to apply to all images in this manifest
-//         if per-image definitions are not used.
-//       - "override": If true, all images in the manifest use "manifest_registry"
-//         regardless of any "source_registry" specified per image.
-//
-//     Although per-manifest mapping is optional, it is encouraged—even if
-//     "manifest_registry" is set to null—for clarity and visibility.
-//
-// - "registries":
-//     A dictionary of registry definitions including URLs, credentials, and optional path prefixes.
-//     Each registry can define:
-//       - "path_prefix": Optional path prefix prepended to image names during sync.
-//         Enables organizational separation within the same registry host.
-//         Trailing slash is optional and will be normalized automatically.
-//         Examples:
-//           - Harbor projects: "project-x/test" -> harbor.com/project-x/test/busybox
-//           - Private registry namespaces: "team-a" -> registry.com/team-a/my-image
-//
-// ----------------------------------------------------------------------------
-// Registry Resolution Behavior:
-// ----------------------------------------------------------------------------
-// For each image, the registry is resolved in this order:
-//
-// 1) If a manifest entry exists in "manifest_registry_map":
-//    - If "override" is true:
-//         The "manifest_registry" is always used for all images.
-//    - If "override" is false:
-//         a. If the image defines "source_registry", that is used.
-//         b. Otherwise, if "manifest_registry" is defined (not null), it is used.
-//         c. Otherwise, "default_source_registry" is used.
-//
-// 2) If the manifest is listed in "image_manifest_files" but does not have a corresponding
-//    entry in "manifest_registry_map":
-//    - If the image defines "source_registry", that is used.
-//    - Otherwise, "default_source_registry" is used.
-//
-// ----------------------------------------------------------------------------
-// Rationale:
-// ----------------------------------------------------------------------------
-// This design allows declarative, centralized control over where images are
-// pulled from without requiring edits to the manifests themselves. It enables:
-//
-// - Reusing the same manifests across environments.
-// - Overriding all sources (e.g., to pull from an internal or mirrored registry).
-// - Per-image flexibility for mixed-registry scenarios.
-// - Simplified configuration for air-gapped or network-restricted deployments.
-//
-// ----------------------------------------------------------------------------
-// Notes:
-// ----------------------------------------------------------------------------
-// - Each registry must define a unique "registry_name", which acts as a logical key.
-//   This key is referenced in "manifest_registry_map", per-image "source_registry",
-//   and "default_source_registry".
-// - Public registries (e.g., DockerHub, k8s, GCR) typically do not require credentials.
-//   Use empty strings for "user_name" and "password" in these cases.
-// - Private registries or internal mirrors (including "local_registry") must be configured
-//   with valid credentials if authentication is required.
-// - "path_prefix" is optional and only used when the registry organizes images using
-//   path-based hierarchies (Harbor projects, private registry namespaces, etc.).
-//   Public registries like DockerHub, k8s.io typically don't need path prefixes.
 // ============================================================================
 
 {
-  "default_source_registry": "dockerhub",
+  // --------------------------------------------------------------------------
+  // Local Registry Configuration
+  // --------------------------------------------------------------------------
+  // Target registry where images will be pushed after syncing from source.
+  // This is typically the local registry running on the StarlingX system.
 
-  "image_manifest_files": [
-    "resources/image_manifests/stx-test-images.yaml",
-    "resources/image_manifests/stx-test-images-invalid.yaml",
-    "resources/image_manifests/stx-third-party-images.yaml"
-    // "resources/image_manifests/harbor-test-images.yaml",
-    // "resources/stx-networking-images.yaml",
+  "local_registry": {
+    "url": "registry.local:9001",
+    "username": "test_user",
+    "password": "password",
+
+  },
+
+  // --------------------------------------------------------------------------
+  // Source Registry Credentials (for authenticated pulls)
+  // --------------------------------------------------------------------------
+  // Credentials for authenticating to registries before pulling images.
+  // Used for Docker login only - does not affect canonical name extraction
+  // or tagging behavior.
+  // 
+  // When to add:
+  // - Private registries requiring authentication (Harbor, private repos)
+  // - Public registries to avoid rate limits (DockerHub: 100 pulls/6hrs anonymous)
+  //
+  // Examples:
+  //
+  // 1. DockerHub (avoid rate limits or access private repos):
+  //    "docker.io": {
+  //      "username": "your-dockerhub-username",
+  //      "password": "your-dockerhub-token"
+  //    }
+  //
+  // 2. Private Harbor registry:
+  //    "harbor.example.com:5000": {
+  //      "username": "admin",
+  //      "password": "harborpassword"
+  //    }
+  //
+  // 3. Corporate mirror:
+  //    "mirror.corporate.io:5000": {
+  //      "username": "mirror-user",
+  //      "password": "mirror-pass"
+  //    }
+
+  "source_registries": {
+    // Empty by default - anonymous access to public registries
+    // Uncomment and fill in as needed:
+
+    // "docker.io": {
+    //   "username": "your-dockerhub-username",
+    //   "password": "your-dockerhub-token"
+    // }
+  },
+
+  // --------------------------------------------------------------------------
+  // Custom Registry Patterns (optional)
+  // --------------------------------------------------------------------------
+  // Registry patterns for extracting canonical names from manifest image URLs.
+  // Used to strip registry prefixes while preserving or removing namespaces.
+  //
+  // You control the final image names in your local registry by choosing which
+  // patterns to configure. This gives you flexibility to organize images however
+  // you want, regardless of how they're organized in the source registry.
+  //
+  // Built-in patterns (no config needed):
+  // - docker.io, docker.io/library, quay.io, gcr.io, ghcr.io, registry.k8s.io
+  // - Missing a common public registry? Consider contributing a PR to add it!
+  //
+  // What is Canonical Name Extraction?
+  // - Full image URL: "mirror.corp.io:5000/stx-images/busybox:1.36.1"
+  // - Pattern: "mirror.corp.io:5000/stx-images/"
+  // - Extracted canonical name: "busybox"
+  // - Local registry: "registry.local:9001/busybox:1.36.1"
+  //
+  // When do you need this?
+  // - When your mirror adds organizational folders that AREN'T part of the real image name
+  //   Example: You mirror busybox to mirror.corp.io:5000/stx-images/busybox
+  //            The canonical image name is "busybox" (not "stx-images/busybox")
+  //            Add pattern: "mirror.corp.io:5000/stx-images/" to strip the folder
+  //            Result: registry.local:9001/busybox
+  //            Without pattern: registry.local:9001/stx-images/busybox
+  //
+  // - Multiple organizational folders on same registry
+  //   Example: mirror.corp.io:5000/stx-images/busybox
+  //            mirror.corp.io:5000/k8s-images/pause
+  //            Both folders are just storage organization, not part of image identity
+  //            Add patterns for each: "mirror.corp.io:5000/stx-images/", "mirror.corp.io:5000/k8s-images/"
+  //
+  // When DON'T you need this?
+  // - Mirrors that preserve the original registry path in the URL
+  //   Example: harbor.io/project/docker.io/library/busybox -> extracts "busybox"
+  //            harbor.io/mirrors/quay.io/calico/node -> extracts "calico/node"
+  //            Works automatically - the original registry pattern (docker.io, quay.io) is
+  //            detected within the URL and used for extraction
+  //
+  // - Flat mirrors where namespace IS part of the real image name
+  //   Example: harbor.io/myorg/scanner -> real image name is "myorg/scanner"
+  //            private.io/team-a/tool -> real image name is "team-a/tool"
+  //            Works automatically - fallback strips hostname, preserves the namespace you want
+  //            Result: registry.local:9001/myorg/scanner (correct!)
+  //
+  // - Built-in public registries (already configured)
+  //   Example: docker.io/busybox, quay.io/prometheus/alertmanager, ghcr.io/owner/repo
+  //            Works automatically - built-in patterns handle these
+  //
+  // Pattern Format:
+  // - Must include full path up to where image name starts
+  // - Trailing "/" is optional (auto-normalized)
+  // - Examples: "mirror.corp.io:5000/stx-images/"
+  //             "registry.example.com/project/"
+
+  "custom_registry_patterns": [
+    // Example: Namespaced mirror (multiple projects on same registry)
+    // "mirror.corporate.io:5000/stx-images/",
+    // "mirror.corporate.io:5000/k8s-images/",
+    // "mirror.corporate.io:5000/openstack-images/"
   ],
 
-  "manifest_registry_map": {
-    // Force all images in this manifest to come from DockerHub
-    "resources/image_manifests/stx-test-images.yaml": {
-      "manifest_registry": "dockerhub",
-      "override": true,
-    },
-    "resources/image_manifests/stx-test-images-invalid.yaml": {
-      "manifest_registry": "dockerhub",
-      "override": false,
-    },
-    "resources/image_manifests/stx-third-party-images.yaml": {
-      "manifest_registry": null, // No manifest fallback; each image uses its "source_registry" or "default_source_registry"
-    },
-    // // Use Harbor as the default for images in this manifest that do not specify "source_registry"
-    // "resources/image_manifests/stx-sanity-images.yaml": {
-    //   "manifest_registry": "harbor",
-    //   "override": false,
-    // },
-    // // No manifest fallback is defined; each image will use its "source_registry" if set, or "default_source_registry".
-    // "resources/stx-networking-images.yaml": {
-    //   "manifest_registry": null,
-    //   // "override": false,  // Not needed when manifest_registry is null (nothing to override with)
-    // },
-  },
+  // --------------------------------------------------------------------------
+  // Named Manifests
+  // --------------------------------------------------------------------------
+  // Maps logical manifest names to YAML files containing image lists.
+  //
+  // Workflow:
+  // 1. Test calls: sync_image_from_manifest("busybox", "1.36.1", "stx-sanity")
+  // 2. System looks up "stx-sanity" -> resources/image_manifests/stx-sanity-images.yaml
+  // 3. Searches manifest for image with canonical name "busybox" and tag "1.36.1"
+  // 4. Finds: "docker.io/busybox:1.36.1"
+  // 5. Extracts canonical name "busybox" from found URL
+  // 6. Pulls, tags as "registry.local:9001/busybox:1.36.1", pushes to local registry
+  //
+  // Key Feature: Same test code works with different Docker configs and manifests
+  // - default.json5 + public-images.yaml -> pulls from docker.io/busybox:1.36.1
+  // - custom.json5 + mirror-images.yaml -> pulls from mirror.corp.io/busybox:1.36.1
+  // - Test code unchanged, just swap config + manifest files!
+  //
+  // Manifest Format (YAML):
+  //   images:
+  //     - docker.io/busybox:1.36.1
+  //     - quay.io/prometheus/node-exporter:v1.5.0
+  //     - registry.k8s.io/pause:3.9
 
-  "registries": {
-    "dockerhub": {
-      "registry_name": "dockerhub",
-      "registry_url": "docker.io",
-      "user_name": "",
-      "password": "",
-    },
-
-    "k8s": {
-      "registry_name": "k8s",
-      "registry_url": "registry.k8s.io",
-      "user_name": "",
-      "password": "",
-    },
-
-    "gcr": {
-      "registry_name": "gcr",
-      "registry_url": "gcr.io",
-      "user_name": "",
-      "password": "",
-    },
-
-    // Examples of registries with path_prefix for organizational separation:
-
-    // Harbor with project-based organization
-    // "harbor_project_x": {
-    //   "registry_name": "harbor_project_x",
-    //   "registry_url": "harbor.example.org:5000",
-    //   "path_prefix": "project-x/test",
-    //   "user_name": "robot_user",
-    //   "password": "robot_token",
-    // },
-
-    // Same Harbor host, different project
-    // "harbor_user": {
-    //   "registry_name": "harbor_user",
-    //   "registry_url": "harbor.example.org:5000",
-    //   "path_prefix": "user-project", # Trailing slash is optional and will be normalized automatically
-    //   "user_name": "harbor_username",
-    //   "password": "harbor_password",
-    // },
-
-    // Private registry with namespace organization
-    // "private_team_a": {
-    //   "registry_name": "private_team_a",
-    //   "registry_url": "registry.company.com:5000",
-    // "path_prefix": "team-a/projects/",   # Trailing slash is optional and will be normalized automatically
-    //   "user_name": "team_user",
-    //   "password": "team_token",
-    // },
-
-    "local_registry": {
-      "registry_name": "local_registry",
-      "registry_url": "registry.local:9001",
-      "user_name": "test_user",
-      "password": "test_password",
-    },
-  },
+  "named_manifests": {
+    "stx-sanity": "resources/image_manifests/stx-sanity-images.yaml",
+    // Add custom manifests:
+    // "my-images": "path/to/my-manifest.yaml"
+  }
 }

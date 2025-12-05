@@ -1,4 +1,4 @@
-from typing import List
+from typing import Dict
 
 import json5
 
@@ -7,10 +7,15 @@ from config.docker.objects.registry import Registry
 
 class DockerConfig:
     """
-    Holds configuration for Docker registries and image sync manifests.
+    Holds configuration for Docker image sync.
 
-    This class parses the contents of a Docker config JSON5 file, exposing registry
-    definitions and optional image manifest paths for use by automation keywords.
+    Manages Docker registry configuration including:
+    - Local registry (destination for synced images)
+    - Source registries with authentication credentials
+    - Named manifest file mappings
+    - Custom registry patterns for canonical name extraction
+
+    Configuration file format: JSON5 with required fields 'local_registry' and 'named_manifests'.
     """
 
     def __init__(self, config: str):
@@ -24,135 +29,137 @@ class DockerConfig:
             FileNotFoundError: If the file is not found.
             ValueError: If the config is missing required fields.
         """
-        self.registry_list: List[Registry] = []
-
         try:
             with open(config) as f:
                 self._config_dict = json5.load(f)
-        except FileNotFoundError:
-            print(f"Could not find the Docker config file: {config}")
-            raise
+        except FileNotFoundError as e:
+            raise FileNotFoundError(f"Could not find the Docker config file: {config}") from e
 
-        # Validate manifest_registry_map entries
-        manifest_map = self._config_dict.get("manifest_registry_map", {})
-        for manifest_path, entry in manifest_map.items():
-            if isinstance(entry, dict):
-                override = entry.get("override", False)
-                manifest_registry = entry.get("manifest_registry", None)
-                if override and manifest_registry is None:
-                    raise ValueError(f"Invalid manifest_registry_map entry for '{manifest_path}': " "override=true requires 'manifest_registry' to be set (not null).")
+        # Validate required fields
+        if "local_registry" not in self._config_dict:
+            raise ValueError("Config missing required field: 'local_registry'")
+        if "named_manifests" not in self._config_dict:
+            raise ValueError("Config missing required field: 'named_manifests'")
 
-        for registry_key in self._config_dict.get("registries", {}):
-            registry_dict = self._config_dict["registries"][registry_key]
-            reg = Registry(
-                registry_name=registry_dict["registry_name"],
-                registry_url=registry_dict["registry_url"],
-                user_name=registry_dict["user_name"],
-                password=registry_dict["password"],
-                path_prefix=registry_dict.get("path_prefix"),
-            )
-            self.registry_list.append(reg)
+        # Parse local_registry
+        local_reg_dict = self._config_dict["local_registry"]
+        self.local_registry = Registry(
+            registry_name="local_registry",
+            registry_url=local_reg_dict["url"],
+            user_name=local_reg_dict.get("username", ""),
+            password=local_reg_dict.get("password", ""),
+        )
 
-    def get_registry(self, registry_name: str) -> Registry:
+        # Parse source_registries (optional - for authenticated pulls from external registries)
+        # Note: For source registries, the URL serves as both the lookup key (in the map)
+        # and the registry identity, so registry_name is set to the same value as registry_url.
+        # This is semantically correct: the name of "docker.io" IS "docker.io".
+        self.source_registries: Dict[str, Registry] = {}
+        if "source_registries" in self._config_dict:
+            for reg_host, creds in self._config_dict["source_registries"].items():
+                self.source_registries[reg_host] = Registry(
+                    registry_name=reg_host,  # URL is the identity for source registries
+                    registry_url=reg_host,  # Connection endpoint (same as name)
+                    user_name=creds.get("username", ""),
+                    password=creds.get("password", ""),
+                )
+
+    def get_local_registry(self) -> Registry:
         """
-        Retrieves a registry object by logical name.
+        Returns the local registry configuration.
+
+        Returns:
+            Registry: Local registry object.
+        """
+        return self.local_registry
+
+    def get_named_manifest(self, manifest_name: str) -> str:
+        """
+        Retrieves the path to a named manifest.
 
         Args:
-            registry_name (str): Logical name (e.g., 'dockerhub', 'local_registry').
+            manifest_name (str): Logical name of the manifest (e.g., "sanity", "networking").
 
         Returns:
-            Registry: Matching registry object.
+            str: Path to the manifest YAML file.
 
         Raises:
-            ValueError: If the registry name is not found.
+            ValueError: If the manifest name is not found in config.
         """
-        registries = list(filter(lambda r: r.get_registry_name() == registry_name, self.registry_list))
-        if not registries:
-            raise ValueError(f"No registry with the name '{registry_name}' was found")
-        return registries[0]
+        named_manifests = self._config_dict.get("named_manifests", {})
+        if manifest_name not in named_manifests:
+            available = list(named_manifests.keys())
+            raise ValueError(f"Named manifest '{manifest_name}' not found in config. Available: {available}")
+        return named_manifests[manifest_name]
 
-    def get_image_manifest_files(self) -> List[str]:
+    def get_named_manifests(self) -> Dict[str, str]:
         """
-        Returns the list of image manifest file paths defined in the config.
+        Returns all named manifests defined in config.
 
         Returns:
-            List[str]: List of paths to manifest YAML files.
-
-        Raises:
-            ValueError: If the value is neither a string nor a list.
+            Dict[str, str]: Mapping of manifest name -> manifest path.
         """
-        manifests = self._config_dict.get("image_manifest_files", [])
-        if isinstance(manifests, str):
-            return [manifests]
-        if not isinstance(manifests, list):
-            raise ValueError("image_manifest_files must be a string or list of strings")
-        return manifests
+        return self._config_dict.get("named_manifests", {})
 
-    def get_default_source_registry_name(self) -> str:
+    def get_source_registries(self) -> Dict[str, Registry]:
         """
-        Returns the default source registry name defined in config (if any).
+        Returns all configured source registries with authentication credentials.
+
+        Source registries are external registries that require authentication for pulling images.
+        The dictionary maps registry URL (e.g., "docker.io", "registry.example.com:5000")
+        to Registry objects containing credentials.
 
         Returns:
-            str: Logical registry name (e.g., 'dockerhub'), or empty string.
+            Dict[str, Registry]: Mapping of registry URL -> Registry object with credentials.
         """
-        return self._config_dict.get("default_source_registry", "")
+        return self.source_registries
 
-    def get_manifest_registry_map(self) -> dict:
+    def get_source_registry_for_image(self, image_ref: str) -> Registry | None:
         """
-        Returns the mapping of manifest file paths to registry definitions.
+        Find matching source registry credentials for an image reference.
 
-        Returns:
-            dict: Mapping of manifest file path -> dict with 'manifest_registry' and 'override'.
-        """
-        return self._config_dict.get("manifest_registry_map", {})
-
-    def get_effective_source_registry_name(self, image: dict, manifest_filename: str) -> str:
-        """
-        Resolves the source registry name for a given image using the following precedence:
-
-        1. If a manifest entry exists in "manifest_registry_map":
-            - If "override" is true, use the manifest's "manifest_registry" (must not be null).
-            - If "override" is false:
-                a. If the image has "source_registry", use it.
-                b. If the manifest's "manifest_registry" is set (not null), use it.
-                c. Otherwise, use "default_source_registry".
-        2. If no manifest entry exists:
-            - If the image has "source_registry", use it.
-            - Otherwise, use "default_source_registry".
+        Matches the image reference against configured source registry URLs.
+        Returns credentials if a matching registry is found.
 
         Args:
-            image (dict): An image entry from the manifest.
-            manifest_filename (str): Filename of the manifest.
+            image_ref (str): Full image reference including registry URL
+                            (e.g., "registry.example.com:5000/myapp/backend:v1.2.3")
 
         Returns:
-            str: The resolved logical registry name.
+            Registry | None: Registry object with credentials if match found, None otherwise
 
-        Raises:
-            ValueError: If "override" is true but "manifest_registry" is null.
+        Examples:
+            >>> config.get_source_registry_for_image("registry.example.com:5000/myapp/backend:v1.2.3")
+            <Registry: registry.example.com:5000>
+
+            >>> config.get_source_registry_for_image("docker.io/library/busybox:1.36.1")
+            <Registry: docker.io>
+
+            >>> config.get_source_registry_for_image("public-registry.io/image:tag")
+            None  # No credentials configured for this registry
         """
-        manifest_map = self.get_manifest_registry_map()
-        manifest_entry = manifest_map.get(manifest_filename)
+        for reg_host, registry in self.source_registries.items():
+            # Match registry at proper boundary per Docker image format: <registry>/<namespace>/<image>:<tag>
+            # Registry part must be followed by '/' to avoid matching "registry.io:5000" when config has "registry.io:500"
+            if image_ref.startswith(f"{reg_host}/"):
+                return registry
+        return None
 
-        if manifest_entry:
-            manifest_registry = manifest_entry.get("manifest_registry")
-            override = manifest_entry.get("override", False)
+    def get_custom_registry_patterns(self) -> list[str]:
+        """
+        Returns list of custom registry patterns for canonical name extraction.
 
-            if override:
-                if manifest_registry is None:
-                    raise ValueError(f"Invalid manifest_registry_map entry for '{manifest_filename}': " "override=true requires 'manifest_registry' to be set (not null).")
-                return manifest_registry
+        Custom registry patterns identify public registries that don't require authentication
+        but aren't in the built-in PUBLIC_REGISTRY_PATTERNS list. Examples include:
+        - Corporate Docker mirrors (e.g., "mirror.company.com/dockerhub/")
+        - Public Harbor registries (e.g., "public-harbor.example.com/")
+        - Regional registry caches
 
-            # override == False
-            if "source_registry" in image:
-                return image["source_registry"]
+        These patterns enable extracting canonical names from mirrored images.
+        For example, with pattern "mirror.company.com/":
+          mirror.company.com/namespace/app:tag -> namespace/app:tag
 
-            if manifest_registry is not None:
-                return manifest_registry
-
-            return self.get_default_source_registry_name()
-
-        # No manifest entry
-        if "source_registry" in image:
-            return image["source_registry"]
-
-        return self.get_default_source_registry_name()
+        Returns:
+            list[str]: List of registry patterns as configured (may or may not include trailing "/")
+        """
+        return self._config_dict.get("custom_registry_patterns", [])
