@@ -1,12 +1,11 @@
 import os
 from time import time
-from typing import Tuple, List, Any
+from typing import Any, List, Tuple
 
 from config.configuration_manager import ConfigurationManager
 from framework.logging.automation_logger import get_logger
 from framework.resources.resource_finder import get_stx_resource_path
 from framework.validation.validation import validate_equals
-from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.docker.images.docker_images_keywords import DockerImagesKeywords
 from keywords.docker.images.docker_load_image_keywords import DockerLoadImageKeywords
 from keywords.docker.login.docker_login_keywords import DockerLoginKeywords
@@ -34,16 +33,11 @@ class SetupStressPods:
         Initialize the SetupStressPods class.
 
         Args:
-            ssh_connection: SSH connection to the target system
+            ssh_connection (Any): SSH connection to the target system
         """
         self.ssh_connection = ssh_connection
         self.file_keywords = FileKeywords(ssh_connection)
-        self.images = [
-            "gcr.io/kubernetes-e2e-test-images/resource-consumer:1.4",
-            "alexeiled/stress-ng",
-            "centos/tools:latest",
-            "datawiseio/fio:latest"
-        ]
+        self.images = ["gcr.io/kubernetes-e2e-test-images/resource-consumer:1.4", "alexeiled/stress-ng", "centos/tools:latest", "datawiseio/fio:latest"]
         self.scale_factor = 30
         self.services_path = "resources/cloud_platform/system_test/pod_scaling/services"
         self.deployments_path = "resources/cloud_platform/system_test/pod_scaling/deployments"
@@ -53,10 +47,10 @@ class SetupStressPods:
         Set up stress pods for benchmark testing.
 
         Args:
-            benchmark: The benchmark type to set up
+            benchmark (str): The benchmark type to set up
 
         Returns:
-            Tuple of deploy time and scale up time in seconds
+            Tuple[float, float]: Tuple of deploy time and scale up time in seconds
         """
         namespace = f"{benchmark}-benchmark"
         local_services_dir = get_stx_resource_path(self.services_path)
@@ -78,22 +72,19 @@ class SetupStressPods:
 
         self._setup_docker_registry(namespace, self.images)
 
-        get_logger().log_info(f"Apply services YAMLs....")
+        get_logger().log_info("Apply services YAMLs....")
         service_files = self.file_keywords.get_files_in_dir(remote_services_dir)
         pod_applier = KubectlApplyPodsKeywords(self.ssh_connection)
         for svc_yaml in service_files:
             pod_applier.apply_from_yaml(f"{remote_services_dir}/{svc_yaml}", namespace=namespace)
 
-        get_logger().log_info(f"Apply deployment YAMLs and calculate time....")
+        get_logger().log_info("Apply deployment YAMLs and calculate time....")
         pod_getter = KubectlGetPodsKeywords(self.ssh_connection)
         deployment_files = self.file_keywords.get_files_in_dir(remote_deployments_dir)
         start_deploy = time()
         for dep_yaml in deployment_files:
             pod_applier.apply_from_yaml(f"{remote_deployments_dir}/{dep_yaml}", namespace=namespace)
-            validate_equals(
-                pod_getter.wait_for_all_pods_status(expected_statuses=["Running", "Completed"]),
-                True,
-                'Logs reached expected state')
+            validate_equals(pod_getter.wait_for_all_pods_status(expected_statuses=["Running", "Completed"]), True, "Logs reached expected state")
         deploy_time = time() - start_deploy
         get_logger().log_info(f"Time to deploy pods for the first time: {deploy_time:.2f} seconds")
 
@@ -102,19 +93,18 @@ class SetupStressPods:
         get_logger().log_info(f"Time to scale up pods: {scale_up_time:.2f} seconds")
 
         return deploy_time, scale_up_time
-    
-    def _setup_upload_files(self, local_services_dir: str, remote_services_dir: str, 
-                           local_deployments_dir: str, remote_deployments_dir: str) -> None:
+
+    def _setup_upload_files(self, local_services_dir: str, remote_services_dir: str, local_deployments_dir: str, remote_deployments_dir: str) -> None:
         """
         Upload necessary files to the controller node for the pod scaling test.
 
         Args:
-            local_services_dir: Path to the local directory containing service YAML files
-            remote_services_dir: Path to the remote directory where service YAML files will be uploaded
-            local_deployments_dir: Path to the local directory containing deployment YAML files
-            remote_deployments_dir: Path to the remote directory where deployment YAML files will be uploaded
+            local_services_dir (str): Path to the local directory containing service YAML files
+            remote_services_dir (str): Path to the remote directory where service YAML files will be uploaded
+            local_deployments_dir (str): Path to the local directory containing deployment YAML files
+            remote_deployments_dir (str): Path to the remote directory where deployment YAML files will be uploaded
         """
-        get_logger().log_info(f"Uploading service yaml files ...")
+        get_logger().log_info("Uploading service yaml files ...")
         self.file_keywords.create_directory(remote_services_dir)
         for filename in os.listdir(local_services_dir):
             local_file = os.path.join(local_services_dir, filename)
@@ -122,7 +112,7 @@ class SetupStressPods:
             if os.path.isfile(local_file):
                 self.file_keywords.upload_file(local_file, remote_file, overwrite=True)
 
-        get_logger().log_info(f"Uploading deployment yaml files ...")
+        get_logger().log_info("Uploading deployment yaml files ...")
         self.file_keywords.create_directory(remote_deployments_dir)
         for filename in os.listdir(local_deployments_dir):
             local_file = os.path.join(local_deployments_dir, filename)
@@ -130,7 +120,7 @@ class SetupStressPods:
             if os.path.isfile(local_file):
                 self.file_keywords.upload_file(local_file, remote_file, overwrite=True)
 
-        get_logger().log_info(f"Uploading netdef yaml files ...")
+        get_logger().log_info("Uploading netdef yaml files ...")
         local_netdef_file = get_stx_resource_path("resources/cloud_platform/system_test/pod_scaling/netdef-data0.yaml")
         self.file_keywords.upload_file(local_netdef_file, f"{remote_deployments_dir}/netdef-data0.yaml", overwrite=True)
 
@@ -139,11 +129,11 @@ class SetupStressPods:
         Set up the local Docker registry by pulling, tagging, and pushing necessary images.
 
         Args:
-            namespace: Kubernetes namespace
-            images: List of Docker images to process
+            namespace (str): Kubernetes namespace
+            images (List[str]): List of Docker images to process
         """
         docker_config = ConfigurationManager.get_docker_config()
-        local_registry = docker_config.get_registry("local_registry")
+        local_registry = docker_config.get_local_registry()
         registry_url = local_registry.get_registry_url()
         registry_user = local_registry.get_user_name()
         registry_pass = local_registry.get_password()
@@ -172,11 +162,11 @@ class SetupStressPods:
         Scale all deployments in the specified namespace according to replicas.
 
         Args:
-            replicas: The desired number of replicas for each deployment
-            namespace: The Kubernetes namespace containing the deployments
+            replicas (int): The desired number of replicas for each deployment
+            namespace (str): The Kubernetes namespace containing the deployments
 
         Returns:
-            The time taken to scale the deployments
+            float: The time taken to scale the deployments
         """
         pod_getter = KubectlGetPodsKeywords(self.ssh_connection)
         pod_scaler = KubectlScaleDeploymentsKeywords(self.ssh_connection)
@@ -184,9 +174,7 @@ class SetupStressPods:
         deployments = deployments_obj.get_deployments()
         start_scale = time()
         for deployment in deployments:
-            pod_scaler.scale_deployment(deployment.get_name(),
-                                        replicas=int(replicas/len(deployments)),
-                                        namespace=namespace)
+            pod_scaler.scale_deployment(deployment.get_name(), replicas=int(replicas / len(deployments)), namespace=namespace)
         assert pod_getter.wait_for_all_pods_status(expected_statuses=["Running", "Completed"])
         scale_time = time() - start_scale
 

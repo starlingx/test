@@ -1,24 +1,24 @@
-from pytest import mark, fail
 from typing import List
 
-from framework.validation.validation import validate_equals, validate_list_contains
+from pytest import fail, mark
+
 from config.configuration_manager import ConfigurationManager
 from framework.logging.automation_logger import get_logger
+from framework.validation.validation import validate_equals
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_backup_keywords import DcManagerSubcloudBackupKeywords
+from keywords.cloud_platform.dcmanager.dcmanager_subcloud_group_keywords import DcmanagerSubcloudGroupKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_list_keywords import DcManagerSubcloudListKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_manager_keywords import DcManagerSubcloudManagerKeywords
-from keywords.cloud_platform.dcmanager.dcmanager_subcloud_group_keywords import DcmanagerSubcloudGroupKeywords
-from keywords.cloud_platform.dcmanager.dcmanager_subcloud_show_keywords import DcManagerSubcloudShowKeywords
-from keywords.cloud_platform.dcmanager.objects.dcmanager_subcloud_list_object_filter import DcManagerSubcloudListObjectFilter
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_update_keywords import DcManagerSubcloudUpdateKeywords
+from keywords.cloud_platform.dcmanager.objects.dcmanager_subcloud_list_object_filter import DcManagerSubcloudListObjectFilter
 from keywords.cloud_platform.health.health_keywords import HealthKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.cloud_platform.system.host.system_host_list_keywords import SystemHostListKeywords
 from keywords.cloud_platform.system.host.system_host_swact_keywords import SystemHostSwactKeywords
 from keywords.cloud_platform.version_info.cloud_platform_version_manager import CloudPlatformVersionManagerClass
-from keywords.files.file_keywords import FileKeywords
 from keywords.docker.images.docker_images_keywords import DockerImagesKeywords
 from keywords.docker.images.docker_load_image_keywords import DockerLoadImageKeywords
+from keywords.files.file_keywords import FileKeywords
 
 
 def create_subcloud_group(subcloud_list: List[str]) -> None:
@@ -431,7 +431,7 @@ def test_restore_remote_with_backup_values(request):
 
     def teardown():
         get_logger().log_info(f"Managing subcloud {subcloud_name}")
-        DcManagerSubcloudManagerKeywords(central_ssh).get_dcmanager_subcloud_manage(subcloud_name,10)
+        DcManagerSubcloudManagerKeywords(central_ssh).get_dcmanager_subcloud_manage(subcloud_name, 10)
 
         get_logger().log_info("Removing test files during teardown")
         FileKeywords(subcloud_ssh).delete_folder_with_sudo(local_path)
@@ -1032,8 +1032,7 @@ def test_restore_group_central_backup_active_load(request):
     # Retrieves the subclouds. Considers only subclouds that are online, managed, and synced.
     dcmanager_subcloud_list_input = DcManagerSubcloudListObjectFilter.get_healthy_subcloud_filter()
     dcmanager_subcloud_list_keywords = DcManagerSubcloudListKeywords(central_ssh)
-    dcmanager_subcloud_list_objects_filtered = dcmanager_subcloud_list_keywords.get_dcmanager_subcloud_list().get_dcmanager_subcloud_list_objects_filtered(
-        dcmanager_subcloud_list_input)
+    dcmanager_subcloud_list_objects_filtered = dcmanager_subcloud_list_keywords.get_dcmanager_subcloud_list().get_dcmanager_subcloud_list_objects_filtered(dcmanager_subcloud_list_input)
 
     subcloud_list = [subcloud.get_name() for subcloud in dcmanager_subcloud_list_objects_filtered]
     if len(subcloud_list) < 2:
@@ -1048,8 +1047,7 @@ def test_restore_group_central_backup_active_load(request):
         obj_health.validate_healty_cluster()  # Checks alarms, pods, app health
 
     # Gets the subcloud sysadmin password needed for backup creation.
-    subcloud_password = ConfigurationManager.get_lab_config().get_subcloud(
-        subcloud_list[0]).get_admin_credentials().get_password()
+    subcloud_password = ConfigurationManager.get_lab_config().get_subcloud(subcloud_list[0]).get_admin_credentials().get_password()
 
     # Create a subcloud group and add 2 subclouds
     get_logger().log_test_case_step(f"Creating subcloud group {group_name}.")
@@ -1078,19 +1076,18 @@ def test_restore_group_central_backup_active_load(request):
 
     # Create a subcloud backup
     get_logger().log_test_case_step(f"Create backup on Central Cloud for subcloud group: {group_name}")
-    dc_manager_backup.create_subcloud_backup(subcloud_password, central_ssh, group=group_name, release=str(release),
-                                             subcloud_list=subcloud_list)
+    dc_manager_backup.create_subcloud_backup(subcloud_password, central_ssh, group=group_name, release=str(release), subcloud_list=subcloud_list)
 
     for subcloud_name in subcloud_list:
         get_logger().log_test_case_step("Checking if backup was created on Central")
-        DcManagerSubcloudBackupKeywords(central_ssh).wait_for_backup_status_complete(subcloud_name,
-                                                                                     expected_status="complete-central")
+        DcManagerSubcloudBackupKeywords(central_ssh).wait_for_backup_status_complete(subcloud_name, expected_status="complete-central")
         DcManagerSubcloudManagerKeywords(central_ssh).get_dcmanager_subcloud_unmanage(subcloud_name, 10)
 
     dc_manager_backup.restore_subcloud_backup(subcloud_password, central_ssh, group=group_name, with_install=True, subcloud_list=subcloud_list)
 
     for subcloud_name in subcloud_list:
         DcManagerSubcloudListKeywords(central_ssh).validate_subcloud_availability_status(subcloud_name)
+
 
 @mark.p2
 @mark.lab_has_min_2_subclouds
@@ -1117,8 +1114,7 @@ def test_restore_group_local_backup_active_load(request):
     # Retrieves the subclouds. Considers only subclouds that are online, managed, and synced.
     dcmanager_subcloud_list_input = DcManagerSubcloudListObjectFilter.get_healthy_subcloud_filter()
     dcmanager_subcloud_list_keywords = DcManagerSubcloudListKeywords(central_ssh)
-    dcmanager_subcloud_list_objects_filtered = dcmanager_subcloud_list_keywords.get_dcmanager_subcloud_list().get_dcmanager_subcloud_list_objects_filtered(
-        dcmanager_subcloud_list_input)
+    dcmanager_subcloud_list_objects_filtered = dcmanager_subcloud_list_keywords.get_dcmanager_subcloud_list().get_dcmanager_subcloud_list_objects_filtered(dcmanager_subcloud_list_input)
 
     subcloud_list = [subcloud.get_name() for subcloud in dcmanager_subcloud_list_objects_filtered]
     if len(subcloud_list) < 2:
@@ -1133,8 +1129,7 @@ def test_restore_group_local_backup_active_load(request):
         obj_health.validate_healty_cluster()  # Checks alarms, pods, app health
 
     # Gets the subcloud sysadmin password needed for backup creation.
-    subcloud_password = ConfigurationManager.get_lab_config().get_subcloud(
-        subcloud_list[0]).get_admin_credentials().get_password()
+    subcloud_password = ConfigurationManager.get_lab_config().get_subcloud(subcloud_list[0]).get_admin_credentials().get_password()
 
     # Create a subcloud group and add 2 subclouds
     get_logger().log_test_case_step(f"Creating subcloud group {group_name}.")
@@ -1163,20 +1158,19 @@ def test_restore_group_local_backup_active_load(request):
 
     # Create a subcloud backup
     get_logger().log_test_case_step(f"Create backup on local for subcloud group: {group_name}")
-    dc_manager_backup.create_subcloud_backup(subcloud_password, central_ssh, group=group_name, release=str(release),
-                                             subcloud_list=subcloud_list, local_only=True)
+    dc_manager_backup.create_subcloud_backup(subcloud_password, central_ssh, group=group_name, release=str(release), subcloud_list=subcloud_list, local_only=True)
 
     for subcloud_name in subcloud_list:
         subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
         get_logger().log_test_case_step(f"Checking if backup was created in {subcloud_name}")
-        DcManagerSubcloudBackupKeywords(central_ssh).wait_for_backup_status_complete(subcloud_name,
-                                                                                     expected_status="complete-local")
+        DcManagerSubcloudBackupKeywords(central_ssh).wait_for_backup_status_complete(subcloud_name, expected_status="complete-local")
         DcManagerSubcloudManagerKeywords(central_ssh).get_dcmanager_subcloud_unmanage(subcloud_name, 10)
 
     dc_manager_backup.restore_subcloud_backup(subcloud_password, central_ssh, group=group_name, with_install=True, subcloud_list=subcloud_list, local_only=True)
 
     for subcloud_name in subcloud_list:
         DcManagerSubcloudListKeywords(central_ssh).validate_subcloud_availability_status(subcloud_name)
+
 
 @mark.p2
 @mark.lab_has_subcloud
@@ -1212,7 +1206,7 @@ def test_verify_backup_restore_local_simplex_images(request):
     docker_config = ConfigurationManager.get_docker_config()
     docker_img = "hello-world"
     docker_tag = "latest"
-    local_registry = docker_config.get_registry("local_registry")
+    local_registry = docker_config.get_local_registry()
     get_logger().log_test_case_step(f"Add custom docker image to {subcloud_name} registry.")
     DockerImagesKeywords(subcloud_ssh).pull_image(f"{docker_img}:{docker_tag}")
     DockerLoadImageKeywords(subcloud_ssh).tag_docker_image_for_registry(docker_img, docker_tag, local_registry)
@@ -1240,7 +1234,6 @@ def test_verify_backup_restore_local_simplex_images(request):
 
     DcManagerSubcloudManagerKeywords(central_ssh).get_dcmanager_subcloud_unmanage(subcloud_name, 10)
     dc_manager_backup.restore_subcloud_backup(subcloud_password, central_ssh, subcloud=subcloud_name, with_install=True, local_only=True, registry=True)
-
 
     img_check = DockerImagesKeywords(subcloud_ssh).exists_image(local_registry, docker_img, docker_tag)
     validate_equals(img_check, True, f"Validate that {docker_img} was restored with backup.")

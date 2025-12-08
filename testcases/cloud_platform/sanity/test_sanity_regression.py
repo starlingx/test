@@ -125,7 +125,7 @@ def test_push_docker_image_to_local_registry_standby(request):
 
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
 
-    local_registry = ConfigurationManager.get_docker_config().get_registry("local_registry")
+    local_registry = ConfigurationManager.get_docker_config().get_local_registry()
 
     FileKeywords(ssh_connection).upload_file(get_stx_resource_path("resources/images/busybox.tar"), "/home/sysadmin/busybox.tar", overwrite=False)
     KubectlCreateSecretsKeywords(ssh_connection).create_secret_for_registry(local_registry, "local-secret")
@@ -505,7 +505,7 @@ def deploy_images_to_local_registry(ssh_connection: SSHConnection):
         ssh_connection (SSHConnection): the ssh connection
 
     """
-    local_registry = ConfigurationManager.get_docker_config().get_registry("local_registry")
+    local_registry = ConfigurationManager.get_docker_config().get_local_registry()
 
     docker_load_image_keywords = DockerLoadImageKeywords(ssh_connection)
     FileKeywords(ssh_connection).upload_file(get_stx_resource_path("resources/images/resource-consumer.tar"), "/home/sysadmin/resource-consumer.tar", overwrite=False)
@@ -703,7 +703,7 @@ def test_isolated_2processors_2big_pods_best_effort_simplex(request):
     get_logger().log_info("Validated the cpu-manager-policy and topology-manager-policy from the kubelet command line.")
 
     # Upload Docker image to local registry
-    local_registry = ConfigurationManager.get_docker_config().get_registry("local_registry")
+    local_registry = ConfigurationManager.get_docker_config().get_local_registry()
     KubectlCreateSecretsKeywords(ssh_connection).create_secret_for_registry(local_registry, "local-secret")
 
     file_keywords = FileKeywords(ssh_connection)
@@ -951,7 +951,7 @@ def test_isolated_2processors_2big_pods_best_effort_standby_controller(request):
     get_logger().log_info("Validated the cpu-manager-policy and topology-manager-policy from the kubelet command line.")
 
     # Upload Docker image to local registry
-    local_registry = ConfigurationManager.get_docker_config().get_registry("local_registry")
+    local_registry = ConfigurationManager.get_docker_config().get_local_registry()
     KubectlCreateSecretsKeywords(standby_controller_ssh).create_secret_for_registry(local_registry, "local-secret")
 
     file_keywords = FileKeywords(standby_controller_ssh)
@@ -1474,7 +1474,7 @@ def sriov_deploy_images_to_local_registry(ssh_connection: SSHConnection):
         ssh_connection (SSHConnection): the ssh connection
 
     """
-    local_registry = ConfigurationManager.get_docker_config().get_registry("local_registry")
+    local_registry = ConfigurationManager.get_docker_config().get_local_registry()
     file_keywords = FileKeywords(ssh_connection)
 
     file_keywords.upload_file(get_stx_resource_path("resources/images/pv-test.tar"), "/home/sysadmin/pv-test.tar", overwrite=False)

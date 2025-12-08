@@ -1,7 +1,5 @@
 from pytest import mark
 
-from keywords.docker.images.docker_images_keywords import DockerImagesKeywords
-from keywords.docker.images.docker_load_image_keywords import DockerLoadImageKeywords
 from config.configuration_manager import ConfigurationManager
 from framework.logging.automation_logger import get_logger
 from framework.validation.validation import validate_greater_than
@@ -9,7 +7,10 @@ from keywords.cloud_platform.dcmanager.dcmanager_subcloud_backup_keywords import
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_list_keywords import DcManagerSubcloudListKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.cloud_platform.version_info.cloud_platform_version_manager import CloudPlatformVersionManagerClass
+from keywords.docker.images.docker_images_keywords import DockerImagesKeywords
+from keywords.docker.images.docker_load_image_keywords import DockerLoadImageKeywords
 from keywords.files.file_keywords import FileKeywords
+
 
 def teardown_local(subcloud_name: str, local_path: str):
     """Teardown function for local backup.
@@ -40,7 +41,7 @@ def test_verify_backup_with_custom_docker_image(request):
     """
     docker_config = ConfigurationManager.get_docker_config()
     docker_img = "hello-world:latest"
-    local_registry = docker_config.get_registry("local_registry")
+    local_registry = docker_config.get_local_registry()
     local_default_backup_path = "/opt/platform-backup/backups"
     central_ssh = LabConnectionKeywords().get_active_controller_ssh()
     subcloud_list = DcManagerSubcloudListKeywords(central_ssh)
@@ -49,7 +50,6 @@ def test_verify_backup_with_custom_docker_image(request):
     lab_config = ConfigurationManager.get_lab_config().get_subcloud(subcloud_name)
     subcloud_password = lab_config.get_admin_credentials().get_password()
     release = CloudPlatformVersionManagerClass().get_sw_version()
-
 
     # Pulls an image from central cloud that is not on subcloud registry
     DockerImagesKeywords(subcloud_ssh).pull_image(docker_img)
@@ -77,4 +77,4 @@ def test_verify_backup_with_custom_docker_image(request):
     img_tarball = [file for file in files_in_bckp_dir if "image_registry" in file][0]
 
     matches = FileKeywords(subcloud_ssh).find_in_tgz(f"{local_default_backup_path}/{release}/{img_tarball}", "repositories/hello-world")
-    validate_greater_than(matches, 0,f"Validate that were found mathces for hello-world in {img_tarball} tarball.")
+    validate_greater_than(matches, 0, f"Validate that were found mathces for hello-world in {img_tarball} tarball.")

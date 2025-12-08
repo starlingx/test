@@ -5,6 +5,7 @@ import yaml
 from config.configuration_manager import ConfigurationManager
 from framework.exceptions.keyword_exception import KeywordException
 from framework.logging.automation_logger import get_logger
+from framework.resources import resource_finder
 from framework.ssh.ssh_connection import SSHConnection
 from keywords.base_keyword import BaseKeyword
 from keywords.docker.images.docker_images_keywords import DockerImagesKeywords
@@ -111,7 +112,7 @@ class DockerSyncImagesKeywords(BaseKeyword):
         # Not a file path, try resolving as logical name from config
         try:
             path = self.docker_config.get_named_manifest(manifest)
-            return os.path.abspath(path)
+            return resource_finder.get_stx_resource_path(path)
         except ValueError as e:
             raise KeywordException(f"Failed to resolve manifest '{manifest}': {e}. " "Provide either a logical name defined in docker config JSON5 or a valid file path.") from e
 

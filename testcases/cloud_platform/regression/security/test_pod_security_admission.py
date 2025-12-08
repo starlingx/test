@@ -81,7 +81,7 @@ def deploy_docker_image_to_local_registry(ssh_connection: SSHConnection, secret_
         None:  This function does not return a value.
 
     """
-    local_registry = ConfigurationManager.get_docker_config().get_registry("local_registry")
+    local_registry = ConfigurationManager.get_docker_config().get_local_registry()
 
     get_logger().log_info(f"Deploy docker images to local registry to {local_registry}")
     FileKeywords(ssh_connection).upload_file(get_stx_resource_path("resources/images/pause.tar"), "/home/sysadmin/pause.tar")

@@ -486,6 +486,7 @@ def test_dc_alarm_aggregation_managed():
         subcloud_alarm = next((alarm for alarm in subcloud_alarms if alarm.alarm_id == fm_client_cli_object.get_alarm_id()), None)
         validate_none(subcloud_alarm, f"Alarm with ID {DEFAULT_ALARM_ID} should not be present in subcloud {subcloud_name}")
 
+
 @mark.p0
 @mark.lab_has_subcloud
 def test_dc_install_custom_app():
@@ -1397,7 +1398,7 @@ def deploy_images_to_local_registry(ssh_connection: SSHConnection):
     Args:
         ssh_connection (SSHConnection): the SSH connection.
     """
-    local_registry = ConfigurationManager.get_docker_config().get_registry("local_registry")
+    local_registry = ConfigurationManager.get_docker_config().get_local_registry()
 
     file_keywords = FileKeywords(ssh_connection)
     file_keywords.upload_file(get_stx_resource_path("resources/images/pv-test.tar"), "/home/sysadmin/pv-test.tar", overwrite=False)
