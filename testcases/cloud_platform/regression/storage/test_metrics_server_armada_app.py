@@ -24,17 +24,41 @@ def setup(request, active_ssh_connection):
     """Setup function to ensure metrics-server is applied before tests."""
     app_config = ConfigurationManager.get_app_config()
     metrics_server_name = app_config.get_metric_server_app_name()
+    base_path = app_config.get_base_application_path()
+
     get_logger().log_setup_step("Checking ceph health.")
     ceph_status_keywords = CephStatusKeywords(active_ssh_connection)
     ceph_status_keywords.wait_for_ceph_health_status(expect_health_status=True)
-    get_logger().log_setup_step("Check app metrics-server is applied.")
-    SystemApplicationListKeywords(active_ssh_connection).validate_app_status(metrics_server_name, "applied")
+
+    app_list_keywords = SystemApplicationListKeywords(active_ssh_connection)
+    if not app_list_keywords.is_app_present(metrics_server_name):
+        get_logger().log_setup_step("Upload metrics-server app.")
+        system_application_upload_input = SystemApplicationUploadInput()
+        system_application_upload_input.set_app_name(metrics_server_name)
+        system_application_upload_input.set_tar_file_path(f"{base_path}{metrics_server_name}*.tgz")
+        SystemApplicationUploadKeywords(active_ssh_connection).system_application_upload(system_application_upload_input)
+
+    get_logger().log_setup_step("Apply metrics-server app.")
+    SystemApplicationApplyKeywords(active_ssh_connection).system_application_apply(app_name=metrics_server_name)
 
     def cleanup():
-        if not SystemApplicationListKeywords(active_ssh_connection).is_app_present(metrics_server_name):
-            SystemApplicationApplyKeywords(active_ssh_connection).system_application_apply(app_name=metrics_server_name)
+        get_logger().log_teardown_step("Cleanup metrics-server app.")
+        if app_list_keywords.is_app_present(metrics_server_name):
+            app_show = SystemApplicationShowKeywords(active_ssh_connection).get_system_application_show(metrics_server_name)
+            app_status = app_show.get_system_application_object().get_status()
+
+            if app_status == "applied":
+                get_logger().log_teardown_step("Remove metrics-server app.")
+                system_application_remove_input = SystemApplicationRemoveInput()
+                system_application_remove_input.set_app_name(metrics_server_name)
+                SystemApplicationRemoveKeywords(active_ssh_connection).system_application_remove(system_application_remove_input)
+
+            get_logger().log_teardown_step("Delete metrics-server app.")
+            system_application_delete_input = SystemApplicationDeleteInput()
+            system_application_delete_input.set_app_name(metrics_server_name)
+            SystemApplicationDeleteKeywords(active_ssh_connection).get_system_application_delete(system_application_delete_input)
+
         get_logger().log_teardown_step("Checking ceph health.")
-        ceph_status_keywords = CephStatusKeywords(active_ssh_connection)
         ceph_status_keywords.wait_for_ceph_health_status(expect_health_status=True)
 
     request.addfinalizer(cleanup)
