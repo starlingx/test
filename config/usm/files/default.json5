@@ -35,6 +35,7 @@
   "precheck_timeout_sec": 300,
   "software_delete_timeout_sec": 300,
   "deploy_delete_timeout_sec": 300,
+  "deploy_start_timeout_sec": 600,
   
   // Remote copy settings
   "copy_from_remote": true,
