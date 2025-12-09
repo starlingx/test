@@ -139,7 +139,6 @@ class USMKeywords(BaseKeyword):
             sudo (bool): Option to pass the command with sudo.
             os_region_name (str): Use Os region name option for upload if it is specified
 
-
         Raises:
             KeywordException: If upload fails or release does not become available in time.
         """
@@ -181,3 +180,46 @@ class USMKeywords(BaseKeyword):
             timeout=timeout,
             polling_sleep_time=poll_interval,
         )
+
+    def software_deploy_delete(self, sudo: bool = False) -> str:
+        """
+        This method executed the command 'software deploy delete'
+
+        Args:
+            sudo (bool): flag to check if it needs to be run as sudo.
+
+        Returns:
+            str: output
+        """
+        timeout = self.usm_config.get_deploy_delete_timeout_sec()
+        base_cmd = "software deploy delete"
+        cmd = source_openrc(base_cmd)
+        if sudo:
+            output = self.ssh_connection.send_as_sudo(cmd, reconnect_timeout=timeout)
+        else:
+            output = self.ssh_connection.send(cmd, reconnect_timeout=timeout, get_pty=True)
+        self.validate_success_return_code(self.ssh_connection)
+        output = output[0].strip()
+        return output
+
+    def software_delete(self, release: str, sudo: bool = False) -> str:
+        """
+        This method executed the command 'software delete <release>'
+
+        Args:
+            release (str): release to be deleted
+            sudo (bool): flag to check if it needs to be run as sudo.
+
+        Returns:
+            str: software delete output
+        """
+        timeout = self.usm_config.get_software_delete_timeout_sec()
+        base_cmd = f"software delete {release}"
+        cmd = source_openrc(base_cmd)
+        if sudo:
+            output = self.ssh_connection.send_as_sudo(cmd, reconnect_timeout=timeout)
+        else:
+            output = self.ssh_connection.send(cmd, reconnect_timeout=timeout, get_pty=True)
+        self.validate_success_return_code(self.ssh_connection)
+        output = output[0].strip()
+        return output

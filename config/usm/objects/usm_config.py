@@ -48,6 +48,8 @@ class USMConfig:
         self.upload_patch_timeout_sec = usm_dict.get("upload_patch_timeout_sec", 1800)
         self.upload_release_timeout_sec = usm_dict.get("upload_release_timeout_sec", 1800)
         self.precheck_timeout_sec = usm_dict.get("precheck_timeout_sec", 300)
+        self.software_delete_timeout_sec = usm_dict.get("software_delete_timeout_sec", 300)
+        self.deploy_delete_timeout_sec = usm_dict.get("deploy_delete_timeout_sec", 300)
 
     def validate_config(self) -> None:
         """
@@ -460,3 +462,35 @@ class USMConfig:
             value (int): Maximum seconds to wait for release upload to complete.
         """
         self.precheck_timeout_sec = value
+
+    def get_software_delete_timeout_sec(self) -> int:
+        """Get timeout duration for software delete completion.
+
+        Returns:
+            int: Maximum seconds to wait for software delete to complete.
+        """
+        return self.software_delete_timeout_sec
+
+    def set_software_delete_timeout_sec(self, value: int) -> None:
+        """Set timeout duration for software delete completion.
+
+        Args:
+            value (int): Maximum seconds to wait for software delete to complete.
+        """
+        self.software_delete_timeout_sec = value
+
+    def get_deploy_delete_timeout_sec(self) -> int:
+        """Get timeout duration for software deploy delete completion.
+
+        Returns:
+            int: Maximum seconds to wait for software deploy delete to complete.
+        """
+        return self.deploy_delete_timeout_sec
+
+    def set_deploy_delete_timeout_sec(self, value: int) -> None:
+        """Set timeout duration for software deploy delete completion.
+
+        Args:
+            value (int): Maximum seconds to wait for software deploy delete to complete.
+        """
+        self.deploy_delete_timeout_sec = value
