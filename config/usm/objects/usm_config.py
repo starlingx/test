@@ -50,7 +50,7 @@ class USMConfig:
         self.precheck_timeout_sec = usm_dict.get("precheck_timeout_sec", 300)
         self.software_delete_timeout_sec = usm_dict.get("software_delete_timeout_sec", 300)
         self.deploy_delete_timeout_sec = usm_dict.get("deploy_delete_timeout_sec", 300)
-        self.deploy_start_timeout_sec = usm_dict.get("deploy_start_timeout_sec", 600)
+        self.deploy_start_timeout_sec = usm_dict.get("deploy_start_timeout_sec", 1200)
 
     def validate_config(self) -> None:
         """
