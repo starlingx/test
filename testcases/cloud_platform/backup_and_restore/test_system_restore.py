@@ -34,8 +34,9 @@ def test_restore():
       - Validate restore completion
     """
 
+    lab_type = LabConfig.get_lab_type()
     backup_dir = "/home/sysadmin"
-    local_backup_folder_path = "/tmp/bnr"
+    local_backup_folder_path = f"/tmp/bnr/{lab_type}"
     restore_mode = "optimized"
     ssh_connection = LabConnectionKeywords().get_ssh_for_hostname("controller-0")
 
@@ -84,8 +85,9 @@ def test_restore_multi_host():
       - Validate restore completion
     """
 
+    lab_type = LabConfig.get_lab_type()
     backup_dir = "/home/sysadmin"
-    local_backup_folder_path = "/tmp/bnr"
+    local_backup_folder_path = f"/tmp/bnr/{lab_type}"
     ssh_connection = LabConnectionKeywords().get_ssh_for_hostname("controller-0")
 
     get_logger().log_info("Copy backup files from local to target controller")
@@ -133,11 +135,13 @@ def test_restore_multi_host():
     unlock_success = SystemHostLockKeywords(ssh_connection).unlock_host(standby_controller.get_host_name())
     validate_equals(unlock_success, True, "Standby controller unlocking")
 
-    for node in LabConfig.get_computes():
-        host_name = node.get_name()
-        get_logger().log_info(f"wait for {host_name} to successfully unlocked")
-        unlock_success = SystemHostLockKeywords(ssh_connection).unlock_host(host_name)
-        validate_equals(unlock_success, True, f"Host {host_name} unlocking")
+    if len(LabConfig.get_computes()) > 0:
+        get_logger().log_info("Unlocking all the compute nodes")
+        for node in LabConfig.get_computes():
+            host_name = node.get_name()
+            get_logger().log_info(f"wait for {host_name} to successfully unlocked")
+            unlock_success = SystemHostLockKeywords(ssh_connection).unlock_host(host_name)
+            validate_equals(unlock_success, True, f"Host {host_name} unlocking")
 
     # Verify software state matches pre-backup state
     get_logger().log_info("Verifying software state post-restore")
