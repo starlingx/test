@@ -1,7 +1,8 @@
 import time
 from time import sleep
-from typing import Any, Callable
+from typing import Any, Callable, Sequence
 
+from framework.exceptions.validation_failure_error import ValidationFailureError
 from framework.logging.automation_logger import get_logger
 from framework.validation.validation_response import ValidationResponse
 
@@ -36,7 +37,8 @@ def validate_equals_with_retry(
     validation_description: str,
     timeout: int = 30,
     polling_sleep_time: int = 5,
-) -> object:
+    failure_values: Sequence[Any] = (),
+) -> Any:
     """
     Validates that function_to_execute will return the expected value in the specified amount of time.
 
@@ -46,12 +48,24 @@ def validate_equals_with_retry(
       validation_description (str): Description of this validation for logging purposes.
       timeout (int): The maximum time (in seconds) to wait for the match.
       polling_sleep_time (int): The interval of time to wait between calls to function_to_execute.
+      failure_values (Sequence[Any]): Values that cause immediate ValidationFailureError (fail-fast).
+        Must be a sequence (list, tuple, set). Single value: ['failed'] or ('failed',).
+        Multiple values: ['error', 'failed'] or ('error', 'failed'). Do not pass a plain string.
 
     Returns:
-        object: Returns the value_to_return of the ValidationResponse associated with the function_to_execute.
+        Any: Returns the value_to_return of the ValidationResponse associated with the function_to_execute.
+
+    Raises:
+        ValidationFailureError: If the observed value matches any value in failure_values.
+        TimeoutError: If the timeout is reached without finding the expected value.
+        TypeError: If failure_values is a raw string instead of a sequence.
 
     """
     get_logger().log_info(f"Attempting Validation - {validation_description}")
+
+    if isinstance(failure_values, (str, bytes, bytearray)):
+        raise TypeError("failure_values must be a sequence of values (e.g. ['failed'] or ('failed',)), not a raw string.")
+
     end_time = time.time() + timeout
 
     # Attempt the validation
@@ -65,6 +79,11 @@ def validate_equals_with_retry(
         else:
             value_to_validate = result
             value_to_return = result
+
+        # Check for explicit failure values first (fail-fast)
+        if failure_values and value_to_validate in failure_values:
+            get_logger().log_error(f"Validation Failed - {validation_description}: observed failure value '{value_to_validate}'")
+            raise ValidationFailureError(f"{validation_description} encountered failure value '{value_to_validate}' (failure_values={failure_values})")
 
         if value_to_validate == expected_value:
             get_logger().log_info(f"Validation Successful - {validation_description}")
