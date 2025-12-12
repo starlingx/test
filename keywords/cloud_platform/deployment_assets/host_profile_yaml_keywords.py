@@ -122,3 +122,14 @@ class HostProfileYamlKeywords:
 
         with open(yaml_file, "w") as f:
             yaml.safe_dump(data, f, default_flow_style=False)
+
+    def write_dict_yaml(self, data: dict, output_filename: str):
+        """
+        Writes a yaml file with data formatted as dict
+
+        Args:
+            data (dict): data formatted as dict.
+            output_filename (str): file name
+        """
+        with open(output_filename, 'w') as outfile:
+            yaml.dump(data, outfile, default_flow_style=False)
