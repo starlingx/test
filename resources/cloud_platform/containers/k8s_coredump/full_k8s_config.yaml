@@ -1,0 +1,26 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: dummypod
+  annotations:
+    starlingx.io/core_pattern: "/coredump/core.%P.%u.%g.%s.%t.%e.lz4"
+    starlingx.io/core_compression: "lz4"
+    starlingx.io/core_max_size: "512M"
+    starlingx.io/core_max_used: "4G"
+    starlingx.io/core_min_free: "2G"
+spec:
+  containers:
+  - command:
+    - /bin/bash
+    - -ec
+    - while :; do echo '.';sleep 5 ; done
+    image: ubuntu
+    name: dummypod
+    volumeMounts:
+    - mountPath: /coredump
+      name: hostpath-volume
+  restartPolicy: Never
+  volumes:
+  - hostPath:
+      path: /var/lib/systemd/coredump
+    name: hostpath-volume
