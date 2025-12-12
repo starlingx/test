@@ -39,7 +39,7 @@ class DockerImagesKeywords(BaseKeyword):
         output = self.ssh_connection.send_as_sudo(f"docker image rm {image}")
 
         # both the Untagged Image and no such images messages are valid
-        assert len(list(filter(lambda output_line: f"Untagged: {image}" in output_line, output))) > 0 or len(list(filter(lambda output_line: f"Error: No such image: {image}" in output_line, output))) > 0
+        assert len(list(filter(lambda output_line: f"Untagged: {image}" in output_line, output))) > 0 or len(list(filter(lambda output_line: f"No such image: {image}" in output_line, output))) > 0
 
     def pull_image(self, image: str) -> None:
         """
@@ -56,15 +56,17 @@ class DockerImagesKeywords(BaseKeyword):
         """
         self.ssh_connection.send_as_sudo("docker image prune -f")
 
-    def exists_image(self, registry: Registry, image: str, tag: str):
+    def exists_image(self, registry: Registry, image: str, tag: str) -> bool:
         """
         Verifies if image and tag exist in registry.
 
         Args:
-            registry (str): Target registry.
+            registry (Registry): Target registry.
             image (str): Desired image to be searched.
             tag (str): Searched image tag.
-        """
 
+        Returns:
+            bool: True if image exists
+        """
         output = self.ssh_connection.send_as_sudo(f"docker manifest inspect {registry.get_registry_url()}/{image}:{tag}")
         return "no such manifest" not in output
