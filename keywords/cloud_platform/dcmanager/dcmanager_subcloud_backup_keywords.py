@@ -41,17 +41,20 @@ class DcManagerSubcloudBackupKeywords(BaseKeyword):
 
         return f"/opt/dc-vault/backups/{subcloud_name}/{release}/"
 
+    # fmt: off
     def create_subcloud_backup_expect_fail(
-            self,
-            sysadmin_password: str,
-            con_ssh: SSHConnection,
-            subcloud: Optional[str] = None,
-            local_only: bool = False,
-            backup_yaml: Optional[str] = None, group: Optional[str] = None,
-            registry: bool = False,
-            subcloud_list: Optional[list] = None,
-            expect_cmd_rejection: Optional[bool] = False
+        self,
+        sysadmin_password: str,
+        con_ssh: SSHConnection,
+        subcloud: Optional[str] = None,
+        local_only: bool = False,
+        backup_yaml: Optional[str] = None,
+        group: Optional[str] = None,
+        registry: bool = False,
+        subcloud_list: Optional[list] = None,
+        expect_cmd_rejection: Optional[bool] = False,
     ) -> None:
+        # fmt: on
         """
         Runs backup creation command expecting it to fail.
 
@@ -131,14 +134,9 @@ class DcManagerSubcloudBackupKeywords(BaseKeyword):
             else:
                 return False
 
-        validate_equals_with_retry(
-            function_to_execute=check_for_failure,
-            expected_value=True,
-            validation_description="Backup creation failed.",
-            timeout=timeout,
-            polling_sleep_time=check_interval
-        )
+        validate_equals_with_retry(function_to_execute=check_for_failure, expected_value=True, validation_description="Backup creation failed.", timeout=timeout, polling_sleep_time=check_interval)
 
+    # fmt: off
     def create_subcloud_backup(
         self,
         sysadmin_password: str,
@@ -152,6 +150,7 @@ class DcManagerSubcloudBackupKeywords(BaseKeyword):
         release: Optional[str] = None,
         subcloud_list: Optional[list] = None,
     ) -> None:
+        # fmt: on
         """
         Creates a backup of the specified subcloud.
 
@@ -198,7 +197,7 @@ class DcManagerSubcloudBackupKeywords(BaseKeyword):
 
         else:
             # Wait for backup to initiate to avoid false validation.
-            self.wait_for_backup_status_complete(subcloud=subcloud, expected_status="backing-up", check_interval=2, timeout=10)
+            self.wait_for_backup_status_complete(subcloud=subcloud, expected_status="backing-up", check_interval=2, timeout=30)
             self.wait_for_backup_creation(con_ssh, path, subcloud)
 
     def wait_for_backup_creation(
@@ -359,12 +358,7 @@ class DcManagerSubcloudBackupKeywords(BaseKeyword):
                 return f"Backup still exists at {path}."
 
         # Using validate_equals_with_retry to ensure the backup is deleted.
-        validate_equals_with_retry(
-            function_to_execute=check_backup_deleted,
-            expected_value=f"Backup successfully deleted from {path} for {subcloud}",
-            validation_description=f"Backup deletion for subcloud {subcloud} completed.",
-            timeout=60
-        )
+        validate_equals_with_retry(function_to_execute=check_backup_deleted, expected_value=f"Backup successfully deleted from {path} for {subcloud}", validation_description=f"Backup deletion for subcloud {subcloud} completed.", timeout=60)
 
     def wait_for_backup_status_complete(
         self,
@@ -411,13 +405,13 @@ class DcManagerSubcloudBackupKeywords(BaseKeyword):
         con_ssh: SSHConnection,
         with_install: Optional[bool] = False,
         subcloud: Optional[str] = None,
-        local_only: Optional[bool] = False,
+        local_only: bool = False,
         restore_values_path: Optional[str] = None,
         group: Optional[str] = None,
         registry: bool = False,
         release: Optional[str] = None,
         subcloud_list: Optional[list] = None,
-    ):
+    ) -> None:
         """
         Sends the command to restore a subcloud backup.
 
@@ -433,9 +427,6 @@ class DcManagerSubcloudBackupKeywords(BaseKeyword):
             registry (bool): Option to add the registry backup in the same task. Defaults to False.
             release (Optional[str]): Release version required to check backup. Defaults to None.
             subcloud_list (Optional[list]): List of subcloud names when restoring a group backup. Defaults to None.
-
-        Returns:
-            None:
         """
         # Command construction
         cmd = f"dcmanager subcloud-backup restore --sysadmin-password {sysadmin_password}"
@@ -492,7 +483,6 @@ class DcManagerSubcloudBackupKeywords(BaseKeyword):
             Returns:
                 str: A message indicating whether the backup has been successfully created or not.
             """
-
             deploy_status = DcManagerSubcloudShowKeywords(con_ssh).get_dcmanager_subcloud_show(subcloud).get_dcmanager_subcloud_show_object().get_deploy_status()
 
             if deploy_status == "complete":
