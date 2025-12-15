@@ -42,6 +42,10 @@
   "remote_server": "",
   "remote_username": "",
   "remote_password": "",
-  "dest_dir": "/scratch/usm_files/"
+  "dest_dir": "/scratch/usm_files/",
+
+  // Distributed Cloud
+  "subcloud_group": "Default",
+  "subcloud_name": "None"
 }
 
