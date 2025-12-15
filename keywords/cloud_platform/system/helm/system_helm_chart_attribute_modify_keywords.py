@@ -1,6 +1,7 @@
 from framework.ssh.ssh_connection import SSHConnection
 from keywords.base_keyword import BaseKeyword
 from keywords.cloud_platform.command_wrappers import source_openrc
+from keywords.cloud_platform.system.helm.objects.system_helm_chart_attribute_modify_output import SystemHelmChartAttributeModifyOutput
 
 
 class SystemHelmChartAttributeModifyKeywords(BaseKeyword):
@@ -18,7 +19,7 @@ class SystemHelmChartAttributeModifyKeywords(BaseKeyword):
         """
         self.ssh_connection = ssh_connection
 
-    def helm_chart_attribute_modify_enabled(self, enabled_value: str, app_name: str, chart_name: str, namespace: str):
+    def helm_chart_attribute_modify_enabled(self, enabled_value: str, app_name: str, chart_name: str, namespace: str) -> SystemHelmChartAttributeModifyOutput:
         """
         Modify helm chart attribute.
 
@@ -30,5 +31,7 @@ class SystemHelmChartAttributeModifyKeywords(BaseKeyword):
 
         """
         command = source_openrc(f"system helm-chart-attribute-modify --enabled {enabled_value} {app_name} {chart_name} {namespace}")
-        self.ssh_connection.send(command)
+        output = self.ssh_connection.send(command)
         self.validate_success_return_code(self.ssh_connection)
+        system_helm_chart_attribute_modify_output = SystemHelmChartAttributeModifyOutput(output)
+        return system_helm_chart_attribute_modify_output
