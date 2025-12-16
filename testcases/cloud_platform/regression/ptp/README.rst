@@ -53,7 +53,7 @@ Test Environment Setup
 Physical Topology
 ---------------
 
-The test environment is based on the configuration in ``ptp_configuration_expectation_compute.json5``. This topology represents a real-world PTP deployment with precise timing requirements.
+The test environment is based on the configuration in ``ptp_data_westport_dx_plus_tgm_tbc.json5``. This topology represents a real-world PTP deployment with precise timing requirements.
 
 **Network and Time Flow Diagram:**
 
@@ -134,7 +134,7 @@ Software Configuration
 
 The PTP configuration is defined in JSON5 files:
 
-- **ptp_configuration_expectation_compute.json5**: Defines expected PTP configuration
+- **ptp_data_westport_dx_plus_tgm_tbc.json5**: Defines expected PTP configuration
 - **default.json5**: Contains interface mappings and hardware details
 
 Service types in the configuration:
@@ -413,5 +413,5 @@ Related Test Files
 ---------------
 
 - **test_ptp.py**: Main test file for PTP functionality
-- **ptp_configuration_expectation_compute.json5**: PTP configuration file
+- **ptp_data_westport_dx_plus_tgm_tbc.json5**: PTP configuration file
 - **default.json5**: Interface mappings and hardware details

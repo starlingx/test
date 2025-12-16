@@ -20,7 +20,7 @@ class PTPSetupKeywords(BaseKeyword):
         This function will read the template_file specified and will replace values based on the ptp_config.
 
         Args:
-            template_file_location (str): Path in the repo to the Template JSON5 file. e.g. 'resources/ptp/setup/ptp_setup_template.json5'
+            template_file_location (str): Path in the repo to the Template JSON5 file. e.g. 'resources/ptp/ptp_setup_template.json5'
 
         Returns:
             PTPSetup: An object representing the setup.
@@ -50,7 +50,7 @@ class PTPSetupKeywords(BaseKeyword):
         ptp_setup = PTPSetup(json_data)
         return ptp_setup
 
-    def filter_and_render_ptp_config(self, template_file_location: str, selected_instances: List[Tuple[str, str, List[str]]], custom_expected_dict_template: Optional[str] = None, expected_dict_overrides: Optional[Dict[str, Any]] = None) -> PTPSetup:
+    def filter_and_render_ptp_config(self, template_file_location: str, selected_instances: List[Tuple[str, str, List[str]]], custom_configuration_verification_template: Optional[str] = None, configuration_verification_overrides: Optional[Dict[str, Any]] = None) -> PTPSetup:
         """
         Filters and renders a PTP configuration from a JSON5 template based on selected instances.
 
@@ -66,11 +66,11 @@ class PTPSetupKeywords(BaseKeyword):
                     - ptp_instance_name (str)
                     - hostname (str)
                     - list of associated interface names (List[str])
-            custom_expected_dict_template (Optional[str]):
-                Jinja2-formatted string representing an expected_dict override. If provided,
-                it replaces the auto-filtered expected_dict.
-            expected_dict_overrides (Optional[Dict[str, Any]]):
-                A dictionary of specific overrides to apply on the generated or provided expected_dict.
+            custom_configuration_verification_template (Optional[str]):
+                Jinja2-formatted string representing a configuration_verification override. If provided,
+                it replaces the auto-filtered configuration_verification.
+            configuration_verification_overrides (Optional[Dict[str, Any]]):
+                A dictionary of specific overrides to apply on the generated or provided configuration_verification.
                 Supports nested structure (e.g. overriding grandmaster_settings -> clock_class).
 
         Returns:
@@ -78,9 +78,9 @@ class PTPSetupKeywords(BaseKeyword):
 
         Example:
             filter_and_render_ptp_config(
-                template_file_location="resources/ptp/setup/ptp_setup_template.json5",
+                template_file_location="resources/ptp/ptp_setup_template.json5",
                 selected_instances=[("ptp4", "controller-1", ["ptp4if1"])],
-                expected_dict_overrides={
+                configuration_verification_overrides={
                     "ptp4l": [
                         {
                             "name": "ptp4",
@@ -109,14 +109,15 @@ class PTPSetupKeywords(BaseKeyword):
         # Render main config template
         rendered_config = Template(json5_template).render(render_context)
         ptp_config_dict = json5.loads(rendered_config)
+        ptp_config_dict = PTPSetupKeywords._parse_embedded_json(ptp_config_dict)
 
-        # Optionally render custom expected_dict
-        custom_expected_dict = None
-        if custom_expected_dict_template:
-            rendered_custom_expected = Template(custom_expected_dict_template).render(render_context)
-            custom_expected_dict = json5.loads(rendered_custom_expected)
+        # Optionally render custom configuration_verification
+        custom_configuration_verification = None
+        if custom_configuration_verification_template:
+            rendered_custom_configuration_verification = Template(custom_configuration_verification_template).render(render_context)
+            custom_configuration_verification = json5.loads(rendered_custom_configuration_verification)
 
-        filtered_json = {"ptp_instances": {"ptp4l": []}, "ptp_host_ifs": [], "expected_dict": {"ptp4l": []}}
+        filtered_json = {"ptp_configuration": {"ptp_instances": {"ptp4l": []}, "ptp_host_ifs": []}, "verification": []}
 
         ptp_selection = {}
         all_required_ifaces = set()
@@ -128,12 +129,13 @@ class PTPSetupKeywords(BaseKeyword):
             all_required_ifaces.update(iface_list)
 
         # Filter ptp_instances.ptp4l
-        for instance in ptp_config_dict.get("ptp_instances", {}).get("ptp4l", []):
+        ptp_config = ptp_config_dict.get("ptp_configuration", {})
+        for instance in ptp_config.get("ptp_instances", {}).get("ptp4l", []):
             name = instance.get("name")
             if name in ptp_selection:
                 hosts = ptp_selection[name]
                 selected_ifaces = [iface for iface_list in hosts.values() for iface in iface_list]
-                filtered_json["ptp_instances"]["ptp4l"].append(
+                filtered_json["ptp_configuration"]["ptp_instances"]["ptp4l"].append(
                     {
                         "name": name,
                         "instance_hostnames": list(hosts.keys()),
@@ -143,37 +145,74 @@ class PTPSetupKeywords(BaseKeyword):
                 )
 
         # Filter ptp_host_ifs
-        for iface in ptp_config_dict.get("ptp_host_ifs", []):
+        for iface in ptp_config.get("ptp_host_ifs", []):
             if iface.get("name") in all_required_ifaces:
-                filtered_json["ptp_host_ifs"].append(iface)
+                filtered_json["ptp_configuration"]["ptp_host_ifs"].append(iface)
 
-        # Use custom expected_dict if provided
-        if custom_expected_dict:
-            filtered_json["expected_dict"]["ptp4l"] = custom_expected_dict.get("ptp4l", [])
+        # Use custom configuration_verification if provided
+        if custom_configuration_verification:
+            filtered_json["verification"] = [{"type": "pmc", "pmc_values": custom_configuration_verification.get("pmc_values", [])}]
             return PTPSetup(filtered_json)
 
-        # Auto-generate expected_dict by filtering
-        for expected_instance in ptp_config_dict.get("expected_dict", {}).get("ptp4l", []):
+        # Auto-generate verification by filtering
+        verification_data = ptp_config_dict.get("verification", [])
+        pmc_values = []
+        for ver_item in verification_data:
+            if ver_item.get("type") in ["pmc", "pmc_value"]:
+                pmc_values = ver_item.get("pmc_values", [])
+                break
+
+        filtered_pmc_values = []
+        for expected_instance in pmc_values:
             name = expected_instance.get("name")
             if name not in ptp_selection:
                 continue
 
             filtered_instance = {"name": name}
 
-            for hostname, _ in ptp_selection[name].items():
+            for hostname, selected_iface_names in ptp_selection[name].items():
                 instance_data = expected_instance.get(hostname)
                 if not instance_data:
                     continue
 
-                filtered_instance[hostname] = {key: instance_data.get(key) for key in ["parent_data_set", "time_properties_data_set", "grandmaster_settings", "port_data_set"]}
+                filtered_host_data = {}
+                for key in ["parent_data_set", "time_properties_data_set", "grandmaster_settings"]:
+                    if key in instance_data:
+                        filtered_host_data[key] = instance_data[key]
 
-            filtered_json["expected_dict"]["ptp4l"].append(filtered_instance)
+                # Filter port_data_set based on selected interfaces
+                if "port_data_set" in instance_data:
+                    if selected_iface_names:
+                        # Get actual interface names for selected ptp_interface_names
+                        selected_actual_interfaces = set()
+                        for iface_name in selected_iface_names:
+                            for ptp_host_if in ptp_config.get("ptp_host_ifs", []):
+                                if ptp_host_if.get("name") == iface_name:
+                                    hostname_key = f"{hostname.replace('-', '_')}_interfaces"
+                                    if hostname_key in ptp_host_if:
+                                        selected_actual_interfaces.update(ptp_host_if[hostname_key])
+
+                        # Filter port_data_set to only include selected interfaces
+                        filtered_port_data_set = []
+                        for port in instance_data["port_data_set"]:
+                            if "interface" in port and port["interface"] in selected_actual_interfaces:
+                                filtered_port_data_set.append(port)
+
+                        if filtered_port_data_set:
+                            filtered_host_data["port_data_set"] = filtered_port_data_set
+                    else:
+                        # If no interfaces specified, include all port_data_set
+                        filtered_host_data["port_data_set"] = instance_data["port_data_set"]
+
+                filtered_instance[hostname] = filtered_host_data
+
+            filtered_pmc_values.append(filtered_instance)
 
         # Apply single-value overrides (like clock_class)
-        if expected_dict_overrides:
-            for override in expected_dict_overrides.get("ptp4l", []):
+        if configuration_verification_overrides:
+            for override in configuration_verification_overrides.get("ptp4l", []):
                 override_name = override.get("name")
-                for inst in filtered_json["expected_dict"]["ptp4l"]:
+                for inst in filtered_pmc_values:
                     if inst.get("name") == override_name:
                         for hostname, host_data in override.items():
                             if hostname == "name":
@@ -181,7 +220,28 @@ class PTPSetupKeywords(BaseKeyword):
                             inst.setdefault(hostname, {})
                             inst[hostname] = self.deep_merge(inst[hostname], host_data)
 
+        filtered_json["verification"] = [{"type": "pmc", "pmc_values": filtered_pmc_values}]
         return PTPSetup(filtered_json)
+
+    @staticmethod
+    def _parse_embedded_json(data: Any) -> Any:
+        """
+        Recursively parse embedded JSON strings in the data structure.
+
+        Args:
+            data (Any): The data structure to process.
+
+        Returns:
+            Any: The processed data with embedded JSON strings parsed.
+        """
+        if isinstance(data, dict):
+            return {key: PTPSetupKeywords._parse_embedded_json(value) for key, value in data.items()}
+        elif isinstance(data, list):
+            return [PTPSetupKeywords._parse_embedded_json(item) for item in data]
+        elif isinstance(data, str):
+            return json5.loads(data) if data.startswith(("{", "[")) else data
+        else:
+            return data
 
     def deep_merge(self, dest: Dict[str, Any], src: Dict[str, Any]) -> Dict[str, Any]:
         """

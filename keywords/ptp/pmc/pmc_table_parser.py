@@ -35,7 +35,7 @@ class PMCTableParser:
         Getter for output values dict
 
         Returns:
-            list[dict]: the output values dict
+            list[dict]: the output values dict (empty dict if no output)
 
         Raises:
             KeywordException: if a line with values is not in the expected format.
@@ -44,6 +44,8 @@ class PMCTableParser:
         output_values_dict_list = []
 
         total_rows = len(self.pmc_output)
+        if total_rows < 2:
+            return [{}]
 
         for row in self.pmc_output[2:total_rows]:  # Ignore the first 2 rows and the last row (prompt)
             if "~$" in row:

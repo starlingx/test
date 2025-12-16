@@ -174,14 +174,14 @@ class AlarmListKeywords(BaseKeyword):
 
     def alarms_match(self, observed_alarm_object: AlarmListObject, expected_alarm_object: AlarmListObject) -> bool:
         """
-        Compares two AlarmListObject instances for equality based on alarm ID, reason text, and entity ID.
+        Compares two AlarmListObject instances for equality based on alarm ID, reason text, entity ID, and severity.
 
         Args:
             observed_alarm_object (AlarmListObject): The current alarm object to compare against.
             expected_alarm_object (AlarmListObject): The expected alarm object.
 
         Returns:
-            bool: True if all three fields (alarm ID, reason text, and entity ID) match exactly
+            bool: True if all fields (alarm ID, reason text, entity ID, and severity) match exactly
                 (after stripping whitespace for text fields), False otherwise.
         """
         observed_id = observed_alarm_object.get_alarm_id()
@@ -193,13 +193,17 @@ class AlarmListKeywords(BaseKeyword):
         observed_entity_id = observed_alarm_object.get_entity_id()
         expected_entity_id = expected_alarm_object.get_entity_id()
 
+        observed_severity = observed_alarm_object.get_severity()
+        expected_severity = expected_alarm_object.get_severity()
+
         # Perform the comparisons, making each condition clear.
         id_matches = observed_id == expected_id
         reason_text_matches = re.fullmatch(expected_reason_text_pattern, observed_reason_text)
         entity_id_matches = observed_entity_id == expected_entity_id
+        severity_matches = expected_severity is None or observed_severity == expected_severity
 
-        # Return True only if all three conditions are met.
-        return id_matches and reason_text_matches and entity_id_matches
+        # Return True only if all conditions are met.
+        return id_matches and reason_text_matches and entity_id_matches and severity_matches
 
     def get_timeout_in_seconds(self) -> int:
         """

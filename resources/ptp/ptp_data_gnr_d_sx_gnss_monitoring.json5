@@ -1,0 +1,107 @@
+{
+  // PTP Configuration Expectation for GNR-D GNSS
+  // This file defines the expected PTP configuration for AIO-SX system
+  // Based on the provided system commands for PTP setup
+  
+  // Service types:
+  // - T-TSC: Telecom Time Slave Clock - Synchronizes to an upstream master clock via GNSS
+  
+  // Time sources:
+  // - GNSS: Global Navigation Satellite System provides time via /dev/ttyACM0
+  
+  ptp_configuration: {
+    ptp_instances: {
+
+      ptp4l: [
+        {
+          // PTP-INST1 instance - Telecom Time Slave Clock (T-TSC)
+          // Receives time from GNSS via ts2phc and distributes via eno1
+          // Domain 24 with G.8275.x profile
+          name: "ptp-inst1",
+          instance_hostnames : ["controller-0"],
+          instance_parameters: "domainNumber=24 tx_timestamp_timeout=700 dataset_comparison=G.8275.x fault_reset_interval=0 logAnnounceInterval=-3 logMinDelayReqInterval=-4 logSyncInterval=-4",
+          ptp_interface_names: [
+            "ptp-iface1",
+          ],
+        },
+      ],
+
+      // phc2sys - Synchronizes system clock to PTP hardware clock
+      // Uses eno1 interface with specific command line options
+      phc2sys : [
+          {
+            // PHC-INST1 instance - Synchronizes controller-0 system clock
+            // Uses eno1 interface with wait mode and specific UDS address
+            name: "phc-inst1",
+            instance_hostnames : ["controller-0"],
+            instance_parameters: "cmdline_opts='-w -s {{ controller_0.nic1.nic_connection.interface }}' domainNumber=24 uds_address=/var/run/ptp4l-ptp-inst1",
+            ptp_interface_names: [],
+          },
+      ],
+
+      // ts2phc - Synchronizes PTP hardware clock to external time source
+      // Uses GNSS receiver via NMEA serial port /dev/ttyACM0
+      ts2phc : [
+          {
+            // TS1 instance - Synchronizes controller-0 to GNSS time source
+            // Uses NMEA serial port /dev/ttyACM0 for GNSS connection
+            name: "ts1",
+            instance_hostnames : ["controller-0"],
+            instance_parameters: "ts2phc.nmea_serialport=/dev/ttyACM0",
+            ptp_interface_names: [
+              "tsint1",
+            ],
+          },
+      ],
+    },
+
+    // PTP Host Interfaces - Maps logical PTP interfaces to physical network interfaces
+    // Defines which physical interfaces are used for each PTP instance on each host
+    ptp_host_ifs: [
+      {
+        name: "ptp-iface1",
+        controller_0_interfaces: ["{{ controller_0.nic1.nic_connection.interface }}"],
+        ptp_interface_parameter : "",
+      },
+      {
+        name: "tsint1",
+        controller_0_interfaces: ["{{ controller_0.nic1.nic_connection.interface }}"],
+        ptp_interface_parameter : "",
+      },
+    ],
+  },
+
+  // This section is for validation purposes. All expected values are maintained here
+  // Used by test framework to verify correct PTP configuration and behavior
+  // Defines expected port states, parent-child relationships, and clock settings
+  "verification": [
+    {
+      "type": "pmc",
+      "pmc_values": [
+        {
+          "name": "ptp-inst1",
+          "controller-0": {
+            "parent_data_set" : {
+              "gm_clock_class": [6, 7],
+              "gm_clock_accuracy": "0x20",
+              "gm_offset_scaled_log_variance": "0x4e5d"
+            },
+            "time_properties_data_set": {
+              "current_utc_offset": 37,
+              "current_utc_offset_valid": 0,
+              "time_traceable": 1,
+              "frequency_traceable": 1
+            },
+            "grandmaster_settings": "{{ grandmaster_settings.grandmaster_settings_tgm_default }}",
+            "port_data_set": [
+              {
+                "interface" : "{{ controller_0.nic1.nic_connection.interface }}",
+                "port_state": "MASTER"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

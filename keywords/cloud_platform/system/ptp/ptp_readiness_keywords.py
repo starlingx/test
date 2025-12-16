@@ -21,7 +21,7 @@ class PTPReadinessKeywords:
         """
         self.ssh_connection = ssh_connection
 
-    def wait_for_port_state_appear_in_port_data_set(self, name: str, expected_port_states: list[str]) -> None:
+    def wait_for_port_state_appear_in_port_data_set(self, name: str, expected_port_states: list[str], timeout: int = 120) -> None:
         """
         Waits until the port states observed in the port data set match the expected states, or times out.
 
@@ -52,9 +52,9 @@ class PTPReadinessKeywords:
 
             return observed_states
 
-        validate_equals_with_retry(lambda: check_port_state_in_port_data_set(name), expected_port_states, "port state in port data set", 180, 30)
+        validate_equals_with_retry(lambda: check_port_state_in_port_data_set(name), expected_port_states, "port state in port data set", timeout, 30)
 
-    def wait_for_clock_class_appear_in_grandmaster_settings_np(self, name: str, expected_clock_class: Union[int, list]) -> None:
+    def wait_for_clock_class_appear_in_grandmaster_settings_np(self, name: str, expected_clock_class: Union[int, list], timeout: int = 120) -> None:
         """
         Waits until the clock class observed in the grandmaster settings np match the expected clock class, or times out.
 
@@ -87,7 +87,7 @@ class PTPReadinessKeywords:
             return observed_clock_class
 
         exp_clock_class = expected_clock_class if isinstance(expected_clock_class, list) else [expected_clock_class]
-        validate_list_contains_with_retry(lambda: get_clock_class_in_grandmaster_settings_np(name), exp_clock_class, "clock class in grandmaster settings np", 120, 30)
+        validate_list_contains_with_retry(lambda: get_clock_class_in_grandmaster_settings_np(name), exp_clock_class, "clock class in grandmaster settings np", timeout, 30)
 
     def wait_for_gm_clock_class_appear_in_parent_data_set(self, name: str, expected_gm_clock_class: Union[int, list]) -> None:
         """

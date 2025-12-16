@@ -1,5 +1,9 @@
 {
-  ptp_instances: {
+  // PTP Configuration Expectation for Test Environment
+  // This file defines the expected PTP configuration for unit testing purposes
+
+  "ptp_configuration": {
+    "ptp_instances": {
 
     ptp4l: [
 
@@ -114,7 +118,9 @@
 
   },
 
-  ptp_host_ifs: [
+    // PTP Host Interfaces - Maps logical PTP interfaces to physical network interfaces
+    // Defines which physical interfaces are used for each PTP instance on each host
+    "ptp_host_ifs": [
 
     {
       name: "ptp1if1",
@@ -221,5 +227,5 @@
      ptp_interface_parameter : "sma1={{ controller_0.nic2.sma1.is_input_or_output }}",
     },
   ],
-
+  }
 }

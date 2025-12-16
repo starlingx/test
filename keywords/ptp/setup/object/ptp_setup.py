@@ -2,7 +2,7 @@ from typing import Dict, List
 
 from keywords.ptp.setup.object.clock_setup import ClockSetup
 from keywords.ptp.setup.object.phc2sys_setup import PHC2SysSetup
-from keywords.ptp.setup.object.ptp4l_expected_dict import PTP4LExpectedDict
+from keywords.ptp.setup.object.pmc_values_expected_dict import PMCValuesExpectedDict
 from keywords.ptp.setup.object.ptp4l_setup import PTP4LSetup
 from keywords.ptp.setup.object.ptp_host_interface_setup import PTPHostInterfaceSetup
 from keywords.ptp.setup.object.ts2phc_setup import TS2PHCSetup
@@ -26,21 +26,26 @@ class PTPSetup:
         self.ts2phc_setup_list: List[TS2PHCSetup] = []
         self.clock_setup_list: List[ClockSetup] = []
         self.host_ptp_if_dict: Dict[str, PTPHostInterfaceSetup] = {}  # Name -> PTPHostInterfaceSetup
-        self.ptp4l_expected_list: List[PTP4LExpectedDict] = []
+        self.pmc_values_expected_list: List[PMCValuesExpectedDict] = []
 
-        if "ptp_instances" not in setup_dict:
-            raise Exception("You must define a ptp_instances section in your ptp setup_dict")
+        if "ptp_configuration" not in setup_dict:
+            raise Exception("You must define a ptp_configuration section in your ptp setup_dict")
 
-        if "ptp_host_ifs" not in setup_dict:
-            raise Exception("You must define a ptp_host_ifs section in your ptp setup_dict")
+        ptp_config = setup_dict["ptp_configuration"]
 
-        ptp_host_ifs = setup_dict["ptp_host_ifs"]
+        if "ptp_instances" not in ptp_config:
+            raise Exception("You must define a ptp_instances section in your ptp_configuration")
+
+        if "ptp_host_ifs" not in ptp_config:
+            raise Exception("You must define a ptp_host_ifs section in your ptp_configuration")
+
+        ptp_host_ifs = ptp_config["ptp_host_ifs"]
         for ptp_host_if in ptp_host_ifs:
             ptp_host_if_object = PTPHostInterfaceSetup(ptp_host_if)
             ptp_host_if_name = ptp_host_if_object.get_name()
             self.host_ptp_if_dict[ptp_host_if_name] = ptp_host_if_object
 
-        ptp_instances_dict = setup_dict["ptp_instances"]
+        ptp_instances_dict = ptp_config["ptp_instances"]
         if "ptp4l" in ptp_instances_dict:
             ptp4l_list = ptp_instances_dict["ptp4l"]
             for ptp4l_entry_dict in ptp4l_list:
@@ -65,8 +70,11 @@ class PTPSetup:
                 clock_setup = ClockSetup(clock_entry_dict, self.host_ptp_if_dict)
                 self.clock_setup_list.append(clock_setup)
 
-        expected_dict = setup_dict.get("expected_dict", {})
-        self.ptp4l_expected_list.extend(PTP4LExpectedDict(item) for item in expected_dict.get("ptp4l", []))
+        verification_data = setup_dict.get("verification", [])
+        for ver_item in verification_data:
+            if ver_item.get("type") in ["pmc", "pmc_value"]:
+                pmc_values = ver_item.get("pmc_values", [])
+                self.pmc_values_expected_list.extend(PMCValuesExpectedDict(item) for item in pmc_values)
 
     def __str__(self) -> str:
         """
@@ -174,26 +182,26 @@ class PTPSetup:
                 return setup
         raise Exception(f"There is no clock setup named {setup_name}")
 
-    def get_expected_ptp4l_list(self) -> List[PTP4LExpectedDict]:
+    def get_expected_pmc_values_list(self) -> List[PMCValuesExpectedDict]:
         """
-        Getter for the list of expected ptp4l list.
+        Getter for the list of expected pmc_values list.
 
         Returns:
-            List[PTP4LExpectedDict]: list of ptp4l expected dict
+            List[PMCValuesExpectedDict]: list of pmc_values expected dict
         """
-        return self.ptp4l_expected_list
+        return self.pmc_values_expected_list
 
-    def get_ptp4l_expected_by_name(self, name: str) -> PTP4LExpectedDict:
+    def get_pmc_values_expected_by_name(self, name: str) -> PMCValuesExpectedDict:
         """
-        Getter for ptp4l expected by name.
+        Getter for pmc_values expected by name.
 
         Args:
             name (str): The name of the instance.
 
         Returns:
-            PTP4LExpectedDict: ptp4l expected by name
+            PMCValuesExpectedDict: pmc_values expected by name
         """
-        ptp4l_expected_obj = next((obj for obj in self.ptp4l_expected_list if obj.get_name() == name), None)
-        if not ptp4l_expected_obj:
-            raise ValueError(f"No expected PTP4L object found for name: {name}")
-        return ptp4l_expected_obj
+        pmc_values_expected_obj = next((obj for obj in self.pmc_values_expected_list if obj.get_name() == name), None)
+        if not pmc_values_expected_obj:
+            raise ValueError(f"No expected PMC values object found for name: {name}")
+        return pmc_values_expected_obj
