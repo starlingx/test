@@ -7,6 +7,7 @@ from framework.database.objects.test_case_result import TestCaseResult
 from framework.database.objects.testcase import TestCase
 from framework.database.operations.run_content_operation import RunContentOperation
 from framework.database.operations.test_case_result_operation import TestCaseResultOperation
+from framework.runner.objects.RunResultsManager import RunResultsManager
 from framework.runner.objects.test_executor_summary import TestExecutorSummary
 
 
@@ -15,11 +16,10 @@ class ResultCollector:
     Pytest plugin that allows us to get results and add them to the test summary object
     """
 
-    def __init__(self, test_executor_summary: TestExecutorSummary, test: TestCase, test_case_result_id: int = None):
+    def __init__(self, test_executor_summary: TestExecutorSummary, test: TestCase):
         self.test_executor_summary = test_executor_summary
         self.test = test
         self.start_time = datetime.now()  # start time for the test
-        self.test_case_result_id = test_case_result_id
 
     @pytest.hookimpl(tryfirst=True, hookwrapper=True)
     def pytest_runtest_makereport(self, item: any, call: any):
@@ -69,9 +69,9 @@ class ResultCollector:
             outcome = "FAIL"
 
         # if we've been given a testcase result id, update the result and don't create a new one
-        if self.test_case_result_id:
-            test_case_result = TestCaseResult(-1, outcome, self.start_time, datetime.now())
-            test_case_result.set_test_case_result_id(self.test_case_result_id)
+        if RunResultsManager.get_test_case_result_id():
+            test_case_result = TestCaseResult(self.test.get_test_info_id(), outcome, self.start_time, datetime.now())
+            test_case_result.set_test_case_result_id(RunResultsManager.get_test_case_result_id())
             TestCaseResultOperation().update_test_case_result(test_case_result)
 
         else:
