@@ -9,6 +9,7 @@ from keywords.cloud_platform.system.host.system_host_lock_keywords import System
 from keywords.cloud_platform.system.host.system_host_reboot_keywords import SystemHostRebootKeywords
 from keywords.cloud_platform.system.host.system_host_swact_keywords import SystemHostSwactKeywords
 from keywords.cloud_platform.system.ptp.objects.operation_type_object import OperationType
+from keywords.cloud_platform.system.ptp.objects.status_constants_object import StatusConstants
 from keywords.cloud_platform.system.ptp.objects.verification_type_object import VerificationType
 from keywords.cloud_platform.system.ptp.ptp_scenario_executor_keywords import PTPScenarioExecutorKeywords
 from keywords.cloud_platform.system.ptp.ptp_setup_executor_keywords import PTPSetupExecutorKeywords
@@ -46,7 +47,7 @@ def test_delete_and_add_all_ptp_configuration():
 
 @mark.p1
 @mark.lab_has_dx_plus_westport
-def test_ptp_operation_interface_down_and_up():
+def test_ptp_operation_interface_down_and_up(request):
     """
     Verify PTP operation and status change when an interface goes down and comes back up.
 
@@ -105,25 +106,241 @@ def test_ptp_operation_interface_down_and_up():
         {
             "description": "Bring interface down",
             "operations": [
-                {"name": "ctrl0_nic1_interface_down", "description": "Controller-0 NIC1 interface down scenario", "type": OperationType.interface, "status": "down", "interface_mapping": {"ptp_instance": "ptp1", "interface_name": "ptp1if1", "hostname": "controller-0"}},
+                {
+                    "name": "ctrl0_nic1_interface_down",
+                    "description": "Controller-0 NIC1 interface down scenario",
+                    "type": OperationType.interface,
+                    "status": StatusConstants.interface_down,
+                    "interface_mapping": {"hostname": "controller-0", "nic": "nic1"},
+                },
             ],
-            "verification": [{"type": VerificationType.alarm, "timeout": 120, "alarms": [{"alarm_id": "100.119", "state": "set", "severity": "major", "reason_text": "controller-1 is not locked to remote PTP Grand Master", "entity_id": "host=controller-1.instance=ptp1.ptp=no-lock"}]}, {"type": VerificationType.pmc_value, "timeout": 30, "pmc_values": [{"name": "ptp1", "controller-1": {"parent_data_set": {"gm_clock_class": 165, "gm_clock_accuracy": "0xfe", "gm_offset_scaled_log_variance": "0xffff"}, "time_properties_data_set": {"current_utc_offset": 37, "current_utc_offset_valid": 0, "time_traceable": 0, "frequency_traceable": 0}, "grandmaster_settings": {"clock_class": 165, "clock_accuracy": "0xfe", "offset_scaled_log_variance": "0xffff", "time_traceable": 0, "frequency_traceable": 0, "time_source": "0xa0", "current_utc_offset_valid": 0}, "port_data_set": [{"interface": "{{ controller_1.nic1.nic_connection.interface }}", "port_state": ["MASTER"], "parent_port_identity": {"name": "ptp1", "hostname": "controller-1"}}, {"interface": "{{ controller_1.nic1.conn_to_proxmox }}", "port_state": "MASTER"}]}}]}],
+            "verification": [
+                {
+                    "type": VerificationType.alarm,
+                    "timeout": 120,
+                    "alarms": [
+                        {
+                            "alarm_id": "100.119",
+                            "state": StatusConstants.alarm_set,
+                            "severity": "major",
+                            "reason_text": "controller-1 is not locked to remote PTP Grand Master",
+                            "entity_id": "host=controller-1.instance=ptp1.ptp=no-lock"
+                        },
+                    ],
+                },
+                {
+                    "type": VerificationType.pmc_value,
+                    "timeout": 30,
+                    "pmc_values": [
+                        {
+                            "name": "ptp1",
+                            "controller-1": {
+                                "parent_data_set": {
+                                    "gm_clock_class": 165,
+                                    "gm_clock_accuracy": "0xfe",
+                                    "gm_offset_scaled_log_variance": "0xffff"
+                                },
+                                "time_properties_data_set": {
+                                    "current_utc_offset": 37,
+                                    "current_utc_offset_valid": 0,
+                                    "time_traceable": 0,
+                                    "frequency_traceable": 0
+                                },
+                                "grandmaster_settings": {
+                                    "clock_class": 165,
+                                    "clock_accuracy": "0xfe",
+                                    "offset_scaled_log_variance": "0xffff",
+                                    "time_traceable": 0,
+                                    "frequency_traceable": 0,
+                                    "time_source": "0xa0",
+                                    "current_utc_offset_valid": 0
+                                },
+                                "port_data_set": [
+                                    {
+                                        "interface": "{{ controller_1.nic1.nic_connection.interface }}",
+                                        "port_state": ["MASTER"],
+                                        "parent_port_identity": {
+                                            "name": "ptp1",
+                                            "hostname": "controller-1"
+                                        }
+                                    },
+                                    {
+                                        "interface": "{{ controller_1.nic1.conn_to_proxmox }}",
+                                        "port_state": "MASTER"
+                                    },
+                                ],
+                            },
+                        },
+                    ],
+                },
+            ],
         },
-        {"description": "Bring interface up", "operations": [{"name": "ctrl0_nic1_interface_up", "description": "Controller-0 NIC1 interface up scenario", "type": OperationType.interface, "status": "up", "interface_mapping": {"ptp_instance": "ptp1", "interface_name": "ptp1if1", "hostname": "controller-0"}}], "verification": [{"type": VerificationType.alarm, "timeout": 120, "alarms": [{"alarm_id": "100.119", "state": "clear", "severity": "major", "reason_text": "controller-1 is not locked to remote PTP Grand Master", "entity_id": "host=controller-1.instance=ptp1.ptp=no-lock"}]}, {"type": VerificationType.pmc_value, "timeout": 30, "pmc_values_overrides": [{"name": "ptp1", "controller-1": {"grandmaster_settings": {"clock_class": 165}}}]}]},
-        {"description": "Bring interface down", "operations": [{"name": "ctrl0_nic2_interface_down", "description": "Controller-0 NIC2 interface down scenario", "type": OperationType.interface, "status": "down", "interface_mapping": {"ptp_instance": "ptp3", "interface_name": "ptp3if1", "hostname": "controller-0"}}], "verification": [{"type": VerificationType.alarm, "timeout": 120, "alarms": [{"alarm_id": "100.119", "state": "set", "severity": "major", "reason_text": "controller-1 is not locked to remote PTP Grand Master", "entity_id": "host=controller-1.instance=ptp4.ptp=no-lock"}]}, {"type": VerificationType.pmc_value, "timeout": 30, "pmc_values": [{"name": "ptp4", "controller-1": {"parent_data_set": {"gm_clock_class": 165, "gm_clock_accuracy": "0xfe", "gm_offset_scaled_log_variance": "0xffff"}, "time_properties_data_set": {"current_utc_offset": 37, "current_utc_offset_valid": 0, "time_traceable": 0, "frequency_traceable": 0}, "grandmaster_settings": {"clock_class": 165, "clock_accuracy": "0xfe", "offset_scaled_log_variance": "0xffff", "time_traceable": 0, "frequency_traceable": 0, "time_source": "0xa0", "current_utc_offset_valid": 0}, "port_data_set": [{"interface": "{{ controller_1.nic2.nic_connection.interface }}", "port_state": "MASTER", "parent_port_identity": {"name": "ptp4", "hostname": "controller-1"}}, {"interface": "{{ controller_1.nic2.conn_to_proxmox }}", "port_state": "MASTER"}]}}]}]},
-        {"description": "Bring interface up", "operations": [{"name": "ctrl0_nic2_interface_up", "description": "Controller-0 NIC2 interface up scenario", "type": OperationType.interface, "status": "up", "interface_mapping": {"ptp_instance": "ptp3", "interface_name": "ptp3if1", "hostname": "controller-0"}}], "verification": [{"type": VerificationType.alarm, "timeout": 120, "alarms": [{"alarm_id": "100.119", "state": "clear", "severity": "major", "reason_text": "controller-1 is not locked to remote PTP Grand Master", "entity_id": "host=controller-1.instance=ptp1.ptp=no-lock"}]}, {"type": VerificationType.pmc_value, "timeout": 30, "pmc_values_overrides": [{"name": "ptp4", "controller-1": {"grandmaster_settings": {"clock_class": 165}}}]}]},
+        {
+            "description": "Bring interface up",
+            "operations": [
+                {
+                    "name": "ctrl0_nic1_interface_up",
+                    "description": "Controller-0 NIC1 interface up scenario",
+                    "type": OperationType.interface,
+                    "status": StatusConstants.interface_up,
+                    "interface_mapping": {"hostname": "controller-0", "nic": "nic1"},
+                }
+            ],
+            "verification": [
+                {
+                    "type": VerificationType.alarm,
+                    "timeout": 120,
+                    "alarms": [
+                        {
+                            "alarm_id": "100.119",
+                            "state": StatusConstants.alarm_clear,
+                            "severity": "major",
+                            "reason_text": "controller-1 is not locked to remote PTP Grand Master",
+                            "entity_id": "host=controller-1.instance=ptp1.ptp=no-lock"
+                        },
+                    ],
+                },
+                {
+                    "type": VerificationType.pmc_value,
+                    "timeout": 30,
+                    "pmc_values_overrides": [
+                        {
+                            "name": "ptp1",
+                            "controller-1": {
+                                "grandmaster_settings": {
+                                    "clock_class": 165
+                                }
+                            }
+                        }
+                    ]
+                },
+            ],
+        },
+        {
+            "description": "Bring interface down",
+            "operations": [
+                {
+                    "name": "ctrl0_nic2_interface_down",
+                    "description": "Controller-0 NIC2 interface down scenario",
+                    "type": OperationType.interface,
+                    "status": StatusConstants.interface_down,
+                    "interface_mapping": {"hostname": "controller-0", "nic": "nic2"},
+                }
+            ],
+            "verification": [
+                {
+                    "type": VerificationType.alarm,
+                    "timeout": 120,
+                    "alarms": [
+                        {
+                            "alarm_id": "100.119",
+                            "state": StatusConstants.alarm_set,
+                            "severity": "major",
+                            "reason_text": "controller-1 is not locked to remote PTP Grand Master",
+                            "entity_id": "host=controller-1.instance=ptp4.ptp=no-lock"
+                        },
+                    ],
+                },
+                {
+                    "type": VerificationType.pmc_value,
+                    "timeout": 30,
+                    "pmc_values": [
+                        {
+                            "name": "ptp4",
+                            "controller-1": {
+                                "parent_data_set": {
+                                    "gm_clock_class": 165,
+                                    "gm_clock_accuracy": "0xfe",
+                                    "gm_offset_scaled_log_variance": "0xffff"
+                                },
+                                "time_properties_data_set": {
+                                    "current_utc_offset": 37,
+                                    "current_utc_offset_valid": 0,
+                                    "time_traceable": 0,
+                                    "frequency_traceable": 0
+                                },
+                                "grandmaster_settings": {
+                                    "clock_class": 165,
+                                    "clock_accuracy": "0xfe",
+                                    "offset_scaled_log_variance": "0xffff",
+                                    "time_traceable": 0,
+                                    "frequency_traceable": 0,
+                                    "time_source": "0xa0",
+                                    "current_utc_offset_valid": 0
+                                },
+                                "port_data_set": [
+                                    {
+                                        "interface": "{{ controller_1.nic2.nic_connection.interface }}",
+                                        "port_state": "MASTER",
+                                        "parent_port_identity": {
+                                            "name": "ptp4",
+                                            "hostname": "controller-1"
+                                        }
+                                    },
+                                    {
+                                        "interface": "{{ controller_1.nic2.conn_to_proxmox }}",
+                                        "port_state": "MASTER"
+                                    },
+                                ],
+                            },
+                        },
+                    ],
+                },
+            ],
+        },
+        {
+            "description": "Bring interface up",
+            "operations": [
+                {
+                    "name": "ctrl0_nic2_interface_up",
+                    "description": "Controller-0 NIC2 interface up scenario",
+                    "type": OperationType.interface,
+                    "status": StatusConstants.interface_up,
+                    "interface_mapping": {"hostname": "controller-0", "nic": "nic2"},
+                }
+            ],
+            "verification": [
+                {
+                    "type": VerificationType.alarm,
+                    "timeout": 120,
+                    "alarms": [
+                        {
+                            "alarm_id": "100.119",
+                            "state": StatusConstants.alarm_clear,
+                            "severity": "major",
+                            "reason_text": "controller-1 is not locked to remote PTP Grand Master",
+                            "entity_id": "host=controller-1.instance=ptp1.ptp=no-lock"
+                        },
+                    ],
+                },
+                {
+                    "type": VerificationType.pmc_value,
+                    "timeout": 30,
+                    "pmc_values_overrides": [
+                        {
+                            "name": "ptp4",
+                            "controller-1": {
+                                "grandmaster_settings": {
+                                    "clock_class": 165
+                                }
+                            }
+                        }
+                    ]
+                },
+            ],
+        },
     ]
 
     resource_path = get_stx_resource_path(relative_path)
     lab_connect_keywords = LabConnectionKeywords()
     ssh_connection = lab_connect_keywords.get_active_controller_ssh()
     ptp_scenario_executor = PTPScenarioExecutorKeywords(ssh_connection, resource_path)
-    ptp_scenario_executor.execute_test_scenario(test_scenario)
+    ptp_scenario_executor.execute_test_scenario(test_scenario, request)
 
 
 @mark.p1
 @mark.lab_has_dx_plus_westport
-def test_ptp_operation_sma_disabled_and_enable():
+def test_ptp_operation_sma_disabled_and_enable(request):
     """
     Verify PTP operation and status changes when the SMA is disabled and then re-enabled.
 
@@ -140,17 +357,172 @@ def test_ptp_operation_sma_disabled_and_enable():
     Preconditions:
         - System is set up with valid PTP configuration as defined in ptp_data_westport_dx_plus_tgm_tbc.json5.
     """
-    test_scenario = [{"description": "Disable sma port", "operations": [{"name": "ctrl0_nic2_sma1_disable", "description": "Controller-0 NIC2 SMA1 disable scenario", "type": OperationType.sma, "status": "disable", "sma_config": {"hostname": "controller-0", "nic": "nic2", "ptp_instance": "ptp3"}}], "verification": [{"type": VerificationType.alarm, "timeout": 120, "alarms": [{"alarm_id": "100.119", "state": "set", "severity": "major", "reason_text": "controller-0 is not locked to remote PTP Grand Master", "entity_id": "host=controller-0.instance=ptp3.ptp=no-lock"}, {"alarm_id": "100.119", "state": "set", "severity": "major", "reason_text": "controller-0 1PPS signal loss state: LockStatus.HOLDOVER", "entity_id": "host=controller-0.interface={{ controller_0.nic2.nic_connection.interface }}.ptp=1PPS-signal-loss"}]}, {"type": VerificationType.pmc_value, "timeout": 30, "pmc_values_overrides": [{"name": "ptp3", "controller-0": {"parent_data_set": {"gm_clock_class": 7, "gm_clock_accuracy": "0xfe", "gm_offset_scaled_log_variance": "0xffff"}, "time_properties_data_set": {"current_utc_offset": 37, "current_utc_offset_valid": 0, "time_traceable": 1, "frequency_traceable": 1}, "grandmaster_settings": {"clock_class": 7, "clock_accuracy": "0xfe", "offset_scaled_log_variance": "0xffff", "time_traceable": 1, "frequency_traceable": 1, "time_source": "0xa0", "current_utc_offset_valid": 0}, "port_data_set": [{"interface": "{{ controller_0.nic2.nic_connection.interface }}", "port_state": "MASTER"}, {"interface": "{{ controller_0.nic2.conn_to_proxmox }}", "port_state": "MASTER"}]}}, {"name": "ptp4", "controller-1": {"parent_data_set": {"gm_clock_class": 7, "gm_clock_accuracy": "0xfe", "gm_offset_scaled_log_variance": "0xffff"}, "time_properties_data_set": {"current_utc_offset": 37, "current_utc_offset_valid": 0, "time_traceable": 1, "frequency_traceable": 1}, "grandmaster_settings": {"clock_class": [165, 248], "clock_accuracy": "0xfe", "offset_scaled_log_variance": "0xffff", "time_traceable": 0, "frequency_traceable": 0, "time_source": "0xa0", "current_utc_offset_valid": 0}, "port_data_set": [{"interface": "{{ controller_1.nic2.nic_connection.interface }}", "port_state": "SLAVE", "parent_port_identity": {"name": "ptp3", "hostname": "controller-0", "interface": "{{ controller_0.nic2.nic_connection.interface }}"}}, {"interface": "{{ controller_1.nic2.conn_to_proxmox }}", "port_state": "MASTER"}]}}]}]}, {"description": "Enable sma port", "operations": [{"name": "ctrl0_nic2_sma1_enable", "description": "Controller-0 NIC2 SMA1 enable scenario", "type": OperationType.sma, "status": "enable", "sma_config": {"hostname": "controller-0", "nic": "nic2", "ptp_instance": "ptp3"}}], "verification": [{"type": VerificationType.alarm, "timeout": 120, "alarms": [{"alarm_id": "100.119", "state": "clear", "severity": "major", "reason_text": "controller-0 is not locked to remote PTP Grand Master", "entity_id": "host=controller-0.instance=ptp3.ptp=no-lock"}, {"alarm_id": "100.119", "state": "set", "severity": "major", "reason_text": "controller-0 1PPS signal loss state: LockStatus.HOLDOVER", "entity_id": "host=controller-0.interface={interface}.ptp=1PPS-signal-loss"}]}, {"type": VerificationType.pmc_value, "timeout": 30, "pmc_values_overrides": []}]}]
+    test_scenario = [
+        {
+            "description": "Disable sma port",
+            "operations": [
+                {
+                    "name": "ctrl0_nic2_sma1_disable",
+                    "description": "Controller-0 NIC2 SMA1 disable scenario",
+                    "type": OperationType.sma,
+                    "status": StatusConstants.gnss_sma_disable,
+                    "sma_config": {"hostname": "controller-0", "nic": "nic2", "ptp_instance": "ptp3"},
+                }
+            ],
+            "verification": [
+                {
+                    "type": VerificationType.alarm,
+                    "timeout": 120,
+                    "alarms": [
+                        {
+                            "alarm_id": "100.119",
+                            "state": StatusConstants.alarm_set,
+                            "severity": "major",
+                            "reason_text": "controller-0 is not locked to remote PTP Grand Master",
+                            "entity_id": "host=controller-0.instance=ptp3.ptp=no-lock"
+                        },
+                        {
+                            "alarm_id": "100.119",
+                            "state": StatusConstants.alarm_set,
+                            "severity": "major",
+                            "reason_text": "controller-0 1PPS signal loss state: LockStatus.HOLDOVER",
+                            "entity_id": "host=controller-0.interface={{ controller_0.nic2.base_port }}.ptp=1PPS-signal-loss"
+                        },
+                    ],
+                },
+                {
+                    "type": VerificationType.pmc_value,
+                    "timeout": 30,
+                    "pmc_values_overrides": [
+                        {
+                            "name": "ptp3",
+                            "controller-0": {
+                                "parent_data_set": {
+                                    "gm_clock_class": 7,
+                                    "gm_clock_accuracy": "0xfe",
+                                    "gm_offset_scaled_log_variance": "0xffff"
+                                },
+                                "time_properties_data_set": {
+                                    "current_utc_offset": 37,
+                                    "current_utc_offset_valid": 0,
+                                    "time_traceable": 1,
+                                    "frequency_traceable": 1
+                                },
+                                "grandmaster_settings": {
+                                    "clock_class": 7,
+                                    "clock_accuracy": "0xfe",
+                                    "offset_scaled_log_variance": "0xffff",
+                                    "time_traceable": 1,
+                                    "frequency_traceable": 1,
+                                    "time_source": "0xa0",
+                                    "current_utc_offset_valid": 0
+                                },
+                                "port_data_set": [
+                                    {
+                                        "interface": "{{ controller_0.nic2.nic_connection.interface }}",
+                                        "port_state": "MASTER"
+                                    },
+                                    {
+                                        "interface": "{{ controller_0.nic2.conn_to_proxmox }}",
+                                        "port_state": "MASTER"
+                                    }
+                                ]
+                            }
+                        },
+                        {
+                            "name": "ptp4",
+                            "controller-1": {
+                                "parent_data_set": {
+                                    "gm_clock_class": 7,
+                                    "gm_clock_accuracy": "0xfe",
+                                    "gm_offset_scaled_log_variance": "0xffff"
+                                },
+                                "time_properties_data_set": {
+                                    "current_utc_offset": 37,
+                                    "current_utc_offset_valid": 0,
+                                    "time_traceable": 1,
+                                    "frequency_traceable": 1
+                                },
+                                "grandmaster_settings": {
+                                    "clock_class": [165, 248],
+                                    "clock_accuracy": "0xfe",
+                                    "offset_scaled_log_variance": "0xffff",
+                                    "time_traceable": 0,
+                                    "frequency_traceable": 0,
+                                    "time_source": "0xa0",
+                                    "current_utc_offset_valid": 0
+                                },
+                                "port_data_set": [
+                                    {
+                                        "interface": "{{ controller_1.nic2.nic_connection.interface }}",
+                                        "port_state": "SLAVE",
+                                        "parent_port_identity": {
+                                            "name": "ptp3",
+                                            "hostname": "controller-0",
+                                            "interface": "{{ controller_0.nic2.nic_connection.interface }}"
+                                        }
+                                    },
+                                    {
+                                        "interface": "{{ controller_1.nic2.conn_to_proxmox }}",
+                                        "port_state": "MASTER"
+                                    }
+                                ]
+                            }
+                        },
+                    ],
+                },
+            ],
+        },
+        {
+            "description": "Enable sma port",
+            "operations": [
+                {
+                    "name": "ctrl0_nic2_sma1_enable",
+                    "description": "Controller-0 NIC2 SMA1 enable scenario",
+                    "type": OperationType.sma,
+                    "status": StatusConstants.gnss_sma_enable,
+                    "sma_config": {"hostname": "controller-0", "nic": "nic2", "ptp_instance": "ptp3"},
+                }
+            ],
+            "verification": [
+                {
+                    "type": VerificationType.alarm,
+                    "timeout": 120,
+                    "alarms": [
+                        {
+                            "alarm_id": "100.119",
+                            "state": StatusConstants.alarm_clear,
+                            "severity": "major",
+                            "reason_text": "controller-0 is not locked to remote PTP Grand Master",
+                            "entity_id": "host=controller-0.instance=ptp3.ptp=no-lock"
+                        },
+                        {
+                            "alarm_id": "100.119",
+                            "state": StatusConstants.alarm_set,
+                            "severity": "major",
+                            "reason_text": "controller-0 1PPS signal loss state: LockStatus.HOLDOVER",
+                            "entity_id": "host=controller-0.interface={{ controller_0.nic2.base_port }}.ptp=1PPS-signal-loss"
+                        },
+                    ],
+                },
+                {
+                    "type": VerificationType.pmc_value,
+                    "timeout": 30,
+                    "pmc_values_overrides": []
+                },
+            ],
+        },
+    ]
 
     resource_path = get_stx_resource_path(relative_path)
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     ptp_scenario_executor = PTPScenarioExecutorKeywords(ssh_connection, resource_path)
-    ptp_scenario_executor.execute_test_scenario(test_scenario)
+    ptp_scenario_executor.execute_test_scenario(test_scenario, request)
 
 
 @mark.p1
 @mark.lab_has_dx_plus_westport
-def test_ptp_operation_gnss_off_and_on():
+def test_ptp_operation_gnss_off_and_on(request):
     """
     Verify PTP behavior when GNSS is powered off and then back on.
 
@@ -181,17 +553,221 @@ def test_ptp_operation_gnss_off_and_on():
         - time_traceable 1 → 0: Loss of traceable time reference
         - frequency_traceable 1 → 0: Loss of traceable frequency reference
     """
-    test_scenario = [{"description": "Turn off gnss signal", "operations": [{"name": "ctrl0_nic1_gnss_disable", "description": "Controller-0 NIC1 GNSS disable scenario", "type": OperationType.gnss, "status": "disable", "alarm_config": {"hostname": "controller-0", "nic": "nic1", "ptp_instance": "ptp1"}, "gnss_config": {"hostname": "controller-0", "nic": "nic1"}}], "verification": [{"type": VerificationType.alarm, "timeout": 120, "alarms": [{"alarm_id": "100.119", "state": "set", "severity": "major", "reason_text": "controller-0 is not locked to remote PTP Grand Master", "entity_id": "host=controller-0.instance=ptp1.ptp=no-lock"}, {"alarm_id": "100.119", "state": "set", "severity": "major", "reason_text": "controller-0 1PPS signal loss state: LockStatus.HOLDOVER", "entity_id": "host=controller-0.interface={interface}.ptp=1PPS-signal-loss"}, {"alarm_id": "100.119", "state": "set", "severity": "major", "reason_text": "controller-0 GNSS signal loss state: LockStatus.HOLDOVER", "entity_id": "host=controller-0.interface={interface}.ptp=GNSS-signal-loss"}]}, {"type": VerificationType.pmc_value, "timeout": 30, "pmc_values_overrides": [{"name": "ptp1", "controller-0": {"parent_data_set": {"gm_clock_class": 7, "gm_clock_accuracy": "0xfe", "gm_offset_scaled_log_variance": "0xffff"}, "time_properties_data_set": {"current_utc_offset": 37, "current_utc_offset_valid": 0, "time_traceable": 1, "frequency_traceable": 1}, "grandmaster_settings": {"clock_class": 7, "clock_accuracy": "0xfe", "offset_scaled_log_variance": "0xffff", "time_traceable": 1, "frequency_traceable": 1, "time_source": "0xa0", "current_utc_offset_valid": 0}, "port_data_set": [{"interface": "{{ controller_0.nic1.nic_connection.interface }}", "port_state": "MASTER"}, {"interface": "{{ controller_0.nic1.conn_to_proxmox }}", "port_state": "MASTER"}]}, "controller-1": {"parent_data_set": {"gm_clock_class": 7, "gm_clock_accuracy": "0xfe", "gm_offset_scaled_log_variance": "0xffff"}, "time_properties_data_set": {"current_utc_offset": 37, "current_utc_offset_valid": 0, "time_traceable": 1, "frequency_traceable": 1}, "grandmaster_settings": {"clock_class": [165, 248], "clock_accuracy": "0xfe", "offset_scaled_log_variance": "0xffff", "time_traceable": 0, "frequency_traceable": 0, "time_source": "0xa0", "current_utc_offset_valid": 0}, "port_data_set": [{"interface": "{{ controller_1.nic1.nic_connection.interface }}", "port_state": "SLAVE", "parent_port_identity": {"name": "ptp1", "hostname": "controller-0", "interface": "{{ controller_0.nic1.nic_connection.interface }}"}}, {"interface": "{{ controller_1.nic1.conn_to_proxmox }}", "port_state": "MASTER"}]}}, {"name": "ptp3", "controller-0": {"parent_data_set": {"gm_clock_class": 7, "gm_clock_accuracy": "0xfe", "gm_offset_scaled_log_variance": "0xffff"}, "time_properties_data_set": {"current_utc_offset": 37, "current_utc_offset_valid": 0, "time_traceable": 1, "frequency_traceable": 1}, "grandmaster_settings": {"clock_class": 7, "clock_accuracy": "0xfe", "offset_scaled_log_variance": "0xffff", "time_traceable": 1, "frequency_traceable": 1, "time_source": "0xa0", "current_utc_offset_valid": 0}, "port_data_set": [{"interface": "{{ controller_0.nic2.nic_connection.interface }}", "port_state": "MASTER"}, {"interface": "{{ controller_0.nic2.conn_to_proxmox }}", "port_state": "MASTER"}]}}, {"name": "ptp4", "controller-1": {"parent_data_set": {"gm_clock_class": 7, "gm_clock_accuracy": "0xfe", "gm_offset_scaled_log_variance": "0xffff"}, "time_properties_data_set": {"current_utc_offset": 37, "current_utc_offset_valid": 0, "time_traceable": 1, "frequency_traceable": 1}, "grandmaster_settings": {"clock_class": [165, 248], "clock_accuracy": "0xfe", "offset_scaled_log_variance": "0xffff", "time_traceable": 0, "frequency_traceable": 0, "time_source": "0xa0", "current_utc_offset_valid": 0}, "port_data_set": [{"interface": "{{ controller_1.nic2.nic_connection.interface }}", "port_state": "SLAVE", "parent_port_identity": {"name": "ptp3", "hostname": "controller-0", "interface": "{{ controller_0.nic2.nic_connection.interface }}"}}, {"interface": "{{ controller_1.nic2.conn_to_proxmox }}", "port_state": "MASTER"}]}}]}]}, {"description": "Turn on gnss signal", "operations": [{"name": "ctrl0_nic1_gnss_enable", "description": "Controller-0 NIC1 GNSS enable scenario", "type": OperationType.gnss, "status": "enable", "gnss_config": {"hostname": "controller-0", "nic": "nic1"}}], "verification": [{"type": VerificationType.alarm, "timeout": 120, "alarms": [{"alarm_id": "100.119", "state": "clear", "severity": "major", "reason_text": "controller-0 is not locked to remote PTP Grand Master", "entity_id": "host=controller-0.instance=ptp1.ptp=no-lock"}, {"alarm_id": "100.119", "state": "set", "severity": "major", "reason_text": "controller-0 1PPS signal loss state: LockStatus.HOLDOVER", "entity_id": "host=controller-0.interface={interface}.ptp=1PPS-signal-loss"}, {"alarm_id": "100.119", "state": "set", "severity": "major", "reason_text": "controller-0 GNSS signal loss state: LockStatus.HOLDOVER", "entity_id": "host=controller-0.interface={interface}.ptp=GNSS-signal-loss"}]}, {"type": VerificationType.pmc_value, "timeout": 30, "pmc_values_overrides": []}]}]
+    test_scenario = [
+        {
+            "description": "Turn off gnss signal",
+            "operations": [
+                {
+                    "name": "ctrl0_nic1_gnss_disable",
+                    "description": "Controller-0 NIC1 GNSS disable scenario",
+                    "type": OperationType.gnss,
+                    "status": StatusConstants.gnss_sma_disable,
+                    "gnss_config": {"hostname": "controller-0", "nic": "nic1"},
+                }
+            ],
+            "verification": [
+                {
+                    "type": VerificationType.alarm,
+                    "timeout": 120,
+                    "alarms": [
+                        {
+                            "alarm_id": "100.119",
+                            "state": StatusConstants.alarm_set,
+                            "severity": "major",
+                            "reason_text": "controller-0 is not locked to remote PTP Grand Master",
+                            "entity_id": "host=controller-0.instance=ptp1.ptp=no-lock"
+                        },
+                        {
+                            "alarm_id": "100.119",
+                            "state": StatusConstants.alarm_set,
+                            "severity": "major",
+                            "reason_text": "controller-0 1PPS signal loss state: LockStatus.HOLDOVER",
+                            "entity_id": "host=controller-0.interface={{ controller_0.nic1.base_port }}.ptp=1PPS-signal-loss"
+                        },
+                        {
+                            "alarm_id": "100.119",
+                            "state": StatusConstants.alarm_set,
+                            "severity": "major",
+                            "reason_text": "controller-0 GNSS signal loss state: LockStatus.HOLDOVER",
+                            "entity_id": "host=controller-0.interface={{ controller_0.nic1.base_port }}.ptp=GNSS-signal-loss"
+                        },
+                    ],
+                },
+                {
+                    "type": VerificationType.pmc_value,
+                    "timeout": 30,
+                    "pmc_values_overrides": [
+                        {
+                            "name": "ptp1",
+                            "controller-0": {
+                                "parent_data_set": {
+                                    "gm_clock_class": 7,
+                                    "gm_clock_accuracy": "0xfe",
+                                    "gm_offset_scaled_log_variance": "0xffff"
+                                },
+                                "time_properties_data_set": {
+                                    "current_utc_offset": 37,
+                                    "current_utc_offset_valid": 0,
+                                    "time_traceable": 1,
+                                    "frequency_traceable": 1
+                                },
+                                "grandmaster_settings": {
+                                    "clock_class": 7,
+                                    "clock_accuracy": "0xfe",
+                                    "offset_scaled_log_variance": "0xffff",
+                                    "time_traceable": 1,
+                                    "frequency_traceable": 1,
+                                    "time_source": "0xa0",
+                                    "current_utc_offset_valid": 0
+                                },
+                                "port_data_set": [
+                                    {
+                                        "interface": "{{ controller_0.nic1.nic_connection.interface }}",
+                                        "port_state": "MASTER"
+                                    },
+                                    {
+                                        "interface": "{{ controller_0.nic1.conn_to_proxmox }}",
+                                        "port_state": "MASTER"
+                                    },
+                                ]
+                            }
+                        },
+                        {
+                            "name": "ptp3",
+                            "controller-0": {
+                                "parent_data_set": {
+                                    "gm_clock_class": 7,
+                                    "gm_clock_accuracy": "0xfe",
+                                    "gm_offset_scaled_log_variance": "0xffff"
+                                },
+                                "time_properties_data_set": {
+                                    "current_utc_offset": 37,
+                                    "current_utc_offset_valid": 0,
+                                    "time_traceable": 1,
+                                    "frequency_traceable": 1
+                                },
+                                "grandmaster_settings": {
+                                    "clock_class": 7,
+                                    "clock_accuracy": "0xfe",
+                                    "offset_scaled_log_variance": "0xffff",
+                                    "time_traceable": 1,
+                                    "frequency_traceable": 1,
+                                    "time_source": "0xa0",
+                                    "current_utc_offset_valid": 0
+                                },
+                                "port_data_set": [
+                                    {
+                                        "interface": "{{ controller_0.nic2.nic_connection.interface }}",
+                                        "port_state": "MASTER"
+                                    },
+                                    {
+                                        "interface": "{{ controller_0.nic2.conn_to_proxmox }}",
+                                        "port_state": "MASTER"
+                                    },
+                                ]
+                            }
+                        },
+                        {
+                            "name": "ptp4",
+                            "controller-1": {
+                                "parent_data_set": {
+                                    "gm_clock_class": 7,
+                                    "gm_clock_accuracy": "0xfe",
+                                    "gm_offset_scaled_log_variance": "0xffff"
+                                },
+                                "time_properties_data_set": {
+                                    "current_utc_offset": 37,
+                                    "current_utc_offset_valid": 0,
+                                    "time_traceable": 1,
+                                    "frequency_traceable": 1
+                                },
+                                "grandmaster_settings": {
+                                    "clock_class": [165, 248],
+                                    "clock_accuracy": "0xfe",
+                                    "offset_scaled_log_variance": "0xffff",
+                                    "time_traceable": 0,
+                                    "frequency_traceable": 0,
+                                    "time_source": "0xa0",
+                                    "current_utc_offset_valid": 0
+                                },
+                                "port_data_set": [
+                                    {
+                                        "interface": "{{ controller_1.nic2.nic_connection.interface }}",
+                                        "port_state": "SLAVE",
+                                        "parent_port_identity": {
+                                            "name": "ptp3",
+                                            "hostname": "controller-0",
+                                            "interface": "{{ controller_0.nic2.nic_connection.interface }}"
+                                        }
+                                    },
+                                    {
+                                        "interface": "{{ controller_1.nic2.conn_to_proxmox }}",
+                                        "port_state": "MASTER"
+                                    },
+                                ]
+                            }
+                        },
+                    ],
+                },
+            ],
+        },
+        {
+            "description": "Turn on gnss signal",
+            "operations": [
+                {
+                    "name": "ctrl0_nic1_gnss_enable",
+                    "description": "Controller-0 NIC1 GNSS enable scenario",
+                    "type": OperationType.gnss,
+                    "status": StatusConstants.gnss_sma_enable,
+                    "gnss_config": {"hostname": "controller-0", "nic": "nic1"},
+                }
+            ],
+            "verification": [
+                {
+                    "type": VerificationType.alarm,
+                    "timeout": 120,
+                    "alarms": [
+                        {
+                            "alarm_id": "100.119",
+                            "state": StatusConstants.alarm_clear,
+                            "severity": "major",
+                            "reason_text": "controller-0 is not locked to remote PTP Grand Master",
+                            "entity_id": "host=controller-0.instance=ptp1.ptp=no-lock"
+                        },
+                        {
+                            "alarm_id": "100.119",
+                            "state": StatusConstants.alarm_clear,
+                            "severity": "major",
+                            "reason_text": "controller-0 1PPS signal loss state: LockStatus.HOLDOVER",
+                            "entity_id": "host=controller-0.interface={{ controller_0.nic1.base_port }}.ptp=1PPS-signal-loss"
+                        },
+                        {
+                            "alarm_id": "100.119",
+                            "state": StatusConstants.alarm_clear,
+                            "severity": "major",
+                            "reason_text": "controller-0 GNSS signal loss state: LockStatus.HOLDOVER",
+                            "entity_id": "host=controller-0.interface={{ controller_0.nic1.base_port }}.ptp=GNSS-signal-loss"
+                        },
+                    ],
+                },
+                {
+                    "type": VerificationType.pmc_value,
+                    "timeout": 30,
+                    "pmc_values_overrides": []
+                },
+            ],
+        },
+    ]
 
     resource_path = get_stx_resource_path(relative_path)
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     ptp_scenario_executor = PTPScenarioExecutorKeywords(ssh_connection, resource_path)
-    ptp_scenario_executor.execute_test_scenario(test_scenario)
+    ptp_scenario_executor.execute_test_scenario(test_scenario, request)
 
 
 @mark.p1
 @mark.lab_has_dx_plus_westport
-def test_ptp_operation_phc_ctl_time_change():
+def test_ptp_operation_phc_ctl_time_change(request):
     """
     Verify PTP behavior when the PHC (Precision Hardware Clock) is adjusted manually using `phc_ctl`
     and then returned to normal.
@@ -207,17 +783,98 @@ def test_ptp_operation_phc_ctl_time_change():
     Preconditions:
         - The system must have a valid PTP configuration as defined in `ptp_data_westport_dx_plus_tgm_tbc.json5`.
     """
-    test_scenario = [{"description": "phc_ctl time change", "operations": [{"name": "ctrl0_nic1_phc_ctl_time", "description": "Controller-0 NIC1 PHC control time change scenario", "type": OperationType.phc_ctl_loop, "status": "loop", "interface_mapping": {"ptp_instance": "ptp1", "interface_name": "ptp1if1", "hostname": "controller-0"}}], "verification": [{"type": VerificationType.alarm, "timeout": 120, "alarms": [{"alarm_id": "100.119", "state": "clear", "reason_text": "controller-0 Precision Time Protocol \\(PTP\\) clocking is out of tolerance by (\\d+\\.\\d+) (milli|micro)secs", "entity_id": "host=controller-0.instance=ptp3.ptp=out-of-tolerance"}, {"alarm_id": "100.119", "state": "clear", "reason_text": "controller-0 Precision Time Protocol \\(PTP\\) clocking is out of tolerance by (\\d+\\.\\d+) (milli|micro)secs", "entity_id": "host=controller-0.instance=ptp1.ptp=out-of-tolerance"}, {"alarm_id": "100.119", "state": "clear", "reason_text": "controller-1 Precision Time Protocol \\(PTP\\) clocking is out of tolerance by (\\d+\\.\\d+) (milli|micro)secs", "entity_id": "host=controller-1.instance=ptp1.ptp=out-of-tolerance"}]}, {"type": "pmc", "timeout": 30, "pmc_values_overrides": []}]}, {"description": "phc_ctl time change", "operations": [{"name": "ctrl1_nic2_phc_ctl_time", "description": "Controller-1 NIC2 PHC control time change scenario", "type": OperationType.phc_ctl_loop, "status": "loop", "interface_mapping": {"ptp_instance": "ptp4", "interface_name": "ptp4if1", "hostname": "controller-1"}}], "verification": [{"type": VerificationType.alarm, "timeout": 120, "alarms": [{"alarm_id": "100.119", "state": "clear", "reason_text": "controller-1 Precision Time Protocol \\(PTP\\) clocking is out of tolerance by (\\d+\\.\\d+) (milli|micro)secs", "entity_id": "host=controller-1.instance=ptp1.ptp=out-of-tolerance"}, {"alarm_id": "100.119", "state": "clear", "reason_text": "controller-1 Precision Time Protocol \\(PTP\\) clocking is out of tolerance by (\\d+\\.\\d+) (milli|micro)secs", "entity_id": "host=controller-1.instance=ptp4.ptp=out-of-tolerance"}]}, {"type": VerificationType.pmc_value, "timeout": 30, "pmc_values_overrides": []}]}]
+    test_scenario = [
+        {
+            "description": "phc_ctl time change",
+            "operations": [
+                {
+                    "name": "ctrl0_nic1_phc_ctl_time",
+                    "description": "Controller-0 NIC1 PHC control time change scenario",
+                    "type": OperationType.phc_ctl_loop,
+                    "status": "loop",
+                    "interface_mapping": {"hostname": "controller-0", "nic": "nic1"},
+                }
+            ],
+            "verification": [
+                {
+                    "type": VerificationType.alarm,
+                    "timeout": 120,
+                    "alarms": [
+                        {
+                            "alarm_id": "100.119",
+                            "state": StatusConstants.alarm_clear,
+                            "reason_text": "controller-0 Precision Time Protocol \\(PTP\\) clocking is out of tolerance by (\\d+\\.\\d+) (milli|micro)secs",
+                            "entity_id": "host=controller-0.instance=ptp3.ptp=out-of-tolerance"
+                        },
+                        {
+                            "alarm_id": "100.119",
+                            "state": StatusConstants.alarm_clear,
+                            "reason_text": "controller-0 Precision Time Protocol \\(PTP\\) clocking is out of tolerance by (\\d+\\.\\d+) (milli|micro)secs",
+                            "entity_id": "host=controller-0.instance=ptp1.ptp=out-of-tolerance"
+                        },
+                        {
+                            "alarm_id": "100.119",
+                            "state": StatusConstants.alarm_clear,
+                            "reason_text": "controller-1 Precision Time Protocol \\(PTP\\) clocking is out of tolerance by (\\d+\\.\\d+) (milli|micro)secs",
+                            "entity_id": "host=controller-1.instance=ptp1.ptp=out-of-tolerance"
+                        },
+                    ],
+                },
+                {
+                    "type": VerificationType.pmc_value,
+                    "timeout": 30,
+                    "pmc_values_overrides": []
+                },
+            ],
+        },
+        {
+            "description": "phc_ctl time change",
+            "operations": [
+                {
+                    "name": "ctrl1_nic2_phc_ctl_time",
+                    "description": "Controller-1 NIC2 PHC control time change scenario",
+                    "type": OperationType.phc_ctl_loop,
+                    "status": "loop",
+                    "interface_mapping": {"hostname": "controller-1", "nic": "nic2"},
+                }
+            ],
+            "verification": [
+                {
+                    "type": VerificationType.alarm,
+                    "timeout": 120,
+                    "alarms": [
+                        {
+                            "alarm_id": "100.119",
+                            "state": StatusConstants.alarm_clear,
+                            "reason_text": "controller-1 Precision Time Protocol \\(PTP\\) clocking is out of tolerance by (\\d+\\.\\d+) (milli|micro)secs",
+                            "entity_id": "host=controller-1.instance=ptp1.ptp=out-of-tolerance"
+                        },
+                        {
+                            "alarm_id": "100.119",
+                            "state": StatusConstants.alarm_clear,
+                            "reason_text": "controller-1 Precision Time Protocol \\(PTP\\) clocking is out of tolerance by (\\d+\\.\\d+) (milli|micro)secs",
+                            "entity_id": "host=controller-1.instance=ptp4.ptp=out-of-tolerance"
+                        },
+                    ],
+                },
+                {
+                    "type": VerificationType.pmc_value,
+                    "timeout": 30,
+                    "pmc_values_overrides": []
+                },
+            ],
+        },
+    ]
 
     resource_path = get_stx_resource_path(relative_path)
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     ptp_scenario_executor = PTPScenarioExecutorKeywords(ssh_connection, resource_path)
-    ptp_scenario_executor.execute_test_scenario(test_scenario)
+    ptp_scenario_executor.execute_test_scenario(test_scenario, request)
 
 
 @mark.p1
 @mark.lab_has_dx_plus_westport
-def test_ptp_operation_service_stop_start_restart():
+def test_ptp_operation_service_stop_start_restart(request):
     """
     Verify Precision Time Protocol (PTP) behavior when the PTP service is stopped, started, and restarted.
 
@@ -234,12 +891,185 @@ def test_ptp_operation_service_stop_start_restart():
     Preconditions:
         - System is configured with a valid PTP setup (as per ptp_data_westport_dx_plus_tgm_tbc.json5).
     """
-    test_scenario = [{"description": "service stop", "operations": [{"name": "ctrl0_ptp1_service_stop", "description": "Controller-0 PTP1 service stop scenario", "type": OperationType.service, "status": "stop", "service_config": {"service_name": "ptp4l", "instance_name": "ptp1"}}], "verification": [{"type": VerificationType.service_status, "timeout": 30, "service_status": [{"service_name": "ptp4l", "instance_name": "ptp1", "expected_status": "inactive (dead)"}]}, {"type": VerificationType.alarm, "timeout": 120, "alarms": [{"alarm_id": "100.119", "state": "set", "severity": "major", "reason_text": "controller-0 PTP service ptp4l@ptp1.service enabled but not running", "entity_id": "host=controller-0.instance=ptp1.ptp"}, {"alarm_id": "100.119", "state": "set", "severity": "major", "reason_text": "controller-1 is not locked to remote PTP Grand Master", "entity_id": "host=controller-1.instance=ptp1.ptp=no-lock"}]}, {"type": VerificationType.pmc_value, "timeout": 30, "pmc_values": [{"name": "ptp1", "controller-0": {"parent_data_set": {"gm_clock_class": -1, "gm_clock_accuracy": "", "gm_offset_scaled_log_variance": ""}, "time_properties_data_set": {"current_utc_offset": -1, "current_utc_offset_valid": -1, "time_traceable": -1, "frequency_traceable": -1}, "grandmaster_settings": {"clock_class": -1, "clock_accuracy": "", "offset_scaled_log_variance": "", "time_traceable": -1, "frequency_traceable": -1, "time_source": "", "current_utc_offset_valid": -1}, "port_data_set": [{"interface": "{{ controller_1.nic1.nic_connection.interface }}", "port_state": ""}, {"interface": "{{ controller_1.nic1.conn_to_proxmox }}", "port_state": ""}]}, "controller-1": {"parent_data_set": {"gm_clock_class": 165, "gm_clock_accuracy": "0xfe", "gm_offset_scaled_log_variance": "0xffff"}, "time_properties_data_set": {"current_utc_offset": 37, "current_utc_offset_valid": 0, "time_traceable": 0, "frequency_traceable": 0}, "grandmaster_settings": {"clock_class": 165, "clock_accuracy": "0xfe", "offset_scaled_log_variance": "0xffff", "time_traceable": 0, "frequency_traceable": 0, "time_source": "0xa0", "current_utc_offset_valid": 0}, "port_data_set": [{"interface": "{{ controller_1.nic1.nic_connection.interface }}", "port_state": "MASTER"}, {"interface": "{{ controller_1.nic1.conn_to_proxmox }}", "port_state": "MASTER"}]}}]}]}, {"description": "service start", "operations": [{"name": "ctrl0_ptp1_service_start", "description": "Controller-0 PTP1 service start scenario", "type": OperationType.service, "status": "start", "service_config": {"service_name": "ptp4l", "instance_name": "ptp1"}}], "verification": [{"type": VerificationType.service_status, "timeout": 30, "service_status": [{"service_name": "ptp4l", "instance_name": "ptp1", "expected_status": "active (running)"}]}, {"type": VerificationType.alarm, "timeout": 120, "alarms": [{"alarm_id": "100.119", "state": "clear", "severity": "major", "reason_text": "controller-0 PTP service ptp4l@ptp1.service enabled but not running", "entity_id": "host=controller-0.instance=ptp1.ptp"}, {"alarm_id": "100.119", "state": "set", "severity": "major", "reason_text": "controller-1 is not locked to remote PTP Grand Master", "entity_id": "host=controller-1.instance=ptp1.ptp=no-lock"}]}, {"type": VerificationType.pmc_value, "timeout": 30, "pmc_values_overrides": []}]}, {"description": "service restart", "operations": [{"name": "ctrl0_ptp1_service_restart", "description": "Controller-0 PTP1 service restart scenario", "type": OperationType.service, "status": "restart", "service_config": {"service_name": "ptp4l", "instance_name": "ptp1"}}], "verification": [{"type": VerificationType.service_status, "timeout": 30, "service_status": [{"service_name": "ptp4l", "instance_name": "ptp1", "expected_status": "active (running)"}]}, {"type": VerificationType.alarm, "timeout": 120, "alarms": [{"alarm_id": "100.119", "state": "clear", "severity": "major", "reason_text": "controller-0 PTP service ptp4l@ptp1.service enabled but not running", "entity_id": "host=controller-0.instance=ptp1.ptp"}, {"alarm_id": "100.119", "state": "set", "severity": "major", "reason_text": "controller-1 is not locked to remote PTP Grand Master", "entity_id": "host=controller-1.instance=ptp1.ptp=no-lock"}]}, {"type": VerificationType.pmc_value, "timeout": 30, "pmc_values_overrides": []}]}]
+    test_scenario = [
+        {
+            "description": "service stop",
+            "operations": [
+                {
+                    "name": "ctrl0_ptp1_service_stop",
+                    "description": "Controller-0 PTP1 service stop scenario",
+                    "type": OperationType.service,
+                    "status": StatusConstants.service_stop,
+                    "service_config": {"service_name": "ptp4l", "instance_name": "ptp1"},
+                }
+            ],
+            "verification": [
+                {
+                    "type": VerificationType.service_status,
+                    "timeout": 30,
+                    "service_status": [{"service_name": "ptp4l", "instance_name": "ptp1", "expected_status": "inactive (dead)"}],
+                },
+                {
+                    "type": VerificationType.alarm,
+                    "timeout": 120,
+                    "alarms": [
+                        {
+                            "alarm_id": "100.119",
+                            "state": StatusConstants.alarm_set,
+                            "severity": "major",
+                            "reason_text": "controller-0 PTP service ptp4l@ptp1.service enabled but not running",
+                            "entity_id": "host=controller-0.instance=ptp1.ptp"
+                        },
+                        {
+                            "alarm_id": "100.119",
+                            "state": StatusConstants.alarm_set,
+                            "severity": "major",
+                            "reason_text": "controller-1 is not locked to remote PTP Grand Master",
+                            "entity_id": "host=controller-1.instance=ptp1.ptp=no-lock"
+                        },
+                    ],
+                },
+                {
+                    "type": VerificationType.pmc_value,
+                    "timeout": 30,
+                    "pmc_values": [
+                        {
+                            "name": "ptp1",
+                            "controller-0": {
+                                "parent_data_set": {
+                                    "gm_clock_class": -1,
+                                    "gm_clock_accuracy": "",
+                                    "gm_offset_scaled_log_variance": ""
+                                },
+                                "time_properties_data_set": {
+                                    "current_utc_offset": -1,
+                                    "current_utc_offset_valid": -1,
+                                    "time_traceable": -1,
+                                    "frequency_traceable": -1
+                                },
+                                "grandmaster_settings": {
+                                    "clock_class": -1,
+                                    "clock_accuracy": "",
+                                    "offset_scaled_log_variance": "",
+                                    "time_traceable": -1,
+                                    "frequency_traceable": -1,
+                                    "time_source": "",
+                                    "current_utc_offset_valid": -1
+                                },
+                                "port_data_set": [
+                                    {
+                                        "interface": "{{ controller_1.nic1.nic_connection.interface }}",
+                                        "port_state": ""
+                                    },
+                                    {
+                                        "interface": "{{ controller_1.nic1.conn_to_proxmox }}",
+                                        "port_state": ""
+                                    },
+                                ]
+                            }
+                        },
+                    ],
+                },
+            ],
+        },
+        {
+            "description": "service start",
+            "operations": [
+                {
+                    "name": "ctrl0_ptp1_service_start",
+                    "description": "Controller-0 PTP1 service start scenario",
+                    "type": OperationType.service,
+                    "status": StatusConstants.service_start,
+                    "service_config": {"service_name": "ptp4l", "instance_name": "ptp1"},
+                }
+            ],
+            "verification": [
+                {
+                    "type": VerificationType.service_status,
+                    "timeout": 30,
+                    "service_status": [{"service_name": "ptp4l", "instance_name": "ptp1", "expected_status": "active (running)"}],
+                },
+                {
+                    "type": VerificationType.alarm,
+                    "timeout": 120,
+                    "alarms": [
+                        {
+                            "alarm_id": "100.119",
+                            "state": StatusConstants.alarm_clear,
+                            "severity": "major",
+                            "reason_text": "controller-0 PTP service ptp4l@ptp1.service enabled but not running",
+                            "entity_id": "host=controller-0.instance=ptp1.ptp"
+                        },
+                        {
+
+                            "alarm_id": "100.119",
+                            "state": StatusConstants.alarm_set,
+                            "severity": "major",
+                            "reason_text": "controller-1 is not locked to remote PTP Grand Master",
+                            "entity_id": "host=controller-1.instance=ptp1.ptp=no-lock"
+                        },
+                    ],
+                },
+                {
+
+                    "type": VerificationType.pmc_value,
+                    "timeout": 30,
+                    "pmc_values_overrides": []
+                },
+            ],
+        },
+        {
+            "description": "service restart",
+            "operations": [
+                {
+                    "name": "ctrl0_ptp1_service_restart",
+                    "description": "Controller-0 PTP1 service restart scenario",
+                    "type": OperationType.service,
+                    "status": StatusConstants.service_restart,
+                    "service_config": {"service_name": "ptp4l", "instance_name": "ptp1"},
+                }
+            ],
+            "verification": [
+                {
+                    "type": VerificationType.service_status,
+                    "timeout": 30,
+                    "service_status": [{"service_name": "ptp4l", "instance_name": "ptp1", "expected_status": "active (running)"}],
+                },
+                {
+                    "type": VerificationType.alarm,
+                    "timeout": 120,
+                    "alarms": [
+                        {
+                            "alarm_id": "100.119",
+                            "state": StatusConstants.alarm_clear,
+                            "severity": "major",
+                            "reason_text": "controller-0 PTP service ptp4l@ptp1.service enabled but not running",
+                            "entity_id": "host=controller-0.instance=ptp1.ptp"
+                        },
+                        {
+                            "alarm_id": "100.119",
+                            "state": StatusConstants.alarm_set,
+                            "severity": "major",
+                            "reason_text": "controller-1 is not locked to remote PTP Grand Master",
+                            "entity_id": "host=controller-1.instance=ptp1.ptp=no-lock"
+                        },
+                    ],
+                },
+                {
+
+                    "type": VerificationType.pmc_value,
+                    "timeout": 30,
+                    "pmc_values_overrides": []
+
+                },
+            ],
+        },
+    ]
 
     resource_path = get_stx_resource_path(relative_path)
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     ptp_scenario_executor = PTPScenarioExecutorKeywords(ssh_connection, resource_path)
-    ptp_scenario_executor.execute_test_scenario(test_scenario)
+    ptp_scenario_executor.execute_test_scenario(test_scenario, request)
 
 
 @mark.p1
@@ -449,7 +1279,67 @@ def test_proxmox_ptp_vm_verification(request):
     Preconditions:
         - System is set up with valid PTP configuration as defined in ptp_data_westport_dx_plus_tgm_tbc.json5.
     """
-    test_scenario = [{"description": "Proxmox PTP VM verification scenario", "operations": [{"name": "proxmox_ptp_vm", "description": "Proxmox PTP VM verification scenario", "type": OperationType.proxmox, "status": "pass", "proxmox_config": {"hostname": "controller-0", "nic": "nic1", "ptp_config_file": "/etc/ptp4l.conf", "ptp_instance": "ptp1", "validation_hostname": "controller-0", "expected_port_state": "SLAVE", "master_ptp_config_path": "/etc/linuxptp/ptpinstance/ptp4l-ptp1.conf", "master_ptp_uds_path": "/var/run/ptp4l-ptp1"}}], "verification": [{"type": VerificationType.alarm, "timeout": 120, "alarms": []}, {"type": VerificationType.pmc_value, "timeout": 30, "pmc_values": [{"name": "ptp1", "controller-0": {"parent_data_set": {"gm_clock_class": 6, "gm_clock_accuracy": "0x20", "gm_offset_scaled_log_variance": "0x4e5d"}, "time_properties_data_set": {"current_utc_offset": 37, "current_utc_offset_valid": 0, "time_traceable": 1, "frequency_traceable": 1}, "grandmaster_settings": {"clock_class": 6, "clock_accuracy": "0x20", "offset_scaled_log_variance": "0x4e5d", "time_traceable": 1, "frequency_traceable": 1, "time_source": "0x20", "current_utc_offset_valid": 0}}}]}]}]
+    test_scenario = [
+        {
+            "description": "Proxmox PTP VM verification scenario",
+            "operations": [
+                {
+                    "name": "proxmox_ptp_vm",
+                    "description": "Proxmox PTP VM verification scenario",
+                    "type": OperationType.proxmox,
+                    "status": "pass",
+                    "proxmox_config": {
+                        "hostname": "controller-0",
+                        "nic": "nic1",
+                        "ptp_config_file": "/etc/ptp4l.conf",
+                        "ptp_instance": "ptp1",
+                        "validation_hostname": "controller-0",
+                        "expected_port_state": "SLAVE",
+                        "master_ptp_config_path": "/etc/linuxptp/ptpinstance/ptp4l-ptp1.conf",
+                        "master_ptp_uds_path": "/var/run/ptp4l-ptp1"
+                    }
+                }
+            ],
+            "verification": [
+                {
+                    "type": VerificationType.alarm,
+                    "timeout": 120,
+                    "alarms": []
+                },
+                {
+                    "type": VerificationType.pmc_value,
+                    "timeout": 30,
+                    "pmc_values": [
+                        {
+                            "name": "ptp1",
+                            "controller-0": {
+                                "parent_data_set": {
+                                    "gm_clock_class": 6,
+                                    "gm_clock_accuracy": "0x20",
+                                    "gm_offset_scaled_log_variance": "0x4e5d"
+                                },
+                                "time_properties_data_set": {
+                                    "current_utc_offset": 37,
+                                    "current_utc_offset_valid": 0,
+                                    "time_traceable": 1,
+                                    "frequency_traceable": 1
+                                },
+                                "grandmaster_settings": {
+                                    "clock_class": 6,
+                                    "clock_accuracy": "0x20",
+                                    "offset_scaled_log_variance": "0x4e5d",
+                                    "time_traceable": 1,
+                                    "frequency_traceable": 1,
+                                    "time_source": "0x20",
+                                    "current_utc_offset_valid": 0
+                                },
+                            },
+                        }
+                    ],
+                },
+            ],
+        }
+    ]
 
     resource_path = get_stx_resource_path(relative_path)
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
