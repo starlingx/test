@@ -51,6 +51,7 @@ class USMConfig:
         self.software_delete_timeout_sec = usm_dict.get("software_delete_timeout_sec", 300)
         self.deploy_delete_timeout_sec = usm_dict.get("deploy_delete_timeout_sec", 300)
         self.deploy_start_timeout_sec = usm_dict.get("deploy_start_timeout_sec", 1200)
+        self.deploy_host_timeout_sec = usm_dict.get("deploy_host_timeout_sec", 1800)
         self.subcloud_group = usm_dict.get("subcloud_group", "Default")
         self.subcloud_name = usm_dict.get("subcloud_name", "None")
 
