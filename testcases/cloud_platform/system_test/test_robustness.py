@@ -1,7 +1,9 @@
-from time import time
+import math
+import time
 from pytest import mark
 
 from framework.logging.automation_logger import get_logger
+from framework.validation.validation import validate_equals
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.cloud_platform.system.host.system_host_list_keywords import SystemHostListKeywords
 from keywords.cloud_platform.system.host.system_host_lock_keywords import SystemHostLockKeywords
@@ -12,6 +14,7 @@ from keywords.system_test.kpi_extractor import KpiExtractor
 from keywords.system_test.setup_stress_pods import SetupStressPods
 
 @mark.p0
+@mark.lab_has_standby_controller
 def test_standby_controller_lock_unlock():
     """
     Test lock and unlock operations on standby controller.
@@ -28,7 +31,7 @@ def test_standby_controller_lock_unlock():
     log_extractor = KpiExtractor(ssh_connection)
 
     standby_controller = host_list_keywords.get_standby_controller()
-    assert standby_controller is not None, "No standby controller available for testing"
+    validate_equals(standby_controller is not None, True, "No standby controller available for testing")
 
     stress_pods = SetupStressPods(ssh_connection)
     stress_pods.setup_stress_pods(benchmark="mixed") 
@@ -45,9 +48,9 @@ def test_standby_controller_lock_unlock():
     get_logger().log_info(f"Standby controller {standby_name} unlocked successfully")
 
     get_logger().log_info("Measuring time for all pods to be running...")
-    start_pod_check = time()
+    start_pod_check = time.time()
     pod_keywords.wait_for_all_pods_status(["Running", "Succeeded", "Completed"], timeout=600)
-    pod_readiness_time = time() - start_pod_check
+    pod_readiness_time = time.time() - start_pod_check
     get_logger().log_info(f"All pods ready in {pod_readiness_time:.2f} seconds")
 
     get_logger().log_info("Extracting lock/unlock timings from logs...")
@@ -81,7 +84,7 @@ def test_lock_unlock_simplex():
 
     # Check if system is simplex
     system_type = system_show_keywords.system_show().get_system_show_object().get_system_type()
-    assert system_type == "All-in-one", f"Test only valid for simplex systems"
+    validate_equals(system_type, "All-in-one", "Test only valid for simplex systems")
 
     active_controller = host_list_keywords.get_active_controller()
     active_name = active_controller.get_host_name()
@@ -96,9 +99,9 @@ def test_lock_unlock_simplex():
     get_logger().log_info(f"Active controller {active_name} unlocked successfully")
 
     get_logger().log_info("Measuring time for all pods to be running...")
-    start_pod_check = time()
+    start_pod_check = time.time()
     pod_keywords.wait_for_all_pods_status(["Running", "Succeeded", "Completed"], timeout=600)
-    pod_readiness_time = time() - start_pod_check
+    pod_readiness_time = time.time() - start_pod_check
     get_logger().log_info(f"All pods ready in {pod_readiness_time:.2f} seconds")
 
     get_logger().log_info("Extracting lock/unlock timings from logs...")
@@ -108,4 +111,135 @@ def test_lock_unlock_simplex():
     get_logger().log_info(f"Lock operation completed in {lock_time:.2f} seconds (from logs)")
     get_logger().log_info(f"Unlock operation completed in {unlock_time:.2f} seconds (from logs)")
     timing_logger.log_timings(lock_time, unlock_time, pod_readiness_time)
-    get_logger().log_info(f"Active controller {active_name} lock/unlock test completed successfully")
+
+@mark.p0
+@mark.lab_has_compute
+def test_lock_unlock_multiple_workers():
+    """
+    Test lock and unlock operations on worker nodes.
+
+    This test verifies that worker nodes can be successfully locked and unlocked,
+    measuring pod migration time, host availability time, host enable time, and pod recovery time.
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    host_list_keywords = SystemHostListKeywords(ssh_connection)
+    host_keywords = SystemHostLockKeywords(ssh_connection)
+    pod_keywords = KubectlGetPodsKeywords(ssh_connection)
+    timing_logger = TimingLogger("worker_lock_unlock", 
+                                 column_headers=["Pod Migration Time (s)", "Hosts Available Time (s)", 
+                                                "Hosts Enabled Time (s)", "Pod Recovery Time (s)"])
+    log_extractor = KpiExtractor(ssh_connection)
+
+    workers = host_list_keywords.get_computes()
+    validate_equals(bool(workers), True, "No worker nodes available for testing")
+
+    num_workers = math.ceil(len(workers) / 3)
+    workers_to_test = workers[:num_workers]
+    worker_names = [w.get_host_name() for w in workers_to_test]
+    get_logger().log_info(f"Testing lock/unlock on {num_workers} worker(s): {worker_names}")
+
+    stress_pods = SetupStressPods(ssh_connection)
+    stress_pods.setup_stress_pods(benchmark="mixed")
+
+    get_logger().log_test_case_step(f"Locking worker(s) {worker_names}...")
+    lock_start = time.time()
+    for worker_name in worker_names:
+        host_keywords.lock_host(worker_name)
+
+    get_logger().log_test_case_step("Measuring time for pod migration...")
+    pod_keywords.wait_for_all_pods_status(["Running", "Succeeded", "Completed"], timeout=600)
+    pod_migration_time = time.time() - lock_start
+    get_logger().log_info(f"Pods migrated in {pod_migration_time:.2f} seconds")
+
+    get_logger().log_test_case_step(f"Unlocking worker(s) {worker_names}...")
+    for worker_name in worker_names:
+        host_keywords.unlock_host(worker_name)
+    get_logger().log_info(f"Worker(s) {worker_names} unlocked successfully")
+
+    get_logger().log_test_case_step("Waiting for hosts to be unlocked (available and enabled)...")
+    for worker_name in worker_names:
+        validate_equals(
+            host_keywords.wait_for_host_unlocked(worker_name, unlock_wait_timeout=600),
+            True,
+            f"Host {worker_name} should be unlocked after unlock operation"
+        )
+
+    get_logger().log_info("Waiting for all pods to be running...")
+    recovery_start = time.time()
+    pod_keywords.wait_for_all_pods_status(["Running", "Succeeded", "Completed"], timeout=600)
+    pod_recovery_time = time.time() - recovery_start
+    get_logger().log_info(f"All pods recovered in {pod_recovery_time:.2f} seconds")
+
+    get_logger().log_info("Extracting timing from logs...")
+    hosts_available_time = log_extractor.extract_max_timing_for_hosts(worker_names, 'extract_unlock_to_available_timing')
+    hosts_enabled_time = log_extractor.extract_max_timing_for_hosts(worker_names, 'extract_unlock_to_enabled_timing')
+    get_logger().log_info(f"Max host available time: {hosts_available_time:.2f} seconds (from logs)")
+    get_logger().log_info(f"Max host enabled time: {hosts_enabled_time:.2f} seconds (from logs)")
+
+    timing_logger.log_timings(pod_migration_time, hosts_available_time, hosts_enabled_time, pod_recovery_time)
+    get_logger().log_info(f"Worker(s) {worker_names} lock/unlock test completed successfully")
+
+
+@mark.p0
+@mark.lab_has_compute
+def test_reboot_multiple_workers():
+    """
+    Test hard reboot operations on worker nodes without lock/unlock.
+
+    This test verifies that worker nodes can be successfully hard rebooted,
+    measuring pod migration time, host availability time, host enable time, and pod recovery time.
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    host_list_keywords = SystemHostListKeywords(ssh_connection)
+    host_lock_keywords = SystemHostLockKeywords(ssh_connection)
+    pod_keywords = KubectlGetPodsKeywords(ssh_connection)
+    timing_logger = TimingLogger("worker_reboot", 
+                                 column_headers=["Pod Migration Time (s)", "Hosts Available Time (s)", 
+                                                "Hosts Enabled Time (s)", "Pod Recovery Time (s)"])
+    log_extractor = KpiExtractor(ssh_connection)
+
+    workers = host_list_keywords.get_computes()
+    validate_equals(bool(workers), True, "No worker nodes available for testing")
+
+    num_workers = math.ceil(len(workers) / 3)
+    workers_to_test = workers[:num_workers]
+    worker_names = [w.get_host_name() for w in workers_to_test]
+
+    stress_pods = SetupStressPods(ssh_connection)
+    stress_pods.setup_stress_pods(benchmark="mixed")
+
+    get_logger().log_test_case_step(f"Hard rebooting worker(s) {worker_names}...")
+    reboot_start = time.time()
+    lab_connection = LabConnectionKeywords()
+    for worker_name in worker_names:
+        worker_ssh = lab_connection.get_compute_ssh(worker_name)
+        worker_ssh.send_as_sudo("reboot")
+    get_logger().log_info(f"Reboot command issued for worker(s) {worker_names}")
+
+    get_logger().log_test_case_step("Waiting for pod migration...")
+    pod_keywords.wait_for_all_pods_status(["Running", "Succeeded", "Completed", "Pending"], timeout=600)
+    pod_migration_time = time.time() - reboot_start
+    get_logger().log_info(f"Pods migrated in {pod_migration_time:.2f} seconds")
+
+    # Allow some time for the hosts to change state to unavailable after reboot
+    time.sleep(30)
+    get_logger().log_test_case_step("Waiting for hosts to be unlocked (available and enabled)...")
+    for worker_name in worker_names:
+        validate_equals(
+            host_lock_keywords.wait_for_host_unlocked(worker_name, unlock_wait_timeout=600),
+            True,
+            f"Host {worker_name} should be unlocked after reboot"
+        )
+
+    recovery_start = time.time()
+    get_logger().log_test_case_step("Waiting for all pods to be running...")
+    pod_keywords.wait_for_all_pods_status(["Running", "Succeeded", "Completed"], timeout=600)
+    pod_recovery_time = time.time() - recovery_start
+    get_logger().log_info(f"All pods recovered in {pod_recovery_time:.2f} seconds")
+
+    get_logger().log_test_case_step("Extracting timing from logs...")
+    hosts_available_time = log_extractor.extract_max_timing_for_hosts(worker_names, 
+                                                                      'extract_reboot_to_available_timing')
+    hosts_enabled_time = log_extractor.extract_max_timing_for_hosts(worker_names, 
+                                                                    'extract_reboot_to_enabled_timing')
+    timing_logger.log_timings(pod_migration_time, hosts_available_time, hosts_enabled_time, pod_recovery_time)

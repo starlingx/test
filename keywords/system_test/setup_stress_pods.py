@@ -84,7 +84,8 @@ class SetupStressPods:
         start_deploy = time()
         for dep_yaml in deployment_files:
             pod_applier.apply_from_yaml(f"{remote_deployments_dir}/{dep_yaml}", namespace=namespace)
-            validate_equals(pod_getter.wait_for_all_pods_status(expected_statuses=["Running", "Completed"]), True, "Logs reached expected state")
+        
+        validate_equals(pod_getter.wait_for_all_pods_status(expected_statuses=["Running", "Completed"]), True, "Logs reached expected state")
         deploy_time = time() - start_deploy
         get_logger().log_info(f"Time to deploy pods for the first time: {deploy_time:.2f} seconds")
 
@@ -94,7 +95,8 @@ class SetupStressPods:
 
         return deploy_time, scale_up_time
 
-    def _setup_upload_files(self, local_services_dir: str, remote_services_dir: str, local_deployments_dir: str, remote_deployments_dir: str) -> None:
+    def _setup_upload_files(self, local_services_dir: str, remote_services_dir: str, 
+                           local_deployments_dir: str, remote_deployments_dir: str) -> None:
         """
         Upload necessary files to the controller node for the pod scaling test.
 
