@@ -243,3 +243,26 @@ class DCManagerSubcloudDeployKeywords(BaseKeyword):
         if isinstance(output, list) and len(output) > 0:
             return "\n".join(line.strip() for line in output)
         return output.strip() if isinstance(output, str) else str(output)
+
+    def dcmanager_subcloud_redeploy(self, subcloud_name: str, install_values: str, wait_for_status: bool):
+        """
+        Redeploy the subcloud using 'dcmanager subcloud redeploy' command.
+
+        Args:
+            subcloud_name (str): subcloud name.
+            install_values (str): install-values.yml file path. Default to use install values file from deployment assets.
+            wait_for_status (bool): If true waits for a 'complete' status.
+        """
+
+        # Get the subcloud config
+        deployment_assets_config = ConfigurationManager.get_deployment_assets_config()
+        sc_config = ConfigurationManager.get_lab_config().get_subcloud(subcloud_name)
+        sc_assets = deployment_assets_config.get_subcloud_deployment_assets(subcloud_name)
+
+        if not install_values:
+            install_values = sc_assets.get_install_file()
+
+        admin_creds = sc_config.get_admin_credentials()
+
+        cmd = f"dcmanager subcloud redeploy {subcloud_name} --install-values {install_values} --sysadmin-password {admin_creds} --bmc-password {admin_creds}"
+        print(cmd)

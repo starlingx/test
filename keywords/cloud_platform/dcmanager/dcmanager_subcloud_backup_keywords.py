@@ -106,7 +106,7 @@ class DcManagerSubcloudBackupKeywords(BaseKeyword):
         con_ssh: SSHConnection,
         subcloud: Optional[str],
         check_interval: int = 30,
-        timeout: int = 120,
+        timeout: int = 300,
     ) -> None:
         """
         Waits for backup operation to fail
