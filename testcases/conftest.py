@@ -8,6 +8,7 @@ from config.configuration_manager import ConfigurationManager
 from framework.logging import log_banners
 from framework.logging.automation_logger import configure_testcase_log_handler, get_logger, remove_testcase_handler
 from framework.options.safe_option_parser import SafeOptionParser
+from framework.runner.objects.RunResultsManager import RunResultsManager
 
 
 def pytest_addoption(parser: Parser):
@@ -20,6 +21,7 @@ def pytest_addoption(parser: Parser):
     """
     safe_parser = SafeOptionParser(parser)
     ConfigurationFileLocationsManager.add_options(safe_parser)
+    safe_parser.add_option("--test_case_result_id", action="store", dest="test_case_result_id", help="the test case result id")
 
 
 def pytest_sessionstart(session: Any):
@@ -32,6 +34,11 @@ def pytest_sessionstart(session: Any):
     configuration_locations_manager = ConfigurationFileLocationsManager()
     configuration_locations_manager.set_configs_from_pytest_args(session)
     ConfigurationManager.load_configs(configuration_locations_manager)
+
+    # check if option test_case_result_id is being passed in
+    if session.config.getoption("--test_case_result_id"):
+        RunResultsManager.set_test_case_result_id(int(session.config.getoption("--test_case_result_id")))
+
     log_configuration()
 
 

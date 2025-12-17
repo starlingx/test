@@ -1,7 +1,7 @@
 from psycopg2.extras import RealDictCursor
 
 from framework.database.connection.database_operation_manager import DatabaseOperationManager
-from framework.database.objects.upgrade_event import UpgradeEvent
+from keywords.cloud_platform.upgrade.objects.upgrade_event import UpgradeEvent
 
 
 class UpgradeEventOperation:
@@ -12,19 +12,20 @@ class UpgradeEventOperation:
     def __init__(self):
         self.database_operation_manager = DatabaseOperationManager()
 
-    def create_upgrade_event(self, upgrade_event: UpgradeEvent):
+    def create_upgrade_event(self, upgrade_event: UpgradeEvent, test_case_result_id: int):
         """
         Creates an upgrade event in the database
 
         Args:
             upgrade_event (UpgradeEvent): The upgrade event to create
+            test_case_result_id (int): the test case result id
         """
         # fmt: off
         create_upgrade_event_query = (
             "INSERT INTO upgrade_event (test_case_result_id, event_name, retry, operation, entity, "
             "is_upgrade, is_patch, timestamp, is_rollback, duration, from_version, to_version, "
             "snapshot, subcloud, build_id) "
-            f"VALUES ({upgrade_event.test_case_result_id}, '{upgrade_event.event_name}', "
+            f"VALUES ({test_case_result_id}, '{upgrade_event.event_name}', "
             f"{upgrade_event.retry}, '{upgrade_event.operation}', '{upgrade_event.entity}', "
             f"{upgrade_event.is_upgrade}, {upgrade_event.is_patch}, '{upgrade_event.timestamp}', "
             f"{upgrade_event.is_rollback}, {upgrade_event.duration}, '{upgrade_event.from_version}', "

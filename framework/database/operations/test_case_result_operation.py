@@ -10,22 +10,27 @@ class TestCaseResultOperation:
     def __init__(self):
         self.database_operation_manager = DatabaseOperationManager()
 
-    def create_test_case_result(self, test_case_result: TestCaseResult):
+    def create_test_case_result(self, test_case_result: TestCaseResult) -> int:
         """
         Creates a test case result in the database
 
         Args:
             test_case_result (TestCaseResult): the test case result
 
+        Returns:
+            int: the test case result
+
         """
         # fmt: off
         create_test_case_result = (
             "INSERT INTO test_case_result (test_info_id, execution_result, start_time, end_time, test_run_execution_id, log_hostname, log_location) "
             f"VALUES ({test_case_result.test_info_id}, '{test_case_result.execution_result}', '{test_case_result.start_time}', "
-            f"'{test_case_result.end_time}', {test_case_result.test_run_execution_id}, '{test_case_result.log_hostname}', '{test_case_result.log_location}')"
+            f"'{test_case_result.end_time}', {test_case_result.test_run_execution_id}, '{test_case_result.log_hostname}', '{test_case_result.log_location}') "
+            "RETURNING test_case_result_id"
         )
 
-        self.database_operation_manager.execute_query(create_test_case_result, expect_results=False)
+        result = self.database_operation_manager.execute_query(create_test_case_result)
+        return result[0][0]
 
     def update_test_case_result(self, test_case_result: TestCaseResult):
         """

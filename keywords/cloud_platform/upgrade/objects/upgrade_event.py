@@ -6,12 +6,11 @@ class UpgradeEvent:
     Class for upgrade event object
     """
 
-    def __init__(self, test_case_result_id: int, event_name: str, retry: int, operation: str, entry: str, is_upgrade: bool, is_patch: bool):
+    def __init__(self, event_name: str, retry: int, operation: str, entry: str, is_upgrade: bool, is_patch: bool):
         """
         Constructor for UpgradeEvent
 
         Args:
-            test_case_result_id (int): The test case result ID
             event_name (str): Name of the upgrade event
             retry (int): Retry count for the operation
             operation (str): Type of operation being performed
@@ -19,7 +18,6 @@ class UpgradeEvent:
             is_upgrade (bool): Whether this is an upgrade operation
             is_patch (bool): Whether this is a patch operation
         """
-        self.test_case_result_id = test_case_result_id
         self.event_name = event_name
         self.retry = retry
         self.operation: str = operation
@@ -36,15 +34,6 @@ class UpgradeEvent:
         self.snapshot: bool = False
         self.subcloud: str = ""
         self.build_id: str = ""
-
-    def get_test_case_result_id(self) -> int:
-        """
-        Getter for test case result ID
-
-        Returns:
-            int: The test case result ID
-        """
-        return self.test_case_result_id
 
     def get_event_name(self) -> str:
         """
