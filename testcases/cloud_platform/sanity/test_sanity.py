@@ -1386,9 +1386,15 @@ def test_host_to_service_connection(request):
     if ConfigurationManager.get_lab_config().is_ipv6():
         url = f"http://[{ConfigurationManager.get_lab_config().get_floating_ip()}]:{node_port}"
 
-    ssh_connection.send(f"curl -Is {url}")
+    def do_curl():
+        """
+        Does the curl command and returns the return code. Used for validate_with_retries method.
 
-    assert ssh_connection.get_return_code() == 0
+        """
+        ssh_connection.send(f"curl -Is {url}")
+        return ssh_connection.get_return_code()
+
+    validate_equals_with_retry(do_curl, 0, "Validated that the return code was successful")
 
 
 def deploy_images_to_local_registry(ssh_connection: SSHConnection):
