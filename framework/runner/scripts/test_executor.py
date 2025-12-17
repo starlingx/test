@@ -32,6 +32,8 @@ def execute_test(test: TestCase, test_executor_summary: TestExecutorSummary, tes
     result_collector = ResultCollector(test_executor_summary, test)
     pytest_args = ConfigurationManager.get_config_pytest_args()
     pytest_args.append(test.get_pytest_node_id())
+    if test_case_result_id:
+        pytest_args.append(f"--test_case_result_id={test_case_result_id}")
 
     pytest.main(pytest_args, plugins=[result_collector])
 

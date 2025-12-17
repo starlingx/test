@@ -25,9 +25,8 @@ class RecordUpgradeEventKeywords(BaseKeyword):
         if not test_case_result_id:
             test_case_result = TestCaseResult(-1, "NOT_RUN", datetime.now(), datetime.now())
             test_case_result_id = TestCaseResultOperation().create_test_case_result(test_case_result)
+            # update the singleton with the test result id so we don't create another one
+            if test_case_result_id:
+                RunResultsManager.set_test_case_result_id(test_case_result_id)
 
         UpgradeEventOperation().create_upgrade_event(event, test_case_result_id)
-
-        # update the singleton with the test result id so we don't create another one
-        if test_case_result_id:
-            RunResultsManager.set_test_case_result_id(test_case_result_id)
