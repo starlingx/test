@@ -688,6 +688,13 @@ def create_subcloud_group(subcloud_list: List[str]) -> None:
 
     central_ssh = LabConnectionKeywords().get_active_controller_ssh()
 
+    # Verify if there is a group with same name.
+    get_logger().log_info("Checking if there is a group with same name, if so remove it.")
+    group_list = [group.get_name() for group in DcmanagerSubcloudGroupKeywords(central_ssh).get_dcmanager_subcloud_group_list().get_dcmanager_subcloud_group_list()]
+    if group_name in group_list:
+        get_logger().log_info(f"Removing the existing subcloud group: {group_name}")
+        DcmanagerSubcloudGroupKeywords(central_ssh).dcmanager_subcloud_group_delete(group_name)
+
     # Create a subcloud group
     get_logger().log_info(f"Creating subcloud group: {group_name}")
     subcloud_group_keywords = DcmanagerSubcloudGroupKeywords(central_ssh)
@@ -705,7 +712,7 @@ def create_subcloud_group(subcloud_list: List[str]) -> None:
     get_logger().log_info("Checking Subcloud is added to the new group")
     group_list = subcloud_group_keywords.get_dcmanager_subcloud_group_list_subclouds(group_name).get_dcmanager_subcloud_group_list_subclouds()
     subclouds = [subcloud.get_name() for subcloud in group_list]
-    validate_equals(subclouds, subcloud_list.sort(), "Checking Subcloud's assigned to the group correctly")
+    validate_equals(subclouds, subcloud_list, "Checking Subcloud's assigned to the group correctly")
 
 def validate_subcloud_health(subcloud_name):
     subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
