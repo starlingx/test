@@ -568,6 +568,10 @@ def test_delete_backup_group_on_central(request):
     # Gets the subcloud sysadmin password needed for backup creation.
     subcloud_password = ConfigurationManager.get_lab_config().get_subcloud(subcloud_list[0]).get_admin_credentials().get_password()
 
+    # Force subclouds to be in Default group.
+    for subcloud_name in subcloud_list:
+        DcManagerSubcloudUpdateKeywords(central_ssh).dcmanager_subcloud_update(subcloud_name, "group", "Default")
+
     # Create a subcloud group and add 2 subclouds
     create_subcloud_group(subcloud_list)
 
@@ -639,6 +643,10 @@ def test_delete_backup_group_on_local(request):
 
     # Gets the subcloud sysadmin password needed for backup creation.
     subcloud_password = ConfigurationManager.get_lab_config().get_subcloud(subcloud_list[0]).get_admin_credentials().get_password()
+
+    # Force subclouds to be in Default group.
+    for subcloud_name in subcloud_list:
+        DcManagerSubcloudUpdateKeywords(central_ssh).dcmanager_subcloud_update(subcloud_name, "group", "Default")
 
     # Create a subcloud group and add 2 subclouds
     create_subcloud_group(subcloud_list)
