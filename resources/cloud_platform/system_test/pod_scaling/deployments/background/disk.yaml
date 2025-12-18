@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: disk-stress-simple
+spec:
+  restartPolicy: Never
+  containers:
+  - name: disk-stress
+    image: registry.local:9001/centos/tools:latest
+
+    command:
+      - /bin/bash
+      - -c
+    args:
+      - |
+        echo "Starting simple disk stress (2GiB)"
+        dd if=/dev/zero of=/tmp/stressfile bs=1M count=2048
+        echo "Disk write done"
+        sleep 300
+  restartPolicy: Always
+  imagePullSecrets:
+  - name: regcred
