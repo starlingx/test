@@ -56,7 +56,13 @@ class PTPParametersParser:
         Returns:
             str: The modified string with parameter values properly quoted.
         """
-        if isinstance(self.parameters, list):
+        if isinstance(self.parameters, dict):
+            params_list = []
+            for key, values in self.parameters.items():
+                if isinstance(values, list):
+                    params_list.extend(values)
+            parameters_str = " ".join(params_list)
+        elif isinstance(self.parameters, list):
             parameters_str = " ".join(self.parameters)  # Convert list to string
         else:
             parameters_str = self.parameters
