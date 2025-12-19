@@ -1,3 +1,5 @@
+import time
+
 from config.configuration_manager import ConfigurationManager
 from framework.exceptions.keyword_exception import KeywordException
 from framework.logging.automation_logger import get_logger
@@ -6,6 +8,7 @@ from framework.validation.validation import validate_equals_with_retry
 from keywords.base_keyword import BaseKeyword
 from keywords.cloud_platform.command_wrappers import source_openrc
 from keywords.cloud_platform.upgrade.objects.software_upload_output import SoftwareUploadOutput
+from keywords.cloud_platform.upgrade.software_deploy_show_keywords import SoftwareDeployShowKeywords
 from keywords.cloud_platform.upgrade.software_show_keywords import SoftwareShowKeywords
 
 
@@ -223,3 +226,49 @@ class USMKeywords(BaseKeyword):
         self.validate_success_return_code(self.ssh_connection)
         output = output[0].strip()
         return output
+
+    def deploy_start(self, release: str, sudo: bool = False) -> str:
+        """
+        This method executed the command 'software deploy start <release>'
+
+        Args:
+            release (str): release to be started
+            sudo (bool): flag to check if it needs to be run as sudo.
+
+        Returns:
+            str: software deploy start output
+        """
+        timeout = self.usm_config.get_deploy_start_timeout_sec()
+        base_cmd = f"software deploy start {release}"
+        cmd = source_openrc(base_cmd)
+        if sudo:
+            output = self.ssh_connection.send_as_sudo(cmd, reconnect_timeout=timeout)
+        else:
+            output = self.ssh_connection.send(cmd, reconnect_timeout=timeout, get_pty=True)
+        self.validate_success_return_code(self.ssh_connection)
+        output = output[0].strip()
+        return output
+
+    def wait_for_deploy_state(self, expected_deploy_state: str, timeout: int = 6000) -> bool:
+        """
+        Method to wait for desired state in deploy show
+
+        Args:
+            expected_deploy_state (str): Desired state in the deploy show output for the specified release.
+            timeout (int): Timeout value to wait for the deploy state to match specified value.
+
+        Returns:
+            bool: True / False
+        """
+        deploy_show = SoftwareDeployShowKeywords(self.ssh_connection)
+        end_time = time.time() + timeout
+        while time.time() < end_time:
+            deploy_state = deploy_show.get_software_deploy_show().get_software_deploy_show().get_state()
+            get_logger().log_info(f"Currently deploy state:{deploy_state} ")
+            if deploy_state == expected_deploy_state:
+                get_logger().log_info(f"Deploy state updated as {deploy_state}")
+                return True
+            elif "failed" in deploy_state:
+                break
+            time.sleep(5)
+        return False

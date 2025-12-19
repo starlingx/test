@@ -50,6 +50,7 @@ class USMConfig:
         self.precheck_timeout_sec = usm_dict.get("precheck_timeout_sec", 300)
         self.software_delete_timeout_sec = usm_dict.get("software_delete_timeout_sec", 300)
         self.deploy_delete_timeout_sec = usm_dict.get("deploy_delete_timeout_sec", 300)
+        self.deploy_start_timeout_sec = usm_dict.get("deploy_start_timeout_sec", 600)
 
     def validate_config(self) -> None:
         """
@@ -494,3 +495,19 @@ class USMConfig:
             value (int): Maximum seconds to wait for software deploy delete to complete.
         """
         self.deploy_delete_timeout_sec = value
+
+    def get_deploy_start_timeout_sec(self) -> int:
+        """Get timeout duration for software deploy start completion.
+
+        Returns:
+            int: Maximum seconds to wait for software deploy start to complete.
+        """
+        return self.deploy_start_timeout_sec
+
+    def set_deploy_start_timeout_sec(self, value: int) -> None:
+        """Set timeout duration for software deploy start completion.
+
+        Args:
+            value (int): Maximum seconds to wait for software deploy start to complete.
+        """
+        self.deploy_start_timeout_sec = value
