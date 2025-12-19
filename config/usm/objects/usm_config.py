@@ -52,6 +52,7 @@ class USMConfig:
         self.deploy_delete_timeout_sec = usm_dict.get("deploy_delete_timeout_sec", 300)
         self.deploy_start_timeout_sec = usm_dict.get("deploy_start_timeout_sec", 1200)
         self.deploy_host_timeout_sec = usm_dict.get("deploy_host_timeout_sec", 1800)
+        self.deploy_activate_timeout_sec = usm_dict.get("deploy_activate_timeout_sec", 600)
         self.subcloud_group = usm_dict.get("subcloud_group", "Default")
         self.subcloud_name = usm_dict.get("subcloud_name", "None")
 
@@ -514,6 +515,7 @@ class USMConfig:
             value (int): Maximum seconds to wait for software deploy start to complete.
         """
         self.deploy_start_timeout_sec = value
+
     def get_subcloud_group(self) -> str:
         """Get the subcloud group name.
 
@@ -545,3 +547,35 @@ class USMConfig:
             value (str): The subcloud name.
         """
         self.subcloud_name = value
+
+    def get_deploy_host_timeout_sec(self) -> int:
+        """Get timeout duration for software deploy host completion.
+
+        Returns:
+            int: Maximum seconds to wait for software deploy host to complete.
+        """
+        return self.deploy_host_timeout_sec
+
+    def set_deploy_host_timeout_sec(self, value: int) -> None:
+        """Set timeout duration for software deploy host completion.
+
+        Args:
+            value (int): Maximum seconds to wait for software deploy host to complete.
+        """
+        self.deploy_host_timeout_sec = value
+
+    def get_deploy_activate_timeout_sec(self) -> int:
+        """Get timeout duration for software deploy activate completion.
+
+        Returns:
+            int: Maximum seconds to wait for software deploy activate to complete.
+        """
+        return self.deploy_activate_timeout_sec
+
+    def set_deploy_activate_timeout_sec(self, value: int) -> None:
+        """Set timeout duration for software deploy activate completion.
+
+        Args:
+            value (int): Maximum seconds to wait for software deploy activate to complete.
+        """
+        self.deploy_activate_timeout_sec = value

@@ -278,7 +278,7 @@ class USMKeywords(BaseKeyword):
             time.sleep(5)
         return False
 
-    def software_deploy_host(self, host: str, sudo: bool = False) -> list[str]:
+    def software_deploy_host(self, host: str, sudo: bool = False) -> str:
         """
         This method executed the command 'software deploy host <host>'
 
@@ -287,7 +287,7 @@ class USMKeywords(BaseKeyword):
             sudo (bool): flag to check if it needs to be run as sudo.
 
         Returns:
-            list[str]: software deploy host output list
+            str: software deploy host result output
         """
         timeout = self.usm_config.get_deploy_host_timeout_sec()
         base_cmd = f"software deploy host {host}"
@@ -297,7 +297,30 @@ class USMKeywords(BaseKeyword):
         else:
             output = self.ssh_connection.send(cmd, reconnect_timeout=timeout, get_pty=True)
         self.validate_success_return_code(self.ssh_connection)
-        output = [output_item.strip() for output_item in output]
+        output = [line.strip() for line in output if line.strip()]
+        output = output[0] if output else ""
+        return output
+
+    def software_deploy_activate(self, sudo: bool = False) -> str:
+        """
+        This method executed the command 'software deploy activate'
+
+        Args:
+            sudo (bool): flag to check if it needs to be run as sudo.
+
+        Returns:
+            str: software deploy start output
+        """
+        timeout = self.usm_config.get_deploy_activate_timeout_sec()
+        base_cmd = "software deploy activate"
+        cmd = source_openrc(base_cmd)
+        if sudo:
+            output = self.ssh_connection.send_as_sudo(cmd, reconnect_timeout=timeout)
+        else:
+            output = self.ssh_connection.send(cmd, reconnect_timeout=timeout, get_pty=True)
+        self.validate_success_return_code(self.ssh_connection)
+        output = [line.strip() for line in output if line.strip()]
+        output = output[0] if output else ""
         return output
 
     def active_controller_host_upgrade(self) -> SystemHostObject:
