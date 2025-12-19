@@ -195,6 +195,19 @@ def has_qat_device(ssh_connection: SSHConnection) -> bool:
 
     return lspci_keywords.has_pci_device(qat_patterns)
 
+def has_dsa_device(ssh_connection: SSHConnection) -> bool:
+    """Verify:
+     - that the DSA Device exists: 11fb|0b25
+     - Raise Error If Above Devices are not present.
+    Args:
+        ssh_connection: SSHConnection object
+    Return:
+        bool: True if a matching device is found, otherwise False
+    """
+    lspci_keywords = LspciKeywords(ssh_connection)
+    dsa_patterns = ("11fb","0b25")
+    return  lspci_keywords.has_pci_device(dsa_patterns)
+
 
 def retrieve_subclouds(lab_config: LabConfig, ssh_connection: SSHConnection) -> list[LabConfig]:
     """Get the list of online and managed subclouds.
@@ -447,6 +460,9 @@ def scan_hosts(lab_config: LabConfig, ssh_connection: SSHConnection) -> list[Nod
             node.append_node_capability("lab_has_qat")
             lab_config.add_lab_capability("lab_has_qat")
 
+        if has_dsa_device(ssh_connection):
+            node.append_node_capability("lab_has_dsa")
+            lab_config.add_lab_capability("lab_has_dsa")
         nodes.append(node)
     return nodes
 
