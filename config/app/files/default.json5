@@ -16,5 +16,6 @@
   intel_device_plugins_app_name: "intel-device-plugins-operator",
   node_feature_discovery_app_name: "node-feature-discovery",
   node_interface_metrics_exporter_app_name: "node-interface-metrics-exporter",
-  platform_integ_apps_app_name: "platform-integ-apps"
+  platform_integ_apps_app_name: "platform-integ-apps",
+  sriov_fec_operator_app_name: "sriov-fec-operator"
 }

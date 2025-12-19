@@ -26,6 +26,7 @@ class AppConfig:
         self.node_feature_discovery_app_name = app_dict["node_feature_discovery_app_name"]
         self.node_interface_metrics_exporter_app_name = app_dict["node_interface_metrics_exporter_app_name"]
         self.platform_integ_apps_app_name = app_dict["platform_integ_apps_app_name"]
+        self.sriov_fec_operator_app_name = app_dict["sriov_fec_operator_app_name"]
 
     def get_base_application_path(self) -> str:
         """
@@ -97,7 +98,6 @@ class AppConfig:
         """
         return self.intel_device_plugins_app_name
 
-
     def get_node_feature_discovery_app_name(self) -> str:
         """
         Getter for node feature discovery app name
@@ -147,3 +147,13 @@ class AppConfig:
 
         """
         return self.metrics_server_app_tarball
+
+    def get_sriov_fec_operator_app_name(self) -> str:
+        """
+        Getter for SRIOV FEC operator name
+
+        Returns:
+            str: the sriov fec operator app name
+
+        """
+        return self.sriov_fec_operator_app_name
