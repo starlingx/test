@@ -2,7 +2,7 @@ import time
 
 from pytest import mark
 
-from config.lab.objects.lab_config import LabConfig
+from config.configuration_manager import ConfigurationManager
 from framework.kpi.time_kpi import TimeKPI
 from framework.logging.automation_logger import get_logger
 from framework.validation.validation import validate_equals
@@ -28,7 +28,7 @@ def test_backup():
       - copy to local test server
 
     """
-    lab_type = LabConfig.get_lab_type()
+    lab_type = ConfigurationManager.get_lab_config().get_lab_type()
     backup_dir = "/opt/backups"
     local_backup_folder_path = f"/tmp/bnr/{lab_type}"
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
