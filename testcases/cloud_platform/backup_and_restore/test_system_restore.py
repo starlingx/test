@@ -2,7 +2,7 @@ import time
 
 from pytest import mark
 
-from config.lab.objects.lab_config import LabConfig
+from config.configuration_manager import ConfigurationManager
 from framework.kpi.time_kpi import TimeKPI
 from framework.logging.automation_logger import get_logger
 from framework.validation.validation import validate_equals
@@ -34,7 +34,7 @@ def test_restore():
       - Validate restore completion
     """
 
-    lab_type = LabConfig.get_lab_type()
+    lab_type = ConfigurationManager.get_lab_config().get_lab_type()
     backup_dir = "/home/sysadmin"
     local_backup_folder_path = f"/tmp/bnr/{lab_type}"
     restore_mode = "optimized"
@@ -85,7 +85,7 @@ def test_restore_multi_host():
       - Validate restore completion
     """
 
-    lab_type = LabConfig.get_lab_type()
+    lab_type = ConfigurationManager.get_lab_config().get_lab_type()
     backup_dir = "/home/sysadmin"
     local_backup_folder_path = f"/tmp/bnr/{lab_type}"
     ssh_connection = LabConnectionKeywords().get_ssh_for_hostname("controller-0")
@@ -108,7 +108,7 @@ def test_restore_multi_host():
     time_kpi_restore.log_elapsed_time(time.time(), "time taken for controller-0 restore")
 
     nodes_with_bmc = []
-    for node in LabConfig.get_nodes():
+    for node in ConfigurationManager.get_lab_config().get_nodes():
         if node.get_bm_ip() and node.get_bm_ip() != "None":
             nodes_with_bmc.append(node)
 
@@ -135,9 +135,9 @@ def test_restore_multi_host():
     unlock_success = SystemHostLockKeywords(ssh_connection).unlock_host(standby_controller.get_host_name())
     validate_equals(unlock_success, True, "Standby controller unlocking")
 
-    if len(LabConfig.get_computes()) > 0:
+    if len(ConfigurationManager.get_lab_config().get_computes()) > 0:
         get_logger().log_info("Unlocking all the compute nodes")
-        for node in LabConfig.get_computes():
+        for node in ConfigurationManager.get_lab_config().get_computes():
             host_name = node.get_name()
             get_logger().log_info(f"wait for {host_name} to successfully unlocked")
             unlock_success = SystemHostLockKeywords(ssh_connection).unlock_host(host_name)
