@@ -13,6 +13,7 @@ class KubectlNodesObject:
         self.roles: str = None
         self.age: str = None
         self.version: str = None
+        self.allocatable: dict = {}
 
     def set_name(self, name: str):
         """
@@ -62,7 +63,7 @@ class KubectlNodesObject:
         """
         Getter for the roles of the node.
 
-        Returns: (str) roles of the node.
+        Returns: (str) roles  of the node.
         """
         return self.roles
 
@@ -100,3 +101,34 @@ class KubectlNodesObject:
              str: Version of the node.
         """
         return self.version
+
+    def set_allocatable(self, allocatable: dict):
+        """
+        Setter for the allocatable resources
+
+        Args:
+            allocatable(dict): Allocatable resources of the Node
+        """
+        self.allocatable = allocatable
+
+    def get_allocatable(self) -> dict:
+        """
+        Getter for the allocatable resources of the node.
+
+        Returns:
+             dict: Allocatable resources of the node.
+        """
+        return self.allocatable
+
+    def get_allocatable_resource(self, resource_key: str) -> int:
+        """
+        Return the allocatable resource value for a specific resource key.
+
+        Args:
+            resource_key (str): Resource key, e.g. "dsa.intel.com/wq-user-dedicated".
+
+        Returns:
+            int: Resource value for the node, or 0 if missing/non-integer.
+        """
+        val = self.allocatable.get(resource_key)
+        return int(val) if val and str(val).isdigit() else 0
