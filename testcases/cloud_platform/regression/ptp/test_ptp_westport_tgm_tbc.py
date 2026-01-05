@@ -1,3 +1,5 @@
+import os
+
 from pytest import mark
 
 from framework.logging.automation_logger import get_logger
@@ -13,11 +15,42 @@ from keywords.cloud_platform.system.ptp.objects.status_constants_object import S
 from keywords.cloud_platform.system.ptp.objects.verification_type_object import VerificationType
 from keywords.cloud_platform.system.ptp.ptp_scenario_executor_keywords import PTPScenarioExecutorKeywords
 from keywords.cloud_platform.system.ptp.ptp_setup_executor_keywords import PTPSetupExecutorKeywords
+from keywords.cloud_platform.system.ptp.ptp_status_collector_keywords import PTPStatusCollectorKeywords
 from keywords.cloud_platform.system.ptp.ptp_teardown_executor_keywords import PTPTeardownExecutorKeywords
 from keywords.cloud_platform.system.ptp.ptp_verify_config_keywords import PTPVerifyConfigKeywords
 from keywords.ptp.setup.ptp_setup_reader import PTPSetupKeywords
+from keywords.files.file_keywords import FileKeywords
 
 relative_path = "resources/ptp/ptp_data_westport_dx_plus_tgm_tbc.json5"
+
+
+def teardown_collect_ptp_status_and_logs(request) -> None:
+    """PTP status collection and log download teardown.
+
+    Args:
+        request: Pytest request fixture.
+    """
+    resource_path = get_stx_resource_path(relative_path)
+    lab_connect_keywords = LabConnectionKeywords()
+    ssh_connection = lab_connect_keywords.get_active_controller_ssh()
+
+    def collect_ptp_status_and_user_logs() -> None:
+        """Collect PTP status and download user logs during teardown.
+        
+        Returns:
+            None
+        """
+        get_logger().log_teardown_step("Collecting PTP status")
+        ptp_setup_keywords = PTPSetupKeywords()
+        ptp_setup = ptp_setup_keywords.generate_ptp_setup_from_template(resource_path)
+        ptp_status_collector = PTPStatusCollectorKeywords(ssh_connection, ptp_setup)
+        ptp_status_collector.collect_all_ptp_status()
+
+        get_logger().log_teardown_step("Downloading /var/log/user.log for reference.")
+        local_file_path = os.path.join(get_logger().get_test_case_log_dir(), "user.log")
+        FileKeywords(ssh_connection).download_file("/var/log/user.log", local_file_path)
+    
+    request.addfinalizer(collect_ptp_status_and_user_logs)
 
 
 @mark.p0
@@ -334,6 +367,9 @@ def test_ptp_operation_interface_down_and_up(request):
     resource_path = get_stx_resource_path(relative_path)
     lab_connect_keywords = LabConnectionKeywords()
     ssh_connection = lab_connect_keywords.get_active_controller_ssh()
+    
+    teardown_collect_ptp_status_and_logs(request)
+    
     ptp_scenario_executor = PTPScenarioExecutorKeywords(ssh_connection, resource_path)
     ptp_scenario_executor.execute_test_scenario(test_scenario, request)
 
@@ -366,7 +402,7 @@ def test_ptp_operation_sma_disabled_and_enable(request):
                     "description": "Controller-0 NIC2 SMA1 disable scenario",
                     "type": OperationType.sma,
                     "status": StatusConstants.gnss_sma_disable,
-                    "sma_config": {"hostname": "controller-0", "nic": "nic2", "ptp_instance": "ptp3"},
+                    "sma_config": {"hostname": "controller-0", "nic": "nic2"},
                 }
             ],
             "verification": [
@@ -481,7 +517,7 @@ def test_ptp_operation_sma_disabled_and_enable(request):
                     "description": "Controller-0 NIC2 SMA1 enable scenario",
                     "type": OperationType.sma,
                     "status": StatusConstants.gnss_sma_enable,
-                    "sma_config": {"hostname": "controller-0", "nic": "nic2", "ptp_instance": "ptp3"},
+                    "sma_config": {"hostname": "controller-0", "nic": "nic2"},
                 }
             ],
             "verification": [
@@ -498,7 +534,7 @@ def test_ptp_operation_sma_disabled_and_enable(request):
                         },
                         {
                             "alarm_id": "100.119",
-                            "state": StatusConstants.alarm_set,
+                            "state": StatusConstants.alarm_clear,
                             "severity": "major",
                             "reason_text": "controller-0 1PPS signal loss state: LockStatus.HOLDOVER",
                             "entity_id": "host=controller-0.interface={{ controller_0.nic2.base_port }}.ptp=1PPS-signal-loss"
@@ -516,6 +552,9 @@ def test_ptp_operation_sma_disabled_and_enable(request):
 
     resource_path = get_stx_resource_path(relative_path)
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    
+    teardown_collect_ptp_status_and_logs(request)
+    
     ptp_scenario_executor = PTPScenarioExecutorKeywords(ssh_connection, resource_path)
     ptp_scenario_executor.execute_test_scenario(test_scenario, request)
 
@@ -761,6 +800,9 @@ def test_ptp_operation_gnss_off_and_on(request):
 
     resource_path = get_stx_resource_path(relative_path)
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    
+    teardown_collect_ptp_status_and_logs(request)
+    
     ptp_scenario_executor = PTPScenarioExecutorKeywords(ssh_connection, resource_path)
     ptp_scenario_executor.execute_test_scenario(test_scenario, request)
 
@@ -868,6 +910,9 @@ def test_ptp_operation_phc_ctl_time_change(request):
 
     resource_path = get_stx_resource_path(relative_path)
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    
+    teardown_collect_ptp_status_and_logs(request)
+    
     ptp_scenario_executor = PTPScenarioExecutorKeywords(ssh_connection, resource_path)
     ptp_scenario_executor.execute_test_scenario(test_scenario, request)
 
@@ -1068,6 +1113,9 @@ def test_ptp_operation_service_stop_start_restart(request):
 
     resource_path = get_stx_resource_path(relative_path)
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    
+    teardown_collect_ptp_status_and_logs(request)
+    
     ptp_scenario_executor = PTPScenarioExecutorKeywords(ssh_connection, resource_path)
     ptp_scenario_executor.execute_test_scenario(test_scenario, request)
 
@@ -1091,6 +1139,10 @@ def test_ptp_host_operation_swact(request):
         - The test will automatically swact back to the original controller at the end of the test
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    ptp_setup_template_path = get_stx_resource_path(relative_path)
+    
+    teardown_collect_ptp_status_and_logs(request)
+    
     system_host_list_keywords = SystemHostListKeywords(ssh_connection)
     active_controller = system_host_list_keywords.get_active_controller()
     standby_controller = system_host_list_keywords.get_standby_controller()
@@ -1123,7 +1175,7 @@ def test_ptp_host_operation_swact(request):
 
 @mark.p1
 @mark.lab_has_dx_plus_westport
-def test_ptp_host_operation_lock_and_unlock():
+def test_ptp_host_operation_lock_and_unlock(request):
     """
     Verify PTP configuration persistence and functionality after controller lock and unlock operations.
 
@@ -1146,6 +1198,10 @@ def test_ptp_host_operation_lock_and_unlock():
         - The test performs operations on the standby controller to minimize service disruption
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    ptp_setup_template_path = get_stx_resource_path(relative_path)
+    
+    teardown_collect_ptp_status_and_logs(request)
+    
     system_host_list_keywords = SystemHostListKeywords(ssh_connection)
     standby_controller = system_host_list_keywords.get_standby_controller()
 
@@ -1158,16 +1214,24 @@ def test_ptp_host_operation_lock_and_unlock():
     validate_equals(unlock_success, True, "Controller unlocked")
 
     ptp_setup_template_path = get_stx_resource_path(relative_path)
-    get_logger().log_info("Verifying PTP configurations after lock and unlock operations")
     ptp_setup_keywords = PTPSetupKeywords()
     ptp_setup = ptp_setup_keywords.generate_ptp_setup_from_template(ptp_setup_template_path)
     ptp_verify_config_keywords = PTPVerifyConfigKeywords(ssh_connection, ptp_setup)
-    ptp_verify_config_keywords.verify_all_ptp_configurations()
+    
+    get_logger().log_info("Waiting for PMC values to stabilize after lock and unlock host")
+    ptp_verify_config_keywords.verify_ptp_pmc_values_with_retry(timeout=300)
+    
+    get_logger().log_info("Verifying PTP configurations after lock and unlock operations")
+    hosts = system_host_list_keywords.get_system_host_list().get_controllers_and_computes()
+    ptp_verify_config_keywords.verify_gnss_status(hosts)
+    ptp_verify_config_keywords.verify_sma_status(hosts)
+    ptp_verify_config_keywords.verify_systemctl_status()
+    ptp_verify_config_keywords.verify_ptp_config_file_content()
 
 
 @mark.p1
 @mark.lab_has_dx_plus_westport
-def test_ptp_host_operation_reboot():
+def test_ptp_host_operation_reboot(request):
     """
     Verify PTP configuration persistence and functionality after controller reboot.
 
@@ -1184,6 +1248,10 @@ def test_ptp_host_operation_reboot():
         - The test performs operations on the standby controller to avoid service disruption
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    ptp_setup_template_path = get_stx_resource_path(relative_path)
+    
+    teardown_collect_ptp_status_and_logs(request)
+    
     system_host_list_keywords = SystemHostListKeywords(ssh_connection)
     standby_controller = system_host_list_keywords.get_standby_controller()
 
@@ -1222,6 +1290,10 @@ def test_ptp_host_operation_force_switchover(request):
         - This test validates that PTP services continue to function properly after a forced controller switchover
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    ptp_setup_template_path = get_stx_resource_path(relative_path)
+    
+    teardown_collect_ptp_status_and_logs(request)
+    
     system_host_list_keywords = SystemHostListKeywords(ssh_connection)
     active_controller = system_host_list_keywords.get_active_controller()
     standby_controller = system_host_list_keywords.get_standby_controller()
@@ -1343,5 +1415,8 @@ def test_proxmox_ptp_vm_verification(request):
 
     resource_path = get_stx_resource_path(relative_path)
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    
+    teardown_collect_ptp_status_and_logs(request)
+    
     ptp_scenario_executor = PTPScenarioExecutorKeywords(ssh_connection, resource_path)
     ptp_scenario_executor.execute_test_scenario(test_scenario, request)

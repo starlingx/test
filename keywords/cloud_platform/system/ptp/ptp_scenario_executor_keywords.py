@@ -17,11 +17,9 @@ from keywords.ptp.gnss_keywords import GnssKeywords
 from keywords.ptp.phc_ctl_keywords import PhcCtlKeywords
 from keywords.ptp.pmc.pmc_keywords import PMCKeywords
 from keywords.ptp.proxmox_keywords import ProxmoxKeywords
-from keywords.ptp.proxmox_ptp_setup_keywords import ProxmoxPTPSetupKeywords
 from keywords.ptp.proxmox_ptp_verification_keywords import ProxmoxPTPVerificationKeywords
 from keywords.ptp.ptp4l.ptp_service_status_validator import PTPServiceStatusValidator
 from keywords.ptp.setup.ptp_setup_reader import PTPSetupKeywords
-from keywords.ptp.setup.ptp_test_scenario_reader import PTPTestScenarioReader
 from keywords.ptp.sma_keywords import SmaKeywords
 
 
@@ -37,7 +35,6 @@ class PTPScenarioExecutorKeywords(BaseKeyword):
         """
         self.ssh_connection = ssh_connection
         self.resource_path = resource_path
-        self.ptp_test_scenario_reader = PTPTestScenarioReader(resource_path)
         self.ptp_setup_keywords = PTPSetupKeywords()
         self.gnss_keywords = GnssKeywords()
         self.sma_keywords = SmaKeywords(ssh_connection)
@@ -341,9 +338,10 @@ class PTPScenarioExecutorKeywords(BaseKeyword):
         get_logger().log_info("Verifying PMC data.")
 
         if pmc_values_overrides is not None:
-            base_pmc = {item["name"]: item for item in self.ptp_test_scenario_reader.get_base_pmc_values()}
-            override_pmc = {item["name"]: item for item in pmc_values_overrides}
-            base_pmc.update(override_pmc)
+            base_pmc = {item["name"]: item for item in self.ptp_setup_keywords.get_base_pmc_values(self.resource_path)}
+            if pmc_values_overrides:  # Only update if overrides list is not empty
+                override_pmc = {item["name"]: item for item in pmc_values_overrides}
+                base_pmc.update(override_pmc)
             combined_pmc = base_pmc
             ptp_setup = self.ptp_setup_keywords.filter_and_render_ptp_config(self.resource_path, [[item["name"], hostname, []] for item in combined_pmc.values() for hostname in item.keys() if hostname != "name"], configuration_verification_overrides={"ptp4l": list(combined_pmc.values())})
         else:
@@ -377,9 +375,16 @@ class PTPScenarioExecutorKeywords(BaseKeyword):
         Args:
             operation (dict): Operation configuration dictionary.
         """
-        interface_name = self.ptp_test_scenario_reader.get_interface_for_operation(operation["name"])
         interface_mapping = operation.get("interface_mapping", {})
         hostname = interface_mapping.get("hostname")
+        nic = interface_mapping.get("nic")
+
+        ptp_config = ConfigurationManager.get_ptp_config()
+        hostname_key = hostname.replace("-", "_")
+        host = ptp_config.get_host(hostname_key)
+        nic_obj = host.get_nic(nic)
+        interface_name = nic_obj.get_base_port()
+
         status = operation.get("status")
 
         get_logger().log_info(f"Executing phc_ctl operation on {hostname} {interface_name}...")
@@ -404,13 +409,13 @@ class PTPScenarioExecutorKeywords(BaseKeyword):
         interface_mapping = operation.get("interface_mapping", {})
         hostname = interface_mapping.get("hostname")
         nic = interface_mapping.get("nic")
-        
+
         ptp_config = ConfigurationManager.get_ptp_config()
         hostname_key = hostname.replace("-", "_")
         host = ptp_config.get_host(hostname_key)
         nic_obj = host.get_nic(nic)
         interface_name = nic_obj.get_base_port()
-        
+
         # Extract alarms from verification section
         alarm_objects = []
         if extra_args:
@@ -425,10 +430,6 @@ class PTPScenarioExecutorKeywords(BaseKeyword):
                         alarm_obj.set_entity_id(entity_id)
                         alarm_objects.append(alarm_obj)
                     break
-        
-        # Fallback to test scenario reader if no alarms found
-        if not alarm_objects:
-            alarm_objects = self.ptp_test_scenario_reader.create_alarm_objects(operation["name"])
 
         get_logger().log_info(f"Starting phc_ctl loop on {hostname} {interface_name} and waiting for alarms...")
         phc_ctl_keywords = PhcCtlKeywords(LabConnectionKeywords().get_ssh_for_hostname(hostname))
@@ -443,7 +444,7 @@ class PTPScenarioExecutorKeywords(BaseKeyword):
             extra_args (list): List with verification data (optional).
         """
         proxmox_config = operation["proxmox_config"]
-        
+
         ptp_config = ConfigurationManager.get_ptp_config()
         hostname_key = proxmox_config["hostname"].replace("-", "_")
         proxmox_vm_config = ptp_config.get_host(hostname_key).get_nic(proxmox_config["nic"]).get_proxmox_ptp_vm_config()
@@ -453,9 +454,11 @@ class PTPScenarioExecutorKeywords(BaseKeyword):
         proxmox_keywords.verify_ptp_service_with_auto_recovery()
 
         if request:
+
             def cleanup_ptp_service():
                 get_logger().log_info("Test cleanup: Stopping PTP service")
                 proxmox_keywords.stop_ptp_service()
+
             request.addfinalizer(cleanup_ptp_service)
 
         ssh_connection = LabConnectionKeywords().get_ssh_for_hostname(proxmox_config["hostname"])

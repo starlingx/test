@@ -7,6 +7,7 @@ from jinja2 import Template
 from config.configuration_manager import ConfigurationManager
 from framework.resources.resource_finder import get_stx_resource_path
 from keywords.base_keyword import BaseKeyword
+from keywords.cloud_platform.system.ptp.objects.verification_type_object import VerificationType
 from keywords.ptp.setup.object.ptp_setup import PTPSetup
 
 
@@ -269,3 +270,29 @@ class PTPSetupKeywords(BaseKeyword):
             else:
                 result[key] = value
         return result
+
+    @staticmethod
+    def get_base_pmc_values(resource_path: str) -> list:
+        """Get base PMC values from verification section of resource file.
+
+        Args:
+            resource_path (str): Path to PTP resource configuration file.
+
+        Returns:
+            list: Base PMC values from verification.
+        """
+        with open(resource_path, "r") as template_file:
+            json5_template = template_file.read()
+
+        ptp_config = ConfigurationManager.get_ptp_config()
+        render_context = ptp_config.get_all_hosts_dictionary()
+        rendered_config = Template(json5_template).render(render_context)
+        config = json5.loads(rendered_config)
+        config = PTPSetupKeywords._parse_embedded_json(config)
+
+        verification = config.get("verification", [])
+        if verification and isinstance(verification, list):
+            for verify_item in verification:
+                if verify_item.get("type") == VerificationType.pmc_value:
+                    return verify_item.get("pmc_values", [])
+        return []

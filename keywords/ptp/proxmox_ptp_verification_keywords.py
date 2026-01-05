@@ -1,9 +1,7 @@
 from framework.logging.automation_logger import get_logger
 from framework.validation.validation import validate_equals_with_retry
 from keywords.base_keyword import BaseKeyword
-from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.ptp.pmc.pmc_keywords import PMCKeywords
-from keywords.ptp.setup.ptp_setup_reader import PTPSetupKeywords
 
 
 class ProxmoxPTPVerificationKeywords(BaseKeyword):
@@ -100,37 +98,3 @@ class ProxmoxPTPVerificationKeywords(BaseKeyword):
             return current_utc_offset_match and current_utc_offset_valid_match and time_traceable_match and frequency_traceable_match
 
         validate_equals_with_retry(check_time_properties_data_set, True, "Time properties data set values (currentUtcOffset, currentUtcOffsetValid, timeTraceable, frequencyTraceable)", timeout)
-
-    def validate_all_ptp_data_sets_with_retry(self, proxmox_keywords, ptp_test_scenario_reader, ptp_setup_template_path: str, operation_name: str, timeout: int = 300) -> None:
-        """
-        Validate all PTP data sets.
-
-        Args:
-            proxmox_keywords: Proxmox keywords instance.
-            ptp_test_scenario_reader: PTP test scenario reader instance.
-            ptp_setup_template_path (str): Path to PTP setup template.
-            operation_name (str): Operation name from test scenario.
-            timeout (int): Timeout in seconds for retrying validations (default: 300).
-        """
-        proxmox_config = ptp_test_scenario_reader.get_proxmox_config(operation_name)
-        ssh_connection = LabConnectionKeywords().get_ssh_for_hostname(proxmox_config["hostname"])
-
-        operation = ptp_test_scenario_reader.get_operation(operation_name)
-        verification = operation.get("verification", {})
-        pmc_values = []
-        for verify_step in verification:
-            verify_type = verify_step.get("type")
-            if verify_type == "pmc_value":
-                pmc_values = verify_step.get("pmc_values", [])
-
-        ptp_instance_selection = [[pmc_val["name"], hostname, []] for pmc_val in pmc_values for hostname in pmc_val.keys() if hostname != "name"]
-        ptp_expected_setup = PTPSetupKeywords().filter_and_render_ptp_config(ptp_setup_template_path, ptp_instance_selection)
-        ptp1_expected_config = ptp_expected_setup.get_pmc_values_expected_by_name(proxmox_config["ptp_instance"])
-
-        pmc_keywords = PMCKeywords(proxmox_keywords.get_proxmox_vm_ssh_connection())
-        ptp_config_file = proxmox_config["ptp_config_file"]
-
-        self.validate_port_data_set_with_retry(pmc_keywords, proxmox_config, ptp_config_file, timeout)
-        self.validate_parent_data_set_with_retry(pmc_keywords, ptp1_expected_config, proxmox_config, ptp_config_file, timeout)
-        self.validate_parent_port_identity_with_retry(pmc_keywords, proxmox_config, ptp_config_file, ssh_connection, timeout)
-        self.validate_time_properties_data_set_with_retry(pmc_keywords, ptp1_expected_config, proxmox_config, ptp_config_file, timeout)
