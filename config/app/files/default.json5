@@ -8,14 +8,17 @@
   platform_integ_app_tarball: "fake_path",
   metrics_server_app_tarball: "fake_path",
 
-  istio_app_name: "istio",
-  metric_server_app_name: "metrics-server",
-  oidc_app_name: "oidc-auth-apps",
-  power_metrics_app_name: "power-metrics",
-  power_manager_app_name: "kubernetes-power-manager",
-  intel_device_plugins_app_name: "intel-device-plugins-operator",
-  node_feature_discovery_app_name: "node-feature-discovery",
-  node_interface_metrics_exporter_app_name: "node-interface-metrics-exporter",
-  platform_integ_apps_app_name: "platform-integ-apps",
-  sriov_fec_operator_app_name: "sriov-fec-operator"
+  // Optional Overrides of app_names.
+
+  //  istio_app_name: "",
+  //  metric_server_app_name: "",
+  //  oidc_app_name: "",
+  //  power_metrics_app_name: "",
+  //  power_manager_app_name: "",
+  //  intel_device_plugins_app_name: "",
+  //  node_feature_discovery_app_name: "",
+  //  node_interface_metrics_exporter_app_name: "",
+  //  platform_integ_apps_app_name: "",
+  //  sriov_fec_operator_app_name: "",
+
 }

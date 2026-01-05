@@ -17,16 +17,46 @@ class AppConfig:
         self.base_application_path = app_dict["base_application_path"]
         self.platform_integ_app_tarball = app_dict["platform_integ_app_tarball"]
         self.metrics_server_app_tarball = app_dict["metrics_server_app_tarball"]
-        self.istio_app_name = app_dict["istio_app_name"]
-        self.metric_server_app_name = app_dict["metric_server_app_name"]
-        self.oidc_app_name = app_dict["oidc_app_name"]
-        self.power_metrics_app_name = app_dict["power_metrics_app_name"]
-        self.power_manager_app_name = app_dict["power_manager_app_name"]
-        self.intel_device_plugins_app_name = app_dict["intel_device_plugins_app_name"]
-        self.node_feature_discovery_app_name = app_dict["node_feature_discovery_app_name"]
-        self.node_interface_metrics_exporter_app_name = app_dict["node_interface_metrics_exporter_app_name"]
-        self.platform_integ_apps_app_name = app_dict["platform_integ_apps_app_name"]
-        self.sriov_fec_operator_app_name = app_dict["sriov_fec_operator_app_name"]
+
+        self.istio_app_name = "istio"
+        if "istio_app_name" in app_dict:
+            self.istio_app_name = app_dict["istio_app_name"]
+
+        self.metric_server_app_name = "metrics-server"
+        if "metric_server_app_name" in app_dict:
+            self.metric_server_app_name = app_dict["metric_server_app_name"]
+
+        self.oidc_app_name = "oidc-auth-apps"
+        if "oidc_app_name" in app_dict:
+            self.oidc_app_name = app_dict["oidc_app_name"]
+
+        self.power_metrics_app_name = "power-metrics"
+        if "power_metrics_app_name" in app_dict:
+            self.power_metrics_app_name = app_dict["power_metrics_app_name"]
+
+        self.power_manager_app_name = "kubernetes-power-manager"
+        if "power_manager_app_name" in app_dict:
+            self.power_manager_app_name = app_dict["power_manager_app_name"]
+
+        self.intel_device_plugins_app_name = "intel-device-plugins-operator"
+        if "intel_device_plugins_app_name" in app_dict:
+            self.intel_device_plugins_app_name = app_dict["intel_device_plugins_app_name"]
+
+        self.node_feature_discovery_app_name = "node-feature-discovery"
+        if "node_feature_discovery_app_name" in app_dict:
+            self.node_feature_discovery_app_name = app_dict["node_feature_discovery_app_name"]
+
+        self.node_interface_metrics_exporter_app_name = "node-interface-metrics-exporter"
+        if "node_interface_metrics_exporter_app_name" in app_dict:
+            self.node_interface_metrics_exporter_app_name = app_dict["node_interface_metrics_exporter_app_name"]
+
+        self.platform_integ_apps_app_name = "platform-integ-apps"
+        if "platform_integ_apps_app_name" in app_dict:
+            self.platform_integ_apps_app_name = app_dict["platform_integ_apps_app_name"]
+
+        self.sriov_fec_operator_app_name = "sriov-fec-operator"
+        if "sriov_fec_operator_app_name" in app_dict:
+            self.sriov_fec_operator_app_name = app_dict["sriov_fec_operator_app_name"]
 
     def get_base_application_path(self) -> str:
         """
