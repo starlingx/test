@@ -1,44 +1,47 @@
 {
-    // Indicates the current operation is for Major rel upgrade
-    "usm_is_upgrade": true,
+  // Default USM Configuration
+  // This file contains default settings for USM upgrade and patch operations
 
-    // Indicates the current operation is patching the system.
-    "usm_is_patch": "",
+  // Type of operation: "upgrade" or "patch"
+  "usm_operation_type": "upgrade",
 
-    // Absolute path to ISO for Major rel upgrade
-    "iso_path": "/path/to/iso/file",
+  // Software release paths
+  "iso_path": "/opt/software/starlingx.iso",
+  "sig_path": "/opt/software/starlingx.sig", 
+  "patch_path": "/opt/software/starlingx.patch",
+  
+  // Target release configuration
+  "to_release_ids": ["starlingx-10.0.1"],
 
-    //  Absolute path to the Signature path for Major rel upgrade.
-    "upgrade_license": "/path/to/lic/file/stx.sig",
+  // Whether a reboot is required after the operation
+  "requires_reboot": false,
 
-    // Absolute path to the .patch file for Patching.
-    "patch_path": "/home/sysadmin",
+  // Operation type flags
+  "snapshot": false,
+  "rollback": false,
+  "deploy_delete": false,
+  "record_kpi": false,
 
-    // Path of directory where one or more .patch files are located.
-    "patch_dir": "/home/sysadmin/patch_dir",
+  // Optional CLI arguments passed to the 'software upload' or 'software upgrade' command
+  // Example: "--force"
+  "upgrade_arguments": "",
 
-    // Directory on the lab where the files need to be stored.
-    "dest_dir": "/home/sysadmin/upload_test/",
+  // Timeout configurations (in seconds)
+  "upload_patch_timeout_sec": 1800,
+  "upload_release_timeout_sec": 1800,
+  "upload_poll_interval_sec": 30,
+  "deployment_timeout_sec": 7200,
+  "activation_timeout_sec": 3600,
+  "precheck_timeout_sec": 300,
+  "software_delete_timeout_sec": 300,
+  "deploy_delete_timeout_sec": 300,
+  "deploy_start_timeout_sec": 1200,
 
-    // Address of the server where the iso/patch files are located.
-    "build_server": "host-name-for-build-server",
-
-    // Username to authenticate to build_server
-    "build_server_username": "build_server_username",
-
-    // Password to authenticate to build_server
-    "build_server_password": "build_server_password",
-
-    //  Arguments for upgrade/patching testing
-    "upgrade_arguments": "",
-
-    // Release ids (one or more) to which the system is upgraded.
-    // Used for either multiple patches or major release + patch(es)
-    "to_release_ids": "stx-major.minor.version",
-
-    // Some extra attributes for patching USM, config
-    "extra_attributes": {
-        "": "",
-    },
-
+  // Remote copy settings
+  "copy_from_remote": true,
+  "remote_server": "",
+  "remote_username": "",
+  "remote_password": "",
+  "dest_dir": "/scratch/usm_files/"
 }
+

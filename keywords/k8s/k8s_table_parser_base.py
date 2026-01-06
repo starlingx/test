@@ -1,3 +1,4 @@
+import re
 from typing import List
 
 from framework.exceptions.keyword_exception import KeywordException
@@ -8,21 +9,25 @@ from keywords.k8s.k8s_table_parser_header import K8sTableParserHeader
 class K8sTableParserBase:
     """
     Base Class for parsing the output of Table-Like k8s commands.
+
     This class shouldn't be used directly. Instead, it should be inherited by specific k8s table parser implementations.
     See KubectlGetPodsTableParser as an example.
     """
 
-    def __init__(self, k8s_output):
+    def __init__(self, k8s_output: str):
         """
         Constructor
+
         Args:
-            k8s_output: The raw String output of a kubernetes command that returns a table.
+            k8s_output (str): The raw String output of a kubernetes command that returns a table.
         """
         self.k8s_output = k8s_output
         self.possible_headers = []  # This needs to be defined in child classes of K8sTableParser
 
     def get_output_values_list(self):
         """
+        get_output_values_list
+
         This function will take the raw String output of a kubernetes command that returns a table
         and will parse it into a list of dictionaries. For example, if self.k8s_output is:
 
@@ -38,7 +43,6 @@ class K8sTableParserBase:
          {'NAME': 'default', 'STATUS': 'Active', 'AGE': '18d'}]
 
         """
-
         if not self.possible_headers:
             get_logger().log_error("There are no 'possible_headers' defined. Please use the specific child class of the k8s_table_parser that has the headers that you need.")
             raise KeywordException("Undefined 'possible_headers'.")
@@ -71,10 +75,12 @@ class K8sTableParserBase:
     def get_headers(self, line: str) -> List[K8sTableParserHeader]:
         """
         This function will extract the headers from the header line passed in.
-        Args:
-            line: Line containing all the headers to be parsed.
 
-        Returns: List of K8sTableParserHeader that have been found, in order.
+        Args:
+            line (str): Line containing all the headers to be parsed.
+
+        Returns:
+            List[K8sTableParserHeader]: List of K8sTableParserHeader that have been found, in order.
 
         """
         headers = []
@@ -83,9 +89,10 @@ class K8sTableParserBase:
         for header in self.possible_headers:
             if header in line:
 
-                # Find the header followed by a space or end of line.
-                # This is to avoid headers that are substrings of other headers.
-                header_index = line.find(header + " ")
+                # This is to avoid headers that are substrings of other headers, either substring as prefix or postfix.
+                pattern = rf"\b{header}\b"
+                match = re.search(pattern, line)
+                header_index = match.start()
                 header_index_last = line.find(header + "\n")
                 index = max(header_index, header_index_last)
 

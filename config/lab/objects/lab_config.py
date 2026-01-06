@@ -85,6 +85,12 @@ class LabConfig:
         if "system_controller_name" in lab_dict:
             self.system_controller_name = lab_dict["system_controller_name"]
 
+        self.secondary_system_controller = None
+        if "secondary_system_controller" in lab_dict:
+            secondary_system_controller = lab_dict["secondary_system_controller"]
+            secondary_lab_file = get_stx_resource_path(secondary_system_controller)
+            self.secondary_system_controller = LabConfig(secondary_lab_file)
+
         self.lab_config_file = config
 
     def get_floating_ip(self) -> str:
@@ -429,6 +435,24 @@ class LabConfig:
         """
         self.system_controller_name = system_controller_name
 
+    def get_secondary_system_controller_config(self) -> object:
+        """
+        Get the secondary system controller object.
+
+        Returns:
+            object: Secondary dc configuration.
+        """
+        return self.secondary_system_controller
+
+    def get_secondary_system_controller_name(self) -> str:
+        """
+        Gets the secondary controller host name
+
+        Returns:
+            str: Secondary lab name.
+        """
+        return self.secondary_system_controller.get_lab_name()
+
     def to_log_strings(self) -> List[str]:
         """
         Convert lab configuration to a list of loggable strings.
@@ -459,3 +483,71 @@ class LabConfig:
                 log_strings.append(f"    {log_string}")
 
         return log_strings
+
+    def get_controllers(self) -> List[Node]:
+        """
+        Getter for controller nodes.
+
+        Returns:
+            List[Node]: List of controller nodes
+        """
+        nodes = self.get_nodes()
+        controllers = [node for node in nodes if node.node_type == "controller"]
+        return controllers
+
+    def get_subclouds_by_type(self, subcloud_type: str = None) -> List["LabConfig"]:
+        """
+        Get a list of subcloud configurations by type.
+
+        Args:
+            subcloud_type (str): Type of the subcloud to retrieve
+
+        Returns:
+            List[LabConfig]: List of subcloud configurations of the specified type
+        """
+        if subcloud_type is None:
+            return self.subclouds
+        return [subcloud for subcloud in self.subclouds if subcloud.get_lab_type().lower() == subcloud_type.lower()]
+
+    def get_subclouds_name_by_type(self, subcloud_type: str = None) -> List[str]:
+        """
+        Get a list of subcloud names by type.
+
+        Args:
+            subcloud_type (str): Type of the subcloud to retrieve
+
+        Returns:
+            List[str]: List of subcloud names of the specified type
+        """
+        if subcloud_type is None:
+            return [subcloud.get_lab_name() for subcloud in self.subclouds]
+        return [subcloud.get_lab_name() for subcloud in self.get_subclouds_by_type(subcloud_type)]
+
+    def get_first_controller(self) -> Optional[Node]:
+        """Get the first controller node.
+
+        Returns:
+            Optional[Node]: The first controller node if found, None otherwise
+        """
+        controllers = self.get_controllers()
+        if len(controllers) > 0:
+            return controllers[0]
+        return None
+
+    def get_counterpart_controller(self, lab_node_name: str) -> Node:
+        """Function to get the paired controller
+
+        Finds and returns the counterpart controller name from a list of controllers,
+        given the name of the current controller. Assumes there are exactly two controllers.
+
+        Args:
+            lab_node_name (str): The name of the current controller.
+
+        Returns:
+            Node: The counterpart / paired controller Node.
+        """
+        counterpart_controllers = [node for node in self.get_controllers() if node.get_name() != lab_node_name]
+        if not counterpart_controllers:
+            raise Exception("Others controller Not Found")
+        else:
+            return counterpart_controllers[0]

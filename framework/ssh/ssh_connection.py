@@ -136,7 +136,7 @@ class SSHConnection:
 
         return is_connection_success
 
-    def send(self, cmd: str, reconnect_timeout: int = 600) -> str:
+    def send(self, cmd: str, reconnect_timeout: int = 600, get_pty: bool = False) -> str:
         """
         Send a command to the SSH session and return the output.
 
@@ -146,11 +146,12 @@ class SSHConnection:
         Args:
             cmd (str): The command to execute.
             reconnect_timeout (int): Time in seconds to retry the connection.
+            get_pty (bool): Defaults to False. Whether to request a terminal when running a 'send' command.
 
         Returns:
             str: The output of the command.
         """
-        return self._execute_command("SEND", cmd, reconnect_timeout=reconnect_timeout)
+        return self._execute_command("SEND", cmd, reconnect_timeout=reconnect_timeout, get_pty=get_pty)
 
     def send_as_sudo(self, cmd: str, reconnect_timeout: int = 600) -> str:
         """
@@ -187,6 +188,7 @@ class SSHConnection:
         cmd: str,
         reconnect_timeout: int = 600,
         prompts: List[PromptResponse] = None,
+        get_pty: bool = False,
     ) -> str:
         """
         Executes the given action with the given command.
@@ -198,6 +200,7 @@ class SSHConnection:
             cmd (str): The command to run.
             reconnect_timeout (int): The time in seconds to wait for SSH connection.
             prompts (List[PromptResponse], optional): Expected prompts, if any.
+            get_pty (bool): Defaults to False. Whether to request a terminal when running a 'send' command.
 
         Returns:
             str: The output of the command.
@@ -208,7 +211,7 @@ class SSHConnection:
         # if we are using ssh pass, we need to wrap the call
         if self.use_ssh_pass:
             if action == "SEND_SUDO":  # if it a sudo call we need further changes to avoid password prompt
-                cmd = f"{self.get_ssh_pass_str()} 'echo '{self.ssh_pass_password}' | sudo -S {cmd}'"
+                cmd = f'{self.get_ssh_pass_str()} "echo "{self.ssh_pass_password}" | sudo -S {cmd}"'
                 # since we do not need prompts or to prepend sudo now, change Action to just 'SEND'
                 action = "SEND"
             else:
@@ -223,7 +226,7 @@ class SSHConnection:
                 thread_manager = ThreadManager(timeout=reconnect_timeout / 10)
 
                 if action == "SEND":
-                    thread_manager.start_thread("SSH_Command", self._send, cmd)
+                    thread_manager.start_thread("SSH_Command", self._send, cmd, get_pty=get_pty)
                 elif action == "SEND_SUDO":
                     thread_manager.start_thread("SSH_Command", self._send_as_sudo, cmd)
                 elif action == "SEND_EXPECT_PROMPTS":
@@ -244,21 +247,21 @@ class SSHConnection:
                 time.sleep(refresh_timeout)
                 self.is_connected = False
 
-    def _send(self, cmd: str, timeout: int = 30) -> str:
+    def _send(self, cmd: str, timeout: int = 30, get_pty: bool = False) -> str:
         """
         Sends the given command with the specified timeout.
 
         Args:
             cmd (str): The command to send.
             timeout (int): The timeout in seconds for command execution.
+            get_pty (bool): Defaults to False. Whether to request a terminal when running a 'send' command.
 
         Returns:
             str: The output of the command.
         """
         get_logger().log_ssh(cmd)
 
-        stdin, stdout, stderr = self.client.exec_command(cmd, timeout=timeout)
-
+        stdin, stdout, stderr = self.client.exec_command(cmd, timeout=timeout, get_pty=get_pty)
         stdout.channel.set_combine_stderr(True)
         self.last_return_code = stdout.channel.recv_exit_status()
         output = stdout.readlines()
@@ -391,8 +394,8 @@ class SSHConnection:
                 get_logger().log_warning("SSH output read timed out — buffer may be incomplete or prompt unmatched.")
                 return -1, "Timeout Exceeded"
 
-        # Read some of the output
-        current_buffer = ssh_channel.recv(1024)
+        # Read some of the output - increased buffer size for large outputs
+        current_buffer = ssh_channel.recv(8192)
 
         # If we have an empty buffer, then the SSH session has been closed
         if len(current_buffer) == 0:
@@ -430,6 +433,16 @@ class SSHConnection:
             None:
         """
         self.client.close()
+
+    def set_name(self, name: str) -> None:
+        """
+        Sets the name of this SSH connection
+
+        Args:
+            name (str): Name to assign to this SSH connection
+
+        """
+        self.name = name
 
     def get_name(self) -> str:
         """

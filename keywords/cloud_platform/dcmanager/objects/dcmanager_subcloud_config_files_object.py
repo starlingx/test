@@ -8,6 +8,7 @@ class DcManagerSubcloudConfigFilesObject:
         install_file: str = None,
         bootstrap_file: str = None,
         deploy_file: str = None,
+        docker_ca_file: str = None,
     ):
         """
         Constructor
@@ -16,10 +17,12 @@ class DcManagerSubcloudConfigFilesObject:
             install_file (str, optional): Path to the install configuration file
             bootstrap_file (str, optional): Path to the bootstrap configuration file
             deploy_file (str, optional): Path to the deploy configuration file
+            docker_ca_file (str, optional): Path to the deploy configuration file
         """
         self.install_file = install_file
         self.bootstrap_file = bootstrap_file
         self.deploy_file = deploy_file
+        self.docker_ca_file = docker_ca_file
 
     def get_install_file(self) -> str:
         """Get install configuration file path"""
@@ -32,3 +35,7 @@ class DcManagerSubcloudConfigFilesObject:
     def get_deploy_file(self) -> str:
         """Get deploy configuration file path"""
         return self.deploy_file
+
+    def get_docker_ca_file(self) -> str:
+        """Get docker ca file path"""
+        return self.docker_ca_file

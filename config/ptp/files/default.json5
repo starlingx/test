@@ -1,4 +1,5 @@
 {
+    external_ptp_device_type: "",
 
     // GNSS server information if you want to turn on/off GNSS ports.
     gnss_server_host: "gnss_server_hostname_or_ip",
@@ -41,7 +42,6 @@
                     // By default, we use the first port.
                     base_port: "enp81s0f0",
                     gpio_switch_port: "30",
-                    pci_slot: "00:007.01",
 
                     nic_connection: {
                        to_host: "controller_1",

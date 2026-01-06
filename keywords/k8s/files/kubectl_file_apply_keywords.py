@@ -26,3 +26,16 @@ class KubectlFileApplyKeywords(BaseKeyword):
         """
         self.ssh_connection.send(export_k8s_config(f"kubectl apply -f {yaml_file}"))
         self.validate_success_return_code(self.ssh_connection)
+
+    def kubectl_apply_with_error(self, yaml_file: str) -> str:
+        """
+        Apply Kubernetes resource and return output message.
+
+        Args:
+            yaml_file (str): Path to the YAML file containing the resource definition.
+
+        Returns:
+            str: Output message from kubectl apply command.
+        """
+        output = self.ssh_connection.send(export_k8s_config(f"kubectl apply -f {yaml_file}"))
+        return "\n".join(output) if isinstance(output, list) else str(output)

@@ -18,7 +18,7 @@ class SoftwareListObject:
         Get release
 
         Returns:
-            (str): release object
+            str: release object
 
         """
         return self.release
@@ -28,7 +28,7 @@ class SoftwareListObject:
         Get rr
 
         Returns:
-            (str): rr object
+            str: rr object
 
         """
         return self.rr
@@ -38,7 +38,25 @@ class SoftwareListObject:
         Get state
 
         Returns:
-            (str): state object
+            str: state object
 
         """
         return self.state
+
+    def __str__(self) -> str:
+        """
+        Return a readable string representation of the software list object.
+
+        Returns:
+            str: Formatted string of the release, RR, and state.
+        """
+        return f"Release: {self.release}, RR: {self.rr}, State: {self.state}"
+
+    def __repr__(self) -> str:
+        """
+        Return the developer-facing representation of the object.
+
+        Returns:
+            str: Object representation with class name and field values.
+        """
+        return f"{self.__class__.__name__}(release={self.release}, rr={self.rr}, state={self.state})"

@@ -1,45 +1,44 @@
 import os
 from typing import Any
 
+from pytest import Parser
+
 from config.configuration_file_locations_manager import ConfigurationFileLocationsManager
 from config.configuration_manager import ConfigurationManager
 from framework.logging import log_banners
 from framework.logging.automation_logger import configure_testcase_log_handler, get_logger, remove_testcase_handler
+from framework.options.safe_option_parser import SafeOptionParser
+from framework.runner.objects.RunResultsManager import RunResultsManager
 
 
-def pytest_addoption(parser: Any):
+def pytest_addoption(parser: Parser):
     """
     Adds the pytest options
 
     Args:
-        parser (Any): the parser
+        parser (Parser): the parser
 
     """
-    parser.addoption("--lab_config_file", action="store")
-    parser.addoption("--k8s_config_file", action="store")
-    parser.addoption("--ptp_config_file", action="store")
-    parser.addoption("--logger_config_file", action="store")
-    parser.addoption("--docker_config_file", action="store")
-    parser.addoption("--web_config_file", action="store")
-    parser.addoption("--database_config_file", action="store")
-    parser.addoption("--rest_api_config_file", action="store")
-    parser.addoption("--security_config_file", action="store")
-    parser.addoption("--usm_config_file", action="store")
-    parser.addoption("--app_config_file", action="store")
+    safe_parser = SafeOptionParser(parser)
+    ConfigurationFileLocationsManager.add_options(safe_parser)
+    safe_parser.add_option("--test_case_result_id", action="store", dest="test_case_result_id", help="the test case result id")
 
 
 def pytest_sessionstart(session: Any):
     """
-    This is run once at test start up.
+    This is run once at test start up.`
 
     Args:
         session (Any): the session
     """
     configuration_locations_manager = ConfigurationFileLocationsManager()
-
     configuration_locations_manager.set_configs_from_pytest_args(session)
-
     ConfigurationManager.load_configs(configuration_locations_manager)
+
+    # check if option test_case_result_id is being passed in
+    if session.config.getoption("--test_case_result_id"):
+        RunResultsManager.set_test_case_result_id(int(session.config.getoption("--test_case_result_id")))
+
     log_configuration()
 
 
@@ -64,11 +63,37 @@ def pytest_runtest_setup(item: Any):
         item(Any): The test case item that we are about to execute.
 
     """
-    # Reset test step counter for this test case
-    get_logger().reset_step_counter()
+    # Reset all step counters for this test case
+    get_logger().reset_all_step_counters()
     # add testcase log handler at test start
     configure_testcase_log_handler(ConfigurationManager.get_logger_config(), item.name)
     log_banners.log_test_start_banner(item)
+    log_banners.log_testcase_stage_banner("Setup", item.name)
+
+
+def pytest_runtest_call(item: Any) -> None:
+    """
+    Built-in pytest hook called to execute the test function.
+
+    This hook runs after setup and before teardown during the pytest lifecycle.
+    This implementation adds to the hook without modifying core test execution behavior.
+
+    It logs a visual banner to mark the beginning of the test's execution phase.
+
+    Args:
+        item (Any): The test case item being executed.
+    """
+    log_banners.log_testcase_stage_banner("Execution", item.name)
+
+
+def pytest_runtest_teardown(item: Any) -> None:
+    """
+    This will run before the test case enters teardown.
+
+    Args:
+        item (Any): The test case item.
+    """
+    log_banners.log_testcase_stage_banner("Teardown", item.name)
 
 
 def pytest_runtest_makereport(item: Any, call: Any):

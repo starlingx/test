@@ -1,3 +1,4 @@
+from framework.ssh.ssh_connection import SSHConnection
 from keywords.base_keyword import BaseKeyword
 
 
@@ -6,24 +7,26 @@ class SystemCTLIsActiveKeywords(BaseKeyword):
     Class for "systemctl is-active" keywords
     """
 
-    def __init__(self, ssh_connection):
+    def __init__(self, ssh_connection: SSHConnection):
         """
         Constructor
+
         Args:
-            ssh_connection:
+            ssh_connection (SSHConnection): SSH connection to the active controller
         """
         self.ssh_connection = ssh_connection
 
-    def is_active(self, service_name) -> str:
+    def is_active(self, service_name: str) -> str:
         """
         Checks if the service is active using  "systemctl is-active <service_name>"
+
         Args:
-            service_name: The name of the service
+            service_name (str): The name of the service
 
-        Returns: 'active' or 'inactive'
-
+        Returns:
+            str: 'active' or 'inactive'
         """
-        output = self.ssh_connection.send(f'systemctl is-active {service_name}')
+        output = self.ssh_connection.send(f"systemctl is-active {service_name}")
         self.validate_success_return_code(self.ssh_connection)
 
         # output is a List of 1 string. "active/n"

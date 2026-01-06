@@ -6,6 +6,7 @@ from framework.ssh.ssh_connection import SSHConnection
 from keywords.base_keyword import BaseKeyword
 from keywords.cloud_platform.command_wrappers import source_openrc
 from keywords.cloud_platform.fault_management.alarms.alarm_list_keywords import AlarmListKeywords
+from keywords.cloud_platform.fault_management.alarms.objects.alarm_list_object import AlarmListObject
 from keywords.cloud_platform.system.host.system_host_list_keywords import SystemHostListKeywords
 
 
@@ -45,6 +46,30 @@ class SystemHostLockKeywords(BaseKeyword):
             raise KeywordException("Lock host did not lock in the required time. Host values were: " f"Operational: {host_value.get_operational()} " f"Administrative: {host_value.get_administrative()} " f"Availability: {host_value.get_availability()}")
         return True
 
+    def lock_host_with_error(self, host_name: str, confirm_flag: bool = False) -> str:
+        """
+        Locks the given host name. It's expected that the cmd returns error
+
+        Args:
+            host_name (str): the name of the host
+            confirm_flag (bool): whether to add --yes flag to bypass confirmation prompts
+
+        Returns:
+            str: a str of error message
+
+        """
+        cmd = f"system host-lock {host_name}"
+        if confirm_flag:
+            cmd += " --yes"
+
+        output = self.ssh_connection.send(source_openrc(cmd))
+        # Handle empty output or return complete output
+        if not output:
+            return "No output received from lock command"
+
+        # Join all output lines to capture complete error message
+        return "\n".join(output) if isinstance(output, list) else str(output)
+
     def wait_for_host_locked(self, host_name: str) -> bool:
         """
         Waits for the given host name to be locked
@@ -81,12 +106,13 @@ class SystemHostLockKeywords(BaseKeyword):
             return True
         return False
 
-    def unlock_host(self, host_name: str) -> bool:
+    def unlock_host(self, host_name: str, unlock_accepted_timeout: int = 300) -> bool:
         """
         Unlocks the given host
 
         Args:
             host_name (str): the host name
+            unlock_accepted_timeout (int): unlock_accepted_timeout to wait to try unlock the host
 
         Returns:
             bool: True if the unlock is successful
@@ -95,15 +121,42 @@ class SystemHostLockKeywords(BaseKeyword):
             KeywordException: If unlock does not occur in the given time
 
         """
+        self.unlock_host_pre_check()
         self.ssh_connection.send(source_openrc(f"system host-unlock {host_name}"))
+
+        # Checking whether the host can be unlocked; if not, the process will retry until the timeout is reached.
+        start = time.time()
+        while time.time() - start < unlock_accepted_timeout:
+            if self.ssh_connection.get_return_code() == 1:
+                get_logger().log_info("Fail to unlock, trying again in 5 seconds")
+                time.sleep(5)
+                self.ssh_connection.send(source_openrc(f"system host-unlock {host_name}"))
+            else:
+                get_logger().log_info(f"The unlock of host {host_name} was started")
+                break
+        else:
+            raise KeywordException(f"Timeout: failed to unlock host {host_name}")
+
         self.validate_success_return_code(self.ssh_connection)
         is_host_unlocked = self.wait_for_host_unlocked(host_name)
         if not is_host_unlocked:
-            host_value = SystemHostListKeywords(self.ssh_connection).get_system_host_list().get_host(host_name)
-            raise KeywordException("Unlock host did not unlock in the required time. Host values were: " f"Operational: {host_value.get_operational()} " f"Administrative: {host_value.get_administrative()} " f"Availability: {host_value.get_availability()}")
+            raise KeywordException("Unlock host did not unlock in the required time.")
         return True
 
-    def wait_for_host_unlocked(self, host_name: str, unlock_wait_timeout: int = 1800) -> bool:
+    def unlock_host_pre_check(self):
+        """
+        Checks to ensure no apps are currently applying as this will cause unlock to fail
+
+        """
+        # check not apps are applying
+        alarm = AlarmListObject()
+        alarm.set_alarm_id("750.004")
+        try:
+            AlarmListKeywords(self.ssh_connection).wait_for_alarms_cleared([alarm])
+        except TimeoutError:  # Alarm still exists, we can't unlock
+            raise KeywordException("Failed unlock pre-check. Application apply was in progress")
+
+    def wait_for_host_unlocked(self, host_name: str, unlock_wait_timeout: int = 2800) -> bool:
         """
         Wait for the host to be unlocked
 
@@ -127,7 +180,6 @@ class SystemHostLockKeywords(BaseKeyword):
                 get_logger().log_info(f"Found an exception when checking the health of the system. Trying again after {refresh_time} seconds")
 
             time.sleep(refresh_time)
-
         return False
 
     def is_host_unlocked(self, host_name: str) -> bool:
@@ -155,6 +207,7 @@ class SystemHostLockKeywords(BaseKeyword):
         for alarm in alarms:
             # Configuration is out-of-date or apps need re-apply or app being reapplied
             if alarm.get_alarm_id() == "250.001" or alarm.get_alarm_id() == "750.006" or alarm.get_alarm_id() == "750.004":
+                get_logger().log_info("The host failed the is_host_unlocked alarm check.")
                 is_alarms_list_ok = False
         if is_alarms_list_ok:
             get_logger().log_info("There are no Config-out-of-date alarms")
@@ -164,3 +217,36 @@ class SystemHostLockKeywords(BaseKeyword):
             return True
 
         return False
+
+    def unlock_multiple_hosts(ssh_connection: SSHConnection, host_names: list[str]) -> None:
+        """
+        Unlocks multiple hosts in succession without waiting between each unlock.
+
+        Args:
+            host_names (list[str]): List of host names to unlock
+        """
+        for host_name in host_names:
+            get_logger().log_info(f"Sending unlock command for host: {host_name}")
+            SystemHostLockKeywords(ssh_connection).unlock_host_pre_check()
+            ssh_connection.send(source_openrc(f"system host-unlock {host_name}"))
+            SystemHostLockKeywords(ssh_connection).validate_success_return_code(ssh_connection)
+
+        for host_name in host_names:
+            if not SystemHostLockKeywords(ssh_connection).wait_for_host_unlocked(host_name):
+                raise RuntimeError(f"{host_name} was not unlocked successfully.")
+
+    def lock_multiple_hosts(ssh_connection: SSHConnection, host_names: list[str]) -> None:
+        """
+        Locks multiple hosts in succession without waiting between each lock.
+
+        Args:
+            host_names (list[str]): List of host names to lock
+        """
+        for host_name in host_names:
+            get_logger().log_info(f"Sending lock command for host: {host_name}")
+            ssh_connection.send(source_openrc(f"system host-lock {host_name}"))
+            SystemHostLockKeywords(ssh_connection).validate_success_return_code(ssh_connection)
+
+            is_host_locked = SystemHostLockKeywords(ssh_connection).wait_for_host_locked(host_name)
+            if not is_host_locked:
+                raise RuntimeError(f"{host_name} was not locked successfully.")

@@ -1,0 +1,51 @@
+# To use this yaml file, you must have the following variables defined:
+# - oam_ip: The oam ip of the lab
+# - mgmt_ip: The management ip of the lab
+# - bind_pw: The bind password to log in
+config:
+  staticClients:
+    - id: stx-oidc-client-app
+      name: STX OIDC Client app
+      redirectURIs: ['https://"{{ oam_ip }}":30555/callback']
+      secret: stx-oidc-client-p@ssw0rd
+  expiry:
+    idTokens: "10h"
+  connectors:
+    - type: ldap
+      name: LocalLDAP
+      id: localldap-1
+      config:
+        host: '"{{ mgmt_ip }}":636'
+        rootCA: /etc/ssl/certs/adcert/local-ldap-ca-cert.crt
+        insecureNoSSL: false
+        insecureSkipVerify: false
+        bindDN: CN=ldapadmin,DC=cgcs,DC=local
+        bindPW: "{{ bind_pw }}"
+        usernamePrompt: Username
+        userSearch:
+          baseDN: ou=People,dc=cgcs,dc=local
+          filter: "(objectClass=posixAccount)"
+          username: uid
+          idAttr: DN
+          emailAttr: uid
+          nameAttr: gecos
+        groupSearch:
+          baseDN: ou=Group,dc=cgcs,dc=local
+          filter: "(objectClass=posixGroup)"
+          userMatchers:
+            - userAttr: uid
+              groupAttr: memberUid
+          nameAttr: cn
+volumeMounts:
+  - mountPath: /etc/ssl/certs/adcert
+    name: certdir
+  - mountPath: /etc/dex/tls
+    name: https-tls
+volumes:
+  - name: certdir
+    secret:
+      secretName: local-ldap-ca-cert
+  - name: https-tls
+    secret:
+      defaultMode: 420
+      secretName: oidc-auth-apps-certificate

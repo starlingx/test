@@ -9,6 +9,12 @@ class CatPtpCguKeywords(BaseKeyword):
     """
 
     def __init__(self, ssh_connection: SSHConnection):
+        """
+        Constructor for CatPtpCguKeywords class.
+
+        Args:
+            ssh_connection (SSHConnection): SSH connection to the active controller.
+        """
         self.ssh_connection = ssh_connection
 
     def cat_ptp_cgu(self, cgu_location: str) -> PtpCguComponentOutput:
@@ -19,8 +25,7 @@ class CatPtpCguKeywords(BaseKeyword):
             cgu_location (str): the cgu location.
 
         Returns:
-            PtpCguComponentOutput - the PtpCguComponentOutput.
-
+            PtpCguComponentOutput: the output of the cat ptp cgu command
         """
         output = self.ssh_connection.send_as_sudo(f"cat {cgu_location}")
         cat_ptp_cgu_component_output = PtpCguComponentOutput(output)

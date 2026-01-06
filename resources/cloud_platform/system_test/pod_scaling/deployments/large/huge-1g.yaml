@@ -1,0 +1,48 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: huge-1g-large
+  annotations:
+    k8s.v1.cni.cncf.io/networks: sriov-data0
+  labels:
+    app: huge-1g-large
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: huge-1g-large
+  template:
+    metadata:
+      labels:
+        app: huge-1g-large
+    spec:
+      containers:
+      - name: huge-1g-large
+        image: registry.local:9001/centos/tools:latest
+        imagePullPolicy: IfNotPresent
+        command: [ "/bin/bash", "-c", "--" ]
+        args: [ "while true; do sleep 300000; done;" ]
+        volumeMounts:
+          - name: hugepage
+            mountPath: /hugepages
+          - name: dummy
+            mountPath: /etc/dummy
+        resources:
+          requests:
+            cpu: 1
+            memory: "1Gi"
+            hugepages-1Gi: 1Gi
+          limits:
+            cpu: 1
+            memory: "1Gi"
+            hugepages-1Gi: 1Gi
+      restartPolicy: Always
+      imagePullSecrets:
+      - name: regcred
+      volumes:
+        - name: hugepage
+          emptyDir:
+            medium: HugePages
+        - hostPath:
+            path: "/home/sysadmin"
+          name: dummy

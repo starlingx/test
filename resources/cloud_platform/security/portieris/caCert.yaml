@@ -1,0 +1,1 @@
+caCert: {{ registry_ca_cert }}

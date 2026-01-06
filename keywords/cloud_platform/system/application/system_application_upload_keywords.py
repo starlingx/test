@@ -45,9 +45,9 @@ class SystemApplicationUploadKeywords(BaseKeyword):
         cmd = self.get_command(system_application_upload_input)
         app_name = system_application_upload_input.get_app_name()
 
-        # If the upload must be forced, checks if the applications is applied/uploaded and remove/delete it, if so.
+        # If the upload must be forced, checks if the applications is applied/apply-failed/uploaded/upload-failed and remove/delete it, if so.
         if system_application_upload_input.get_force():
-            if SystemApplicationApplyKeywords(self.ssh_connection).is_already_applied(app_name):
+            if SystemApplicationApplyKeywords(self.ssh_connection).is_applied_or_failed(app_name):
                 system_application_remove_input = SystemApplicationRemoveInput()
                 system_application_remove_input.set_force_removal(True)
                 system_application_remove_input.set_app_name(app_name)
@@ -65,10 +65,10 @@ class SystemApplicationUploadKeywords(BaseKeyword):
 
         # Tracks the execution of the command 'system application-upload' until its completion or a timeout.
         system_application_list_keywords = SystemApplicationListKeywords(self.ssh_connection)
-        system_application_list_keywords.validate_app_status(app_name, 'uploaded')
+        system_application_list_keywords.validate_app_status(app_name, SystemApplicationStatusEnum.UPLOADED.value)
 
         # If the execution arrived here the status of the application is 'uploaded'.
-        system_application_output.get_system_application_object().set_status('uploaded')
+        system_application_output.get_system_application_object().set_status(SystemApplicationStatusEnum.UPLOADED.value)
 
         return system_application_output
 
@@ -91,9 +91,7 @@ class SystemApplicationUploadKeywords(BaseKeyword):
                 application = SystemApplicationListKeywords(self.ssh_connection).get_system_application_list().get_application(app_name)
                 return (
                     application.get_status() == SystemApplicationStatusEnum.UPLOADED.value
-                    or application.get_status() == SystemApplicationStatusEnum.APPLIED.value
                     or application.get_status() == SystemApplicationStatusEnum.UPLOAD_FAILED.value
-                    or application.get_status() == SystemApplicationStatusEnum.APPLY_FAILED.value
                 )
             return False
         except Exception as ex:
@@ -139,3 +137,26 @@ class SystemApplicationUploadKeywords(BaseKeyword):
         cmd = f'system application-upload {app_name_as_param} {app_version_as_param} {automatic_installation_as_param} {tar_file_path}'
 
         return cmd
+
+    def system_application_upload_and_apply_app(self, app_name: str, tar_file_path: str):
+        """
+        Upload and apply a system application.
+
+        Args:
+            app_name (str): Application name
+            base_path (str): Path where .tgz files are stored
+            tar_file_path (str): Full path to the .tgz file
+
+        Returns:
+            tuple: (upload_status, system_application_apply)
+        """
+
+        upload_input = SystemApplicationUploadInput()
+        upload_input.set_app_name(app_name)
+        upload_input.set_tar_file_path(f"{tar_file_path}")
+
+        self.system_application_upload(upload_input)
+
+        apply_output = SystemApplicationApplyKeywords(self.ssh_connection).system_application_apply(app_name)
+
+        return apply_output

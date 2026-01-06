@@ -1,0 +1,76 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sriov-io-stressor
+  annotations:
+    k8s.v1.cni.cncf.io/networks: sriov-data0
+  labels:
+    app: sriov-io-stressor
+spec:
+  replicas: 5
+  selector:
+    matchLabels:
+      app: sriov-io-stressor
+
+  template:
+    metadata:
+      labels:
+        app: sriov-io-stressor
+    spec:
+      containers:
+      - name: sriov-io-stressor
+        image: alexeiled/stress-ng
+        command: ["/stress-ng"]
+        args: ["--sequential", "1", "--class", "io", "--metrics-brief", "--timeout", "5m", "-v", "--log-file", "/output/$(POD_NAME)-$(NODE_NAME).log", "--yaml", "/output/$(POD_NAME)-$(NODE_NAME).yaml" ]
+        volumeMounts:
+          - name: scratch-volume
+            mountPath: /scratch
+          - name: output-volume
+            mountPath: /output
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "256Mi"
+            intel.com/pci_sriov_net_group0_data0: '1'
+          limits:
+            cpu: "100m"
+            memory: "256Mi"
+            intel.com/pci_sriov_net_group0_data0: '1'
+        env:
+          - name: NODE_NAME
+            valueFrom:
+              fieldRef:
+                fieldPath: spec.nodeName
+          - name: POD_NAME
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.name
+          - name: REQ_CPU
+            valueFrom:
+              resourceFieldRef:
+                containerName: sriov-io-stressor
+                resource: requests.cpu
+          - name: REQ_MEM
+            valueFrom:
+              resourceFieldRef:
+                containerName: sriov-io-stressor
+                resource: requests.memory
+          - name: LIM_CPU
+            valueFrom:
+              resourceFieldRef:
+                containerName: sriov-io-stressor
+                resource: limits.cpu
+          - name: LIM_MEM
+            valueFrom:
+              resourceFieldRef:
+                containerName: sriov-io-stressor
+                resource: limits.memory
+      restartPolicy: Always
+      volumes:
+        - name: scratch-volume
+          emptyDir:
+            medium: Memory
+            sizeLimit: 1Gi
+        - name: output-volume
+          hostPath:
+            path: "/home/sysadmin/stress"

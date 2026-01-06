@@ -1,7 +1,7 @@
 from keywords.k8s.k8s_table_parser_base import K8sTableParserBase
 
 
-class KubectlGetServiceTableParser(K8sTableParserBase):
+class KubectlGetServicesTableParser(K8sTableParserBase):
     """
     Class for parsing the output of "kubectl get service" commands.
     """

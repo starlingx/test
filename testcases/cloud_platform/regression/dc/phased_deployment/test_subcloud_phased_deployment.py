@@ -1,180 +1,240 @@
+import os
 import time
 
-import yaml
-from pytest import fail, mark
+from pytest import mark
 
 from config.configuration_manager import ConfigurationManager
+from framework.kpi.time_kpi import TimeKPI
 from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
 from framework.validation.validation import validate_equals
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_delete_keywords import DcManagerSubcloudDeleteKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_deploy_keywords import DCManagerSubcloudDeployKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_list_keywords import DcManagerSubcloudListKeywords
-from keywords.cloud_platform.dcmanager.objects.dcmanager_subcloud_address_object import DcManagerSubcloudAddressObject
-from keywords.cloud_platform.dcmanager.objects.dcmanager_subcloud_deploy_object import DcManagerSubcloudDeployObject
-from keywords.cloud_platform.dcmanager.objects.dcmanger_subcloud_list_availability_enum import DcManagerSubcloudListAvailabilityEnum
-from keywords.cloud_platform.dcmanager.objects.dcmanger_subcloud_list_management_enum import DcManagerSubcloudListManagementEnum
+from keywords.cloud_platform.dcmanager.dcmanager_subcloud_manager_keywords import DcManagerSubcloudManagerKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
+from keywords.cloud_platform.yaml.deployment_assets_yaml import DeploymentAssetsHandler
 from keywords.files.file_keywords import FileKeywords
 
 
-def select_test_subcloud(ssh_connection: SSHConnection) -> str:
-    """
-    Select the subcloud to perform the test on.
+def get_undeployed_subcloud_name(ssh_connection: SSHConnection) -> str:
+    """Function get undeployed subcloud name
+
+    function to get undeployed subcloud name if no undeployed
+    subcloud found then delete the deployed one and return
 
     Args:
-        ssh_connection(SSHConnection): The ssh connection of the active controller
+        ssh_connection (SSHConnection): SSH connection object.
 
     Returns:
-            str:
-                Subcloud name to test on
+        str: subcloudname
     """
-    subcloud_list_keywords = DcManagerSubcloudListKeywords(ssh_connection)
-    subclouds_list = subcloud_list_keywords.get_dcmanager_subcloud_list()
-    real_subclouds = subclouds_list.get_dcmanager_subcloud_list_objects()
-    if len(real_subclouds) == 0:
-        get_logger().log_error("No subclouds found for testing.")
-        fail("No subclouds found for testing.")
+    dcm_sc_list_kw = DcManagerSubcloudListKeywords(ssh_connection)
 
-    for subcloud in real_subclouds:
-        # Get the subcloud with state unmanaged and offline
-        if subcloud.get_availability == DcManagerSubcloudListManagementEnum.UNMANAGED and subcloud.get_availability == DcManagerSubcloudListAvailabilityEnum.OFFLINE:
-            return subcloud.get_name()
+    subcloud_name = dcm_sc_list_kw.get_dcmanager_subcloud_list().get_undeployed_subcloud_name()
+    if subcloud_name is None:
+        get_logger().log_info("No Undeployed Subcloud found deleting existing one")
+        # Gets the lowest subcloud (the subcloud with the lowest id).
+        get_logger().log_info("Obtaining subcloud with the lowest ID.")
+        lowest_subcloud = dcm_sc_list_kw.get_dcmanager_subcloud_list().get_subcloud_with_lowest_id()
+        get_logger().log_info(f"Subcloud with the lowest ID obtained: ID={lowest_subcloud.get_id()}, Name={lowest_subcloud.get_name()}, Management state={lowest_subcloud.get_management()}")
+        subcloud_name = lowest_subcloud.get_name()
+        dcm_sc_manager_kw = DcManagerSubcloudManagerKeywords(ssh_connection)
+        # poweroff the subcloud.
+        get_logger().log_test_case_step(f"Poweroff subcloud={subcloud_name}.")
+        dcm_sc_manager_kw.set_subcloud_poweroff(subcloud_name)
+        # Unmanage the subcloud.
+        if lowest_subcloud.get_management() == "managed":
+            get_logger().log_test_case_step(f"Unmanage subcloud={subcloud_name}.")
+            dcm_sc_manage_output = dcm_sc_manager_kw.get_dcmanager_subcloud_unmanage(subcloud_name, timeout=10)
+            get_logger().log_info(f"The management state of the subcloud {subcloud_name} was changed to {dcm_sc_manage_output.get_dcmanager_subcloud_manage_object().get_management()}.")
+        # delete the subcloud.
+        dcm_sc_del_kw = DcManagerSubcloudDeleteKeywords(ssh_connection)
+        dcm_sc_del_kw.dcmanager_subcloud_delete(subcloud_name)
 
-    get_logger().log_error("No subcloud found with required state (UNMANAGED and OFFLINE) for testing.")
-    fail("No subcloud found with required state (UNMANAGED and OFFLINE) for testing.")
-
-
-def get_bmc_bootstrap_address(ssh_connection: SSHConnection, subcloud: str) -> DcManagerSubcloudAddressObject:
-    """
-    Get bmc & bootstrap address from install-values-<subcloud>.yaml file
-
-    Args:
-        ssh_connection (SSHConnection): The ssh connection of the active controller
-        subcloud (str): Name of the subcloud
-
-    Raises:
-        FileNotFoundError: If the file does not exist.
-        KeyError: If required keys are missing in the file.
-
-    Returns:
-        DcManagerSubcloudAddressObject: Object containing BMC and bootstrap addresses
-    """
-    get_logger().log_info(f"Get BMC and bootstrap address for {subcloud}")
-    config_files = DCManagerSubcloudDeployKeywords(ssh_connection).get_subcloud_config_files(subcloud)
-    install_values_file_path = config_files.get_install_file()
-    if not FileKeywords(ssh_connection).file_exists(install_values_file_path):
-        raise FileNotFoundError(f"{install_values_file_path} is not found")
-
-    get_logger().log_info(f"Get BMC & bootstrap addresses from {install_values_file_path}")
-    stream = ssh_connection.send("cat {}".format(install_values_file_path))
-    stream_string = "\n".join(stream)
-    install_params = yaml.load(stream_string, Loader=yaml.SafeLoader)
-    install_param_yaml = yaml.dump(install_params, default_flow_style=False)
-    get_logger().log_info(f"Loaded install-values parameters:{install_param_yaml}")
-
-    if "bmc_address" not in install_params or "bootstrap_address" not in install_params:
-        raise KeyError(f"Missing required keys in {install_values_file_path}. Available keys: {list(install_params.keys())}")
-
-    bmc_address = install_params["bmc_address"]
-    bootstrap_address = install_params["bootstrap_address"]
-
-    if not bmc_address or not bootstrap_address:
-        raise ValueError(f"BMC address or bootstrap address cannot be empty in {install_values_file_path}")
-
-    get_logger().log_info(f"Extracted BMC address: {bmc_address}, Bootstrap address: {bootstrap_address}")
-
-    return DcManagerSubcloudAddressObject(bmc_address=bmc_address, bootstrap_address=bootstrap_address)
+    return subcloud_name
 
 
-def capture_kpi(node_name: str, start_time: str, end_time: str, stage: str):
-    """
-    Capture kpi for subcloud deploy phases from start and end time
-
-    Args:
-        node_name (str): Name of the noden
-        start_time (str): The start time of the specified stage execution
-        end_time (str): The end time of the specified stage execution
-        stage (str): The stage of the execution
-    """
-    time_taken = float(end_time) - float(start_time)
-    get_logger().log_info(f"------The time taken for the node {node_name} to finish the stage {stage} is {time_taken} seconds-------")
-
-
-@mark.p1
-@mark.lab_has_subcloud
-def test_kpi_subcloud_deploy_phases():
-    """Capture Kpi for subcloud deploy
-    verify subcloud deploy create, install, bootstrap and config with KPI's for each phase
+@mark.p0
+@mark.lab_has_min_2_subclouds
+def test_phased_deployment(request):
+    """Test Phased deployment steps for subcloud deployment.
 
     Test Steps:
-        - Verify subcloud deploy create
-        - Verify subcloud deploy install
-        - Verify subcloud deploy bootstrap
-        - Verify subcloud deploy config
-        - Collect KPI data for create, install, bootstrap and config phases
+        - log onto system controller
+        - get the ssh connection to the active controller
+        - check first to see if there is an undeployed subcloud if yes run test
+        - If we don't have a subcloud that is undeployed, remove it and then run the test.
+        - execute the phased deployment create
+        - execute the phased deployment install
+        - execute the phased deployment bootstrap
+        - execute the phased deployment config
+        - execute the phased deployment complete
+        - execute the subcloud manage
     """
-    get_logger().log_info("Starting 'test_kpi_subcloud_deploy_phases' test case.")
-
-    # Gets the SSH connection to the active controller of the central cloud.
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    subcloud_name = get_undeployed_subcloud_name(ssh_connection)
+    dcm_sc_deploy_kw = DCManagerSubcloudDeployKeywords(ssh_connection)
+    dcm_sc_manager_kw = DcManagerSubcloudManagerKeywords(ssh_connection)
 
-    # Get subcloud to perform the test on
-    subcloud = select_test_subcloud(ssh_connection)
-    get_logger().log_info(f"Selected subcloud for testing: {subcloud}")
+    # dcmanager subcloud deploy create
+    time_kpi_start_create = TimeKPI(time.time())
+    get_logger().log_info(f"dcmanager subcloud deploy create {subcloud_name}.")
+    dcm_sc_deploy_kw.dcmanager_subcloud_deploy_create(subcloud_name)
+    time_kpi_start_create.log_elapsed_time(time.time(), "time taken subcloud deploy create")
 
-    # Delete the selected subcloud to test on
-    DcManagerSubcloudDeleteKeywords(ssh_connection).dcmanager_subcloud_delete(subcloud)
+    # dcmanager subcloud deploy install
+    time_kpi_start_install = TimeKPI(time.time())
+    get_logger().log_info(f"dcmanager subcloud deploy install {subcloud_name}.")
+    dcm_sc_deploy_kw.dcmanager_subcloud_deploy_install(subcloud_name)
+    time_kpi_start_install.log_elapsed_time(time.time(), "time taken subcloud deploy install")
 
-    # Get sysadmin password from lab config
-    sysadmin_password = ConfigurationManager.get_lab_config().get_admin_credentials().get_password()
+    # dcmanager subcloud deploy bootstrap
+    time_kpi_start_bootstrap = TimeKPI(time.time())
+    get_logger().log_info(f"dcmanager subcloud deploy bootstrap {subcloud_name}.")
+    dcm_sc_deploy_kw.dcmanager_subcloud_deploy_bootstrap(subcloud_name)
+    time_kpi_start_bootstrap.log_elapsed_time(time.time(), "time taken subcloud deploy bootstrap")
 
-    # Get config files
-    config_files = DCManagerSubcloudDeployKeywords(ssh_connection).get_subcloud_config_files(subcloud)
-    bootstrap_file_path = config_files.get_bootstrap_file()
-    install_values_file_path = config_files.get_install_file()
-    deploy_standard_file_path = config_files.get_deploy_file()
+    # dcmanager subcloud deploy config
+    time_kpi_start_config = TimeKPI(time.time())
+    get_logger().log_info(f"dcmanager subcloud deploy config {subcloud_name}.")
+    dcm_sc_deploy_kw.dcmanager_subcloud_deploy_config(subcloud_name)
+    time_kpi_start_config.log_elapsed_time(time.time(), "time taken subcloud deploy config")
 
-    get_logger().log_info(f"Verify subcloud deploy create {subcloud}")
+    # dcmanager subcloud manage
+    get_logger().log_info(f"dcmanager subcloud manage {subcloud_name}.")
+    dcmanager_subcloud_manage_output = dcm_sc_manager_kw.get_dcmanager_subcloud_manage(subcloud_name, timeout=60)
+    manage_status = dcmanager_subcloud_manage_output.get_dcmanager_subcloud_manage_object().get_management()
+    get_logger().log_info(f"The management state of the subcloud {subcloud_name} is {manage_status}")
 
-    # Get BMC and bootstrap addresses
-    address_info = get_bmc_bootstrap_address(ssh_connection, subcloud)
 
-    # Create phase
-    start_time = time.time()
-    deploy_params = DcManagerSubcloudDeployObject(subcloud=subcloud, bootstrap_address=address_info.get_bootstrap_address(), bootstrap_values=bootstrap_file_path)
-    DCManagerSubcloudDeployKeywords(ssh_connection).deploy_create_subcloud(deploy_params)
-    create_end_time = time.time()
-    create_duration = create_end_time - start_time
-    get_logger().log_info(f"Subcloud deploy create duration: {create_duration} seconds")
+@mark.p0
+@mark.lab_has_min_2_subclouds
+def test_subcloud_deploy_abort_resume(request):
+    """Test Phased deployment steps for subcloud deployment.
 
-    # Install phase
-    start_time = time.time()
-    deploy_params = DcManagerSubcloudDeployObject(subcloud=subcloud, install_values=install_values_file_path, bmc_password=sysadmin_password)
-    DCManagerSubcloudDeployKeywords(ssh_connection).deploy_install_subcloud(deploy_params)
-    install_end_time = time.time()
-    install_duration = install_end_time - start_time
-    get_logger().log_info(f"Subcloud deploy install duration: {install_duration} seconds")
+    Test Steps:
+        - log onto system controller
+        - get the ssh connection to the active controller
+        - check first to see if there is an undeployed subcloud if yes run test
+        - If we don't have a subcloud that is undeployed, remove it and then run the test.
+        - execute the phased deployment create
+        - execute the phased deployment install
+        - execute the phased deployment bootstrap
+        - execute the phased deployment abort in some between 10 to 15 mins
+        - execute the phased deployment resume
+        - execute the subcloud manage
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    subcloud_name = get_undeployed_subcloud_name(ssh_connection)
+    dcm_sc_deploy_kw = DCManagerSubcloudDeployKeywords(ssh_connection)
+    dcm_sc_manager_kw = DcManagerSubcloudManagerKeywords(ssh_connection)
 
-    # Bootstrap phase
-    start_time = time.time()
-    deploy_params = DcManagerSubcloudDeployObject(subcloud=subcloud, bootstrap_values=bootstrap_file_path, bootstrap_address=address_info.get_bootstrap_address(), bmc_password=sysadmin_password)
-    DCManagerSubcloudDeployKeywords(ssh_connection).deploy_bootstrap_subcloud(deploy_params)
-    bootstrap_end_time = time.time()
-    bootstrap_duration = bootstrap_end_time - start_time
-    get_logger().log_info(f"Subcloud deploy bootstrap duration: {bootstrap_duration} seconds")
+    # dcmanager subcloud deploy create
+    get_logger().log_info(f"dcmanager subcloud deploy create {subcloud_name}.")
+    dcm_sc_deploy_kw.dcmanager_subcloud_deploy_create(subcloud_name)
 
-    # Config phase
-    start_time = time.time()
-    deploy_params = DcManagerSubcloudDeployObject(subcloud=subcloud, deploy_config=deploy_standard_file_path, bmc_password=sysadmin_password)
-    DCManagerSubcloudDeployKeywords(ssh_connection).deploy_config_subcloud(deploy_params)
-    config_end_time = time.time()
-    config_duration = config_end_time - start_time
-    get_logger().log_info(f"Subcloud deploy config duration: {config_duration} seconds")
+    # dcmanager subcloud deploy install
+    get_logger().log_info(f"dcmanager subcloud deploy install {subcloud_name}.")
+    dcm_sc_deploy_kw.dcmanager_subcloud_deploy_install(subcloud_name)
 
-    # Verify final state
-    subcloud_obj = DcManagerSubcloudListKeywords(ssh_connection).get_dcmanager_subcloud_list().get_subcloud_by_name(subcloud)
-    validate_equals(subcloud_obj.get_deploy_status, DCManagerSubcloudDeployKeywords.CONFIG_EXECUTED, f"Succeeded to verify subcloud deploy config {subcloud}")
-    end_time = time.time()
-    total_duration = end_time - start_time
-    get_logger().log_info(f"Total subcloud deploy duration: {total_duration} seconds")
+    # dcmanager subcloud deploy bootstrap
+    get_logger().log_info(f"dcmanager subcloud deploy bootstrap {subcloud_name}.")
+    dcm_sc_deploy_kw.dcmanager_subcloud_deploy_bootstrap(subcloud_name, wait_for_status=False)
+    # sleep 10 mins for bootstrap to proccess
+    # TODO: Find a better way than random sleep , EX tail log for x number of line
+    sleep_time = 600
+    get_logger().log_info(f"Sleeping for {sleep_time/60} Minutes.")
+    time.sleep(sleep_time)
+    # dcmanager subcloud deploy bootstrap
+    dcm_sc_deploy_kw.dcmanager_subcloud_deploy_abort(subcloud_name)
+    get_logger().log_info(f"dcmanager subcloud deploy abort {subcloud_name}.")
+    dcm_sc_list_kw = DcManagerSubcloudListKeywords(ssh_connection)
+    dcm_sc_list_kw.validate_subcloud_status(subcloud_name, "bootstrap-aborted")
+    # dcmanager subcloud deploy resume
+    time_kpi_start_resume = TimeKPI(time.time())
+    dcm_sc_deploy_kw.dcmanager_subcloud_deploy_resume(subcloud_name)
+    time_kpi_start_resume.log_elapsed_time(time.time(), "time taken subcloud deploy resume")
+
+    # dcmanager subcloud manage
+    get_logger().log_info(f"dcmanager subcloud manage {subcloud_name}.")
+    dcmanager_subcloud_manage_output = dcm_sc_manager_kw.get_dcmanager_subcloud_manage(subcloud_name, timeout=60)
+    manage_status = dcmanager_subcloud_manage_output.get_dcmanager_subcloud_manage_object().get_management()
+    get_logger().log_info(f"The management state of the subcloud {subcloud_name} is {manage_status}")
+
+
+def test_bootstrap_failure_replay():
+    """Test bootstrap failure and resume
+
+    Test Steps:
+        - log onto system controller
+        - get the ssh connection to the active controller
+        - check first to see if there is an undeployed subcloud if yes run test
+        - If we don't have a subcloud that is undeployed, remove it and then run the test.
+        - backup the original bootstrap values yaml file
+        - download the bootstrap values yaml file
+        - inject the wrong docker registery
+        - execute the phased deployment create
+        - execute the phased deployment install
+        - execute the phased deployment bootstrap
+        - wait for bootstrap to fail
+        - restore original bootstrap values yaml file
+        - execute the phased deployment resume
+        - execute the subcloud manage
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    subcloud_name = get_undeployed_subcloud_name(ssh_connection)
+    # Get the subcloud deployment assets
+    deployment_assets_config = ConfigurationManager.get_deployment_assets_config()
+    sc_assets = deployment_assets_config.get_subcloud_deployment_assets(subcloud_name)
+    bootstrap_file = sc_assets.get_bootstrap_file()
+    directory, local_bootstrap_file = os.path.split(bootstrap_file)
+    bootstrap_bkup_file = f"{bootstrap_file}.bkup"
+
+    # backup the file before editing
+    FileKeywords(ssh_connection).copy_file(bootstrap_file, bootstrap_bkup_file)
+    # download file before for updation
+    FileKeywords(ssh_connection).download_file(bootstrap_file, local_bootstrap_file)
+
+    # download bootstrap values file
+    bootstrap_yaml_obj = DeploymentAssetsHandler(local_bootstrap_file)
+    bootstrap_yaml_obj.inject_wrong_bootstrap_value()
+    # upload file
+    FileKeywords(ssh_connection).upload_file(local_bootstrap_file, bootstrap_file)
+
+    # deploy the subcloud with wrong values
+    dcm_sc_deploy_kw = DCManagerSubcloudDeployKeywords(ssh_connection)
+    dcm_sc_manager_kw = DcManagerSubcloudManagerKeywords(ssh_connection)
+
+    # dcmanager subcloud deploy create
+    get_logger().log_info(f"dcmanager subcloud deploy create {subcloud_name}.")
+    dcm_sc_deploy_kw.dcmanager_subcloud_deploy_create(subcloud_name)
+
+    # dcmanager subcloud deploy install
+    get_logger().log_info(f"dcmanager subcloud deploy install {subcloud_name}.")
+    dcm_sc_deploy_kw.dcmanager_subcloud_deploy_install(subcloud_name)
+
+    # dcmanager subcloud deploy bootstrap
+    get_logger().log_info(f"dcmanager subcloud deploy bootstrap {subcloud_name}.")
+    dcm_sc_deploy_kw.dcmanager_subcloud_deploy_bootstrap(subcloud_name, wait_for_status=False)
+    dc_manager_sc_list_kw = DcManagerSubcloudListKeywords(ssh_connection)
+    dc_manager_sc_list_kw.validate_subcloud_status(subcloud_name, "bootstrap-failed")
+
+    # restore original file
+    FileKeywords(ssh_connection).rename_file(bootstrap_bkup_file, bootstrap_file)
+
+    # dcmanager subcloud deploy resume
+    time_kpi_start_resume = TimeKPI(time.time())
+    dcm_sc_deploy_kw.dcmanager_subcloud_deploy_resume(subcloud_name)
+    time_kpi_start_resume.log_elapsed_time(time.time(), "time taken subcloud deploy resume")
+    # dcmanager subcloud deploy config
+    get_logger().log_info(f"dcmanager subcloud deploy config {subcloud_name}.")
+    dcm_sc_deploy_kw.dcmanager_subcloud_deploy_config(subcloud_name)
+    sc_status = dc_manager_sc_list_kw.get_dcmanager_subcloud_list().get_subcloud_by_name(subcloud_name).get_deploy_status()
+    validate_equals(sc_status, "complete", "Validate that subcloud is now deployed")
+
+    # dcmanager subcloud manage
+    get_logger().log_info(f"dcmanager subcloud manage {subcloud_name}.")
+    dcmanager_subcloud_manage_output = dcm_sc_manager_kw.get_dcmanager_subcloud_manage(subcloud_name, timeout=60)
+    manage_status = dcmanager_subcloud_manage_output.get_dcmanager_subcloud_manage_object().get_management()
+    get_logger().log_info(f"The management state of the subcloud {subcloud_name} is {manage_status}")

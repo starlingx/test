@@ -1,0 +1,31 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: huge-1g
+  labels:
+    app: huge-1g
+spec:
+  replicas: 5
+  selector:
+    matchLabels:
+      app: huge-1g
+  template:
+    metadata:
+      labels:
+        app: huge-1g
+    spec:
+      containers:
+      - image: gcr.io/kubernetes-e2e-test-images/resource-consumer:1.4
+        name: huge-1g
+        ports:
+        - containerPort: 8080
+        resources:
+          requests:
+            cpu: "500m"
+            memory: "1Gi"
+            hugepages-1Gi: "1Gi"
+          limits:
+            cpu: "500m"
+            memory: "1Gi"
+            hugepages-1Gi: "1Gi"
+      restartPolicy: Always

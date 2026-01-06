@@ -1,0 +1,61 @@
+heat_template_version: wallaby
+
+description: >
+  Heat template to create OpenStack QoS policies.
+
+parameters:
+  name:
+    type: string
+    default: "{{ name }}"
+    description: Name of the QoS policy
+
+  description:
+    type: string
+    default: "{{ description }}"
+    description: Description of the QoS policy
+
+  project_name:
+    type: string
+    default: "{{ project_name }}"
+    description: Project ID associated with the QoS policy
+
+  max_kbps:
+    type: number
+    default: "{{ max_kbps }}"
+    description: Maximum bandwidth in kbps
+
+  max_burst_kbps:
+    type: number
+    default: "{{ max_burst_kbps }}"
+    description: Maximum burst bandwidth in kbps
+
+  dscp_mark:
+    type: number
+    default: "{{ dscp_mark }}"
+    description: DSCP marking value
+
+resources:
+  project:
+    type: OS::Keystone::Project
+    properties:
+      name: { get_param: project_name }
+
+  qos_policy:
+    type: OS::Neutron::QoSPolicy
+    properties:
+      name: { get_param: name }
+      description: { get_param: description }
+      tenant_id: { get_resource: project }
+      rules:
+        - type: OS::Neutron::QoSBandwidthLimitRule
+          properties:
+            max_kbps: { get_param: max_kbps }
+            max_burst_kbps: { get_param: max_burst_kbps }
+        - type: OS::Neutron::QoSDscpMarkingRule
+          properties:
+            dscp_mark: { get_param: dscp_mark }
+
+outputs:
+  qos_policy_id:
+    description: ID of the created QoS policy
+    value: { get_resource: qos_policy }

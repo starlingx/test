@@ -1,57 +1,53 @@
 import re
 
+from pytest import mark
+
 from config.configuration_manager import ConfigurationManager
+from config.lab.objects.lab_type_enum import LabTypeEnum
 from framework.logging.automation_logger import get_logger
-from framework.validation.validation import validate_equals
+from framework.ssh.ssh_connection import SSHConnection
+from framework.validation.validation import validate_equals, validate_list_contains
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_backup_keywords import DcManagerSubcloudBackupKeywords
+from keywords.cloud_platform.dcmanager.dcmanager_subcloud_group_keywords import DcmanagerSubcloudGroupKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_list_keywords import DcManagerSubcloudListKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_show_keywords import DcManagerSubcloudShowKeywords
+from keywords.cloud_platform.dcmanager.dcmanager_subcloud_update_keywords import DcManagerSubcloudUpdateKeywords
+from keywords.cloud_platform.dcmanager.objects.dcmanager_subcloud_list_object_filter import DcManagerSubcloudListObjectFilter
+from keywords.cloud_platform.health.health_keywords import HealthKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.cloud_platform.version_info.cloud_platform_version_manager import CloudPlatformVersionManagerClass
 from keywords.files.file_keywords import FileKeywords
 from keywords.linux.date.date_keywords import DateKeywords
+from keywords.cloud_platform.system.host.system_host_list_keywords import SystemHostListKeywords
+from keywords.cloud_platform.system.host.system_host_swact_keywords import SystemHostSwactKeywords
+
+BACKUP_PATH = "/opt/dc-vault/backups/"
 
 
-def test_verify_backup_central(request):
-    """
+def verify_backup_central(central_ssh: SSHConnection, subcloud_name: str):
+    """Function to central Backup of a subcloud
 
     Verify backup files are stored in centralized archive
     Verify backup date and backup state of single subcloud
-    Test Steps:
-        - Backup subcloud to store the file on the System Controller
-        - Verify the subcloud backup file is transferred to the centralized
-    default location
-        - Check backup match current Date and if it is complete
-        - Remove files created while the Tc was running.
 
+    Args:
+        central_ssh (SSHConnection): SSH connection to the active controller
+        subcloud_name (str): subcloud name to backup
     """
-    central_ssh = LabConnectionKeywords().get_active_controller_ssh()
     release = CloudPlatformVersionManagerClass().get_sw_version()
-
-    # Gets the lowest subcloud (the subcloud with the lowest id).
-    dcmanager_subcloud_list_keywords = DcManagerSubcloudListKeywords(central_ssh)
-    lowest_subcloud = dcmanager_subcloud_list_keywords.get_dcmanager_subcloud_list().get_healthy_subcloud_with_lowest_id()
-    subcloud_name = lowest_subcloud.get_name()
-
     # Gets the lowest subcloud sysadmin password needed for backup creation.
     lab_config = ConfigurationManager.get_lab_config().get_subcloud(subcloud_name)
     subcloud_password = lab_config.get_admin_credentials().get_password()
 
     dc_manager_backup = DcManagerSubcloudBackupKeywords(central_ssh)
-
     # Path to where the backup file will store.
-    central_path = f"/opt/dc-vault/backups/{subcloud_name}/{release}"
-
-    def teardown():
-        get_logger().log_info("Removing test files during teardown")
-        FileKeywords(central_ssh).delete_folder_with_sudo("/opt/dc-vault/backups/")
-
-    request.addfinalizer(teardown)
-
+    central_path = f"{BACKUP_PATH}{subcloud_name}/{release}"
     # Create a subcloud backup and verify the subcloud backup file in central_path
     get_logger().log_info(f"Create {subcloud_name} backup on Central Cloud")
     dc_manager_backup.create_subcloud_backup(subcloud_password, central_ssh, path=central_path, subcloud=subcloud_name)
 
+    get_logger().log_info("Checking if backup was created on Central")
+    DcManagerSubcloudBackupKeywords(central_ssh).wait_for_backup_status_complete(subcloud_name, expected_status="complete-central")
     get_logger().log_info("Checking Subcloud's backup_status, backup_datetime")
     subcloud_show_object = DcManagerSubcloudShowKeywords(central_ssh).get_dcmanager_subcloud_show(subcloud_name).get_dcmanager_subcloud_show_object()
     backup_status = subcloud_show_object.get_backup_status()
@@ -65,38 +61,40 @@ def test_verify_backup_central(request):
     validate_equals(backup_date[0].strip(), current_date, "Verifying that the backup was created today")
 
 
-def test_verify_backup_local_custom_path(request):
-    """
-    Verify backup files are stored locally to custom directory
+def teardown_central():
+    """Teardown function for central backup."""
+    central_ssh = LabConnectionKeywords().get_active_controller_ssh()
+    # Path to where the backup file will store.
+    get_logger().log_info("Removing test files during teardown")
+    FileKeywords(central_ssh).delete_folder_with_sudo(BACKUP_PATH)
 
-    Test Steps:
-        - Create a YAML file and add backup backup_dir parameter
-        - Verify file created on the System Controller
-        - Run dcmanager CLI Backup with --local-only --backup-values
-        - Verify the backup files are stored locally (subcloud) using
-    the configured path.
-        - Remove files created while the Tc was running.
+
+def teardown_local(subcloud_name: str):
+    """Teardown function for local backup.
+
+    Args:
+        subcloud_name (str): subcloud name
     """
     central_ssh = LabConnectionKeywords().get_active_controller_ssh()
-
-    # Gets the lowest subcloud (the subcloud with the lowest id).
-    dcmanager_subcloud_list_keywords = DcManagerSubcloudListKeywords(central_ssh)
-    lowest_subcloud = dcmanager_subcloud_list_keywords.get_dcmanager_subcloud_list().get_healthy_subcloud_with_lowest_id()
-    subcloud_name = lowest_subcloud.get_name()
     subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
+    get_logger().log_info("Removing test files")
+    FileKeywords(central_ssh).delete_folder_with_sudo("subcloud_backup.yaml")
+    FileKeywords(subcloud_ssh).delete_folder_with_sudo(f"{subcloud_name}_platform_backup_*.tgz")
 
+
+def verify_backup_local_custom_path(central_ssh: SSHConnection, subcloud_ssh: SSHConnection, subcloud_name: str):
+    """Verify backup files are stored locally to custom directory
+
+    Args:
+        central_ssh (SSHConnection): SSH connection to the active controller
+        subcloud_ssh (SSHConnection): SSH connection to the subcloud
+        subcloud_name (str): subcloud name to backup
+    """
     # Gets the lowest subcloud sysadmin password needed for backup creation.
     lab_config = ConfigurationManager.get_lab_config().get_subcloud(subcloud_name)
     subcloud_password = lab_config.get_admin_credentials().get_password()
 
     dc_manager_backup = DcManagerSubcloudBackupKeywords(central_ssh)
-
-    def teardown():
-        get_logger().log_info("Removing test files")
-        FileKeywords(central_ssh).delete_folder_with_sudo("subcloud_backup.yaml")
-        FileKeywords(subcloud_ssh).delete_folder_with_sudo(f"{subcloud_name}_platform_backup_*.tgz")
-
-    request.addfinalizer(teardown)
 
     get_user = lab_config.get_admin_credentials().get_user_name()
     home_path = f"/home/{get_user}/"
@@ -113,3 +111,404 @@ def test_verify_backup_local_custom_path(request):
     # Create a subcloud backup and verify the subcloud backup file in local custom path.
     get_logger().log_info(f"Create {subcloud_name} backup locally on custom path")
     dc_manager_backup.create_subcloud_backup(subcloud_password, subcloud_ssh, path=f"{home_path}{subcloud_name}_platform_backup_*.tgz", subcloud=subcloud_name, local_only=True, backup_yaml=backup_yaml_path)
+
+    get_logger().log_info(f"Checking if backup was created on {subcloud_name}")
+    DcManagerSubcloudBackupKeywords(central_ssh).wait_for_backup_status_complete(subcloud_name, expected_status="complete-local")
+
+
+@mark.p0
+@mark.subcloud_lab_is_simplex
+def test_verify_backup_central_simplex(request):
+    """Central Backup of a subcloud Simplex
+
+    Test Steps:
+        - Backup subcloud to store the file on the System Controller
+        - Verify the subcloud backup file is transferred to the centralized
+    default location
+        - Check backup match current Date and if it is complete
+        - Remove files created while the Tc was running.
+    """
+    central_ssh = LabConnectionKeywords().get_active_controller_ssh()
+    dcm_sc_list_kw = DcManagerSubcloudListKeywords(central_ssh)
+    subcloud = dcm_sc_list_kw.get_dcmanager_subcloud_list().get_healthy_subcloud_by_type(LabTypeEnum.SIMPLEX.value)
+    subcloud_name = subcloud.get_name()
+    # get subcloud ssh
+    subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
+    # Prechecks Before Back-Up:
+    get_logger().log_info(f"Performing pre-checks on {subcloud_name}")
+    obj_health = HealthKeywords(subcloud_ssh)
+    obj_health.validate_healty_cluster()  # Checks alarms, pods, app health
+
+    request.addfinalizer(teardown_central)
+    verify_backup_central(central_ssh, subcloud_name)
+
+
+@mark.p0
+@mark.subcloud_lab_is_duplex
+def test_verify_backup_central_duplex(request):
+    """Central Backup of a subcloud Duplex
+
+    Test Steps:
+        - Backup subcloud to store the file on the System Controller
+        - Verify the subcloud backup file is transferred to the centralized
+    default location
+        - Check backup match current Date and if it is complete
+        - Remove files created while the Tc was running.
+    """
+    central_ssh = LabConnectionKeywords().get_active_controller_ssh()
+    dcm_sc_list_kw = DcManagerSubcloudListKeywords(central_ssh)
+    subcloud = dcm_sc_list_kw.get_dcmanager_subcloud_list().get_healthy_subcloud_by_type(LabTypeEnum.DUPLEX.value)
+    subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud.get_name())
+
+    # Prechecks Before Back-Up:
+    get_logger().log_info(f"Performing pre-checks on {subcloud.get_name()}")
+    obj_health = HealthKeywords(subcloud_ssh)
+    obj_health.validate_healty_cluster()  # Checks alarms, pods, app health
+
+    request.addfinalizer(teardown_central)
+    verify_backup_central(central_ssh, subcloud.get_name())
+
+
+@mark.p0
+@mark.subcloud_lab_is_simplex
+def test_verify_backup_local_simplex(request):
+    """
+    Test Steps:
+        - Create a YAML file and add backup backup_dir parameter
+        - Verify file created on the System Controller
+        - Run dcmanager CLI Backup with --local-only --backup-values
+        - Verify the backup files are stored locally (subcloud) using
+    the configured path.
+        - Remove files created while the Tc was running.
+    """
+    central_ssh = LabConnectionKeywords().get_active_controller_ssh()
+    dcm_sc_list_kw = DcManagerSubcloudListKeywords(central_ssh)
+    subcloud = dcm_sc_list_kw.get_dcmanager_subcloud_list().get_healthy_subcloud_by_type(LabTypeEnum.SIMPLEX.value)
+    subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud.get_name())
+
+    # Prechecks Before Back-Up:
+    get_logger().log_info(f"Performing pre-checks on {subcloud.get_name()}")
+    obj_health = HealthKeywords(subcloud_ssh)
+    obj_health.validate_healty_cluster()  # Checks alarms, pods, app health
+
+    def teardown():
+        teardown_local(subcloud.get_name())
+
+    request.addfinalizer(teardown)
+    verify_backup_local_custom_path(central_ssh, subcloud_ssh, subcloud.get_name())
+
+
+@mark.p0
+@mark.subcloud_lab_is_duplex
+def test_verify_backup_local_duplex(request):
+    """
+    Test Steps:
+        - Create a YAML file and add backup backup_dir parameter
+        - Verify file created on the System Controller
+        - Run dcmanager CLI Backup with --local-only --backup-values
+        - Verify the backup files are stored locally (subcloud) using
+    the configured path.
+        - Remove files created while the Tc was running.
+    """
+    central_ssh = LabConnectionKeywords().get_active_controller_ssh()
+    dcm_sc_list_kw = DcManagerSubcloudListKeywords(central_ssh)
+    subcloud = dcm_sc_list_kw.get_dcmanager_subcloud_list().get_healthy_subcloud_by_type(LabTypeEnum.DUPLEX.value)
+    subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud.get_name())
+
+    # Prechecks Before Back-Up:
+    get_logger().log_info(f"Performing pre-checks on {subcloud.get_name()}")
+    obj_health = HealthKeywords(subcloud_ssh)
+    obj_health.validate_healty_cluster()  # Checks alarms, pods, app health
+
+    def teardown():
+        teardown_local(subcloud.get_name())
+
+    request.addfinalizer(teardown)
+    verify_backup_local_custom_path(central_ssh, subcloud_ssh, subcloud.get_name())
+
+@mark.p0
+@mark.lab_has_subcloud
+def test_verify_backup_central_simplex_group(request):
+    """
+    Verify backup of subcloud group
+
+    Test Steps:
+        - Create a Subcloud group
+        - Assign subcloud to group
+        - Verify the subcloud backup file is transferred to the centralized
+    default location
+        - Check backup match current Date and if it is complete
+    Teardown:
+        - Remove Test Group
+        - Remove files created while the Tc was running.
+    """
+    central_ssh = LabConnectionKeywords().get_active_controller_ssh()
+    release = CloudPlatformVersionManagerClass().get_sw_version()
+
+    # Gets the lowest subcloud (the subcloud with the lowest id).
+    dcmanager_subcloud_list_keywords = DcManagerSubcloudListKeywords(central_ssh)
+    lowest_subcloud = dcmanager_subcloud_list_keywords.get_dcmanager_subcloud_list().get_healthy_subcloud_with_lowest_id()
+    subcloud_name = lowest_subcloud.get_name()
+
+    # Retrieves the subclouds. Considers only subclouds that are online, managed, and synced.
+    dcmanager_subcloud_list_input = DcManagerSubcloudListObjectFilter.get_healthy_subcloud_filter()
+    dcmanager_subcloud_list_keywords = DcManagerSubcloudListKeywords(central_ssh)
+    dcmanager_subcloud_list_objects_filtered = dcmanager_subcloud_list_keywords.get_dcmanager_subcloud_list().get_dcmanager_subcloud_list_objects_filtered(dcmanager_subcloud_list_input)
+    subcloud_list = [subcloud.get_name() for subcloud in dcmanager_subcloud_list_objects_filtered]
+    for subcloud_name in subcloud_list:
+        # Prechecks Before Back-Up:
+        subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
+        get_logger().log_info(f"Performing pre-checks on {subcloud_name}")
+        obj_health = HealthKeywords(subcloud_ssh)
+        obj_health.validate_healty_cluster()  # Checks alarms, pods, app health
+
+    # Gets the lowest subcloud sysadmin password needed for backup creation.
+    lab_config = ConfigurationManager.get_lab_config().get_subcloud(subcloud_name)
+    subcloud_password = lab_config.get_admin_credentials().get_password()
+
+    dc_manager_backup = DcManagerSubcloudBackupKeywords(central_ssh)
+    central_path = f"/opt/dc-vault/backups/{subcloud_name}/{release}/"
+
+    def teardown():
+        get_logger().log_info("Removing test files")
+        FileKeywords(central_ssh).delete_folder_with_sudo("subcloud_backup.yaml")
+        FileKeywords(central_ssh).delete_folder_with_sudo(f"{central_path}{subcloud_name}_platform_backup_*.tgz")
+
+    def teardown_group():
+        get_logger().log_info("Removing the created subcloud group before teardown.")
+        DcManagerSubcloudUpdateKeywords(central_ssh).dcmanager_subcloud_update(subcloud_name=subcloud_name, update_attr="group", update_value="Default")
+        DcmanagerSubcloudGroupKeywords(central_ssh).dcmanager_subcloud_group_delete("TestGroup")
+
+    request.addfinalizer(teardown)
+    request.addfinalizer(teardown_group)
+
+    # Create subcloud group TestGroup
+    DcmanagerSubcloudGroupKeywords(central_ssh).dcmanager_subcloud_group_add(group_name="TestGroup")
+    # Adds subcloud to TestGroup
+    DcManagerSubcloudUpdateKeywords(central_ssh).dcmanager_subcloud_update(subcloud_name=subcloud_name, update_attr="group", update_value="TestGroup")
+
+    group_list = DcmanagerSubcloudGroupKeywords(central_ssh).get_dcmanager_subcloud_group_list_subclouds("TestGroup").get_dcmanager_subcloud_group_list_subclouds()
+    subclouds = [subcloud.get_name() for subcloud in group_list]
+    validate_list_contains(subcloud_name, subclouds, "Verifies if the subcloud name is in the list of subclouds.")
+
+    dc_manager_backup.create_subcloud_backup(subcloud_password, central_ssh, path=f"{central_path}{subcloud_name}_platform_backup_*.tgz", group="TestGroup", subcloud_list=[subcloud_name], release=str(release))
+
+    for subcloud_name in subcloud_list:
+        get_logger().log_info("Checking if backup was created on Central")
+        DcManagerSubcloudBackupKeywords(central_ssh).wait_for_backup_status_complete(subcloud_name, expected_status="complete-central")
+
+@mark.p0
+@mark.lab_has_subcloud
+def test_verify_backup_remote_simplex_group(request):
+    """
+    Verify remote backup of subcloud group
+
+    Test Steps:
+        - Create a Subcloud group
+        - Assign subcloud to group
+        - Verify the subcloud backup file is transferred to the centralized
+    default location
+        - Check backup match current Date and if it is complete
+    Teardown:
+        - Remove Test Group
+        - Remove files created while the Tc was running.
+    """
+
+    get_logger().log_test_case_step("Retrieving ssh key and software release.")
+    central_ssh = LabConnectionKeywords().get_active_controller_ssh()
+    release = CloudPlatformVersionManagerClass().get_sw_version()
+
+    # Gets the lowest subcloud (the subcloud with the lowest id).
+    get_logger().log_test_case_step("Retrieving subcloud name.")
+    dcmanager_subcloud_list_keywords = DcManagerSubcloudListKeywords(central_ssh)
+    lowest_subcloud = dcmanager_subcloud_list_keywords.get_dcmanager_subcloud_list().get_healthy_subcloud_with_lowest_id()
+    subcloud_name = lowest_subcloud.get_name()
+
+    # Retrieves the subclouds. Considers only subclouds that are online, managed, and synced.
+    dcmanager_subcloud_list_input = DcManagerSubcloudListObjectFilter.get_healthy_subcloud_filter()
+    dcmanager_subcloud_list_keywords = DcManagerSubcloudListKeywords(central_ssh)
+    dcmanager_subcloud_list_objects_filtered = dcmanager_subcloud_list_keywords.get_dcmanager_subcloud_list().get_dcmanager_subcloud_list_objects_filtered(dcmanager_subcloud_list_input)
+    subcloud_list = [subcloud.get_name() for subcloud in dcmanager_subcloud_list_objects_filtered]
+    for subcloud_name in subcloud_list:
+        # Prechecks Before Back-Up:
+        subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
+        get_logger().log_test_case_step(f"Performing pre-checks on {subcloud_name}.")
+        obj_health = HealthKeywords(subcloud_ssh)
+        obj_health.validate_healty_cluster()  # Checks alarms, pods, app health
+
+    # Gets the lowest subcloud sysadmin password needed for backup creation.
+    get_logger().log_test_case_step("Retrieving subcloud sysadmin password.")
+    lab_config = ConfigurationManager.get_lab_config().get_subcloud(subcloud_name)
+    subcloud_password = lab_config.get_admin_credentials().get_password()
+
+    dc_manager_backup = DcManagerSubcloudBackupKeywords(central_ssh)
+    central_path = f"/opt/dc-vault/backups/{subcloud_name}/{release}/"
+
+    def teardown():
+        get_logger().log_info("Removing test files")
+        FileKeywords(central_ssh).delete_folder_with_sudo("subcloud_backup.yaml")
+        FileKeywords(central_ssh).delete_folder_with_sudo(f"{central_path}{subcloud_name}_platform_backup_*.tgz")
+
+    def teardown_group():
+        get_logger().log_info("Removing the created subcloud group before teardown.")
+        for subcloud_name in subcloud_list:
+            DcManagerSubcloudUpdateKeywords(central_ssh).dcmanager_subcloud_update(subcloud_name=subcloud_name, update_attr="group", update_value="Default")
+        DcmanagerSubcloudGroupKeywords(central_ssh).dcmanager_subcloud_group_delete("TestGroup")
+
+    request.addfinalizer(teardown)
+    request.addfinalizer(teardown_group)
+
+    # Create subcloud group TestGroup
+    get_logger().log_test_case_step("Creating subcloud group.")
+    DcmanagerSubcloudGroupKeywords(central_ssh).dcmanager_subcloud_group_add(group_name="TestGroup")
+
+    for subcloud_name in subcloud_list:
+        # Adds subcloud to TestGroup
+        get_logger().log_test_case_step(f"Adding {subcloud_name} to group.")
+        DcManagerSubcloudUpdateKeywords(central_ssh).dcmanager_subcloud_update(subcloud_name=subcloud_name, update_attr="group", update_value="TestGroup")
+
+    group_list = DcmanagerSubcloudGroupKeywords(central_ssh).get_dcmanager_subcloud_group_list_subclouds("TestGroup").get_dcmanager_subcloud_group_list_subclouds()
+    subclouds = [subcloud.get_name() for subcloud in group_list]
+    validate_equals(subclouds, subcloud_list, "Checking Subcloud's assigned to the group correctly")
+
+    get_logger().log_test_case_step("Creating subclouds backup on subclouds.")
+    dc_manager_backup.create_subcloud_backup(subcloud_password, central_ssh, path=f"{central_path}{subcloud_name}_platform_backup_*.tgz", group="TestGroup", subcloud_list=[subcloud_name], release=str(release), local_only=True)
+
+    for subcloud_name in subcloud_list:
+        get_logger().log_info(f"Checking if backup was created on {subcloud_name}")
+        DcManagerSubcloudBackupKeywords(central_ssh).wait_for_backup_status_complete(subcloud_name, expected_status="complete-local")
+
+@mark.p0
+@mark.lab_has_subcloud
+def test_verify_backup_local_simplex_images(request):
+    """
+    Verify Backup of registry container images
+
+    Testcase steps:
+            - Pull, tag and push a test image to local registry
+            - Create backup of subcloud and registry backup
+            - Made a Subcloud Restore
+            - Check if the test image was restored
+    """
+    central_ssh = LabConnectionKeywords().get_active_controller_ssh()
+    release = CloudPlatformVersionManagerClass().get_sw_version()
+
+    # Gets the lowest subcloud (the subcloud with the lowest id).
+    dcmanager_subcloud_list_keywords = DcManagerSubcloudListKeywords(central_ssh)
+    lowest_subcloud = dcmanager_subcloud_list_keywords.get_dcmanager_subcloud_list().get_healthy_subcloud_with_lowest_id()
+    subcloud_name = lowest_subcloud.get_name()
+    subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
+
+    # Prechecks Before Back-Up:
+    get_logger().log_info(f"Performing pre-checks on {subcloud_name}")
+    obj_health = HealthKeywords(subcloud_ssh)
+    obj_health.validate_healty_cluster()  # Checks alarms, pods, app health
+
+    # Gets the lowest subcloud sysadmin password needed for backup creation.
+    lab_config = ConfigurationManager.get_lab_config().get_subcloud(subcloud_name)
+    subcloud_password = lab_config.get_admin_credentials().get_password()
+
+    dc_manager_backup = DcManagerSubcloudBackupKeywords(central_ssh)
+    local_path = f"/opt/platform-backup/backups/{release}/"
+
+    def teardown():
+        get_logger().log_info("Removing test files")
+        FileKeywords(central_ssh).delete_folder_with_sudo("subcloud_backup.yaml")
+        FileKeywords(central_ssh).delete_folder_with_sudo(f"{local_path}{subcloud_name}_platform_backup_*.tgz")
+
+    request.addfinalizer(teardown)
+
+    dc_manager_backup.create_subcloud_backup(subcloud_password, subcloud_ssh, subcloud=subcloud_name, path=f"{local_path}{subcloud_name}_platform_backup_*.tgz", local_only=True, registry=True)
+
+    get_logger().log_info(f"Checking if backup was created on {subcloud_name}")
+    DcManagerSubcloudBackupKeywords(central_ssh).wait_for_backup_status_complete(subcloud_name, expected_status="complete-local")
+
+@mark.p2
+@mark.lab_has_subcloud
+def test_c1_restore_remote_backup_active_load(request):
+    """
+    Verify subcloud backup is created and stored in subcloud.
+
+    Test Steps:
+        - Verify if the active controller is controller-1,
+          if not, swact to it.
+        - Create a Subcloud backup and check it is stored
+          in the subcloud.
+    Teardown:
+        - Remove files created while the Tc was running.
+
+    """
+    central_ssh = LabConnectionKeywords().get_active_controller_ssh()
+    active_controller = SystemHostListKeywords(central_ssh).get_active_controller()
+    standby_controller = SystemHostListKeywords(central_ssh).get_standby_controller()
+    if active_controller.get_host_name() == "controller-0":
+        SystemHostSwactKeywords(central_ssh).host_swact()
+        SystemHostSwactKeywords(central_ssh).wait_for_swact(active_controller, standby_controller)
+
+    release = CloudPlatformVersionManagerClass().get_sw_version()
+
+    # Gets the lowest subcloud (the subcloud with the lowest id).
+    dcmanager_subcloud_list_keywords = DcManagerSubcloudListKeywords(central_ssh)
+    lowest_managed_subcloud = dcmanager_subcloud_list_keywords.get_dcmanager_subcloud_list().get_healthy_subcloud_with_lowest_id()
+    subcloud_name = lowest_managed_subcloud.get_name()
+
+    subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
+
+    # Prechecks Before Back-Up:
+    get_logger().log_info(f"Performing pre-checks on {subcloud_name}")
+    obj_health = HealthKeywords(subcloud_ssh)
+    obj_health.validate_healty_cluster()  # Checks alarms, pods, app health
+
+    # Gets the lowest subcloud sysadmin password needed for backup creation and deletion on local_path.
+    lab_config = ConfigurationManager.get_lab_config().get_subcloud(subcloud_name)
+    subcloud_password = lab_config.get_admin_credentials().get_password()
+
+    dc_manager_backup = DcManagerSubcloudBackupKeywords(central_ssh)
+
+    # Path to where the backup file will store.
+    local_path = f"/opt/platform-backup/backups/{release}/{subcloud_name}_platform_backup_*.tgz"
+
+    def teardown():
+
+        get_logger().log_info("Removing test files during teardown")
+        FileKeywords(subcloud_ssh).delete_folder_with_sudo("/opt/platform-backup/backups/")
+
+    request.addfinalizer(teardown)
+    verify_backup_local_custom_path(central_ssh, subcloud_ssh, subcloud_name)
+
+@mark.p2
+@mark.lab_has_subcloud
+def test_c1_restore_central_backup_active_load(request):
+    """
+    Verify subcloud backup is created and stored centrally.
+
+    Test Steps:
+        - Verify if the active controller is controller-1,
+          if not, swact to it.
+        - Create a Subcloud backup and check it is stored
+          centrally on the System Controller.
+    Teardown:
+        - Remove files created while the Tc was running.
+
+    """
+    central_ssh = LabConnectionKeywords().get_active_controller_ssh()
+    active_controller = SystemHostListKeywords(central_ssh).get_active_controller()
+    standby_controller = SystemHostListKeywords(central_ssh).get_standby_controller()
+    if active_controller.get_host_name() == "controller-0":
+        SystemHostSwactKeywords(central_ssh).host_swact()
+        SystemHostSwactKeywords(central_ssh).wait_for_swact(active_controller, standby_controller)
+
+    # Gets the lowest subcloud (the subcloud with the lowest id).
+    dcmanager_subcloud_list_keywords = DcManagerSubcloudListKeywords(central_ssh)
+    lowest_managed_subcloud = dcmanager_subcloud_list_keywords.get_dcmanager_subcloud_list().get_healthy_subcloud_with_lowest_id()
+    subcloud_name = lowest_managed_subcloud.get_name()
+
+    subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
+
+    # Prechecks Before Back-Up:
+    get_logger().log_info(f"Performing pre-checks on {subcloud_name}")
+    obj_health = HealthKeywords(subcloud_ssh)
+    obj_health.validate_healty_cluster()  # Checks alarms, pods, app health
+
+    request.addfinalizer(teardown_central)
+    verify_backup_central(central_ssh, subcloud_name)

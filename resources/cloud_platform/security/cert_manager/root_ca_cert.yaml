@@ -1,0 +1,13 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ root_ca_cert }}
+  namespace: {{ namespace }}
+spec:
+  isCA: true
+  duration: 8760h
+  secretName: {{ root_ca_secret }}
+  issuerRef:
+    name: {{ cluster_issuer }}
+    kind: ClusterIssuer
+  commonName: root-ca.test

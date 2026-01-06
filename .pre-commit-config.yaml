@@ -72,3 +72,10 @@ repos:
       language: python
       types: [python]
       args: ["--fail-under", "100", "--ignore-module", "--ignore-init-method", "--ignore-nested-functions", "--verbose"]
+
+    - id: unit-tests
+      name: Run unit tests before push
+      entry: bash -c 'pytest unit_tests/'
+      language: system
+      pass_filenames: false
+      stages: [push]

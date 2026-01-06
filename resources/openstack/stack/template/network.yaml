@@ -1,0 +1,119 @@
+heat_template_version: wallaby
+
+description: >
+  Heat template to create OpenStack networks and subnets with project name and QoS policy name lookup.
+
+parameters:
+  network_name:
+    type: string
+    default: "{{ name }}"
+    description: Name of the network
+
+  subnet_name:
+    type: string
+    default: "{{ subnet_name }}"
+    description: Name of the subnet
+
+  project_name:
+    type: string
+    default: "{{ project_name }}"
+    description: Project name associated with the network
+
+  qos_policy_name:
+    type: string
+    default: "{{ qos_policy_name }}"
+    description: QoS policy name associated with the network
+
+  provider_network_type:
+    type: string
+    default: "{{ provider_network_type }}"
+    description: Provider network type (e.g., vlan)
+
+  provider_physical_network:
+    type: string
+    default: "{{ provider_physical_network }}"
+    description: Provider physical network name
+
+  shared:
+    type: boolean
+    default: "{{ shared }}"
+    description: Whether the network is shared
+
+  external:
+    type: boolean
+    default: "{{ external }}"
+    description: Whether the network is external
+
+  gateway_ip:
+    type: string
+    default: "{{ gateway_ip }}"
+    description: Gateway IP for the subnet
+
+  enable_dhcp:
+    type: boolean
+    default: "{{ enable_dhcp }}"
+    description: Whether DHCP is disabled for the subnet
+
+  subnet_range:
+    type: string
+    default: "{{ subnet_range }}"
+    description: Subnet range in CIDR format
+
+  ip_version:
+    type: number
+    default: "{{ ip_version }}"
+    description: IP version (e.g., 4)
+
+  allocation_pool_start:
+    type: string
+    default: "{{ allocation_pool_start }}"
+    description: Start of the allocation pool
+
+  allocation_pool_end:
+    type: string
+    default: "{{ allocation_pool_end }}"
+    description: End of the allocation pool
+
+resources:
+  project:
+    type: OS::Keystone::Project
+    properties:
+      name: { get_param: project_name }
+
+  qos_policy:
+    type: OS::Neutron::QoSPolicy
+    properties:
+      name: { get_param: qos_policy_name }
+
+  network:
+    type: OS::Neutron::Net
+    properties:
+      name: { get_param: network_name }
+      tenant_id: { get_resource: project }
+      provider:network_type: { get_param: provider_network_type }
+      provider:physical_network: { get_param: provider_physical_network }
+      shared: { get_param: shared }
+      external: { get_param: external }
+      qos_policy: { get_resource: qos_policy }
+
+  subnet:
+    type: OS::Neutron::Subnet
+    properties:
+      name: { get_param: subnet_name }
+      network_id: { get_resource: network }
+      gateway_ip: { get_param: gateway_ip }
+      enable_dhcp: { get_param: enable_dhcp }
+      cidr: { get_param: subnet_range }
+      ip_version: { get_param: ip_version }
+      allocation_pools:
+        - start: { get_param: allocation_pool_start }
+          end: { get_param: allocation_pool_end }
+
+outputs:
+  network_id:
+    description: ID of the created network
+    value: { get_resource: network }
+
+  subnet_id:
+    description: ID of the created subnet
+    value: { get_resource: subnet }

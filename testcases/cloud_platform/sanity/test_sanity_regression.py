@@ -23,6 +23,7 @@ from keywords.cloud_platform.system.interface.system_interface_datanetwork_keywo
 from keywords.docker.images.docker_images_keywords import DockerImagesKeywords
 from keywords.docker.images.docker_load_image_keywords import DockerLoadImageKeywords
 from keywords.docker.images.docker_remove_images_keywords import DockerRemoveImagesKeywords
+from keywords.docker.images.docker_sync_images_keywords import DockerSyncImagesKeywords
 from keywords.docker.login.docker_login_keywords import DockerLoginKeywords
 from keywords.files.file_keywords import FileKeywords
 from keywords.files.yaml_keywords import YamlKeywords
@@ -54,50 +55,53 @@ from keywords.server.power_keywords import PowerKeywords
 @mark.lab_is_simplex
 def test_push_docker_image_to_local_registry_simplex(request):
     """
-    Test push a docker image to local docker registry
+    Test push a docker image to local docker registry using manifest-based sync
 
     Test Steps:
-      - Copy busybox.tar file to controller
-      - Load image to host
-      - tag image for local registry
-      - Push image to local registry
-      - Assert image appears using docker images command
+    - Sync busybox image from named manifest to local registry
+    - Remove cached images to force fresh pull
+    - Pull image from local registry
+    - Assert image is available in docker images list
 
     Cleanup
-      - Remove docker image
-
+      - Remove docker image from local registry
     """
-
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
 
-    local_registry = ConfigurationManager.get_docker_config().get_registry("local_registry")
+    local_registry = ConfigurationManager.get_docker_config().get_local_registry()
 
-    FileKeywords(ssh_connection).upload_file(get_stx_resource_path("resources/images/busybox.tar"), "/home/sysadmin/busybox.tar", overwrite=False)
+    # Test image details
+    image_name = "busybox"
+    image_tag = "1.36.1"
+    manifest_name = "stx-sanity"  # logical name of manifest in docker config;  e.g. "stx-sanity" in config/docker/<docker_config>.json5"
+
+    # Create secret for local registry
     KubectlCreateSecretsKeywords(ssh_connection).create_secret_for_registry(local_registry, "local-secret")
-    docker_load_image_keywords = DockerLoadImageKeywords(ssh_connection)
-    docker_load_image_keywords.load_docker_image_to_host("busybox.tar")
-    docker_load_image_keywords.tag_docker_image_for_registry("busybox", "busybox", local_registry)
-    docker_load_image_keywords.push_docker_image_to_registry("busybox", local_registry)
+
+    # Sync busybox image from manifest to local registry
+    docker_sync_keywords = DockerSyncImagesKeywords(ssh_connection)
+    docker_sync_keywords.sync_image_from_manifest(image_name, image_tag, manifest_name)
 
     def remove_docker_image():
         """
         Finalizer to remove docker image
-
         """
-        DockerRemoveImagesKeywords(ssh_connection).remove_docker_image("busybox")
+        docker_sync_keywords.remove_image_from_manifest(image_name, image_tag, manifest_name)
 
     request.addfinalizer(remove_docker_image)
 
-    # remove cached images
+    # Remove cached images to test pull from local registry
     docker_image_keywords = DockerImagesKeywords(ssh_connection)
-    docker_image_keywords.remove_image("registry.local:9001/busybox")
-    docker_image_keywords.remove_image("busybox")
+    docker_sync_keywords.remove_image_from_manifest(image_name, image_tag, manifest_name)
 
-    # pull image
-    docker_image_keywords.pull_image("registry.local:9001/busybox")
+    # Pull image from local registry
+    local_image_full_ref = f"{local_registry.get_registry_url()}/{image_name}:{image_tag}"
+    docker_image_keywords.pull_image(local_image_full_ref)
 
-    images = DockerImagesKeywords(ssh_connection).list_images()
-    assert "registry.local:9001/busybox" in list(map(lambda image: image.get_repository(), images))
+    # Assert image is available
+    images = docker_image_keywords.list_images()
+    expected_repo = f"{local_registry.get_registry_url()}/{image_name}"
+    assert expected_repo in list(map(lambda image: image.get_repository(), images))
 
 
 @mark.p0
@@ -121,7 +125,7 @@ def test_push_docker_image_to_local_registry_standby(request):
 
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
 
-    local_registry = ConfigurationManager.get_docker_config().get_registry("local_registry")
+    local_registry = ConfigurationManager.get_docker_config().get_local_registry()
 
     FileKeywords(ssh_connection).upload_file(get_stx_resource_path("resources/images/busybox.tar"), "/home/sysadmin/busybox.tar", overwrite=False)
     KubectlCreateSecretsKeywords(ssh_connection).create_secret_for_registry(local_registry, "local-secret")
@@ -250,6 +254,7 @@ def test_upload_charts_via_helm_upload_simplex():
     file_keywords = FileKeywords(ssh_connection)
     if file_keywords.file_exists(f"{helm_chart_location}/{helm_file}"):
         file_keywords.delete_file(f"{helm_chart_location}/{helm_file}")
+        HelmKeywords(ssh_connection).helm_repo_index(f"{helm_chart_location}")
 
     # upload file to lab
     file_keywords.upload_file(get_stx_resource_path(f"resources/cloud_platform/containers/{helm_file}"), f"/home/sysadmin/{helm_file}", overwrite=True)
@@ -283,6 +288,7 @@ def test_upload_charts_via_helm_upload_standby_controller(request):
     file_keywords = FileKeywords(ssh_connection)
     if file_keywords.file_exists(f"{helm_chart_location}/{helm_file}"):
         file_keywords.delete_file(f"{helm_chart_location}/{helm_file}")
+        HelmKeywords(ssh_connection).helm_repo_index(f"{helm_chart_location}")
 
     # upload file to lab
     file_keywords.upload_file(get_stx_resource_path(f"resources/cloud_platform/containers/{helm_file}"), f"/home/sysadmin/{helm_file}", overwrite=True)
@@ -499,7 +505,7 @@ def deploy_images_to_local_registry(ssh_connection: SSHConnection):
         ssh_connection (SSHConnection): the ssh connection
 
     """
-    local_registry = ConfigurationManager.get_docker_config().get_registry("local_registry")
+    local_registry = ConfigurationManager.get_docker_config().get_local_registry()
 
     docker_load_image_keywords = DockerLoadImageKeywords(ssh_connection)
     FileKeywords(ssh_connection).upload_file(get_stx_resource_path("resources/images/resource-consumer.tar"), "/home/sysadmin/resource-consumer.tar", overwrite=False)
@@ -551,14 +557,22 @@ def wait_for_pods_status_running(ssh_connection: SSHConnection) -> bool:
         bool: True if they are running, False otherwise
 
     """
-    pods = KubectlGetPodsKeywords(ssh_connection).get_pods()
 
+    # Wait until the pods are created.
+    def get_number_of_consumer_pods():
+        pods = KubectlGetPodsKeywords(ssh_connection).get_pods()
+        consumer_pods = pods.get_pods_start_with("resource-consumer")
+        return len(consumer_pods)
+
+    validate_equals_with_retry(get_number_of_consumer_pods, 2, "There are 2 resource-consumer pods created")
+
+    # Get the full names of those consumer pods
+    pods = KubectlGetPodsKeywords(ssh_connection).get_pods()
     consumer_pods = pods.get_pods_start_with("resource-consumer")
-    assert len(consumer_pods) == 2, "Incorrect number of consumer_pods were created"
     consumer_pod1_name = consumer_pods[0].get_name()
     consumer_pod2_name = consumer_pods[1].get_name()
 
-    # wait for all pods to be running
+    # Wait for all pods to be running
     kubectl_get_pods_keywords = KubectlGetPodsKeywords(ssh_connection)
     consumer_pod1_running = kubectl_get_pods_keywords.wait_for_pod_status(consumer_pod1_name, "Running")
     consumer_pod2_running = kubectl_get_pods_keywords.wait_for_pod_status(consumer_pod2_name, "Running")
@@ -689,7 +703,7 @@ def test_isolated_2processors_2big_pods_best_effort_simplex(request):
     get_logger().log_info("Validated the cpu-manager-policy and topology-manager-policy from the kubelet command line.")
 
     # Upload Docker image to local registry
-    local_registry = ConfigurationManager.get_docker_config().get_registry("local_registry")
+    local_registry = ConfigurationManager.get_docker_config().get_local_registry()
     KubectlCreateSecretsKeywords(ssh_connection).create_secret_for_registry(local_registry, "local-secret")
 
     file_keywords = FileKeywords(ssh_connection)
@@ -937,7 +951,7 @@ def test_isolated_2processors_2big_pods_best_effort_standby_controller(request):
     get_logger().log_info("Validated the cpu-manager-policy and topology-manager-policy from the kubelet command line.")
 
     # Upload Docker image to local registry
-    local_registry = ConfigurationManager.get_docker_config().get_registry("local_registry")
+    local_registry = ConfigurationManager.get_docker_config().get_local_registry()
     KubectlCreateSecretsKeywords(standby_controller_ssh).create_secret_for_registry(local_registry, "local-secret")
 
     file_keywords = FileKeywords(standby_controller_ssh)
@@ -1460,7 +1474,7 @@ def sriov_deploy_images_to_local_registry(ssh_connection: SSHConnection):
         ssh_connection (SSHConnection): the ssh connection
 
     """
-    local_registry = ConfigurationManager.get_docker_config().get_registry("local_registry")
+    local_registry = ConfigurationManager.get_docker_config().get_local_registry()
     file_keywords = FileKeywords(ssh_connection)
 
     file_keywords.upload_file(get_stx_resource_path("resources/images/pv-test.tar"), "/home/sysadmin/pv-test.tar", overwrite=False)

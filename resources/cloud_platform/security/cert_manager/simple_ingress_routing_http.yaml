@@ -1,0 +1,82 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: pvtest
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: apple-app
+  namespace: pvtest
+  labels:
+    app: apple
+spec:
+  containers:
+    - name: apple-app
+      image: hashicorp/http-echo
+      args:
+        - "-text=apple"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: apple-service
+  namespace: pvtest
+spec:
+  selector:
+    app: apple
+  ports:
+    - port: 5678
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: banana-app
+  namespace: pvtest
+  labels:
+    app: banana
+spec:
+  containers:
+    - name: banana-app
+      image: hashicorp/http-echo
+      args:
+        - "-text=banana"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: banana-service
+  namespace: pvtest
+spec:
+  selector:
+    app: banana
+  ports:
+    - port: 5678
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: example-ingress
+  namespace: pvtest
+  annotations:
+    ingress.kubernetes.io/rewrite-target: /
+spec:
+  ingressClassName: nginx
+  rules:
+  - http:
+      paths:
+        - backend:
+            service:
+              name: apple-service
+              port:
+                number: 5678
+          path: /apple
+          pathType: ImplementationSpecific
+        - backend:
+            service:
+              name: banana-service
+              port:
+                number: 5678
+          path: /banana
+          pathType: ImplementationSpecific

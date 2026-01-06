@@ -1,0 +1,13 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ registry_local_cert }}
+  namespace: {{ namespace }}
+spec:
+  commonName: {{ floating_ip }}
+  dnsNames:
+    - registry.local
+  issuerRef:
+    name: {{ platform_issuer }}
+    kind: Issuer
+  secretName: {{ registry_local_secret }}

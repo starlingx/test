@@ -1,5 +1,6 @@
 from typing import Dict
 
+from config.host.objects.host_configuration import HostConfiguration
 from config.ptp.objects.ptp_nic_connection import PTPNicConnection
 from config.ptp.objects.sma_connector import SMAConnector
 from config.ptp.objects.ufl_connector import UFLConnector
@@ -21,7 +22,6 @@ class PTPNic:
         """
         self.name: str = nic_name
         self.gpio_switch_port = None
-        self.pci_slot = None
         self.base_port = None
         self.sma1 = None
         self.sma2 = None
@@ -30,12 +30,12 @@ class PTPNic:
         self.nic_connection = None
         self.conn_to_spirent = None
         self.spirent_port = None
+        self.conn_to_proxmox = None
+        self.proxmox_port = None
+        self.proxmox_ptp_vm_config = None
 
         if "gpio_switch_port" in nic_dict and nic_dict["gpio_switch_port"]:
             self.gpio_switch_port = nic_dict["gpio_switch_port"]
-
-        if "pci_slot" in nic_dict and nic_dict["pci_slot"]:
-            self.pci_slot = nic_dict["pci_slot"]
 
         if "base_port" in nic_dict and nic_dict["base_port"]:
             self.base_port = nic_dict["base_port"]
@@ -48,6 +48,15 @@ class PTPNic:
 
         if "spirent_port" in nic_dict and nic_dict["spirent_port"]:
             self.spirent_port = nic_dict["spirent_port"]
+
+        if "conn_to_proxmox" in nic_dict and nic_dict["conn_to_proxmox"]:
+            self.conn_to_proxmox = nic_dict["conn_to_proxmox"]
+
+        if "proxmox_port" in nic_dict and nic_dict["proxmox_port"]:
+            self.proxmox_port = nic_dict["proxmox_port"]
+
+        if "proxmox_ptp_vm_config" in nic_dict and nic_dict["proxmox_ptp_vm_config"]:
+            self.proxmox_ptp_vm_config = HostConfiguration(nic_dict["proxmox_ptp_vm_config"])
 
     def __str__(self):
         """
@@ -70,11 +79,11 @@ class PTPNic:
         """
         sma1_dict = None
         if self.sma1:
-            sma1_dict = self.sma1.to_dictionary()
+            sma1_dict = self.sma1.to_dictionary(self.name)
 
         sma2_dict = None
         if self.sma2:
-            sma2_dict = self.sma2.to_dictionary()
+            sma2_dict = self.sma2.to_dictionary(self.name)
 
         ufl1_dict = None
         if self.ufl1:
@@ -91,7 +100,6 @@ class PTPNic:
         ptp_nic_dictionary = {
             "name": self.name,
             "gpio_switch_port": self.gpio_switch_port,
-            "pci_slot": self.pci_slot,
             "base_port": self.base_port,
             "sma1": sma1_dict,
             "sma2": sma2_dict,
@@ -100,6 +108,9 @@ class PTPNic:
             "nic_connection": nic_connection_dict,
             "conn_to_spirent": self.conn_to_spirent,
             "spirent_port": self.spirent_port,
+            "conn_to_proxmox": self.conn_to_proxmox,
+            "proxmox_port": self.proxmox_port,
+            "proxmox_ptp_vm_config": self.proxmox_ptp_vm_config,
         }
         return ptp_nic_dictionary
 
@@ -123,16 +134,6 @@ class PTPNic:
         """
         return self.gpio_switch_port
 
-    def get_pci_slot(self) -> str:
-        """
-        Gets the pci slot
-
-        Returns (str):
-            The pci slot
-
-        """
-        return self.pci_slot
-
     def get_base_port(self) -> str:
         """
         Gets the base port.
@@ -141,6 +142,15 @@ class PTPNic:
             The base port.
         """
         return self.base_port
+
+    def get_nic_connection(self) -> PTPNicConnection:
+        """
+        Gets the nic connection.
+
+        Returns:
+            PTPNicConnection: PTP NIC connection.
+        """
+        return self.nic_connection
 
     def get_sma1(self) -> SMAConnector:
         """
@@ -243,3 +253,30 @@ class PTPNic:
             The Spirent port.
         """
         return self.spirent_port
+
+    def get_conn_to_proxmox(self) -> str:
+        """
+        Gets the connection to proxmox.
+
+        Returns (str):
+            The connection to proxmox.
+        """
+        return self.conn_to_proxmox
+
+    def get_proxmox_port(self) -> str:
+        """
+        Gets the proxmox port.
+
+        Returns (str):
+            The proxmox port.
+        """
+        return self.proxmox_port
+
+    def get_proxmox_ptp_vm_config(self) -> HostConfiguration:
+        """
+        Gets the proxmox PTP VM config.
+
+        Returns (HostConfiguration):
+            The proxmox PTP VM configuration object.
+        """
+        return self.proxmox_ptp_vm_config

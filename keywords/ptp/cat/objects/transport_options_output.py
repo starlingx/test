@@ -17,45 +17,43 @@ class TransportOptionsOutput:
 
     """
 
-    def __init__(self, transport_options_output: [str]):
+    def __init__(self, transport_options_output: list[str]):
         """
-        Constructor.
-            Create an internal ServoOptionsObject from the passed parameter.
+        Create an internal ServoOptionsObject from the passed parameter.
+
         Args:
             transport_options_output (list[str]): a list of strings representing the servo options output
-
         """
         cat_ptp_table_parser = CatPtpTableParser(transport_options_output)
         output_values = cat_ptp_table_parser.get_output_values_dict()
         self.transport_options_object = TransportOptionsObject()
 
-        if 'transportSpecific' in output_values:
-            self.transport_options_object.set_transport_specific(output_values['transportSpecific'])
+        if "transportSpecific" in output_values:
+            self.transport_options_object.set_transport_specific(output_values["transportSpecific"])
 
-        if 'ptp_dst_mac' in output_values:
-            self.transport_options_object.set_ptp_dst_mac(output_values['ptp_dst_mac'])
+        if "ptp_dst_mac" in output_values:
+            self.transport_options_object.set_ptp_dst_mac(output_values["ptp_dst_mac"])
 
-        if 'p2p_dst_mac' in output_values:
-            self.transport_options_object.set_p2p_dst_mac(output_values['p2p_dst_mac'])
+        if "p2p_dst_mac" in output_values:
+            self.transport_options_object.set_p2p_dst_mac(output_values["p2p_dst_mac"])
 
-        if 'udp_ttl' in output_values:
-            self.transport_options_object.set_udp_ttl(int(output_values['udp_ttl']))
+        if "udp_ttl" in output_values:
+            self.transport_options_object.set_udp_ttl(int(output_values["udp_ttl"]))
 
-        if 'udp6_scope' in output_values:
-            self.transport_options_object.set_udp6_scope(output_values['udp6_scope'])
+        if "udp6_scope" in output_values:
+            self.transport_options_object.set_udp6_scope(output_values["udp6_scope"])
 
-        if 'uds_address' in output_values:
-            self.transport_options_object.set_uds_address(output_values['uds_address'])
+        if "uds_address" in output_values:
+            self.transport_options_object.set_uds_address(output_values["uds_address"])
 
-        if 'uds_ro_address' in output_values:
-            self.transport_options_object.set_uds_ro_address(output_values['uds_ro_address'])
+        if "uds_ro_address" in output_values:
+            self.transport_options_object.set_uds_ro_address(output_values["uds_ro_address"])
 
     def get_transport_options_object(self) -> TransportOptionsObject:
         """
         Getter for TransportOptionsObject object.
 
         Returns:
-            A TransportOptionsObject
-
+            TransportOptionsObject: The transport options object containing parsed values.
         """
         return self.transport_options_object

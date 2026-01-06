@@ -1,0 +1,75 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: burstable-random-stressor
+  labels:
+    app: burstable-random-stressor
+spec:
+  replicas: 5
+  selector:
+    matchLabels:
+      app: burstable-random-stressor
+
+  template:
+    metadata:
+      labels:
+        app: burstable-random-stressor
+    spec:
+      containers:
+      - name: burstable-random-stressor
+        image: registry.local:9001/alexeiled/stress-ng
+        imagePullPolicy: IfNotPresent
+        command: ["/stress-ng"]
+        args: ["--random", "5", "--metrics-brief", "--timeout", "1h", "-v", "--log-file", "/output/$(POD_NAME)-$(NODE_NAME).log", "--yaml", "/output/$(POD_NAME)-$(NODE_NAME).yaml" ] 
+        volumeMounts:
+          - name: scratch-volume
+            mountPath: /scratch
+          - name: output-volume
+            mountPath: /output
+        resources:
+          requests:
+            cpu: "25m"
+            memory: "100Mi"
+          limits:
+            cpu: "50m"
+            memory: "200Mi"
+        env:
+          - name: NODE_NAME
+            valueFrom:
+              fieldRef:
+                fieldPath: spec.nodeName
+          - name: POD_NAME
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.name
+          - name: REQ_CPU
+            valueFrom:
+              resourceFieldRef:
+                containerName: burstable-random-stressor
+                resource: requests.cpu
+          - name: REQ_MEM
+            valueFrom:
+              resourceFieldRef:
+                containerName: burstable-random-stressor
+                resource: requests.memory
+          - name: LIM_CPU
+            valueFrom:
+              resourceFieldRef:
+                containerName: burstable-random-stressor
+                resource: limits.cpu
+          - name: LIM_MEM
+            valueFrom:
+              resourceFieldRef:
+                containerName: burstable-random-stressor
+                resource: limits.memory
+      restartPolicy: Always
+      imagePullSecrets:
+      - name: regcred
+      volumes:
+        - name: scratch-volume
+          emptyDir:
+            medium: Memory
+            sizeLimit: 1Gi
+        - name: output-volume
+          hostPath:
+            path: "/home/sysadmin/stress"

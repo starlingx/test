@@ -1,12 +1,12 @@
 import os
+import threading
+import time
 from optparse import OptionParser
 from typing import Optional
 
 import pytest
 
-from config.configuration_file_locations_manager import (
-    ConfigurationFileLocationsManager,
-)
+from config.configuration_file_locations_manager import ConfigurationFileLocationsManager
 from config.configuration_manager import ConfigurationManager
 from framework.database.objects.testcase import TestCase
 from framework.database.operations.run_content_operation import RunContentOperation
@@ -14,7 +14,6 @@ from framework.database.operations.run_operation import RunOperation
 from framework.database.operations.test_plan_operation import TestPlanOperation
 from framework.logging.automation_logger import get_logger
 from framework.pytest_plugins.result_collector import ResultCollector
-from framework.resources.resource_finder import get_stx_resource_path
 from framework.runner.objects.test_capability_matcher import TestCapabilityMatcher
 from framework.runner.objects.test_executor_summary import TestExecutorSummary
 from testcases.conftest import log_configuration
@@ -30,18 +29,11 @@ def execute_test(test: TestCase, test_executor_summary: TestExecutorSummary, tes
         test_case_result_id (Optional[int], optional): If provided, updates the specified test case result instead of creating a new one. Defaults to None.
 
     """
-    result_collector = ResultCollector(test_executor_summary, test, test_case_result_id)
+    result_collector = ResultCollector(test_executor_summary, test)
     pytest_args = ConfigurationManager.get_config_pytest_args()
-
-    node_id = test.get_pytest_node_id().lstrip("/")  # Normalize node_id
-
-    # Ensure we do not prepend "testcases/" for unit tests
-    if node_id.startswith("unit_tests/"):
-        resolved_path = get_stx_resource_path(node_id)
-    else:
-        resolved_path = get_stx_resource_path(os.path.join("testcases", node_id))
-
-    pytest_args.append(resolved_path)
+    pytest_args.append(test.get_pytest_node_id())
+    if test_case_result_id:
+        pytest_args.append(f"--test_case_result_id={test_case_result_id}")
 
     pytest.main(pytest_args, plugins=[result_collector])
 
@@ -130,9 +122,20 @@ def main():
 
     log_summary(test_executor_summary)
 
+    # Force exit after 10 seconds if process doesn't terminate naturally
+    def force_exit_timer():
+        time.sleep(10)
+        get_logger().log_warning("Process did not exit naturally, forcing exit...")
+        os._exit(0)
+
+    timer_thread = threading.Thread(target=force_exit_timer, daemon=True)
+    timer_thread.start()
+
+    return 0
+
 
 if __name__ == "__main__":
     """
     Main Launcher
     """
-    main()
+    exit(main())

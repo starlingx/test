@@ -15,20 +15,29 @@ class HelmKeywords(BaseKeyword):
     def helm_upload(self, repo_name: str, helm_file: str):
         """
         Runs the helm-upload command
-        Args:
-            repo_name (): the name of the repo ex. starlingx
-            helm_file (): the helm tar file
 
-        Returns:
+        Args:
+            repo_name (str): the name of the repo ex. starlingx
+            helm_file (str): the helm tar file
 
         """
-
         # setup expected prompts for password request
         password_prompt = PromptResponse("assword", ConfigurationManager.get_lab_config().get_admin_credentials().get_password())
         password_completed = PromptResponse("@")
         expected_prompts = [password_prompt, password_completed]
 
-        output_list = self.ssh_connection.send_expect_prompts(f'helm-upload {repo_name} {helm_file}', expected_prompts)
+        output_list = self.ssh_connection.send_expect_prompts(f"helm-upload {repo_name} {helm_file}", expected_prompts)
 
         # At this time the this will only fail. Once we have a passing test we can check if there are better assertion values
-        assert not any('Error' in output for output in output_list), f"There was an error running the command helm-upload {repo_name} {helm_file}"
+        assert not any("Error" in output for output in output_list), f"There was an error running the command helm-upload {repo_name} {helm_file}"
+
+    def helm_repo_index(self, dir_path: str):
+        """
+        Runs the helm repo index command
+
+        Args:
+            dir_path (str): the name of the repo ex. /var/www/pages/helm_charts/starlingx/
+
+        """
+        self.ssh_connection.send_as_sudo(f"helm repo index {dir_path}")
+        self.validate_success_return_code(self.ssh_connection)

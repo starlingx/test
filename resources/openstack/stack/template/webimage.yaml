@@ -1,0 +1,57 @@
+heat_template_version: wallaby
+
+description: >
+  Heat template to create a Glance image with optional minimum disk and minimum RAM properties.
+
+parameters:
+  name:
+    type: string
+    default: "{{ name }}"
+    description: Name of the image
+
+  container_format:
+    type: string
+    default: "{{ container_format }}"
+    description: Container format of the image
+
+  disk_format:
+    type: string
+    default: "{{ disk_format }}"
+    description: Disk format of the image
+
+  location:
+    type: string
+    default: "{{ location }}"
+    description: Path to the image file
+
+  min_disk:
+    type: number
+    description: Minimum disk size (optional)
+    default: "{{ min_disk }}"
+
+  min_ram:
+    type: number
+    description: Minimum RAM size (optional)
+    default: "{{ min_ram }}"
+
+  visibility:
+    type: string
+    description: Is the image public
+    default: "{{ visibility }}"
+
+resources:
+  glance_image:
+    type: OS::Glance::WebImage
+    properties:
+      name: { get_param: name }
+      container_format: { get_param: container_format }
+      disk_format: { get_param: disk_format }
+      visibility: { get_param: visibility }
+      location: { get_param: location }
+      min_disk: { get_param: min_disk }
+      min_ram: { get_param: min_ram }
+
+outputs:
+  image_id:
+    description: ID of the created image
+    value: { get_attr: [glance_image, show, id] }

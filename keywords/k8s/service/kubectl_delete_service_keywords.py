@@ -16,7 +16,7 @@ class KubectlDeleteServiceKeywords(BaseKeyword):
         """
         self.ssh_connection = ssh_connection
 
-    def delete_service(self, service_name: str) -> str:
+    def delete_service(self, service_name: str, namespace: str = None) -> str:
         """
         Deletes the given service
         Args:
@@ -25,7 +25,10 @@ class KubectlDeleteServiceKeywords(BaseKeyword):
         Returns: the output of the cmd
 
         """
-        output = self.ssh_connection.send(export_k8s_config(f"kubectl delete service {service_name}"))
+        cmd = f"kubectl delete service {service_name}"
+        if namespace:
+            cmd = f"{cmd} -n {namespace}"
+        output = self.ssh_connection.send(export_k8s_config(cmd))
         self.validate_success_return_code(self.ssh_connection)
 
         return output

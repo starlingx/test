@@ -8,7 +8,7 @@ class FaultManagementClientCLIObject:
     Class to assist in constructing the parameters for the fmClientCli command.
     """
 
-    DEFAULT_ALARM_ID = "260.001"
+    DEFAULT_ALARM_ID = "100.106"
 
     def __init__(self):
         """
@@ -53,6 +53,7 @@ class FaultManagementClientCLIObject:
     def set_alarm_state(self, alarm_state: str):
         """
         Setter for the alarm_state.
+
         Args: alarm_state (str): "set" or "clear"
         """
         self.alarm_state = alarm_state

@@ -1,0 +1,45 @@
+heat_template_version: wallaby
+
+description: >
+  Heat template to create OpenStack flavors.
+
+parameters:
+  name:
+    type: string
+    default: "{{ name }}"
+    description: Name of the flavor
+
+  ram:
+    type: number
+    default: "{{ ram }}"
+    description: Amount of RAM in MB
+
+  vcpus:
+    type: number
+    default: "{{ vcpus }}"
+    description: Number of VCPUs
+
+  disk:
+    type: number
+    default: "{{ disk }}"
+    description: Size of disk in GB
+
+  extra_specs:
+    type: json
+    default: {{ extra_specs }}
+    description: Properties of the flavor
+
+resources:
+  flavor:
+    type: OS::Nova::Flavor
+    properties:
+      name: { get_param: name }
+      ram: { get_param: ram }
+      vcpus: { get_param: vcpus }
+      disk: { get_param: disk }
+      extra_specs: { get_param: extra_specs }
+
+outputs:
+  flavor_id:
+    description: ID of the created flavor
+    value: { get_resource: flavor }

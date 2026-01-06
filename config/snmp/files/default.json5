@@ -1,0 +1,55 @@
+{
+  // SNMP Application Configuration
+  "snmp_app_name": "snmp",
+  "snmp_namespace": "kube-system", 
+  "snmp_package_path": "/usr/local/share/applications/helm/snmp*.tgz",
+  
+  // SNMP Configuration Files
+  "config_file_ipv4": "user_conf_ipv4.yaml",
+  "config_file_ipv6": "user_conf_ipv6.yaml", 
+  "port_config_file": "snmp_port_config.yaml",
+  "policy_file_ipv4": "snmp_policy_ipv4.yaml",
+  "policy_file_ipv6": "snmp_policy_ipv6.yaml",
+  "port_restore_file": "snmp_port_restore.yaml",
+  
+  // SNMP v3 Authentication
+  "snmp_v3_username": "{{snmp_username}}",
+  "snmp_v3_auth_password": "{{snmp_auth_password}}",
+  "snmp_v3_priv_password": "{{snmp_priv_password}}",
+  
+  // SNMP v2c Configuration
+  "snmp_v2c_community": "{{snmp_community}}",
+  
+  // Test Alarm Configuration
+  "test_alarm_id": "{{test_alarm_id}}",
+  "test_entity_type_id": "{{test_entity_type}}",
+  "test_entity_id": "{{test_entity_id}}", 
+  "test_severity": "{{test_severity}}",
+  "test_reason_text": "{{test_reason_text}}",
+  "test_alarm_type": "{{test_alarm_type}}",
+  
+  // SNMP OID Configuration
+  "active_alarm_oid": "{{active_alarm_oid}}",
+  "default_udp_port": "{{default_udp_port}}",
+  "get_timeout": "{{get_timeout}}",
+  
+  // SNMP Server Configuration
+  "snmp_server_ip": "{{snmp_server_ip}}",
+  "snmp_server_port": "{{snmp_server_port}}",
+  "trap_server_ip": "{{trap_server_ip}}", 
+  "trap_server_ipv6": "{{trap_server_ipv6}}",
+  "trap_server_port": "{{trap_server_port}}",
+  
+  // Configuration Validation Patterns
+  "required_config_patterns": [
+    "agentaddress",
+    "sysobjectid", 
+    "master"
+  ],
+  
+  // Alarm Detection Patterns
+  "alarm_patterns": [
+    "{{test_alarm_id}}",
+    "{{alarm_detection_pattern}}"
+  ]
+}

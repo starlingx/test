@@ -1,0 +1,7 @@
+configmap:
+  user_conf: |-
+    createUser {{snmp_v3_username}} MD5 {{snmp_v3_auth_password}} DES
+    rwuser {{snmp_v3_username}} priv
+    rocommunity {{snmp_v2c_community}}  default    -V all
+    trapsess -v 3 -u {{snmp_v3_username}} -a MD5 -A {{snmp_v3_auth_password}} -l authPriv -x DES -X {{snmp_v3_priv_password}} udp:{{trap_server_ip}}:{{trap_server_port}}
+    trap2sink {{trap_server_ip}}:{{trap_server_port}} {{snmp_v2c_community}}

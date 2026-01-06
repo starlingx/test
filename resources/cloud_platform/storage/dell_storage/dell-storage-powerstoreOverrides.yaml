@@ -1,0 +1,13 @@
+storageClasses:
+- name: csi-powerstore-iscsi
+  arrayID: PSc02e199014f4
+  fstype: ext4
+ 
+secret:
+  arrays:
+  - globalID: PSc02e199014f4
+    username: "{{ username }}"
+    password: "{{ password }}"
+    endpoint: https://128.224.51.253/api/rest
+    isDefault: true
+    blockProtocol: "ISCSI"

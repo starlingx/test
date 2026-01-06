@@ -1,0 +1,752 @@
+from pytest import mark
+
+from config.configuration_manager import ConfigurationManager
+from config.lab.objects.lab_type_enum import LabTypeEnum
+from framework.logging.automation_logger import get_logger
+from framework.ssh.ssh_connection import SSHConnection
+from framework.validation.validation import validate_equals, validate_none, validate_not_equals, validate_not_none
+from keywords.cloud_platform.dcmanager.dcmanager_kube_rootca_update_strategy_keywords import DcmanagerKubeRootcaUpdateStrategyKeywords
+from keywords.cloud_platform.dcmanager.dcmanager_subcloud_add_keywords import DcManagerSubcloudAddKeywords
+from keywords.cloud_platform.dcmanager.dcmanager_subcloud_backup_keywords import DcManagerSubcloudBackupKeywords
+from keywords.cloud_platform.dcmanager.dcmanager_subcloud_delete_keywords import DcManagerSubcloudDeleteKeywords
+from keywords.cloud_platform.dcmanager.dcmanager_subcloud_list_keywords import DcManagerSubcloudListKeywords
+from keywords.cloud_platform.dcmanager.dcmanager_subcloud_manager_keywords import DcManagerSubcloudManagerKeywords
+from keywords.cloud_platform.dcmanager.dcmanager_subcloud_show_keywords import DcManagerSubcloudShowKeywords
+from keywords.cloud_platform.deployment_assets.host_profile_yaml_keywords import HostProfileYamlKeywords
+from keywords.cloud_platform.fault_management.alarms.alarm_list_keywords import AlarmListKeywords
+from keywords.cloud_platform.fault_management.fm_client_cli.fm_client_cli_keywords import FaultManagementClientCLIKeywords
+from keywords.cloud_platform.fault_management.fm_client_cli.object.fm_client_cli_object import FaultManagementClientCLIObject
+from keywords.cloud_platform.health.health_keywords import HealthKeywords
+from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
+from keywords.cloud_platform.sync_files.sync_deployment_assets import SyncDeploymentAssets
+from keywords.cloud_platform.system.addrpool.system_addrpool_list_keywords import SystemAddrpoolListKeywords
+from keywords.cloud_platform.system.application.object.system_application_upload_input import SystemApplicationUploadInput
+from keywords.cloud_platform.system.application.system_application_apply_keywords import SystemApplicationApplyKeywords
+from keywords.cloud_platform.system.application.system_application_list_keywords import SystemApplicationListKeywords
+from keywords.cloud_platform.system.application.system_application_upload_keywords import SystemApplicationUploadKeywords
+from keywords.cloud_platform.system.host.system_host_list_keywords import SystemHostListKeywords
+from keywords.cloud_platform.system.host.system_host_route_keywords import SystemHostRouteKeywords
+from keywords.cloud_platform.system.host.system_host_swact_keywords import SystemHostSwactKeywords
+from keywords.cloud_platform.version_info.cloud_platform_version_manager import CloudPlatformVersionManagerClass
+from keywords.files.file_keywords import FileKeywords
+from keywords.k8s.pods.kubectl_get_pods_keywords import KubectlGetPodsKeywords
+from testcases.cloud_platform.regression.dc.backup_restore.test_verify_backup_file import teardown_central, teardown_local, verify_backup_central, verify_backup_local_custom_path
+
+
+def ensure_oidc_app_installed(subcloud_ssh: SSHConnection) -> bool:
+    """
+    Ensure OIDC app is installed on subcloud. Install if not present.
+
+    Args:
+        subcloud_ssh (SSHConnection): SSH connection to the subcloud.
+
+    Returns:
+        bool: True if app was already installed, False if newly installed.
+    """
+    app_name = "oidc-auth-apps"
+    app_path = "/usr/local/share/applications/helm/"
+
+    # Check if OIDC app is already installed
+    app_list_keywords = SystemApplicationListKeywords(subcloud_ssh)
+    app_list = app_list_keywords.get_system_application_list()
+
+    if app_list.is_application_in_output(app_name):
+        app = app_list.get_application_by_name(app_name)
+        if app.get_status() == "applied":
+            get_logger().log_info(f"OIDC app {app_name} is already installed and applied")
+            return True
+
+    # Install OIDC app if not present or not applied
+    get_logger().log_info(f"Installing OIDC app {app_name} on subcloud")
+
+    upload_input = SystemApplicationUploadInput()
+    upload_input.set_app_name(app_name)
+    upload_input.set_force(True)
+    upload_input.set_tar_file_path(app_path + app_name + "*")
+
+    # Upload application
+    upload_output = SystemApplicationUploadKeywords(subcloud_ssh).system_application_upload(upload_input)
+    app_object = upload_output.get_system_application_object()
+    validate_equals(app_object.get_status(), "uploaded", f"OIDC app {app_name} should be uploaded")
+
+    # Apply application
+    apply_output = SystemApplicationApplyKeywords(subcloud_ssh).system_application_apply(app_name, 3600, 30)
+    app_object = apply_output.get_system_application_object()
+    validate_equals(app_object.get_status(), "applied", f"OIDC app {app_name} should be applied")
+
+    return False
+
+
+def validate_oidc_app_installed(subcloud_ssh: SSHConnection) -> None:
+    """
+    Validate that OIDC app is installed and applied on subcloud.
+
+    Args:
+        subcloud_ssh (SSHConnection): SSH connection to the subcloud.
+    """
+    app_name = "oidc-auth-apps"
+
+    app_list_keywords = SystemApplicationListKeywords(subcloud_ssh)
+    app_list = app_list_keywords.get_system_application_list()
+
+    validate_equals(app_list.is_application_in_output(app_name), True, f"OIDC app {app_name} should be present")
+
+    app = app_list.get_application_by_name(app_name)
+    validate_equals(app.get_status(), "applied", f"OIDC app {app_name} should be applied after rehoming")
+
+    get_logger().log_info(f"OIDC app {app_name} validation successful")
+
+
+def count_pods_on_subcloud(subcloud_ssh: SSHConnection) -> int:
+    """
+    Count the total number of pods running on a subcloud.
+
+    Args:
+        subcloud_ssh (SSHConnection): SSH connection to the subcloud.
+
+    Returns:
+        int: Total number of pods on the subcloud.
+    """
+    kubectl_keywords = KubectlGetPodsKeywords(subcloud_ssh)
+    pods_output = kubectl_keywords.get_pods_all_namespaces()
+    pod_count = len(pods_output.get_pods())
+    get_logger().log_info(f"Total pods on subcloud: {pod_count}")
+    return pod_count
+
+
+def verify_software_release(ssh_connection: SSHConnection) -> None:
+    """
+    Verify that the software release image is available on the given system controller.
+
+    Args:
+        ssh_connection (SSHConnection): SSH connection to the target system controller.
+    """
+    release = CloudPlatformVersionManagerClass().get_sw_version()
+    path = f"/opt/dc-vault/software/{release}"
+    file_keywords = FileKeywords(ssh_connection)
+    is_iso_exist = file_keywords.validate_file_exists_with_sudo(f"{path}/*.iso")
+    validate_equals(is_iso_exist, True, f"Iso file exists in path {path}.")
+
+    is_sig_exist = file_keywords.validate_file_exists_with_sudo(f"{path}/*.sig")
+    validate_equals(is_sig_exist, True, f"Sig file exists in path {path}.")
+
+
+def update_subcloud_assets(ssh_connection: SSHConnection, subcloud_bootstrap_values: str, subcloud_install_values: str, systemcontroller_gateway_address: str) -> None:
+    """
+    Update the subcloud assets files before rehome.
+
+    Args:
+        ssh_connection (SSHConnection): SSH connection to the target system controller.
+        subcloud_bootstrap_values (str): Path to the subcloud bootstrap values file.
+        subcloud_install_values (str): Path to the subcloud install values file.
+        systemcontroller_gateway_address (str): Gateway address of the system controller.
+    """
+    yaml_file = HostProfileYamlKeywords(ssh_connection)
+    file = yaml_file.download_file(subcloud_bootstrap_values)
+    yaml_file.update_yaml_key(file, "systemcontroller_gateway_address", systemcontroller_gateway_address)
+    yaml_file.upload_file(file, subcloud_bootstrap_values)
+    file = yaml_file.download_file(subcloud_install_values)
+    yaml_file.remove_yaml_key(file, "software_version")
+    yaml_file.upload_file(file, subcloud_install_values)
+
+
+def sync_deployment_assets_between_system_controllers(origin_ssh_connection: SSHConnection, destination_ssh_connection: SSHConnection, subcloud_name: str, subcloud_bootstrap_values: str, subcloud_install_values: str) -> None:
+    """
+    Synchronize deployment assets files for a given subcloud between two system controllers.
+
+    Args:
+        origin_ssh_connection (SSHConnection): SSH connection to the origin system controller.
+        destination_ssh_connection (SSHConnection): SSH connection to the destination system controller.
+        subcloud_name (str): Name of the subcloud whose assets are to be synchronized.
+        subcloud_bootstrap_values (str): Path to the subcloud bootstrap values file.
+        subcloud_install_values (str): Path to the subcloud install values file.
+    """
+    SyncDeploymentAssets(origin_ssh_connection).sync_subcloud_assets(subcloud_name, destination_ssh_connection)
+    host_name = SystemHostListKeywords(destination_ssh_connection).get_active_controller().get_host_name()
+    system_host_route = SystemHostRouteKeywords(destination_ssh_connection).get_system_host_route_list(host_name)
+    systemcontroller_gateway_address = system_host_route.get_gateway()[0]
+    update_subcloud_assets(destination_ssh_connection, subcloud_bootstrap_values, subcloud_install_values, systemcontroller_gateway_address)
+
+
+def get_subcloud_in_sync(ssh_connection: SSHConnection, subcloud_name: str) -> None:
+    """
+    Ensure that the specified subcloud reaches 'in-sync' status.
+
+    Args:
+        ssh_connection (SSHConnection): SSH connection to the target system controller.
+        subcloud_name (str): Name of the subcloud to make it in-sync.
+    """
+    file_keywords = FileKeywords(ssh_connection)
+    path1 = "/etc/kubernetes/pki/ca.crt"
+    path2 = "/etc/kubernetes/pki/ca.key"
+    is_crt_exist = file_keywords.validate_file_exists_with_sudo(path1)
+    validate_equals(is_crt_exist, True, f"Crt file exists in path {path1}.")
+    is_key_exist = file_keywords.validate_file_exists_with_sudo(path2)
+    validate_equals(is_key_exist, True, f"Key file exists in path {path2}.")
+    file_keywords.concatenate_files_with_sudo(path1, path2, "/tmp/ca.pem")
+    dcm_krc_update_strategy = DcmanagerKubeRootcaUpdateStrategyKeywords(ssh_connection)
+    dcm_krc_update_strategy.dcmanager_kube_rootca_update_strategy_create(cert_file="/tmp/ca.pem", subcloud_name=subcloud_name)
+    dcm_krc_update_strategy.dcmanager_kube_rootca_update_strategy_apply()
+    DcManagerSubcloudListKeywords(ssh_connection).validate_subcloud_sync_status(subcloud_name, expected_sync_status="in-sync")
+
+
+def perform_rehome_operation(origin_ssh_connection: SSHConnection, destination_ssh_connection: SSHConnection, subcloud_name: str, subcloud_bootstrap_values: str, subcloud_install_values: str) -> None:
+    """
+    Rehome a subcloud from the origin system controller to the destination system controller.
+
+    Args:
+        origin_ssh_connection (SSHConnection): SSH connection to the origin system controller.
+        destination_ssh_connection (SSHConnection): SSH connection to the destination system controller.
+        subcloud_name (str): Name of the subcloud to be rehomed.
+        subcloud_bootstrap_values (str): Path to the subcloud bootstrap values file.
+        subcloud_install_values (str): Path to the subcloud install values file.
+    """
+    # Ensure software image load is available on destination system controller.
+    verify_software_release(destination_ssh_connection)
+
+    # Synchronizes subcloud deployments assets between both source and destination system controllers.
+    get_logger().log_info(f"Synchronizing subcloud {subcloud_name} deployment assets between source and destination system controllers")
+    sync_deployment_assets_between_system_controllers(origin_ssh_connection, destination_ssh_connection, subcloud_name, subcloud_bootstrap_values, subcloud_install_values)
+
+    dcm_sc_list_kw_destination = DcManagerSubcloudListKeywords(destination_ssh_connection)
+    dcm_sc_kw_origin = DcManagerSubcloudManagerKeywords(origin_ssh_connection)
+    dcm_sc_kw_destination = DcManagerSubcloudManagerKeywords(destination_ssh_connection)
+
+    dcm_sc_kw_origin.get_dcmanager_subcloud_unmanage(subcloud_name, 30)
+    DcManagerSubcloudAddKeywords(destination_ssh_connection).dcmanager_subcloud_add_migrate(subcloud_name, bootstrap_values=subcloud_bootstrap_values, install_values=subcloud_install_values)
+    dcm_sc_list_kw_destination.validate_subcloud_status(subcloud_name, status="rehoming")
+    dcm_sc_list_kw_destination.validate_subcloud_status(subcloud_name, status="complete")
+    dcm_sc_list_kw_destination.validate_subcloud_availability_status(subcloud_name)
+    dcm_sc_kw_destination.get_dcmanager_subcloud_manage(subcloud_name, timeout=30)
+
+    get_logger().log_info(f"Deleting subcloud from {origin_ssh_connection}")
+    DcManagerSubcloudDeleteKeywords(origin_ssh_connection).dcmanager_subcloud_delete(subcloud_name)
+
+    get_logger().log_info(f"Getting subcloud {subcloud_name} in-sync on {destination_ssh_connection}")
+    get_subcloud_in_sync(destination_ssh_connection, subcloud_name)
+
+
+def verify_subcloud_healthy(ssh_connection: SSHConnection, subcloud_name: str) -> None:
+    """
+    Verify that the specified subcloud is healthy.
+
+    Args:
+        ssh_connection (SSHConnection): SSH connection to the system controller.
+        subcloud_name (str): Name of the subcloud.
+    """
+    subcloud = DcManagerSubcloudListKeywords(ssh_connection).get_dcmanager_subcloud_list().get_subcloud_by_name(subcloud_name)
+    validate_equals(subcloud.get_management(), "managed", f"Subcloud {subcloud_name} is managed.")
+    validate_equals(subcloud.get_availability(), "online", f"Subcloud {subcloud_name} is online.")
+    validate_equals(subcloud.get_sync(), "in-sync", f"Subcloud {subcloud_name} is in-sync.")
+
+
+def validate_updated_host_route(ssh_connection: SSHConnection, subcloud_ssh: SSHConnection, subcloud_name: str, mgmt_floating_address_before_rehome: str, oam_floating_address_before_rehome: str) -> None:
+    """
+    Validate that the host route and floating addresses are updated after rehome.
+
+    Args:
+        ssh_connection (SSHConnection): SSH connection to the destination system controller.
+        subcloud_ssh (SSHConnection): SSH connection to the subcloud.
+        subcloud_name (str): Name of the subcloud.
+        mgmt_floating_address_before_rehome (str): Management floating address before rehome.
+        oam_floating_address_before_rehome (str): OAM floating address before rehome.
+    """
+    # Get subcloud's management subnet and system controller gateway ip from destination system controller after rehome
+    get_logger().log_info(f"Getting subcloud {subcloud_name} management subnet and system controller gateway ip from destination system controller after rehome")
+    subcloud_show = DcManagerSubcloudShowKeywords(ssh_connection).get_dcmanager_subcloud_show(subcloud_name)
+    mgmt_subnet = subcloud_show.get_management_network()
+    gateway_ip = subcloud_show.get_dcmanager_subcloud_show_object().get_systemcontroller_gateway_ip()
+
+    # Validate new gateway exists after rehome
+    mgmt_subnet = mgmt_subnet.split("/")[0]
+    get_logger().log_info(f"Validating system host route for management subnet {mgmt_subnet} has gateway {gateway_ip}")
+    host_name = SystemHostListKeywords(ssh_connection).get_active_controller().get_host_name()
+    host_route_list = SystemHostRouteKeywords(ssh_connection).get_system_host_route_list(host_name)
+    validate_equals(host_route_list.get_gateway_by_network(mgmt_subnet), gateway_ip, f"System host route for management subnet {mgmt_subnet} should have new gateway {gateway_ip}")
+
+    get_logger().log_info("Validating updated floating addresses after rehome")
+    # Get system controller's management and oam floating addresses from subcloud after rehome
+    sys_addrpool_output = SystemAddrpoolListKeywords(subcloud_ssh).get_system_addrpool_list()
+    mgmt_floating_address_after_rehome = sys_addrpool_output.get_system_controller_management_floating_address_from_subcloud()
+    oam_floating_address_after_rehome = sys_addrpool_output.get_system_controller_oam_floating_address_from_subcloud()
+
+    # Get management and oam floating addresses from destination system controller after rehome
+    sys_addrpool_output = SystemAddrpoolListKeywords(ssh_connection).get_system_addrpool_list()
+    mgmt_floating_address_destination = sys_addrpool_output.get_management_floating_address()
+    oam_floating_address_destination = sys_addrpool_output.get_oam_floating_address()
+
+    # Validate system controller management and oam floating address is the different before and after rehome
+    validate_not_equals(mgmt_floating_address_before_rehome, mgmt_floating_address_after_rehome, "System controller management floating address should change in subcloud after rehoming")
+    validate_not_equals(oam_floating_address_before_rehome, oam_floating_address_after_rehome, "System controller OAM floating address should change in subcloud after rehoming")
+
+    # Validate system controller management and oam floating address on subcloud is same as destination system controller after rehome
+    validate_equals(mgmt_floating_address_after_rehome, mgmt_floating_address_destination, "System controller management floating address on subcloud should match destination system controller after rehoming")
+    validate_equals(oam_floating_address_after_rehome, oam_floating_address_destination, "System controller OAM floating address on subcloud should match destination system controller after rehoming")
+
+
+def verify_backup_central_duplex(central_ssh: SSHConnection, subcloud_ssh: SSHConnection, subcloud_name: str) -> None:
+    """
+    Verify backup of a subcloud on Central Cloud.
+
+    Args:
+        central_ssh (SSHConnection): SSH connection to the active controller.
+        subcloud_ssh (SSHConnection): SSH connection to the subcloud.
+        subcloud_name (str): subcloud name to backup.
+    """
+    get_logger().log_info(f"Create {subcloud_name} backup on Central Cloud")
+    HealthKeywords(subcloud_ssh).validate_healty_cluster()
+    verify_backup_central(central_ssh, subcloud_name)
+
+
+def verify_backup_local_duplex(central_ssh: SSHConnection, subcloud_ssh: SSHConnection, subcloud_name: str) -> None:
+    """
+    Verify backup of a subcloud on Local Cloud.
+
+    Args:
+        central_ssh (SSHConnection): SSH connection to the active controller.
+        subcloud_ssh (SSHConnection): SSH connection to the subcloud.
+        subcloud_name (str): subcloud name to backup.
+    """
+    get_logger().log_info(f"Create {subcloud_name} backup on Local Cloud")
+    HealthKeywords(subcloud_ssh).validate_healty_cluster()
+    verify_backup_local_custom_path(central_ssh, subcloud_ssh, subcloud_name)
+
+
+def dc_swact(ssh_connection: SSHConnection) -> None:
+    """
+    Perform a swact operation between active and standby controllers on subcloud.
+
+    Args:
+        ssh_connection (SSHConnection): SSH connection to the active controller.
+    """
+    system_host_list_keywords = SystemHostListKeywords(ssh_connection)
+    active_controller = system_host_list_keywords.get_active_controller()
+    standby_controller = system_host_list_keywords.get_standby_controller()
+    get_logger().log_info(f"A 'swact' operation is about to be executed in {ssh_connection}. Current controllers' configuration before this operation: Active controller = {active_controller.get_host_name()}, Standby controller = {standby_controller.get_host_name()}.")
+    system_host_swact_keywords = SystemHostSwactKeywords(ssh_connection)
+    system_host_swact_keywords.host_swact()
+
+    active_controller_after_swact = system_host_list_keywords.get_active_controller()
+    standby_controller_after_swact = system_host_list_keywords.get_standby_controller()
+
+    validate_equals(active_controller.get_id(), standby_controller_after_swact.get_id(), "Validate that active controller is now standby")
+    validate_equals(standby_controller.get_id(), active_controller_after_swact.get_id(), "Validate that standby controller is now active")
+
+
+@mark.p2
+@mark.subcloud_lab_is_duplex
+@mark.lab_has_secondary_system_controller
+def test_rehome_duplex_subcloud(request):
+    """
+    Verify rehome one subcloud between two system controllers.
+
+    Test Steps:
+        - Get the duplex subcloud.
+        - Ensure OIDC app is installed on subcloud before rehoming
+        - Count pods on subcloud before rehoming
+        - Perform rehoming operation between system controllers
+        - Validate OIDC app is still installed after rehoming
+        - Count pods on subcloud after rehoming
+        - Validate pod counts are the same before and after rehoming
+    """
+    origin_system_controller_ssh = LabConnectionKeywords().get_active_controller_ssh()
+    destination_system_controller_ssh = LabConnectionKeywords().get_secondary_active_controller_ssh()
+    dcm_sc_list_kw_origin = DcManagerSubcloudListKeywords(origin_system_controller_ssh)
+
+    # Gets the duplex subcloud.
+    get_logger().log_info("Getting duplex subcloud")
+    duplex_subcloud = dcm_sc_list_kw_origin.get_dcmanager_subcloud_list().get_healthy_subcloud_by_type(LabTypeEnum.DUPLEX.value)
+    subcloud_name = duplex_subcloud.get_name()
+
+    # Gets the subcloud bootstrap and install values files
+    get_logger().log_info(f"Getting deployment assets for subcloud {subcloud_name}")
+    deployment_assets_config = ConfigurationManager.get_deployment_assets_config()
+    subcloud_bootstrap_values = deployment_assets_config.get_subcloud_deployment_assets(subcloud_name).get_bootstrap_file()
+    subcloud_install_values = deployment_assets_config.get_subcloud_deployment_assets(subcloud_name).get_install_file()
+
+    # All Validation before rehome operation
+    subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
+
+    # Ensure OIDC app is installed before rehoming
+    get_logger().log_info("Ensuring OIDC app is installed before rehoming")
+    ensure_oidc_app_installed(subcloud_ssh)
+
+    # Count pods before rehoming
+    get_logger().log_info("Counting pods before rehoming")
+    pods_before_rehome = count_pods_on_subcloud(subcloud_ssh)
+
+    # Get system controller's management and oam floating addresses from subcloud before rehome
+    sys_addrpool_output = SystemAddrpoolListKeywords(subcloud_ssh).get_system_addrpool_list()
+    mgmt_floating_address_before_rehome = sys_addrpool_output.get_system_controller_management_floating_address_from_subcloud()
+    oam_floating_address_before_rehome = sys_addrpool_output.get_system_controller_oam_floating_address_from_subcloud()
+
+    # Perform rehome operation
+    get_logger().log_info(f"Rehoming subcloud {subcloud_name} from {origin_system_controller_ssh} to {destination_system_controller_ssh}")
+    perform_rehome_operation(origin_system_controller_ssh, destination_system_controller_ssh, subcloud_name, subcloud_bootstrap_values, subcloud_install_values)
+
+    # Validations after rehome operation
+    get_logger().log_info(f"Validating subcloud {subcloud_name} is healthy after rehome")
+    verify_subcloud_healthy(destination_system_controller_ssh, subcloud_name)
+    get_logger().log_info(f"Rehome operation of subcloud {subcloud_name} completed successfully.")
+
+    # Validate updated host route and floating addresses after rehome
+    get_logger().log_info("Validating updated host route and floating addresses after rehome")
+    validate_updated_host_route(destination_system_controller_ssh, subcloud_ssh, subcloud_name, mgmt_floating_address_before_rehome, oam_floating_address_before_rehome)
+
+    # Validate OIDC app is still installed after rehoming
+    get_logger().log_info("Validating OIDC app is installed after rehoming")
+    validate_oidc_app_installed(subcloud_ssh)
+
+    # Count pods after rehoming
+    get_logger().log_info("Counting pods after rehoming")
+    pods_after_rehome = count_pods_on_subcloud(subcloud_ssh)
+    # Validate pod counts are the same
+    validate_equals(pods_before_rehome, pods_after_rehome, "Pod count should be the same before and after rehoming")
+
+    # Verify backup on Central Cloud after rehoming
+    request.addfinalizer(teardown_central)
+    verify_backup_central_duplex(destination_system_controller_ssh, subcloud_ssh, subcloud_name)
+
+    # Verify backup on Local Cloud after rehoming
+    request.addfinalizer(teardown_local)
+    verify_backup_local_duplex(destination_system_controller_ssh, subcloud_ssh, subcloud_name)
+
+    # Validate swact in both directions (controller-0 -> controller-1 and controller-1 -> controller-0)
+    get_logger().log_info("Performing swact operation on rehomed duplex subcloud")
+    dc_swact(subcloud_ssh)
+    verify_subcloud_healthy(destination_system_controller_ssh, subcloud_name)
+
+    # Validate swact back to original state
+    dc_swact(subcloud_ssh)
+    verify_subcloud_healthy(destination_system_controller_ssh, subcloud_name)
+
+
+@mark.p2
+@mark.subcloud_lab_is_simplex
+@mark.lab_has_secondary_system_controller
+def test_rehome_simplex_subcloud_alarm_recovery_scenario(request):
+    """
+    Verify rehome simplex subcloud with fault injection and recovery between two system controllers.
+
+    This test validates the rehoming process resilience by injecting a fault (alarm) that causes
+    the initial rehome operation to fail, then clearing the fault and successfully completing
+    the rehome operation on retry.
+
+    Test Steps:
+        1. Get a healthy simplex subcloud from the origin system controller
+        2. Count total pods on subcloud before rehoming (baseline measurement)
+        3. Inject fault by raising an alarm on subcloud to simulate failure condition
+        4. Validate alarm is present and properly configured on subcloud
+        5. Attempt rehome operation and verify it fails due to the alarm
+        6. Clear the injected alarm to remove failure condition
+        7. Retry rehome operation and verify it succeeds
+        8. Validate subcloud is healthy and properly managed after successful rehome
+        9. Count pods after rehoming and verify count matches baseline
+        10. Validate pod counts are identical before and after rehoming
+
+    Expected Results:
+        - Initial rehome fails with alarm present (rehome-failed status)
+        - Rehome succeeds after alarm is cleared
+        - Subcloud maintains same pod count after successful rehome
+        - Subcloud is healthy and in-sync after rehome completion
+    """
+    # Initialize SSH connections to both system controllers
+    origin_system_controller_ssh = LabConnectionKeywords().get_active_controller_ssh()
+    destination_system_controller_ssh = LabConnectionKeywords().get_secondary_active_controller_ssh()
+
+    # Initialize DC manager keywords for both controllers
+    origin_dcm_list_kw = DcManagerSubcloudListKeywords(origin_system_controller_ssh)
+    destination_dcm_list_kw = DcManagerSubcloudListKeywords(destination_system_controller_ssh)
+
+    origin_dcm_sc_kw = DcManagerSubcloudManagerKeywords(origin_system_controller_ssh)
+
+    # Get a healthy simplex subcloud for testing
+    get_logger().log_info("Selecting healthy simplex subcloud for rehoming test")
+    simplex_subcloud = origin_dcm_list_kw.get_dcmanager_subcloud_list().get_healthy_subcloud_by_type(LabTypeEnum.SIMPLEX.value)
+    subcloud_name = simplex_subcloud.get_name()
+
+    # Retrieve deployment assets (bootstrap and install files) for the subcloud
+    get_logger().log_info(f"Retrieving deployment assets for subcloud {subcloud_name}")
+    deployment_assets_config = ConfigurationManager.get_deployment_assets_config()
+    subcloud_bootstrap_values = deployment_assets_config.get_subcloud_deployment_assets(subcloud_name).get_bootstrap_file()
+    subcloud_install_values = deployment_assets_config.get_subcloud_deployment_assets(subcloud_name).get_install_file()
+
+    # Establish SSH connection to the target subcloud
+    subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
+
+    # Baseline measurement: count pods before any rehoming operations
+    get_logger().log_info("Establishing baseline pod count before rehoming")
+    pods_before_rehome = count_pods_on_subcloud(subcloud_ssh)
+
+    # Fault injection phase: prepare and inject alarm to simulate failure condition
+    fm_client_cli_keywords = FaultManagementClientCLIKeywords(subcloud_ssh)
+    alarm_list_keywords = AlarmListKeywords(subcloud_ssh)
+
+    # Verify no conflicting alarms exist before injection
+    get_logger().log_info("Verifying no conflicting alarms exist on subcloud")
+    subcloud_alarms = alarm_list_keywords.alarm_list()
+    existing_alarm = next((alarm for alarm in subcloud_alarms if alarm.alarm_id == FaultManagementClientCLIObject.DEFAULT_ALARM_ID), None)
+    validate_none(existing_alarm, f"Alarm with ID {FaultManagementClientCLIObject.DEFAULT_ALARM_ID} should not exist before test injection")
+
+    # Create and inject test alarm to simulate failure condition
+    fm_client_cli_object = FaultManagementClientCLIObject()
+    fm_client_cli_object.set_alarm_id(FaultManagementClientCLIObject.DEFAULT_ALARM_ID)
+    fm_client_cli_object.set_entity_id(f"name={subcloud_name}")
+
+    get_logger().log_info(f"Injecting test alarm on subcloud {subcloud_name} to simulate failure condition")
+    fm_client_cli_keywords.raise_alarm(fm_client_cli_object)
+
+    # Verify alarm injection was successful
+    get_logger().log_info("Verifying alarm injection was successful")
+    subcloud_alarms = alarm_list_keywords.alarm_list()
+    injected_alarm = next((alarm for alarm in subcloud_alarms if alarm.alarm_id == fm_client_cli_object.get_alarm_id()), None)
+    validate_not_none(injected_alarm, f"Injected alarm with ID {fm_client_cli_object.get_alarm_id()} should be present on subcloud")
+    validate_equals(injected_alarm.get_entity_id(), fm_client_cli_object.get_entity_id(), "Injected alarm entity ID should match subcloud name")
+
+    # Prepare for rehoming: synchronize deployment assets between system controllers
+    get_logger().log_info(f"Synchronizing deployment assets for subcloud {subcloud_name} between system controllers")
+    sync_deployment_assets_between_system_controllers(origin_system_controller_ssh, destination_system_controller_ssh, subcloud_name, subcloud_bootstrap_values, subcloud_install_values)
+
+    # First rehome attempt: expect failure due to injected alarm
+    get_logger().log_info(f"Attempting initial rehome of {subcloud_name} (expecting failure due to alarm)")
+    origin_dcm_sc_kw.get_dcmanager_subcloud_unmanage(subcloud_name, 30)
+    DcManagerSubcloudAddKeywords(destination_system_controller_ssh).dcmanager_subcloud_add_migrate(subcloud_name, bootstrap_values=subcloud_bootstrap_values, install_values=subcloud_install_values)
+
+    # Verify rehome failed as expected
+    destination_dcm_list_kw.validate_subcloud_status(subcloud_name, status="rehome-failed")
+    get_logger().log_info(f"Rehome failed as expected due to alarm on subcloud {subcloud_name}")
+
+    # Cleanup failed rehome attempt: re-manage on origin and delete from destination
+    origin_dcm_sc_kw.get_dcmanager_subcloud_manage(subcloud_name, timeout=30)
+    origin_dcm_list_kw.validate_subcloud_sync_status(subcloud_name, "in-sync")
+    DcManagerSubcloudDeleteKeywords(destination_system_controller_ssh).dcmanager_subcloud_delete(subcloud_name)
+
+    # Recovery phase: clear injected alarm to remove failure condition
+    get_logger().log_info(f"Clearing injected alarm from subcloud {subcloud_name} to enable successful rehome")
+    fm_client_cli_keywords.delete_alarm(fm_client_cli_object)
+
+    # Second rehome attempt: expect success after alarm clearance
+    get_logger().log_info(f"Retrying rehome of {subcloud_name} after alarm clearance (expecting success)")
+    perform_rehome_operation(origin_system_controller_ssh, destination_system_controller_ssh, subcloud_name, subcloud_bootstrap_values, subcloud_install_values)
+
+    # Post-rehome validation: verify subcloud health and functionality
+    get_logger().log_info(f"Validating subcloud {subcloud_name} health after successful rehome")
+    verify_subcloud_healthy(destination_system_controller_ssh, subcloud_name)
+    get_logger().log_info(f"Rehome operation for subcloud {subcloud_name} completed successfully")
+
+    # Final validation: verify pod count consistency
+    get_logger().log_info("Performing final pod count validation")
+    pods_after_rehome = count_pods_on_subcloud(subcloud_ssh)
+    validate_equals(pods_before_rehome, pods_after_rehome, "Pod count must remain consistent before and after successful rehoming")
+
+
+@mark.p2
+@mark.subcloud_lab_is_simplex
+@mark.lab_has_secondary_system_controller
+def test_rehome_simplex_subcloud_with_local_restore(request):
+    """
+    Validate local restore functionality on simplex subcloud after rehoming.
+
+    This test verifies that local backup and restore operations work correctly
+    on a subcloud after it has been rehomed to a different system controller.
+
+    Test Steps:
+        1. Select a healthy simplex subcloud
+        2. Count pods and validate health before rehoming
+        3. Perform rehome operation to destination system controller
+        4. Count pods and validate health after rehoming
+        5. Create local backup on rehomed subcloud
+        6. Restore from local backup
+        7. Validate health and pod count consistency after restore
+
+    Expected Results:
+        - Subcloud maintains health throughout rehoming process
+        - Local backup creation succeeds on rehomed subcloud
+        - Local restore completes successfully
+        - Pod count remains consistent after restore operation
+    """
+    # Initialize SSH connections
+    origin_system_controller_ssh = LabConnectionKeywords().get_active_controller_ssh()
+    destination_system_controller_ssh = LabConnectionKeywords().get_secondary_active_controller_ssh()
+
+    # Get healthy simplex subcloud
+    get_logger().log_info("Selecting healthy simplex subcloud for rehoming and restore test")
+    origin_dcm_list_kw = DcManagerSubcloudListKeywords(origin_system_controller_ssh)
+    simplex_subcloud = origin_dcm_list_kw.get_dcmanager_subcloud_list().get_healthy_subcloud_by_type(LabTypeEnum.SIMPLEX.value)
+    subcloud_name = simplex_subcloud.get_name()
+
+    # Get deployment assets
+    get_logger().log_info(f"Retrieving deployment assets for subcloud {subcloud_name}")
+    deployment_assets_config = ConfigurationManager.get_deployment_assets_config()
+    subcloud_bootstrap_values = deployment_assets_config.get_subcloud_deployment_assets(subcloud_name).get_bootstrap_file()
+    subcloud_install_values = deployment_assets_config.get_subcloud_deployment_assets(subcloud_name).get_install_file()
+
+    # Establish subcloud SSH connection
+    subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
+
+    # Pre-rehome validation: count pods and check health
+    get_logger().log_info("Validating subcloud health and counting pods before rehoming")
+    pods_before_rehome = count_pods_on_subcloud(subcloud_ssh)
+    HealthKeywords(subcloud_ssh).validate_healty_cluster()
+
+    # Perform rehome operation
+    get_logger().log_info(f"Rehoming subcloud {subcloud_name} to destination system controller")
+    perform_rehome_operation(origin_system_controller_ssh, destination_system_controller_ssh, subcloud_name, subcloud_bootstrap_values, subcloud_install_values)
+
+    # Post-rehome validation: count pods and check health
+    get_logger().log_info("Validating subcloud health and counting pods after rehoming")
+    verify_subcloud_healthy(destination_system_controller_ssh, subcloud_name)
+    pods_after_rehome = count_pods_on_subcloud(subcloud_ssh)
+    validate_equals(pods_before_rehome, pods_after_rehome, "Pod count should remain consistent after rehoming")
+
+    # Get subcloud credentials for backup operations
+    lab_config = ConfigurationManager.get_lab_config().get_subcloud(subcloud_name)
+    subcloud_password = lab_config.get_admin_credentials().get_password()
+
+    # Setup backup path and teardown
+    release = CloudPlatformVersionManagerClass().get_sw_version()
+    local_path = f"/opt/platform-backup/backups/{release}/{subcloud_name}_platform_backup_*.tgz"
+
+    def teardown_backup():
+        get_logger().log_info("Cleaning up backup files during teardown")
+        FileKeywords(subcloud_ssh).delete_folder_with_sudo("/opt/platform-backup/backups/")
+
+    request.addfinalizer(teardown_backup)
+
+    # Create local backup on rehomed subcloud
+    get_logger().log_info(f"Creating local backup on rehomed subcloud {subcloud_name}")
+    dc_manager_backup = DcManagerSubcloudBackupKeywords(destination_system_controller_ssh)
+    dc_manager_backup.create_subcloud_backup(subcloud_password, subcloud_ssh, path=local_path, subcloud=subcloud_name, local_only=True)
+
+    # Wait for backup completion
+    get_logger().log_info("Waiting for backup creation to complete")
+    DcManagerSubcloudBackupKeywords(destination_system_controller_ssh).wait_for_backup_status_complete(subcloud_name, expected_status="complete-local")
+
+    # Unmanage subcloud before restore
+    get_logger().log_info(f"Unmanaging subcloud {subcloud_name} before restore")
+    DcManagerSubcloudManagerKeywords(destination_system_controller_ssh).get_dcmanager_subcloud_unmanage(subcloud_name, 30)
+
+    # Restore from local backup
+    get_logger().log_info(f"Restoring subcloud {subcloud_name} from local backup")
+    dc_manager_backup.restore_subcloud_backup(subcloud_password, destination_system_controller_ssh, subcloud=subcloud_name, local_only=True, with_install=True)
+
+    # Post-restore validation: check health and pod count
+    get_logger().log_info("Validating subcloud health after restore operation")
+    verify_subcloud_healthy(destination_system_controller_ssh, subcloud_name)
+    HealthKeywords(subcloud_ssh).validate_healty_cluster()
+
+    # Final pod count validation
+    get_logger().log_info("Performing final pod count validation after restore")
+    pods_after_restore = count_pods_on_subcloud(subcloud_ssh)
+    validate_equals(pods_before_rehome, pods_after_restore, "Pod count should remain consistent after backup and restore operations")
+
+    get_logger().log_info(f"Local restore functionality validated successfully on rehomed subcloud {subcloud_name}")
+
+
+@mark.p2
+@mark.subcloud_lab_is_simplex
+@mark.lab_has_secondary_system_controller
+def test_rehome_simplex_subcloud_with_central_restore(request):
+    """
+    Validate local restore functionality on simplex subcloud after rehoming.
+
+    This test verifies that local backup and restore operations work correctly
+    on a subcloud after it has been rehomed to a different system controller.
+
+    Test Steps:
+        1. Select a healthy simplex subcloud
+        2. Count pods and validate health before rehoming
+        3. Perform rehome operation to destination system controller
+        4. Count pods and validate health after rehoming
+        5. Create central backup on rehomed subcloud
+        6. Restore from central backup
+        7. Validate health and pod count consistency after restore
+
+    Expected Results:
+        - Subcloud maintains health throughout rehoming process
+        - Central backup creation succeeds on rehomed subcloud
+        - Central restore completes successfully
+        - Pod count remains consistent after restore operation
+    """
+    # Initialize SSH connections
+    origin_system_controller_ssh = LabConnectionKeywords().get_active_controller_ssh()
+    destination_system_controller_ssh = LabConnectionKeywords().get_secondary_active_controller_ssh()
+
+    # Get healthy simplex subcloud
+    get_logger().log_info("Selecting healthy simplex subcloud for rehoming and restore test")
+    origin_dcm_list_kw = DcManagerSubcloudListKeywords(origin_system_controller_ssh)
+    simplex_subcloud = origin_dcm_list_kw.get_dcmanager_subcloud_list().get_healthy_subcloud_by_type(LabTypeEnum.SIMPLEX.value)
+    subcloud_name = simplex_subcloud.get_name()
+
+    # Get deployment assets
+    get_logger().log_info(f"Retrieving deployment assets for subcloud {subcloud_name}")
+    deployment_assets_config = ConfigurationManager.get_deployment_assets_config()
+    subcloud_bootstrap_values = deployment_assets_config.get_subcloud_deployment_assets(subcloud_name).get_bootstrap_file()
+    subcloud_install_values = deployment_assets_config.get_subcloud_deployment_assets(subcloud_name).get_install_file()
+
+    # Establish subcloud SSH connection
+    subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
+
+    # Pre-rehome validation: count pods and check health
+    get_logger().log_info("Validating subcloud health and counting pods before rehoming")
+    pods_before_rehome = count_pods_on_subcloud(subcloud_ssh)
+    HealthKeywords(subcloud_ssh).validate_healty_cluster()
+
+    # Perform rehome operation
+    get_logger().log_info(f"Rehoming subcloud {subcloud_name} to destination system controller")
+    perform_rehome_operation(origin_system_controller_ssh, destination_system_controller_ssh, subcloud_name, subcloud_bootstrap_values, subcloud_install_values)
+
+    # Post-rehome validation: count pods and check health
+    get_logger().log_info("Validating subcloud health and counting pods after rehoming")
+    verify_subcloud_healthy(destination_system_controller_ssh, subcloud_name)
+    pods_after_rehome = count_pods_on_subcloud(subcloud_ssh)
+    validate_equals(pods_before_rehome, pods_after_rehome, "Pod count should remain consistent after rehoming")
+
+    # Get subcloud credentials for backup operations
+    lab_config = ConfigurationManager.get_lab_config().get_subcloud(subcloud_name)
+    subcloud_password = lab_config.get_admin_credentials().get_password()
+
+    # Prechecks Before Back-Up:
+    get_logger().log_info(f"Performing pre-checks on {subcloud_name}")
+    obj_health = HealthKeywords(subcloud_ssh)
+    obj_health.validate_healty_cluster()  # Checks alarms, pods, app health
+
+    dc_manager_backup = DcManagerSubcloudBackupKeywords(destination_system_controller_ssh)
+
+    # Setup central backup path and teardown
+    central_path = "/opt/dc-vault/backups/"
+    subcloud_release = CloudPlatformVersionManagerClass().get_sw_version()
+
+    def teardown():
+        get_logger().log_info("Removing test files during teardown")
+        FileKeywords(subcloud_ssh).delete_folder_with_sudo(central_path)
+
+    request.addfinalizer(teardown)
+
+    # Create a subcloud backup on central cloud
+    get_logger().log_info(f"Create {subcloud_name} backup on central cloud.")
+    dc_manager_backup.create_subcloud_backup(subcloud_password, destination_system_controller_ssh, path=f"{central_path}/{subcloud_name}/{subcloud_release}", subcloud=subcloud_name)
+
+    get_logger().log_info(f"Checking if backup was created on {subcloud_name}")
+    DcManagerSubcloudBackupKeywords(destination_system_controller_ssh).wait_for_backup_status_complete(subcloud_name, expected_status="complete-central")
+
+    DcManagerSubcloudManagerKeywords(destination_system_controller_ssh).get_dcmanager_subcloud_unmanage(subcloud_name, 30)
+
+    # Restore subcloud remote backup
+    dc_manager_backup.restore_subcloud_backup(subcloud_password, destination_system_controller_ssh, subcloud=subcloud_name, with_install=True, release=str(subcloud_release))
+
+    DcManagerSubcloudManagerKeywords(destination_system_controller_ssh).get_dcmanager_subcloud_manage(subcloud_name, 30)
+
+    DcManagerSubcloudListKeywords(destination_system_controller_ssh).validate_subcloud_sync_status(subcloud_name, expected_sync_status="in-sync")
+
+    # Post-restore validation: check health and pod count
+    get_logger().log_info("Validating subcloud health after restore operation")
+    verify_subcloud_healthy(destination_system_controller_ssh, subcloud_name)
+    HealthKeywords(subcloud_ssh).validate_healty_cluster()
+
+    # Final pod count validation
+    get_logger().log_info("Performing final pod count validation after restore")
+    pods_after_restore = count_pods_on_subcloud(subcloud_ssh)
+    validate_equals(pods_before_rehome, pods_after_restore, "Pod count should remain consistent after backup and restore operations")
+
+    get_logger().log_info(f"Central restore functionality validated successfully on rehomed subcloud {subcloud_name}")

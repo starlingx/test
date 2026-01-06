@@ -66,5 +66,19 @@ class CloudPlatformVersionManagerClass:
             self.sw_version = self._get_sw_version_from_system()
         return self.sw_version
 
+    def get_last_major_release(self) -> ProductVersion:
+        """
+        This function will return the latest Product Version defined in CloudPlatformSoftwareVersion
+        class.
+        """
+        return CloudPlatformSoftwareVersion.STARLINGX_10_0
+
+    def get_second_last_major_release(self) -> ProductVersion:
+        """
+        This function will return the second-latest Product Version defined in
+         CloudPlatformSoftwareVersion class.
+        """
+        return CloudPlatformSoftwareVersion.STARLINGX_9_0
+
 
 CloudPlatformVersionManager = CloudPlatformVersionManagerClass()

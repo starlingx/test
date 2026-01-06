@@ -1,4 +1,48 @@
 {
     // dns name for the lab
-    "dns_name": "lab_dns_name"
+    "domain_name": "lab_domain_name",
+
+    // ACME server url
+    "stepca_server_url": "external_acme_server_url",
+
+    // ACME server issuer
+    "stepca_server_issuer": "external_acme_server_issuer",
+
+    // Nginx ingress configuration
+    "nginx_ingress": {
+        "https_test": {
+            "host_name": "konoha.rei",
+            "key_file": "key.crt",
+            "cert_file": "cert.crt",
+            "tls_secret_name": "kanoha-secret",
+            "namespace": "pvtest"
+        },
+        "http_test": {
+            "namespace": "pvtest"
+        },
+        "external_ca_test": {
+            "stepca_issuer": "stepca-issuer",
+            "pod_name": "kuard",
+            "cert": "kuard-ingress-tls",
+            "deploy_app_file_name": "deploy_app.yaml",
+            "global_policy_file_name": "global_policy.yaml",
+            "kuard_file_name": "kuard.yaml",
+            "namespace": "pvtest",
+            "tls_secret_name": "kuard-ingress-tls"
+        }
+    },
+
+    // Portieris configuration
+    "portieris": {
+        "registry_server_hostname": "registry_server_hostname",
+        "registry_server_port": "registry_server_port",
+        "trust_server": "https://registry_server_hostname:trust_port",
+        "signed_image_name": "registry_server_hostname:registry_server_port/signed_repo/image:tag",
+        "unsigned_image_name": "registry_server_hostname:registry_server_port/unsigned_repo/image:tag",
+        "registry_credentials": {
+            "username": "registry_username",
+            "password": "registry_password"
+        },
+        "registry_ca_cert": "registry_ca_cert"
+    }
 }

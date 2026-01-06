@@ -1,10 +1,179 @@
+// ============================================================================
+// Default Open-Source Docker Configuration for StarlingX Test
+// ============================================================================
+//
+// This is the default configuration for public / open-source testing.
+// It is intended to work without requiring authentication when using manifests
+// that reference publicly available images on registries such as DockerHub,
+// Quay, GHCR, and registry.k8s.io.
+//
+// Usage:
+//   python framework/runner/scripts/test_executor.py \
+//     --tests_location=testcases/cloud_platform/sanity/ \
+//     --lab_config_file=config/lab/files/<lab_config>.json5 \
+//     --docker_config_file=config/docker/files/default.json5
+//
+// This Config Includes:
+// - Empty source_registries (anonymous access to public registries)
+// - Empty custom_registry_patterns (built-in registry patterns are sufficient)
+// - Manifest pointing to public registry images (stx-sanity-images.yaml)
+// - Works out-of-the-box for open-source testing
+//
+// Three Independent Configuration Concerns:
+// 1. Authentication (source_registries) - Credentials for docker login
+// 2. Pattern Matching (custom_registry_patterns) - Canonical name extraction
+// 3. Manifest Mapping (named_manifests) - Logical names to manifest files
+//
+// Each section serves a distinct purpose and can be configured independently.
+//
+// ============================================================================
+
 {
-  registries: {
-    "local_registry" : {
-        "registry_name": "local_registry",
-        "registry_url": "registry.local:9001",
-        "user_name": "test_user",
-        "password": "test_password",
-    }
+  // --------------------------------------------------------------------------
+  // Local Registry Configuration
+  // --------------------------------------------------------------------------
+  // Target registry where images will be pushed after syncing from source.
+  // This is typically the local registry running on the StarlingX system.
+
+  "local_registry": {
+    "url": "registry.local:9001",
+    "username": "test_user",
+    "password": "password",
+
+  },
+
+  // --------------------------------------------------------------------------
+  // Source Registry Credentials (for authenticated pulls)
+  // --------------------------------------------------------------------------
+  // Credentials for authenticating to registries before pulling images.
+  // Used for Docker login only - does not affect canonical name extraction
+  // or tagging behavior.
+  // 
+  // When to add:
+  // - Private registries requiring authentication (Harbor, private repos)
+  // - Public registries to avoid rate limits (DockerHub: 100 pulls/6hrs anonymous)
+  //
+  // Examples:
+  //
+  // 1. DockerHub (avoid rate limits or access private repos):
+  //    "docker.io": {
+  //      "username": "your-dockerhub-username",
+  //      "password": "your-dockerhub-token"
+  //    }
+  //
+  // 2. Private Harbor registry:
+  //    "harbor.example.com:5000": {
+  //      "username": "admin",
+  //      "password": "harborpassword"
+  //    }
+  //
+  // 3. Corporate mirror:
+  //    "mirror.corporate.io:5000": {
+  //      "username": "mirror-user",
+  //      "password": "mirror-pass"
+  //    }
+
+  "source_registries": {
+    // Empty by default - anonymous access to public registries
+    // Uncomment and fill in as needed:
+
+    // "docker.io": {
+    //   "username": "your-dockerhub-username",
+    //   "password": "your-dockerhub-token"
+    // }
+  },
+
+  // --------------------------------------------------------------------------
+  // Custom Registry Patterns (optional)
+  // --------------------------------------------------------------------------
+  // Registry patterns for extracting canonical names from manifest image URLs.
+  // Used to strip registry prefixes while preserving or removing namespaces.
+  //
+  // You control the final image names in your local registry by choosing which
+  // patterns to configure. This gives you flexibility to organize images however
+  // you want, regardless of how they're organized in the source registry.
+  //
+  // Built-in patterns (no config needed):
+  // - docker.io, docker.io/library, quay.io, gcr.io, ghcr.io, registry.k8s.io
+  // - Missing a common public registry? Consider contributing a PR to add it!
+  //
+  // What is Canonical Name Extraction?
+  // - Full image URL: "mirror.corp.io:5000/stx-images/busybox:1.36.1"
+  // - Pattern: "mirror.corp.io:5000/stx-images/"
+  // - Extracted canonical name: "busybox"
+  // - Local registry: "registry.local:9001/busybox:1.36.1"
+  //
+  // When do you need this?
+  // - When your mirror adds organizational folders that AREN'T part of the real image name
+  //   Example: You mirror busybox to mirror.corp.io:5000/stx-images/busybox
+  //            The canonical image name is "busybox" (not "stx-images/busybox")
+  //            Add pattern: "mirror.corp.io:5000/stx-images/" to strip the folder
+  //            Result: registry.local:9001/busybox
+  //            Without pattern: registry.local:9001/stx-images/busybox
+  //
+  // - Multiple organizational folders on same registry
+  //   Example: mirror.corp.io:5000/stx-images/busybox
+  //            mirror.corp.io:5000/k8s-images/pause
+  //            Both folders are just storage organization, not part of image identity
+  //            Add patterns for each: "mirror.corp.io:5000/stx-images/", "mirror.corp.io:5000/k8s-images/"
+  //
+  // When DON'T you need this?
+  // - Mirrors that preserve the original registry path in the URL
+  //   Example: harbor.io/project/docker.io/library/busybox -> extracts "busybox"
+  //            harbor.io/mirrors/quay.io/calico/node -> extracts "calico/node"
+  //            Works automatically - the original registry pattern (docker.io, quay.io) is
+  //            detected within the URL and used for extraction
+  //
+  // - Flat mirrors where namespace IS part of the real image name
+  //   Example: harbor.io/myorg/scanner -> real image name is "myorg/scanner"
+  //            private.io/team-a/tool -> real image name is "team-a/tool"
+  //            Works automatically - fallback strips hostname, preserves the namespace you want
+  //            Result: registry.local:9001/myorg/scanner (correct!)
+  //
+  // - Built-in public registries (already configured)
+  //   Example: docker.io/busybox, quay.io/prometheus/alertmanager, ghcr.io/owner/repo
+  //            Works automatically - built-in patterns handle these
+  //
+  // Pattern Format:
+  // - Must include full path up to where image name starts
+  // - Trailing "/" is optional (auto-normalized)
+  // - Examples: "mirror.corp.io:5000/stx-images/"
+  //             "registry.example.com/project/"
+
+  "custom_registry_patterns": [
+    // Example: Namespaced mirror (multiple projects on same registry)
+    // "mirror.corporate.io:5000/stx-images/",
+    // "mirror.corporate.io:5000/k8s-images/",
+    // "mirror.corporate.io:5000/openstack-images/"
+  ],
+
+  // --------------------------------------------------------------------------
+  // Named Manifests
+  // --------------------------------------------------------------------------
+  // Maps logical manifest names to YAML files containing image lists.
+  //
+  // Workflow:
+  // 1. Test calls: sync_image_from_manifest("busybox", "1.36.1", "stx-sanity")
+  // 2. System looks up "stx-sanity" -> resources/image_manifests/stx-sanity-images.yaml
+  // 3. Searches manifest for image with canonical name "busybox" and tag "1.36.1"
+  // 4. Finds: "docker.io/busybox:1.36.1"
+  // 5. Extracts canonical name "busybox" from found URL
+  // 6. Pulls, tags as "registry.local:9001/busybox:1.36.1", pushes to local registry
+  //
+  // Key Feature: Same test code works with different Docker configs and manifests
+  // - default.json5 + public-images.yaml -> pulls from docker.io/busybox:1.36.1
+  // - custom.json5 + mirror-images.yaml -> pulls from mirror.corp.io/busybox:1.36.1
+  // - Test code unchanged, just swap config + manifest files!
+  //
+  // Manifest Format (YAML):
+  //   images:
+  //     - docker.io/busybox:1.36.1
+  //     - quay.io/prometheus/node-exporter:v1.5.0
+  //     - registry.k8s.io/pause:3.9
+
+  "named_manifests": {
+    "stx-sanity": "resources/image_manifests/stx-sanity-images.yaml",
+    // Add custom manifests:
+    // "my-images": "path/to/my-manifest.yaml"
   }
 }

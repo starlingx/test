@@ -13,8 +13,7 @@ class LabConnectionKeywords(BaseKeyword):
     """
 
     def get_active_controller_ssh(self) -> SSHConnection:
-        """
-        Gets the active controller ssh
+        """Gets the active controller ssh
 
         Returns:
             SSHConnection: the ssh for the active controller
@@ -61,6 +60,7 @@ class LabConnectionKeywords(BaseKeyword):
             standby_ip,
             lab_config.get_admin_credentials().get_user_name(),
             lab_config.get_admin_credentials().get_password(),
+            name=standby_host_name,
             ssh_port=lab_config.get_ssh_port(),
             jump_host=jump_host_config,
         )
@@ -80,8 +80,11 @@ class LabConnectionKeywords(BaseKeyword):
         """
         lab_config = ConfigurationManager.get_lab_config()
 
-        host_ip = lab_config.get_node(hostname).get_ip()
+        host_node = lab_config.get_node(hostname)
+        if host_node and host_node.get_type() and "worker" in host_node.get_type():
+            return self.get_compute_ssh(hostname)
 
+        host_ip = lab_config.get_node(hostname).get_ip()
         jump_host_config = None
         if lab_config.is_use_jump_server():
             jump_host_config = lab_config.get_jump_host_configuration()
@@ -90,10 +93,10 @@ class LabConnectionKeywords(BaseKeyword):
             host_ip,
             lab_config.get_admin_credentials().get_user_name(),
             lab_config.get_admin_credentials().get_password(),
+            name=hostname,
             ssh_port=lab_config.get_ssh_port(),
             jump_host=jump_host_config,
         )
-
         return connection
 
     def get_compute_ssh(self, compute_name: str) -> SSHConnection:
@@ -110,6 +113,7 @@ class LabConnectionKeywords(BaseKeyword):
 
         """
         connection = self.get_active_controller_ssh()
+        connection.set_name(compute_name)
         lab_config = ConfigurationManager.get_lab_config()
 
         # setup this connection to use ssh pass
@@ -118,8 +122,8 @@ class LabConnectionKeywords(BaseKeyword):
         return connection
 
     def get_subcloud_ssh(self, subcloud_name: str) -> SSHConnection:
-        """
-        Gets an SSH connection to the 'Subcloud' node whose name is specified by the argument 'subcloud_name'.
+        """Gets an SSH connection to the 'Subcloud' node whose name is specified by the argument 'subcloud_name'.
+
         Args:
              subcloud_name (str): The name of the 'subcloud' node.
 
@@ -146,3 +150,59 @@ class LabConnectionKeywords(BaseKeyword):
         )
 
         return connection
+
+    def get_secondary_active_controller_ssh(self) -> SSHConnection:
+        """Gets an SSH connection to the secondary active controller node.
+
+        Returns:
+            SSHConnection: the ssh for the secondary active controller
+        """
+        lab_config = ConfigurationManager.get_lab_config()
+        secondary_lab_config = lab_config.get_secondary_system_controller_config()
+
+        if not secondary_lab_config:
+            raise ValueError(f"There is no {secondary_lab_config} defined in your config file.")
+
+        jump_host_config = None
+        if lab_config.is_use_jump_server():
+            jump_host_config = lab_config.get_jump_host_configuration()
+
+        connection = SSHConnectionManager.create_ssh_connection(
+            secondary_lab_config.get_floating_ip(),
+            secondary_lab_config.get_admin_credentials().get_user_name(),
+            secondary_lab_config.get_admin_credentials().get_password(),
+            ssh_port=secondary_lab_config.get_ssh_port(),
+            jump_host=jump_host_config,
+        )
+
+        return connection
+
+    def ping_host(self, hostname: str, count: int = 3) -> bool:
+        """Ping a host by hostname or IP address.
+
+        Args:
+            hostname (str): The hostname or IP address to ping.
+            count (int): Number of ping packets.
+
+        Returns:
+            bool: True if ping succeeds, False otherwise.
+        """
+        connection = self.get_active_controller_ssh()
+        cmd = f"ping -c {count} {hostname}"
+        connection.send(cmd)
+        return connection.get_return_code() == 0
+
+    def test_ssh_connectivity(self, hostname: str) -> bool:
+        """Test SSH connectivity to a host using lab credentials.
+
+        Args:
+            hostname (str): The hostname to test SSH connectivity to.
+
+        Returns:
+            bool: True if SSH connection succeeds, False otherwise.
+        """
+        connection = self.get_active_controller_ssh()
+        lab_config = ConfigurationManager.get_lab_config()
+        connection.setup_ssh_pass(hostname, lab_config.get_admin_credentials().get_user_name(), lab_config.get_admin_credentials().get_password())
+        connection.send("echo 'connection_test'")
+        return connection.get_return_code() == 0

@@ -1,0 +1,533 @@
+from pytest import FixtureRequest, mark
+
+from config.configuration_manager import ConfigurationManager
+from framework.logging.automation_logger import get_logger
+from framework.validation.validation import validate_equals, validate_not_equals, validate_str_contains
+from keywords.ceph.ceph_status_keywords import CephStatusKeywords
+from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
+from keywords.cloud_platform.system.application.object.system_application_delete_input import SystemApplicationDeleteInput
+from keywords.cloud_platform.system.application.object.system_application_remove_input import SystemApplicationRemoveInput
+from keywords.cloud_platform.system.application.object.system_application_update_input import SystemApplicationUpdateInput
+from keywords.cloud_platform.system.application.object.system_application_upload_input import SystemApplicationUploadInput
+from keywords.cloud_platform.system.application.system_application_abort_keywords import SystemApplicationAbortKeywords
+from keywords.cloud_platform.system.application.system_application_apply_keywords import SystemApplicationApplyKeywords
+from keywords.cloud_platform.system.application.system_application_delete_keywords import SystemApplicationDeleteKeywords
+from keywords.cloud_platform.system.application.system_application_list_keywords import SystemApplicationListKeywords
+from keywords.cloud_platform.system.application.system_application_remove_keywords import SystemApplicationRemoveKeywords
+from keywords.cloud_platform.system.application.system_application_show_keywords import SystemApplicationShowKeywords
+from keywords.cloud_platform.system.application.system_application_update_keywords import SystemApplicationUpdateKeywords
+from keywords.cloud_platform.system.application.system_application_upload_keywords import SystemApplicationUploadKeywords
+from keywords.cloud_platform.system.helm.system_helm_chart_attribute_modify_keywords import SystemHelmChartAttributeModifyKeywords
+from keywords.cloud_platform.system.helm.system_helm_override_keywords import SystemHelmOverrideKeywords
+from keywords.files.file_keywords import FileKeywords
+from keywords.linux.mount.mount_keywords import MountKeywords
+
+
+def setup(request, active_ssh_connection):
+    """Setup function to ensure platform-integ-apps is applied before tests."""
+    app_config = ConfigurationManager.get_app_config()
+    platform_integ_apps_name = app_config.get_platform_integ_apps_app_name()
+    get_logger().log_setup_step("Checking ceph health.")
+    ceph_status_keywords = CephStatusKeywords(active_ssh_connection)
+    ceph_status_keywords.wait_for_ceph_health_status(expect_health_status=True)
+    get_logger().log_setup_step("Check app platform-integ-apps is applied.")
+    SystemApplicationListKeywords(active_ssh_connection).validate_app_status(platform_integ_apps_name, "applied")
+
+    def cleanup():
+        if not SystemApplicationListKeywords(active_ssh_connection).is_app_present(platform_integ_apps_name):
+            SystemApplicationApplyKeywords(active_ssh_connection).system_application_apply(app_name=platform_integ_apps_name)
+        get_logger().log_teardown_step("Checking ceph health.")
+        ceph_status_keywords = CephStatusKeywords(active_ssh_connection)
+        ceph_status_keywords.wait_for_ceph_health_status(expect_health_status=True)
+
+    request.addfinalizer(cleanup)
+    return platform_integ_apps_name
+
+
+@mark.p2
+def test_remove_apply_platform_integ_app(request):
+    """
+    Remove and apply the platform-integ-apps  application.
+    Test Steps:
+        - Run this command "system application-remove platform-integ-apps"
+        - The status of the application should change to uploaded
+        - Run this command "system application-apply"
+        - The platform-integ-apps application was applied
+    Args: None
+    """
+    active_ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    platform_integ_apps_name = setup(request, active_ssh_connection)
+    get_logger().log_test_case_step("Remove platform-integ-apps")
+    system_application_remove_input = SystemApplicationRemoveInput()
+    system_application_remove_input.set_app_name(platform_integ_apps_name)
+    SystemApplicationRemoveKeywords(active_ssh_connection).system_application_remove(system_application_remove_input)
+    get_logger().log_test_case_step("Apply platform-integ-apps")
+    SystemApplicationApplyKeywords(active_ssh_connection).system_application_apply(app_name=platform_integ_apps_name)
+
+
+@mark.p2
+def test_delete_platform_integ_app(request):
+    """
+    Delete platform-integ-apps application.
+    Test Steps:
+        - Run this command "system application-remove platform-integ-apps"
+        - The status of the application should change to uploaded
+        - Run this command "system application-delete"
+        - The platform-integ-apps application was deleted
+    Args: None
+    """
+    active_ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    platform_integ_apps_name = setup(request, active_ssh_connection)
+
+    def teardown():
+        get_logger().log_teardown_step("Test- Testdown: Upload platform-integ-apps")
+        app_config = ConfigurationManager.get_app_config()
+        base_path = app_config.get_base_application_path()
+        system_application_upload_input = SystemApplicationUploadInput()
+        system_application_upload_input.set_app_name(platform_integ_apps_name)
+        system_application_upload_input.set_tar_file_path(f"{base_path}{platform_integ_apps_name}*.tgz")
+        SystemApplicationUploadKeywords(active_ssh_connection).system_application_upload(system_application_upload_input)
+        get_logger().log_teardown_step("Apply platform-integ-apps")
+        SystemApplicationApplyKeywords(active_ssh_connection).system_application_apply(app_name=platform_integ_apps_name)
+
+    request.addfinalizer(teardown)
+    get_logger().log_test_case_step("Remove platform-integ-apps")
+    system_application_remove_input = SystemApplicationRemoveInput()
+    system_application_remove_input.set_app_name(platform_integ_apps_name)
+    SystemApplicationRemoveKeywords(active_ssh_connection).system_application_remove(system_application_remove_input)
+    get_logger().log_test_case_step("Delete platform-integ-apps")
+    system_application_delete_input = SystemApplicationDeleteInput()
+    system_application_delete_input.set_app_name(platform_integ_apps_name)
+    app_delete_response = SystemApplicationDeleteKeywords(active_ssh_connection).get_system_application_delete(system_application_delete_input)
+    validate_equals(app_delete_response.rstrip(), "Application platform-integ-apps deleted.", "Application deletion.")
+
+
+@mark.p2
+def test_abort_platform_integ_app(request: FixtureRequest):
+    """
+    Abort platform-integ-apps application during apply process.
+
+    Test Steps:
+        - Run this command "system application-remove platform-integ-apps"
+        - The status of the application should change to uploaded
+        - Run this command "system application-apply"
+        - Run this command "system application-abort platform-integ-apps"
+
+    Args:
+        request (FixtureRequest): pytest request fixture for test setup and teardown
+    """
+    active_ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    platform_integ_apps_name = setup(request, active_ssh_connection)
+
+    def teardown():
+        get_logger().log_teardown_step("Check if application status is not applied and apply if needed")
+        app_list_keywords = SystemApplicationListKeywords(active_ssh_connection)
+        if app_list_keywords.is_app_present(platform_integ_apps_name):
+            system_applications = app_list_keywords.get_system_application_list()
+            current_status = system_applications.get_application(platform_integ_apps_name).get_status()
+            if current_status != "applied":
+                get_logger().log_teardown_step("Apply platform-integ-apps")
+                SystemApplicationApplyKeywords(active_ssh_connection).system_application_apply(app_name=platform_integ_apps_name)
+
+    request.addfinalizer(teardown)
+
+    get_logger().log_test_case_step("Remove platform-integ-apps")
+    system_application_remove_input = SystemApplicationRemoveInput()
+    system_application_remove_input.set_app_name(platform_integ_apps_name)
+    SystemApplicationRemoveKeywords(active_ssh_connection).system_application_remove(system_application_remove_input)
+
+    get_logger().log_test_case_step("Apply platform-integ-apps")
+    SystemApplicationApplyKeywords(active_ssh_connection).system_application_apply(app_name=platform_integ_apps_name, wait_for_applied=False)
+
+    get_logger().log_test_case_step("Abort platform-integ-apps")
+    SystemApplicationAbortKeywords(active_ssh_connection).system_application_abort(app_name=platform_integ_apps_name)
+
+    get_logger().log_test_case_step("Validate application status changed to apply-failed")
+    SystemApplicationListKeywords(active_ssh_connection).validate_app_status(platform_integ_apps_name, "apply-failed")
+
+
+@mark.p2
+def test_rollback_platform_integ_app(request: FixtureRequest):
+    """
+    Rollback platform-integ-apps application to a previous version.
+
+    Test Steps:
+        - Record current version of platform-integ-apps
+        - Transfer tarball from local machine to /home/sysadmin
+        - Mount /usr with read-write permissions
+        - Copy tarball to /usr/local/share/applications/helm/
+        - Execute system application-update with tarball filename
+        - Verify the platform-integ-apps version has changed (rollback)
+
+    Args:
+        request (FixtureRequest): pytest request fixture for test setup and teardown
+    """
+    active_ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    platform_integ_apps_name = setup(request, active_ssh_connection)
+
+    # Record current version before rollback
+    get_logger().log_test_case_step("Record current platform-integ-apps version")
+    current_app_info = SystemApplicationShowKeywords(active_ssh_connection).get_system_application_show(platform_integ_apps_name)
+    current_version = current_app_info.get_system_application_object().get_version()
+
+    def teardown():
+        get_logger().log_teardown_step("Test- Teardown: Check if restore needed")
+        # Check current version on system
+        current_app_info = SystemApplicationShowKeywords(active_ssh_connection).get_system_application_show(platform_integ_apps_name)
+        system_version = current_app_info.get_system_application_object().get_version()
+
+        if system_version != current_version:
+            get_logger().log_teardown_step("Restoring original platform-integ-apps version")
+            # Remove the rolled back version
+            system_application_remove_input = SystemApplicationRemoveInput()
+            system_application_remove_input.set_app_name(platform_integ_apps_name)
+            SystemApplicationRemoveKeywords(active_ssh_connection).system_application_remove(system_application_remove_input)
+
+            # Delete the rolled back version
+            system_application_delete_input = SystemApplicationDeleteInput()
+            system_application_delete_input.set_app_name(platform_integ_apps_name)
+            SystemApplicationDeleteKeywords(active_ssh_connection).get_system_application_delete(system_application_delete_input)
+
+            # Copy original tarball from /home/sysadmin to base_application_path
+            get_logger().log_teardown_step("Copy original tarball to base application path")
+            FileKeywords(active_ssh_connection).move_file("/home/sysadmin/platform-integ-app*.tgz", app_config.get_base_application_path(), sudo=True)
+
+            # Move rollback tarball from base_application_path to /home/sysadmin
+            get_logger().log_teardown_step("Move rollback tarball to /home/sysadmin")
+            FileKeywords(active_ssh_connection).move_file(app_config.get_base_application_path() + tarball_filename, "/home/sysadmin/", sudo=True)
+
+            # Upload original version
+            system_application_upload_input = SystemApplicationUploadInput()
+            system_application_upload_input.set_app_name(platform_integ_apps_name)
+            system_application_upload_input.set_tar_file_path(f"{app_config.get_base_application_path()}platform-integ-app*.tgz")
+            SystemApplicationUploadKeywords(active_ssh_connection).system_application_upload(system_application_upload_input)
+
+            # Apply original version
+            SystemApplicationApplyKeywords(active_ssh_connection).system_application_apply(app_name=platform_integ_apps_name)
+
+            # Delete tarball file from /home/sysadmin
+            get_logger().log_teardown_step("Delete tarball file from /home/sysadmin")
+            FileKeywords(active_ssh_connection).delete_file(f"/home/sysadmin/{tarball_filename}")
+        else:
+            get_logger().log_teardown_step("No restore needed - version unchanged")
+
+    request.addfinalizer(teardown)
+
+    # Transfer tarball from local machine to /home/sysadmin
+    get_logger().log_test_case_step("Transfer rollback tarball from local machine to /home/sysadmin")
+    app_config = ConfigurationManager.get_app_config()
+    tarball_filename = app_config.get_platform_integ_app_tarball().split("/")[-1]
+    temp_remote_path = f"/home/sysadmin/{tarball_filename}"
+    FileKeywords(active_ssh_connection).upload_file(app_config.get_platform_integ_app_tarball(), temp_remote_path)
+
+    # Mount /usr to be able to write the tarball
+    get_logger().log_test_case_step("Mount /usr with read-write permissions")
+    MountKeywords(active_ssh_connection).remount_read_write("/usr")
+
+    # Copy platform_integ_app*.tgz from base_application_path to /home/sysadmin
+    get_logger().log_test_case_step("Move platform_integ_app*.tgz to /home/sysadmin")
+    FileKeywords(active_ssh_connection).move_file(f"{app_config.get_base_application_path()}platform-integ-app*.tgz", "/home/sysadmin/", sudo=True)
+
+    # Copy tarball from /home/sysadmin to base_application_path
+    get_logger().log_test_case_step("Move tarball to base application path")
+    FileKeywords(active_ssh_connection).move_file(temp_remote_path, app_config.get_base_application_path(), sudo=True)
+
+    # Rollback platform-integ-apps with tarball
+    get_logger().log_test_case_step("Rollback platform-integ-apps with tarball")
+    system_application_update_input = SystemApplicationUpdateInput()
+    system_application_update_input.set_app_name(platform_integ_apps_name)
+    system_application_update_input.set_tar_file_path(f"{app_config.get_base_application_path()}{tarball_filename}")
+    SystemApplicationUpdateKeywords(active_ssh_connection).system_application_update(system_application_update_input)
+
+    # Verify the application version has changed (rollback)
+    get_logger().log_test_case_step("Verify platform-integ-apps version has changed after rollback")
+    rollback_app_info = SystemApplicationShowKeywords(active_ssh_connection).get_system_application_show(platform_integ_apps_name)
+    rollback_version = rollback_app_info.get_system_application_object().get_version()
+    validate_not_equals(current_version, rollback_version, "Application version should have changed after rollback")
+
+
+@mark.p2
+def test_update_platform_integ_app(request: FixtureRequest):
+    """
+    Update platform-integ-apps application.
+
+    Test Steps:
+        - Roll back the platform-integ-apps
+        - Remove tarball from application base path
+        - Copy tarball from /home/sysadmin to application base path
+        - Check if the application was upgraded
+
+    Args:
+        request (FixtureRequest): pytest request fixture for test setup and teardown
+    """
+    active_ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    platform_integ_apps_name = setup(request, active_ssh_connection)
+
+    def teardown():
+        get_logger().log_teardown_step("Test- Teardown: Check if restore needed")
+        # Check current version on system
+        current_app_info = SystemApplicationShowKeywords(active_ssh_connection).get_system_application_show(platform_integ_apps_name)
+        system_version = current_app_info.get_system_application_object().get_version()
+
+        if system_version != current_version:
+            get_logger().log_teardown_step("Restoring original platform-integ-apps version")
+            # Remove the rolled back version
+            system_application_remove_input = SystemApplicationRemoveInput()
+            system_application_remove_input.set_app_name(platform_integ_apps_name)
+            SystemApplicationRemoveKeywords(active_ssh_connection).system_application_remove(system_application_remove_input)
+
+            # Delete the rolled back version
+            system_application_delete_input = SystemApplicationDeleteInput()
+            system_application_delete_input.set_app_name(platform_integ_apps_name)
+            SystemApplicationDeleteKeywords(active_ssh_connection).get_system_application_delete(system_application_delete_input)
+
+            # Copy original tarball from /home/sysadmin to base_application_path
+            get_logger().log_teardown_step("Move original tarball to base application path")
+            FileKeywords(active_ssh_connection).move_file("/home/sysadmin/platform-integ-app*.tgz", app_config.get_base_application_path(), sudo=True)
+
+            # Move rollback tarball from base_application_path to /home/sysadmin
+            get_logger().log_teardown_step("Move rollback tarball to /home/sysadmin")
+            FileKeywords(active_ssh_connection).move_file(app_config.get_base_application_path() + tarball_filename, "/home/sysadmin/", sudo=True)
+
+            # Upload original version
+            system_application_upload_input = SystemApplicationUploadInput()
+            system_application_upload_input.set_app_name(platform_integ_apps_name)
+            system_application_upload_input.set_tar_file_path(f"{app_config.get_base_application_path()}platform-integ-app*.tgz")
+            SystemApplicationUploadKeywords(active_ssh_connection).system_application_upload(system_application_upload_input)
+
+            # Apply original version
+            SystemApplicationApplyKeywords(active_ssh_connection).system_application_apply(app_name=platform_integ_apps_name)
+
+            # Delete tarball file from /home/sysadmin
+            get_logger().log_teardown_step("Delete tarball file from /home/sysadmin")
+            FileKeywords(active_ssh_connection).delete_file(f"/home/sysadmin/{tarball_filename}")
+        else:
+            get_logger().log_teardown_step("No restore needed - version unchanged")
+
+    request.addfinalizer(teardown)
+
+    # Record current version before rollback
+    get_logger().log_test_case_step("Record current platform-integ-apps version")
+    current_app_info = SystemApplicationShowKeywords(active_ssh_connection).get_system_application_show(platform_integ_apps_name)
+    current_version = current_app_info.get_system_application_object().get_version()
+
+    # Transfer tarball from local machine to /home/sysadmin
+    get_logger().log_test_case_step("Transfer rollback tarball from local machine to /home/sysadmin")
+    app_config = ConfigurationManager.get_app_config()
+    tarball_filename = app_config.get_platform_integ_app_tarball().split("/")[-1]
+    temp_remote_path = f"/home/sysadmin/{tarball_filename}"
+    FileKeywords(active_ssh_connection).upload_file(app_config.get_platform_integ_app_tarball(), temp_remote_path)
+
+    # Mount /usr to be able to write the tarball
+    get_logger().log_test_case_step("Mount /usr with read-write permissions")
+    MountKeywords(active_ssh_connection).remount_read_write("/usr")
+
+    # Copy platform_integ_app*.tgz from base_application_path to /home/sysadmin
+    get_logger().log_test_case_step("Move platform_integ_app*.tgz to /home/sysadmin")
+    FileKeywords(active_ssh_connection).move_file(f"{app_config.get_base_application_path()}platform-integ-app*.tgz", "/home/sysadmin/", sudo=True)
+
+    # Copy tarball from /home/sysadmin to base_application_path
+    get_logger().log_test_case_step("Move tarball to base application path")
+    FileKeywords(active_ssh_connection).move_file(temp_remote_path, app_config.get_base_application_path(), sudo=True)
+
+    # Rollback platform-integ-apps with tarball
+    get_logger().log_test_case_step("Rollback platform-integ-apps with tarball")
+    system_application_update_input = SystemApplicationUpdateInput()
+    system_application_update_input.set_app_name(platform_integ_apps_name)
+    system_application_update_input.set_tar_file_path(f"{app_config.get_base_application_path()}{tarball_filename}")
+    SystemApplicationUpdateKeywords(active_ssh_connection).system_application_update(system_application_update_input)
+
+    # Verify the application version has changed (rollback)
+    get_logger().log_test_case_step("Verify platform-integ-apps version has changed after rollback")
+    rollback_app_info = SystemApplicationShowKeywords(active_ssh_connection).get_system_application_show(platform_integ_apps_name)
+    rollback_version = rollback_app_info.get_system_application_object().get_version()
+    validate_not_equals(current_version, rollback_version, "Application version should have changed after rollback")
+
+    # Remove tarball from application base path
+    get_logger().log_test_case_step("Remove tarball from application base path")
+    FileKeywords(active_ssh_connection).delete_file(f"{app_config.get_base_application_path()}{tarball_filename}")
+
+    # Move tarball from /home/sysadmin to base application path
+    get_logger().log_test_case_step("Copy tarball from /home/sysadmin to base application path")
+    FileKeywords(active_ssh_connection).move_file("/home/sysadmin/platform-integ-app*.tgz", app_config.get_base_application_path(), sudo=True)
+
+    # Update platform-integ-apps with new tarball
+    get_logger().log_test_case_step("Update platform-integ-apps with new tarball")
+    upgrade_tarball_path = f"{app_config.get_base_application_path()}platform-integ-app*.tgz"
+    system_application_update_input = SystemApplicationUpdateInput()
+    system_application_update_input.set_app_name(platform_integ_apps_name)
+    system_application_update_input.set_tar_file_path(upgrade_tarball_path)
+    SystemApplicationUpdateKeywords(active_ssh_connection).system_application_update(system_application_update_input)
+
+    # Check if the application was upgraded
+    get_logger().log_test_case_step("Check if the application was upgraded")
+    upgraded_app_info = SystemApplicationShowKeywords(active_ssh_connection).get_system_application_show(platform_integ_apps_name)
+    upgraded_version = upgraded_app_info.get_system_application_object().get_version()
+    validate_equals(upgraded_version, current_version, "Application version should match original version after upgrade")
+    get_logger().log_info(f"Application status after upgrade: {upgraded_app_info.get_system_application_object()}")
+
+
+@mark.p2
+def test_update_helm_chart_user_overrides_platform_integ_app(request: FixtureRequest):
+    """
+    Update helm chart user overrides for platform-integ-apps application.
+
+    Test Steps:
+        - Show initial helm override properties and values
+        - Set user_overrides default debug to true
+        - Verify the update was applied correctly
+        - Clean up by deleting the helm override
+
+    Args:
+        request (FixtureRequest): pytest request fixture for test setup and teardown
+    """
+    active_ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    platform_integ_apps_name = setup(request, active_ssh_connection)
+    helm_override_keywords = SystemHelmOverrideKeywords(active_ssh_connection)
+
+    chart_name = "ceph-pools-audit"
+    namespace = "kube-system"
+
+    def teardown():
+        get_logger().log_teardown_step("Delete helm override")
+        helm_override_keywords.delete_system_helm_override(platform_integ_apps_name, chart_name, namespace)
+
+        get_logger().log_teardown_step("Verify helm override was deleted")
+        final_override_show = helm_override_keywords.get_system_helm_override_show(platform_integ_apps_name, chart_name, namespace)
+        final_user_overrides = final_override_show.get_helm_override_show().get_user_overrides()
+        validate_equals(final_user_overrides, "None", "User overrides should be None after deletion")
+
+    request.addfinalizer(teardown)
+
+    # Show initial helm override properties and values
+    get_logger().log_test_case_step("Show initial helm override properties and values")
+    initial_override_show = helm_override_keywords.get_system_helm_override_show(platform_integ_apps_name, chart_name, namespace)
+    initial_user_overrides = initial_override_show.get_helm_override_show().get_user_overrides()
+    get_logger().log_info(f"Initial user overrides: {initial_user_overrides}")
+
+    # Set user_overrides default debug to true
+    get_logger().log_test_case_step("Set user_overrides default debug to true")
+    override_values = "conf.kube-system.DEFAULT.DEBUG=true"
+    helm_override_keywords.update_helm_override_via_set(override_values, platform_integ_apps_name, chart_name, namespace)
+
+    # Verify the update was applied correctly
+    get_logger().log_test_case_step("Verify the update was applied correctly")
+    updated_override_show = helm_override_keywords.get_system_helm_override_show(platform_integ_apps_name, chart_name, namespace)
+    updated_user_overrides = updated_override_show.get_helm_override_show().get_user_overrides()
+
+    validate_str_contains(updated_user_overrides, "DEBUG: true", "User overrides should contain DEBUG: true")
+    validate_str_contains(updated_user_overrides, "kube-system", "User overrides should contain kube-system namespace")
+    get_logger().log_info(f"Updated user overrides: {updated_user_overrides}")
+
+
+@mark.p2
+def test_delete_helm_chart_user_overrides_platform_integ_app(request: FixtureRequest):
+    """
+    Delete helm chart user overrides for platform-integ-apps application.
+
+    Test Steps:
+        - Show initial helm override properties and values
+        - Set user_overrides default debug to true
+        - Delete the user-overrides configuration
+        - Verify the delete was successful
+
+    Args:
+        request (FixtureRequest): pytest request fixture for test setup and teardown
+    """
+    active_ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    platform_integ_apps_name = setup(request, active_ssh_connection)
+    helm_override_keywords = SystemHelmOverrideKeywords(active_ssh_connection)
+
+    chart_name = "ceph-pools-audit"
+    namespace = "kube-system"
+
+    def teardown():
+        get_logger().log_teardown_step("Check and delete helm override if needed")
+        current_override_show = helm_override_keywords.get_system_helm_override_show(platform_integ_apps_name, chart_name, namespace)
+        current_user_overrides = current_override_show.get_helm_override_show().get_user_overrides()
+        if current_user_overrides != "None":
+            helm_override_keywords.delete_system_helm_override(platform_integ_apps_name, chart_name, namespace)
+
+    request.addfinalizer(teardown)
+
+    # Show initial helm override properties and values
+    get_logger().log_test_case_step("Show initial helm override properties and values")
+    initial_override_show = helm_override_keywords.get_system_helm_override_show(platform_integ_apps_name, chart_name, namespace)
+    get_logger().log_info(f"Initial user overrides: {initial_override_show.get_helm_override_show().get_user_overrides()}")
+
+    # Set user_overrides default debug to true
+    get_logger().log_test_case_step("Set user_overrides default debug to true")
+    override_values = "conf.kube-system.DEFAULT.DEBUG=true"
+    helm_override_keywords.update_helm_override_via_set(override_values, platform_integ_apps_name, chart_name, namespace)
+
+    # Delete the user-overrides configuration
+    get_logger().log_test_case_step("Delete the user-overrides configuration")
+    helm_override_keywords.delete_system_helm_override(platform_integ_apps_name, chart_name, namespace)
+
+    # Verify the delete was successful
+    get_logger().log_test_case_step("Verify the delete was successful")
+    final_override_show = helm_override_keywords.get_system_helm_override_show(platform_integ_apps_name, chart_name, namespace)
+    final_user_overrides = final_override_show.get_helm_override_show().get_user_overrides()
+    validate_equals(final_user_overrides, "None", "User overrides should be None after deletion")
+    get_logger().log_info(f"Final user overrides: {final_user_overrides}")
+
+
+@mark.p2
+def test_modify_helm_chart_attribute_platform_integ_app(request: FixtureRequest):
+    """
+    Modify helm chart attribute for platform-integ-apps application.
+
+    Test Steps:
+        - Show initial helm override properties and values
+        - Set the enabled parameter to true
+        - Verify it was enabled
+        - Set the enabled parameter to false
+        - Verify it was disabled
+
+    Args:
+        request (FixtureRequest): pytest request fixture for test setup and teardown
+    """
+    active_ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    platform_integ_apps_name = setup(request, active_ssh_connection)
+    helm_override_keywords = SystemHelmOverrideKeywords(active_ssh_connection)
+    helm_attribute_keywords = SystemHelmChartAttributeModifyKeywords(active_ssh_connection)
+
+    chart_name = "ceph-pools-audit"
+    namespace = "kube-system"
+
+    def teardown():
+        get_logger().log_teardown_step("Check and set enabled attribute to false if needed")
+        current_override_show = helm_override_keywords.get_system_helm_override_show(platform_integ_apps_name, chart_name, namespace)
+        current_attributes = current_override_show.get_helm_override_show().get_attributes()
+        if "enabled: true" in str(current_attributes):
+            helm_attribute_keywords.helm_chart_attribute_modify_enabled("false", platform_integ_apps_name, chart_name, namespace)
+
+    request.addfinalizer(teardown)
+
+    # Show initial helm override properties and values
+    get_logger().log_test_case_step("Show initial helm override properties and values")
+    initial_override_show = helm_override_keywords.get_system_helm_override_show(platform_integ_apps_name, chart_name, namespace)
+    initial_attributes = initial_override_show.get_helm_override_show().get_attributes()
+    get_logger().log_info(f"Initial attributes: {initial_attributes}")
+
+    # Set the enabled parameter to true
+    get_logger().log_test_case_step("Set the enabled parameter to true")
+    helm_attribute_keywords.helm_chart_attribute_modify_enabled("true", platform_integ_apps_name, chart_name, namespace)
+
+    # Verify it was enabled
+    get_logger().log_test_case_step("Verify it was enabled")
+    enabled_override_show = helm_override_keywords.get_system_helm_override_show(platform_integ_apps_name, chart_name, namespace)
+    enabled_attributes = enabled_override_show.get_helm_override_show().get_attributes()
+    validate_str_contains(str(enabled_attributes), "enabled: true", "Attributes should contain enabled: true")
+    get_logger().log_info(f"Enabled attributes: {enabled_attributes}")
+
+    # Set the enabled parameter to false
+    get_logger().log_test_case_step("Set the enabled parameter to false")
+    helm_attribute_keywords.helm_chart_attribute_modify_enabled("false", platform_integ_apps_name, chart_name, namespace)
+
+    # Verify it was disabled
+    get_logger().log_test_case_step("Verify it was disabled")
+    disabled_override_show = helm_override_keywords.get_system_helm_override_show(platform_integ_apps_name, chart_name, namespace)
+    disabled_attributes = disabled_override_show.get_helm_override_show().get_attributes()
+    validate_str_contains(str(disabled_attributes), "enabled: false", "Attributes should contain enabled: false")
+    get_logger().log_info(f"Disabled attributes: {disabled_attributes}")

@@ -16,7 +16,6 @@ class PtpCguComponentOutput:
         Gets the cgu component.
 
         Returns:
-            PtpCguComponentObject - the PtpCguComponentObject
-
+            PtpCguComponentObject: The cgu component object containing parsed values.
         """
         return self.cgu_component

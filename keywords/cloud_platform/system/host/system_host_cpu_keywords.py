@@ -1,3 +1,4 @@
+from framework.ssh.ssh_connection import SSHConnection
 from keywords.base_keyword import BaseKeyword
 from keywords.cloud_platform.command_wrappers import source_openrc
 from keywords.cloud_platform.system.host.objects.system_host_cpu_output import SystemHostCPUOutput
@@ -9,25 +10,27 @@ class SystemHostCPUKeywords(BaseKeyword):
     This class contains all the keywords related to the 'system host-cpu-*' commands.
     """
 
-    def __init__(self, ssh_connection):
+    def __init__(self, ssh_connection: SSHConnection) -> None:
         """
-        Constructor
+        Constructor for SystemHostCPUKeywords.
+
         Args:
-            ssh_connection:
+            ssh_connection (SSHConnection): An active SSH connection to the target system,
+                used for executing system commands.
         """
         self.ssh_connection = ssh_connection
 
-    def get_system_host_cpu_list(self, hostname) -> SystemHostCPUOutput:
+    def get_system_host_cpu_list(self, hostname: str) -> SystemHostCPUOutput:
         """
-        Gets the system host cpu list
+        Gets the system host CPU list.
 
         Args:
-            hostname: Name of the host for which we want to get the cpu list.
+            hostname (str): Name of the host for which we want to get the CPU list.
 
         Returns:
-
+            SystemHostCPUOutput: An object containing the parsed CPU list for the specified host.
         """
-        output = self.ssh_connection.send(source_openrc(f'system host-cpu-list --nowrap {hostname}'))
+        output = self.ssh_connection.send(source_openrc(f"system host-cpu-list --nowrap {hostname}"))
         self.validate_success_return_code(self.ssh_connection)
         system_host_cpu_output = SystemHostCPUOutput(output)
 
@@ -38,15 +41,14 @@ class SystemHostCPUKeywords(BaseKeyword):
         Run the "system host-cpu-modify" command with the specified arguments.
 
         Args:
-            hostname: Name of the host to modify.
-            function: Name of the function (-f) that we want to set. e.g. vswitch, shared
-            num_cores_on_processor_0: (-p0) Number of Cores on Processor 0. Will ignore this parameter if set to -1.
-            num_cores_on_processor_1: (-p1) Number of Cores on Processor 1. Will ignore this parameter if set to -1.
+            hostname (str): Name of the host to modify.
+            function (str): Name of the function (-f) that we want to set. For example: `vswitch`, `shared`.
+            num_cores_on_processor_0 (int, optional): Number of cores on Processor 0 (`-p0`). Ignored if set to `-1`.
+            num_cores_on_processor_1 (int, optional): Number of cores on Processor 1 (`-p1`). Ignored if set to `-1`.
 
         Returns:
-
+            SystemHostCPUOutput: Parsed output of the `system host-cpu-modify` command.
         """
-
         num_cores_argument = ""
         if num_cores_on_processor_0 >= 0:
             num_cores_argument += f"-p0 {num_cores_on_processor_0} "
@@ -61,18 +63,18 @@ class SystemHostCPUKeywords(BaseKeyword):
 
         return system_host_cpu_output
 
-    def get_system_host_cpu_show(self, host_id, cpu_uuid) -> SystemHostCPUShowOutput:
+    def get_system_host_cpu_show(self, host_id: str, cpu_uuid: str) -> SystemHostCPUShowOutput:
         """
-        Gets the system host cpu show
+        Gets the details of a specific CPU from a given host.
 
         Args:
-            host_id: ID of host for which we want to get the cpu details.
-            cpu_uuid: UUID of the CPU
+            host_id (str): ID of the host for which to retrieve CPU details.
+            cpu_uuid (str): UUID of the CPU.
 
         Returns:
-
+            SystemHostCPUShowOutput: Parsed output containing the CPU details.
         """
-        output = self.ssh_connection.send(source_openrc(f'system host-cpu-show {host_id} {cpu_uuid}'))
+        output = self.ssh_connection.send(source_openrc(f"system host-cpu-show {host_id} {cpu_uuid}"))
         self.validate_success_return_code(self.ssh_connection)
         system_host_cpu_output = SystemHostCPUShowOutput(output)
 

@@ -1,0 +1,75 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: guaranteed-fio-mixed
+  labels:
+    app: guaranteed-fio-mixed
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: guaranteed-fio-mixed
+  template:
+    metadata:
+      labels:
+        app: guaranteed-fio-mixed
+    spec:
+      containers:
+      - name: guaranteed-fio-mixed
+        image: registry.local:9001/datawiseio/fio:latest
+        imagePullPolicy: IfNotPresent
+        command:
+          - /bin/bash
+          - -ec
+          - |
+            STAMP=$(date +'%F_%H%M%S')
+            MY_CPUS=$(awk '/Cpus_allowed_list:/ {print $2}' < /proc/self/status)
+            /usr/bin/fio \
+              --name=k8sfio \
+              --ioengine=cpuio --cpuload=80 --cpuchunks=1000
+              --numjobs=$(REQ_CPU) \
+              --cpus_allowed=$MY_CPUS --cpus_allowed_policy=split \
+              --runtime=10m --time_based --log_avg_msec=1000 \
+              --output=/output/$(POD_NAME)-$(NODE_NAME)-$STAMP.log
+        volumeMounts:
+          - name: scratch-volume
+            mountPath: /scratch
+          - name: output-volume
+            mountPath: /output
+        resources:
+          requests:
+            cpu: "500m"
+            memory: "1Gi"
+          limits:
+            cpu: "500m"
+            memory: "1Gi"
+        env:
+          - name: NODE_NAME
+            valueFrom:
+              fieldRef:
+                fieldPath: spec.nodeName
+          - name: POD_NAME
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.name
+          - name: REQ_CPU
+            valueFrom:
+              resourceFieldRef:
+                containerName: guaranteed-fio-mixed
+                resource: requests.cpu
+          - name: REQ_MEM
+            valueFrom:
+              resourceFieldRef:
+                containerName: guaranteed-fio-mixed
+                resource: requests.memory
+      restartPolicy: Always
+      imagePullSecrets:
+      - name: regcred
+      volumes:
+        - name: scratch-volume
+          emptyDir:
+            medium: Memory
+            sizeLimit: 1Gi
+        - name: output-volume
+          hostPath:
+            path: "/home/sysadmin/"

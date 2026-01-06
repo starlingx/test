@@ -57,6 +57,33 @@ class TestInfoOperation:
         else:
             raise ValueError(f"There is no entry for test_info_id={test_info_id}")
 
+    def get_all_active_tests(self) -> list[TestCase]:
+        """
+        Gets all the testcases in the db.
+
+        Returns:
+            list[TestCase]: list of testcases
+
+        """
+        test_case_info_query = f"select * from test_info where is_active=true"
+
+        results = self.database_operation_manager.execute_query(test_case_info_query, RealDictCursor)
+
+        test_info_list = []
+        if not results:
+            raise ValueError("Did not find any tests in the db.")
+        for result in results:
+            test_info: TestCase = TestCase(result['test_name'], result['test_suite'], result['priority'], result['test_path'], result['pytest_node_id'])
+
+            test_info.set_test_info_id(result['test_info_id'])
+            test_info.set_test_case_group_id(result['test_case_group_id'])
+            test_info.set_is_active(result['is_active'])
+
+            test_info_list.append(test_info)
+        return test_info_list
+
+
+
     def insert_test(self, testcase: TestCase):
         """
         Inserts the given testcase
@@ -116,3 +143,17 @@ class TestInfoOperation:
 
         update_pytest_node_id_query = f"update test_info set pytest_node_id='{pytest_node_id}' where test_info_id={test_info_id}"
         self.database_operation_manager.execute_query(update_pytest_node_id_query, expect_results=False)
+
+    def set_tests_inactive(self, test_ids: list[int]):
+        """
+        Sets the given tests to be in active
+        Args:
+            test_ids: the list of test ids
+
+        Returns:
+
+        """
+        list_of_ids = ",".join(map(str, test_ids))
+        set_inactive_query = f"UPDATE test_info SET is_active=false where test_info_id in ({list_of_ids})"
+
+        self.database_operation_manager.execute_query(set_inactive_query, expect_results=False)
