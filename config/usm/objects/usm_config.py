@@ -51,6 +51,8 @@ class USMConfig:
         self.software_delete_timeout_sec = usm_dict.get("software_delete_timeout_sec", 300)
         self.deploy_delete_timeout_sec = usm_dict.get("deploy_delete_timeout_sec", 300)
         self.deploy_start_timeout_sec = usm_dict.get("deploy_start_timeout_sec", 1200)
+        self.subcloud_group = usm_dict.get("subcloud_group", "Default")
+        self.subcloud_name = usm_dict.get("subcloud_name", "None")
 
     def validate_config(self) -> None:
         """
@@ -511,3 +513,34 @@ class USMConfig:
             value (int): Maximum seconds to wait for software deploy start to complete.
         """
         self.deploy_start_timeout_sec = value
+    def get_subcloud_group(self) -> str:
+        """Get the subcloud group name.
+
+        Returns:
+            str: The subcloud group name, or None if not specified.
+        """
+        return self.subcloud_group
+
+    def set_subcloud_group(self, value: str) -> None:
+        """Set the subcloud group name.
+
+        Args:
+            value (str): The subcloud group name.
+        """
+        self.subcloud_group = value
+
+    def get_subcloud_name(self) -> str:
+        """Get the subcloud name.
+
+        Returns:
+            str: The subcloud name.
+        """
+        return self.subcloud_name
+
+    def set_subcloud_name(self, value: str) -> None:
+        """Set the subcloud name.
+
+        Args:
+            value (str): The subcloud name.
+        """
+        self.subcloud_name = value

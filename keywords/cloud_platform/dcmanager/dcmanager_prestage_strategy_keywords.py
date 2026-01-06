@@ -44,21 +44,27 @@ class DcmanagerPrestageStrategyKeywords(BaseKeyword):
         # wait for apply to complete
         return self.wait_for_state(["complete", "failed"])
 
-    def get_dcmanager_prestage_strategy_create(self, sw_deploy: bool = True, subcloud_name: str = None) -> DcmanagerPrestageStrategyShowOutput:
+    def get_dcmanager_prestage_strategy_create(self, sw_deploy: bool = True, subcloud_name: str = None, subcloud_group: str = None) -> DcmanagerPrestageStrategyShowOutput:
         """Gets the prestage-strategy create.
 
         Args:
             sw_deploy (bool): If True, include the --for-sw-deploy argument in the command,
              if False include --for-install argument.
             subcloud_name (str): The subcloud name.
+            subcloud_group (str): The subcloud group name.
 
         Returns:
             DcmanagerPrestageStrategyShowOutput: The output of the prestage strategy.
         """
         sysadmin_password = ConfigurationManager.get_lab_config().get_admin_credentials().get_password()
         sw_deploy_arg = "--for-sw-deploy" if sw_deploy else "--for-install"
-        subcloud_name_arg = subcloud_name if subcloud_name else ""
-        command = source_openrc(f"dcmanager prestage-strategy create {sw_deploy_arg} --sysadmin-password {sysadmin_password} {subcloud_name_arg}")
+        
+        if subcloud_group:
+            command = source_openrc(f"dcmanager prestage-strategy create {sw_deploy_arg} --sysadmin-password {sysadmin_password} --group {subcloud_group}")
+        else:
+            subcloud_name_arg = subcloud_name if subcloud_name else ""
+            command = source_openrc(f"dcmanager prestage-strategy create {sw_deploy_arg} --sysadmin-password {sysadmin_password} {subcloud_name_arg}")
+        
         output = self.ssh_connection.send(command)
         self.validate_success_return_code(self.ssh_connection)
         return DcmanagerPrestageStrategyShowOutput(output)
@@ -113,16 +119,17 @@ class DcmanagerPrestageStrategyKeywords(BaseKeyword):
             time.sleep(interval)
         raise TimeoutError(f"Timed out waiting for prestage-strategy to reach state '{state}' after {timeout} seconds.")
 
-    def dc_manager_prestage_strategy_create_apply_delete(self, sw_deploy: bool = True, subcloud_name: str = None):
+    def dc_manager_prestage_strategy_create_apply_delete(self, sw_deploy: bool = True, subcloud_name: str = None, subcloud_group: str = None):
         """Creates, applies, and deletes a prestage strategy.
 
         Args:
             sw_deploy (bool): If True, the strategy will be created with the --for-sw-deploy argument.
             subcloud_name (str): The subcloud name.
+            subcloud_group (str): The subcloud group name.
         """
         get_logger().log_info("Starting the prestage strategy creation, application, and deletion process.")
         get_logger().log_test_case_step("Create the prestage strategy")
-        prestage_strategy_out = self.get_dcmanager_prestage_strategy_create(sw_deploy=sw_deploy, subcloud_name=subcloud_name)
+        prestage_strategy_out = self.get_dcmanager_prestage_strategy_create(sw_deploy=sw_deploy, subcloud_name=subcloud_name, subcloud_group=subcloud_group)
         get_logger().log_info(f"Created prestage strategy state: {prestage_strategy_out.get_dcmanager_prestage_strategy().get_state()}")
         get_logger().log_test_case_step("Apply the strategy")
         dcman_obj = self.get_dcmanager_prestage_strategy_apply()
