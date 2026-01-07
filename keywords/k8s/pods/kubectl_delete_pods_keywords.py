@@ -8,39 +8,42 @@ class KubectlDeletePodsKeywords(BaseKeyword):
     Keywords for delete pods
     """
 
-    def __init__(self, ssh_connection):
-        """
-        Constructor
+    def __init__(self, ssh_connection: object):
+        """Constructor.
+
         Args:
-            ssh_connection:
+            ssh_connection (object): SSH connection object.
         """
         self.ssh_connection = ssh_connection
 
-    def delete_pod(self, pod_name: str) -> str:
-        """
-        Deletes the pod
+    def delete_pod(self, pod_name: str, namespace: str = "default") -> str:
+        """Deletes the pod.
+
         Args:
-            pod_name (): the pod
+            pod_name (str): the pod name
+            namespace (str): the namespace. Defaults to "default"
 
-        Returns: the output
-
+        Returns:
+            str: the output
         """
-        output = self.ssh_connection.send(export_k8s_config(f"kubectl delete pod {pod_name}"))
+        cmd = f"kubectl delete pod {pod_name} -n {namespace}"
+
+        output = self.ssh_connection.send(export_k8s_config(cmd))
         self.validate_success_return_code(self.ssh_connection)
 
         return output
 
     def cleanup_pod(self, pod_name: str, namespace: str = None) -> int:
-        """
-        For use in cleanup as it doesn't automatically fail the test
+        """For use in cleanup as it doesn't automatically fail the test.
+
         Deletes the pod
         Args:
-            pod_name (): the pod
-            namespace ():  the namespace
-        Returns: the output
+            pod_name (str): the pod
+            namespace (str): the namespace
 
+        Returns:
+            int: the output
         """
-
         arg_namespace = ""
         if namespace:
             arg_namespace = f"-n {namespace}"

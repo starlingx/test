@@ -24,8 +24,7 @@ class KubectlGetPodsKeywords(BaseKeyword):
         self.ssh_connection = ssh_connection
 
     def get_pods(self, namespace: str = None, label: str = None) -> KubectlGetPodsOutput:
-        """
-        Gets the k8s pods that are available using '-o wide'.
+        """Gets the k8s pods that are available using '-o wide'.
 
         Args:
             namespace (str, optional): The namespace to search for pods. If None, it will search in all namespaces.
@@ -44,7 +43,9 @@ class KubectlGetPodsKeywords(BaseKeyword):
         if label:
             arg_label = f"-l {label}"
 
-        kubectl_get_pods_output = self.ssh_connection.send(export_k8s_config(f"kubectl {arg_namespace} {arg_label} -o wide get pods"))
+        cmd = f"kubectl {arg_namespace} {arg_label} -o wide get pods"
+
+        kubectl_get_pods_output = self.ssh_connection.send(export_k8s_config(cmd))
         self.validate_success_return_code(self.ssh_connection)
         pods_list_output = KubectlGetPodsOutput(kubectl_get_pods_output)
 

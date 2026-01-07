@@ -1,4 +1,4 @@
-from framework.ssh.ssh_connection import SSHConnection
+from framework.ssh.ssh_connection import SSHConnection 
 from keywords.base_keyword import BaseKeyword
 from keywords.k8s.k8s_command_wrapper import export_k8s_config
 
@@ -17,14 +17,20 @@ class KubectlFileApplyKeywords(BaseKeyword):
         """
         self.ssh_connection = ssh_connection
 
-    def apply_resource_from_yaml(self, yaml_file: str):
+    def apply_resource_from_yaml(self, yaml_file: str, validate: bool = True):
         """
         Applies a Kubernetes resource using the given YAML file.
 
         Args:
             yaml_file (str): The path to the YAML file containing the resource definition.
+            validate (bool): Enable validation. Defaults to True.
         """
-        self.ssh_connection.send(export_k8s_config(f"kubectl apply -f {yaml_file}"))
+        cmd = f"kubectl apply -f {yaml_file}"
+
+        if not validate:
+            cmd += " --validate=false"
+
+        self.ssh_connection.send(export_k8s_config(cmd))
         self.validate_success_return_code(self.ssh_connection)
 
     def kubectl_apply_with_error(self, yaml_file: str) -> str:

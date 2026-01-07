@@ -35,7 +35,9 @@ class KubectlExecInPodsKeywords(BaseKeyword):
             str: the output
 
         """
-        output = self.ssh_connection.send(export_k8s_config(f"kubectl exec {options} {pod_name} -- {cmd}"))
+        kubectl_cmd = f"kubectl exec {options} {pod_name} -- {cmd}"
+
+        output = self.ssh_connection.send(export_k8s_config(kubectl_cmd))
         self.validate_success_return_code(self.ssh_connection)
 
         return output

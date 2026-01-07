@@ -17,18 +17,24 @@ class KubectlFileDeleteKeywords(BaseKeyword):
         """
         self.ssh_connection = ssh_connection
 
-    def delete_resources(self, file_path: str) -> str:
+    def delete_resources(self, file_path: str, validate: bool = True) -> str:
         """
         Deletes the dashboard resources
 
         Args:
             file_path (str): the file path
+            validate (bool): Enable validation. Defaults to True.
 
         Returns:
             str: the output
 
         """
-        output = self.ssh_connection.send(export_k8s_config(f"kubectl delete -f {file_path}"))
+        cmd = f"kubectl delete -f {file_path}"
+
+        if not validate:
+            cmd += " --validate=false"
+
+        output = self.ssh_connection.send(export_k8s_config(cmd))
         self.validate_success_return_code(self.ssh_connection)
 
         return output
