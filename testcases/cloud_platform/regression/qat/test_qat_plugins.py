@@ -14,10 +14,35 @@ from keywords.k8s.pods.kubectl_get_pods_keywords import KubectlGetPodsKeywords
 from keywords.linux.lsmod.lsmod_keywords import LsmodKeywords
 from keywords.linux.hardware.hardware_keywords import HardwareKeywords
 from keywords.cloud_platform.system.helm.system_helm_chart_attribute_modify_keywords import SystemHelmChartAttributeModifyKeywords
+from keywords.files.file_keywords import FileKeywords
+from keywords.k8s.pods.kubectl_create_pods_keywords import KubectlCreatePodsKeywords
+from framework.resources.resource_finder import get_stx_resource_path
+from keywords.k8s.pods.kubectl_delete_pods_keywords import KubectlDeletePodsKeywords
+from keywords.k8s.pods.kubectl_exec_in_pods_keywords import KubectlExecInPodsKeywords
+from typing import Iterable
+
+
+def count_qat_env_vars(env_lines: Iterable[str]) -> int:
+    """
+    Count QAT-related environment variables in the given output.
+
+    Args:
+        env_lines (Iterable[str]): Environment variable lines.
+
+    Returns:
+        int: Number of variables starting with 'QAT'.
+    """
+
+    count = 0
+    for line in env_lines:
+        if line.startswith("QAT"):
+            count += 1
+    return count
 
 
 @mark.p0
 @mark.lab_has_qat
+@mark.lab_has_page_size_1gb
 def test_intel_qat_lifecycle(request):
     def cleanup_qat_test():
         app_config = ConfigurationManager.get_app_config()
@@ -27,9 +52,13 @@ def test_intel_qat_lifecycle(request):
         SystemApplicationRemoveKeywords(ssh_connection).system_application_remove_and_delete_app(intel_plugins_app_name)
         get_logger().log_teardown_step(f"Removing {nfd_app_name} app")
         SystemApplicationRemoveKeywords(ssh_connection).system_application_remove_and_delete_app(nfd_app_name)
+        KubectlDeletePodsKeywords(ssh_connection).cleanup_pod("dpdk-test-crypto-perf")
 
     request.addfinalizer(cleanup_qat_test)
     # Setup environment
+    EXPECTED_QAT_DEVICE_COUNT = 4
+    CONTAINER_DEPLOYED_TIMEOUT = 60
+
     app_config = ConfigurationManager.get_app_config()
     base_path = app_config.get_base_application_path()
 
@@ -112,3 +141,24 @@ def test_intel_qat_lifecycle(request):
     pod_names = get_pod_obj.get_pods(namespace=namespace).get_unique_pod_matching_prefix(starts_with=pod_prefix)
     pod_status = get_pod_obj.wait_for_pod_status(pod_names, "Running", namespace)
     validate_equals(pod_status, True, f"Verify {pod_prefix} pods are running")
+
+    get_logger().log_test_case_step("Running QAT Container")
+    file_keywords = FileKeywords(ssh_connection)
+    file_keywords.upload_file(get_stx_resource_path("resources/cloud_platform/networking/qat/qat-dpdk.yaml"), "/home/sysadmin/qat-dpdk.yaml")
+    kubectl_create_pods_keyword = KubectlCreatePodsKeywords(ssh_connection)
+    kubectl_create_pods_keyword.create_from_yaml("/home/sysadmin/qat-dpdk.yaml")
+
+    get_logger().log_test_case_step("check if QAT pod is running")
+    namespace = "default"
+    pod_prefix = "dpdk-test-crypto-perf"
+    get_pod_obj = KubectlGetPodsKeywords(ssh_connection)
+    pod_names = get_pod_obj.get_pods(namespace=namespace).get_unique_pod_matching_prefix(starts_with=pod_prefix)
+    pod_status = get_pod_obj.wait_for_pod_status(pod_names, "Running", namespace, CONTAINER_DEPLOYED_TIMEOUT)
+    validate_equals(pod_status, True, f"Verify {pod_prefix} pods are running")
+
+    kubeclt_exec_in_pods = KubectlExecInPodsKeywords(ssh_connection)
+    options = f" -n {namespace}"
+    cmd = 'printenv'
+    output = kubeclt_exec_in_pods.run_pod_exec_cmd(pod_prefix, cmd, options=options)
+
+    validate_equals(count_qat_env_vars(output), EXPECTED_QAT_DEVICE_COUNT, "Number of QAT devices allocated")
