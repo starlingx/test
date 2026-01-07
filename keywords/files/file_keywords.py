@@ -183,6 +183,18 @@ class FileKeywords(BaseKeyword):
         """
         return self.ssh_connection.send(f"cat {file_path}")
 
+    def read_file_with_sudo(self, file_path: str) -> list[str]:
+        """
+        Read the contents of a file using sudo.
+
+        Args:
+            file_path (str): The absolute path to the file.
+
+        Returns:
+            list[str]: The lines of the file.
+        """
+        return self.ssh_connection.send_as_sudo(f"cat {file_path}")
+
     def find_in_tgz(self, file_path: str, grep_pattern: str) -> int:
         """
         Searches for a string in tgz file
