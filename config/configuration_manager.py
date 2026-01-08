@@ -11,6 +11,7 @@ from config.ptp.objects.ptp_config import PTPConfig
 from config.rest_api.objects.rest_api_config import RestAPIConfig
 from config.security.objects.security_config import SecurityConfig
 from config.snmp.objects.snmp_config import SNMPConfig
+from config.storage.objects.storage_config import StorageConfig
 from config.usm.objects.usm_config import USMConfig
 from config.web.objects.web_config import WebConfig
 from framework.resources.resource_finder import get_stx_resource_path
@@ -38,6 +39,7 @@ class ConfigurationManagerClass:
         self.app_config: AppConfig = None
         self.configuration_locations_manager = None
         self.openstack_config: OpenstackConfig = None
+        self.storage_config: StorageConfig = None
 
     def is_config_loaded(self) -> bool:
         """
@@ -120,6 +122,10 @@ class ConfigurationManagerClass:
         if not openstack_config_file:
             openstack_config_file = get_stx_resource_path("config/openstack/files/default.json5")
 
+        storage_config_file = config_file_locations.get_storage_config_file()
+        if not storage_config_file:
+            storage_config_file = get_stx_resource_path("config/storage/files/default.json5")
+
         if not self.loaded:
             try:
                 self.lab_config = LabConfig(lab_config_file)
@@ -136,6 +142,7 @@ class ConfigurationManagerClass:
                 self.usm_config = USMConfig(usm_config_file)
                 self.app_config = AppConfig(app_config_file)
                 self.openstack_config = OpenstackConfig(openstack_config_file)
+                self.storage_config = StorageConfig(storage_config_file)
                 self.loaded = True
             except FileNotFoundError as e:
                 print(f"Unable to load the config using file: {str(e.filename)} ")
@@ -279,6 +286,16 @@ class ConfigurationManagerClass:
         """
         return self.openstack_config
 
+    def get_storage_config(self) -> StorageConfig:
+        """
+        Getter for storage config
+
+        Returns:
+            StorageConfig: the storage config
+
+        """
+        return self.storage_config
+
     def get_config_pytest_args(self) -> [str]:
         """
         Returns the configuration file locations as pytest args.
@@ -316,6 +333,8 @@ class ConfigurationManagerClass:
             pytest_config_args.append(f"--app_config_file={self.configuration_locations_manager.get_app_config_file()}")
         if self.configuration_locations_manager.openstack_config_file:
             pytest_config_args.append(f"--openstack_config_file={self.configuration_locations_manager.get_openstack_config_file()}")
+        if self.configuration_locations_manager.storage_config_file:
+            pytest_config_args.append(f"--storage_config_file={self.configuration_locations_manager.get_storage_config_file()}")
 
         return pytest_config_args
 
