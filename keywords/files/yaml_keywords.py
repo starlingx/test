@@ -68,16 +68,45 @@ class YamlKeywords(BaseKeyword):
             return target_remote_file
         return rendered_yaml_file_location
 
-    def load_yaml(self, file_path):
+    def load_yaml(self, file_path: str) -> dict:
         """
-        This function will load a yaml file from the local dir
+        This function will load a yaml file from the local dir.
 
         Args:
             file_path (str): Path to the YAML file.
                 Example: 'resources/cloud_platform/folder/file_name'.
 
         Returns:
-            file: The loaded YAML file
+            dict: The loaded YAML file as a Python object.
         """
-        with open(file_path, 'r') as file:
+        with open(file_path, "r") as file:
             return yaml.safe_load(file)
+
+    def read_yaml_file_as_string(self, yaml_file: str) -> str:
+        """
+        Reads a YAML file and returns its contents as a string.
+
+        Validates YAML syntax before returning to ensure valid content.
+        Complements load_yaml() which returns parsed dict.
+
+        Args:
+            yaml_file (str): Path to the YAML file.
+
+        Returns:
+            str: Contents of the YAML file as a string.
+
+        Raises:
+            yaml.YAMLError: If the YAML file has invalid syntax.
+            FileNotFoundError: If the file does not exist.
+        """
+        with open(yaml_file, "r") as f:
+            content = f.read()
+
+        # Validate YAML syntax before returning
+        # Use safe_load_all to support both single and multi-document YAML
+        try:
+            list(yaml.safe_load_all(content))
+        except yaml.YAMLError as e:
+            raise yaml.YAMLError(f"Invalid YAML syntax in {yaml_file}: {e}")
+
+        return content
