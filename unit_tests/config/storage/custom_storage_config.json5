@@ -1,0 +1,8 @@
+{
+  // File used for unit testing.
+  
+  "iscsi_credentials": {
+    "user_name": "testuser",
+    "password": "testpass"
+  }
+}
