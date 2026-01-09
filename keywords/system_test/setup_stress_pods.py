@@ -42,9 +42,9 @@ class SetupStressPods:
         self.services_path = "resources/cloud_platform/system_test/pod_scaling/services"
         self.deployments_path = "resources/cloud_platform/system_test/pod_scaling/deployments"
 
-    def setup_stress_pods(self, benchmark: str) -> Tuple[float, float]:
+    def setup_stress_pods(self, benchmark: str, namespace=None) -> Tuple[float, float]:
         """
-        Set up stress pods for benchmark testing.
+        Set up and scale stress pods for benchmark testing.
 
         Args:
             benchmark (str): The benchmark type to set up
@@ -52,7 +52,8 @@ class SetupStressPods:
         Returns:
             Tuple[float, float]: Tuple of deploy time and scale up time in seconds
         """
-        namespace = f"{benchmark}-benchmark"
+        if namespace is None:
+            namespace = f"{benchmark}-benchmark"
         local_services_dir = get_stx_resource_path(self.services_path)
         remote_services_dir = "/tmp/system_test/services"
         local_deployments_dir = get_stx_resource_path(f"{self.deployments_path}/{benchmark}")
@@ -94,6 +95,59 @@ class SetupStressPods:
         get_logger().log_info(f"Time to scale up pods: {scale_up_time:.2f} seconds")
 
         return deploy_time, scale_up_time
+
+
+    def deploy_stress_pods(self, benchmark: str, namespace=None) -> Tuple[float, float]:
+        """
+        Set up stress pods for benchmark testing.
+
+        Args:
+            benchmark (str): The benchmark type to set up
+
+        Returns:
+            Tuple[float, float]: Tuple of deploy time and scale up time in seconds
+        """
+        if namespace is None:
+            namespace = f"{benchmark}-benchmark"
+        local_services_dir = get_stx_resource_path(self.services_path)
+        remote_services_dir = "/tmp/system_test/services"
+        local_deployments_dir = get_stx_resource_path(f"{self.deployments_path}/{benchmark}")
+        remote_deployments_dir = f"/tmp/system_test/deployments/{benchmark}"
+
+        self._setup_upload_files(local_services_dir, remote_services_dir, local_deployments_dir, remote_deployments_dir)
+
+        get_logger().log_info(f"Creating namespace '{namespace}'...")
+        ns_creator = KubectlCreateNamespacesKeywords(self.ssh_connection)
+        raw_namespace_obj = KubectlGetNamespacesKeywords(self.ssh_connection).get_namespaces()
+        namespace_objs = raw_namespace_obj.get_namespaces()
+        existing_namespaces = [ns.get_name() for ns in namespace_objs]
+        if namespace in existing_namespaces:
+            ns_destroyer = KubectlDeleteNamespaceKeywords(self.ssh_connection)
+            ns_destroyer.delete_namespace(namespace)
+        ns_creator.create_namespaces(namespace)
+
+        self._setup_docker_registry(namespace, self.images)
+
+        get_logger().log_info("Apply services YAMLs....")
+        service_files = self.file_keywords.get_files_in_dir(remote_services_dir)
+        pod_applier = KubectlApplyPodsKeywords(self.ssh_connection)
+        for svc_yaml in service_files:
+            pod_applier.apply_from_yaml(f"{remote_services_dir}/{svc_yaml}", namespace=namespace)
+
+        get_logger().log_info("Apply deployment YAMLs and calculate time....")
+        pod_getter = KubectlGetPodsKeywords(self.ssh_connection)
+        deployment_files = self.file_keywords.get_files_in_dir(remote_deployments_dir)
+        start_deploy = time()
+        for dep_yaml in deployment_files:
+            pod_applier.apply_from_yaml(f"{remote_deployments_dir}/{dep_yaml}", namespace=namespace)
+        
+        validate_equals(pod_getter.wait_for_all_pods_status(expected_statuses=["Running", "Completed"]), True, "Logs reached expected state")
+        deploy_time = time() - start_deploy
+        get_logger().log_info(f"Time to deploy pods for the first time: {deploy_time:.2f} seconds")
+
+        return deploy_time
+
+
 
     def _setup_upload_files(self, local_services_dir: str, remote_services_dir: str, 
                            local_deployments_dir: str, remote_deployments_dir: str) -> None:
