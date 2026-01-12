@@ -487,6 +487,8 @@ class DcManagerSubcloudBackupKeywords(BaseKeyword):
 
             if deploy_status == "complete":
                 return f"{subcloud} backup restored."
+            elif deploy_status == "restore-failed":
+                return f"{subcloud} backup restore failed."
             else:
                 return "Restore not done yet."
 
@@ -496,4 +498,5 @@ class DcManagerSubcloudBackupKeywords(BaseKeyword):
             validation_description=f"Backup restore operation for {subcloud} completed.",
             timeout=timeout,
             polling_sleep_time=check_interval,
+            failure_values=[f"{subcloud} backup restore failed."]
         )
