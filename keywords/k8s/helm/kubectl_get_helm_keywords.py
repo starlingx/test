@@ -25,3 +25,16 @@ class KubectlGetHelmKeywords(BaseKeyword):
         output = self.ssh_connection.send(export_k8s_config(cmd))
         self.validate_success_return_code(self.ssh_connection)
         return KubectlGetHelmOutput(output)
+
+    def get_helmchart_by_name(self, name: str, namespace: str) -> KubectlGetHelmOutput:
+        """Get specific helmchart by name and namespace.
+
+        Returns:
+            KubectlGetHelmOutput: Parsed helmcharts output.
+        """
+        cmd = f"kubectl get helmcharts.source.toolkit.fluxcd.io {name} -n {namespace} -o custom-columns=NAME:.metadata.name,CHART:.spec.chart,VERSION:.spec.version"
+        output = self.ssh_connection.send(export_k8s_config(cmd))
+        rc = self.ssh_connection.get_return_code()
+        if rc != 0:
+            return None
+        return KubectlGetHelmOutput(output)
