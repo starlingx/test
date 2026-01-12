@@ -9,6 +9,14 @@
   "iso_path": "/opt/software/starlingx.iso",
   "sig_path": "/opt/software/starlingx.sig", 
   "patch_path": "/opt/software/starlingx.patch",
+
+  // License
+  "license_from_path": "",
+  "license_to_path": "",
+  "license_server": "",
+  "license_server_username": "",
+  "license_server_password": "",
+
   
   // Target release configuration
   "to_release_ids": ["starlingx-10.0.1"],

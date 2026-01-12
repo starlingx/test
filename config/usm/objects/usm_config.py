@@ -56,6 +56,11 @@ class USMConfig:
         self.deploy_complete_timeout_sec = usm_dict.get("deploy_complete_timeout_sec", 900)
         self.subcloud_group = usm_dict.get("subcloud_group", "Default")
         self.subcloud_name = usm_dict.get("subcloud_name", "None")
+        self.license_server = usm_dict.get("license_server", "")
+        self.license_username = usm_dict.get("license_username", "")
+        self.license_password = usm_dict.get("license_password", "")
+        self.license_from_path = usm_dict.get("license_from_path", "")
+        self.license_to_path = usm_dict.get("license_to_path", "/home/sysadmin/")
 
     def validate_config(self) -> None:
         """
@@ -596,3 +601,83 @@ class USMConfig:
             value (int): Maximum seconds to wait for software deploy complete to finish.
         """
         self.deploy_complete_timeout_sec = value
+
+    def get_license_server(self) -> str:
+        """Get the server address where the license file is located.
+
+        Returns:
+            str: Hostname or IP of the server where the license file is located.
+        """
+        return self.license_server
+
+    def set_license_server(self, value: str) -> None:
+        """Set the server address where the license file is located.
+
+        Args:
+            value (str): Hostname or IP of the server where the license file is located.
+        """
+        self.license_server = value
+
+    def get_license_username(self) -> str:
+        """Get the server username where the license file is located.
+
+        Returns:
+            str: Username for authenticating with the license server.
+        """
+        return self.license_username
+
+    def set_license_username(self, value: str) -> None:
+        """Set the server username where the license file is located.
+
+        Args:
+            value (str): Username for authenticating with the license server.
+        """
+        self.license_username = value
+
+    def get_license_password(self) -> str:
+        """Get the server password where the license file is located.
+
+        Returns:
+            str: Password for authenticating with the license server.
+        """
+        return self.license_password
+
+    def set_license_password(self, value: str) -> None:
+        """Set the remote password.
+
+        Args:
+            value (str): Password for authenticating with the remote server.
+        """
+        self.license_password = value
+
+    def get_license_from_path(self) -> str:
+        """Get the path where the license file is located.
+
+        Returns:
+            str: Absolute path where the license file is located.
+        """
+        return self.license_from_path
+
+    def set_license_from_path(self, value: str) -> None:
+        """Set the path where the license file is located.
+
+        Args:
+            value (str): Absolute path where the license file is located.
+        """
+        self.license_from_path = value
+
+    def get_license_to_path(self) -> str:
+        """Get the path destination to the license file.
+
+        Returns:
+            str: Absolute path destination to the license file.
+        """
+        return self.license_to_path
+
+    def set_license_to_path(self, value: str) -> None:
+        """Set the path destination to the license file.
+
+        Args:
+            value (str): Absolute path destination to the license file.
+        """
+        self.license_to_path = value
