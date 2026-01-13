@@ -5,7 +5,7 @@ import time
 from framework.exceptions.keyword_exception import KeywordException
 from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
-from framework.validation.validation import validate_equals
+from framework.validation.validation import validate_equals_with_retry
 from keywords.base_keyword import BaseKeyword
 
 
@@ -442,11 +442,12 @@ class FileKeywords(BaseKeyword):
         self.ssh_connection.send(f"chmod +x {file_path}")
         self.validate_success_return_code(self.ssh_connection)
 
-    def create_file_to_fill_disk_space(self, dest_dir: str = "/opt/dc-vault") -> str:
+    def create_file_to_fill_disk_space(self, dest_dir: str = "/opt/dc-vault", file_size: int = None) -> str:
         """Creates a file with the available space of the desired directory.
 
         Args:
             dest_dir (str): Directory where the file is created. Default to home dir.
+            file_size (int): Size of the file to be created, fills directory if not sent
 
         Returns:
             str: Created file path.
@@ -454,12 +455,25 @@ class FileKeywords(BaseKeyword):
         get_space_cmd = f"echo $(($(stat -f --format=\"%a*%S\" {dest_dir})))| awk '{{print $1 / (1024*1024*1024) }}'"
         available_space = self.ssh_connection.send_as_sudo(get_space_cmd)[0].strip("\n")
         rounded_size = math.ceil(float(available_space))
-        file_size_to_be_created = math.trunc(1023 * float(rounded_size))
+        start_size = math.trunc(1023 * float(rounded_size))
+        if file_size:
+            file_size_to_be_created = file_size
+            expected_remaining_space = math.ceil((start_size - file_size) / 1023)
+            if expected_remaining_space <= 0:
+                raise KeywordException(f"Exception creating file. File size {file_size} is bigger than available space {start_size}.")
+        else:
+            file_size_to_be_created = start_size
+            expected_remaining_space = 0
 
-        get_logger().log_info(f"Creating file 'test' with size {file_size_to_be_created}.")
+        get_logger().log_info(f"Creating file 'test' with size {file_size_to_be_created}. Total: {start_size}")
         self.ssh_connection.send_as_sudo(f"dd if=/dev/zero of={dest_dir}/giant_test_file bs=1M count={file_size_to_be_created}")
-        remaining_space = self.ssh_connection.send_as_sudo(get_space_cmd)[0].strip("\n")
-        remaining_space = math.trunc(float(remaining_space))
-        validate_equals(remaining_space, 0, "Validate that the remaining space on local is 0.")
+
+        def get_remaining_space() -> float:
+            get_space_cmd = f"echo $(($(stat -f --format=\"%a*%S\" {dest_dir})))| awk '{{print $1 / (1024*1024*1024) }}'"
+            remaining_space = self.ssh_connection.send_as_sudo(get_space_cmd)[0].strip("\n")
+            remaining_space = math.trunc(float(remaining_space))
+            return remaining_space
+
+        validate_equals_with_retry(get_remaining_space, expected_remaining_space, f"Remaining size is {get_remaining_space()}. Expected {expected_remaining_space}", timeout=5, polling_sleep_time=0.5)
         path_to_file = f"{dest_dir}/giant_test_file"
         return path_to_file

@@ -43,6 +43,7 @@ def teardown_local(subcloud_name: str, created_file_path: str):
     FileKeywords(subcloud_ssh).delete_folder_with_sudo(f"{subcloud_name}_platform_backup_*.tgz")
     FileKeywords(subcloud_ssh).delete_file(created_file_path)
 
+
 def teardown_central(backup_path: str, created_file_path: str):
     """Teardown function for central backup.
 
@@ -80,10 +81,13 @@ def test_verify_backup_space_failure(request):
     obj_health.validate_healty_cluster()  # Checks alarms, pods, app health
 
     created_file_path = FileKeywords(subcloud_ssh).create_file_to_fill_disk_space("/home/sysadmin")
+
     def teardown():
         teardown_local(subcloud.get_name(), created_file_path)
+
     request.addfinalizer(teardown)
     backup_create_failure_local(subcloud_name, local=True)
+
 
 @mark.p0
 @mark.subcloud_lab_is_simplex
@@ -107,7 +111,43 @@ def test_verify_backup_space_failure_default_storage(request):
     obj_health.validate_healty_cluster()  # Checks alarms, pods, app health
 
     created_file_path = FileKeywords(central_ssh).create_file_to_fill_disk_space()
+
     def teardown():
         teardown_central(subcloud.get_name(), created_file_path)
+
     request.addfinalizer(teardown)
     backup_create_failure_local(subcloud_name)
+
+
+@mark.p0
+@mark.subcloud_lab_is_simplex
+def test_verify_backup_failure_home_folder_too_large(request):
+    """Forced backup failure on a subcloud due to home folder exceeding 2000MB.
+
+    Test Steps:
+        - Create a file exceeding 2000MB on subcloud /var/home.
+        - Attempt subcloud backup with home folder too large.
+        - Check that the backup fails
+
+    """
+    central_ssh = LabConnectionKeywords().get_active_controller_ssh()
+    dcm_sc_list_kw = DcManagerSubcloudListKeywords(central_ssh)
+    subcloud = dcm_sc_list_kw.get_dcmanager_subcloud_list().get_healthy_subcloud_by_type(LabTypeEnum.SIMPLEX.value)
+    subcloud_name = subcloud.get_name()
+    # get subcloud ssh
+    subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
+
+    # Prechecks Before Back-Up:
+    get_logger().log_info(f"Performing pre-checks on {subcloud_name}")
+    obj_health = HealthKeywords(subcloud_ssh)
+    obj_health.validate_healty_cluster()  # Checks alarms, pods, app health
+
+    home_folder = "/var/home/"
+
+    created_file_path = FileKeywords(subcloud_ssh).create_file_to_fill_disk_space(dest_dir=home_folder, file_size=2001)
+
+    def teardown():
+        teardown_local(subcloud.get_name(), created_file_path)
+
+    request.addfinalizer(teardown)
+    backup_create_failure_local(subcloud_name, local=True)
