@@ -3,7 +3,7 @@ from pytest import mark
 from config.configuration_manager import ConfigurationManager
 from framework.logging.automation_logger import get_logger
 from framework.resources.resource_finder import get_stx_resource_path
-from framework.validation.validation import validate_equals
+from framework.validation.validation import validate_equals, validate_equals_with_retry
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.cloud_platform.system.application.object.system_application_delete_input import SystemApplicationDeleteInput
 from keywords.cloud_platform.system.application.object.system_application_status_enum import SystemApplicationStatusEnum
@@ -64,9 +64,8 @@ def make_sure_dell_storage_application_applied():
 
         get_logger().log_test_case_step("Update user-overrides for CSI-Powerstore chart")
         yaml_file = "dell-storage-powerstoreOverrides.yaml"
-        rest_credentials = ConfigurationManager.get_lab_config().get_rest_credentials()
-        username = rest_credentials.get_user_name()
-        password = rest_credentials.get_password()
+        username = ConfigurationManager.get_storage_config().get_iscsi_credentials().get_user_name()
+        password = ConfigurationManager.get_storage_config().get_iscsi_credentials().get_password()
         template_file = get_stx_resource_path(f"resources/cloud_platform/storage/dell_storage/{yaml_file}")
         replacement_dictionary = {"username": username, "password": password}
         remote_yaml = YamlKeywords(ssh_connection).generate_yaml_file_from_template(template_file, replacement_dictionary, yaml_file, "/home/sysadmin")
@@ -78,6 +77,36 @@ def make_sure_dell_storage_application_applied():
     app_status_list = ["applied"]
     SystemApplicationListKeywords(ssh_connection).validate_app_status_in_list(dell_storage_app_name, app_status_list, timeout=360, polling_sleep_time=10)
     get_logger().log_info(f"{dell_storage_app_name} application is: applied")
+
+
+def common_dell_storage_teardown():
+    """
+    Common teardown function for dell-storage tests.
+
+    Teardown Steps:
+        - Remove dell-storage application if not in uploaded state
+        - Delete helm overrides for csi-powerstore chart
+
+    """
+    dell_storage_app_name = "dell-storage"
+    chart_name = "csi-powerstore"
+    namespace = "dell-storage"
+
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    system_application_remove_input = SystemApplicationRemoveInput()
+
+    system_applications = SystemApplicationListKeywords(ssh_connection).get_system_application_list()
+    dell_storage_app_status = system_applications.get_application(dell_storage_app_name).get_status()
+
+    if dell_storage_app_status != SystemApplicationStatusEnum.UPLOADED.value:
+        get_logger().log_teardown_step("Remove dell-storage application")
+        system_application_remove_input.set_app_name(dell_storage_app_name)
+        SystemApplicationRemoveKeywords(ssh_connection).system_application_remove(system_application_remove_input)
+    else:
+        get_logger().log_info(f"Dell-storage already in uploaded state: {dell_storage_app_status}")
+
+    get_logger().log_teardown_step("Remove helm-override")
+    SystemHelmOverrideKeywords(ssh_connection).delete_system_helm_override(dell_storage_app_name, chart_name, namespace)
 
 
 @mark.p2
@@ -121,30 +150,22 @@ def test_dell_storage_powerstore_procedure(request):
         kubectl_delete_keywords = KubectlFileDeleteKeywords(ssh_connection)
 
         snapshot_pod_name = "powerstoretest-snapshot-restore-0"
-        get_logger().log_info(f"Check if test snapshot pod {snapshot_pod_name} is running")
-        snapshot_pod_status = KubectlGetPodsKeywords(ssh_connection).wait_for_pod_status(snapshot_pod_name, "Running", namespace)
-        if snapshot_pod_status is True:
-            get_logger().log_teardown_step(f"Clean up the snapshot pod {snapshot_pod_name}.")
-            kubectl_delete_keywords.delete_resources(f"/home/sysadmin/{snapshot_pod_yaml}")
+        get_logger().log_teardown_step(f"Clean up the snapshot pod {snapshot_pod_name}.")
+        kubectl_delete_keywords.delete_resources(f"/home/sysadmin/{snapshot_pod_yaml}", True)
 
-        snapshot_name = "csi-powerstore-pvc-snapshot"
-        get_logger().log_info(f"Check whether {snapshot_name} is ready to use")
-        snapshot_status = KubectlGetVolumesnapshotsKeywords(ssh_connection).wait_for_volumesnapshot_status(snapshot_name, "true", namespace)
-        if snapshot_status is True:
-            get_logger().log_teardown_step(f"Clean up the snapshot {snapshot_name}.")
-            kubectl_delete_keywords.delete_resources(f"/home/sysadmin/{snapshot_yaml}")
+        teardown_snapshot_name = "csi-powerstore-pvc-snapshot"
+        get_logger().log_teardown_step(f"Clean up the snapshot {teardown_snapshot_name}.")
+        kubectl_delete_keywords.delete_resources(f"/home/sysadmin/{snapshot_yaml}", True)
 
         test_pod_name = "powerstoretest-0"
-        get_logger().log_info(f"Check if test {test_pod_name} pod is running")
-        pod_status = KubectlGetPodsKeywords(ssh_connection).wait_for_pod_status(test_pod_name, "Running", namespace)
-        if pod_status is True:
-            get_logger().log_teardown_step(f"Clean up the test pod {test_pod_name}.")
-            kubectl_delete_keywords.delete_resources(f"/home/sysadmin/{test_pod_yaml}")
+        get_logger().log_teardown_step(f"Clean up the test pod {test_pod_name}.")
+        kubectl_delete_keywords.delete_resources(f"/home/sysadmin/{test_pod_yaml}", True)
 
         get_logger().log_teardown_step("Remove test yaml files")
-        for file_name in dell_storage_files:
-            FileKeywords(ssh_connection).delete_file(f"/home/sysadmin/{file_name}")
+        for teardown_file_name in dell_storage_files:
+            FileKeywords(ssh_connection).delete_file(f"/home/sysadmin/{teardown_file_name}")
 
+    request.addfinalizer(common_dell_storage_teardown)
     request.addfinalizer(teardown)
 
     make_sure_dell_storage_application_applied()
@@ -214,7 +235,7 @@ def test_dell_storage_powerstore_procedure(request):
 
 @mark.p2
 @mark.lab_dell_storage
-def test_remove_dell_storage_app():
+def test_remove_dell_storage_app(request):
     """
     Remove and apply the dell-storage application.
 
@@ -239,10 +260,12 @@ def test_remove_dell_storage_app():
     get_logger().log_test_case_step("Re-Apply dell-storage")
     SystemApplicationApplyKeywords(ssh_connection).system_application_apply(app_name=dell_storage_app_name)
 
+    request.addfinalizer(common_dell_storage_teardown)
+
 
 @mark.p2
 @mark.lab_dell_storage
-def test_delete_dell_storage_app():
+def test_delete_dell_storage_app(request):
     """
     Testing remove, delete, upload and apply the dell-storage application.
 
@@ -288,12 +311,14 @@ def test_delete_dell_storage_app():
     validate_equals(oidc_app_status, "uploaded", f"{dell_storage_app_name} upload status validation")
 
     get_logger().log_test_case_step("Re-Apply dell-storage")
-    SystemApplicationApplyKeywords(ssh_connection).system_application_apply(app_name=dell_storage_app_name)
+    make_sure_dell_storage_application_applied()
+
+    request.addfinalizer(common_dell_storage_teardown)
 
 
 @mark.p2
 @mark.lab_dell_storage
-def test_abort_dell_storage_app():
+def test_abort_dell_storage_app(request):
     """
     Testing apply, abort, remove and apply the dell-storage application.
 
@@ -317,13 +342,10 @@ def test_abort_dell_storage_app():
     SystemApplicationAbortKeywords(ssh_connection).system_application_apply_and_abort(dell_storage_app_name, False)
 
     get_logger().log_test_case_step(f"Check if {dell_storage_app_name} abort is success")
-    system_applications = SystemApplicationListKeywords(ssh_connection).get_system_application_list()
-    app_status = system_applications.get_application(dell_storage_app_name).get_status()
-    validate_equals(app_status, "apply-failed", f"{dell_storage_app_name} abort status validation")
+    validate_equals_with_retry(lambda: SystemApplicationListKeywords(ssh_connection).get_system_application_list().get_application(dell_storage_app_name).get_status(), "apply-failed", f"{dell_storage_app_name} abort status validation", timeout=60)
 
     expected_progress_msg = "operation aborted by user"
-    app_progress = system_applications.get_application(dell_storage_app_name).get_progress()
-    validate_equals(app_progress, expected_progress_msg, f"{dell_storage_app_name} abort progress validation")
+    validate_equals_with_retry(lambda: SystemApplicationListKeywords(ssh_connection).get_system_application_list().get_application(dell_storage_app_name).get_progress(), expected_progress_msg, f"{dell_storage_app_name} abort progress validation", timeout=60)
 
     get_logger().log_test_case_step("Remove dell-storage application")
     system_application_remove_input = SystemApplicationRemoveInput()
@@ -332,3 +354,5 @@ def test_abort_dell_storage_app():
 
     get_logger().log_test_case_step("Re-Apply dell-storage")
     SystemApplicationApplyKeywords(ssh_connection).system_application_apply(app_name=dell_storage_app_name)
+
+    request.addfinalizer(common_dell_storage_teardown)
