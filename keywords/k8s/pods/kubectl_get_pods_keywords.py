@@ -2,6 +2,7 @@ import json
 import time
 
 from framework.exceptions.keyword_exception import KeywordException
+from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
 from framework.validation.validation import validate_equals_with_retry
 from keywords.base_keyword import BaseKeyword
@@ -177,40 +178,78 @@ class KubectlGetPodsKeywords(BaseKeyword):
         raise KeywordException("All pods are not in the expected status")
 
     def wait_for_pods_to_reach_status(self, expected_status: str | list, pod_names: list = None, namespace: str = None, poll_interval: int = 5, timeout: int = 180) -> bool:
-        """
-        Wait timeout amount of time for the given pod in a namespace to be in the given status.
+        """Wait for specified pods to reach expected status within timeout period.
+
+        This function monitors pods in a given namespace and waits for them to reach
+        one of the expected statuses. It can monitor specific pods by name or all pods
+        in the namespace if no pod names are provided.
 
         Args:
-            expected_status (str | list): the expected status.
-            pod_names (list): the pod names to look for. If left as None, we will check for all the pods.
-            namespace (str): the namespace.
-            poll_interval (int): the interval in seconds to poll for status.
-            timeout (int): the timeout in seconds.
+            expected_status (str | list): Single status string or list of acceptable statuses
+                                        (e.g., 'Running', ['Running', 'Completed']).
+            pod_names (list, optional): List of specific pod names to monitor. If None,
+                                      monitors all pods in the namespace. Defaults to None.
+            namespace (str, optional): Kubernetes namespace to search in. If None, uses
+                                     default namespace. Defaults to None.
+            poll_interval (int): Time in seconds between status checks. Defaults to 5.
+            timeout (int): Maximum time in seconds to wait for pods to reach expected
+                         status. Defaults to 180.
 
         Returns:
-            bool: True if pod is in expected status else False.
+            bool: True if all specified pods reach expected status within timeout.
+
+        Raises:
+            KeywordException: If pods are not found within timeout or don't reach
+                            expected status within timeout period.
         """
         pod_status_timeout = time.time() + timeout
 
+        # Normalize expected_status to list for consistent processing
         if isinstance(expected_status, str):
             expected_statuses = [expected_status]
         else:
             expected_statuses = expected_status
 
-        while time.time() < pod_status_timeout:
+        # Track missing pods across polling iterations
+        missing_pods = []
 
+        while time.time() < pod_status_timeout:
+            # Get all pods in the specified namespace
             pods = self.get_pods(namespace).get_pods()
 
-            # We need to filter the list for only the pods matching the pod names if specified
+            # Filter to specific pods if pod_names is provided
             if pod_names:
-                pods = [pod for pod in pods if pod.get_name() in pod_names]
+                # Get current pod names from the retrieved pods
+                current_pod_names = [pod.get_name() for pod in pods]
 
-            pods_in_incorrect_status = list(filter(lambda pod: pod.get_status() not in expected_statuses, pods))
+                # Identify missing pods (requested but not found) using prefix matching
+                missing_pods = [name for name in pod_names if not any(pod_name.startswith(name) for pod_name in current_pod_names)]
+
+                # If any requested pods are missing, continue polling
+                if missing_pods:
+                    get_logger().log_debug(f"Missing pods: {missing_pods}, continuing to poll...")
+                    time.sleep(poll_interval)
+                    continue
+
+                # Filter pods to only include the requested ones using prefix matching
+                pods = [pod for pod in pods if any(pod.get_name().startswith(name) for name in pod_names)]
+
+            # Check if all pods have reached expected status
+            pods_in_incorrect_status = [pod for pod in pods if pod.get_status() not in expected_statuses]
+
+            # If no pods have incorrect status, all pods are ready
             if len(pods_in_incorrect_status) == 0:
+                get_logger().log_info(f"All pods reached expected status: {expected_statuses}")
                 return True
 
             time.sleep(poll_interval)
 
+        # Timeout reached - determine failure reason and raise appropriate exception
+        if missing_pods:
+            # Some requested pods were never found
+            raise KeywordException(f"Pods {', '.join(missing_pods)} not found in namespace {namespace} within {timeout} seconds")
+
+        # Pods exist but didn't reach expected status
         pods_in_incorrect_status_names = [pod.get_name() for pod in pods_in_incorrect_status]
         pods_in_incorrect_status_names = ", ".join(pods_in_incorrect_status_names)
         raise KeywordException(f"Pods {pods_in_incorrect_status_names} in namespace {namespace} did not reach status {expected_status} within {timeout} seconds")
