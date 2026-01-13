@@ -190,9 +190,19 @@ class WebDriverCore:
         action_executor = WebActionExecutor(action)
         return action_executor.execute_mass_action()
 
+    def get_current_url(self) -> str:
+        """
+        Get the current URL of the browser.
+
+        Returns:
+            str: Current URL
+        """
+        return self.driver.current_url
+
     def is_exists(self, locator: WebLocator) -> bool:
         """
-        Checks for existence of the locator
+        Checks for existence of the locator.
+
         Args:
             locator (WebLocator): the locator
 
