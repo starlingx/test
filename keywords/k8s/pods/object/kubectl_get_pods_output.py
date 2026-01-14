@@ -87,6 +87,26 @@ class KubectlGetPodsOutput:
         pods = list(filter(lambda pod: starts_with in pod.get_name(), self.kubectl_pod))
         return pods
 
+    def get_single_pod_start_with(self, starts_with: str, status: str = None) -> KubectlPodObject:
+        """Get single pod that starts with specified string and optionally matches status.
+
+        Args:
+            starts_with (str): The string the pod name starts with.
+            status (str, optional): Filter by pod status (e.g., "Running"). Defaults to None.
+
+        Returns:
+            KubectlPodObject: The pod object if exactly one match found.
+
+        Raises:
+            KeywordException: If zero or multiple pods match the criteria.
+        """
+        pods = self.get_pods_start_with(starts_with)
+        if status:
+            pods = [p for p in pods if p.get_status() == status]
+        if len(pods) != 1:
+            raise KeywordException(f"Expected exactly 1 pod starting with '{starts_with}', found {len(pods)}.")
+        return pods[0]
+
     def get_pods(self) -> list[KubectlPodObject]:
         """Get all pods.
 
