@@ -1,4 +1,3 @@
-import re
 from typing import List
 
 from framework.exceptions.keyword_exception import KeywordException
@@ -87,16 +86,27 @@ class K8sTableParserBase:
 
         # Find all the known headers.
         for header in self.possible_headers:
-            if header in line:
+            if header not in line:
+                continue
 
-                # This is to avoid headers that are substrings of other headers, either substring as prefix or postfix.
-                pattern = rf"\b{header}\b"
-                match = re.search(pattern, line)
-                header_index = match.start()
-                header_index_last = line.find(header + "\n")
-                index = max(header_index, header_index_last)
+            # Find the exact position of the header in the line
+            header_index = line.find(header)
+            if header_index == -1:
+                continue
 
-                header_in_line = K8sTableParserHeader(header, index)
+            # Verify it's a standalone header (surrounded by spaces/tabs or line boundaries)
+            # This prevents matching "CLUSTER" as part of "CLUSTER-IP"
+            is_valid = True
+            # Check if there's a non-whitespace character before the header
+            if header_index > 0 and line[header_index - 1] not in (" ", "\t"):
+                is_valid = False
+            # Check if there's a non-whitespace character after the header
+            end_pos = header_index + len(header)
+            if end_pos < len(line) and line[end_pos] not in (" ", "\t", "\n"):
+                is_valid = False
+
+            if is_valid:
+                header_in_line = K8sTableParserHeader(header, header_index)
                 headers.append(header_in_line)
 
         # Sort the headers by reverse order in the line.
