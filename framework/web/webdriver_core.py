@@ -213,3 +213,16 @@ class WebDriverCore:
         action = WebActionIsExists(self.driver, locator)
         action_executor = WebActionExecutor(action)
         return action_executor.execute_action()
+
+    def is_condition_satisfied(self, condition: WebCondition) -> bool:
+        """
+        Checks if the specified WebCondition is satisfied or not.
+
+        Args:
+            condition (WebCondition): the condition
+
+        Returns:
+            bool: Returns True if the condition is satisfied, False otherwise
+        """
+        is_condition = condition.is_condition_satisfied(self.driver)
+        return is_condition
