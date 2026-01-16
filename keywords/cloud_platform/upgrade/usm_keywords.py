@@ -202,8 +202,7 @@ class USMKeywords(BaseKeyword):
         else:
             output = self.ssh_connection.send(cmd, reconnect_timeout=timeout, get_pty=True)
         self.validate_success_return_code(self.ssh_connection)
-        output = [line.strip() for line in output if line.strip()]
-        output = output[0] if output else ""
+        output = "".join(output)
         return output
 
     def software_delete(self, release: str, sudo: bool = False) -> str:
@@ -225,8 +224,7 @@ class USMKeywords(BaseKeyword):
         else:
             output = self.ssh_connection.send(cmd, reconnect_timeout=timeout, get_pty=True)
         self.validate_success_return_code(self.ssh_connection)
-        output = [line.strip() for line in output if line.strip()]
-        output = output[0] if output else ""
+        output = "".join(output)
         return output
 
     def deploy_start(self, release: str, sudo: bool = False) -> str:
