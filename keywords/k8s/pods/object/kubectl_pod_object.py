@@ -67,6 +67,20 @@ class KubectlPodObject:
         """
         return self.ready
 
+    def is_ready(self) -> bool:
+        """
+        Check if pod is ready by comparing ready vs total containers.
+
+        Returns:
+            bool: True if all containers are ready (e.g., '2/2'), False otherwise.
+        """
+        if not self.ready:
+            return False
+        parts = self.ready.split("/")
+        if len(parts) != 2:
+            return False
+        return parts[0] == parts[1]
+
     def set_status(self, status: str) -> None:
         """
         Setter for STATUS.
