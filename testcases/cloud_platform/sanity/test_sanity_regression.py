@@ -344,9 +344,14 @@ def test_system_crash_reports():
 
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
 
+    get_logger().log_test_case_step(f"Check for crash reports in {crash_report_dir}")
     files = FileKeywords(ssh_connection).get_files_in_dir(crash_report_dir)
-    assert not files, "Crash report files were found"  # check that files is empty, assert will print out filenames if they exist
+    get_logger().log_debug(f"Found {files} crash log files")
+    # Ignore kexec_cmd as it is expected system file, not a crash report
+    files = [f for f in files if f != "kexec_cmd"]
+    assert not files, "Crash report files were found"
 
+    get_logger().log_test_case_step(f"Check for crash logs in {crash_log_dir}")
     files = FileKeywords(ssh_connection).get_files_in_dir(crash_log_dir)
     assert not files, "Crash log files were found"  # check that files is empty, assert will print out filenames if they exist
 
