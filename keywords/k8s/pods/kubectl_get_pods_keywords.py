@@ -6,7 +6,7 @@ from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
 from framework.validation.validation import validate_equals_with_retry
 from keywords.base_keyword import BaseKeyword
-from keywords.k8s.k8s_command_wrapper import export_k8s_config
+from keywords.k8s.k8s_command_wrapper import K8sConfigExporter
 from keywords.k8s.pods.object.kubectl_get_pods_output import KubectlGetPodsOutput
 
 
@@ -15,14 +15,16 @@ class KubectlGetPodsKeywords(BaseKeyword):
     Class for 'kubectl get pods' keywords
     """
 
-    def __init__(self, ssh_connection: SSHConnection):
+    def __init__(self, ssh_connection: SSHConnection, kubeconfig_path: str = None):
         """
         Initialize the KubectlGetPodsKeywords class.
 
         Args:
             ssh_connection (SSHConnection): An SSH connection object to the target system.
+            kubeconfig_path (str, optional): Custom KUBECONFIG path. If None, uses default from config.
         """
         self.ssh_connection = ssh_connection
+        self.k8s_config = K8sConfigExporter(kubeconfig_path)
 
     def get_pods(self, namespace: str = None, label: str = None) -> KubectlGetPodsOutput:
         """Gets the k8s pods that are available using '-o wide'.
@@ -46,7 +48,7 @@ class KubectlGetPodsKeywords(BaseKeyword):
 
         cmd = f"kubectl {arg_namespace} {arg_label} -o wide get pods"
 
-        kubectl_get_pods_output = self.ssh_connection.send(export_k8s_config(cmd))
+        kubectl_get_pods_output = self.ssh_connection.send(self.k8s_config.export(cmd))
         self.validate_success_return_code(self.ssh_connection)
         pods_list_output = KubectlGetPodsOutput(kubectl_get_pods_output)
 
@@ -67,7 +69,7 @@ class KubectlGetPodsKeywords(BaseKeyword):
         if namespace:
             arg_namespace = f"-n {namespace}"
 
-        kubectl_get_pods_output = self.ssh_connection.send(export_k8s_config(f"kubectl {arg_namespace} -o wide get pods"))
+        kubectl_get_pods_output = self.ssh_connection.send(self.k8s_config.export(f"kubectl {arg_namespace} -o wide get pods"))
         rc = self.ssh_connection.get_return_code()
         if rc != 0:
             return None
@@ -82,7 +84,7 @@ class KubectlGetPodsKeywords(BaseKeyword):
         Returns:
             KubectlGetPodsOutput: An object containing the parsed output of the command.
         """
-        kubectl_get_pods_output = self.ssh_connection.send(export_k8s_config("kubectl -o wide get pods --all-namespaces"))
+        kubectl_get_pods_output = self.ssh_connection.send(self.k8s_config.export("kubectl -o wide get pods --all-namespaces"))
         self.validate_success_return_code(self.ssh_connection)
         pods_list_output = KubectlGetPodsOutput(kubectl_get_pods_output)
 
@@ -96,7 +98,7 @@ class KubectlGetPodsKeywords(BaseKeyword):
             KubectlGetPodsOutput: An object containing the parsed output of the command.
         """
         field_selector = "status.phase!=Running,status.phase!=Succeeded"
-        kubectl_get_pods_output = self.ssh_connection.send(export_k8s_config(f"kubectl get pods --all-namespaces --field-selector={field_selector}"))
+        kubectl_get_pods_output = self.ssh_connection.send(self.k8s_config.export(f"kubectl get pods --all-namespaces --field-selector={field_selector}"))
         self.validate_success_return_code(self.ssh_connection)
         pods_list_output = KubectlGetPodsOutput(kubectl_get_pods_output)
 
@@ -268,7 +270,7 @@ class KubectlGetPodsKeywords(BaseKeyword):
         if namespace:
             cmd += f" -n {namespace}"
 
-        output = self.ssh_connection.send(export_k8s_config(cmd))
+        output = self.ssh_connection.send(self.k8s_config.export(cmd))
         self.validate_success_return_code(self.ssh_connection)
 
         content = "\n".join(output) if isinstance(output, list) else output
@@ -293,7 +295,7 @@ class KubectlGetPodsKeywords(BaseKeyword):
         """
 
         def is_kubernetes_up() -> bool:
-            output = self.ssh_connection.send(export_k8s_config("kubectl get pods -A"))
+            output = self.ssh_connection.send(self.k8s_config.export("kubectl get pods -A"))
             return "was refused - did you specify the right host or port?" not in output[0]
 
         validate_equals_with_retry(
