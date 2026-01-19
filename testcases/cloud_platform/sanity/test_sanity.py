@@ -1,7 +1,8 @@
 import time
 from typing import Any
-
+from datetime import datetime, timedelta
 from pytest import mark
+from tabulate import tabulate
 
 from config.configuration_manager import ConfigurationManager
 from config.lab.objects.node import Node
@@ -54,6 +55,7 @@ from keywords.k8s.service.kubectl_delete_service_keywords import KubectlDeleteSe
 from keywords.k8s.service.kubectl_get_service_keywords import KubectlGetServiceKeywords
 from keywords.linux.date.date_keywords import DateKeywords
 from keywords.linux.tar.tar_keywords import TarKeywords
+from keywords.kpi.log_pattern_kpi_keywords import LogPatternKpiKeywords
 from web_pages.horizon.admin.platform.horizon_host_inventory_page import HorizonHostInventoryPage
 from web_pages.horizon.login.horizon_login_page import HorizonLoginPage
 
@@ -162,13 +164,36 @@ def test_lock_unlock_simplex():
         - connect to simplex controller
         - run 'system host-lock' and wait for lock to complete
         - run 'system host-unlock' and wait for unlock to complete successfully
+        - calculate detailed unlock KPIs using log pattern matching
+        - generate profile.timing and CSV output
 
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     lock_success = SystemHostLockKeywords(ssh_connection).lock_host("controller-0")
     assert lock_success, "Controller was not locked successfully."
+
     unlock_success = SystemHostLockKeywords(ssh_connection).unlock_host("controller-0")
     assert unlock_success, "Controller was not unlocked successfully."
+
+    kpi_keywords = LogPatternKpiKeywords(ssh_connection)
+    start_time_str = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+    
+    get_logger().log_info("=== Calculating Unlock KPIs ===")
+    results, output = kpi_keywords.calculate_unlock_kpi(
+        hostname="controller-0",
+        blocks=LogPatternKpiKeywords.get_unlock_blocks(),
+        start_date=start_time_str,
+        loops=1,
+        output_file="/tmp/unlock_profile.timing",
+        csv_file="/tmp/unlock_profile.csv"
+    )
+    
+    assert results or output, "No KPI results were generated"
+    
+    if results:
+        kpi_keywords.parse_and_display_results(results)
+    else:
+        get_logger().log_info("No timing patterns found, but KPI calculation completed")
 
 
 @mark.p0
