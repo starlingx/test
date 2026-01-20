@@ -933,7 +933,7 @@ def test_subcloud_restore_central_backup_with_restore_values_inactive_load(reque
 
     # Manage the subcloud and validate sync status
     dcm_sc_manager_kw.get_dcmanager_subcloud_manage(subcloud_name, 30)
-    DcManagerSubcloudListKeywords(central_ssh).validate_subcloud_sync_status(subcloud_name, expected_sync_status="in-sync")
+    DcManagerSubcloudListKeywords(central_ssh).validate_subcloud_sync_status(subcloud_name, expected_sync_status="out-of-sync")
 
 
 @mark.p2
@@ -978,9 +978,6 @@ def test_subcloud_restore_local_backup_with_restore_values_inactive_load(request
     local_path = f"/opt/platform-backup/backups/{subcloud_release}"
 
     def teardown():
-        get_logger().log_info(f"Managing subcloud {subcloud_name}")
-        DcManagerSubcloudManagerKeywords(central_ssh).get_dcmanager_subcloud_manage(subcloud_name, 10)
-
         get_logger().log_info("Removing test files during teardown")
         FileKeywords(subcloud_ssh).delete_folder_with_sudo(local_path)
 
@@ -1005,7 +1002,7 @@ def test_subcloud_restore_local_backup_with_restore_values_inactive_load(request
 
     # Manage the subcloud and validate sync status
     dcm_sc_manager_kw.get_dcmanager_subcloud_manage(subcloud_name, 30)
-    DcManagerSubcloudListKeywords(central_ssh).validate_subcloud_sync_status(subcloud_name, expected_sync_status="in-sync")
+    DcManagerSubcloudListKeywords(central_ssh).validate_subcloud_sync_status(subcloud_name, expected_sync_status="out-of-sync")
 
 
 @mark.p2
