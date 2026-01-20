@@ -36,8 +36,9 @@ from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKey
 from keywords.cloud_platform.system.host.objects.system_host_if_output import SystemHostInterfaceOutput
 from keywords.cloud_platform.system.oam.objects.system_oam_show_output import SystemOamShowOutput
 from keywords.cloud_platform.system.oam.system_oam_show_keywords import SystemOamShowKeywords
-from testcases.conftest import log_configuration
 from keywords.linux.lspci.lspci_keywords import LspciKeywords
+from testcases.conftest import log_configuration
+
 
 def find_capabilities(lab_config: LabConfig) -> list[str]:
     """Find the capabilities of the given lab.
@@ -68,8 +69,40 @@ def find_capabilities(lab_config: LabConfig) -> list[str]:
     if len(lab_config.get_subclouds()) >= 2:
         lab_config.add_lab_capability("lab_has_min_2_subclouds")
 
+    secondary_system_controller = lab_config.get_secondary_system_controller_config()
+    if secondary_system_controller:
+        lab_config.add_lab_capability("lab_has_secondary_system_controller")
+        find_secondary_controller_capabilities(lab_config)
+
     nodes = scan_hosts(lab_config, ssh_connection)
     lab_config.set_nodes(nodes)
+
+
+def find_secondary_controller_capabilities(lab_config: LabConfig):
+    """Find secondary system controller capabilities from given lab.
+
+    Args:
+        lab_config (LabConfig): The lab configuration object.
+    """
+    try:
+        secondary_system_controller = lab_config.get_secondary_system_controller_config()
+
+        ConfigurationManager.set_lab_config(secondary_system_controller)
+        ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+
+        nodes = scan_hosts(secondary_system_controller, ssh_connection)
+        secondary_system_controller.set_nodes(nodes)
+
+        lab_type = get_lab_type(secondary_system_controller)
+        secondary_system_controller.set_lab_type(lab_type)
+
+        for capability in secondary_system_controller.get_lab_capabilities():
+            secondary_system_controller.add_lab_capability(capability)
+
+        write_config(secondary_system_controller)
+    finally:
+        # The lab config is restored in ConfigurationManager.
+        ConfigurationManager.set_lab_config(lab_config)
 
 
 def find_subclouds_capabilities(lab_config: LabConfig) -> list[str]:
@@ -183,11 +216,14 @@ def has_host_bmc_sensor(ssh_connection: SSHConnection) -> bool:
 
 def has_qat_device(ssh_connection: SSHConnection) -> bool:
     """Verify:
+
      - that the QAT Device exists: 4940|4942|0b40
      - Raise Error If Above Devices are not present.
+
     Args:
-        ssh_connection: SSHConnection object
-    Return:
+        ssh_connection (SSHConnection): The SSH connection to the host.
+
+    Returns:
         bool: True if a matching device is found, otherwise False
     """
     lspci_keywords = LspciKeywords(ssh_connection)
@@ -195,22 +231,27 @@ def has_qat_device(ssh_connection: SSHConnection) -> bool:
 
     return lspci_keywords.has_pci_device(qat_patterns)
 
+
 def has_dsa_device(ssh_connection: SSHConnection) -> bool:
     """Verify:
+
      - that the DSA Device exists: 11fb|0b25
      - Raise Error If Above Devices are not present.
+
     Args:
-        ssh_connection: SSHConnection object
-    Return:
+        ssh_connection (SSHConnection): The SSH connection to the host.
+
+    Returns:
         bool: True if a matching device is found, otherwise False
     """
     lspci_keywords = LspciKeywords(ssh_connection)
-    dsa_patterns = ("11fb","0b25")
-    return  lspci_keywords.has_pci_device(dsa_patterns)
+    dsa_patterns = ("11fb", "0b25")
+    return lspci_keywords.has_pci_device(dsa_patterns)
 
 
 def retrieve_subclouds(lab_config: LabConfig, ssh_connection: SSHConnection) -> list[LabConfig]:
     """Get the list of online and managed subclouds.
+
     Only subclouds with 'availability' = 'online' and 'management' = 'managed' are considered.
 
     Args:
@@ -637,6 +678,7 @@ def write_config(lab_config: LabConfig) -> None:
     new_config += get_main_lab_config(lab_config)
     new_config += get_nodes_config(lab_config)
     new_config += get_subclouds_config(lab_config)
+    new_config += get_secondary_controller_config(lab_config)
     new_config += "}"
 
     lab_config_file = lab_config.get_lab_config_file()
@@ -741,6 +783,28 @@ def get_nodes_config(lab_config: LabConfig) -> str:
     return node_config
 
 
+def get_secondary_controller_config(lab_config: LabConfig) -> str:
+    """Getter for the secondary system controller configs
+
+    The portion in lab config file where are specified the secondary
+    system controller config file paths).
+
+    Args:
+        lab_config (LabConfig): The secondary system controllers
+                                LabConfig object.
+
+    Returns:
+        str: The formatted secondary controller configuration.
+    """
+    secondary_controller = lab_config.get_secondary_system_controller_config()
+    if not secondary_controller:
+        return ""
+
+    secondary_controller_config = f'"secondary_system_controller": "{secondary_controller.get_lab_config_file()}",'
+
+    return secondary_controller_config
+
+
 def get_subclouds_config(lab_config: LabConfig) -> str:
     """
     Getter for the subcloud configs (the portion in lab config file where are specified the subcloud config file paths).
@@ -759,7 +823,7 @@ def get_subclouds_config(lab_config: LabConfig) -> str:
     subclouds_sorted = sorted(subclouds, key=lambda subcloud: subcloud.get_lab_name())
     for subcloud in subclouds_sorted:
         subcloud_config += f'"{subcloud.get_lab_name()}": "{subcloud.get_lab_config_file()}",'
-    subcloud_config += "}"
+    subcloud_config += "},"
 
     return subcloud_config
 
