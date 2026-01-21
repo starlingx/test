@@ -170,12 +170,19 @@ def test_verify_coredump_using_default_handling(request: FixtureRequest):
     kubectl_pods = KubectlGetPodsKeywords(ssh_connection)
     kubectl_pods.wait_for_pod_status(POD_NAME, "Running")
 
+    def cleanup_pod():
+        get_logger().log_teardown_step("Delete pod")
+        KubectlDeletePodsKeywords(ssh_connection).cleanup_pod(POD_NAME)
+
+    request.addfinalizer(cleanup_pod)
+
     # Generate a coredump inside pod
     get_logger().log_test_case_step("Create coredump inside pod")
     kubectl_exec = KubectlExecInPodsKeywords(ssh_connection)
     kubectl_exec.run_pod_exec_cmd(POD_NAME, SLEEP_PROCESS_CREATE_CMDLINE)
     kubectl_exec.run_pod_exec_cmd(POD_NAME, SLEEP_PROCESS_KILL_CMDLINE)
-    output = kubectl_exec.run_pod_exec_cmd(POD_NAME, f"ls coredump | grep --color=never {coredump_file}")
+    kubectl_pods.wait_for_pod_status(POD_NAME, "Running")
+    output = kubectl_exec.run_pod_exec_cmd(POD_NAME, f"ls coredump | grep {coredump_file}")
     validate_not_none(output, "Coredump file was generated on pod")
 
     # Verify the coredump exists on host
@@ -183,10 +190,9 @@ def test_verify_coredump_using_default_handling(request: FixtureRequest):
     validate_equals(file_keywords.validate_file_exists_with_sudo(f"{POD_COREDUMP_PATH_ON_HOST}/{coredump_file}"), True, "Coredump file was generated on host")
 
     def teardown():
-        get_logger().log_teardown_step("Remove core files and delete pod")
+        get_logger().log_teardown_step("Remove files")
         file_keywords.delete_file(f"{POD_COREDUMP_PATH_ON_HOST}/{coredump_file}")
         file_keywords.delete_file(f"/home/sysadmin/{filename}")
-        KubectlDeletePodsKeywords(ssh_connection).cleanup_pod(POD_NAME)
 
     request.addfinalizer(teardown)
 
@@ -204,7 +210,7 @@ def test_verify_coredump_using_full_config_annotations(request: FixtureRequest):
     Args:
         request (FixtureRequest): pytest fixture for managing test setup and teardown
     """
-    coredump_file = "core.*sleep"
+    coredump_file = "core.*sleep.lz4"
     filename = "full_k8s_config.yaml"
 
     get_logger().log_test_case_step("Create pod with full config annotations")
@@ -221,12 +227,19 @@ def test_verify_coredump_using_full_config_annotations(request: FixtureRequest):
     kubectl_pods = KubectlGetPodsKeywords(ssh_connection)
     kubectl_pods.wait_for_pod_status(POD_NAME, "Running")
 
+    def cleanup_pod():
+        get_logger().log_teardown_step("Delete pod")
+        KubectlDeletePodsKeywords(ssh_connection).cleanup_pod(POD_NAME)
+
+    request.addfinalizer(cleanup_pod)
+
     # Generate a coredump inside pod
     get_logger().log_test_case_step("Create coredump inside pod")
     kubectl_exec = KubectlExecInPodsKeywords(ssh_connection)
     kubectl_exec.run_pod_exec_cmd(POD_NAME, SLEEP_PROCESS_CREATE_CMDLINE)
     kubectl_exec.run_pod_exec_cmd(POD_NAME, SLEEP_PROCESS_KILL_CMDLINE)
-    output = kubectl_exec.run_pod_exec_cmd(POD_NAME, f"ls coredump | grep --color=never {coredump_file}")
+    kubectl_pods.wait_for_pod_status(POD_NAME, "Running")
+    output = kubectl_exec.run_pod_exec_cmd(POD_NAME, f"ls coredump | grep {coredump_file}")
     validate_not_none(output, "Coredump file was generated on pod")
 
     # Verify the coredump exists on host
@@ -234,10 +247,9 @@ def test_verify_coredump_using_full_config_annotations(request: FixtureRequest):
     validate_equals(file_keywords.validate_file_exists_with_sudo(f"{POD_COREDUMP_PATH_ON_HOST}/{coredump_file}"), True, "Coredump file was generated on host")
 
     def teardown():
-        get_logger().log_teardown_step("Remove core files and delete pod")
+        get_logger().log_teardown_step("Remove files")
         file_keywords.delete_file(f"{POD_COREDUMP_PATH_ON_HOST}/{coredump_file}")
         file_keywords.delete_file(f"/home/sysadmin/{filename}")
-        KubectlDeletePodsKeywords(ssh_connection).cleanup_pod(POD_NAME)
 
     request.addfinalizer(teardown)
 
@@ -272,12 +284,19 @@ def test_verify_coredump_using_minimal_config_annotations(request: FixtureReques
     kubectl_pods = KubectlGetPodsKeywords(ssh_connection)
     kubectl_pods.wait_for_pod_status(POD_NAME, "Running")
 
+    def cleanup_pod():
+        get_logger().log_teardown_step("Delete pod")
+        KubectlDeletePodsKeywords(ssh_connection).cleanup_pod(POD_NAME)
+
+    request.addfinalizer(cleanup_pod)
+
     # Generate a coredump inside pod
     get_logger().log_test_case_step("Create coredump inside pod")
     kubectl_exec = KubectlExecInPodsKeywords(ssh_connection)
     kubectl_exec.run_pod_exec_cmd(POD_NAME, SLEEP_PROCESS_CREATE_CMDLINE)
     kubectl_exec.run_pod_exec_cmd(POD_NAME, SLEEP_PROCESS_KILL_CMDLINE)
-    output = kubectl_exec.run_pod_exec_cmd(POD_NAME, f"ls coredump | grep --color=never {coredump_file}")
+    kubectl_pods.wait_for_pod_status(POD_NAME, "Running")
+    output = kubectl_exec.run_pod_exec_cmd(POD_NAME, f"ls coredump | grep {coredump_file}")
     validate_not_none(output, "Coredump file was generated on pod")
 
     # Verify the coredump exists on host
@@ -285,9 +304,8 @@ def test_verify_coredump_using_minimal_config_annotations(request: FixtureReques
     validate_equals(file_keywords.validate_file_exists_with_sudo(f"{POD_COREDUMP_PATH_ON_HOST}/{coredump_file}"), True, "Coredump file was generated on host")
 
     def teardown():
-        get_logger().log_teardown_step("Remove core files and delete pod")
+        get_logger().log_teardown_step("Remove files")
         file_keywords.delete_file(f"{POD_COREDUMP_PATH_ON_HOST}/{coredump_file}")
         file_keywords.delete_file(f"/home/sysadmin/{filename}")
-        KubectlDeletePodsKeywords(ssh_connection).cleanup_pod(POD_NAME)
 
     request.addfinalizer(teardown)
