@@ -5,6 +5,7 @@ Tests the read_yaml_file_as_string() method added per ADR-2026-01-09.
 """
 
 import os
+import shutil
 import tempfile
 import unittest
 from unittest.mock import Mock, patch
@@ -31,10 +32,7 @@ class TestYamlKeywords(unittest.TestCase):
         # Stop the logger patcher
         self.logger_patcher.stop()
         # Clean up any temporary files
-        import shutil
-
-        if os.path.exists(self.temp_dir):
-            shutil.rmtree(self.temp_dir)
+        shutil.rmtree(self.temp_dir)
 
     def test_read_yaml_file_as_string_valid(self):
         """Test reading valid YAML file returns string."""
