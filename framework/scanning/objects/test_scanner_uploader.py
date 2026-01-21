@@ -43,8 +43,7 @@ class TestScannerUploader:
         for db_test in tests_in_db:
             is_test_in_repo = False
             for repo_test in filtered_test_cases:
-                if (db_test.get_test_name() == repo_test.get_test_name()
-                        and db_test.get_test_suite() == repo_test.get_test_suite()):
+                if db_test.get_test_name() == repo_test.get_test_name() and db_test.get_test_suite() == repo_test.get_test_suite():
                     is_test_in_repo = True
                     break
             if not is_test_in_repo:
@@ -67,6 +66,7 @@ class TestScannerUploader:
             self.update_test_path(test, database_testcase)
             self.update_pytest_node_id(test, database_testcase)
             self.update_capability(test, database_testcase.get_test_info_id())
+            self.update_active(database_testcase)
 
     def scan_for_tests(self, repo_root: str) -> List[TestCase]:
         """
@@ -76,7 +76,7 @@ class TestScannerUploader:
             repo_root (str): The full path to the root of the repo.
 
         Returns:
-            [TestCase]: list of Testcases
+            List[TestCase]: list of Testcases
 
         """
         collection_plugin = CollectionPlugin(repo_root)
@@ -180,3 +180,15 @@ class TestScannerUploader:
             # find the correct db_capability
             db_capability = next(filter(lambda x: x.get_capability_marker() == marker_name, db_capabilities))
             capability_test_operation.delete_capability_test(db_capability.get_capability_id(), test_info_id)
+
+    def update_active(self, database_testcase: TestCase):
+        """
+        Sets the test to active if it's currently inactive
+
+        Args:
+            database_testcase (TestCase): the Test in the Database
+
+        """
+        if not database_testcase.is_testcase_active():
+            test_info_operation = TestInfoOperation()
+            test_info_operation.set_test_active(database_testcase.get_test_info_id())
