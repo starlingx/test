@@ -82,7 +82,7 @@ class YamlKeywords(BaseKeyword):
         with open(file_path, "r") as file:
             return yaml.safe_load(file)
 
-    def read_yaml_file_as_string(self, yaml_file: str) -> str:
+    def read_yaml_file_as_string(self, yaml_file: str, encoding: str = "utf-8") -> str:
         """
         Reads a YAML file and returns its contents as a string.
 
@@ -91,6 +91,7 @@ class YamlKeywords(BaseKeyword):
 
         Args:
             yaml_file (str): Path to the YAML file.
+            encoding (str): File encoding to use when reading. Defaults to 'utf-8'.
 
         Returns:
             str: Contents of the YAML file as a string.
@@ -99,7 +100,7 @@ class YamlKeywords(BaseKeyword):
             yaml.YAMLError: If the YAML file has invalid syntax.
             FileNotFoundError: If the file does not exist.
         """
-        with open(yaml_file, "r") as f:
+        with open(yaml_file, "r", encoding=encoding) as f:
             content = f.read()
 
         # Validate YAML syntax before returning
