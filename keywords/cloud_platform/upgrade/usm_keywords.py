@@ -7,6 +7,8 @@ from framework.ssh.ssh_connection import SSHConnection
 from framework.validation.validation import validate_equals_with_retry
 from keywords.base_keyword import BaseKeyword
 from keywords.cloud_platform.command_wrappers import source_openrc
+from keywords.cloud_platform.system.host.objects.system_host_object import SystemHostObject
+from keywords.cloud_platform.system.host.system_host_list_keywords import SystemHostListKeywords
 from keywords.cloud_platform.upgrade.objects.software_upload_output import SoftwareUploadOutput
 from keywords.cloud_platform.upgrade.software_deploy_show_keywords import SoftwareDeployShowKeywords
 from keywords.cloud_platform.upgrade.software_show_keywords import SoftwareShowKeywords
@@ -273,3 +275,108 @@ class USMKeywords(BaseKeyword):
                 break
             time.sleep(5)
         return False
+
+    def software_deploy_host(self, host: str, sudo: bool = False) -> list[str]:
+        """
+        This method executed the command 'software deploy host <host>'
+
+        Args:
+            host (str): host do be deployed
+            sudo (bool): flag to check if it needs to be run as sudo.
+
+        Returns:
+            list[str]: software deploy host output list
+        """
+        timeout = self.usm_config.get_deploy_host_timeout_sec()
+        base_cmd = f"software deploy host {host}"
+        cmd = source_openrc(base_cmd)
+        if sudo:
+            output = self.ssh_connection.send_as_sudo(cmd, reconnect_timeout=timeout)
+        else:
+            output = self.ssh_connection.send(cmd, reconnect_timeout=timeout, get_pty=True)
+        self.validate_success_return_code(self.ssh_connection)
+        output = [output_item.strip() for output_item in output]
+        return output
+
+    def active_controller_host_upgrade(self) -> SystemHostObject:
+        """
+        This method returns the active controller host object for upgrade flows.
+
+        Returns:
+            SystemHostObject: active controller host object
+        """
+        system_host_list_keywords = SystemHostListKeywords(self.ssh_connection)
+        return system_host_list_keywords.get_active_controller()
+
+    def standby_controller_host_upgrade(self) -> SystemHostObject | None:
+        """
+        This method returns the standby controller host object for upgrade flows. If it exists, otherwise None.
+
+        Returns:
+            SystemHostObject | None:  standby controller host object or None
+        """
+        system_host_list_keywords = SystemHostListKeywords(self.ssh_connection)
+        output = system_host_list_keywords.get_system_host_with_extra_column(["capabilities"])
+        for host in output.system_hosts:
+            caps = host.get_capabilities()
+            if caps and caps.get_personality() == "Controller-Standby":
+                return host
+        return None
+
+    def storage_host_upgrade_list(self) -> list[SystemHostObject]:
+        """
+        This method returns the list of storage nodes, or an empty list if none exist.
+
+        Returns:
+            list[SystemHostObject]: List of storage nodes objects
+        """
+        system_host_list_keywords = SystemHostListKeywords(self.ssh_connection)
+        output = system_host_list_keywords.get_system_host_with_extra_column(["capabilities"])
+        return [h for h in output.system_hosts if h.get_personality() == "storage"]
+
+    def computes_host_upgrade_list(self) -> list[SystemHostObject]:
+        """
+        This method returns the list of compute nodes, or an empty list if none exist.
+
+        Returns:
+            list[SystemHostObject]: List of compute nodes objects
+        """
+        system_host_list_keywords = SystemHostListKeywords(self.ssh_connection)
+        output = system_host_list_keywords.get_system_host_with_extra_column(["capabilities"])
+        return [h for h in output.system_hosts if h.get_personality() == "worker"]
+
+    def deploy_host_upgrade_order(self) -> list[str]:
+        """
+        This method returns the ordered list of hostnames to be used for 'software deploy host' operations.
+
+        Order rules:
+        - Standby controller (if exists)
+        - Active controller
+        - Storage nodes (alphabetical order)
+        - Compute nodes (alphabetical order)
+
+        Returns:
+            list[str]: ordered list of hostnames for upgrade flows.
+        """
+        order: list[str] = []
+
+        # Controllers
+        active = self.active_controller_host_upgrade()
+        standby = self.standby_controller_host_upgrade()
+
+        if standby is not None:
+            order.append(standby.get_host_name())
+
+        order.append(active.get_host_name())
+
+        # Storages (alphabetical)
+        storages = self.storage_host_upgrade_list()
+        storage_names = sorted(host.get_host_name() for host in storages)
+        order.extend(storage_names)
+
+        # Computes (alphabetical)
+        computes = self.computes_host_upgrade_list()
+        compute_names = sorted(host.get_host_name() for host in computes)
+        order.extend(compute_names)
+
+        return order
