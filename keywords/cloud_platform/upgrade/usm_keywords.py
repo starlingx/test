@@ -11,7 +11,7 @@ from keywords.cloud_platform.system.host.objects.system_host_object import Syste
 from keywords.cloud_platform.system.host.system_host_list_keywords import SystemHostListKeywords
 from keywords.cloud_platform.upgrade.objects.software_upload_output import SoftwareUploadOutput
 from keywords.cloud_platform.upgrade.software_deploy_show_keywords import SoftwareDeployShowKeywords
-from keywords.cloud_platform.upgrade.software_show_keywords import SoftwareShowKeywords
+from keywords.cloud_platform.upgrade.software_list_keywords import SoftwareListKeywords
 
 
 class USMKeywords(BaseKeyword):
@@ -150,7 +150,7 @@ class USMKeywords(BaseKeyword):
         self.upload_patch_file(patch_file_path, sudo, os_region_name=os_region_name)
 
         validate_equals_with_retry(
-            function_to_execute=lambda: SoftwareShowKeywords(self.ssh_connection).get_release_state(expected_release_id),
+            function_to_execute=lambda: SoftwareListKeywords(self.ssh_connection).get_software_list(sudo=True).get_release_state_by_release_name(expected_release_id),
             expected_value="available",
             validation_description=f"Wait for patch release {expected_release_id} to become available",
             timeout=timeout,
@@ -179,7 +179,7 @@ class USMKeywords(BaseKeyword):
         self.upload_release(iso_path, sig_path, sudo, os_region_name)
 
         validate_equals_with_retry(
-            function_to_execute=lambda: SoftwareShowKeywords(self.ssh_connection).get_release_state(expected_release_id),
+            function_to_execute=lambda: SoftwareListKeywords(self.ssh_connection).get_software_list(sudo=True).get_release_state_by_release_name(expected_release_id),
             expected_value="available",
             validation_description=f"Wait for release {expected_release_id} to become available",
             timeout=timeout,
