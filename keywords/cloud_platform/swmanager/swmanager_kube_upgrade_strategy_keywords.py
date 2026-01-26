@@ -1,3 +1,5 @@
+import time
+
 from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
 from framework.validation.validation import validate_equals_with_retry
@@ -40,7 +42,7 @@ class SwManagerKubeUpgradeStrategyKeywords(BaseKeyword):
         # Wait for strategy to be built
         return self.wait_for_ready_to_apply(180)
 
-    def apply_kube_upgrade_strategy(self, timeout: int = 600) -> SwManagerKubeUpgradeStrategyObject:
+    def apply_kube_upgrade_strategy(self, timeout: int = 3600) -> SwManagerKubeUpgradeStrategyObject:
         """Apply the Kubernetes upgrade strategy.
 
         Args:
@@ -78,10 +80,20 @@ class SwManagerKubeUpgradeStrategyKeywords(BaseKeyword):
 
         Returns:
             SwManagerKubeUpgradeStrategyShowOutput: Strategy show output object.
+
+        Raises:
+            ConnectionRefusedError: If sw-manager service is temporarily unavailable.
         """
         command = source_openrc("sw-manager kube-upgrade-strategy show")
         output = self.ssh_connection.send(command)
-        self.validate_success_return_code(self.ssh_connection)
+        rc = self.ssh_connection.get_return_code()
+
+        # Allow connection refused and internal server errors during upgrade (service temporarily unavailable)
+        if rc != 0:
+            error_output = "\n".join(output)
+            if "Connection refused" in error_output or "500 Server Error: Internal Server Error" in error_output:
+                raise ConnectionRefusedError("sw-manager service temporarily unavailable")
+
         return SwManagerKubeUpgradeStrategyShowOutput(output)
 
     def verify_no_kube_upgrade_strategy_available(self) -> bool:
@@ -150,37 +162,89 @@ class SwManagerKubeUpgradeStrategyKeywords(BaseKeyword):
 
         return self.show_kube_upgrade_strategy().get_swmanager_kube_upgrade_strategy_show()
 
+    def _check_strategy_state(self, strategy_obj: SwManagerKubeUpgradeStrategyObject) -> None:
+        """Check and log strategy state, raise exception if in failed state.
+
+        This method monitors the current state of the upgrade strategy and logs
+        progress information. It raises exceptions for terminal failure states.
+
+        Args:
+            strategy_obj (SwManagerKubeUpgradeStrategyObject): Current strategy object.
+
+        Raises:
+            Exception: If strategy is in Apply-failed, Aborted, or Abort-failed state.
+        """
+        # Log progress for active states
+        if strategy_obj.is_applying():
+            phase = strategy_obj.get_current_phase()
+            stage = strategy_obj.get_current_stage()
+            completion = strategy_obj.get_current_phase_completion()
+            get_logger().log_info(f"Kube-upgrade-strategy applying: {phase}/{stage} ({completion} complete)")
+        elif strategy_obj.is_aborting():
+            phase = strategy_obj.get_current_phase()
+            stage = strategy_obj.get_current_stage()
+            completion = strategy_obj.get_current_phase_completion()
+            get_logger().log_info(f"Kube-upgrade-strategy aborting: {phase}/{stage} ({completion} complete)")
+        # Raise exceptions for failure states
+        elif strategy_obj.is_apply_failed():
+            raise Exception("Kube-upgrade-strategy is in Apply-failed state")
+        elif strategy_obj.is_aborted():
+            raise Exception("Kube-upgrade-strategy is in Aborted state")
+        elif strategy_obj.is_abort_failed():
+            raise Exception("Kube-upgrade-strategy is in Abort-failed state")
+
     def wait_for_applied(self, timeout: int = 3600) -> SwManagerKubeUpgradeStrategyObject:
         """Wait for strategy to be applied.
+
+        This method monitors the Kubernetes upgrade strategy until it completes.
+        The method handles temporary service unavailability (up to 3 minutes) which
+        can occur during certain upgrade operations like control plane upgrades.
 
         Args:
             timeout (int): Maximum time to wait in seconds.
 
         Returns:
             SwManagerKubeUpgradeStrategyObject: Strategy object when applied.
+
+        Raises:
+            Exception: If strategy enters Apply-failed or Aborted state, or if
+                      sw-manager service is unavailable for more than 3 minutes.
         """
+        unavailable_start = None
 
         def check_applied() -> bool:
-            strategy_output = self.show_kube_upgrade_strategy()
-            strategy_obj = strategy_output.get_swmanager_kube_upgrade_strategy_show()
-            if strategy_obj.is_applying():
-                # Show progress information if available
-                phase = strategy_obj.get_current_phase()
-                stage = strategy_obj.get_current_stage()
-                completion = strategy_obj.get_current_phase_completion()
-                get_logger().log_info(f"Kube-upgrade-strategy applying: {phase}/{stage} ({completion} complete)")
-            elif strategy_obj.is_aborting():
-                get_logger().log_info(f"Kube-upgrade-strategy aborting: {phase}/{stage} ({completion} complete)")
-            elif strategy_obj.is_apply_failed():
-                raise Exception("Kube-upgrade-strategy is in Apply-failed state")
-            elif strategy_obj.is_aborted():
-                raise Exception("Kube-upgrade-strategy is in Aborted state")
-            elif strategy_obj.is_abort_failed():
-                raise Exception("Kube-upgrade-strategy is in Abort-failed state")
-            return strategy_obj.is_applied()
+            nonlocal unavailable_start
 
+            try:
+                # Attempt to get current strategy status
+                strategy_output = self.show_kube_upgrade_strategy()
+                strategy_obj = strategy_output.get_swmanager_kube_upgrade_strategy_show()
+
+                # Service is available - reset unavailability timer if it was set
+                unavailable_start = None
+
+                # Check strategy state and log progress or raise exceptions for failures
+                self._check_strategy_state(strategy_obj)
+                # Return True if strategy is applied, False otherwise to continue polling
+                return strategy_obj.is_applied()
+            except ConnectionRefusedError:
+                # Service temporarily unavailable - track elapsed time
+                if unavailable_start is None:
+                    # First time seeing unavailability - start timer
+                    unavailable_start = time.time()
+                    get_logger().log_debug("sw-manager service temporarily unavailable, will retry")
+                elif time.time() - unavailable_start > 180:
+                    # Fail if service has been unavailable for more than 3 minutes
+                    raise Exception("sw-manager service unavailable for more than 3 minutes")
+                else:
+                    # Service still unavailable - log elapsed time
+                    get_logger().log_debug(f"sw-manager service still unavailable ({int(time.time() - unavailable_start)}s elapsed, max 180s)")
+                # Return False to retry after polling interval
+                return False
+
+        # Poll check_applied() every 30 seconds until it returns True or timeout
         validate_equals_with_retry(function_to_execute=check_applied, expected_value=True, validation_description="Waiting for kube-upgrade-strategy to be applied", timeout=timeout, polling_sleep_time=30)
-
+        # Strategy applied successfully - return final strategy object
         return self.show_kube_upgrade_strategy().get_swmanager_kube_upgrade_strategy_show()
 
     def wait_for_aborted(self, timeout: int = 600) -> SwManagerKubeUpgradeStrategyObject:
