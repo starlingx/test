@@ -47,18 +47,23 @@ class DcmanagerKubeStrategyKeywords(BaseKeyword):
             polling_sleep_time=check_interval,
         )
 
-    def dcmanager_kube_upgrade_strategy_create(self, subcloud: str, kube_version: str) -> DcmanagerKubeStrategyStepShowOutput:
+    def dcmanager_kube_upgrade_strategy_create(self, kube_version: str = None, subcloud: str = None, subcloud_group: str = None) -> DcmanagerKubeStrategyStepShowOutput:
         """
         Kube-strategy create.
 
         Args:
+            kube_version (str): Kubernetes version to be upgraded to. If None, dcmanager uses latest available.
             subcloud (str): Subcloud name.
-            kube_version (str): Kubernetes version to be upgraded to.
+            subcloud_group (str): Subcloud group name.
 
         Returns:
             DcmanagerKubeStrategyStepShowOutput: An object containing details of the kubernetes strategy .
         """
-        command = source_openrc(f"dcmanager kube-upgrade-strategy create {subcloud} --to-version {kube_version}")
+        version_arg = f"--to-version {kube_version}" if kube_version else ""
+        if subcloud_group:
+            command = source_openrc(f"dcmanager kube-upgrade-strategy create --group {subcloud_group} {version_arg}")
+        else:
+            command = source_openrc(f"dcmanager kube-upgrade-strategy create {subcloud} {version_arg}")
 
         output = self.ssh_connection.send(command)
         self.validate_success_return_code(self.ssh_connection)
