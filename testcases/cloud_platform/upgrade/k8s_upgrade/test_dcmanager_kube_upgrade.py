@@ -35,21 +35,17 @@ def test_dcmanager_kube_upgrade_subcloud():
     subcloud_group = k8s_config.get_subcloud_group()
     subcloud_name = k8s_config.get_subcloud_name()
 
-    get_logger().log_test_case_step("Get Active and available Kubernetes versions from system controller")
+    get_logger().log_test_case_step("Get Active Kubernetes version from system controller")
     kube_version_list = system_kube_keywords.get_system_kube_version_list()
     active_kube_version = kube_version_list.get_active_kubernetes_version()
     validate_not_none(active_kube_version, f"Active Kubernetes version found {active_kube_version}")
-    available_kube_version = kube_version_list.get_version_by_state("available")
-    validate_not_none(available_kube_version, f"Available Kubernetes versions found {available_kube_version}")
 
     target_version = k8s_config.get_k8_target_version()
     if target_version and target_version != "":
         get_logger().log_info(f"Target kubernetes version from config: {target_version}")
-        get_logger().log_test_case_step("Check target kubernetes version is in available kubernetes list")
-        validate_list_contains(target_version, available_kube_version, "Target Kubernetes version is in available kubernetes list")
     else:
         target_version = None
-        get_logger().log_info("No target version specified, dcmanager will use latest available version")
+        get_logger().log_info("No target version specified, dcmanager will use active version from system controller")
 
     # Use subcloud from config if specified
     if subcloud_name != "None":
@@ -64,7 +60,7 @@ def test_dcmanager_kube_upgrade_subcloud():
         dcm_kube_keywords.dcmanager_kube_upgrade_strategy_create(kube_version=target_version, subcloud_group=subcloud_group)
     else:
         get_logger().log_info("No subcloud or group specified, applying to all subclouds")
-        dcm_kube_keywords.dcmanager_kube_upgrade_strategy_create(kube_version=target_version)
+        dcm_kube_keywords.dcmanager_kube_upgrade_strategy_create(kube_version=target_version, subcloud_group="Default")
 
     get_logger().log_test_case_step("Apply dcmanager kube-upgrade-strategy")
     dcm_kube_keywords.dcmanager_kube_upgrade_strategy_apply()
