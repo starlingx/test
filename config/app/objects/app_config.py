@@ -58,6 +58,10 @@ class AppConfig:
         if "sriov_fec_operator_app_name" in app_dict:
             self.sriov_fec_operator_app_name = app_dict["sriov_fec_operator_app_name"]
 
+        self.deployment_manager_app_name = "deployment-manager"
+        if "deployment_manager_app_name" in app_dict:
+            self.deployment_manager_app_name = app_dict["deployment_manager_app_name"]
+
     def get_base_application_path(self) -> str:
         """
         Getter for base application path
@@ -187,3 +191,13 @@ class AppConfig:
 
         """
         return self.sriov_fec_operator_app_name
+    
+    def get_deployment_manager_app_name(self) -> str:
+        """
+        Getter for deployment manager app name
+
+        Returns:
+            str: the deployment manager app name
+
+        """
+        return self.deployment_manager_app_name
