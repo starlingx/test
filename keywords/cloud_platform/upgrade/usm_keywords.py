@@ -307,7 +307,7 @@ class USMKeywords(BaseKeyword):
             sudo (bool): flag to check if it needs to be run as sudo.
 
         Returns:
-            str: software deploy start output
+            str: software deploy activate output
         """
         timeout = self.usm_config.get_deploy_activate_timeout_sec()
         base_cmd = "software deploy activate"
@@ -403,3 +403,25 @@ class USMKeywords(BaseKeyword):
         order.extend(compute_names)
 
         return order
+
+    def software_deploy_complete(self, sudo: bool = False) -> str:
+        """
+        This method executed the command 'software deploy complete'
+
+        Args:
+            sudo (bool): flag to check if it needs to be run as sudo.
+
+        Returns:
+            str: software deploy complete output
+        """
+        timeout = self.usm_config.get_deploy_complete_timeout_sec()
+        base_cmd = "software deploy complete"
+        cmd = source_openrc(base_cmd)
+        if sudo:
+            output = self.ssh_connection.send_as_sudo(cmd, reconnect_timeout=timeout)
+        else:
+            output = self.ssh_connection.send(cmd, reconnect_timeout=timeout, get_pty=True)
+        self.validate_success_return_code(self.ssh_connection)
+        output = [line.strip() for line in output if line.strip()]
+        output = output[0] if output else ""
+        return output
