@@ -82,7 +82,7 @@ class DcmanagerKubeStrategyKeywords(BaseKeyword):
 
         output = self.ssh_connection.send(command)
         self.validate_success_return_code(self.ssh_connection)
-        self.wait_kube_upgrade(expected_status="complete")
+        self.wait_kube_upgrade(expected_status="complete", timeout=3600)
 
         return DcmanagerKubeStrategyStepShowOutput(output)
 
