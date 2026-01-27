@@ -15,6 +15,7 @@ from keywords.cloud_platform.dcmanager.dcmanager_subcloud_manager_keywords impor
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.cloud_platform.yaml.deployment_assets_yaml import DeploymentAssetsHandler
 from keywords.files.file_keywords import FileKeywords
+from keywords.cloud_platform.dcmanager.dcmanager_subcloud_show_keywords import DcManagerSubcloudShowKeywords
 
 
 def get_undeployed_subcloud_name(ssh_connection: SSHConnection) -> str:
@@ -48,6 +49,14 @@ def get_undeployed_subcloud_name(ssh_connection: SSHConnection) -> str:
             get_logger().log_test_case_step(f"Unmanage subcloud={subcloud_name}.")
             dcm_sc_manage_output = dcm_sc_manager_kw.get_dcmanager_subcloud_unmanage(subcloud_name, timeout=10)
             get_logger().log_info(f"The management state of the subcloud {subcloud_name} was changed to {dcm_sc_manage_output.get_dcmanager_subcloud_manage_object().get_management()}.")
+
+        # Delete any backups or prestaged data before deleting the subcloud.
+        release = DcManagerSubcloudShowKeywords(ssh_connection).get_dcmanager_subcloud_show(subcloud_name).get_dcmanager_subcloud_show_object().get_software_version()
+        local_backup_dir = f"/opt/platform-backup/{release}"
+        get_logger().log_info("Checking if prestage file exists, remove if it does.")
+        if FileKeywords(ssh_connection).file_exists(f"{local_backup_dir}/local_registry_filesystem.tgz"):
+            FileKeywords(ssh_connection).remove_file(local_backup_dir)
+
         # delete the subcloud.
         dcm_sc_del_kw = DcManagerSubcloudDeleteKeywords(ssh_connection)
         dcm_sc_del_kw.dcmanager_subcloud_delete(subcloud_name)
