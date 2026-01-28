@@ -37,7 +37,8 @@ class UnlockKpiBlocks:
                 "label": "SHUTDOWN PHASE",
                 "file": ["mtcAgent.log*", "daemon.log*"],
                 "start": "Info : {hostname} Unlock Action",
-                "stop": "info Stopped Service Management API Unit."
+                "stop": "info Stopped Service Management API Unit.",
+                "exclude_from_kpi": False
             },
             {
                 "label": "BLACKOUT PHASE",
@@ -67,7 +68,7 @@ class UnlockKpiBlocks:
                 "file": "daemon.log*",
                 "start": "Started Kubernetes Isolated CPU Plugin Daemon.",
                 "stop": "k8s-pod-recovery.service: Succeeded.",
-                "max_time_delta": 500
+                "max_time_delta": 500,
             }
         ]
 

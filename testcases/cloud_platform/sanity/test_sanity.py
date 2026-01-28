@@ -170,16 +170,18 @@ def test_lock_unlock_simplex():
 
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    
+    # Capture start time BEFORE lock operation
+    start_time_str = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+
     lock_success = SystemHostLockKeywords(ssh_connection).lock_host("controller-0")
     assert lock_success, "Controller was not locked successfully."
-
+    
     unlock_success = SystemHostLockKeywords(ssh_connection).unlock_host("controller-0")
     assert unlock_success, "Controller was not unlocked successfully."
 
     kpi_keywords = LogPatternKpiKeywords(ssh_connection)
-    start_time_str = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
 
-    
     get_logger().log_info("=== Calculating Unlock KPIs ===")
     results, csv_results = kpi_keywords.calculate_kpi(
         hostname="controller-0",
