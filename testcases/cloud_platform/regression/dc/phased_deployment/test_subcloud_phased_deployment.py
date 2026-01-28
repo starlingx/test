@@ -50,13 +50,6 @@ def get_undeployed_subcloud_name(ssh_connection: SSHConnection) -> str:
             dcm_sc_manage_output = dcm_sc_manager_kw.get_dcmanager_subcloud_unmanage(subcloud_name, timeout=10)
             get_logger().log_info(f"The management state of the subcloud {subcloud_name} was changed to {dcm_sc_manage_output.get_dcmanager_subcloud_manage_object().get_management()}.")
 
-        # Delete any backups or prestaged data before deleting the subcloud.
-        release = DcManagerSubcloudShowKeywords(ssh_connection).get_dcmanager_subcloud_show(subcloud_name).get_dcmanager_subcloud_show_object().get_software_version()
-        local_backup_dir = f"/opt/platform-backup/{release}"
-        get_logger().log_info("Checking if prestage file exists, remove if it does.")
-        if FileKeywords(ssh_connection).file_exists(f"{local_backup_dir}/local_registry_filesystem.tgz"):
-            FileKeywords(ssh_connection).remove_file(local_backup_dir)
-
         # delete the subcloud.
         dcm_sc_del_kw = DcManagerSubcloudDeleteKeywords(ssh_connection)
         dcm_sc_del_kw.dcmanager_subcloud_delete(subcloud_name)
@@ -193,6 +186,14 @@ def test_bootstrap_failure_replay():
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     subcloud_name = get_undeployed_subcloud_name(ssh_connection)
+
+    # Delete any backups or prestaged data before deleting the subcloud.
+    release = DcManagerSubcloudShowKeywords(ssh_connection).get_dcmanager_subcloud_show(subcloud_name).get_dcmanager_subcloud_show_object().get_software_version()
+    local_backup_dir = f"/opt/platform-backup/backups/{release}"
+    get_logger().log_info("Remove prestaged data dir if exists.")
+    subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
+    FileKeywords(subcloud_ssh).delete_folder_with_sudo(local_backup_dir)
+
     # Get the subcloud deployment assets
     deployment_assets_config = ConfigurationManager.get_deployment_assets_config()
     sc_assets = deployment_assets_config.get_subcloud_deployment_assets(subcloud_name)
