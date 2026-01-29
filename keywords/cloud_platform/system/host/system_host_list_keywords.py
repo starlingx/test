@@ -81,6 +81,18 @@ class SystemHostListKeywords(BaseKeyword):
 
         return storages
 
+    def get_workers(self) -> [SystemHostObject]:
+        """
+        Gets hosts with worker subfunction
+
+        Returns:
+            [SystemHostObject]: List of hosts with worker capability
+        """
+        system_host_output = self.get_system_host_with_extra_column(["subfunctions"])
+        workers = system_host_output.get_workers()
+
+        return workers
+
     def get_uptime(self, host_name: str) -> int:
         """
         Gets the uptime of the given host

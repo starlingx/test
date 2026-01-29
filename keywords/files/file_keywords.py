@@ -477,3 +477,22 @@ class FileKeywords(BaseKeyword):
         validate_equals_with_retry(get_remaining_space, expected_remaining_space, f"Remaining size is {get_remaining_space()}. Expected {expected_remaining_space}", timeout=5, polling_sleep_time=0.5)
         path_to_file = f"{dest_dir}/giant_test_file"
         return path_to_file
+
+    def validate_file_content(self, file_path: str, expected_lines: list[str]) -> bool:
+        """
+        Validates that file contains all expected lines.
+
+        Args:
+            file_path (str): Path to the file to validate.
+            expected_lines (list[str]): List of expected lines in the file.
+
+        Returns:
+            bool: True if all expected lines are present, False otherwise.
+        """
+        actual_content = self.read_file(file_path)
+        for expected_line in expected_lines:
+            found = any(expected_line in line.strip() for line in actual_content)
+            if not found:
+                get_logger().log_error(f"Expected line '{expected_line}' not found in {file_path}")
+                return False
+        return True

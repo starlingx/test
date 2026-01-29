@@ -172,6 +172,18 @@ class SystemHostOutput:
 
         return hosts
 
+    def get_workers(self) -> list[SystemHostObject]:
+        """
+        Gets hosts with worker subfunction
+
+        Returns:
+            list[SystemHostObject]: hosts with worker capability
+        """
+        hosts = [host for host in self.system_hosts if host.get_sub_functions() and "worker" in host.get_sub_functions()]
+        if len(hosts) == 0:
+            raise KeywordException("No hosts with worker subfunction were found")
+        return hosts
+
     @staticmethod
     def is_valid_output(value: dict) -> bool:
         """
