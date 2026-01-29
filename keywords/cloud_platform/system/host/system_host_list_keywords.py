@@ -57,6 +57,16 @@ class SystemHostListKeywords(BaseKeyword):
 
         return active_controller
 
+    def get_controllers(self) -> [SystemHostObject]:
+        """
+        Gets all controllers
+
+        Returns:
+            [SystemHostObject]: List of controller objects
+        """
+        system_host_output = self.get_system_host_with_extra_column(["capabilities"])
+        return system_host_output.get_controllers()
+
     def get_computes(self) -> [SystemHostObject]:
         """
         Gets the computes

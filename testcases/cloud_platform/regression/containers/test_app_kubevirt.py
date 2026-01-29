@@ -9,9 +9,13 @@ from keywords.cloud_platform.system.application.system_application_delete_keywor
 from keywords.cloud_platform.system.application.system_application_list_keywords import SystemApplicationListKeywords
 from keywords.cloud_platform.system.application.system_application_remove_keywords import SystemApplicationRemoveInput, SystemApplicationRemoveKeywords
 from keywords.cloud_platform.system.application.system_application_upload_keywords import SystemApplicationUploadInput, SystemApplicationUploadKeywords
+from keywords.cloud_platform.system.host.system_host_list_keywords import SystemHostListKeywords
+from keywords.files.file_keywords import FileKeywords
 from keywords.k8s.helm.kubectl_get_helm_keywords import KubectlGetHelmKeywords
 from keywords.k8s.pods.kubectl_get_pods_keywords import KubectlGetPodsKeywords
+from keywords.linux.ln.ln_keywords import LnKeywords
 from keywords.linux.ls.ls_keywords import LsKeywords
+from keywords.linux.which.which_keywords import WhichKeywords
 
 APP_NAME = "kubevirt-app"
 KUBEVIRT_NAMESPACE = "kubevirt"
@@ -23,6 +27,73 @@ KUBE_SYSTEM_NAMESPACE = "kube-system"
 # Expected pod name patterns
 KUBEVIRT_EXPECTED_PODS = ["virt-api", "virt-operator", "kubevirt-daemonset"]
 CDI_EXPECTED_PODS = ["cdi-apiserver", "cdi-deployment", "cdi-operator", "cdi-uploadproxy"]
+
+# For virtctl setup
+PATH_VARIABLE = "/home/sysadmin/bin"
+VIRTCTL_PATH = "/var/opt/kubevirt/virtctl"
+
+
+def setup_virtctl_on_controller(ssh_connection: SSHConnection) -> bool:
+    """Setup virtctl on a single controller.
+
+    Args:
+        ssh_connection (SSHConnection): SSH connection to controller.
+
+    Returns:
+        bool: True if virtctl setup successfully, False otherwise.
+    """
+    file_keywords = FileKeywords(ssh_connection)
+    file_keywords.create_directory(PATH_VARIABLE)
+
+    get_logger().log_info("Finding virtctl executable path")
+    ls_keywords = LsKeywords(ssh_connection)
+    actual_virtctl_path = ls_keywords.get_first_matching_file(VIRTCTL_PATH)
+
+    get_logger().log_info(f"Creating symbolic link to virtctl at {PATH_VARIABLE}/virtctl")
+    ln_keywords = LnKeywords(ssh_connection)
+    ln_keywords.create_symbolic_link_to_a_file(actual_virtctl_path, f"{PATH_VARIABLE}/virtctl")
+    ssh_connection.close()
+
+
+def setup_virtctl(ssh_connection: SSHConnection) -> None:
+    """Setup virtctl client executable to be accessible from sysadmin's PATH.
+
+    Args:
+        ssh_connection (SSHConnection): SSH connection to active controller.
+    """
+    system_host_list = SystemHostListKeywords(ssh_connection)
+    controllers = system_host_list.get_controllers()
+
+    # Create symbolic link to virtctl on all controllers
+    for controller in controllers:
+        controller_name = controller.get_host_name()
+        get_logger().log_info(f"Setting up virtctl on {controller_name}")
+        controller_ssh = LabConnectionKeywords().get_ssh_for_hostname(controller_name)
+        setup_virtctl_on_controller(controller_ssh)
+        ssh_connection.close()
+
+    get_logger().log_info("Validating virtctl is set up properly")
+    which_keywords = WhichKeywords(ssh_connection)
+    which_keywords.which_process("virtctl")
+
+
+def remove_virtctl(ssh_connection: SSHConnection) -> None:
+    """Remove virtctl client executable from sysadmin's PATH.
+
+    Args:
+        ssh_connection (SSHConnection): SSH connection to active controller.
+    """
+    get_logger().log_info("Removing virtctl from all controllers")
+    system_host_list = SystemHostListKeywords(ssh_connection)
+    controllers = system_host_list.get_controllers()
+
+    for controller in controllers:
+        controller_name = controller.get_host_name()
+        get_logger().log_info(f"Removing virtctl from {controller_name}")
+        controller_ssh = LabConnectionKeywords().get_ssh_for_hostname(controller_name)
+        file_keywords = FileKeywords(controller_ssh)
+        file_keywords.delete_file(f"{PATH_VARIABLE}/virtctl")
+        file_keywords.delete_directory(PATH_VARIABLE)
 
 
 def setup_kubevirt_environment(ssh_connection: SSHConnection) -> None:
@@ -47,8 +118,12 @@ def setup_kubevirt_environment(ssh_connection: SSHConnection) -> None:
     # Verify all kubevirt and cdi pods are running
     get_logger().log_info("Verifying kubevirt pods are running")
     kubectl_pods = KubectlGetPodsKeywords(ssh_connection)
-    kubectl_pods.wait_for_pods_to_reach_status(expected_status="Running", pod_names=KUBEVIRT_EXPECTED_PODS, namespace=KUBEVIRT_NAMESPACE, timeout=30)
     kubectl_pods.wait_for_pods_to_reach_status(expected_status="Running", pod_names=CDI_EXPECTED_PODS, namespace=CDI_NAMESPACE, timeout=30)
+    kubectl_pods.wait_for_pods_to_reach_status(expected_status="Running", pod_names=KUBEVIRT_EXPECTED_PODS, namespace=KUBEVIRT_NAMESPACE, timeout=30)
+
+    # setting up virtctl
+    get_logger().log_info("Setting up virtctl on all controllers")
+    setup_virtctl(ssh_connection)
 
 
 def verify_kubevirt_helmchart_removed(ssh_connection: SSHConnection) -> None:
@@ -75,7 +150,7 @@ def cleanup_kubevirt_environment(ssh_connection: SSHConnection) -> None:
     if system_app_list.is_app_present(APP_NAME):
         get_logger().log_info(f"Removing {APP_NAME} application")
         system_app_apply = SystemApplicationApplyKeywords(ssh_connection)
-        if system_app_apply.is_already_applied(APP_NAME):
+        if system_app_apply.is_applied_or_failed(APP_NAME):
             remove_input = SystemApplicationRemoveInput()
             remove_input.set_app_name(APP_NAME)
             system_app_remove = SystemApplicationRemoveKeywords(ssh_connection)
@@ -86,6 +161,8 @@ def cleanup_kubevirt_environment(ssh_connection: SSHConnection) -> None:
         delete_input.set_force_deletion(True)
         system_app_delete = SystemApplicationDeleteKeywords(ssh_connection)
         system_app_delete.get_system_application_delete(delete_input)
+        # remove virtctl
+        remove_virtctl(ssh_connection)
 
 
 @mark.p1
