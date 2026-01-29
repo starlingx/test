@@ -48,7 +48,7 @@ class SystemApplicationApplyKeywords(BaseKeyword):
         if wait_for_applied:
             # Tracks the execution of the command 'system application-apply' until its completion or a timeout.
             system_application_list_keywords = SystemApplicationListKeywords(self.ssh_connection)
-            system_application_list_keywords.validate_app_status(app_name, "applied", timeout, polling_sleep_time)
+            system_application_list_keywords.validate_app_status(app_name, "applied", timeout, polling_sleep_time, ["apply-failed"])
 
             # If the execution arrived here the status of the application is 'applied'.
             system_application_output.get_system_application_object().set_status("applied")
