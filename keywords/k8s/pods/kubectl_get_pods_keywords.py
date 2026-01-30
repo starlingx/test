@@ -38,15 +38,19 @@ class KubectlGetPodsKeywords(BaseKeyword):
         """
         arg_namespace = ""
 
+        arg_all_namespaces = ""
+
         arg_label = ""
 
         if namespace:
             arg_namespace = f"-n {namespace}"
+        else:
+            arg_all_namespaces = "--all-namespaces"
 
         if label:
             arg_label = f"-l {label}"
 
-        cmd = f"kubectl {arg_namespace} {arg_label} -o wide get pods"
+        cmd = f"kubectl {arg_namespace} {arg_label} -o wide get pods {arg_all_namespaces}"
 
         kubectl_get_pods_output = self.ssh_connection.send(self.k8s_config.export(cmd))
         self.validate_success_return_code(self.ssh_connection)
