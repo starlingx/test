@@ -45,8 +45,8 @@ class USMConfig:
         self.activation_timeout_sec = usm_dict.get("activation_timeout_sec", 3600)
         self.upgrade_arguments = usm_dict.get("upgrade_arguments", "")
         self.upload_poll_interval_sec = usm_dict.get("upload_poll_interval_sec", 30)
-        self.upload_patch_timeout_sec = usm_dict.get("upload_patch_timeout_sec", 1800)
-        self.upload_release_timeout_sec = usm_dict.get("upload_release_timeout_sec", 1800)
+        self.upload_patch_timeout_sec = usm_dict.get("upload_patch_timeout_sec", 6000)
+        self.upload_release_timeout_sec = usm_dict.get("upload_release_timeout_sec", 6000)
         self.precheck_timeout_sec = usm_dict.get("precheck_timeout_sec", 300)
         self.software_delete_timeout_sec = usm_dict.get("software_delete_timeout_sec", 300)
         self.deploy_delete_timeout_sec = usm_dict.get("deploy_delete_timeout_sec", 300)
@@ -513,6 +513,7 @@ class USMConfig:
             value (int): Maximum seconds to wait for software deploy start to complete.
         """
         self.deploy_start_timeout_sec = value
+
     def get_subcloud_group(self) -> str:
         """Get the subcloud group name.
 
