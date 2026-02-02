@@ -358,14 +358,15 @@ def test_rehome_duplex_subcloud(request):
     duplex_subcloud = dcm_sc_list_kw_origin.get_dcmanager_subcloud_list().get_healthy_subcloud_by_type(LabTypeEnum.DUPLEX.value)
     subcloud_name = duplex_subcloud.get_name()
 
+    subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
+
+    SystemHostSwactKeywords(subcloud_ssh).ensure_duplex_subcloud_c0_is_active(subcloud_name)
+
     # Gets the subcloud bootstrap and install values files
     get_logger().log_info(f"Getting deployment assets for subcloud {subcloud_name}")
     deployment_assets_config = ConfigurationManager.get_deployment_assets_config()
     subcloud_bootstrap_values = deployment_assets_config.get_subcloud_deployment_assets(subcloud_name).get_bootstrap_file()
     subcloud_install_values = deployment_assets_config.get_subcloud_deployment_assets(subcloud_name).get_install_file()
-
-    # All Validation before rehome operation
-    subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
 
     # Ensure OIDC app is installed before rehoming
     get_logger().log_info("Ensuring OIDC app is installed before rehoming")

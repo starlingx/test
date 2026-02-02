@@ -7,6 +7,7 @@ from keywords.cloud_platform.dcmanager.dcmanager_subcloud_list_keywords import D
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_prestage import DcmanagerSubcloudPrestage
 from keywords.cloud_platform.health.health_keywords import HealthKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
+from keywords.cloud_platform.system.host.system_host_swact_keywords import SystemHostSwactKeywords
 
 
 @mark.p0
@@ -19,6 +20,14 @@ def test_subcloud_prestage():
     dcm_sc_list_kw = DcManagerSubcloudListKeywords(ssh_connection)
     lowest_subcloud = dcm_sc_list_kw.get_dcmanager_subcloud_list().get_healthy_subcloud_with_lowest_id()
     sc_name = lowest_subcloud.get_name()
+
+    subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(sc_name)
+
+    SystemHostSwactKeywords(subcloud_ssh).ensure_duplex_subcloud_c0_is_active(sc_name)
+
+    # validate Healthy status
+    HealthKeywords(subcloud_ssh).validate_healty_cluster()
+
     # Gets the lowest subcloud sysadmin password
     lab_config = ConfigurationManager.get_lab_config().get_subcloud(sc_name)
     syspass = lab_config.get_admin_credentials().get_password()
@@ -31,5 +40,4 @@ def test_subcloud_prestage():
     validate_equals(obj_subcloud.get_prestage_status(), "complete", f"subcloud {sc_name} successfully.")
 
     # validate Healthy status
-    subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(sc_name)
     HealthKeywords(subcloud_ssh).validate_healty_cluster()

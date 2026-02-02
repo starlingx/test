@@ -11,6 +11,7 @@ from keywords.cloud_platform.dcmanager.dcmanager_subcloud_show_keywords import D
 from keywords.cloud_platform.dcmanager.dcmanager_sw_deploy_strategy_keywords import DcmanagerSwDeployStrategy
 from keywords.cloud_platform.health.health_keywords import HealthKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
+from keywords.cloud_platform.system.host.system_host_swact_keywords import SystemHostSwactKeywords
 from keywords.cloud_platform.upgrade.software_list_keywords import SoftwareListKeywords
 from keywords.files.file_keywords import FileKeywords
 
@@ -27,6 +28,8 @@ def test_subcloud_prestage_with_images():
     lowest_subcloud = dcm_sc_list_kw.get_dcmanager_subcloud_list().get_lower_id_async_subcloud()
     subcloud_name = lowest_subcloud.get_name()
     subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
+
+    SystemHostSwactKeywords(subcloud_ssh).ensure_duplex_subcloud_c0_is_active(subcloud_name)
 
     # Gets the lowest subcloud sysadmin password
     lab_config = ConfigurationManager.get_lab_config().get_subcloud(subcloud_name)
