@@ -9,6 +9,8 @@ class DcManagerSubcloudListBackupEnum(Enum):
     """
 
     NONE = 'None'  # No recent backup was performed.
-    COMPLETED = 'backup-completed'  # The backup process completed successfully.
+    COMPLETE_LOCAL = 'complete-local'  # The backup process completed successfully locally.
+    COMPLETE_CENTRAL = 'complete-central'  # The backup process completed successfully on central cloud.
     FAILED = 'backup-failed'  # The backup process failed.
     IN_PROGRESS = 'backup-in-progress'  # The backup process is currently ongoing.
+    UNKNOWN = 'unknown' # A backup was made and removed.

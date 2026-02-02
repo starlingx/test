@@ -24,7 +24,7 @@ def test_subcloud_prestage_with_images():
 
     # Gets the lowest subcloud (the subcloud with the lowest id).
     dcm_sc_list_kw = DcManagerSubcloudListKeywords(central_ssh)
-    lowest_subcloud = dcm_sc_list_kw.get_dcmanager_subcloud_list().get_lower_id_async_subcloud()
+    lowest_subcloud = dcm_sc_list_kw.get_dcmanager_subcloud_list().get_specific_subcloud_with_lowest_id(management="out-of-sync")
     subcloud_name = lowest_subcloud.get_name()
     subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
 

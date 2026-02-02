@@ -29,7 +29,7 @@ def test_verify_backup_on_central_inactive_load(request):
 
     # Gets the lowest subcloud (the subcloud with the lowest id).
     dcmanager_subcloud_list_keywords = DcManagerSubcloudListKeywords(central_ssh)
-    lowest_subcloud = dcmanager_subcloud_list_keywords.get_dcmanager_subcloud_list().get_lower_id_async_subcloud()
+    lowest_subcloud = dcmanager_subcloud_list_keywords.get_dcmanager_subcloud_list().get_specific_subcloud_with_lowest_id(sync_status="out-of-sync")
     subcloud_name = lowest_subcloud.get_name()
     release = DcManagerSubcloudShowKeywords(central_ssh).get_dcmanager_subcloud_show(subcloud_name).get_dcmanager_subcloud_show_object().get_software_version()
 
@@ -80,7 +80,7 @@ def test_verify_backup_local_inactive_load(request):
 
     # Gets the lowest subcloud (the subcloud with the lowest id).
     dcmanager_subcloud_list_keywords = DcManagerSubcloudListKeywords(central_ssh)
-    lowest_subcloud = dcmanager_subcloud_list_keywords.get_dcmanager_subcloud_list().get_lower_id_async_subcloud()
+    lowest_subcloud = dcmanager_subcloud_list_keywords.get_dcmanager_subcloud_list().get_specific_subcloud_with_lowest_id(sync_status="out-of-sync")
     subcloud_name = lowest_subcloud.get_name()
     subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
     release = DcManagerSubcloudShowKeywords(central_ssh).get_dcmanager_subcloud_show(subcloud_name).get_dcmanager_subcloud_show_object().get_software_version()
@@ -141,7 +141,7 @@ def test_c0_verify_backup_on_central_inactive_load(request):
 
     # Gets the lowest subcloud (the subcloud with the lowest id).
     dcmanager_subcloud_list_keywords = DcManagerSubcloudListKeywords(central_ssh)
-    lowest_subcloud = dcmanager_subcloud_list_keywords.get_dcmanager_subcloud_list().get_lower_id_async_subcloud()
+    lowest_subcloud = dcmanager_subcloud_list_keywords.get_dcmanager_subcloud_list().get_specific_subcloud_with_lowest_id(sync_status="out-of-sync")
     subcloud_name = lowest_subcloud.get_name()
     release = DcManagerSubcloudShowKeywords(central_ssh).get_dcmanager_subcloud_show(subcloud_name).get_dcmanager_subcloud_show_object().get_software_version()
 
@@ -199,7 +199,7 @@ def test_c1_verify_backup_on_central_inactive_load(request):
 
     # Gets the lowest subcloud (the subcloud with the lowest id).
     dcmanager_subcloud_list_keywords = DcManagerSubcloudListKeywords(central_ssh)
-    lowest_subcloud = dcmanager_subcloud_list_keywords.get_dcmanager_subcloud_list().get_lower_id_async_subcloud()
+    lowest_subcloud = dcmanager_subcloud_list_keywords.get_dcmanager_subcloud_list().get_specific_subcloud_with_lowest_id(sync_status="out-of-sync")
     subcloud_name = lowest_subcloud.get_name()
     release = DcManagerSubcloudShowKeywords(central_ssh).get_dcmanager_subcloud_show(subcloud_name).get_dcmanager_subcloud_show_object().get_software_version()
 
@@ -257,7 +257,7 @@ def test_c1_verify_backup_local_inactive_load(request):
 
     # Gets the lowest subcloud (the subcloud with the lowest id).
     dcmanager_subcloud_list_keywords = DcManagerSubcloudListKeywords(central_ssh)
-    lowest_subcloud = dcmanager_subcloud_list_keywords.get_dcmanager_subcloud_list().get_lower_id_async_subcloud()
+    lowest_subcloud = dcmanager_subcloud_list_keywords.get_dcmanager_subcloud_list().get_specific_subcloud_with_lowest_id(sync_status="out-of-sync")
     subcloud_name = lowest_subcloud.get_name()
     subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
     release = DcManagerSubcloudShowKeywords(central_ssh).get_dcmanager_subcloud_show(subcloud_name).get_dcmanager_subcloud_show_object().get_software_version()

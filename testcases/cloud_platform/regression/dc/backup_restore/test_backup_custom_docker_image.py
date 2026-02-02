@@ -44,8 +44,9 @@ def test_verify_backup_with_custom_docker_image(request):
     local_registry = docker_config.get_local_registry()
     local_default_backup_path = "/opt/platform-backup/backups"
     central_ssh = LabConnectionKeywords().get_active_controller_ssh()
-    subcloud_list = DcManagerSubcloudListKeywords(central_ssh)
-    subcloud_name = subcloud_list.get_dcmanager_subcloud_list().get_healthy_subcloud_with_lowest_id().get_name()
+    dcmanager_subcloud_list_keywords = DcManagerSubcloudListKeywords(central_ssh)
+    lowest_subcloud = dcmanager_subcloud_list_keywords.get_dcmanager_subcloud_list().get_specific_subcloud_with_lowest_id()
+    subcloud_name = lowest_subcloud.get_name()
     subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
     lab_config = ConfigurationManager.get_lab_config().get_subcloud(subcloud_name)
     subcloud_password = lab_config.get_admin_credentials().get_password()
@@ -77,4 +78,4 @@ def test_verify_backup_with_custom_docker_image(request):
     img_tarball = [file for file in files_in_bckp_dir if "image_registry" in file][0]
 
     matches = FileKeywords(subcloud_ssh).find_in_tgz(f"{local_default_backup_path}/{release}/{img_tarball}", "repositories/hello-world")
-    validate_greater_than(matches, 0, f"Validate that were found mathces for hello-world in {img_tarball} tarball.")
+    validate_greater_than(matches, 0, f"Validate that were found matches for hello-world in {img_tarball} tarball.")

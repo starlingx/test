@@ -77,6 +77,21 @@ class DcManagerSubcloudListObjectFilter:
         out_of_sync_filter.set_sync(DcManagerSubcloudListSyncEnum.OUT_OF_SYNC)
         return out_of_sync_filter
 
+    @staticmethod
+    def get_specific_subcloud_filter(management, availability, deploy_status, sync_status, backup_status, prestaged):
+        desired_filter = DcManagerSubcloudListObjectFilter()
+
+        desired_filter.set_management(DcManagerSubcloudListManagementEnum(management))
+        desired_filter.set_availability(DcManagerSubcloudListAvailabilityEnum(availability))
+        desired_filter.set_deploy_status(DcManagerSubcloudListDeployEnum(deploy_status))
+        desired_filter.set_sync(DcManagerSubcloudListSyncEnum(sync_status))
+        if backup_status:
+            desired_filter.set_backup_status(DcManagerSubcloudListBackupEnum(backup_status))
+        if prestaged:
+            desired_filter.set_prestage_status(DcManagerSubcloudListPrestageEnum(prestaged))
+
+        return desired_filter
+
     def get_id(self) -> str:
         """
         Getter for the filter by Subcloud Id.

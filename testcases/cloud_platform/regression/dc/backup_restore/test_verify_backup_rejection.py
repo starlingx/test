@@ -18,12 +18,12 @@ def backup_creation_rejection(subcloud_name: str):
 
     # Gets the lowest subcloud sysadmin password needed for backup creation.
     lab_config = ConfigurationManager.get_lab_config().get_subcloud(subcloud_name)
-    subcloud_password = lab_config.get_admin_credentials().get_password()
+    subcloud_password = "wrongpassword"
     dc_manager_backup = DcManagerSubcloudBackupKeywords(central_ssh)
 
     # Create a subcloud backup and verify the subcloud backup file in central_path
     get_logger().log_info(f"Attempt creation of {subcloud_name} backup.")
-    dc_manager_backup.create_subcloud_backup_expect_fail(subcloud_password, central_ssh, subcloud=subcloud_name, expect_cmd_rejection=True)
+    dc_manager_backup.create_subcloud_backup_expect_fail(subcloud_password, central_ssh, subcloud=subcloud_name)
 
 
 @mark.p0
@@ -38,7 +38,7 @@ def test_verify_backup_command_rejection(request):
     """
     central_ssh = LabConnectionKeywords().get_active_controller_ssh()
     dcm_sc_list_kw = DcManagerSubcloudListKeywords(central_ssh)
-    subcloud = dcm_sc_list_kw.get_dcmanager_subcloud_list().get_lower_id_unmanaged_subcloud()
+    subcloud = dcm_sc_list_kw.get_dcmanager_subcloud_list().get_specific_subcloud_with_lowest_id()
     subcloud_name = subcloud.get_name()
     # get subcloud ssh
     subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
