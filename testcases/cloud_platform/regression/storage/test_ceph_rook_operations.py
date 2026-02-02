@@ -19,7 +19,7 @@ from keywords.cloud_platform.system.storage.system_storage_backend_keywords impo
 
 
 @mark.p2
-@mark.lab_rook_ceph
+@mark.lab_has_rook_ceph
 def test_ceph_rook_host_fs_operation():
     """
     Test case: [TC_34893] host-fs cmd operations testing. This TC was migrated from cgcs.
@@ -97,7 +97,7 @@ def test_ceph_rook_host_fs_operation():
 
 
 @mark.p2
-@mark.lab_rook_ceph
+@mark.lab_has_rook_ceph
 def test_ceph_rook_capabilities_testing_open_model(request):
     """
     Test case: [TC_34918] WRCPPV-1015 ceph-rook backend capabilities testing for open model
@@ -225,7 +225,7 @@ def test_ceph_rook_capabilities_testing_open_model(request):
         validate_equals(pool_update, True, "Replicated min_size is updated.")
 
 
-@mark.lab_rook_ceph
+@mark.lab_has_rook_ceph
 def test_lock_unlock_multiple_hosts():
     """
     Lock and unlock multiple nodes on a standard lab
@@ -259,7 +259,7 @@ def test_lock_unlock_multiple_hosts():
 
 
 @mark.p2
-@mark.lab_rook_ceph
+@mark.lab_has_rook_ceph
 @mark.lab_is_simplex
 def test_ceph_rook_backend_deployment_model_operation_sx():
     """
@@ -315,7 +315,7 @@ def test_ceph_rook_backend_deployment_model_operation_sx():
 
 
 @mark.p2
-@mark.lab_rook_ceph
+@mark.lab_has_rook_ceph
 @mark.lab_is_duplex
 def test_ceph_rook_backend_deployment_model_operation_dx():
     """
@@ -390,7 +390,7 @@ def test_ceph_rook_backend_deployment_model_operation_dx():
 
 
 @mark.p2
-@mark.lab_rook_ceph
+@mark.lab_has_rook_ceph
 def test_ceph_rook_backend_services_operation():
     """
     Test case: ceph-rook backend services testing.
@@ -475,7 +475,7 @@ def test_ceph_rook_backend_services_operation():
 
 
 @mark.p2
-@mark.lab_rook_ceph
+@mark.lab_has_rook_ceph
 def test_ceph_rook_backend_delete_negative_testing():
     """
     Test case: ceph-rook backend delete cmd testing.
@@ -507,7 +507,7 @@ def test_ceph_rook_backend_delete_negative_testing():
 
 
 @mark.p2
-@mark.lab_rook_ceph
+@mark.lab_has_rook_ceph
 def test_rook_ceph_applying_host_lock_reject_testing():
     """
     Test case: rook-ceph app applying host-lock reject testing (SX).
@@ -544,7 +544,7 @@ def test_rook_ceph_applying_host_lock_reject_testing():
     SystemApplicationListKeywords(ssh_connection).validate_app_status_in_list(app_name, app_status_list, timeout=360, polling_sleep_time=10)
 
 
-@mark.lab_rook_ceph
+@mark.lab_has_rook_ceph
 @mark.lab_has_standby_controller
 def test_lock_unlock_then_swact_and_reverse_cycle():
     """
@@ -606,7 +606,7 @@ def test_lock_unlock_then_swact_and_reverse_cycle():
     ceph_status_keywords.wait_for_ceph_health_status(expect_health_status=True)
 
 
-@mark.lab_rook_ceph
+@mark.lab_has_rook_ceph
 @mark.lab_has_standby_controller
 def test_rook_ceph_swact():
     """
@@ -648,7 +648,7 @@ def test_rook_ceph_swact():
     ceph_status_keywords.wait_for_ceph_health_status(expect_health_status=True)
 
 
-@mark.lab_rook_ceph
+@mark.lab_has_rook_ceph
 @mark.lab_has_standby_controller
 def test_reboot_active_controller_rook_ceph():
     """
@@ -686,7 +686,7 @@ def test_reboot_active_controller_rook_ceph():
 
 
 @mark.p2
-@mark.lab_rook_ceph
+@mark.lab_has_rook_ceph
 @mark.lab_has_min_3_compute
 def test_monitor_operations_rook_ceph():
     """
@@ -767,7 +767,7 @@ def test_monitor_operations_rook_ceph():
 
 
 @mark.p2
-@mark.lab_rook_ceph
+@mark.lab_has_rook_ceph
 def test_helm_overrides_operations():
     """
     Test case: test helm overrides operations

@@ -664,6 +664,17 @@ def is_rook_ceph() -> bool:
     return backends.is_backend_configured("ceph-rook")
 
 
+def is_ceph() -> bool:
+    """
+    Checks if the lab is using Ceph.
+
+    Returns:
+        bool: True if the lab is using Ceph, False otherwise.
+    """
+    backends = GetStorageBackendKeywords().get_storage_backends()
+    return backends.is_backend_configured("ceph")
+
+
 def write_config(lab_config: LabConfig) -> None:
     """
     Writes the new config out to the current config
@@ -871,6 +882,10 @@ if __name__ == "__main__":
     # check if the lab is using rook ceph
     if is_rook_ceph():
         lab_config.add_lab_capability("lab_has_rook_ceph")
+
+    # check if the lab is using ceph
+    if is_ceph():
+        lab_config.add_lab_capability("lab_has_ceph")
 
     if ConfigurationManager.get_database_config().use_database():
         # insert lab into db if it doesn't already exist

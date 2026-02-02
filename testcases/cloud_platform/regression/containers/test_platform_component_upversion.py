@@ -11,7 +11,7 @@ from keywords.k8s.helm.kubectl_get_helm_release_keywords import KubectlGetHelmRe
 
 
 @mark.p3
-@mark.lab_ceph
+@mark.lab_has_ceph
 def test_kubectl_delete_helm_release(request: FixtureRequest):
     """
     Verify that if helm release is deleted the helm release does not come back
