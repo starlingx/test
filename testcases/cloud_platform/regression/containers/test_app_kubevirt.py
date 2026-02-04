@@ -2,7 +2,7 @@ from pytest import mark
 
 from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
-from framework.validation.validation import validate_none
+from framework.validation.validation import validate_equals, validate_none
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.cloud_platform.system.application.system_application_apply_keywords import SystemApplicationApplyKeywords
 from keywords.cloud_platform.system.application.system_application_delete_keywords import SystemApplicationDeleteInput, SystemApplicationDeleteKeywords
@@ -10,6 +10,7 @@ from keywords.cloud_platform.system.application.system_application_list_keywords
 from keywords.cloud_platform.system.application.system_application_remove_keywords import SystemApplicationRemoveInput, SystemApplicationRemoveKeywords
 from keywords.cloud_platform.system.application.system_application_upload_keywords import SystemApplicationUploadInput, SystemApplicationUploadKeywords
 from keywords.cloud_platform.system.host.system_host_list_keywords import SystemHostListKeywords
+from keywords.cloud_platform.system.host.system_host_reboot_keywords import SystemHostRebootKeywords
 from keywords.files.file_keywords import FileKeywords
 from keywords.k8s.helm.kubectl_get_helm_keywords import KubectlGetHelmKeywords
 from keywords.k8s.pods.kubectl_get_pods_keywords import KubectlGetPodsKeywords
@@ -171,8 +172,12 @@ def test_kubevirt_upload_apply_delete(request):
 
     Steps:
         - Cleanup kubevirt application
-        - Upload kubevirt application
-        - Apply the application
+        - Upload and Apply kubevirt application
+        - Reapply the application
+        - Verify pods are running
+        - Reboot the controller
+        - Verify application is in applied state
+        - Verify pods are running
         - Remove and delete the application
         - Verify kubevirt HelmChart is removed
     """
@@ -189,6 +194,33 @@ def test_kubevirt_upload_apply_delete(request):
 
     get_logger().log_test_case_step("Setting up kubevirt environment")
     setup_kubevirt_environment(ssh_connection)
+
+    get_logger().log_test_case_step(f"Reapplying {APP_NAME} application")
+    system_app_apply = SystemApplicationApplyKeywords(ssh_connection)
+    system_app_apply.system_application_apply(APP_NAME)
+
+    get_logger().log_test_case_step("Verifying kubevirt pods are running after reapply")
+    kubectl_pods = KubectlGetPodsKeywords(ssh_connection)
+    kubectl_pods.wait_for_pods_to_reach_status(expected_status="Running", pod_names=CDI_EXPECTED_PODS, namespace=CDI_NAMESPACE, timeout=30)
+    kubectl_pods.wait_for_pods_to_reach_status(expected_status="Running", pod_names=KUBEVIRT_EXPECTED_PODS, namespace=KUBEVIRT_NAMESPACE, timeout=30)
+
+    system_host_list = SystemHostListKeywords(ssh_connection)
+    active_controller = system_host_list.get_active_controller().get_host_name()
+
+    get_logger().log_test_case_step(f"Rebooting controller {active_controller}")
+    pre_uptime = system_host_list.get_uptime(active_controller)
+    ssh_connection.send_as_sudo("reboot -f")
+    system_host_reboot = SystemHostRebootKeywords(ssh_connection)
+    reboot_success = system_host_reboot.wait_for_force_reboot(active_controller, pre_uptime)
+    validate_equals(reboot_success, True, "Controller should reboot successfully")
+
+    get_logger().log_test_case_step(f"Verifying {APP_NAME} is in applied state after reboot")
+    system_app_list = SystemApplicationListKeywords(ssh_connection)
+    system_app_list.validate_app_status(APP_NAME, "applied", timeout=30)
+
+    get_logger().log_test_case_step("Verifying kubevirt pods are running after reboot")
+    kubectl_pods.wait_for_pods_to_reach_status(expected_status="Running", pod_names=CDI_EXPECTED_PODS, namespace=CDI_NAMESPACE, timeout=30)
+    kubectl_pods.wait_for_pods_to_reach_status(expected_status="Running", pod_names=KUBEVIRT_EXPECTED_PODS, namespace=KUBEVIRT_NAMESPACE, timeout=30)
 
     get_logger().log_test_case_step("Removing kubevirt application")
     cleanup_kubevirt_environment(ssh_connection)
