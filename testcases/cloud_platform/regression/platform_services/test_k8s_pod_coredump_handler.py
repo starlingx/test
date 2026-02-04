@@ -161,8 +161,8 @@ def test_verify_coredump_using_default_handling(request: FixtureRequest):
     ssh_connection = lab_connection_keywords.get_active_controller_ssh()
 
     # Copy yaml file to host
-    file_keywords = FileKeywords(ssh_connection)
-    file_keywords.upload_file(get_stx_resource_path(f"{K8S_COREDUMP_YAML_DIR}/{filename}"), f"/home/sysadmin/{filename}")
+    file_keywords_active_controller = FileKeywords(ssh_connection)
+    file_keywords_active_controller.upload_file(get_stx_resource_path(f"{K8S_COREDUMP_YAML_DIR}/{filename}"), f"/home/sysadmin/{filename}")
 
     # Create pod from yaml and wait for 'Running' status
     kubectl_create_pods_keyword = KubectlCreatePodsKeywords(ssh_connection)
@@ -173,6 +173,7 @@ def test_verify_coredump_using_default_handling(request: FixtureRequest):
     def cleanup_pod():
         get_logger().log_teardown_step("Delete pod")
         KubectlDeletePodsKeywords(ssh_connection).cleanup_pod(POD_NAME)
+        file_keywords_active_controller.delete_file(f"/home/sysadmin/{filename}")
 
     request.addfinalizer(cleanup_pod)
 
@@ -181,20 +182,23 @@ def test_verify_coredump_using_default_handling(request: FixtureRequest):
     kubectl_exec = KubectlExecInPodsKeywords(ssh_connection)
     kubectl_exec.run_pod_exec_cmd(POD_NAME, SLEEP_PROCESS_CREATE_CMDLINE)
     kubectl_exec.run_pod_exec_cmd(POD_NAME, SLEEP_PROCESS_KILL_CMDLINE)
-    kubectl_pods.wait_for_pod_status(POD_NAME, "Running")
-    output = kubectl_exec.run_pod_exec_cmd(POD_NAME, f"ls coredump | grep {coredump_file}")
-    validate_not_none(output, "Coredump file was generated on pod")
 
     # Verify the coredump exists on host
-    get_logger().log_test_case_step("Check coredump file on host where pod is running")
-    validate_equals(file_keywords.validate_file_exists_with_sudo(f"{POD_COREDUMP_PATH_ON_HOST}/{coredump_file}"), True, "Coredump file was generated on host")
+    kubectl_pods.wait_for_pod_status(POD_NAME, "Running")
+    pods = KubectlGetPodsKeywords(ssh_connection).get_pods_all_namespaces()
+    pod_host = pods.get_pod(POD_NAME).get_node()
+    output = kubectl_exec.run_pod_exec_cmd(POD_NAME, f"ls coredump | grep {coredump_file}")
+    validate_not_none(output, "Coredump file was generated on pod")
+    get_logger().log_test_case_step(f"Check coredump file on host ({pod_host}) where pod is running")
+    ssh_pod_host_connection = lab_connection_keywords.get_ssh_for_hostname(pod_host)
+    file_keywords = FileKeywords(ssh_pod_host_connection)
+    validate_equals(file_keywords.validate_file_exists_with_sudo(f"{POD_COREDUMP_PATH_ON_HOST}/{coredump_file}"), True, f"Coredump file was generated on host {pod_host}")
 
-    def teardown():
-        get_logger().log_teardown_step("Remove files")
+    def remove_coredump():
+        get_logger().log_teardown_step("Remove coredump")
         file_keywords.delete_file(f"{POD_COREDUMP_PATH_ON_HOST}/{coredump_file}")
-        file_keywords.delete_file(f"/home/sysadmin/{filename}")
 
-    request.addfinalizer(teardown)
+    request.addfinalizer(remove_coredump)
 
 
 @mark.p0
@@ -218,8 +222,8 @@ def test_verify_coredump_using_full_config_annotations(request: FixtureRequest):
     ssh_connection = lab_connection_keywords.get_active_controller_ssh()
 
     # Copy yaml file to host
-    file_keywords = FileKeywords(ssh_connection)
-    file_keywords.upload_file(get_stx_resource_path(f"{K8S_COREDUMP_YAML_DIR}/{filename}"), f"/home/sysadmin/{filename}")
+    file_keywords_active_controller = FileKeywords(ssh_connection)
+    file_keywords_active_controller.upload_file(get_stx_resource_path(f"{K8S_COREDUMP_YAML_DIR}/{filename}"), f"/home/sysadmin/{filename}")
 
     # Create pod from yaml and wait for 'Running' status
     kubectl_create_pods_keyword = KubectlCreatePodsKeywords(ssh_connection)
@@ -230,6 +234,7 @@ def test_verify_coredump_using_full_config_annotations(request: FixtureRequest):
     def cleanup_pod():
         get_logger().log_teardown_step("Delete pod")
         KubectlDeletePodsKeywords(ssh_connection).cleanup_pod(POD_NAME)
+        file_keywords_active_controller.delete_file(f"/home/sysadmin/{filename}")
 
     request.addfinalizer(cleanup_pod)
 
@@ -238,20 +243,23 @@ def test_verify_coredump_using_full_config_annotations(request: FixtureRequest):
     kubectl_exec = KubectlExecInPodsKeywords(ssh_connection)
     kubectl_exec.run_pod_exec_cmd(POD_NAME, SLEEP_PROCESS_CREATE_CMDLINE)
     kubectl_exec.run_pod_exec_cmd(POD_NAME, SLEEP_PROCESS_KILL_CMDLINE)
-    kubectl_pods.wait_for_pod_status(POD_NAME, "Running")
-    output = kubectl_exec.run_pod_exec_cmd(POD_NAME, f"ls coredump | grep {coredump_file}")
-    validate_not_none(output, "Coredump file was generated on pod")
 
     # Verify the coredump exists on host
-    get_logger().log_test_case_step("Check coredump file on host where pod is running")
+    kubectl_pods.wait_for_pod_status(POD_NAME, "Running")
+    pods = KubectlGetPodsKeywords(ssh_connection).get_pods_all_namespaces()
+    pod_host = pods.get_pod(POD_NAME).get_node()
+    output = kubectl_exec.run_pod_exec_cmd(POD_NAME, f"ls coredump | grep {coredump_file}")
+    validate_not_none(output, "Coredump file was generated on pod")
+    get_logger().log_test_case_step(f"Check coredump file on host ({pod_host}) where pod is running")
+    ssh_pod_host_connection = lab_connection_keywords.get_ssh_for_hostname(pod_host)
+    file_keywords = FileKeywords(ssh_pod_host_connection)
     validate_equals(file_keywords.validate_file_exists_with_sudo(f"{POD_COREDUMP_PATH_ON_HOST}/{coredump_file}"), True, "Coredump file was generated on host")
 
-    def teardown():
-        get_logger().log_teardown_step("Remove files")
+    def remove_coredump():
+        get_logger().log_teardown_step("Remove coredump")
         file_keywords.delete_file(f"{POD_COREDUMP_PATH_ON_HOST}/{coredump_file}")
-        file_keywords.delete_file(f"/home/sysadmin/{filename}")
 
-    request.addfinalizer(teardown)
+    request.addfinalizer(remove_coredump)
 
 
 @mark.p1
@@ -275,8 +283,8 @@ def test_verify_coredump_using_minimal_config_annotations(request: FixtureReques
     ssh_connection = lab_connection_keywords.get_active_controller_ssh()
 
     # Copy yaml file to host
-    file_keywords = FileKeywords(ssh_connection)
-    file_keywords.upload_file(get_stx_resource_path(f"{K8S_COREDUMP_YAML_DIR}/{filename}"), f"/home/sysadmin/{filename}")
+    file_keywords_active_controller = FileKeywords(ssh_connection)
+    file_keywords_active_controller.upload_file(get_stx_resource_path(f"{K8S_COREDUMP_YAML_DIR}/{filename}"), f"/home/sysadmin/{filename}")
 
     # Create pod from yaml and wait for 'Running' status
     kubectl_create_pods_keyword = KubectlCreatePodsKeywords(ssh_connection)
@@ -287,6 +295,7 @@ def test_verify_coredump_using_minimal_config_annotations(request: FixtureReques
     def cleanup_pod():
         get_logger().log_teardown_step("Delete pod")
         KubectlDeletePodsKeywords(ssh_connection).cleanup_pod(POD_NAME)
+        file_keywords_active_controller.delete_file(f"/home/sysadmin/{filename}")
 
     request.addfinalizer(cleanup_pod)
 
@@ -295,17 +304,20 @@ def test_verify_coredump_using_minimal_config_annotations(request: FixtureReques
     kubectl_exec = KubectlExecInPodsKeywords(ssh_connection)
     kubectl_exec.run_pod_exec_cmd(POD_NAME, SLEEP_PROCESS_CREATE_CMDLINE)
     kubectl_exec.run_pod_exec_cmd(POD_NAME, SLEEP_PROCESS_KILL_CMDLINE)
-    kubectl_pods.wait_for_pod_status(POD_NAME, "Running")
-    output = kubectl_exec.run_pod_exec_cmd(POD_NAME, f"ls coredump | grep {coredump_file}")
-    validate_not_none(output, "Coredump file was generated on pod")
 
     # Verify the coredump exists on host
-    get_logger().log_test_case_step("Check coredump file on host where pod is running")
+    kubectl_pods.wait_for_pod_status(POD_NAME, "Running")
+    pods = KubectlGetPodsKeywords(ssh_connection).get_pods_all_namespaces()
+    pod_host = pods.get_pod(POD_NAME).get_node()
+    output = kubectl_exec.run_pod_exec_cmd(POD_NAME, f"ls coredump | grep {coredump_file}")
+    validate_not_none(output, "Coredump file was generated on pod")
+    get_logger().log_test_case_step(f"Check coredump file on host ({pod_host}) where pod is running")
+    ssh_pod_host_connection = lab_connection_keywords.get_ssh_for_hostname(pod_host)
+    file_keywords = FileKeywords(ssh_pod_host_connection)
     validate_equals(file_keywords.validate_file_exists_with_sudo(f"{POD_COREDUMP_PATH_ON_HOST}/{coredump_file}"), True, "Coredump file was generated on host")
 
-    def teardown():
-        get_logger().log_teardown_step("Remove files")
+    def remove_coredump():
+        get_logger().log_teardown_step("Remove coredump")
         file_keywords.delete_file(f"{POD_COREDUMP_PATH_ON_HOST}/{coredump_file}")
-        file_keywords.delete_file(f"/home/sysadmin/{filename}")
 
-    request.addfinalizer(teardown)
+    request.addfinalizer(remove_coredump)
