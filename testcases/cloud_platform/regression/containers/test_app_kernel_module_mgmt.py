@@ -7,7 +7,7 @@ from config.docker.objects.docker_config import DockerConfig
 from framework.logging.automation_logger import get_logger
 from framework.resources.resource_finder import get_stx_resource_path
 from framework.ssh.ssh_connection import SSHConnection
-from framework.validation.validation import validate_none
+from framework.validation.validation import validate_none, validate_not_none
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.cloud_platform.system.application.system_application_apply_keywords import SystemApplicationApplyKeywords
 from keywords.cloud_platform.system.application.system_application_delete_keywords import SystemApplicationDeleteInput, SystemApplicationDeleteKeywords
@@ -18,6 +18,7 @@ from keywords.cloud_platform.system.helm.system_helm_override_keywords import Sy
 from keywords.files.file_keywords import FileKeywords
 from keywords.files.yaml_keywords import YamlKeywords
 from keywords.k8s.helm.kubectl_get_helm_keywords import KubectlGetHelmKeywords
+from keywords.k8s.helm.kubectl_get_helm_release_keywords import KubectlGetHelmReleaseKeywords
 from keywords.k8s.pods.kubectl_get_pods_keywords import KubectlGetPodsKeywords
 from keywords.linux.ls.ls_keywords import LsKeywords
 
@@ -108,7 +109,41 @@ def setup_kernel_module_management_environment(ssh_connection: SSHConnection, do
     kubectl_pods.wait_for_pods_to_reach_status(expected_status="Running", pod_names=KMM_EXPECTED_PODS, namespace=NAMESPACE, timeout=30)
 
 
-def verify_kernel_module_manager_helmchart_removed(ssh_connection: SSHConnection) -> None:
+def verify_kernel_module_management_helm_deployed(ssh_connection: SSHConnection) -> None:
+    """Verify kernel module management helm chart is deployed.
+
+    Args:
+        ssh_connection (SSHConnection): SSH connection to active controller.
+    """
+    get_logger().log_info("Verifying kernel module management helm chart is deployed")
+    kubectl_helm_release = KubectlGetHelmReleaseKeywords(ssh_connection)
+    kubectl_helm_release.validate_helm_release_exists(True, APP_NAME, NAMESPACE, f"{APP_NAME} helm release should exist")
+
+
+def verify_kernel_module_management_helm_removed(ssh_connection: SSHConnection) -> None:
+    """Verify kernel module management helm chart is removed.
+
+    Args:
+        ssh_connection (SSHConnection): SSH connection to active controller.
+    """
+    get_logger().log_info("Verifying kernel module management helm chart is removed")
+    kubectl_helm_release = KubectlGetHelmReleaseKeywords(ssh_connection)
+    kubectl_helm_release.validate_helm_release_exists(False, APP_NAME, NAMESPACE, f"{APP_NAME} helm release should not exist")
+
+
+def verify_kernel_module_management_helmchart_deployed(ssh_connection: SSHConnection) -> None:
+    """Verify kernel module management helmchart is deployed.
+
+    Args:
+        ssh_connection (SSHConnection): SSH connection to active controller.
+    """
+    get_logger().log_info("Verifying kernel module management helmchart is deployed")
+    kubectl_helmchart = KubectlGetHelmKeywords(ssh_connection)
+    chart = kubectl_helmchart.get_helmchart_by_name(f"{NAMESPACE}-{APP_NAME}", NAMESPACE)
+    validate_not_none(chart, f"{APP_NAME} helmchart should exist")
+
+
+def verify_kernel_module_management_helmchart_removed(ssh_connection: SSHConnection) -> None:
     """Verify that kernel-module-manager entry is removed from HelmChart list.
 
     Args:
@@ -116,7 +151,7 @@ def verify_kernel_module_manager_helmchart_removed(ssh_connection: SSHConnection
     """
     get_logger().log_info("Verifying kernel-module-manager HelmChart is removed")
     kubectl_helmchart = KubectlGetHelmKeywords(ssh_connection)
-    chart = kubectl_helmchart.get_helmchart_by_name(APP_NAME, NAMESPACE)
+    chart = kubectl_helmchart.get_helmchart_by_name(f"{NAMESPACE}-{APP_NAME}", NAMESPACE)
     validate_none(chart, "kernel-module-manager HelmChart should be removed")
 
 
@@ -131,8 +166,7 @@ def cleanup_kernel_module_management_environment(ssh_connection: SSHConnection) 
     system_app_list = SystemApplicationListKeywords(ssh_connection)
     if system_app_list.is_app_present(APP_NAME):
         get_logger().log_info(f"Removing {APP_NAME} application")
-        system_app_apply = SystemApplicationApplyKeywords(ssh_connection)
-        if system_app_apply.is_already_applied(APP_NAME):
+        if system_app_list.is_applied_or_applyfailed_or_removefailed(APP_NAME):
             remove_input = SystemApplicationRemoveInput()
             remove_input.set_app_name(APP_NAME)
             system_app_remove = SystemApplicationRemoveKeywords(ssh_connection)
@@ -153,8 +187,11 @@ def test_kernel_module_management_upload_apply_delete(request):
         - Cleanup kernel module management application
         - Upload kernel module management application
         - Apply the application
+        - Verify helm release and helmchart are deployed
+        - Reapply the application
+        - Verify kernel module management pods are running after reapply
         - Remove and delete the application
-        - Verify kernel-module-manager HelmChart is removed
+        - Verify helm release and helmchart are removed
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
 
@@ -171,8 +208,25 @@ def test_kernel_module_management_upload_apply_delete(request):
     docker_config = ConfigurationManager.get_docker_config()
     setup_kernel_module_management_environment(ssh_connection, docker_config)
 
+    get_logger().log_test_case_step("Verifying kernel module management helm release is deployed")
+    verify_kernel_module_management_helm_deployed(ssh_connection)
+
+    get_logger().log_test_case_step("Verifying kernel module management helmchart is deployed")
+    verify_kernel_module_management_helmchart_deployed(ssh_connection)
+
+    get_logger().log_test_case_step(f"Reapplying {APP_NAME} application")
+    system_app_apply = SystemApplicationApplyKeywords(ssh_connection)
+    system_app_apply.system_application_apply(APP_NAME)
+
+    get_logger().log_test_case_step("Verifying kernel module management pods are running after reapply")
+    kubectl_pods = KubectlGetPodsKeywords(ssh_connection)
+    kubectl_pods.wait_for_pods_to_reach_status(expected_status="Running", pod_names=KMM_EXPECTED_PODS, namespace=NAMESPACE, timeout=30)
+
     get_logger().log_test_case_step("Removing kernel module management application")
     cleanup_kernel_module_management_environment(ssh_connection)
 
-    get_logger().log_test_case_step("Verifying kernel-module-manager HelmChart is removed")
-    verify_kernel_module_manager_helmchart_removed(ssh_connection)
+    get_logger().log_test_case_step("Verifying kernel module management helm release is removed")
+    verify_kernel_module_management_helm_removed(ssh_connection)
+
+    get_logger().log_test_case_step("Verifying kernel module management helmchart is removed")
+    verify_kernel_module_management_helmchart_removed(ssh_connection)

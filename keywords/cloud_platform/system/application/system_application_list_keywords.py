@@ -7,6 +7,7 @@ from framework.validation.validation import validate_equals_with_retry, validate
 from keywords.base_keyword import BaseKeyword
 from keywords.cloud_platform.command_wrappers import source_openrc
 from keywords.cloud_platform.system.application.object.system_application_list_output import SystemApplicationListOutput
+from keywords.cloud_platform.system.application.object.system_application_status_enum import SystemApplicationStatusEnum
 
 
 class SystemApplicationListKeywords(BaseKeyword):
@@ -119,3 +120,20 @@ class SystemApplicationListKeywords(BaseKeyword):
             for app in not_applied_apps:
                 get_logger().log_info(f"Application {app.get_application()} is in status {app.get_status()}")
             raise KeywordException("All applications are not in the expected status.")
+
+    def is_applied_or_applyfailed_or_removefailed(self, app_name: str) -> bool:
+        """Verifies if the application has already been applied or apply-failed or remove-failed.
+
+        This function can be used in app cleanup functions, where application-remove is run.
+        applied, apply-failed, remove-failed are the 3 end states where application can be removed.
+
+        Args:
+            app_name (str): a string representing the name of the application.
+
+        Returns:
+            bool: True if the application named 'app_name' has already been applied or apply-failed or remove-failed; False otherwise.
+        """
+        if self.get_system_application_list().is_in_application_list(app_name):
+            application = self.get_system_application_list().get_application(app_name)
+            return application.get_status() == SystemApplicationStatusEnum.APPLIED.value or application.get_status() == SystemApplicationStatusEnum.APPLY_FAILED.value or application.get_status() == SystemApplicationStatusEnum.REMOVE_FAILED.value
+        return False
