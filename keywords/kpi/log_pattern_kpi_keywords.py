@@ -635,6 +635,8 @@ class LogPatternKpiKeywords(BaseKeyword):
                                 continue
                             elif verbose:
                                 get_logger().log_info(f"ACCEPTING: {pattern} at {timestamp} (after start_date {start_date})")
+                        elif verbose:
+                            get_logger().log_info(f"NO start_date filter - ACCEPTING: {pattern} at {timestamp}")
 
                         # Check max_time_delta constraint
                         if max_time_delta and start_date and not ignore_max_time_delta:
@@ -1179,19 +1181,22 @@ class LogPatternKpiKeywords(BaseKeyword):
             start_timestamp, start_log_line, start_filename = start_result
 
             # Find stop pattern - handle OR patterns (lists)
+            # Use max_time_delta to limit search window
             stop_result = None
             if isinstance(stop_pattern, list):
                 # OR pattern - try each alternative
                 for alt_pattern in stop_pattern:
                     stop_result = self._find_pattern_lpmp_style(
-                        logs_dir, block['file'], alt_pattern, start_timestamp, verbose, block['label']
+                        logs_dir, block['file'], alt_pattern, start_timestamp, verbose, block['label'],
+                        max_time_delta=block.get('max_time_delta', max_time_delta)
                     )
                     if stop_result:
                         break
             else:
                 # Single pattern
                 stop_result = self._find_pattern_lpmp_style(
-                    logs_dir, block['file'], stop_pattern, start_timestamp, verbose, block['label']
+                    logs_dir, block['file'], stop_pattern, start_timestamp, verbose, block['label'],
+                    max_time_delta=block.get('max_time_delta', max_time_delta)
                 )
                 
             if not stop_result:

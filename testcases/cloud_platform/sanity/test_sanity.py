@@ -171,8 +171,10 @@ def test_lock_unlock_simplex():
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     
-    # Capture start time BEFORE lock operation
-    start_time_str = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+    # Capture start time from remote system BEFORE lock operation
+    date_result = ssh_connection.send("date '+%Y-%m-%dT%H:%M:%S'")
+    start_time_str = date_result[0].strip() if date_result else datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+    get_logger().log_info(f"Using start_time for KPI search: {start_time_str}")
 
     lock_success = SystemHostLockKeywords(ssh_connection).lock_host("controller-0")
     assert lock_success, "Controller was not locked successfully."

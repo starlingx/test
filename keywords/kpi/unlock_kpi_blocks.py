@@ -15,12 +15,12 @@ class UnlockKpiBlocks:
         Get unlock KPI blocks for pair mode - measures phase durations.
         
         Phases:
-        1. Lock Host: Lock action -> Disable complete (excluded from KPI)
-        2. Shutdown: Unlock action -> Service stopped
-        3. Blackout: Service stopped -> Kernel boot (excluded from KPI)
-        4. OS Startup: Kernel boot -> Multi-user system
-        5. Platform Startup: Multi-user system -> Host available
-        6. K8s Startup: CPU plugin started -> Pod recovery done
+        1. Lock Host: Lock action -> mtcAgent.log Disable complete (excluded from KPI)
+        2. Shutdown: mtcAgent.log Unlock action -> daemon.log Service stopped
+        3. Blackout: daemon.log Service stopped -> kern.log Kernel boot (excluded from KPI)
+        4. OS Startup: kern.log Kernel boot -> daemon.log Multi-user system
+        5. Platform Startup: daemon.log Multi-user system -> Host available
+        6. K8s Startup: daemon.log CPU plugin started -> Pod recovery done
         
         Returns:
             List[Dict[str, Any]]: Block definitions for pair mode timing
@@ -66,9 +66,9 @@ class UnlockKpiBlocks:
             {
                 "label": "K8s STARTUP PHASE",
                 "file": "daemon.log*",
-                "start": "Started Kubernetes Isolated CPU Plugin Daemon.",
-                "stop": "k8s-pod-recovery.service: Succeeded.",
-                "max_time_delta": 500,
+                "start": "info Started Kubernetes Isolated CPU Plugin Daemon.",
+                "stop": "info k8s-pod-recovery.service: Succeeded",
+                "max_time_delta": 900
             }
         ]
 
