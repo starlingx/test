@@ -15,10 +15,13 @@ from keywords.cloud_platform.system.application.system_application_list_keywords
 from keywords.cloud_platform.system.application.system_application_remove_keywords import SystemApplicationRemoveInput, SystemApplicationRemoveKeywords
 from keywords.cloud_platform.system.application.system_application_upload_keywords import SystemApplicationUploadInput, SystemApplicationUploadKeywords
 from keywords.cloud_platform.system.helm.system_helm_override_keywords import SystemHelmOverrideKeywords
+from keywords.cloud_platform.system.host.system_host_cpu_keywords import SystemHostCPUKeywords
+from keywords.cloud_platform.system.host.system_host_list_keywords import SystemHostListKeywords
 from keywords.files.file_keywords import FileKeywords
 from keywords.files.yaml_keywords import YamlKeywords
 from keywords.k8s.helm.kubectl_get_helm_keywords import KubectlGetHelmKeywords
 from keywords.k8s.helm.kubectl_get_helm_release_keywords import KubectlGetHelmReleaseKeywords
+from keywords.k8s.kube_cpusets.kube_cpusets_keywords import KubeCpusetsKeywords
 from keywords.k8s.pods.kubectl_get_pods_keywords import KubectlGetPodsKeywords
 from keywords.linux.ls.ls_keywords import LsKeywords
 
@@ -230,3 +233,66 @@ def test_kernel_module_management_upload_apply_delete(request):
 
     get_logger().log_test_case_step("Verifying kernel module management helmchart is removed")
     verify_kernel_module_management_helmchart_removed(ssh_connection)
+
+
+@mark.p1
+def test_kernel_module_management_label_override(request):
+    """Test applying isApplication label override to kernel module management.
+
+    Steps:
+        - Cleanup kernel module management application
+        - Setup kernel module management environment
+        - Upload label override YAML file to controller
+        - Apply helm override to set isApplication label on KMM pods
+        - Reapply application with label override
+        - Verify pods are running
+        - Verify KMM pods are running on application cores
+        - Cleanup kernel module management application
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+
+    get_logger().log_test_case_step("Cleanup kernel module management application")
+    cleanup_kernel_module_management_environment(ssh_connection)
+
+    def cleanup():
+        get_logger().log_teardown_step("Removing kernel module management application")
+        cleanup_kernel_module_management_environment(ssh_connection)
+
+    request.addfinalizer(cleanup)
+
+    get_logger().log_test_case_step("Setting up kernel module management environment")
+    docker_config = ConfigurationManager.get_docker_config()
+    setup_kernel_module_management_environment(ssh_connection, docker_config)
+
+    get_logger().log_test_case_step("Applying isApplication label override")
+    # Upload the label override YAML file to the controller
+    file_keywords = FileKeywords(ssh_connection)
+    file_keywords.upload_file(get_stx_resource_path("resources/cloud_platform/kubernetes-operator-framework/kernel-module-mgmt/kmm-app-label-override.yaml"), "/tmp/kmm-app-label-override.yaml", overwrite=False)
+    # Apply the helm override to set isApplication label on KMM pods
+    helm_override_keywords = SystemHelmOverrideKeywords(ssh_connection)
+    helm_override_keywords.update_helm_override("/tmp/kmm-app-label-override.yaml", APP_NAME, CHART_NAME, NAMESPACE, reuse_values=True)
+
+    get_logger().log_test_case_step("Reapplying application with label override")
+    system_app_apply = SystemApplicationApplyKeywords(ssh_connection)
+    system_app_apply.system_application_apply(APP_NAME)
+
+    get_logger().log_test_case_step("Verifying pods are running")
+    kubectl_pods = KubectlGetPodsKeywords(ssh_connection)
+    kubectl_pods.wait_for_pods_to_reach_status(expected_status="Running", pod_names=KMM_EXPECTED_PODS, namespace=NAMESPACE, timeout=30)
+
+    get_logger().log_test_case_step("Verifying KMM pods are running on application cores")
+    # Get active controller hostname
+    active_controller = SystemHostListKeywords(ssh_connection).get_active_controller().get_host_name()
+
+    # Retrieve application cores configured on the host
+    cpu_list = SystemHostCPUKeywords(ssh_connection).get_system_host_cpu_list(active_controller)
+    app_cores = [cpu.get_log_core() for cpu in cpu_list.get_system_host_cpu_objects(assigned_function="Application")]
+
+    get_logger().log_debug(f"Application cores for {active_controller}: {app_cores}")
+    # Get exact pod names from running pods
+    all_pods = kubectl_pods.get_pods(namespace=NAMESPACE).get_pods()
+    pod_names = [pod.get_name() for pod in all_pods]
+    # Get SSH connection to the host where pods are running
+    host_ssh = LabConnectionKeywords().get_ssh_for_hostname(active_controller)
+    # Verify pods are using application cores via kube-cpusets
+    KubeCpusetsKeywords(host_ssh).verify_pods_running_on_specific_cores(pod_names, app_cores)
