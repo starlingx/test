@@ -106,7 +106,7 @@ class DcmanagerKubeStrategyKeywords(BaseKeyword):
             DcmanagerKubeStrategyStepShowOutput: An object containing details of
             the kubernetes strategy .
         """
-        command = source_openrc("dcmanager kube-upgrade-strategy delete.")
+        command = source_openrc("dcmanager kube-upgrade-strategy delete")
         output = self.ssh_connection.send(command)
         self.validate_success_return_code(self.ssh_connection)
         return DcmanagerKubeStrategyStepShowOutput(output)
