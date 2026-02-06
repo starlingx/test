@@ -52,7 +52,9 @@ class SystemApplicationUpdateKeywords(BaseKeyword):
 
         # Tracks the execution of the command 'system application-update' until its completion or a timeout.
         system_application_list_keywords = SystemApplicationListKeywords(self.ssh_connection)
-        system_application_list_keywords.validate_app_status(app_name, SystemApplicationStatusEnum.APPLIED.value)
+        timeout = system_application_update_input.get_timeout_in_seconds()
+        check_interval = system_application_update_input.get_check_interval_in_seconds()
+        system_application_list_keywords.validate_app_status(app_name, SystemApplicationStatusEnum.APPLIED.value, timeout, check_interval)
 
         # If the execution arrived here the status of the application is 'applied'.
         system_application_output.get_system_application_object().set_status(SystemApplicationStatusEnum.APPLIED.value)

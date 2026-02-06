@@ -106,13 +106,14 @@ class SystemHostLockKeywords(BaseKeyword):
             return True
         return False
 
-    def unlock_host(self, host_name: str, unlock_accepted_timeout: int = 300) -> bool:
+    def unlock_host(self, host_name: str, unlock_accepted_timeout: int = 300, exclude_alarm_ids: list[str] = None) -> bool:
         """
         Unlocks the given host
 
         Args:
             host_name (str): the host name
             unlock_accepted_timeout (int): unlock_accepted_timeout to wait to try unlock the host
+            exclude_alarm_ids (list[str]): list of alarm IDs to exclude from alarm checks
 
         Returns:
             bool: True if the unlock is successful
@@ -129,7 +130,7 @@ class SystemHostLockKeywords(BaseKeyword):
         while time.time() - start < unlock_accepted_timeout:
             if self.ssh_connection.get_return_code() == 1:
                 get_logger().log_info("Fail to unlock, trying again in 5 seconds")
-                time.sleep(5)
+                time.sleep(30)
                 self.ssh_connection.send(source_openrc(f"system host-unlock {host_name}"))
             else:
                 get_logger().log_info(f"The unlock of host {host_name} was started")
@@ -138,7 +139,7 @@ class SystemHostLockKeywords(BaseKeyword):
             raise KeywordException(f"Timeout: failed to unlock host {host_name}")
 
         self.validate_success_return_code(self.ssh_connection)
-        is_host_unlocked = self.wait_for_host_unlocked(host_name)
+        is_host_unlocked = self.wait_for_host_unlocked(host_name, exclude_alarm_ids=exclude_alarm_ids)
         if not is_host_unlocked:
             raise KeywordException("Unlock host did not unlock in the required time.")
         return True
@@ -156,13 +157,14 @@ class SystemHostLockKeywords(BaseKeyword):
         except TimeoutError:  # Alarm still exists, we can't unlock
             raise KeywordException("Failed unlock pre-check. Application apply was in progress")
 
-    def wait_for_host_unlocked(self, host_name: str, unlock_wait_timeout: int = 2800) -> bool:
+    def wait_for_host_unlocked(self, host_name: str, unlock_wait_timeout: int = 2800, exclude_alarm_ids: list[str] = None) -> bool:
         """
         Wait for the host to be unlocked
 
         Args:
             host_name (str): the host name
             unlock_wait_timeout (int): the amount of time in secs to wait for the host to unlock
+            exclude_alarm_ids (list[str]): list of alarm IDs to exclude from alarm checks
 
         Returns:
             bool: True if host is unlocked
@@ -174,7 +176,7 @@ class SystemHostLockKeywords(BaseKeyword):
         while time.time() < timeout:
 
             try:
-                if self.is_host_unlocked(host_name):
+                if self.is_host_unlocked(host_name, exclude_alarm_ids=exclude_alarm_ids):
                     return True
             except Exception:
                 get_logger().log_info(f"Found an exception when checking the health of the system. Trying again after {refresh_time} seconds")
@@ -182,17 +184,21 @@ class SystemHostLockKeywords(BaseKeyword):
             time.sleep(refresh_time)
         return False
 
-    def is_host_unlocked(self, host_name: str) -> bool:
+    def is_host_unlocked(self, host_name: str, exclude_alarm_ids: list[str] = None) -> bool:
         """
         Returns true if the host is unlocked
 
         Args:
             host_name (str): the name of the host
+            exclude_alarm_ids (list[str]): list of alarm IDs to exclude from alarm checks
 
         Returns:
             bool: True is host is unlocked
 
         """
+        if exclude_alarm_ids is None:
+            exclude_alarm_ids = []
+
         is_host_list_ok = False
 
         # Check System Host-List
@@ -206,8 +212,8 @@ class SystemHostLockKeywords(BaseKeyword):
         is_alarms_list_ok = True
         for alarm in alarms:
             # Configuration is out-of-date or apps need re-apply or app being reapplied
-            if alarm.get_alarm_id() == "250.001" or alarm.get_alarm_id() == "750.006" or alarm.get_alarm_id() == "750.004":
-                get_logger().log_info("The host failed the is_host_unlocked alarm check.")
+            if alarm.get_alarm_id() in ["250.001", "750.006", "750.004"] and alarm.get_alarm_id() not in exclude_alarm_ids:
+                get_logger().log_info(f"The host failed the is_host_unlocked alarm check for alarm {alarm.get_alarm_id()}.")
                 is_alarms_list_ok = False
         if is_alarms_list_ok:
             get_logger().log_info("There are no Config-out-of-date alarms")
