@@ -10,7 +10,7 @@ class UnlockKpiBlocks:
     """
 
     @staticmethod
-    def get_pair_mode_blocks() -> List[Dict[str, Any]]:
+    def active_controller_unlock_kpi_blocks() -> List[Dict[str, Any]]:
         """
         Get unlock KPI blocks for pair mode - measures phase durations.
         
@@ -67,11 +67,40 @@ class UnlockKpiBlocks:
                 "label": "K8s STARTUP PHASE",
                 "file": "daemon.log*",
                 "start": "info Started Kubernetes Isolated CPU Plugin Daemon.",
-                "stop": "info k8s-pod-recovery.service: Succeeded",
-                "max_time_delta": 900
+                "stop": "info k8s-pod-recovery.service: Succeeded.",
+                "max_time_delta": 1200
             }
         ]
 
+    @staticmethod
+    def node_unlock_kpi_blocks() -> List[Dict[str, Any]]:
+        """
+        Get unlock KPI blocks for pair mode - measures phase durations.
+        
+        Phases:
+        1. Lock Host: Lock action -> mtcAgent.log Disable complete (excluded from KPI)
+        2. Unlock Phase: mtcAgent.log Unlock action -> unlocked-enabled-available
+        
+        Returns:
+            List[Dict[str, Any]]: Block definitions for pair mode timing
+        """
+        return [
+            {
+                "label": "LOCK HOST",
+                "file": ["mtcAgent.log*"],
+                "start": "Info : {hostname} Lock Action",
+                "stop": "Info : {hostname} Disable Complete",
+                "exclude_from_kpi": True
+            },
+            {
+                "label": "UNLOCK HOST",
+                "file": ["mtcAgent.log*"],
+                "start": "Info : {hostname} Unlock Action",
+                "stop": "Info : {hostname} unlocked-enabled-available",
+                "exclude_from_kpi": False
+            }
+        ]
+    
     @staticmethod
     def get_sequential_mode_blocks() -> List[Dict[str, Any]]:
         """

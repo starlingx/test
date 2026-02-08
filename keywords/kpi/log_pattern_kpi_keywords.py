@@ -629,9 +629,9 @@ class LogPatternKpiKeywords(BaseKeyword):
 
                     if timestamp:
                         if start_date:
-                            if timestamp < start_date:
+                            if timestamp <= start_date:
                                 if verbose:
-                                    get_logger().log_info(f"REJECTING: {pattern} at {timestamp} (before start_date {start_date})")
+                                    get_logger().log_info(f"REJECTING: {pattern} at {timestamp} (before or equal to start_date {start_date})")
                                 continue
                             elif verbose:
                                 get_logger().log_info(f"ACCEPTING: {pattern} at {timestamp} (after start_date {start_date})")
