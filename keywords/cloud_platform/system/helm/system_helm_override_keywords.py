@@ -20,20 +20,21 @@ class SystemHelmOverrideKeywords(BaseKeyword):
         """
         self.ssh_connection = ssh_connection
 
-    def update_helm_override(self, yaml_file: str, app_name: str, chart_name: str, namespace: str) -> SystemHelmOverrideOutput:
-        """
-        Gets the system helm-override list
+    def update_helm_override(self, yaml_file: str, app_name: str, chart_name: str, namespace: str, reuse_values: bool = False) -> SystemHelmOverrideOutput:
+        """Gets the system helm-override list.
 
         Args:
             yaml_file (str): the yaml file with override values
             app_name (str): the app name
             chart_name (str): the chart name
             namespace (str): the namespace
+            reuse_values (bool): whether to reuse existing values
 
         Returns:
             SystemHelmOverrideOutput: object with the list of helm overrides.
         """
-        command = source_openrc(f"system helm-override-update --values {yaml_file} {app_name} {chart_name} {namespace}")
+        reuse_flag = "--reuse-values " if reuse_values else ""
+        command = source_openrc(f"system helm-override-update {reuse_flag}--values {yaml_file} {app_name} {chart_name} {namespace}")
         output = self.ssh_connection.send(command)
         self.validate_success_return_code(self.ssh_connection)
         system_helm_override_output = SystemHelmOverrideOutput(output)
