@@ -1,4 +1,4 @@
-from typing import List
+from typing import Any, List, Sequence
 
 from framework.exceptions.keyword_exception import KeywordException
 from framework.logging.automation_logger import get_logger
@@ -40,7 +40,7 @@ class SystemApplicationListKeywords(BaseKeyword):
 
         return system_application_list_output
 
-    def validate_app_status(self, application_name: str, status: str, timeout: int = 300, polling_sleep_time: int = 5):
+    def validate_app_status(self, application_name: str, status: str, timeout: int = 300, polling_sleep_time: int = 5, failure_values: Sequence[Any] = ()):
         """This function will validate that the application specified reaches the desired status.
 
         Args:
@@ -48,6 +48,9 @@ class SystemApplicationListKeywords(BaseKeyword):
             status (str): Status in which we want to wait for the application to reach.
             timeout (int): Timeout in seconds
             polling_sleep_time (int): wait time in seconds before the next attempt when unsuccessful validation
+            failure_values (Sequence[Any]): Values that cause immediate ValidationFailureError (fail-fast).
+                Must be a sequence (list, tuple, set). Single value: ['failed'] or ('failed',).
+                Multiple values: ['error', 'failed'] or ('error', 'failed'). Do not pass a plain string.
 
         Returns: None
 
@@ -59,7 +62,7 @@ class SystemApplicationListKeywords(BaseKeyword):
             return application_status
 
         message = f"Application {application_name}'s status is {status}"
-        validate_equals_with_retry(get_app_status, status, message, timeout, polling_sleep_time)
+        validate_equals_with_retry(get_app_status, status, message, timeout, polling_sleep_time, failure_values)
 
     def validate_app_status_in_list(self, application_name: str, status: List[str], timeout: int = 3600, polling_sleep_time: int = 30) -> str:
         """This function will validate that the application specified reaches the desired status.
