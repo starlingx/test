@@ -1,5 +1,7 @@
 import time
 
+from config.configuration_manager import ConfigurationManager
+from config.lab.objects.lab_type_enum import LabTypeEnum
 from framework.exceptions.keyword_exception import KeywordException
 from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
@@ -108,3 +110,22 @@ class SystemHostSwactKeywords(BaseKeyword):
             time.sleep(refresh_time)
 
         return False
+
+    def ensure_duplex_subcloud_c0_is_active(self, subcloud_name: str) -> None:
+        """
+        Swact a Duplex subcloud in case controller-1 is the active one.
+
+        Args:
+            subcloud_name (str): The name of the subcloud to check.
+
+        """
+        lab_config = ConfigurationManager.get_lab_config()
+        sc_config = lab_config.get_subcloud(subcloud_name)
+
+        # Swact to controller-0 on subcloud if it is duplex
+        if sc_config.get_lab_type() == LabTypeEnum.DUPLEX.value:
+            subcloud_active_controller = SystemHostListKeywords(self.ssh_connection).get_active_controller()
+            subcloud_standby_controller = SystemHostListKeywords(self.ssh_connection).get_standby_controller()
+            if subcloud_active_controller.get_host_name() == "controller-1":
+                self.host_swact()
+                self.wait_for_swact(subcloud_active_controller, subcloud_standby_controller)
