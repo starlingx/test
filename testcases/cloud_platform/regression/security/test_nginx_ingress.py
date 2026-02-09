@@ -46,7 +46,7 @@ def test_app_using_nginx_controller(request):
     oam_ip = lab_config.get_floating_ip()
     lab_name = lab_config.get_lab_name()
     domain_name = security_config.get_domain_name()
-    full_dns_name = f"{lab_name}.{domain_name}"
+    full_dns_name = f"{lab_name}.{domain_name}".lower()
     stepca_url = security_config.get_stepca_server_url()
     expected_issuer = security_config.get_stepca_server_issuer()
 
@@ -145,6 +145,17 @@ def test_simple_ingress_routing_http(request):
     oam_ip = lab_config.get_floating_ip()
     namespace = security_config.get_nginx_http_namespace()
 
+    def teardown():
+        """Clean up test resources."""
+        get_logger().log_info("Cleaning up HTTP ingress test resources")
+        KubectlDeleteNamespaceKeywords(ssh_connection).cleanup_namespace(namespace)
+
+    request.addfinalizer(teardown)
+
+    # Clean up any existing namespace first
+    get_logger().log_info("Cleaning up any existing test namespace")
+    KubectlDeleteNamespaceKeywords(ssh_connection).cleanup_namespace(namespace)
+
     base_url = f"http://{oam_ip}"
     if lab_config.is_ipv6():
         base_url = f"http://[{oam_ip}]"
@@ -176,13 +187,6 @@ def test_simple_ingress_routing_http(request):
     get_logger().log_info("Testing /banana route")
     validate_equals_with_retry(lambda: curl_keywords.get_safe_first_response(ssh_connection.send(f"curl -s {base_url}/banana")), "banana", "Expected response for /banana", timeout=60, polling_sleep_time=2)
 
-    def teardown():
-        """Clean up test resources."""
-        get_logger().log_info("Cleaning up HTTP ingress test resources")
-        KubectlDeleteNamespaceKeywords(ssh_connection).cleanup_namespace(namespace)
-
-    request.addfinalizer(teardown)
-
 
 @mark.p0
 def test_simple_ingress_routing_https(request):
@@ -203,6 +207,17 @@ def test_simple_ingress_routing_https(request):
 
     # Test configuration from security config
     namespace = security_config.get_nginx_https_namespace()
+
+    def teardown():
+        """Clean up test resources."""
+        get_logger().log_info("Cleaning up HTTPS ingress test resources")
+        KubectlDeleteNamespaceKeywords(ssh_connection).cleanup_namespace(namespace)
+
+    request.addfinalizer(teardown)
+
+    # Clean up any existing namespace first
+    get_logger().log_info("Cleaning up any existing test namespace")
+    KubectlDeleteNamespaceKeywords(ssh_connection).cleanup_namespace(namespace)
     host_name = security_config.get_nginx_https_host_name()
     key_file = security_config.get_nginx_https_key_file()
     cert_file = security_config.get_nginx_https_cert_file()
@@ -264,13 +279,6 @@ def test_simple_ingress_routing_https(request):
     secret_keywords = KubectlGetSecretsKeywords(ssh_connection)
     issuer = secret_keywords.get_certificate_issuer(tls_secret_name, namespace)
     validate_equals(issuer, expected_issuer, f"Verify the certificate issuer is '{expected_issuer}'")
-
-    def teardown():
-        """Clean up test resources."""
-        get_logger().log_info("Cleaning up HTTPS ingress test resources")
-        KubectlDeleteNamespaceKeywords(ssh_connection).cleanup_namespace(namespace)
-
-    request.addfinalizer(teardown)
 
 
 @mark.p1
