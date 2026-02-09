@@ -173,8 +173,7 @@ def test_lock_unlock_simplex():
     active_controller = SystemHostListKeywords(ssh_connection).get_active_controller()
     
     # Capture start time from remote system BEFORE lock operation
-    date_result = ssh_connection.send("date '+%Y-%m-%dT%H:%M:%S'")
-    start_time_str = date_result[0].strip() if date_result else datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+    start_time_str = DateKeywords(ssh_connection).get_current_datetime()
     get_logger().log_info(f"Using start_time for KPI search: {start_time_str}")
 
     lock_success = SystemHostLockKeywords(ssh_connection).lock_host(active_controller.get_host_name())
@@ -221,8 +220,7 @@ def test_lock_unlock_standby_controller():
     standby_controller = SystemHostListKeywords(ssh_connection).get_standby_controller()
 
     # Capture start time from remote system BEFORE lock operation
-    date_result = ssh_connection.send("date '+%Y-%m-%dT%H:%M:%S'")
-    start_time_str = date_result[0].strip() if date_result else datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+    start_time_str = DateKeywords(ssh_connection).get_current_datetime()
     get_logger().log_info(f"Using start_time for KPI search: {start_time_str}")
 
     lock_success = SystemHostLockKeywords(ssh_connection).lock_host(standby_controller.get_host_name())
@@ -270,8 +268,7 @@ def test_lock_unlock_compute():
     assert len(computes) > 0, "No computes were found"
 
     # Capture start time from remote system BEFORE lock operation
-    date_result = ssh_connection.send("date '+%Y-%m-%dT%H:%M:%S'")
-    start_time_str = date_result[0].strip() if date_result else datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+    start_time_str = DateKeywords(ssh_connection).get_current_datetime()
     get_logger().log_info(f"Using start_time for KPI search: {start_time_str}")
 
     lock_success = SystemHostLockKeywords(ssh_connection).lock_host(computes[0].get_host_name())
