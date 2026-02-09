@@ -29,3 +29,13 @@ class DateKeywords(BaseKeyword):
 
         # can only be one line in the response + remove any trailing \n
         return current_date[0].strip()
+
+    def get_current_time(self):
+        """
+        Returns the current time in the format HH:MM:SS using a linux system command
+        """
+        current_time = self.ssh_connection.send("date +%T")
+        self.validate_success_return_code(self.ssh_connection)
+
+        # can only be one line in the response + remove any trailing \n
+        return current_time[0].strip()

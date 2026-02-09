@@ -195,6 +195,24 @@ class FileKeywords(BaseKeyword):
         """
         return self.ssh_connection.send_as_sudo(f"cat {file_path}")
 
+    def read_file_with_pattern_range(self, file_path: str, start: str, end: str, grep_pattern: str = None) -> list[str]:
+        """
+        Read the contents of a file between start and end patterns.
+
+        Args:
+            file_path (str): The absolute path to the file.
+            start (str): The absolute path to the file.
+            end (str): The absolute path to the file.
+            grep_pattern (str): the pattern to use to filter lines.
+
+        Returns:
+            list[str]: The output of the file.
+        """
+        grep_arg = ""
+        if grep_pattern:
+            grep_arg = f"| grep {grep_pattern}"
+        return self.ssh_connection.send(f"sed -n '/{start}/,/{end}/p' {file_path} {grep_arg}")
+
     def find_in_tgz(self, file_path: str, grep_pattern: str) -> int:
         """
         Searches for a string in tgz file
