@@ -1,10 +1,11 @@
+import requests
+import urllib3
 from pytest import mark
 
 from config.configuration_manager import ConfigurationManager
 from framework.logging.automation_logger import get_logger
 from framework.resources.resource_finder import get_stx_resource_path
 from framework.validation.validation import validate_equals, validate_equals_with_retry
-from keywords.cloud_platform.rest.cloud_rest_client import CloudRestClient
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.files.file_keywords import FileKeywords
 from keywords.files.yaml_keywords import YamlKeywords
@@ -21,6 +22,8 @@ from keywords.k8s.secret.kubectl_get_secret_keywords import KubectlGetSecretsKey
 from keywords.network.curl_response_keywords import CurlResponseKeywords
 from keywords.network.ip_address_keywords import IPAddressKeywords
 from keywords.openssl.openssl_keywords import OpenSSLKeywords
+
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 
 @mark.p0
@@ -110,10 +113,16 @@ def test_app_using_nginx_controller(request):
     cert_keywords = KubectlGetCertStatusKeywords(ssh_connection)
     cert_keywords.wait_for_certs_status(cert, True, namespace)
 
-    # Check the app url
-    get_logger().log_info("Verifying application accessibility")
-    response = CloudRestClient().get(base_url)
-    validate_equals(response.get_status_code(), 200, "Verify the app url is reachable")
+    # Check the app url from external (test execution environment)
+    get_logger().log_info("Verifying application accessibility from external")
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+    try:
+        response = requests.get(base_url, verify=False, timeout=30)
+        validate_equals(response.status_code, 200, "Verify the app url is reachable")
+        get_logger().log_info(f"Successfully accessed {base_url} with status code {response.status_code}")
+    except requests.exceptions.RequestException as e:
+        get_logger().log_error(f"Failed to reach application at {base_url}: {e}")
+        raise
 
     # Verify cert is issued from StepCa
     get_logger().log_info("Verifying certificate issuer")
