@@ -514,3 +514,20 @@ class FileKeywords(BaseKeyword):
                 get_logger().log_error(f"Expected line '{expected_line}' not found in {file_path}")
                 return False
         return True
+
+    def create_file_with_heredoc(self, file_path: str, content: str, delimiter: str = "EOF") -> bool:
+        """
+        Create file with heredoc along with file executable permission
+
+        Args:
+            file_path (str): path to the file
+            content (str): content of the file
+            delimiter (str): heredoc delimiter
+
+        Returns:
+            bool: True if file created successfully
+        """
+        cmd = f"cat > {file_path} << '{delimiter}'\n{content}\n{delimiter}"
+        self.ssh_connection.send_as_sudo(cmd)
+        self.make_executable(file_path)
+        return self.validate_file_exists_with_sudo(file_path)
