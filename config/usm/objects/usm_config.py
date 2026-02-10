@@ -41,7 +41,7 @@ class USMConfig:
         self.rollback = usm_dict.get("rollback", False)
         self.deploy_delete = usm_dict.get("deploy_delete", False)
         self.record_kpi = usm_dict.get("record_kpi", False)
-        self.deployment_timeout_sec = usm_dict.get("deployment_timeout_sec", 7200)
+        self.deployment_timeout_sec = usm_dict.get("deployment_timeout_sec", 9000)
         self.activation_timeout_sec = usm_dict.get("activation_timeout_sec", 3600)
         self.upgrade_arguments = usm_dict.get("upgrade_arguments", "")
         self.upload_poll_interval_sec = usm_dict.get("upload_poll_interval_sec", 30)
