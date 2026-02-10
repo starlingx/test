@@ -2,12 +2,10 @@ from base64 import b64encode
 
 from pytest import mark
 
-from config.configuration_manager import ConfigurationManager
-from config.docker.objects.docker_config import DockerConfig
 from framework.logging.automation_logger import get_logger
 from framework.resources.resource_finder import get_stx_resource_path
 from framework.ssh.ssh_connection import SSHConnection
-from framework.validation.validation import validate_none, validate_not_none
+from framework.validation.validation import validate_equals, validate_equals_with_retry, validate_none, validate_not_none
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.cloud_platform.system.application.system_application_apply_keywords import SystemApplicationApplyKeywords
 from keywords.cloud_platform.system.application.system_application_delete_keywords import SystemApplicationDeleteInput, SystemApplicationDeleteKeywords
@@ -19,11 +17,18 @@ from keywords.cloud_platform.system.host.system_host_cpu_keywords import SystemH
 from keywords.cloud_platform.system.host.system_host_list_keywords import SystemHostListKeywords
 from keywords.files.file_keywords import FileKeywords
 from keywords.files.yaml_keywords import YamlKeywords
+from keywords.k8s.configmap.kubectl_delete_configmap_keywords import KubectlDeleteConfigmapKeywords
+from keywords.k8s.files.kubectl_file_apply_keywords import KubectlFileApplyKeywords
 from keywords.k8s.helm.kubectl_get_helm_keywords import KubectlGetHelmKeywords
 from keywords.k8s.helm.kubectl_get_helm_release_keywords import KubectlGetHelmReleaseKeywords
 from keywords.k8s.kube_cpusets.kube_cpusets_keywords import KubeCpusetsKeywords
+from keywords.k8s.module.kubectl_delete_module_keywords import KubectlDeleteModuleKeywords
+from keywords.k8s.module.kubectl_get_module_keywords import KubectlGetModuleKeywords
 from keywords.k8s.pods.kubectl_get_pods_keywords import KubectlGetPodsKeywords
+from keywords.linux.dmesg.dmesg_keywords import DmesgKeywords
+from keywords.linux.keyring.keyring_keywords import KeyringKeywords
 from keywords.linux.ls.ls_keywords import LsKeywords
+from keywords.linux.lsmod.lsmod_keywords import LsmodKeywords
 
 APP_NAME = "kernel-module-management"
 NAMESPACE = "kernel-module-management"
@@ -34,7 +39,7 @@ CHART_PATH = "/usr/local/share/applications/helm/kernel-module-management-[0-9]*
 KMM_EXPECTED_PODS = ["kmm-operator-controller", "kmm-operator-webhook"]
 
 
-def setup_docker_registry_override(ssh_connection: SSHConnection, docker_config: DockerConfig) -> None:
+def setup_docker_registry_override(ssh_connection: SSHConnection) -> None:
     """Setup Docker registry credentials as helm override.
 
     KMM requires Docker registry credentials to pull and push kernel module images.
@@ -42,23 +47,19 @@ def setup_docker_registry_override(ssh_connection: SSHConnection, docker_config:
 
     Args:
         ssh_connection (SSHConnection): SSH connection to active controller.
-        docker_config (DockerConfig): Docker configuration object.
     """
     get_logger().log_info("Setting up Docker registry credentials")
 
-    # Check if docker.io credentials are configured
-    docker_io_registry = docker_config.get_source_registries().get("docker.io")
-
-    # Extract username and password from docker config
-    username = docker_io_registry.get_user_name()
-    password = docker_io_registry.get_password()
+    # Extract username and password from keyring
+    keyring_keywords = KeyringKeywords(ssh_connection)
+    username = "sysinv"
+    password = keyring_keywords.get_keyring("sysinv", "services")
 
     # Create base64-encoded credentials in format "username:password"
     docker_credentials = b64encode(f"{username}:{password}".encode()).decode()
 
     # Create Docker config JSON with authentication for docker.io registry
-    # Format: {"auths":{"https://index.docker.io/v1/":{"auth":"<base64_credentials>"}}}
-    docker_config_json_content = f'{{"auths":{{"https://index.docker.io/v1/":{{"auth":"{docker_credentials}"}}}}}}'
+    docker_config_json_content = f'{{"auths":{{"https://registry.local:9001":{{"auth":"{docker_credentials}"}}}}}}'
 
     # Base64-encode the entire Docker config JSON for Kubernetes secret
     docker_config_json = b64encode(docker_config_json_content.encode()).decode()
@@ -80,12 +81,11 @@ def setup_docker_registry_override(ssh_connection: SSHConnection, docker_config:
     file_keywords.delete_file(override_file)
 
 
-def setup_kernel_module_management_environment(ssh_connection: SSHConnection, docker_config: DockerConfig = None) -> None:
+def setup_kernel_module_management_environment(ssh_connection: SSHConnection) -> None:
     """Setup kernel module management application.
 
     Args:
         ssh_connection (SSHConnection): SSH connection to active controller.
-        docker_config (DockerConfig): Docker configuration object (optional).
     """
     get_logger().log_info(f"Uploading {APP_NAME} application")
     ls_keywords = LsKeywords(ssh_connection)
@@ -100,7 +100,7 @@ def setup_kernel_module_management_environment(ssh_connection: SSHConnection, do
     # KMM will use this registry to pull images from and push images to.
     # This registry may be an external registry, or it may be registry.local:9001
     get_logger().log_info("Configuring Docker registry credentials for KMM")
-    setup_docker_registry_override(ssh_connection, docker_config)
+    setup_docker_registry_override(ssh_connection)
 
     get_logger().log_info(f"Applying {APP_NAME} application")
     system_app_apply = SystemApplicationApplyKeywords(ssh_connection)
@@ -208,8 +208,7 @@ def test_kernel_module_management_upload_apply_delete(request):
     request.addfinalizer(cleanup)
 
     get_logger().log_test_case_step("Setting up kernel module management environment")
-    docker_config = ConfigurationManager.get_docker_config()
-    setup_kernel_module_management_environment(ssh_connection, docker_config)
+    setup_kernel_module_management_environment(ssh_connection)
 
     get_logger().log_test_case_step("Verifying kernel module management helm release is deployed")
     verify_kernel_module_management_helm_deployed(ssh_connection)
@@ -261,8 +260,7 @@ def test_kernel_module_management_label_override(request):
     request.addfinalizer(cleanup)
 
     get_logger().log_test_case_step("Setting up kernel module management environment")
-    docker_config = ConfigurationManager.get_docker_config()
-    setup_kernel_module_management_environment(ssh_connection, docker_config)
+    setup_kernel_module_management_environment(ssh_connection)
 
     get_logger().log_test_case_step("Applying isApplication label override")
     # Upload the label override YAML file to the controller
@@ -296,3 +294,89 @@ def test_kernel_module_management_label_override(request):
     host_ssh = LabConnectionKeywords().get_ssh_for_hostname(active_controller)
     # Verify pods are using application cores via kube-cpusets
     KubeCpusetsKeywords(host_ssh).verify_pods_running_on_specific_cores(pod_names, app_cores)
+
+
+@mark.p1
+def test_kernel_module_and_config_map_load_and_build(request):
+    """Test kernel module hello world build and load.
+
+    Steps:
+        - Cleanup kernel module management application
+        - Setup kernel module management environment
+        - Upload hello world kernel module ConfigMap and Module YAML files
+        - Apply hello world kernel module resources
+        - Wait for worker pod to complete module build and load
+        - Verify KMM Module resource exists
+        - Verify module load message appears in dmesg
+        - Verify hello_world_dmesg kernel module is loaded via lsmod
+        - Delete Module resource to trigger unload
+        - Delete ConfigMap resource
+        - Verify module unload message appears in dmesg
+        - Verify kernel module is no longer loaded
+        - Cleanup kernel module management application
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+
+    get_logger().log_test_case_step("Cleanup kernel module management application")
+    cleanup_kernel_module_management_environment(ssh_connection)
+
+    def cleanup():
+        get_logger().log_teardown_step("Deleting kernel module resource")
+        KubectlDeleteModuleKeywords(ssh_connection).delete_module("kmm-hello-world", NAMESPACE, ignore_not_found=True)
+        get_logger().log_teardown_step("Deleting configmap resource")
+        KubectlDeleteConfigmapKeywords(ssh_connection).delete_configmap("kmm-hello-world-cm", NAMESPACE, ignore_not_found=True)
+        get_logger().log_teardown_step("Cleaning up kernel module YAML files")
+        file_keywords = FileKeywords(ssh_connection)
+        file_keywords.delete_file("/tmp/hello_world_cm.yaml")
+        file_keywords.delete_file("/tmp/hello_world_mod.yaml")
+        get_logger().log_teardown_step("Removing kernel module management application")
+        cleanup_kernel_module_management_environment(ssh_connection)
+
+    request.addfinalizer(cleanup)
+
+    get_logger().log_test_case_step("Setting up kernel module management environment")
+    setup_kernel_module_management_environment(ssh_connection)
+
+    get_logger().log_test_case_step("Uploading hello world kernel module YAML files")
+    file_keywords = FileKeywords(ssh_connection)
+    file_keywords.upload_file(get_stx_resource_path("resources/cloud_platform/kubernetes-operator-framework/kernel-module-mgmt/hello_world_cm.yaml"), "/tmp/hello_world_cm.yaml", overwrite=True)
+    file_keywords.upload_file(get_stx_resource_path("resources/cloud_platform/kubernetes-operator-framework/kernel-module-mgmt/hello_world_mod.yaml"), "/tmp/hello_world_mod.yaml", overwrite=True)
+
+    get_logger().log_test_case_step("Applying hello world kernel module")
+    apply_keywords = KubectlFileApplyKeywords(ssh_connection)
+    apply_keywords.apply_resource_from_yaml("/tmp/hello_world_cm.yaml")
+    apply_keywords.apply_resource_from_yaml("/tmp/hello_world_mod.yaml")
+
+    get_logger().log_test_case_step("Verifying worker pod is running")
+    kubectl_pods = KubectlGetPodsKeywords(ssh_connection)
+    kubectl_pods.wait_for_pods_to_reach_status(expected_status="Completed", pod_names=["kmm-worker"], namespace=NAMESPACE, poll_interval=1, timeout=30)
+
+    get_logger().log_test_case_step("Verifying KMM module resource exists")
+    module_keywords = KubectlGetModuleKeywords(ssh_connection)
+    validate_equals(module_keywords.is_module_present("kmm-hello-world", NAMESPACE), True, "KMM module resource should exist")
+
+    get_logger().log_test_case_step("Verifying module load message in dmesg")
+    dmesg_keywords = DmesgKeywords(ssh_connection)
+    dmesg_keywords.verify_dmesg_contains("Hello, world!", lines=1)
+
+    get_logger().log_test_case_step("Verifying hello_world_dmesg kernel module is loaded")
+    lsmod_keywords = LsmodKeywords(ssh_connection)
+    lsmod_output = lsmod_keywords.get_lsmod_output()
+    validate_equals(lsmod_output.has_module("hello_world_dmesg"), True, "hello_world_dmesg kernel module should be loaded")
+
+    get_logger().log_test_case_step("Deleting kernel module resource")
+    delete_module_keywords = KubectlDeleteModuleKeywords(ssh_connection)
+    delete_module_keywords.delete_module("kmm-hello-world", NAMESPACE)
+
+    get_logger().log_test_case_step("Deleting configmap resource")
+    delete_configmap_keywords = KubectlDeleteConfigmapKeywords(ssh_connection)
+    delete_configmap_keywords.delete_configmap("kmm-hello-world-cm", NAMESPACE)
+
+    get_logger().log_test_case_step("Verifying kernel module is no longer loaded")
+    validate_equals_with_retry(lambda: lsmod_keywords.get_lsmod_output().has_module("hello_world_dmesg"), False, "hello_world_dmesg kernel module should not be loaded", timeout=10, polling_sleep_time=2)
+
+    get_logger().log_test_case_step("Verifying module unload message in dmesg")
+    dmesg_keywords.verify_dmesg_contains("Goodbye, world!", lines=1)
+
+    get_logger().log_test_case_step("Removing kernel module management application")
+    cleanup_kernel_module_management_environment(ssh_connection)
