@@ -364,6 +364,10 @@ def scan_hosts(lab_config: LabConfig, ssh_connection: SSHConnection) -> list[Nod
     if controllers_count == 1:
         lab_config.add_lab_capability("lab_is_simplex")
     elif controllers_count > 1:
+        system_output = GetSystemKeywords().get_system()
+        system_object = system_output.get_system_object()
+        if system_object.get_system_type() == "Standard":
+            lab_config.add_lab_capability("lab_is_standard")
         lab_config.add_lab_capability("lab_has_standby_controller")
     else:
         raise RuntimeError("Failed to find at least one controller on this lab.")
