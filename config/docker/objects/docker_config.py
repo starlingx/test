@@ -50,6 +50,28 @@ class DockerConfig:
             password=local_reg_dict.get("password", ""),
         )
 
+        # Parse old_openstack_docker_image (optional)
+        self.old_openstack_docker_image = None
+        if "old_openstack_docker_image" in self._config_dict:
+            old_os_dict = self._config_dict["old_openstack_docker_image"]
+            self.old_openstack_docker_image = Registry(
+                registry_name="old_openstack_docker_image",
+                registry_url=old_os_dict["url"],
+                user_name=old_os_dict.get("username", ""),
+                password=old_os_dict.get("password", ""),
+            )
+
+        # Parse openstack_docker_image (optional)
+        self.openstack_docker_image = None
+        if "openstack_docker_image" in self._config_dict:
+            os_dict = self._config_dict["openstack_docker_image"]
+            self.openstack_docker_image = Registry(
+                registry_name="openstack_docker_image",
+                registry_url=os_dict["url"],
+                user_name=os_dict.get("username", ""),
+                password=os_dict.get("password", ""),
+            )
+
         # Parse source_registries (optional - for authenticated pulls from external registries)
         # Note: For source registries, the URL serves as both the lookup key (in the map)
         # and the registry identity, so registry_name is set to the same value as registry_url.
@@ -72,6 +94,24 @@ class DockerConfig:
             Registry: Local registry object.
         """
         return self.local_registry
+
+    def get_old_openstack_docker_image(self) -> Registry:
+        """
+        Returns the old OpenStack docker image registry configuration.
+
+        Returns:
+            Registry: Old OpenStack docker image registry object.
+        """
+        return self.old_openstack_docker_image
+
+    def get_openstack_docker_image(self) -> Registry:
+        """
+        Returns the OpenStack docker image registry configuration.
+
+        Returns:
+            Registry: OpenStack docker image registry object.
+        """
+        return self.openstack_docker_image
 
     def get_named_manifest(self, manifest_name: str) -> str:
         """

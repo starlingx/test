@@ -17,6 +17,8 @@ class AppConfig:
         self.base_application_path = app_dict["base_application_path"]
         self.platform_integ_app_tarball = app_dict["platform_integ_app_tarball"]
         self.metrics_server_app_tarball = app_dict["metrics_server_app_tarball"]
+        self.old_openstack_tarball = app_dict["old_openstack_tarball"]
+        self.openstack_tarball = app_dict["openstack_tarball"]
 
         self.istio_app_name = "istio"
         if "istio_app_name" in app_dict:
@@ -191,7 +193,7 @@ class AppConfig:
 
         """
         return self.sriov_fec_operator_app_name
-    
+
     def get_deployment_manager_app_name(self) -> str:
         """
         Getter for deployment manager app name
