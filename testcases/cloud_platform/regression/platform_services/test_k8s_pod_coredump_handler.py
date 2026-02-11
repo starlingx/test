@@ -4,7 +4,8 @@ from pytest import FixtureRequest, mark
 
 from framework.logging.automation_logger import get_logger
 from framework.resources.resource_finder import get_stx_resource_path
-from framework.validation.validation import validate_equals, validate_not_none
+from framework.ssh.ssh_connection import SSHConnection
+from framework.validation.validation import validate_equals, validate_equals_with_retry, validate_not_none
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.cloud_platform.system.host.system_host_list_keywords import SystemHostListKeywords
 from keywords.files.file_keywords import FileKeywords
@@ -19,6 +20,28 @@ POD_NAME = "dummypod"
 POD_COREDUMP_PATH_ON_HOST = "/var/lib/systemd/coredump"
 SLEEP_PROCESS_CREATE_CMDLINE = "nohup sleep 10 > /dev/null 2>&1 &"
 SLEEP_PROCESS_KILL_CMDLINE = "pkill -6 -f 'sleep 10'"
+
+
+def generate_coredump_on_pod(ssh_connection: SSHConnection, coredump_file: str) -> None:
+    """
+    Generate a coredump on pod. Create a process, kill it and wait for coredump file creation.
+
+    Args:
+        ssh_connection (SSHConnection): SSH connection to active controller.
+        coredump_file (str): Coredump file pattern.
+    """
+    get_logger().log_test_case_step("Create coredump inside pod")
+    kubectl_exec = KubectlExecInPodsKeywords(ssh_connection)
+    kubectl_exec.run_pod_exec_cmd(POD_NAME, SLEEP_PROCESS_CREATE_CMDLINE)
+    kubectl_exec.run_pod_exec_cmd(POD_NAME, SLEEP_PROCESS_KILL_CMDLINE)
+
+    def wait_coredump_file_creation():
+        output = kubectl_exec.run_pod_exec_cmd(POD_NAME, "ls coredump 2>/dev/null || echo ''")
+        output_str = "\n".join(output) if isinstance(output, list) else output
+        return bool(re.search(coredump_file, output_str))
+
+    get_logger().log_test_case_step("Wait coredump file creation")
+    validate_equals_with_retry(wait_coredump_file_creation, True, "Coredump file was generated on pod", timeout=120)
 
 
 @mark.p3
@@ -178,17 +201,12 @@ def test_verify_coredump_using_default_handling(request: FixtureRequest):
     request.addfinalizer(cleanup_pod)
 
     # Generate a coredump inside pod
-    get_logger().log_test_case_step("Create coredump inside pod")
-    kubectl_exec = KubectlExecInPodsKeywords(ssh_connection)
-    kubectl_exec.run_pod_exec_cmd(POD_NAME, SLEEP_PROCESS_CREATE_CMDLINE)
-    kubectl_exec.run_pod_exec_cmd(POD_NAME, SLEEP_PROCESS_KILL_CMDLINE)
+    generate_coredump_on_pod(ssh_connection, coredump_file)
 
     # Verify the coredump exists on host
     kubectl_pods.wait_for_pod_status(POD_NAME, "Running")
     pods = KubectlGetPodsKeywords(ssh_connection).get_pods_all_namespaces()
     pod_host = pods.get_pod(POD_NAME).get_node()
-    output = kubectl_exec.run_pod_exec_cmd(POD_NAME, f"ls coredump | grep {coredump_file}")
-    validate_not_none(output, "Coredump file was generated on pod")
     get_logger().log_test_case_step(f"Check coredump file on host ({pod_host}) where pod is running")
     ssh_pod_host_connection = lab_connection_keywords.get_ssh_for_hostname(pod_host)
     file_keywords = FileKeywords(ssh_pod_host_connection)
@@ -239,17 +257,12 @@ def test_verify_coredump_using_full_config_annotations(request: FixtureRequest):
     request.addfinalizer(cleanup_pod)
 
     # Generate a coredump inside pod
-    get_logger().log_test_case_step("Create coredump inside pod")
-    kubectl_exec = KubectlExecInPodsKeywords(ssh_connection)
-    kubectl_exec.run_pod_exec_cmd(POD_NAME, SLEEP_PROCESS_CREATE_CMDLINE)
-    kubectl_exec.run_pod_exec_cmd(POD_NAME, SLEEP_PROCESS_KILL_CMDLINE)
+    generate_coredump_on_pod(ssh_connection, coredump_file)
 
     # Verify the coredump exists on host
     kubectl_pods.wait_for_pod_status(POD_NAME, "Running")
     pods = KubectlGetPodsKeywords(ssh_connection).get_pods_all_namespaces()
     pod_host = pods.get_pod(POD_NAME).get_node()
-    output = kubectl_exec.run_pod_exec_cmd(POD_NAME, f"ls coredump | grep {coredump_file}")
-    validate_not_none(output, "Coredump file was generated on pod")
     get_logger().log_test_case_step(f"Check coredump file on host ({pod_host}) where pod is running")
     ssh_pod_host_connection = lab_connection_keywords.get_ssh_for_hostname(pod_host)
     file_keywords = FileKeywords(ssh_pod_host_connection)
@@ -300,17 +313,12 @@ def test_verify_coredump_using_minimal_config_annotations(request: FixtureReques
     request.addfinalizer(cleanup_pod)
 
     # Generate a coredump inside pod
-    get_logger().log_test_case_step("Create coredump inside pod")
-    kubectl_exec = KubectlExecInPodsKeywords(ssh_connection)
-    kubectl_exec.run_pod_exec_cmd(POD_NAME, SLEEP_PROCESS_CREATE_CMDLINE)
-    kubectl_exec.run_pod_exec_cmd(POD_NAME, SLEEP_PROCESS_KILL_CMDLINE)
+    generate_coredump_on_pod(ssh_connection, coredump_file)
 
     # Verify the coredump exists on host
     kubectl_pods.wait_for_pod_status(POD_NAME, "Running")
     pods = KubectlGetPodsKeywords(ssh_connection).get_pods_all_namespaces()
     pod_host = pods.get_pod(POD_NAME).get_node()
-    output = kubectl_exec.run_pod_exec_cmd(POD_NAME, f"ls coredump | grep {coredump_file}")
-    validate_not_none(output, "Coredump file was generated on pod")
     get_logger().log_test_case_step(f"Check coredump file on host ({pod_host}) where pod is running")
     ssh_pod_host_connection = lab_connection_keywords.get_ssh_for_hostname(pod_host)
     file_keywords = FileKeywords(ssh_pod_host_connection)
