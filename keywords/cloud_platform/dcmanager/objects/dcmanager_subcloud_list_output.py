@@ -349,3 +349,26 @@ class DcManagerSubcloudListOutput:
         ace_subclouds = [sc for sc in subclouds if sc.get_name() in sc_defined_in_ace_config]
         lowest_subcloud = min(ace_subclouds, key=lambda subcloud: int(subcloud.get_id()))
         return lowest_subcloud
+
+    def get_specific_subcloud_with_lowest_id(
+            self,
+            management="managed",
+            availability="online",
+            deploy_status="complete",
+            sync_status="in-sync",
+            backup_status="",
+            prestaged=""
+    ) -> DcManagerSubcloudListObject:
+
+        invalid_backup_status = ["validating", "backing-up", "deleting-backup", "pre-backup", "None"]
+        invalid_prestage_status = ["prestaging"]
+
+        dcmanager_subcloud_list_obj_filter = DcManagerSubcloudListObjectFilter.get_specific_subcloud_filter(management=management, availability=availability, deploy_status=deploy_status, sync_status=sync_status, backup_status=backup_status, prestaged=prestaged)
+        filtered_subclouds = self.get_dcmanager_subcloud_list_objects_filtered(dcmanager_subcloud_list_obj_filter)
+
+        for sc in filtered_subclouds:
+            if sc.get_backup_status() in invalid_backup_status or sc.get_prestage_status() in invalid_prestage_status:
+                filtered_subclouds.remove(sc)
+
+        lowest_subcloud = min(filtered_subclouds, key=lambda subcloud: int(subcloud.get_id()))
+        return lowest_subcloud

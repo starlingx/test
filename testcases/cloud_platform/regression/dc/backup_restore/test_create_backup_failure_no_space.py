@@ -69,9 +69,8 @@ def test_verify_backup_space_failure(request):
 
     """
     central_ssh = LabConnectionKeywords().get_active_controller_ssh()
-    dcm_sc_list_kw = DcManagerSubcloudListKeywords(central_ssh)
-    subcloud = dcm_sc_list_kw.get_dcmanager_subcloud_list().get_healthy_subcloud_by_type(LabTypeEnum.SIMPLEX.value)
-    subcloud_name = subcloud.get_name()
+    lowest_subcloud = DcManagerSubcloudListKeywords(central_ssh).get_dcmanager_subcloud_list().get_specific_subcloud_with_lowest_id()
+    subcloud_name = lowest_subcloud.get_name()
     # get subcloud ssh
     subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
 
@@ -83,7 +82,7 @@ def test_verify_backup_space_failure(request):
     created_file_path = FileKeywords(subcloud_ssh).create_file_to_fill_disk_space("/home/sysadmin")
 
     def teardown():
-        teardown_local(subcloud.get_name(), created_file_path)
+        teardown_local(lowest_subcloud.get_name(), created_file_path)
 
     request.addfinalizer(teardown)
     backup_create_failure_local(subcloud_name, local=True)
@@ -99,9 +98,8 @@ def test_verify_backup_space_failure_default_storage(request):
 
     """
     central_ssh = LabConnectionKeywords().get_active_controller_ssh()
-    dcm_sc_list_kw = DcManagerSubcloudListKeywords(central_ssh)
-    subcloud = dcm_sc_list_kw.get_dcmanager_subcloud_list().get_healthy_subcloud_by_type(LabTypeEnum.SIMPLEX.value)
-    subcloud_name = subcloud.get_name()
+    lowest_subcloud = DcManagerSubcloudListKeywords(central_ssh).get_dcmanager_subcloud_list().get_specific_subcloud_with_lowest_id()
+    subcloud_name = lowest_subcloud.get_name()
     # get subcloud ssh
     subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
 
@@ -113,7 +111,7 @@ def test_verify_backup_space_failure_default_storage(request):
     created_file_path = FileKeywords(central_ssh).create_file_to_fill_disk_space()
 
     def teardown():
-        teardown_central(subcloud.get_name(), created_file_path)
+        teardown_central(lowest_subcloud.get_name(), created_file_path)
 
     request.addfinalizer(teardown)
     backup_create_failure_local(subcloud_name)
@@ -131,9 +129,8 @@ def test_verify_backup_failure_home_folder_too_large(request):
 
     """
     central_ssh = LabConnectionKeywords().get_active_controller_ssh()
-    dcm_sc_list_kw = DcManagerSubcloudListKeywords(central_ssh)
-    subcloud = dcm_sc_list_kw.get_dcmanager_subcloud_list().get_healthy_subcloud_by_type(LabTypeEnum.SIMPLEX.value)
-    subcloud_name = subcloud.get_name()
+    lowest_subcloud = DcManagerSubcloudListKeywords(central_ssh).get_dcmanager_subcloud_list().get_specific_subcloud_with_lowest_id()
+    subcloud_name = lowest_subcloud.get_name()
     # get subcloud ssh
     subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
 
@@ -147,7 +144,7 @@ def test_verify_backup_failure_home_folder_too_large(request):
     created_file_path = FileKeywords(subcloud_ssh).create_file_to_fill_disk_space(dest_dir=home_folder, file_size=2001)
 
     def teardown():
-        teardown_local(subcloud.get_name(), created_file_path)
+        teardown_local(lowest_subcloud.get_name(), created_file_path)
 
     request.addfinalizer(teardown)
     backup_create_failure_local(subcloud_name, local=True)

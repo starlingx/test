@@ -29,8 +29,7 @@ def test_delete_backup_rejection_invalid_state(request):
     central_ssh = LabConnectionKeywords().get_active_controller_ssh()
 
     # Gets the lowest subcloud (the subcloud with the lowest id).
-    dcmanager_subcloud_list_keywords = DcManagerSubcloudListKeywords(central_ssh)
-    lowest_subcloud = dcmanager_subcloud_list_keywords.get_dcmanager_subcloud_list().get_healthy_subcloud_with_lowest_id()
+    lowest_subcloud = DcManagerSubcloudListKeywords(central_ssh).get_dcmanager_subcloud_list().get_specific_subcloud_with_lowest_id()
     subcloud_name = lowest_subcloud.get_name()
     subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
 
@@ -85,8 +84,7 @@ def test_delete_backup_rejection_version_mismatch(request):
     central_ssh = LabConnectionKeywords().get_active_controller_ssh()
 
     # Gets the lowest subcloud (the subcloud with the lowest id).
-    dcmanager_subcloud_list_keywords = DcManagerSubcloudListKeywords(central_ssh)
-    lowest_subcloud = dcmanager_subcloud_list_keywords.get_dcmanager_subcloud_list().get_healthy_subcloud_with_lowest_id()
+    lowest_subcloud = DcManagerSubcloudListKeywords(central_ssh).get_dcmanager_subcloud_list().get_specific_subcloud_with_lowest_id()
     subcloud_name = lowest_subcloud.get_name()
     subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
 
