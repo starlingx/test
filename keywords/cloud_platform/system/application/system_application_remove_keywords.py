@@ -7,6 +7,8 @@ from keywords.cloud_platform.system.application.object.system_application_status
 from keywords.cloud_platform.system.application.system_application_list_keywords import SystemApplicationListKeywords
 from keywords.cloud_platform.system.application.system_application_delete_keywords import SystemApplicationDeleteInput
 from keywords.cloud_platform.system.application.system_application_delete_keywords import SystemApplicationDeleteKeywords
+from keywords.cloud_platform.system.application.system_application_apply_keywords import SystemApplicationApplyKeywords
+from framework.logging.automation_logger import get_logger
 
 
 class SystemApplicationRemoveKeywords(BaseKeyword):
@@ -77,7 +79,6 @@ class SystemApplicationRemoveKeywords(BaseKeyword):
         remove_input = SystemApplicationRemoveInput()
         remove_input.set_app_name(app_name)
         remove_input.set_force_removal(force_removal)
-
         remove_output = self.system_application_remove(remove_input)
 
         delete_input = SystemApplicationDeleteInput()
@@ -86,3 +87,33 @@ class SystemApplicationRemoveKeywords(BaseKeyword):
         delete_message = SystemApplicationDeleteKeywords(self.ssh_connection).get_system_application_delete(delete_input)
 
         return delete_message
+
+    def cleanup_app_if_present(self, app_name: str, force_removal: bool = False, force_deletion: bool = False) -> None:
+        """
+        Remove and delete an application if it exists, handling both applied and uploaded states.
+        This is a common teardown operation that safely cleans up applications.
+
+        Args:
+            app_name (str): Name of the application to clean up
+            force_removal (bool): Whether to force the removal operation
+            force_deletion (bool): Whether to force the deletion operation
+        """
+
+        app_list_kw = SystemApplicationListKeywords(self.ssh_connection)
+
+        if not app_list_kw.is_app_present(app_name):
+            get_logger().log_info(f"App {app_name} not present, skipping cleanup")
+            return
+
+        # Check if app is applied (needs remove) or just uploaded (needs delete only)
+        apply_kw = SystemApplicationApplyKeywords(self.ssh_connection)
+
+        if apply_kw.is_already_applied(app_name):
+            get_logger().log_info(f"Removing and deleting {app_name} (status: applied)")
+            self.system_application_remove_and_delete_app(app_name, force_removal, force_deletion)
+        else:
+            get_logger().log_info(f"Deleting {app_name} (status: uploaded)")
+            delete_input = SystemApplicationDeleteInput()
+            delete_input.set_app_name(app_name)
+            delete_input.set_force_deletion(force_deletion)
+            SystemApplicationDeleteKeywords(self.ssh_connection).get_system_application_delete(delete_input)

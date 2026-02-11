@@ -136,10 +136,11 @@ class SystemVerticalTableParser:
                 row = row.replace("!!binary |", "")
 
             has_regex = any(re.search(pattern, str(row)) for pattern in regex_indicators)
-            if not has_regex and str(row).count("|") != 3:
-                raise KeywordException("It is expected that a table have exactly two columns.")
+            pipe_count = str(row).count("|")
+            if not has_regex and pipe_count < 3:
+                raise KeywordException("It is expected that a table have at least two columns.")
 
-            parts = row.split("|")
+            parts = row.split("|", 3)
 
             if len(parts) > 2:
                 key = parts[1].strip()
