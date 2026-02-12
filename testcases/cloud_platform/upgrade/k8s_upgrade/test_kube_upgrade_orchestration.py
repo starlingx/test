@@ -19,6 +19,8 @@ def test_kubernetes_upgrade(request: FixtureRequest) -> None:
         - Setup SSH connection
         - Validate Kubernetes versions
         - Create and apply Kubernetes upgrade strategy
+        - Extract and log upgrade timings
+        - Save KPI data to database
         - Verify upgrade completion and cleanup
 
     Args:
@@ -66,6 +68,9 @@ def test_kubernetes_upgrade(request: FixtureRequest) -> None:
     timings = timing_keywords.extract_kube_upgrade_strategy_timings(details_strategy_output, active_kube_version, target_version)
     formatted_timings = timing_keywords.format_upgrade_timings(timings, active_kube_version, target_version)
     get_logger().log_info(formatted_timings)
+
+    get_logger().log_test_case_step("Save Kubernetes upgrade KPI to database")
+    timing_keywords.save_kube_upgrade_kpi_to_database(timings, active_kube_version, target_version)
 
     get_logger().log_test_case_step(f"Verify target version {target_version} is active on all hosts")
     active_kube_versions = system_kube_keywords.get_system_kube_version_list().get_active_kubernetes_version()

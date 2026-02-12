@@ -3,6 +3,8 @@ from typing import Optional
 
 from framework.logging.automation_logger import get_logger
 from keywords.cloud_platform.swmanager.objects.swmanager_kube_upgrade_strategy_timing import SwManagerKubeUpgradeStrategyTiming
+from keywords.cloud_platform.upgrade.objects.upgrade_event import UpgradeEvent
+from keywords.cloud_platform.upgrade.record_upgrade_event_keywords import RecordUpgradeEventKeywords
 
 
 class SwManagerKubeUpgradeStrategyTimingKeywords:
@@ -205,3 +207,47 @@ class SwManagerKubeUpgradeStrategyTimingKeywords:
         get_logger().log_info(f"Total wall clock duration: {self.format_duration(duration)}")
 
         return duration
+
+    def save_kube_upgrade_kpi_to_database(self, timings: list[SwManagerKubeUpgradeStrategyTiming], from_version: str, to_version: str) -> None:
+        """Save Kubernetes upgrade KPI to database.
+
+        Args:
+            timings (list[SwManagerKubeUpgradeStrategyTiming]): List of timing objects.
+            from_version (str): The starting Kubernetes version.
+            to_version (str): The target Kubernetes version.
+        """
+        record_keywords = RecordUpgradeEventKeywords()
+
+        # Save total upgrade duration
+        total_duration = self.calculate_total_duration(timings)
+        total_event = UpgradeEvent(event_name="kube-upgrade-total", retry=0, operation="kube-upgrade", entry="kubernetes", is_upgrade=True, is_patch=False)
+        total_event.set_duration(total_duration)
+        total_event.set_from_version(from_version)
+        total_event.set_to_version(to_version)
+        record_keywords.record_upgrade_event(total_event)
+
+        # Save each stage timing
+        for timing in timings:
+            if timing.is_stage():
+                # Clean entity names by removing brackets and quotes
+                entity = timing.get_entity_names() or "kubernetes"
+                entity = entity.strip("[]").replace("'", "").replace('"', "")
+
+                stage_event = UpgradeEvent(event_name=f"kube-stage:{timing.get_name()}", retry=0, operation="kube-upgrade", entry=entity, is_upgrade=True, is_patch=False)
+                stage_event.set_duration(timing.get_duration_seconds())
+                stage_event.set_from_version(from_version)
+                stage_event.set_to_version(to_version)
+                record_keywords.record_upgrade_event(stage_event)
+
+        # Save each step timing
+        for timing in timings:
+            if not timing.is_stage():
+                # Clean entity names by removing brackets and quotes
+                entity = timing.get_entity_names() or "kubernetes"
+                entity = entity.strip("[]").replace("'", "").replace('"', "")
+
+                step_event = UpgradeEvent(event_name=f"kube-step:{timing.get_name()}", retry=0, operation="kube-upgrade", entry=entity, is_upgrade=True, is_patch=False)
+                step_event.set_duration(timing.get_duration_seconds())
+                step_event.set_from_version(from_version)
+                step_event.set_to_version(to_version)
+                record_keywords.record_upgrade_event(step_event)
