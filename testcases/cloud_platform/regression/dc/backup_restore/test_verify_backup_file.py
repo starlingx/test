@@ -512,3 +512,58 @@ def test_c1_restore_central_backup_active_load(request):
 
     request.addfinalizer(teardown_central)
     verify_backup_central(central_ssh, subcloud_name)
+
+@mark.p0
+@mark.subcloud_lab_is_standard
+def test_verify_backup_central_std(request):
+    """Central Backup of a standard subcloud
+
+    Test Steps:
+        - Backup subcloud to store the file on the System Controller
+        - Verify the subcloud backup file is transferred to the centralized
+    default location
+        - Check backup match current Date and if it is complete
+        - Remove files created while the Tc was running.
+    """
+    central_ssh = LabConnectionKeywords().get_active_controller_ssh()
+    dcm_sc_list_kw = DcManagerSubcloudListKeywords(central_ssh)
+    subcloud = dcm_sc_list_kw.get_dcmanager_subcloud_list().get_healthy_subcloud_by_type(LabTypeEnum.STANDARD.value)
+    subcloud_name = subcloud.get_name()
+    # get subcloud ssh
+    subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
+    # Prechecks Before Back-Up:
+    get_logger().log_info(f"Performing pre-checks on {subcloud_name}")
+    obj_health = HealthKeywords(subcloud_ssh)
+    obj_health.validate_healty_cluster()  # Checks alarms, pods, app health
+
+    request.addfinalizer(teardown_central)
+    verify_backup_central(central_ssh, subcloud_name)
+
+@mark.p0
+@mark.subcloud_lab_is_standard
+def test_verify_backup_local_std(request):
+    """Local Backup of a standard subcloud
+
+    Test Steps:
+        - Create a YAML file and add backup backup_dir parameter
+        - Verify file created on the System Controller
+        - Run dcmanager CLI Backup with --local-only --backup-values
+        - Verify the backup files are stored locally (subcloud) using
+    the configured path.
+        - Remove files created while the Tc was running.
+    """
+    central_ssh = LabConnectionKeywords().get_active_controller_ssh()
+    dcm_sc_list_kw = DcManagerSubcloudListKeywords(central_ssh)
+    subcloud = dcm_sc_list_kw.get_dcmanager_subcloud_list().get_healthy_subcloud_by_type(LabTypeEnum.STANDARD.value)
+    subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud.get_name())
+
+    # Prechecks Before Back-Up:
+    get_logger().log_info(f"Performing pre-checks on {subcloud.get_name()}")
+    obj_health = HealthKeywords(subcloud_ssh)
+    obj_health.validate_healty_cluster()  # Checks alarms, pods, app health
+
+    def teardown():
+        teardown_local(subcloud.get_name())
+
+    request.addfinalizer(teardown)
+    verify_backup_local_custom_path(central_ssh, subcloud_ssh, subcloud.get_name())
