@@ -15,7 +15,6 @@ from keywords.cloud_platform.dcmanager.dcmanager_subcloud_manager_keywords impor
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.cloud_platform.yaml.deployment_assets_yaml import DeploymentAssetsHandler
 from keywords.files.file_keywords import FileKeywords
-from keywords.cloud_platform.dcmanager.dcmanager_subcloud_show_keywords import DcManagerSubcloudShowKeywords
 
 
 def get_undeployed_subcloud_name(ssh_connection: SSHConnection) -> str:
@@ -186,13 +185,6 @@ def test_bootstrap_failure_replay():
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     subcloud_name = get_undeployed_subcloud_name(ssh_connection)
-
-    # Delete any backups or prestaged data before deleting the subcloud.
-    release = DcManagerSubcloudShowKeywords(ssh_connection).get_dcmanager_subcloud_show(subcloud_name).get_dcmanager_subcloud_show_object().get_software_version()
-    local_backup_dir = f"/opt/platform-backup/backups/{release}"
-    get_logger().log_info("Remove prestaged data dir if exists.")
-    subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
-    FileKeywords(subcloud_ssh).delete_folder_with_sudo(local_backup_dir)
 
     # Get the subcloud deployment assets
     deployment_assets_config = ConfigurationManager.get_deployment_assets_config()
