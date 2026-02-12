@@ -119,17 +119,20 @@ class SystemHelmOverrideKeywords(BaseKeyword):
         self.ssh_connection.send(source_openrc(f"system helm-override-delete {app_name} {chart_name} {namespace}"))
         self.validate_success_return_code(self.ssh_connection)
 
-    def helm_override_update_reuse(self, app_name: str, chart_name: str, namespace: str, reuse_values: str):
+    def helm_override_update_with_list_of_values(self, app_name: str, chart_name: str, namespace: str, reuse_values: bool, set_override: list):
         """
-        Update helm chart user overrides.
+        Update helm chart user overrides using set of values with set and reuse values overrides
 
         Args:
             app_name (str): Name of the application
             chart_name (str): Name of the chart
             namespace (str): Namespace of chart overrides
-            reuse_values (str): YAML file containing helm chart override reuse_values
+            reuse_values (bool): Whether to reuse existing values
+            set_override (list): List of override values to set
 
         """
-        command = source_openrc(f"system helm-override-update {app_name} {chart_name} {namespace} --reuse-values {reuse_values}")
+        reuse_flag = "--reuse-values " if reuse_values else ""
+        set_values = " ".join(f"--set {item}" for item in set_override)
+        command = source_openrc(f"system helm-override-update {app_name} {chart_name} {namespace} {reuse_flag} {set_values}")
         self.ssh_connection.send(command)
         self.validate_success_return_code(self.ssh_connection)
