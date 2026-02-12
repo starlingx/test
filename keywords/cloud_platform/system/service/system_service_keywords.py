@@ -48,6 +48,22 @@ class SystemServiceKeywords(BaseKeyword):
         system_service_parameter_output = SystemServiceParameterListOutput(output)
         return system_service_parameter_output
 
+    def get_system_service_parameter_list_by_section(self, section: str) -> SystemServiceParameterListOutput:
+        """
+        Gets the system service-parameter-list filtered by section.
+
+        Args:
+            section (str): Section name to filter by (e.g., 'sysctl')
+
+        Returns:
+            SystemServiceParameterListOutput: Object with the filtered list of service Parameters.
+        """
+        command = source_openrc(f"system service-parameter-list --section {section}")
+        output = self.ssh_connection.send(command)
+        self.validate_success_return_code(self.ssh_connection)
+        system_service_parameter_output = SystemServiceParameterListOutput(output)
+        return system_service_parameter_output
+
     def get_system_service_show(self, service_id: str) -> SystemServiceShowOutput:
         """
         Gets the system service-show.
@@ -64,7 +80,7 @@ class SystemServiceKeywords(BaseKeyword):
         system_service_show_output = SystemServiceShowOutput(output)
         return system_service_show_output
 
-    def add_service_parameter(self, service: str, parameter: str, value: str) -> SystemServiceParameterOutput:
+    def add_service_parameter(self, service: str, parameter: str, value: str, section: str = "") -> SystemServiceParameterOutput:
         """
         Adds a service parameter.
 
@@ -72,11 +88,15 @@ class SystemServiceKeywords(BaseKeyword):
             service (str): The service name
             parameter (str): The parameter to add
             value (str): The value of the parameter
+            section (str): Optional section name (e.g., 'sysctl')
 
         Returns:
             SystemServiceParameterOutput: Output object
         """
-        command = source_openrc(f"system service-parameter-add {service} {parameter}={value}")
+        if section:
+            command = source_openrc(f"system service-parameter-add {service} {section} {parameter}={value}")
+        else:
+            command = source_openrc(f"system service-parameter-add {service} {parameter}={value}")
         output = self.ssh_connection.send(command)
         self.validate_success_return_code(self.ssh_connection)
         system_service_parameter_add_output = SystemServiceParameterOutput(output)
