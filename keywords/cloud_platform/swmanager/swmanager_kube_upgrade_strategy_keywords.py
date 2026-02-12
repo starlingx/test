@@ -96,6 +96,17 @@ class SwManagerKubeUpgradeStrategyKeywords(BaseKeyword):
 
         return SwManagerKubeUpgradeStrategyShowOutput(output)
 
+    def show_kube_upgrade_strategy_details(self) -> list[str]:
+        """Show the Kubernetes upgrade strategy with detailed timing information.
+
+        Returns:
+            list[str]: Detailed strategy output lines.
+        """
+        command = source_openrc("sw-manager kube-upgrade-strategy show --details")
+        output = self.ssh_connection.send(command)
+        self.validate_success_return_code(self.ssh_connection)
+        return output
+
     def verify_no_kube_upgrade_strategy_available(self) -> bool:
         """Verify that no Kubernetes upgrade strategy is available.
 
