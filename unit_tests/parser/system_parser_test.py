@@ -574,7 +574,7 @@ def test_system_vertical_table_parser_error_in_some_row():
         system_vertical_table_parser.get_output_values_dict()
         assert False, "There should be an exception when parsing the output."
     except KeywordException as e:
-        assert e.args[0] == "It is expected that a table have exactly two columns."
+        assert e.args[0] == "It is expected that a table have at least two columns."
 
 
 def test_system_vertical_table_parser_error_in_last_row():
@@ -620,6 +620,7 @@ def test_system_vertical_table_parser_with_valid_table_with_a_text_in_the_end():
     assert output_dict.get("status") == "removing"
     assert output_dict.get("updated_at") == "2024-10-16T15:50:59.902779+00:00"
 
+
 def test_system_helm_overrides_with_regex():
     """
     Tests the system vertical parser with regex values.
@@ -633,6 +634,7 @@ def test_system_helm_overrides_with_regex():
     assert "^/(sys" in output_dict["user_overrides"]
     assert "system.network.name" in output_dict["user_overrides"]
     assert "^(docker0" in output_dict["user_overrides"]
+
 
 def test_system_vertical_table_parser_handles_binary_lines():
     """
