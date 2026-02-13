@@ -158,6 +158,48 @@ def verify_kernel_module_management_helmchart_removed(ssh_connection: SSHConnect
     validate_none(chart, "kernel-module-manager HelmChart should be removed")
 
 
+def verify_pods_on_application_cores(ssh_connection: SSHConnection, namespace: str) -> None:
+    """Verify pods are running on application cores across all hosts.
+
+    This function verifies that pods in the specified namespace are scheduled
+    and running on the application cores of each host in the system.
+
+    Args:
+        ssh_connection (SSHConnection): SSH connection to active controller.
+        namespace (str): Kubernetes namespace containing the pods.
+    """
+    # Get all pods in the namespace
+    kubectl_pods = KubectlGetPodsKeywords(ssh_connection)
+    all_pods = kubectl_pods.get_pods(namespace=namespace)
+
+    # Get all hosts in the system
+    system_host_list = SystemHostListKeywords(ssh_connection)
+    all_hosts = [host.get_host_name() for host in system_host_list.get_system_host_list().get_hosts()]
+
+    # Verify pods on each host are using application cores
+    for host in all_hosts:
+        # Get pods running on this host
+        pods = all_pods.get_pods_on_node(host)
+        pod_names = [pod.get_name() for pod in pods]
+
+        # Skip hosts with no pods
+        if not pod_names:
+            get_logger().log_info(f"No pods on host {host}, skipping")
+            continue
+
+        get_logger().log_info(f"Checking pods on host {host}: {pod_names}")
+
+        # Get application cores configured on this host
+        cpu_list = SystemHostCPUKeywords(ssh_connection).get_system_host_cpu_list(host)
+        app_cores = [cpu.get_log_core() for cpu in cpu_list.get_system_host_cpu_objects(assigned_function="Application")]
+
+        # Get SSH connection to this host
+        host_ssh = LabConnectionKeywords().get_ssh_for_hostname(host)
+
+        # Verify pods are running on application cores
+        KubeCpusetsKeywords(host_ssh).verify_pods_running_on_specific_cores(pod_names, app_cores)
+
+
 def cleanup_kernel_module_management_environment(ssh_connection: SSHConnection) -> None:
     """Clean up kernel module management test resources.
 
@@ -279,21 +321,10 @@ def test_kernel_module_management_label_override(request):
     kubectl_pods.wait_for_pods_to_reach_status(expected_status="Running", pod_names=KMM_EXPECTED_PODS, namespace=NAMESPACE, timeout=30)
 
     get_logger().log_test_case_step("Verifying KMM pods are running on application cores")
-    # Get active controller hostname
-    active_controller = SystemHostListKeywords(ssh_connection).get_active_controller().get_host_name()
+    verify_pods_on_application_cores(ssh_connection, NAMESPACE)
 
-    # Retrieve application cores configured on the host
-    cpu_list = SystemHostCPUKeywords(ssh_connection).get_system_host_cpu_list(active_controller)
-    app_cores = [cpu.get_log_core() for cpu in cpu_list.get_system_host_cpu_objects(assigned_function="Application")]
-
-    get_logger().log_debug(f"Application cores for {active_controller}: {app_cores}")
-    # Get exact pod names from running pods
-    all_pods = kubectl_pods.get_pods(namespace=NAMESPACE).get_pods()
-    pod_names = [pod.get_name() for pod in all_pods]
-    # Get SSH connection to the host where pods are running
-    host_ssh = LabConnectionKeywords().get_ssh_for_hostname(active_controller)
-    # Verify pods are using application cores via kube-cpusets
-    KubeCpusetsKeywords(host_ssh).verify_pods_running_on_specific_cores(pod_names, app_cores)
+    get_logger().log_test_case_step("Removing kernel module management application")
+    cleanup_kernel_module_management_environment(ssh_connection)
 
 
 @mark.p1

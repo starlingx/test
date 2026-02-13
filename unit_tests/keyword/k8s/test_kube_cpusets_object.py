@@ -35,3 +35,12 @@ def test_get_cpu_list_empty():
     """Test get_cpu_list with empty cpus."""
     obj = KubeCpusetsObject()
     assert obj.get_cpu_list() == []
+
+
+def test_get_cpu_list_multi_node():
+    """Test get_cpu_list with multi-node format."""
+    obj = KubeCpusetsObject()
+    obj.set_cpus("node 0 6-15,38-47; node 1 16-31,48-63")
+    result = obj.get_cpu_list()
+    expected = list(range(6, 16)) + list(range(38, 48)) + list(range(16, 32)) + list(range(48, 64))
+    assert result == expected

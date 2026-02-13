@@ -166,6 +166,7 @@ class KubeCpusetsObject:
         Parses the cpus field which contains CPU assignments in various formats including
         ranges (e.g., "1-31"), comma-separated values (e.g., "0,32"), and combinations.
         The string may also include node information which is ignored during parsing.
+        Supports multi-node format (e.g., "node 0 6-15,38-47; node 1 16-31,48-63").
 
         Returns:
             List[int]: List of individual CPU numbers assigned to this container.
@@ -181,24 +182,34 @@ class KubeCpusetsObject:
             >>> obj.get_cpu_list()
             [1, 2, 3, ..., 31, 33, 34, ..., 63]
 
+            >>> obj.set_cpus("node 0 6-15,38-47; node 1 16-31,48-63")
+            >>> obj.get_cpu_list()
+            [6, 7, ..., 15, 38, ..., 47, 16, 17, ..., 31, 48, ..., 63]
+
         """
         if not self.cpus:
             return []
 
         cpu_list = []
-        # Remove "node X" prefix if present
         cpu_str = self.cpus
-        if cpu_str.startswith("node "):
-            parts = cpu_str.split(maxsplit=2)
-            cpu_str = parts[2] if len(parts) > 2 else ""
 
-        # Split by comma first to handle "1-31,33-63"
-        for part in cpu_str.split(","):
-            part = part.strip()
-            if "-" in part:
-                start, end = part.split("-")
-                cpu_list.extend(range(int(start), int(end) + 1))
-            elif part.isdigit():
-                cpu_list.append(int(part))
+        # Handle multi-node format by splitting on semicolon first
+        node_sections = cpu_str.split(";")
+
+        for section in node_sections:
+            section = section.strip()
+            # Remove "node X" prefix if present
+            if section.startswith("node "):
+                parts = section.split(maxsplit=2)
+                section = parts[2] if len(parts) > 2 else ""
+
+            # Split by comma to handle "1-31,33-63"
+            for part in section.split(","):
+                part = part.strip()
+                if "-" in part:
+                    start, end = part.split("-", 1)
+                    cpu_list.extend(range(int(start), int(end) + 1))
+                elif part.isdigit():
+                    cpu_list.append(int(part))
 
         return cpu_list

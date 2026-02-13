@@ -142,3 +142,14 @@ class KubectlGetPodsOutput:
             list[KubectlPodObject]: List of pods with the specified status.
         """
         return [pod for pod in self.kubectl_pod if pod.get_status() == status]
+
+    def get_pods_on_node(self, node_name: str) -> list[KubectlPodObject]:
+        """Get list of pod objects running on a specific node.
+
+        Args:
+            node_name (str): Name of the node.
+
+        Returns:
+            list[KubectlPodObject]: List of pod objects on the specified node.
+        """
+        return [pod for pod in self.kubectl_pod if pod.get_node() == node_name]
