@@ -288,6 +288,23 @@ system_helm_overrides_with_regex = [
     "+----------------+------------------------------------------------------------------------------------+\n",
 ]
 
+system_helm_override_show_with_multiline_yaml_pipes = [
+    "+----------------+--------------------------------------+\n",
+    "| Property       | Value                                |\n",
+    "+----------------+--------------------------------------+\n",
+    "| name           | dsa-manager                          |\n",
+    "| namespace      | kube-system                          |\n",
+    "| user_overrides | overrideConfig:                      |\n",
+    "|                |   dsa-controller-0.conf: |           |\n",
+    "|                |     [                                |\n",
+    "|                |       {                              |\n",
+    "|                |         \"wq_name\": \"shared_wq\"   |\n",
+    "|                |       }                              |\n",
+    "|                |     ]                                |\n",
+    "+----------------+--------------------------------------+\n",
+]
+
+
 
 def test_system_parser():
     """
@@ -645,3 +662,21 @@ def test_system_vertical_table_parser_handles_binary_lines():
 
     assert "attributes" in output_dict
     assert "!!binary" not in output_dict["attributes"]
+
+
+def test_system_vertical_table_parser_with_multiline_yaml_containing_pipes():
+    """
+    Tests that the parser correctly handles multi-line YAML content with embedded pipes.
+    This scenario occurs with 'system helm-override-show' when user_overrides contains
+    YAML with pipe characters (e.g., 'dsa-controller-0.conf: |').
+    """
+    parser = SystemVerticalTableParser(system_helm_override_show_with_multiline_yaml_pipes)
+    output_dict = parser.get_output_values_dict()
+
+    assert len(output_dict.keys()) == 3
+    assert output_dict['name'] == 'dsa-manager'
+    assert output_dict['namespace'] == 'kube-system'
+    assert 'overrideConfig:' in output_dict['user_overrides']
+    assert 'dsa-controller-0.conf:' in output_dict['user_overrides']
+    assert 'wq_name' in output_dict['user_overrides']
+    assert 'shared_wq' in output_dict['user_overrides']
