@@ -372,6 +372,14 @@ def scan_hosts(lab_config: LabConfig, ssh_connection: SSHConnection) -> list[Nod
     else:
         raise RuntimeError("Failed to find at least one controller on this lab.")
 
+    # Detect duplex configuration (2 controllers, no workers, no storage)
+    if controllers_count == 2:
+        worker_count = sum(1 for host in hosts if host.get_personality() == "worker")
+        storage_count = sum(1 for host in hosts if host.get_personality() == "storage")
+
+        if worker_count == 0 and storage_count == 0:
+            lab_config.add_lab_capability("lab_is_duplex")
+
     # Look at the Capabilities of each host individually.
     for host in hosts:
 
@@ -878,6 +886,7 @@ if __name__ == "__main__":
     # find the lab_type
     lab_type = get_lab_type(lab_config)
     lab_config.set_lab_type(lab_type)
+
 
     # check if the lab is an aio
     if is_aio(lab_config):
