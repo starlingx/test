@@ -44,7 +44,7 @@ class DcmanagerKubeRootcaUpdateStrategyKeywords(BaseKeyword):
             polling_sleep_time=check_interval,
         )
 
-    def dcmanager_kube_rootca_update_strategy_create(self, subcloud_apply_type: Optional[str] = None, max_parallel_subclouds: Optional[str] = None, stop_on_failure: Optional[bool] = None, group: Optional[str] = None, subject: Optional[str] = None, expiry_date: Optional[str] = None, cert_file: Optional[str] = None, force: Optional[bool] = None, subcloud_name: Optional[str] = None) -> DcmanagerKubeRootcaUpdateStrategyShowOutput:
+    def dcmanager_kube_rootca_update_strategy_create(self, subcloud_apply_type: Optional[str] = None, max_parallel_subclouds: Optional[str] = None, stop_on_failure: Optional[bool] = None, group: Optional[str] = None, subject: Optional[str] = None, expiry_date: Optional[str] = None, force: Optional[bool] = None, subcloud_name: Optional[str] = None) -> DcmanagerKubeRootcaUpdateStrategyShowOutput:
         """
         Create kube-rootca-update-strategy
 
@@ -55,7 +55,6 @@ class DcmanagerKubeRootcaUpdateStrategyKeywords(BaseKeyword):
             group (Optional[str]): Group.
             subject (Optional[str]): Subject.
             expiry_date (Optional[str]): Expiry date.
-            cert_file (Optional[str]): Certificate file path.
             force (Optional[bool]): Force flag.
             subcloud_name (Optional[str]): subloud name.
 
@@ -73,11 +72,9 @@ class DcmanagerKubeRootcaUpdateStrategyKeywords(BaseKeyword):
         if group:
             cmd += f" --group {group}"
         if subject:
-            cmd += f" --subject {subject}"
+            cmd += f" --subject='{subject}'"
         if expiry_date:
             cmd += f" --expiry-date {expiry_date}"
-        if cert_file:
-            cmd += f" --cert-file {cert_file}"
         if force:
             cmd += " --force"
         if subcloud_name:
@@ -100,7 +97,7 @@ class DcmanagerKubeRootcaUpdateStrategyKeywords(BaseKeyword):
 
         output = self.ssh_connection.send(source_openrc(cmd))
         self.validate_success_return_code(self.ssh_connection)
-        self.wait_kube_upgrade(expected_status="complete", check_interval=60, timeout=1800)
+        self.wait_kube_upgrade(expected_status="complete", check_interval=60, timeout=3600)
 
         return DcmanagerKubeRootcaUpdateStrategyShowOutput(output)
 
@@ -127,3 +124,38 @@ class DcmanagerKubeRootcaUpdateStrategyKeywords(BaseKeyword):
         output = self.ssh_connection.send(source_openrc(cmd))
         self.validate_success_return_code(self.ssh_connection)
         return DcmanagerKubeRootcaUpdateStrategyShowOutput(output)
+
+    def get_future_date(self, days: int) -> str:
+        """
+        Get future date in YYYY-MM-DD format.
+
+        Args:
+            days (int): Number of days in the future.
+
+        Returns:
+            str: Date string in YYYY-MM-DD format.
+        """
+        cmd = f"date +'%Y-%m-%d' --date='{days} days'"
+        output = self.ssh_connection.send(cmd)
+        self.validate_success_return_code(self.ssh_connection)
+        return output[0].strip()
+
+    def wait_for_strategy_deletion(self, timeout: int = 300) -> bool:
+        """
+        Wait for strategy to be fully deleted.
+
+        Args:
+            timeout (int): Maximum time to wait in seconds.
+
+        Returns:
+            bool: True if strategy deleted, False if timeout.
+        """
+        import time
+
+        start_time = time.time()
+        while time.time() - start_time < timeout:
+            self.ssh_connection.send(source_openrc("dcmanager kube-rootca-update-strategy show"))
+            if self.ssh_connection.get_return_code() != 0:
+                return True
+            time.sleep(5)
+        return False
