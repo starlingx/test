@@ -103,6 +103,33 @@ class KubectlSecretObject:
         """
         return self._metadata
 
+    def set_metadata(self, metadata: dict) -> None:
+        """Set metadata for the secret.
+
+        Args:
+            metadata (dict): Metadata dictionary
+        """
+        self._metadata = metadata
+
+    def get_annotations(self) -> dict:
+        """Return annotations from the secret metadata.
+
+        Returns:
+            dict: Annotations dictionary, or empty dict if none exist.
+        """
+        return self._metadata.get("annotations", {})
+
+    def get_annotation(self, key: str) -> Optional[str]:
+        """Return a specific annotation value.
+
+        Args:
+            key (str): The annotation key to retrieve.
+
+        Returns:
+            Optional[str]: The annotation value, or None if not found.
+        """
+        return self.get_annotations().get(key)
+
     def get_namespace(self) -> Optional[str]:
         """Return the namespace of the secret.
 

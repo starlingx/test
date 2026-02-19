@@ -11,9 +11,11 @@ class KubectlGetSecretsKeywords(BaseKeyword):
     """
     Keyword class for retrieving Kubernetes secrets.
     """
+
     def __init__(self, ssh_connection: SSHConnection):
         """
         Constructor.
+
         Args:
             ssh_connection (SSHConnection): The SSH connection object.
         """
@@ -22,8 +24,10 @@ class KubectlGetSecretsKeywords(BaseKeyword):
     def get_secrets(self, namespace: str = "default") -> KubectlGetSecretOutput:
         """
         Runs `kubectl get secrets` and returns a parsed output object.
+
         Args:
             namespace (str): Kubernetes namespace
+
         Returns:
             KubectlGetSecretOutput: Parsed secrets list
         """
@@ -35,8 +39,10 @@ class KubectlGetSecretsKeywords(BaseKeyword):
     def get_secret_names(self, namespace: str = "default") -> list[str]:
         """
         Returns a list of secret names in the given namespace.
+
         Args:
             namespace (str): Kubernetes namespace
+
         Returns:
             list[str]: Secret names
         """
@@ -87,6 +93,7 @@ class KubectlGetSecretsKeywords(BaseKeyword):
             namespace (str): The namespace where the secret is located.
             output_format (str): The output format (e.g., jsonpath, yaml, etc.).
             extra_parameters (str, optional): Additional parameters for the output format.
+            base64 (bool): Whether to decode base64 content. Defaults to False.
 
         Returns:
             str: The output from the kubectl get command.
@@ -95,7 +102,7 @@ class KubectlGetSecretsKeywords(BaseKeyword):
         if extra_parameters:
             command += f"={extra_parameters}"
         if base64:
-            command += f" | base64 --decode"
+            command += " | base64 --decode"
         output = self.ssh_connection.send(export_k8s_config(command))
 
-        return ''.join(output)
+        return "".join(output)
