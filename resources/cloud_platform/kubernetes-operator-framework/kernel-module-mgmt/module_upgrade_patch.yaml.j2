@@ -1,0 +1,9 @@
+spec:
+  moduleLoader:
+    container:
+      version: "{{ version }}"
+      kernelMappings:
+        - literal: "6.12.0-1-amd64"
+          containerImage: "{{ kmm_container_image_registry }}:amd64-hw"
+        - literal: "6.12.0-1-rt-amd64"
+          containerImage: "{{ kmm_container_image_registry }}:rt-amd64-hw"

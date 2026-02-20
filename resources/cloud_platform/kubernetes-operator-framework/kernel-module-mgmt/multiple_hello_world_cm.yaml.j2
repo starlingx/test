@@ -1,0 +1,27 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ module_name_1 }}-cm
+  namespace: kernel-module-management
+data:
+  dockerfile: |
+    FROM {{ kmm_builder_image }} as builder
+    ARG KERNEL_FULL_VERSION
+    RUN make KERNEL_DIR=/lib/modules/${KERNEL_FULL_VERSION}/build && \
+        mkdir -p /opt/lib/modules/${KERNEL_FULL_VERSION} && \
+        cp -v ./* /opt/lib/modules/${KERNEL_FULL_VERSION}
+    RUN depmod -b /opt ${KERNEL_FULL_VERSION}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ module_name_2 }}-cm
+  namespace: kernel-module-management
+data:
+  dockerfile: |
+    FROM {{ kmm_builder_image }} as builder
+    ARG KERNEL_FULL_VERSION
+    RUN make KERNEL_DIR=/lib/modules/${KERNEL_FULL_VERSION}/build && \
+        mkdir -p /opt/lib/modules/${KERNEL_FULL_VERSION} && \
+        cp -v ./* /opt/lib/modules/${KERNEL_FULL_VERSION}
+    RUN depmod -b /opt ${KERNEL_FULL_VERSION}

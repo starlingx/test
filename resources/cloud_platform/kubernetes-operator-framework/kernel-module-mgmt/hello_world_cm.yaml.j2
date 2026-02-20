@@ -1,11 +1,11 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: kmm-hello-world-cm
+  name: {{ module_name }}-cm
   namespace: kernel-module-management
 data:
   dockerfile: |
-    FROM PLACEHOLDER_IMAGE as builder
+    FROM {{ kmm_builder_image }} as builder
     ARG KERNEL_FULL_VERSION
     RUN make KERNEL_DIR=/lib/modules/${KERNEL_FULL_VERSION}/build && \
         mkdir -p /opt/lib/modules/${KERNEL_FULL_VERSION} && \

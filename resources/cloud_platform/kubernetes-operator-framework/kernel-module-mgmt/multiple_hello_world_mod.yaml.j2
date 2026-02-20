@@ -1,0 +1,105 @@
+apiVersion: kmm.sigs.x-k8s.io/v1beta1
+kind: Module
+metadata:
+  name: {{ module_name_1 }}
+  namespace: kernel-module-management
+spec:
+  moduleLoader:
+    container:
+      modprobe:
+        moduleName: hello_world_dmesg
+      kernelMappings:
+        - literal: "6.12.0-1-amd64"
+          containerImage: {{ image_directory }}/kmm/kmm-hello-world:amd64-hw
+          build:
+            buildArgs:
+              - name: KERNEL_FULL_VERSION
+                value: "6.12.0-1-amd64"
+            baseImageRegistryTLS:
+              insecure: false
+              insecureSkipTLSVerify: true
+            dockerfileConfigMap:
+              name: {{ module_name_1 }}-cm
+          registryTLS:
+            insecure: false
+            insecureSkipTLSVerify: true
+ 
+        - literal: "6.12.0-1-rt-amd64"
+          containerImage: {{ image_directory }}/kmm/kmm-hello-world:rt-amd64-hw
+          build:
+            buildArgs:
+              - name: KERNEL_FULL_VERSION
+                value: "6.12.0-1-rt-amd64"
+            baseImageRegistryTLS:
+              insecure: false
+              insecureSkipTLSVerify: true
+            dockerfileConfigMap:
+              name: {{ module_name_1 }}-cm
+          registryTLS:
+            insecure: false
+            insecureSkipTLSVerify: true
+ 
+  imageRepoSecret:
+    name: "kmm-registry-secret"
+ 
+  selector:
+    kubernetes.io/os: linux
+ 
+  tolerations:
+    - key: "services"
+      operator: "Equal"
+      value: "disabled"
+      effect: "NoExecute"
+---
+apiVersion: kmm.sigs.x-k8s.io/v1beta1
+kind: Module
+metadata:
+  name: {{ module_name_2 }}
+  namespace: kernel-module-management
+spec:
+  moduleLoader:
+    container:
+      modprobe:
+        moduleName: hello_world_dmesg
+      kernelMappings:
+        - literal: "6.12.0-1-amd64"
+          containerImage: {{ image_directory }}/kmm/kmm-hello-world:amd64-hw
+          build:
+            buildArgs:
+              - name: KERNEL_FULL_VERSION
+                value: "6.12.0-1-amd64"
+            baseImageRegistryTLS:
+              insecure: false
+              insecureSkipTLSVerify: true
+            dockerfileConfigMap:
+              name: {{ module_name_2 }}-cm
+          registryTLS:
+            insecure: false
+            insecureSkipTLSVerify: true
+ 
+        - literal: "6.12.0-1-rt-amd64"
+          containerImage: {{ image_directory }}/kmm/kmm-hello-world:rt-amd64-hw
+          build:
+            buildArgs:
+              - name: KERNEL_FULL_VERSION
+                value: "6.12.0-1-rt-amd64"
+            baseImageRegistryTLS:
+              insecure: false
+              insecureSkipTLSVerify: true
+            dockerfileConfigMap:
+              name: {{ module_name_2 }}-cm
+          registryTLS:
+            insecure: false
+            insecureSkipTLSVerify: true
+ 
+  imageRepoSecret:
+    name: "kmm-registry-secret"
+ 
+  selector:
+    kubernetes.io/os: linux
+ 
+  tolerations:
+    - key: "services"
+      operator: "Equal"
+      value: "disabled"
+      effect: "NoExecute"

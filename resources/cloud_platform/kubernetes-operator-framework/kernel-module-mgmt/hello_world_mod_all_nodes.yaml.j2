@@ -1,0 +1,47 @@
+apiVersion: kmm.sigs.x-k8s.io/v1beta1
+kind: Module
+metadata:
+  name: {{ module_name }}
+  namespace: kernel-module-management
+spec:
+  moduleLoader:
+    container:
+      modprobe:
+        moduleName: hello_world_dmesg
+      kernelMappings:
+        - literal: "6.12.0-1-amd64"
+          containerImage: {{ kmm_container_image_registry }}:amd64-hw
+          build:
+            buildArgs:
+              - name: KERNEL_FULL_VERSION
+                value: "6.12.0-1-amd64"
+            baseImageRegistryTLS:
+              insecure: false
+              insecureSkipTLSVerify: true
+            dockerfileConfigMap:
+              name: {{ module_name }}-cm
+          registryTLS:
+            insecure: false
+            insecureSkipTLSVerify: true
+ 
+        - literal: "6.12.0-1-rt-amd64"
+          containerImage: {{ kmm_container_image_registry }}:rt-amd64-hw
+          build:
+            buildArgs:
+              - name: KERNEL_FULL_VERSION
+                value: "6.12.0-1-rt-amd64"
+            baseImageRegistryTLS:
+              insecure: false
+              insecureSkipTLSVerify: true
+            dockerfileConfigMap:
+              name: {{ module_name }}-cm
+          registryTLS:
+            insecure: false
+            insecureSkipTLSVerify: true
+ 
+  imageRepoSecret:
+    name: "kmm-registry-secret"
+ 
+  selector:
+    kubernetes.io/os: linux
+     
