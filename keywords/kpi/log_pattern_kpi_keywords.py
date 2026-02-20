@@ -619,7 +619,10 @@ class LogPatternKpiKeywords(BaseKeyword):
             result = self.ssh_connection.send(cmd)
 
             if result:
-                # Find the first match after start_date
+                # Find the FIRST match after start_date (closest to start_date)
+                best_match = None
+                best_timestamp = None
+                
                 for line in result:
                     if not line.strip():
                         continue
@@ -633,24 +636,34 @@ class LogPatternKpiKeywords(BaseKeyword):
                                 if verbose:
                                     get_logger().log_info(f"REJECTING: {pattern} at {timestamp} (before or equal to start_date {start_date})")
                                 continue
-                            elif verbose:
-                                get_logger().log_info(f"ACCEPTING: {pattern} at {timestamp} (after start_date {start_date})")
-                        elif verbose:
-                            get_logger().log_info(f"NO start_date filter - ACCEPTING: {pattern} at {timestamp}")
-
-                        # Check max_time_delta constraint
-                        if max_time_delta and start_date and not ignore_max_time_delta:
-                            time_diff = (timestamp - start_date).total_seconds()
-                            if time_diff > max_time_delta:
+                            
+                            # Additional constraint: prevent jumping to different unlock sequences
+                            # Reasonable unlock sequence should complete within 2 hours (7200s)
+                            time_from_start = (timestamp - start_date).total_seconds()
+                            if time_from_start > 7200:  # 2 hours max
                                 if verbose:
-                                    get_logger().log_info(f"Skipping match at {timestamp} (exceeds max_time_delta of {max_time_delta}s)")
+                                    get_logger().log_info(f"Skipping match at {timestamp} (too far from start_date: {time_from_start}s > 7200s)")
                                 continue
+                            
+                            # Keep the earliest match after start_date
+                            if best_timestamp is None or timestamp < best_timestamp:
+                                best_match = line
+                                best_timestamp = timestamp
+                                if verbose:
+                                    get_logger().log_info(f"NEW BEST: {pattern} at {timestamp} (closest to start_date {start_date})")
+                        else:
+                            # No start_date filter - take first match
+                            if verbose:
+                                get_logger().log_info(f"NO start_date filter - ACCEPTING: {pattern} at {timestamp}")
+                            formatted_line = self._format_log_line_for_output(line, filename)
+                            return (timestamp, formatted_line, filename)
 
-                        if verbose:
-                            get_logger().log_info(f"Found pattern at {timestamp} in {filename}")
-
-                        formatted_line = self._format_log_line_for_output(line, filename)
-                        return (timestamp, formatted_line, filename)
+                # Return the best match found
+                if best_match and best_timestamp:
+                    if verbose:
+                        get_logger().log_info(f"Found pattern at {best_timestamp} in {filename}")
+                    formatted_line = self._format_log_line_for_output(best_match, filename)
+                    return (best_timestamp, formatted_line, filename)
 
         return None
 
@@ -1130,8 +1143,6 @@ class LogPatternKpiKeywords(BaseKeyword):
             Tuple: (success, kpi_start_time, end_time, blackout_duration)
         """
         patterns_found = 0
-        # KPI start time should be first non-excluded block's start, not start_date
-        # start_date is only used as a search filter
         kpi_start_time = None
         latest_end_time = None
         blackout_duration = 0.0
@@ -1139,8 +1150,7 @@ class LogPatternKpiKeywords(BaseKeyword):
         # If start_date provided, ensure we only find patterns after that time
         if start_date and verbose:
             get_logger().log_info(f"Using start_date as search filter: {start_date}")
-            get_logger().log_info(f"KPI start will be set to first non-excluded block's start")
-            get_logger().log_info(f"All blocks will search independently from: {start_date}")
+            get_logger().log_info(f"Each block searches independently from start_date")
         
         for block in blocks:
             if not block['file']:
@@ -1157,7 +1167,7 @@ class LogPatternKpiKeywords(BaseKeyword):
                 continue
 
             # Find start pattern - handle OR patterns (lists)
-            # Each block searches independently from start_date
+            # Each phase searches independently from start_date
             start_result = None
             if isinstance(start_pattern, list):
                 # OR pattern - try each alternative
@@ -1181,23 +1191,50 @@ class LogPatternKpiKeywords(BaseKeyword):
             start_timestamp, start_log_line, start_filename = start_result
 
             # Find stop pattern - handle OR patterns (lists)
-            # Use max_time_delta to limit search window
+            # For overlapping phases, allow stop pattern to be found before start pattern
+            # if it's within the same unlock sequence timeframe
             stop_result = None
             if isinstance(stop_pattern, list):
                 # OR pattern - try each alternative
                 for alt_pattern in stop_pattern:
+                    # First try: search after start_timestamp
                     stop_result = self._find_pattern_lpmp_style(
                         logs_dir, block['file'], alt_pattern, start_timestamp, verbose, block['label'],
                         max_time_delta=block.get('max_time_delta', max_time_delta)
                     )
+                    # If not found after start, try searching from original start_date for overlapping phases
+                    if not stop_result and start_date:
+                        stop_result = self._find_pattern_lpmp_style(
+                            logs_dir, block['file'], alt_pattern, start_date, verbose, block['label'],
+                            max_time_delta=block.get('max_time_delta', max_time_delta)
+                        )
+                    # If still not found, search without time constraints within unlock sequence
+                    if not stop_result and start_date:
+                        stop_result = self._find_pattern_lpmp_style(
+                            logs_dir, block['file'], alt_pattern, start_date, verbose, block['label'],
+                            max_time_delta=7200  # 2 hour max for unlock sequence
+                        )
                     if stop_result:
                         break
             else:
                 # Single pattern
+                # First try: search after start_timestamp
                 stop_result = self._find_pattern_lpmp_style(
                     logs_dir, block['file'], stop_pattern, start_timestamp, verbose, block['label'],
                     max_time_delta=block.get('max_time_delta', max_time_delta)
                 )
+                # If not found after start, try searching from original start_date for overlapping phases
+                if not stop_result and start_date:
+                    stop_result = self._find_pattern_lpmp_style(
+                        logs_dir, block['file'], stop_pattern, start_date, verbose, block['label'],
+                        max_time_delta=block.get('max_time_delta', max_time_delta)
+                    )
+                # If still not found, search without time constraints within unlock sequence
+                if not stop_result and start_date:
+                    stop_result = self._find_pattern_lpmp_style(
+                        logs_dir, block['file'], stop_pattern, start_date, verbose, block['label'],
+                        max_time_delta=7200  # 2 hour max for unlock sequence
+                    )
                 
             if not stop_result:
                 if not block.get('optional', False):
