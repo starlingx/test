@@ -2,6 +2,7 @@ from base64 import b64encode
 
 from pytest import mark
 
+from config.configuration_manager import ConfigurationManager
 from framework.logging.automation_logger import get_logger
 from framework.resources.resource_finder import get_stx_resource_path
 from framework.ssh.ssh_connection import SSHConnection
@@ -24,6 +25,8 @@ from keywords.k8s.helm.kubectl_get_helm_release_keywords import KubectlGetHelmRe
 from keywords.k8s.kube_cpusets.kube_cpusets_keywords import KubeCpusetsKeywords
 from keywords.k8s.module.kubectl_delete_module_keywords import KubectlDeleteModuleKeywords
 from keywords.k8s.module.kubectl_get_module_keywords import KubectlGetModuleKeywords
+from keywords.k8s.module.kubectl_patch_module_keywords import KubectlPatchModuleKeywords
+from keywords.k8s.node.kubectl_label_node_keywords import KubectlLabelNodeKeywords
 from keywords.k8s.pods.kubectl_get_pods_keywords import KubectlGetPodsKeywords
 from keywords.linux.dmesg.dmesg_keywords import DmesgKeywords
 from keywords.linux.keyring.keyring_keywords import KeyringKeywords
@@ -39,6 +42,332 @@ CHART_PATH = "/usr/local/share/applications/helm/kernel-module-management-[0-9]*
 KMM_EXPECTED_PODS = ["kmm-operator-controller", "kmm-operator-webhook"]
 
 
+# ConfigMap generation functions
+def generate_hello_world_configmap(ssh_connection: SSHConnection, module_name: str = "kmm-hello-world") -> None:
+    """Generate hello world ConfigMap with KMM builder image from config.
+
+    Args:
+        ssh_connection (SSHConnection): SSH connection to active controller.
+        module_name (str): Name for the module and configmap.
+
+    """
+    get_logger().log_info(f"Generating ConfigMap for module: {module_name}")
+    kof_config = ConfigurationManager.get_kof_config()
+    yaml_keywords = YamlKeywords(ssh_connection)
+    replacement_dict = {"kmm_builder_image": kof_config.get_kmm_builder_image(), "module_name": module_name}
+    yaml_keywords.generate_yaml_file_from_template(get_stx_resource_path("resources/cloud_platform/kubernetes-operator-framework/kernel-module-mgmt/hello_world_cm.yaml.j2"), replacement_dict, "hello_world_cm.yaml", "/tmp")
+
+
+def generate_multiple_hello_world_configmaps(ssh_connection: SSHConnection, module_names: list[str]) -> None:
+    """Generate multiple hello world ConfigMaps using single template.
+
+    Args:
+        ssh_connection (SSHConnection): SSH connection to active controller.
+        module_names (list[str]): List of module names for generating configmaps.
+
+    """
+    get_logger().log_info(f"Generating multiple ConfigMaps for modules: {module_names}")
+    kof_config = ConfigurationManager.get_kof_config()
+    yaml_keywords = YamlKeywords(ssh_connection)
+    replacement_dict = {"kmm_builder_image": kof_config.get_kmm_builder_image(), "module_name_1": module_names[0], "module_name_2": module_names[1]}
+
+    yaml_keywords.generate_yaml_file_from_template(get_stx_resource_path("resources/cloud_platform/kubernetes-operator-framework/kernel-module-mgmt/multiple_hello_world_cm.yaml.j2"), replacement_dict, "hello_world_cm.yaml", "/tmp")
+
+
+# Module generation functions
+def generate_hello_world_module_all_nodes(ssh_connection: SSHConnection, module_name: str = "kmm-hello-world") -> None:
+    """Generate hello world Module for all nodes with KMM container image from config.
+
+    Args:
+        ssh_connection (SSHConnection): SSH connection to active controller.
+        module_name (str): Name for the module.
+
+    """
+    get_logger().log_info(f"Generating Module for all nodes: {module_name}")
+    kof_config = ConfigurationManager.get_kof_config()
+    yaml_keywords = YamlKeywords(ssh_connection)
+
+    replacement_dict = {
+        "kmm_container_image_registry": kof_config.get_kmm_container_image_registry(),
+        "module_name": module_name,
+    }
+
+    yaml_keywords.generate_yaml_file_from_template(get_stx_resource_path("resources/cloud_platform/kubernetes-operator-framework/kernel-module-mgmt/hello_world_mod_all_nodes.yaml.j2"), replacement_dict, "hello_world_mod.yaml", "/tmp")
+
+
+def generate_hello_world_module_with_target_host(ssh_connection: SSHConnection, module_name: str = "kmm-hello-world", target_host: str = None) -> None:
+    """Generate hello world Module with specific target host.
+
+    Args:
+        ssh_connection (SSHConnection): SSH connection to active controller.
+        module_name (str): Name for the module.
+        target_host (str): Hostname to pin the module to via node selector.
+
+    """
+    get_logger().log_info(f"Generating Module for target host {target_host}: {module_name}")
+    kof_config = ConfigurationManager.get_kof_config()
+    yaml_keywords = YamlKeywords(ssh_connection)
+
+    replacement_dict = {
+        "kmm_container_image_registry": kof_config.get_kmm_container_image_registry(),
+        "module_name": module_name,
+    }
+
+    replacement_dict["target_host"] = target_host
+
+    yaml_keywords.generate_yaml_file_from_template(get_stx_resource_path("resources/cloud_platform/kubernetes-operator-framework/kernel-module-mgmt/hello_world_mod.yaml.j2"), replacement_dict, "hello_world_mod.yaml", "/tmp")
+
+
+def generate_hello_world_module_with_selector(ssh_connection: SSHConnection, module_name: str = "kmm-hello-world") -> None:
+    """Generate hello world Module with test-hardware selector.
+
+    Args:
+        ssh_connection (SSHConnection): SSH connection to active controller.
+        module_name (str): Name for the module.
+
+    """
+    get_logger().log_info(f"Generating Module with hardware selector: {module_name}")
+    kof_config = ConfigurationManager.get_kof_config()
+    yaml_keywords = YamlKeywords(ssh_connection)
+
+    replacement_dict = {
+        "kmm_container_image_registry": kof_config.get_kmm_container_image_registry(),
+        "module_name": module_name,
+    }
+
+    yaml_keywords.generate_yaml_file_from_template(get_stx_resource_path("resources/cloud_platform/kubernetes-operator-framework/kernel-module-mgmt/hello_world_mod_selector.yaml.j2"), replacement_dict, "hello_world_mod_selector.yaml", "/tmp")
+
+
+def generate_multiple_hello_world_modules(ssh_connection: SSHConnection, module_names: list[str]) -> None:
+    """Generate multiple hello world Modules using single template.
+
+    Args:
+        ssh_connection (SSHConnection): SSH connection to active controller.
+        module_names (list[str]): List of module names for generating modules.
+
+    """
+    get_logger().log_info(f"Generating multiple hello world modules: {module_names}")
+    kof_config = ConfigurationManager.get_kof_config()
+    yaml_keywords = YamlKeywords(ssh_connection)
+
+    replacement_dict = {"image_directory": kof_config.get_kmm_container_image_registry(), "module_name_1": module_names[0], "module_name_2": module_names[1]}
+
+    yaml_keywords.generate_yaml_file_from_template(get_stx_resource_path("resources/cloud_platform/kubernetes-operator-framework/kernel-module-mgmt/multiple_hello_world_mod.yaml.j2"), replacement_dict, "hello_world_mod.yaml", "/tmp")
+
+
+def generate_prebuilt_module(ssh_connection: SSHConnection, module_name: str = "kmm-prebuilt") -> None:
+    """Generate prebuilt module YAML with KMM container image from config.
+
+    Args:
+        ssh_connection (SSHConnection): SSH connection to active controller.
+        module_name (str): Name for the module.
+
+    """
+    get_logger().log_info(f"Generating prebuilt module: {module_name}")
+    kof_config = ConfigurationManager.get_kof_config()
+    yaml_keywords = YamlKeywords(ssh_connection)
+    yaml_keywords.generate_yaml_file_from_template(get_stx_resource_path("resources/cloud_platform/kubernetes-operator-framework/kernel-module-mgmt/prebuilt_mod.yaml.j2"), {"kmm_container_image_registry": kof_config.get_kmm_container_image_registry()}, "prebuilt_mod.yaml", "/tmp")
+
+
+def generate_versioned_module(ssh_connection: SSHConnection, module_name: str, version: str, target_host: str, output_filename: str = "hello_world_mod_versioned.yaml") -> None:
+    """Generate versioned module YAML for ordered upgrade testing.
+
+    Args:
+        ssh_connection (SSHConnection): SSH connection to active controller.
+        module_name (str): Name for the module.
+        version (str): Version string for the module.
+        target_host (str): Hostname to target with node selector.
+        output_filename (str): Output YAML filename.
+
+    """
+    get_logger().log_info(f"Generating versioned module {module_name} v{version} for {target_host}")
+    kof_config = ConfigurationManager.get_kof_config()
+    yaml_keywords = YamlKeywords(ssh_connection)
+    yaml_keywords.generate_yaml_file_from_template(get_stx_resource_path("resources/cloud_platform/kubernetes-operator-framework/kernel-module-mgmt/hello_world_mod_versioned.yaml.j2"), {"module_name": module_name, "kmm_container_image_registry": kof_config.get_kmm_container_image_registry(), "version": version, "target_host": target_host}, output_filename, "/tmp")
+
+
+# Utility functions
+def get_kmm_worker_pod_names(ssh_connection: SSHConnection, module_names: list[str], node_name: str = None) -> list[str]:
+    """Generate KMM worker pod names for given modules.
+
+    Args:
+        ssh_connection (SSHConnection): SSH connection to active controller.
+        module_names (list[str]): List of module names.
+        node_name (str): Specific node name, or None for all nodes.
+
+    Returns:
+        list[str]: List of worker pod names.
+
+    """
+    get_logger().log_info(f"Generating worker pod names for modules: {module_names}")
+
+    # Generate pod names for specific node
+    if node_name:
+        return [f"kmm-worker-{node_name}-{module_name}" for module_name in module_names]
+
+    # Get all nodes and generate pod names for each
+    system_host_list = SystemHostListKeywords(ssh_connection)
+    all_hosts = [host.get_host_name() for host in system_host_list.get_system_host_list().get_hosts()]
+
+    pod_names = []
+    for host in all_hosts:
+        for module_name in module_names:
+            pod_names.append(f"kmm-worker-{host}-{module_name}")
+
+    get_logger().log_debug(f"Generated {len(pod_names)} worker pod names")
+    return pod_names
+
+
+def wait_for_worker_pods_completed(ssh_connection: SSHConnection, pod_names: list[str] = None, timeout: int = 180) -> None:
+    """Wait for KMM worker pods to complete.
+
+    Args:
+        ssh_connection (SSHConnection): SSH connection to active controller.
+        pod_names (list[str]): List of pod names to wait for. Defaults to ["kmm-worker"].
+        timeout (int): Timeout in seconds.
+
+    """
+    if pod_names is None:
+        pod_names = ["kmm-worker"]
+
+    get_logger().log_info(f"Waiting for worker pods to complete: {pod_names}")
+    kubectl_pods = KubectlGetPodsKeywords(ssh_connection)
+    kubectl_pods.wait_for_pods_to_reach_status(expected_status="Completed", pod_names=pod_names, namespace=NAMESPACE, poll_interval=1, timeout=timeout)
+
+
+def delete_module_and_configmap(ssh_connection: SSHConnection, module_name: str, ignore_not_found: bool = False) -> None:
+    """Delete KMM module and its configmap.
+
+    Args:
+        ssh_connection (SSHConnection): SSH connection to active controller.
+        module_name (str): Name of the module to delete.
+        ignore_not_found (bool): If True, ignore resources that don't exist.
+
+    """
+    get_logger().log_info(f"Deleting module and configmap: {module_name}")
+    KubectlDeleteModuleKeywords(ssh_connection).delete_module(module_name, NAMESPACE, ignore_not_found=ignore_not_found)
+    KubectlDeleteConfigmapKeywords(ssh_connection).delete_configmap(f"{module_name}-cm", NAMESPACE, ignore_not_found=ignore_not_found)
+
+
+def cleanup_test_resources(ssh_connection: SSHConnection, module_name: str, cleanup_files: bool = True) -> None:
+    """Clean up test resources including module, configmap, and YAML files.
+
+    Args:
+        ssh_connection (SSHConnection): SSH connection to active controller.
+        module_name (str): Name of the module to clean up.
+        cleanup_files (bool): Whether to clean up YAML files.
+
+    """
+    get_logger().log_info(f"Cleaning up test resources for module: {module_name}")
+
+    # Use helper function for module and configmap deletion with error tolerance
+    delete_module_and_configmap(ssh_connection, module_name, ignore_not_found=True)
+
+    # Clean up generated YAML files
+    if cleanup_files:
+        file_keywords = FileKeywords(ssh_connection)
+        file_keywords.delete_file("/tmp/hello_world_cm.yaml")
+        file_keywords.delete_file("/tmp/hello_world_mod.yaml")
+
+
+def cleanup_test_resources_with_labels(ssh_connection: SSHConnection, module_name: str) -> None:
+    """Clean up test resources including node labels.
+
+    Args:
+        ssh_connection (SSHConnection): SSH connection to active controller.
+        module_name (str): Name of the module to clean up.
+
+    """
+    get_logger().log_info(f"Cleaning up test resources with labels for module: {module_name}")
+
+    # Clean up standard resources
+    cleanup_test_resources(ssh_connection, module_name)
+
+    # Remove test-hardware labels from all nodes
+    label_keywords = KubectlLabelNodeKeywords(ssh_connection)
+    system_host_list = SystemHostListKeywords(ssh_connection)
+    all_hosts = system_host_list.get_system_host_list().get_hosts()
+    for host in all_hosts:
+        label_keywords.remove_label(host.get_host_name(), "test-hardware")
+
+    # Clean up selector-specific files
+    file_keywords = FileKeywords(ssh_connection)
+    file_keywords.delete_file("/tmp/hello_world_mod_selector.yaml")
+
+
+# KMM environment management functions
+def verify_module_loaded(ssh_connection: SSHConnection, module_name: str = "hello_world_dmesg") -> None:
+    """Verify kernel module is loaded via lsmod.
+
+    Args:
+        ssh_connection (SSHConnection): SSH connection to check module on.
+        module_name (str): Name of the kernel module to check.
+
+    """
+    get_logger().log_info(f"Verifying module {module_name} is loaded")
+    lsmod_keywords = LsmodKeywords(ssh_connection)
+    validate_equals_with_retry(lambda: lsmod_keywords.get_lsmod_output().has_module(module_name), True, f"{module_name} should be loaded", timeout=30, polling_sleep_time=2)
+
+
+def verify_module_unloaded(ssh_connection: SSHConnection, module_name: str = "hello_world_dmesg") -> None:
+    """Verify kernel module is unloaded via lsmod.
+
+    Args:
+        ssh_connection (SSHConnection): SSH connection to check module on.
+        module_name (str): Name of the kernel module to check.
+
+    """
+    get_logger().log_info(f"Verifying module {module_name} is unloaded")
+    lsmod_keywords = LsmodKeywords(ssh_connection)
+    validate_equals_with_retry(lambda: lsmod_keywords.get_lsmod_output().has_module(module_name), False, f"{module_name} should be unloaded", timeout=30, polling_sleep_time=2)
+
+
+def verify_dmesg_message(ssh_connection: SSHConnection, message: str) -> None:
+    """Verify message appears in dmesg output.
+
+    Args:
+        ssh_connection (SSHConnection): SSH connection to check dmesg on.
+        message (str): Message to verify in dmesg.
+
+    """
+    get_logger().log_info(f"Verifying dmesg contains: {message}")
+    dmesg_keywords = DmesgKeywords(ssh_connection)
+    dmesg_keywords.verify_dmesg_contains(message, lines=1)
+
+
+def verify_kmm_module_exists(ssh_connection: SSHConnection, module_name: str) -> None:
+    """Verify KMM module resource exists.
+
+    Args:
+        ssh_connection (SSHConnection): SSH connection to active controller.
+        module_name (str): Name of the KMM module to check.
+
+    """
+    get_logger().log_info(f"Verifying KMM module resource exists: {module_name}")
+    module_keywords = KubectlGetModuleKeywords(ssh_connection)
+    validate_equals(module_keywords.is_module_present(module_name, NAMESPACE), True, f"{module_name} module should exist")
+
+
+def patch_module_version(ssh_connection: SSHConnection, module_name: str, version: str) -> None:
+    """Patch module to upgrade to new version.
+
+    Args:
+        ssh_connection (SSHConnection): SSH connection to active controller.
+        module_name (str): Name of the module to patch.
+        version (str): New version string.
+
+    """
+    get_logger().log_info(f"Patching module {module_name} to version {version}")
+    kof_config = ConfigurationManager.get_kof_config()
+    yaml_keywords = YamlKeywords(ssh_connection)
+
+    yaml_keywords.generate_yaml_file_from_template(get_stx_resource_path("resources/cloud_platform/kubernetes-operator-framework/kernel-module-mgmt/module_upgrade_patch.yaml.j2"), {"version": version, "kmm_container_image_registry": kof_config.get_kmm_container_image_registry()}, "module_upgrade_patch.yaml", "/tmp", copy_to_remote=False)
+    patch_data = yaml_keywords.load_yaml(f"{ConfigurationManager.get_logger_config().get_test_case_resources_log_location()}/module_upgrade_patch.yaml")
+
+    patch_keywords = KubectlPatchModuleKeywords(ssh_connection)
+    patch_keywords.patch_module(module_name, NAMESPACE, patch_data, patch_type="merge")
+
+
 def setup_docker_registry_override(ssh_connection: SSHConnection) -> None:
     """Setup Docker registry credentials as helm override.
 
@@ -48,7 +377,7 @@ def setup_docker_registry_override(ssh_connection: SSHConnection) -> None:
     Args:
         ssh_connection (SSHConnection): SSH connection to active controller.
     """
-    get_logger().log_info("Setting up Docker registry credentials")
+    get_logger().log_info("Setting up Docker registry credentials for KMM")
 
     # Extract username and password from keyring
     keyring_keywords = KeyringKeywords(ssh_connection)
@@ -58,7 +387,7 @@ def setup_docker_registry_override(ssh_connection: SSHConnection) -> None:
     # Create base64-encoded credentials in format "username:password"
     docker_credentials = b64encode(f"{username}:{password}".encode()).decode()
 
-    # Create Docker config JSON with authentication for docker.io registry
+    # Create Docker config JSON with authentication for registry.local:9001
     docker_config_json_content = f'{{"auths":{{"https://registry.local:9001":{{"auth":"{docker_credentials}"}}}}}}'
 
     # Base64-encode the entire Docker config JSON for Kubernetes secret
@@ -84,9 +413,14 @@ def setup_docker_registry_override(ssh_connection: SSHConnection) -> None:
 def setup_kernel_module_management_environment(ssh_connection: SSHConnection) -> None:
     """Setup kernel module management application.
 
+    Uploads, configures, and applies the KMM application with Docker registry credentials.
+
     Args:
         ssh_connection (SSHConnection): SSH connection to active controller.
     """
+    get_logger().log_info(f"Setting up {APP_NAME} environment")
+
+    # Upload KMM application chart
     get_logger().log_info(f"Uploading {APP_NAME} application")
     ls_keywords = LsKeywords(ssh_connection)
     actual_chart = ls_keywords.get_first_matching_file(CHART_PATH)
@@ -102,6 +436,7 @@ def setup_kernel_module_management_environment(ssh_connection: SSHConnection) ->
     get_logger().log_info("Configuring Docker registry credentials for KMM")
     setup_docker_registry_override(ssh_connection)
 
+    # Apply the KMM application
     get_logger().log_info(f"Applying {APP_NAME} application")
     system_app_apply = SystemApplicationApplyKeywords(ssh_connection)
     system_app_apply.system_application_apply(APP_NAME)
@@ -279,7 +614,6 @@ def test_kernel_module_management_upload_apply_delete(request):
 @mark.p1
 def test_kernel_module_management_label_override(request):
     """Test applying isApplication label override to kernel module management.
-
     Steps:
         - Cleanup kernel module management application
         - Setup kernel module management environment
@@ -334,7 +668,7 @@ def test_kernel_module_and_config_map_load_and_build(request):
     Steps:
         - Cleanup kernel module management application
         - Setup kernel module management environment
-        - Upload hello world kernel module ConfigMap and Module YAML files
+        - Upload to lab hello world kernel module ConfigMap and Module YAML files
         - Apply hello world kernel module resources
         - Wait for worker pod to complete module build and load
         - Verify KMM Module resource exists
@@ -347,19 +681,14 @@ def test_kernel_module_and_config_map_load_and_build(request):
         - Cleanup kernel module management application
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    module_name = "kmm-test-build"
 
     get_logger().log_test_case_step("Cleanup kernel module management application")
     cleanup_kernel_module_management_environment(ssh_connection)
 
     def cleanup():
-        get_logger().log_teardown_step("Deleting kernel module resource")
-        KubectlDeleteModuleKeywords(ssh_connection).delete_module("kmm-hello-world", NAMESPACE, ignore_not_found=True)
-        get_logger().log_teardown_step("Deleting configmap resource")
-        KubectlDeleteConfigmapKeywords(ssh_connection).delete_configmap("kmm-hello-world-cm", NAMESPACE, ignore_not_found=True)
-        get_logger().log_teardown_step("Cleaning up kernel module YAML files")
-        file_keywords = FileKeywords(ssh_connection)
-        file_keywords.delete_file("/tmp/hello_world_cm.yaml")
-        file_keywords.delete_file("/tmp/hello_world_mod.yaml")
+        get_logger().log_teardown_step("Cleaning up test resources")
+        cleanup_test_resources(ssh_connection, module_name)
         get_logger().log_teardown_step("Removing kernel module management application")
         cleanup_kernel_module_management_environment(ssh_connection)
 
@@ -369,9 +698,9 @@ def test_kernel_module_and_config_map_load_and_build(request):
     setup_kernel_module_management_environment(ssh_connection)
 
     get_logger().log_test_case_step("Uploading hello world kernel module YAML files")
-    file_keywords = FileKeywords(ssh_connection)
-    file_keywords.upload_file(get_stx_resource_path("resources/cloud_platform/kubernetes-operator-framework/kernel-module-mgmt/hello_world_cm.yaml"), "/tmp/hello_world_cm.yaml", overwrite=True)
-    file_keywords.upload_file(get_stx_resource_path("resources/cloud_platform/kubernetes-operator-framework/kernel-module-mgmt/hello_world_mod.yaml"), "/tmp/hello_world_mod.yaml", overwrite=True)
+    active_controller = SystemHostListKeywords(ssh_connection).get_active_controller().get_host_name()
+    generate_hello_world_configmap(ssh_connection, module_name)
+    generate_hello_world_module_with_target_host(ssh_connection, module_name, active_controller)
 
     get_logger().log_test_case_step("Applying hello world kernel module")
     apply_keywords = KubectlFileApplyKeywords(ssh_connection)
@@ -379,35 +708,25 @@ def test_kernel_module_and_config_map_load_and_build(request):
     apply_keywords.apply_resource_from_yaml("/tmp/hello_world_mod.yaml")
 
     get_logger().log_test_case_step("Verifying worker pod is running")
-    kubectl_pods = KubectlGetPodsKeywords(ssh_connection)
-    kubectl_pods.wait_for_pods_to_reach_status(expected_status="Completed", pod_names=["kmm-worker"], namespace=NAMESPACE, poll_interval=1, timeout=30)
+    wait_for_worker_pods_completed(ssh_connection)
 
     get_logger().log_test_case_step("Verifying KMM module resource exists")
-    module_keywords = KubectlGetModuleKeywords(ssh_connection)
-    validate_equals(module_keywords.is_module_present("kmm-hello-world", NAMESPACE), True, "KMM module resource should exist")
+    verify_kmm_module_exists(ssh_connection, module_name)
 
     get_logger().log_test_case_step("Verifying module load message in dmesg")
-    dmesg_keywords = DmesgKeywords(ssh_connection)
-    dmesg_keywords.verify_dmesg_contains("Hello, world!", lines=1)
+    verify_dmesg_message(ssh_connection, "Hello, world!")
 
     get_logger().log_test_case_step("Verifying hello_world_dmesg kernel module is loaded")
-    lsmod_keywords = LsmodKeywords(ssh_connection)
-    lsmod_output = lsmod_keywords.get_lsmod_output()
-    validate_equals(lsmod_output.has_module("hello_world_dmesg"), True, "hello_world_dmesg kernel module should be loaded")
+    verify_module_loaded(ssh_connection)
 
-    get_logger().log_test_case_step("Deleting kernel module resource")
-    delete_module_keywords = KubectlDeleteModuleKeywords(ssh_connection)
-    delete_module_keywords.delete_module("kmm-hello-world", NAMESPACE)
-
-    get_logger().log_test_case_step("Deleting configmap resource")
-    delete_configmap_keywords = KubectlDeleteConfigmapKeywords(ssh_connection)
-    delete_configmap_keywords.delete_configmap("kmm-hello-world-cm", NAMESPACE)
+    get_logger().log_test_case_step("Deleting kernel module and configmap resources")
+    delete_module_and_configmap(ssh_connection, module_name)
 
     get_logger().log_test_case_step("Verifying kernel module is no longer loaded")
-    validate_equals_with_retry(lambda: lsmod_keywords.get_lsmod_output().has_module("hello_world_dmesg"), False, "hello_world_dmesg kernel module should not be loaded", timeout=10, polling_sleep_time=2)
+    verify_module_unloaded(ssh_connection)
 
     get_logger().log_test_case_step("Verifying module unload message in dmesg")
-    dmesg_keywords.verify_dmesg_contains("Goodbye, world!", lines=1)
+    verify_dmesg_message(ssh_connection, "Goodbye, world!")
 
     get_logger().log_test_case_step("Removing kernel module management application")
     cleanup_kernel_module_management_environment(ssh_connection)

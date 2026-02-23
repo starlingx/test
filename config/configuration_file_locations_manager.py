@@ -26,6 +26,7 @@ class ConfigurationFileLocationsManager:
         self.app_config_file = None
         self.openstack_config_file = None
         self.storage_config_file = None
+        self.kof_config_file = None
 
     def set_configs_from_pytest_args(self, session: Session):
         """
@@ -94,6 +95,10 @@ class ConfigurationFileLocationsManager:
         storage_config_file = session.config.getoption("--storage_config_file")
         if storage_config_file:
             self.set_storage_config_file(storage_config_file)
+
+        kof_config_file = session.config.getoption("--kof_config_file")
+        if kof_config_file:
+            self.set_kof_config_file(kof_config_file)
 
     def set_configs_from_options_parser(self, parser: OptionParser = None):
         """
@@ -171,6 +176,10 @@ class ConfigurationFileLocationsManager:
         if storage_config_file:
             self.set_storage_config_file(storage_config_file)
 
+        kof_config_file = options.kof_config_file
+        if kof_config_file:
+            self.set_kof_config_file(kof_config_file)
+
     @staticmethod
     def add_options(safe_parser: SafeOptionParser):
         """
@@ -195,6 +204,7 @@ class ConfigurationFileLocationsManager:
         safe_parser.add_option("--app_config_file", action="store", dest="app_config_file", help="The app config file")
         safe_parser.add_option("--openstack_config_file", action="store", dest="openstack_config_file", help="The openstack config file")
         safe_parser.add_option("--storage_config_file", action="store", dest="storage_config_file", help="The storage config file")
+        safe_parser.add_option("--kof_config_file", action="store", dest="kof_config_file", help="The KOF (Kubernetes Operator Framework) config file")
 
     def set_lab_config_file(self, lab_config_file: str):
         """
@@ -501,3 +511,22 @@ class ConfigurationFileLocationsManager:
             str: the storage config file
         """
         return self.storage_config_file
+
+    def set_kof_config_file(self, kof_config_file: str):
+        """
+        Setter for KOF config file
+
+        Args:
+            kof_config_file (str): the KOF config file
+
+        """
+        self.kof_config_file = kof_config_file
+
+    def get_kof_config_file(self) -> str:
+        """
+        Getter for KOF config file
+
+        Returns:
+            str: the KOF config file
+        """
+        return self.kof_config_file

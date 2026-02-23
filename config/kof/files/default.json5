@@ -1,0 +1,7 @@
+{
+  // KMM builder image for kernel module builds
+  kmm_builder_image: "docker.io/starlingx/kmm-builder:stx.12.0-v1.0.0",
+
+  // KMM container image registry and repository
+  kmm_container_image_registry: "registry.local:9001/kmm/kmm-hello-world",
+}

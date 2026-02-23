@@ -4,6 +4,7 @@ from config.database.objects.database_config import DatabaseConfig
 from config.deployment_assets.objects.deployment_assets_config import DeploymentAssetsConfig
 from config.docker.objects.docker_config import DockerConfig
 from config.k8s.objects.k8s_config import K8sConfig
+from config.kof.objects.kof_config import KofConfig
 from config.lab.objects.lab_config import LabConfig
 from config.logger.objects.logger_config import LoggerConfig
 from config.openstack.objects.openstack_config import OpenstackConfig
@@ -40,6 +41,7 @@ class ConfigurationManagerClass:
         self.configuration_locations_manager = None
         self.openstack_config: OpenstackConfig = None
         self.storage_config: StorageConfig = None
+        self.kof_config: KofConfig = None
 
     def is_config_loaded(self) -> bool:
         """
@@ -126,6 +128,10 @@ class ConfigurationManagerClass:
         if not storage_config_file:
             storage_config_file = get_stx_resource_path("config/storage/files/default.json5")
 
+        kof_config_file = config_file_locations.get_kof_config_file()
+        if not kof_config_file:
+            kof_config_file = get_stx_resource_path("config/kof/files/default.json5")
+
         if not self.loaded:
             try:
                 self.lab_config = LabConfig(lab_config_file)
@@ -143,6 +149,7 @@ class ConfigurationManagerClass:
                 self.app_config = AppConfig(app_config_file)
                 self.openstack_config = OpenstackConfig(openstack_config_file)
                 self.storage_config = StorageConfig(storage_config_file)
+                self.kof_config = KofConfig(kof_config_file)
                 self.loaded = True
             except FileNotFoundError as e:
                 print(f"Unable to load the config using file: {str(e.filename)} ")
@@ -296,6 +303,16 @@ class ConfigurationManagerClass:
         """
         return self.storage_config
 
+    def get_kof_config(self) -> KofConfig:
+        """
+        Getter for KOF config
+
+        Returns:
+            KofConfig: the KOF config
+
+        """
+        return self.kof_config
+
     def get_config_pytest_args(self) -> [str]:
         """
         Returns the configuration file locations as pytest args.
@@ -335,6 +352,8 @@ class ConfigurationManagerClass:
             pytest_config_args.append(f"--openstack_config_file={self.configuration_locations_manager.get_openstack_config_file()}")
         if self.configuration_locations_manager.storage_config_file:
             pytest_config_args.append(f"--storage_config_file={self.configuration_locations_manager.get_storage_config_file()}")
+        if self.configuration_locations_manager.kof_config_file:
+            pytest_config_args.append(f"--kof_config_file={self.configuration_locations_manager.get_kof_config_file()}")
 
         return pytest_config_args
 
