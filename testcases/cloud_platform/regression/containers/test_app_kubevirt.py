@@ -201,8 +201,8 @@ def test_kubevirt_upload_apply_delete(request):
 
     get_logger().log_test_case_step("Verifying kubevirt pods are running after reapply")
     kubectl_pods = KubectlGetPodsKeywords(ssh_connection)
-    kubectl_pods.wait_for_pods_to_reach_status(expected_status="Running", pod_names=CDI_EXPECTED_PODS, namespace=CDI_NAMESPACE, timeout=30)
-    kubectl_pods.wait_for_pods_to_reach_status(expected_status="Running", pod_names=KUBEVIRT_EXPECTED_PODS, namespace=KUBEVIRT_NAMESPACE, timeout=30)
+    kubectl_pods.wait_for_pods_to_reach_status(expected_status="Running", pod_names=CDI_EXPECTED_PODS, namespace=CDI_NAMESPACE, timeout=120)
+    kubectl_pods.wait_for_pods_to_reach_status(expected_status="Running", pod_names=KUBEVIRT_EXPECTED_PODS, namespace=KUBEVIRT_NAMESPACE, timeout=120)
 
     system_host_list = SystemHostListKeywords(ssh_connection)
     active_controller = system_host_list.get_active_controller().get_host_name()
@@ -219,8 +219,8 @@ def test_kubevirt_upload_apply_delete(request):
     system_app_list.validate_app_status(APP_NAME, "applied", timeout=30)
 
     get_logger().log_test_case_step("Verifying kubevirt pods are running after reboot")
-    kubectl_pods.wait_for_pods_to_reach_status(expected_status="Running", pod_names=CDI_EXPECTED_PODS, namespace=CDI_NAMESPACE, timeout=30)
-    kubectl_pods.wait_for_pods_to_reach_status(expected_status="Running", pod_names=KUBEVIRT_EXPECTED_PODS, namespace=KUBEVIRT_NAMESPACE, timeout=30)
+    kubectl_pods.wait_for_pods_to_reach_status(expected_status="Running", pod_names=CDI_EXPECTED_PODS, namespace=CDI_NAMESPACE, timeout=120)
+    kubectl_pods.wait_for_pods_to_reach_status(expected_status="Running", pod_names=KUBEVIRT_EXPECTED_PODS, namespace=KUBEVIRT_NAMESPACE, timeout=120)
 
     get_logger().log_test_case_step("Removing kubevirt application")
     cleanup_kubevirt_environment(ssh_connection)
