@@ -256,3 +256,86 @@ class SystemHostLockKeywords(BaseKeyword):
             is_host_locked = SystemHostLockKeywords(ssh_connection).wait_for_host_locked(host_name)
             if not is_host_locked:
                 raise RuntimeError(f"{host_name} was not locked successfully.")
+
+    # Host un-lock without any pre-check or alarm check
+    def wait_for_host_unlocked_no_alarm_check(self, host_name: str, unlock_wait_timeout: int = 2800) -> bool:
+        """
+        Wait for the host to be unlocked
+
+        Args:
+            host_name (str): the host name
+            unlock_wait_timeout (int): the amount of time in secs to wait for the host to unlock
+
+        Returns:
+            bool: True if host is unlocked
+
+        """
+        timeout = time.time() + unlock_wait_timeout
+        refresh_time = 5
+
+        while time.time() < timeout:
+
+            try:
+                if self.is_host_unlocked_no_alarm_check(host_name):
+                    return True
+            except Exception:
+                get_logger().log_info(f"Found an exception when checking the health of the system. Trying again after {refresh_time} seconds")
+
+            time.sleep(refresh_time)
+        return False
+
+    def is_host_unlocked_no_alarm_check(self, host_name: str) -> bool:
+        """Returns true if the host is unlocked
+
+        Args:
+            host_name (str): the name of the host
+
+        Returns:
+            bool: True is host is unlocked
+
+        """
+        is_host_list_ok = False
+
+        # Check System Host-List
+        host_value = SystemHostListKeywords(self.ssh_connection).get_system_host_list().get_host(host_name)
+        if (host_value.get_availability() == "available" or host_value.get_availability() == "degraded") and host_value.get_administrative() == "unlocked" and host_value.get_operational() == "enabled":
+            get_logger().log_info("The host is in a good state from system host list.")
+            is_host_list_ok = True
+
+        # Exit the loop once all conditions are met.
+        return is_host_list_ok
+
+    def unlock_host_without_alarm_check(self, host_name: str, unlock_accepted_timeout: int = 300) -> bool:
+        """Unlocks the given host without any alarm check
+
+        Args:
+            host_name (str): the host name
+            unlock_accepted_timeout (int): unlock_accepted_timeout to wait to try unlock the host
+
+        Returns:
+            bool: True if the unlock is successful
+
+        Raises:
+            KeywordException: If unlock does not occur in the given time
+
+        """
+        self.ssh_connection.send(source_openrc(f"system host-unlock {host_name}"))
+
+        # Checking whether the host can be unlocked; if not, the process will retry until the timeout is reached.
+        start = time.time()
+        while time.time() - start < unlock_accepted_timeout:
+            if self.ssh_connection.get_return_code() == 1:
+                get_logger().log_info("Fail to unlock, trying again in 5 seconds")
+                time.sleep(30)
+                self.ssh_connection.send(source_openrc(f"system host-unlock {host_name}"))
+            else:
+                get_logger().log_info(f"The unlock of host {host_name} was started")
+                break
+        else:
+            raise KeywordException(f"Timeout: failed to unlock host {host_name}")
+
+        self.validate_success_return_code(self.ssh_connection)
+        is_host_unlocked = self.wait_for_host_unlocked_no_alarm_check(host_name)
+        if not is_host_unlocked:
+            raise KeywordException("Unlock host did not unlock in the required time.")
+        return True
