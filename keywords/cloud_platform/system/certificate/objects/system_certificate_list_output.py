@@ -39,6 +39,8 @@ class SystemCertificateListOutput:
                     current_cert.set_subject(value)
                 elif key == "Renewal":
                     current_cert.set_renewal(value)
+                elif key == "File Path":
+                    current_cert.set_file_path(value)
 
         if current_cert:
             self.certificates.append(current_cert)
@@ -67,3 +69,29 @@ class SystemCertificateListOutput:
             if cert.get_name() == name:
                 return cert
         raise KeywordException(f"Certificate '{name}' not found")
+
+    def get_platform_ca_certificate(self) -> SystemCertificateObject:
+        """Get platform CA certificate (self-signed root).
+
+        When multiple copies exist (e.g., kubernetes-root-ca and ssl_ca_* in
+        /opt/platform/config), they are identical certificates. This method
+        prefers /etc/kubernetes/pki/ as the canonical Kubernetes location.
+
+        Returns:
+            SystemCertificateObject: Platform CA certificate.
+
+        Raises:
+            KeywordException: If platform CA not found.
+        """
+        matches = []
+        for cert in self.certificates:
+            if cert.is_self_signed() and cert.get_issuer() == "CN=starlingx":
+                path = cert.get_file_path() or ""
+                if "/etc/kubernetes/pki/" in path:
+                    return cert
+                matches.append(cert)
+
+        if not matches:
+            raise KeywordException("Platform CA certificate not found")
+
+        return matches[0]
