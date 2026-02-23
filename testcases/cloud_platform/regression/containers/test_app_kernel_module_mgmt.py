@@ -16,6 +16,8 @@ from keywords.cloud_platform.system.application.system_application_upload_keywor
 from keywords.cloud_platform.system.helm.system_helm_override_keywords import SystemHelmOverrideKeywords
 from keywords.cloud_platform.system.host.system_host_cpu_keywords import SystemHostCPUKeywords
 from keywords.cloud_platform.system.host.system_host_list_keywords import SystemHostListKeywords
+from keywords.cloud_platform.system.host.system_host_reboot_keywords import SystemHostRebootKeywords
+from keywords.cloud_platform.system.host.system_host_swact_keywords import SystemHostSwactKeywords
 from keywords.files.file_keywords import FileKeywords
 from keywords.files.yaml_keywords import YamlKeywords
 from keywords.k8s.configmap.kubectl_delete_configmap_keywords import KubectlDeleteConfigmapKeywords
@@ -730,3 +732,203 @@ def test_kernel_module_and_config_map_load_and_build(request):
 
     get_logger().log_test_case_step("Removing kernel module management application")
     cleanup_kernel_module_management_environment(ssh_connection)
+
+
+@mark.p1
+def test_kernel_module_hello_world_reboot(request):
+    """Test kernel module hello world persistence after host reboot.
+
+    Steps:
+        - Cleanup kernel module management application
+        - Setup kernel module management environment
+        - Generate hello world kernel module ConfigMap and Module YAML files
+        - Apply hello world kernel module resources
+        - Wait for worker pod to complete module build and load
+        - Verify hello_world_dmesg kernel module is loaded via lsmod
+        - Verify Hello, world! message appears in dmesg output
+        - Verify KMM Module resource exists via kubectl get modules
+        - Reboot active controller and wait for host to come back online
+        - Verify KMM application is in applied state after reboot
+        - Verify KMM pods are running after reboot
+        - Verify hello_world_dmesg kernel module is still loaded after reboot
+        - Verify Hello, world! message still appears in dmesg after reboot
+        - Delete Module and ConfigMap resources in teardown
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    module_name = "kmm-test-reboot"
+
+    get_logger().log_test_case_step("Cleanup kernel module management application")
+    cleanup_kernel_module_management_environment(ssh_connection)
+
+    def cleanup():
+        get_logger().log_teardown_step("Cleaning up test resources")
+        cleanup_test_resources(ssh_connection, module_name)
+        get_logger().log_teardown_step("Removing kernel module management application")
+        cleanup_kernel_module_management_environment(ssh_connection)
+
+    request.addfinalizer(cleanup)
+
+    get_logger().log_test_case_step("Setting up kernel module management environment")
+    setup_kernel_module_management_environment(ssh_connection)
+
+    get_logger().log_test_case_step("Getting active controller hostname")
+    active_controller = SystemHostListKeywords(ssh_connection).get_active_controller().get_host_name()
+
+    get_logger().log_test_case_step("Uploading hello world kernel module YAML files")
+    generate_hello_world_configmap(ssh_connection, module_name)
+    generate_hello_world_module_with_target_host(ssh_connection, module_name, active_controller)
+
+    get_logger().log_test_case_step("Applying hello world kernel module")
+    apply_keywords = KubectlFileApplyKeywords(ssh_connection)
+    apply_keywords.apply_resource_from_yaml("/tmp/hello_world_cm.yaml")
+    apply_keywords.apply_resource_from_yaml("/tmp/hello_world_mod.yaml")
+
+    get_logger().log_test_case_step("Verifying worker pod completes")
+    wait_for_worker_pods_completed(ssh_connection)
+
+    get_logger().log_test_case_step("Running lsmod | grep hello to verify module is loaded")
+    verify_module_loaded(ssh_connection)
+
+    get_logger().log_test_case_step("Running dmesg and checking for Hello, world! message")
+    verify_dmesg_message(ssh_connection, "Hello, world!")
+
+    get_logger().log_test_case_step("Checking modules via kubectl get modules.kmm.sigs.x-k8s.io")
+    verify_kmm_module_exists(ssh_connection, module_name)
+
+    get_logger().log_test_case_step(f"Rebooting controller {active_controller}")
+    system_host_list = SystemHostListKeywords(ssh_connection)
+    pre_uptime = system_host_list.get_uptime(active_controller)
+    ssh_connection.send_as_sudo("reboot -f")
+    system_host_reboot = SystemHostRebootKeywords(ssh_connection)
+    reboot_success = system_host_reboot.wait_for_force_reboot(active_controller, pre_uptime)
+    validate_equals(reboot_success, True, "Controller should reboot successfully")
+
+    get_logger().log_test_case_step(f"Verifying {APP_NAME} is in applied state after reboot")
+    system_app_list = SystemApplicationListKeywords(ssh_connection)
+    system_app_list.validate_app_status(APP_NAME, "applied", timeout=30)
+
+    get_logger().log_test_case_step("Verifying KMM pods are running after reboot")
+    kubectl_pods = KubectlGetPodsKeywords(ssh_connection)
+    kubectl_pods.wait_for_pods_to_reach_status(expected_status="Running", pod_names=KMM_EXPECTED_PODS, namespace=NAMESPACE, timeout=120)
+
+    get_logger().log_test_case_step(f"Verifying hello_world_dmesg kernel module is still loaded on {active_controller} after reboot")
+    target_host_ssh = LabConnectionKeywords().get_ssh_for_hostname(active_controller)
+    verify_module_loaded(target_host_ssh)
+
+    get_logger().log_test_case_step(f"Verifying Hello, world! message still in dmesg on {active_controller} after reboot")
+    verify_dmesg_message(target_host_ssh, "Hello, world!")
+
+    get_logger().log_test_case_step("Verifying KMM module resource still exists after reboot")
+    verify_kmm_module_exists(ssh_connection, module_name)
+
+    get_logger().log_test_case_step("Deleting kernel module and configmap resources")
+    delete_module_and_configmap(ssh_connection, module_name)
+
+    get_logger().log_test_case_step("Verifying kernel module is no longer loaded")
+    verify_module_unloaded(target_host_ssh)
+
+    get_logger().log_test_case_step("Verifying module unload message in dmesg")
+    verify_dmesg_message(target_host_ssh, "Goodbye, world!")
+
+    get_logger().log_test_case_step("Removing kernel module management application")
+    cleanup_kernel_module_management_environment(ssh_connection)
+
+
+@mark.p1
+@mark.lab_has_standby_controller
+def test_kernel_module_hello_world_swact(request):
+    """Test kernel module hello world persistence after controller swact.
+
+    Steps:
+        - Cleanup kernel module management application
+        - Setup kernel module management environment
+        - Upload hello world kernel module ConfigMap and Module YAML files
+        - Apply hello world kernel module resources
+        - Wait for worker pod to complete module build and load
+        - Verify hello_world_dmesg kernel module is loaded via lsmod
+        - Verify Hello, world! message appears in dmesg output
+        - Verify KMM Module resource exists via kubectl get modules
+        - Perform controller swact
+        - Verify hello_world_dmesg kernel module is still loaded after swact
+        - Verify KMM Module resource still exists after swact
+        - Perform controller swact back to original active controller
+        - Delete Module and ConfigMap resources
+        - Cleanup kernel module management application
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    module_name = "kmm-test-swact"
+
+    get_logger().log_test_case_step("Cleanup kernel module management application")
+    cleanup_kernel_module_management_environment(ssh_connection)
+
+    def cleanup():
+        get_logger().log_teardown_step("Cleaning up test resources")
+        cleanup_test_resources(ssh_connection, module_name)
+        get_logger().log_teardown_step("Removing kernel module management application")
+        cleanup_kernel_module_management_environment(ssh_connection)
+
+    request.addfinalizer(cleanup)
+
+    get_logger().log_test_case_step("Setting up kernel module management environment")
+    setup_kernel_module_management_environment(ssh_connection)
+
+    get_logger().log_test_case_step("Getting active controller hostname")
+    active_controller = SystemHostListKeywords(ssh_connection).get_active_controller().get_host_name()
+
+    get_logger().log_test_case_step("Uploading hello world kernel module YAML files")
+    generate_hello_world_configmap(ssh_connection, module_name)
+    generate_hello_world_module_with_target_host(ssh_connection, module_name, active_controller)
+
+    get_logger().log_test_case_step("Applying hello world kernel module")
+    apply_keywords = KubectlFileApplyKeywords(ssh_connection)
+    apply_keywords.apply_resource_from_yaml("/tmp/hello_world_cm.yaml")
+    apply_keywords.apply_resource_from_yaml("/tmp/hello_world_mod.yaml")
+
+    get_logger().log_test_case_step("Verifying worker pod completes")
+    wait_for_worker_pods_completed(ssh_connection)
+
+    get_logger().log_test_case_step(f"Running lsmod on {active_controller} to verify module is loaded")
+    target_host_ssh = LabConnectionKeywords().get_ssh_for_hostname(active_controller)
+    verify_module_loaded(target_host_ssh)
+
+    get_logger().log_test_case_step(f"Running dmesg on {active_controller} and checking for Hello, world! message")
+    verify_dmesg_message(target_host_ssh, "Hello, world!")
+
+    get_logger().log_test_case_step("Checking modules via kubectl get modules.kmm.sigs.x-k8s.io")
+    verify_kmm_module_exists(ssh_connection, module_name)
+
+    get_logger().log_test_case_step("Performing controller swact")
+    system_host_swact = SystemHostSwactKeywords(ssh_connection)
+    swact_success = system_host_swact.host_swact()
+    validate_equals(swact_success, True, "Controller swact should complete successfully")
+
+    get_logger().log_test_case_step(f"Verifying {APP_NAME} is in applied state after swact")
+    system_app_list = SystemApplicationListKeywords(ssh_connection)
+    system_app_list.validate_app_status(APP_NAME, "applied", timeout=30)
+
+    get_logger().log_test_case_step("Verifying KMM pods are running after swact")
+    kubectl_pods = KubectlGetPodsKeywords(ssh_connection)
+    kubectl_pods.wait_for_pods_to_reach_status(expected_status="Running", pod_names=KMM_EXPECTED_PODS, namespace=NAMESPACE, timeout=120)
+
+    get_logger().log_test_case_step(f"Verifying hello_world_dmesg kernel module is still loaded on {active_controller} after swact")
+    target_host_ssh = LabConnectionKeywords().get_ssh_for_hostname(active_controller)
+    verify_module_loaded(target_host_ssh)
+
+    get_logger().log_test_case_step("Verifying KMM module resource still exists after swact")
+    verify_kmm_module_exists(ssh_connection, module_name)
+
+    get_logger().log_test_case_step("Deleting kernel module and configmap resources")
+    delete_module_and_configmap(ssh_connection, module_name)
+
+    get_logger().log_test_case_step("Verifying kernel module is no longer loaded")
+    verify_module_unloaded(target_host_ssh)
+
+    get_logger().log_test_case_step("Verifying module unload message in dmesg")
+    verify_dmesg_message(target_host_ssh, "Goodbye, world!")
+
+    get_logger().log_test_case_step("Removing kernel module management application")
+    cleanup_kernel_module_management_environment(ssh_connection)
+
+    get_logger().log_test_case_step("Performing controller swact back to original active controller")
+    swact_back_success = system_host_swact.host_swact()
+    validate_equals(swact_back_success, True, "Controller swact back should complete successfully")

@@ -229,7 +229,7 @@ class KubectlGetPodsKeywords(BaseKeyword):
                     get_logger().log_debug(f"Pod {pod_name} reached {expected_statuses} status")
                     pending_pods.remove(pod_name)
 
-            # If no pending pods remain, all have completed
+            # If no pending pods remain, all have reached expected status
             if not pending_pods:
                 get_logger().log_info(f"All pods reached {expected_statuses} status or were cleaned up")
                 return True
