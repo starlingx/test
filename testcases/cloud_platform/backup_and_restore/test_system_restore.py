@@ -74,6 +74,7 @@ def test_restore():
 
 
 @mark.p0
+@mark.lab_has_standby_controller
 def test_restore_multi_host():
     """
     Test system restore using ansible playbook for multi host configuration
@@ -96,31 +97,31 @@ def test_restore_multi_host():
     get_logger().log_info("Backup file copy to controller completed successfully")
 
     time_kpi_restore = TimeKPI(time.time())
+
     get_logger().log_info("Run restore ansible playbook")
     ansible_playbook_restore_output = AnsiblePlaybookKeywords(ssh_connection).ansible_playbook_restore(backup_dir)
     validate_equals(ansible_playbook_restore_output, True, "Ansible restore command execution")
 
     get_logger().log_info("Unlocking controller-0 host")
     ssh_connection = LabConnectionKeywords().get_ssh_for_hostname("controller-0")
-    active_controller = SystemHostListKeywords(ssh_connection).get_active_controller()
-    unlock_success = SystemHostLockKeywords(ssh_connection).unlock_host(active_controller.get_host_name())
+    unlock_success = SystemHostLockKeywords(ssh_connection).unlock_host_without_alarm_check("controller-0")
     validate_equals(unlock_success, True, "Validate controller-0 was unlocked successfully")
     time_kpi_restore.log_elapsed_time(time.time(), "time taken for controller-0 restore")
 
     nodes_with_bmc = []
     for node in ConfigurationManager.get_lab_config().get_nodes():
-        if node.get_bm_ip() and node.get_bm_ip() != "None":
+        if node.get_bm_ip() != "None" and node.get_name() != "controller-0":
             nodes_with_bmc.append(node)
 
     for node in nodes_with_bmc:
         host_name = node.get_name()
         get_logger().log_info(f"Chassis is off for {host_name}, setting boot device to PXE")
 
-        bootdev_result = IPMIToolChassisBootdevKeywords.set_chassis_bootdev_pxe()
+        bootdev_result = IPMIToolChassisBootdevKeywords(ssh_connection, host_name).set_chassis_bootdev_pxe()
         validate_equals(bootdev_result, True, f"Chassis boot device set to PXE for {host_name}")
 
         get_logger().log_info(f"Powering on chassis for {host_name}")
-        power_on_result = PowerKeywords.power_on(host_name)
+        power_on_result = PowerKeywords(ssh_connection).power_on(host_name)
         validate_equals(power_on_result, True, f"Chassis powered on for {host_name}")
 
     for node in nodes_with_bmc:
