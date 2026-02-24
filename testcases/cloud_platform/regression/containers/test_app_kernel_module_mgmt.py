@@ -714,7 +714,7 @@ def test_kernel_module_and_config_map_load_and_build(request):
     apply_keywords.apply_resource_from_yaml("/tmp/hello_world_cm.yaml")
     apply_keywords.apply_resource_from_yaml("/tmp/hello_world_mod.yaml")
 
-    get_logger().log_test_case_step("Verifying worker pod is running")
+    get_logger().log_test_case_step("Verifying worker pod completes")
     wait_for_worker_pods_completed(ssh_connection)
 
     get_logger().log_test_case_step("Verifying KMM module resource exists")
@@ -740,8 +740,8 @@ def test_kernel_module_and_config_map_load_and_build(request):
 
 
 @mark.p1
-def test_kernel_module_hello_world_reboot(request):
-    """Test kernel module hello world persistence after host reboot.
+def test_kernel_module_hello_world_controller_reboot(request):
+    """Test kernel module hello world persistence after controller reboot.
 
     Steps:
         - Cleanup kernel module management application
@@ -1540,4 +1540,203 @@ def test_kernel_module_ordered_upgrade(request):
     KubectlDeleteConfigmapKeywords(ssh_connection).delete_configmap(f"{module_name}-cm", NAMESPACE)
 
     get_logger().log_test_case_step("Cleanup kernel module management application")
+    cleanup_kernel_module_management_environment(ssh_connection)
+
+
+@mark.p2
+def test_kernel_module_invalid_module_handling(request):
+    """Test KMM error handling with invalid module configurations.
+
+    Steps:
+        - Setup kernel module management environment
+        - Generate and apply module with invalid container image reference
+        - Verify Module CR is created
+        - Verify kernel module does not load on active controller
+        - Delete invalid image module
+        - Generate and apply module with missing configmap reference
+        - Verify Module CR is created but worker pods fail with CreateContainerConfigError
+        - Verify kernel module does not load on active controller
+        - Delete invalid configmap module and configmap
+        - Cleanup kernel module management application
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    module_name = "kmm-invalid-img"
+
+    get_logger().log_test_case_step("Cleanup kernel module management application")
+    cleanup_kernel_module_management_environment(ssh_connection)
+
+    def cleanup():
+        get_logger().log_teardown_step("Cleaning up test resources")
+        cleanup_test_resources(ssh_connection, module_name)
+        get_logger().log_teardown_step("Removing kernel module management application")
+        cleanup_kernel_module_management_environment(ssh_connection)
+
+    request.addfinalizer(cleanup)
+
+    get_logger().log_test_case_step("Setting up kernel module management environment")
+    setup_kernel_module_management_environment(ssh_connection)
+
+    get_logger().log_test_case_step("Getting active controller hostname")
+    system_host_list = SystemHostListKeywords(ssh_connection)
+    active_controller = system_host_list.get_active_controller().get_host_name()
+
+    # Test 1: Invalid container image reference
+    get_logger().log_test_case_step("Uploading module with invalid container image")
+    yaml_keywords = YamlKeywords(ssh_connection)
+    yaml_keywords.generate_yaml_file_from_template(get_stx_resource_path("resources/cloud_platform/kubernetes-operator-framework/kernel-module-mgmt/hello_world_mod.yaml.j2"), {"kmm_container_image_registry": "registry.local:9001/invalid/nonexistent", "module_name": module_name, "target_host": active_controller}, "hello_world_mod.yaml", "/tmp")
+
+    get_logger().log_test_case_step("Applying module with invalid image")
+    apply_keywords = KubectlFileApplyKeywords(ssh_connection)
+    apply_keywords.apply_resource_from_yaml("/tmp/hello_world_mod.yaml")
+
+    get_logger().log_test_case_step("Verifying module resource created")
+    verify_kmm_module_exists(ssh_connection, module_name)
+
+    get_logger().log_test_case_step(f"Verifying module does not load on {active_controller}")
+    verify_module_unloaded(ssh_connection)
+
+    get_logger().log_test_case_step("Deleting invalid image module")
+    KubectlDeleteModuleKeywords(ssh_connection).delete_module(module_name, NAMESPACE)
+
+    # Test 2: Missing configmap reference
+    get_logger().log_test_case_step("Uploading configmap and module with missing configmap reference")
+    generate_hello_world_configmap(ssh_connection, f"{module_name}-cm")
+    yaml_keywords.generate_yaml_file_from_template(
+        get_stx_resource_path("resources/cloud_platform/kubernetes-operator-framework/kernel-module-mgmt/hello_world_cm.yaml.j2"),
+        {
+            "kmm_builder_image": "registry.local:9001/invalid/nonexistent",
+            "module_name": f"{module_name}",
+        },
+        "hello_world_cm.yaml",
+        "/tmp",
+    )
+
+    get_logger().log_test_case_step("Applying configmap and module with missing configmap reference")
+    apply_keywords.apply_resource_from_yaml("/tmp/hello_world_cm.yaml")
+    apply_keywords.apply_resource_from_yaml("/tmp/hello_world_mod.yaml")
+
+    get_logger().log_test_case_step("Verifying module resource created")
+    verify_kmm_module_exists(ssh_connection, f"{module_name}")
+
+    get_logger().log_test_case_step("Verifying worker pods fail due to missing configmap")
+    kubectl_pods = KubectlGetPodsKeywords(ssh_connection)
+    kubectl_pods.wait_for_pods_to_reach_status(expected_status=["CreateContainerConfigError", "Error"], pod_names=[module_name], namespace=NAMESPACE, timeout=180)
+
+    get_logger().log_test_case_step(f"Verifying module does not load on {active_controller}")
+    verify_module_unloaded(ssh_connection)
+
+    get_logger().log_test_case_step("Deleting invalid configmap module")
+    KubectlDeleteModuleKeywords(ssh_connection).delete_module(f"{module_name}", NAMESPACE)
+
+    get_logger().log_test_case_step("Deleting configmap resource")
+    KubectlDeleteConfigmapKeywords(ssh_connection).delete_configmap(f"{module_name}-cm", NAMESPACE)
+
+    get_logger().log_test_case_step("Removing kernel module management application")
+    cleanup_kernel_module_management_environment(ssh_connection)
+
+
+@mark.p2
+@mark.lab_has_compute
+def test_kernel_module_hello_world_compute_reboot(request):
+    """Test kernel module hello world persistence after compute node reboot.
+
+    Steps:
+        - Cleanup kernel module management application
+        - Setup kernel module management environment
+        - Select compute node for module deployment
+        - Generate hello world kernel module ConfigMap and Module YAML files
+        - Apply hello world kernel module resources on compute node
+        - Wait for worker pod to complete module build and load
+        - Verify hello_world_dmesg kernel module is loaded on compute node
+        - Verify Hello, world! message appears in dmesg on compute node
+        - Verify KMM Module resource exists
+        - Reboot compute node and wait for host to come back online
+        - Verify KMM application is in applied state after reboot
+        - Verify KMM pods are running after reboot
+        - Verify hello_world_dmesg kernel module is still loaded on compute node after reboot
+        - Verify Hello, world! message still appears in dmesg on compute node after reboot
+        - Delete Module and ConfigMap resources
+        - Cleanup kernel module management application
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    module_name = "kmm-test-compute-reboot"
+
+    get_logger().log_test_case_step("Cleanup kernel module management application")
+    cleanup_kernel_module_management_environment(ssh_connection)
+
+    def cleanup():
+        get_logger().log_teardown_step("Cleaning up test resources")
+        cleanup_test_resources(ssh_connection, module_name)
+        get_logger().log_teardown_step("Removing kernel module management application")
+        cleanup_kernel_module_management_environment(ssh_connection)
+
+    request.addfinalizer(cleanup)
+
+    get_logger().log_test_case_step("Setting up kernel module management environment")
+    setup_kernel_module_management_environment(ssh_connection)
+
+    get_logger().log_test_case_step("Getting compute node hostname")
+    system_host_list = SystemHostListKeywords(ssh_connection)
+    compute_hosts = system_host_list.get_computes()
+    validate_not_none(compute_hosts, "At least one compute node should be available")
+    compute_node = compute_hosts[0].get_host_name()
+    get_logger().log_info(f"Selected compute node: {compute_node}")
+
+    get_logger().log_test_case_step("Uploading hello world kernel module YAML files")
+    generate_hello_world_configmap(ssh_connection, module_name)
+    generate_hello_world_module_with_target_host(ssh_connection, module_name, compute_node)
+
+    get_logger().log_test_case_step("Applying hello world kernel module")
+    apply_keywords = KubectlFileApplyKeywords(ssh_connection)
+    apply_keywords.apply_resource_from_yaml("/tmp/hello_world_cm.yaml")
+    apply_keywords.apply_resource_from_yaml("/tmp/hello_world_mod.yaml")
+
+    get_logger().log_test_case_step("Verifying worker pod completes")
+    wait_for_worker_pods_completed(ssh_connection)
+
+    get_logger().log_test_case_step(f"Verifying hello_world_dmesg kernel module is loaded on {compute_node}")
+    compute_node_ssh = LabConnectionKeywords().get_ssh_for_hostname(compute_node)
+    verify_module_loaded(compute_node_ssh)
+
+    get_logger().log_test_case_step(f"Verifying Hello, world! message in dmesg on {compute_node}")
+    verify_dmesg_message(compute_node_ssh, "Hello, world!")
+
+    get_logger().log_test_case_step("Verifying KMM module resource exists")
+    verify_kmm_module_exists(ssh_connection, module_name)
+
+    get_logger().log_test_case_step(f"Rebooting compute node {compute_node}")
+    pre_uptime = system_host_list.get_uptime(compute_node)
+    compute_node_ssh.send_as_sudo("reboot -f")
+    system_host_reboot = SystemHostRebootKeywords(ssh_connection)
+    reboot_success = system_host_reboot.wait_for_force_reboot(compute_node, pre_uptime)
+    validate_equals(reboot_success, True, "Compute node should reboot successfully")
+
+    get_logger().log_test_case_step(f"Verifying {APP_NAME} is in applied state after reboot")
+    system_app_list = SystemApplicationListKeywords(ssh_connection)
+    system_app_list.validate_app_status(APP_NAME, "applied", timeout=30)
+
+    get_logger().log_test_case_step("Verifying KMM pods are running after reboot")
+    kubectl_pods = KubectlGetPodsKeywords(ssh_connection)
+    kubectl_pods.wait_for_pods_to_reach_status(expected_status="Running", pod_names=KMM_EXPECTED_PODS, namespace=NAMESPACE, timeout=120)
+
+    get_logger().log_test_case_step(f"Verifying hello_world_dmesg kernel module is still loaded on {compute_node} after reboot")
+    compute_node_ssh = LabConnectionKeywords().get_ssh_for_hostname(compute_node)
+    verify_module_loaded(compute_node_ssh)
+
+    get_logger().log_test_case_step(f"Verifying Hello, world! message still in dmesg on {compute_node} after reboot")
+    verify_dmesg_message(compute_node_ssh, "Hello, world!")
+
+    get_logger().log_test_case_step("Verifying KMM module resource still exists after reboot")
+    verify_kmm_module_exists(ssh_connection, module_name)
+
+    get_logger().log_test_case_step("Deleting kernel module and configmap resources")
+    delete_module_and_configmap(ssh_connection, module_name)
+
+    get_logger().log_test_case_step("Verifying kernel module is no longer loaded")
+    verify_module_unloaded(compute_node_ssh)
+
+    get_logger().log_test_case_step("Verifying module unload message in dmesg")
+    verify_dmesg_message(compute_node_ssh, "Goodbye, world!")
+
+    get_logger().log_test_case_step("Removing kernel module management application")
     cleanup_kernel_module_management_environment(ssh_connection)
