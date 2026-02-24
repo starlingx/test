@@ -90,3 +90,19 @@ class SystemCertificateObject:
             bool: True if issuer equals subject, False otherwise.
         """
         return self.issuer == self.subject if self.issuer and self.subject else False
+
+    def set_file_path(self, file_path: str) -> None:
+        """Set certificate file path.
+
+        Args:
+            file_path (str): Certificate file path.
+        """
+        self.file_path = file_path
+
+    def get_file_path(self) -> str:
+        """Get certificate file path.
+
+        Returns:
+            str: Certificate file path.
+        """
+        return self.file_path
