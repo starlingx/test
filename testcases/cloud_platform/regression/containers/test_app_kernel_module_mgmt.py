@@ -191,34 +191,32 @@ def generate_versioned_module(ssh_connection: SSHConnection, module_name: str, v
 
 
 # Utility functions
-def get_kmm_worker_pod_names(ssh_connection: SSHConnection, module_names: list[str], node_name: str = None) -> list[str]:
-    """Generate KMM worker pod names for given modules.
+def get_kmm_worker_pod_names(ssh_connection: SSHConnection, module_names: list[str], host_list: list[str] = None) -> list[str]:
+    """Generate KMM worker pod names for given modules and hosts.
 
     Args:
         ssh_connection (SSHConnection): SSH connection to active controller.
         module_names (list[str]): List of module names.
-        node_name (str): Specific node name, or None for all nodes.
+        host_list (list[str], optional): List of host names. If None, uses all hosts in the system.
 
     Returns:
-        list[str]: List of worker pod names.
+        list[str]: List of worker pod names in format 'kmm-worker-{host}-{module}'.
 
     """
     get_logger().log_info(f"Generating worker pod names for modules: {module_names}")
 
-    # Generate pod names for specific node
-    if node_name:
-        return [f"kmm-worker-{node_name}-{module_name}" for module_name in module_names]
+    # Use provided host list or get all hosts from system
+    if host_list is None:
+        system_host_list = SystemHostListKeywords(ssh_connection)
+        host_list = [host.get_host_name() for host in system_host_list.get_system_host_list().get_hosts()]
+        get_logger().log_debug(f"Using all system hosts: {host_list}")
+    else:
+        get_logger().log_debug(f"Using provided host list: {host_list}")
 
-    # Get all nodes and generate pod names for each
-    system_host_list = SystemHostListKeywords(ssh_connection)
-    all_hosts = [host.get_host_name() for host in system_host_list.get_system_host_list().get_hosts()]
+    # Generate pod names for all host-module combinations
+    pod_names = [f"kmm-worker-{host}-{module}" for host in host_list for module in module_names]
 
-    pod_names = []
-    for host in all_hosts:
-        for module_name in module_names:
-            pod_names.append(f"kmm-worker-{host}-{module_name}")
-
-    get_logger().log_debug(f"Generated {len(pod_names)} worker pod names")
+    get_logger().log_debug(f"Generated {len(pod_names)} worker pod names: {pod_names}")
     return pod_names
 
 
@@ -236,7 +234,7 @@ def wait_for_worker_pods_completed(ssh_connection: SSHConnection, pod_names: lis
 
     get_logger().log_info(f"Waiting for worker pods to complete: {pod_names}")
     kubectl_pods = KubectlGetPodsKeywords(ssh_connection)
-    kubectl_pods.wait_for_pods_to_reach_status(expected_status="Completed", pod_names=pod_names, namespace=NAMESPACE, poll_interval=1, timeout=timeout)
+    kubectl_pods.wait_for_pods_to_reach_status(expected_status="Completed", pod_names=pod_names, namespace=NAMESPACE, poll_interval=0, timeout=timeout)
 
 
 def delete_module_and_configmap(ssh_connection: SSHConnection, module_name: str, ignore_not_found: bool = False) -> None:
@@ -284,8 +282,11 @@ def cleanup_test_resources_with_labels(ssh_connection: SSHConnection, module_nam
     """
     get_logger().log_info(f"Cleaning up test resources with labels for module: {module_name}")
 
-    # Clean up standard resources
-    cleanup_test_resources(ssh_connection, module_name)
+    # Check if KMM app is still present before trying to delete module resources
+    system_app_list = SystemApplicationListKeywords(ssh_connection)
+    if system_app_list.is_app_present(APP_NAME):
+        # Clean up module and configmap resources only if KMM app exists
+        delete_module_and_configmap(ssh_connection, module_name, ignore_not_found=True)
 
     # Remove test-hardware labels from all nodes
     label_keywords = KubectlLabelNodeKeywords(ssh_connection)
@@ -1144,6 +1145,213 @@ def test_kernel_module_hello_world_lock_unlock_simplex(request):
 
     get_logger().log_test_case_step("Verifying module unload message in dmesg")
     verify_dmesg_message(ssh_connection, "Goodbye, world!")
+
+    get_logger().log_test_case_step("Removing kernel module management application")
+    cleanup_kernel_module_management_environment(ssh_connection)
+
+
+@mark.lab_has_standby_controller
+def test_kernel_module_node_selector(request):
+    """Test kernel module loads only on nodes matching selector.
+
+    Steps:
+        - Cleanup kernel module management application
+        - Setup kernel module management environment
+        - Get all nodes
+        - Label first node with test-hardware=absent
+        - Label remaining nodes with test-hardware=present
+        - Upload and apply kernel module with node selector test-hardware=present
+        - Verify module loads on all present nodes
+        - Verify module does not load on absent node
+        - Change label on absent node to test-hardware=present
+        - Verify worker pod completes on previously absent node
+        - Verify module now loads on previously absent node
+        - Delete Module and ConfigMap resources
+        - Verify module unloads from all nodes
+        - Remove labels from nodes
+        - Cleanup kernel module management application
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    module_name = "kmm-selector"
+
+    get_logger().log_test_case_step("Cleanup kernel module management application")
+    cleanup_kernel_module_management_environment(ssh_connection)
+
+    def cleanup():
+        get_logger().log_teardown_step("Cleaning up test resources with labels")
+        cleanup_test_resources_with_labels(ssh_connection, module_name)
+        get_logger().log_teardown_step("Removing kernel module management application")
+        cleanup_kernel_module_management_environment(ssh_connection)
+
+    request.addfinalizer(cleanup)
+
+    get_logger().log_test_case_step("Setting up kernel module management environment")
+    setup_kernel_module_management_environment(ssh_connection)
+
+    get_logger().log_test_case_step("Getting all nodes")
+    system_host_list = SystemHostListKeywords(ssh_connection)
+    all_hosts = system_host_list.get_system_host_list().get_hosts()
+
+    get_logger().log_test_case_step("Labeling first node with test-hardware=absent, others with test-hardware=present")
+    label_keywords = KubectlLabelNodeKeywords(ssh_connection)
+    absent_node = all_hosts[0].get_host_name()
+    label_keywords.label_node(absent_node, "test-hardware", "absent")
+    present_nodes = [host.get_host_name() for host in all_hosts[1:]]
+    for node in present_nodes:
+        label_keywords.label_node(node, "test-hardware", "present")
+
+    get_logger().log_test_case_step("Uploading hello world kernel module YAML files")
+    generate_hello_world_configmap(ssh_connection, module_name)
+    generate_hello_world_module_with_selector(ssh_connection, module_name)
+
+    get_logger().log_test_case_step("Applying hello world kernel module with node selector")
+    apply_keywords = KubectlFileApplyKeywords(ssh_connection)
+    apply_keywords.apply_resource_from_yaml("/tmp/hello_world_cm.yaml")
+    apply_keywords.apply_resource_from_yaml("/tmp/hello_world_mod_selector.yaml")
+
+    get_logger().log_test_case_step("Verifying worker pod completes")
+    pod_names = get_kmm_worker_pod_names(ssh_connection, [module_name], present_nodes)
+    wait_for_worker_pods_completed(ssh_connection, pod_names)
+
+    get_logger().log_test_case_step("Verifying KMM module resource exists")
+    verify_kmm_module_exists(ssh_connection, module_name)
+
+    get_logger().log_test_case_step(f"Verifying module loaded on present nodes {present_nodes}")
+    for present_node in present_nodes:
+        present_node_ssh = LabConnectionKeywords().get_ssh_for_hostname(present_node)
+        verify_module_loaded(present_node_ssh)
+        verify_dmesg_message(present_node_ssh, "Hello, world!")
+
+    get_logger().log_test_case_step(f"Verifying module not loaded on absent node {absent_node}")
+    absent_node_ssh = LabConnectionKeywords().get_ssh_for_hostname(absent_node)
+    verify_module_unloaded(absent_node_ssh)
+
+    get_logger().log_test_case_step(f"Changing label on {absent_node} from absent to present")
+    label_keywords.label_node(absent_node, "test-hardware", "present")
+
+    get_logger().log_test_case_step(f"Verifying worker pod completes on {absent_node}")
+    pod_names = get_kmm_worker_pod_names(ssh_connection, [module_name], [absent_node])
+    wait_for_worker_pods_completed(ssh_connection, pod_names)
+
+    get_logger().log_test_case_step(f"Verifying module now loaded on {absent_node}")
+    verify_module_loaded(absent_node_ssh)
+    verify_dmesg_message(absent_node_ssh, "Hello, world!")
+
+    get_logger().log_test_case_step("Deleting kernel module and configmap resources")
+    delete_module_and_configmap(ssh_connection, module_name)
+
+    get_logger().log_test_case_step("Verifying kernel module is no longer loaded on any nodes")
+    all_node_names = [host.get_host_name() for host in all_hosts]
+    for node in all_node_names:
+        node_ssh = LabConnectionKeywords().get_ssh_for_hostname(node)
+        verify_module_unloaded(node_ssh)
+        verify_dmesg_message(node_ssh, "Goodbye, world!")
+
+    get_logger().log_test_case_step("Removing kernel module management application")
+    cleanup_kernel_module_management_environment(ssh_connection)
+
+
+@mark.p1
+def test_multiple_module_management(request):
+    """Test KMM can manage multiple kernel modules simultaneously on all hosts.
+
+    Steps:
+        - Cleanup kernel module management application
+        - Setup kernel module management environment
+        - Generate 2 ConfigMaps (kmm-multi-1-cm, kmm-multi-2-cm) for kernel module builds
+        - Generate 2 Module CRs (kmm-multi-1, kmm-multi-2) targeting all hosts
+        - Apply ConfigMaps and Module resources to cluster
+        - Wait for KMM worker pods to complete building and loading modules on all hosts
+        - Verify hello_world_dmesg kernel module is loaded on every host
+        - Verify Hello, world! message appears in dmesg on every host
+        - Verify both Module CRs exist in Kubernetes
+        - Delete first module (kmm-multi-1) and verify second module remains loaded (isolation test)
+        - Verify kmm-multi-1 Module CR is deleted
+        - Verify kmm-multi-2 Module CR still exists
+        - Delete second module (kmm-multi-2)
+        - Verify both Module CRs are deleted
+        - Verify hello_world_dmesg kernel module unloads from all hosts
+        - Verify Goodbye, world! message appears in dmesg on all hosts
+        - Delete ConfigMap resources
+        - Cleanup kernel module management application
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+
+    get_logger().log_test_case_step("Cleanup kernel module management application")
+    cleanup_kernel_module_management_environment(ssh_connection)
+
+    def cleanup():
+        get_logger().log_teardown_step("Deleting kernel module resources")
+        delete_module_and_configmap(ssh_connection, "kmm-multi-1", ignore_not_found=True)
+        delete_module_and_configmap(ssh_connection, "kmm-multi-2", ignore_not_found=True)
+
+        get_logger().log_teardown_step("Cleaning up kernel module YAML files")
+        FileKeywords(ssh_connection).delete_file("/tmp/hello_world_cm.yaml")
+        FileKeywords(ssh_connection).delete_file("/tmp/hello_world_mod.yaml")
+        get_logger().log_teardown_step("Removing kernel module management application")
+        cleanup_kernel_module_management_environment(ssh_connection)
+
+    request.addfinalizer(cleanup)
+
+    get_logger().log_test_case_step("Setting up kernel module management environment")
+    setup_kernel_module_management_environment(ssh_connection)
+
+    get_logger().log_test_case_step("Generating 2 ConfigMaps and 2 Modules for multi-module test")
+    generate_multiple_hello_world_configmaps(ssh_connection, ["kmm-multi-1", "kmm-multi-2"])
+    generate_multiple_hello_world_modules(ssh_connection, ["kmm-multi-1", "kmm-multi-2"])
+
+    get_logger().log_test_case_step("Getting all hosts and generating expected worker pod names")
+    system_host_list = SystemHostListKeywords(ssh_connection)
+    all_hosts = [host.get_host_name() for host in system_host_list.get_system_host_list().get_hosts()]
+    get_logger().log_info(f"Hosts in cluster: {all_hosts}")
+    pod_names = get_kmm_worker_pod_names(ssh_connection, ["kmm-multi-1", "kmm-multi-2"])
+
+    get_logger().log_test_case_step("Applying ConfigMaps and Module resources to cluster")
+    apply_keywords = KubectlFileApplyKeywords(ssh_connection)
+    apply_keywords.apply_resource_from_yaml("/tmp/hello_world_cm.yaml")
+    apply_keywords.apply_resource_from_yaml("/tmp/hello_world_mod.yaml")
+
+    get_logger().log_test_case_step("Waiting for KMM worker pods to complete building and loading modules on all hosts")
+    wait_for_worker_pods_completed(ssh_connection, pod_names)
+
+    get_logger().log_test_case_step("Verifying hello_world_dmesg kernel module loaded on all hosts")
+    for host in all_hosts:
+        get_logger().log_info(f"Verifying module loaded on {host}")
+        host_ssh = LabConnectionKeywords().get_ssh_for_hostname(host)
+        verify_module_loaded(host_ssh)
+        verify_dmesg_message(host_ssh, "Hello, world!")
+
+    get_logger().log_test_case_step("Verifying both Module resources exist")
+    verify_kmm_module_exists(ssh_connection, "kmm-multi-1")
+    verify_kmm_module_exists(ssh_connection, "kmm-multi-2")
+
+    get_logger().log_test_case_step("Deleting first module (kmm-multi-1) to verify module isolation")
+    KubectlDeleteModuleKeywords(ssh_connection).delete_module("kmm-multi-1", NAMESPACE)
+
+    get_logger().log_test_case_step("Verifying kmm-multi-1 Module CR is deleted")
+    module_keywords = KubectlGetModuleKeywords(ssh_connection)
+    validate_equals(module_keywords.is_module_present("kmm-multi-1", NAMESPACE), False, "kmm-multi-1 should be deleted")
+
+    get_logger().log_test_case_step("Verifying kmm-multi-2 Module CR still exists")
+    verify_kmm_module_exists(ssh_connection, "kmm-multi-2")
+
+    get_logger().log_test_case_step("Deleting second module (kmm-multi-2)")
+    KubectlDeleteModuleKeywords(ssh_connection).delete_module("kmm-multi-2", NAMESPACE)
+
+    get_logger().log_test_case_step("Verifying kmm-multi-2 Module CR is deleted")
+    validate_equals(module_keywords.is_module_present("kmm-multi-2", NAMESPACE), False, "kmm-multi-2 should be deleted")
+
+    get_logger().log_test_case_step("Verifying hello_world_dmesg kernel module unloaded from all hosts")
+    for host in all_hosts:
+        get_logger().log_info(f"Verifying module unloaded from {host}")
+        host_ssh = LabConnectionKeywords().get_ssh_for_hostname(host)
+        verify_module_unloaded(host_ssh)
+        verify_dmesg_message(host_ssh, "Goodbye, world!")
+
+    get_logger().log_test_case_step("Deleting ConfigMap resources")
+    delete_configmap_keywords = KubectlDeleteConfigmapKeywords(ssh_connection)
+    delete_configmap_keywords.delete_configmap("kmm-multi-1-cm", NAMESPACE)
+    delete_configmap_keywords.delete_configmap("kmm-multi-2-cm", NAMESPACE)
 
     get_logger().log_test_case_step("Removing kernel module management application")
     cleanup_kernel_module_management_environment(ssh_connection)
