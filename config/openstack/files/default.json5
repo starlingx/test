@@ -8,7 +8,8 @@
     "file_server": "",
     "app_version": "latest_build",
     "app_build": "stx-openstack-master-debian",
-
+    "tar_file_path": "",
+    "file_location": "/home/sysadmin/"
   },
 
   "custom": {
