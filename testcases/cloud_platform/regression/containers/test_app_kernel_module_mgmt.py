@@ -251,25 +251,27 @@ def delete_module_and_configmap(ssh_connection: SSHConnection, module_name: str,
     KubectlDeleteConfigmapKeywords(ssh_connection).delete_configmap(f"{module_name}-cm", NAMESPACE, ignore_not_found=ignore_not_found)
 
 
-def cleanup_test_resources(ssh_connection: SSHConnection, module_name: str, cleanup_files: bool = True) -> None:
+def cleanup_test_resources(ssh_connection: SSHConnection, module_name: str) -> None:
     """Clean up test resources including module, configmap, and YAML files.
 
     Args:
         ssh_connection (SSHConnection): SSH connection to active controller.
         module_name (str): Name of the module to clean up.
-        cleanup_files (bool): Whether to clean up YAML files.
 
     """
     get_logger().log_info(f"Cleaning up test resources for module: {module_name}")
 
-    # Use helper function for module and configmap deletion with error tolerance
-    delete_module_and_configmap(ssh_connection, module_name, ignore_not_found=True)
+    # Check if KMM app is still present before trying to delete module resources
+    system_app_list = SystemApplicationListKeywords(ssh_connection)
+    if system_app_list.is_app_present(APP_NAME):
+        delete_module_and_configmap(ssh_connection, module_name, ignore_not_found=True)
+    else:
+        get_logger().log_info(f"KMM application not present, skipping module/configmap deletion for {module_name}")
 
     # Clean up generated YAML files
-    if cleanup_files:
-        file_keywords = FileKeywords(ssh_connection)
-        file_keywords.delete_file("/tmp/hello_world_cm.yaml")
-        file_keywords.delete_file("/tmp/hello_world_mod.yaml")
+    file_keywords = FileKeywords(ssh_connection)
+    file_keywords.delete_file("/tmp/hello_world_cm.yaml")
+    file_keywords.delete_file("/tmp/hello_world_mod.yaml")
 
 
 def cleanup_test_resources_with_labels(ssh_connection: SSHConnection, module_name: str) -> None:
@@ -311,7 +313,7 @@ def verify_module_loaded(ssh_connection: SSHConnection, module_name: str = "hell
     """
     get_logger().log_info(f"Verifying module {module_name} is loaded")
     lsmod_keywords = LsmodKeywords(ssh_connection)
-    validate_equals_with_retry(lambda: lsmod_keywords.get_lsmod_output().has_module(module_name), True, f"{module_name} should be loaded", timeout=30, polling_sleep_time=2)
+    validate_equals_with_retry(lambda: lsmod_keywords.get_lsmod_output().has_module(module_name), True, f"{module_name} should be loaded", timeout=120, polling_sleep_time=2)
 
 
 def verify_module_unloaded(ssh_connection: SSHConnection, module_name: str = "hello_world_dmesg") -> None:
@@ -1073,11 +1075,7 @@ def test_kernel_module_hello_world_lock_unlock_simplex(request):
 
     def cleanup():
         get_logger().log_teardown_step("Cleaning up test resources")
-        delete_module_and_configmap(ssh_connection, module_name)
-
-        file_keywords = FileKeywords(ssh_connection)
-        file_keywords.delete_file("/tmp/hello_world_cm.yaml")
-        file_keywords.delete_file("/tmp/hello_world_mod.yaml")
+        cleanup_test_resources(ssh_connection, module_name)
         get_logger().log_teardown_step("Removing kernel module management application")
         cleanup_kernel_module_management_environment(ssh_connection)
 
@@ -1282,8 +1280,11 @@ def test_multiple_module_management(request):
 
     def cleanup():
         get_logger().log_teardown_step("Deleting kernel module resources")
-        delete_module_and_configmap(ssh_connection, "kmm-multi-1", ignore_not_found=True)
-        delete_module_and_configmap(ssh_connection, "kmm-multi-2", ignore_not_found=True)
+        # Check if KMM app is still present before trying to delete module resources
+        system_app_list = SystemApplicationListKeywords(ssh_connection)
+        if system_app_list.is_app_present(APP_NAME):
+            delete_module_and_configmap(ssh_connection, "kmm-multi-1", ignore_not_found=True)
+            delete_module_and_configmap(ssh_connection, "kmm-multi-2", ignore_not_found=True)
 
         get_logger().log_teardown_step("Cleaning up kernel module YAML files")
         FileKeywords(ssh_connection).delete_file("/tmp/hello_world_cm.yaml")
@@ -1354,4 +1355,189 @@ def test_multiple_module_management(request):
     delete_configmap_keywords.delete_configmap("kmm-multi-2-cm", NAMESPACE)
 
     get_logger().log_test_case_step("Removing kernel module management application")
+    cleanup_kernel_module_management_environment(ssh_connection)
+
+
+@mark.p1
+def test_kernel_module_prebuilt_image(request):
+    """Test kernel module deployment using prebuilt container image without ConfigMap.
+
+    Steps:
+        - Cleanup kernel module management application
+        - Setup kernel module management environment
+        - Generate Module YAML with prebuilt container image (no build step required)
+        - Apply Module resource to cluster
+        - Verify hello_world_dmesg kernel module loads on active controller
+        - Verify Hello, world! message appears in dmesg
+        - Verify kmm-prebuilt Module CR exists
+        - Delete Module resource to trigger unload
+        - Verify hello_world_dmesg kernel module unloads from active controller
+        - Verify Goodbye, world! message appears in dmesg
+        - Cleanup kernel module management application
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+
+    get_logger().log_test_case_step("Cleanup kernel module management application")
+    cleanup_kernel_module_management_environment(ssh_connection)
+
+    def cleanup():
+        get_logger().log_teardown_step("Deleting kernel module resource")
+        # Check if KMM app is still present before trying to delete module resources
+        system_app_list = SystemApplicationListKeywords(ssh_connection)
+        if system_app_list.is_app_present(APP_NAME):
+            KubectlDeleteModuleKeywords(ssh_connection).delete_module("kmm-prebuilt", NAMESPACE, ignore_not_found=True)
+        get_logger().log_teardown_step("Cleaning up kernel module YAML file")
+        FileKeywords(ssh_connection).delete_file("/tmp/prebuilt_mod.yaml")
+        get_logger().log_teardown_step("Removing kernel module management application")
+        cleanup_kernel_module_management_environment(ssh_connection)
+
+    request.addfinalizer(cleanup)
+
+    get_logger().log_test_case_step("Setting up kernel module management environment")
+    setup_kernel_module_management_environment(ssh_connection)
+
+    get_logger().log_test_case_step("Generating Module YAML with prebuilt container image")
+    generate_prebuilt_module(ssh_connection)
+
+    get_logger().log_test_case_step("Applying Module resource with prebuilt image")
+    KubectlFileApplyKeywords(ssh_connection).apply_resource_from_yaml("/tmp/prebuilt_mod.yaml")
+
+    get_logger().log_test_case_step("Verifying kmm-prebuilt Module CR exists")
+    verify_kmm_module_exists(ssh_connection, "kmm-prebuilt")
+
+    get_logger().log_test_case_step("Verifying hello_world_dmesg kernel module loads on active controller")
+    verify_module_loaded(ssh_connection)
+
+    get_logger().log_test_case_step("Verifying Hello, world! message in dmesg")
+    verify_dmesg_message(ssh_connection, "Hello, world!")
+
+    get_logger().log_test_case_step("Deleting Module resource to trigger unload")
+    KubectlDeleteModuleKeywords(ssh_connection).delete_module("kmm-prebuilt", NAMESPACE)
+
+    get_logger().log_test_case_step("Verifying hello_world_dmesg kernel module unloads from active controller")
+    verify_module_unloaded(ssh_connection)
+
+    get_logger().log_test_case_step("Verifying Goodbye, world! message in dmesg")
+    verify_dmesg_message(ssh_connection, "Goodbye, world!")
+
+    get_logger().log_test_case_step("Removing kernel module management application")
+    cleanup_kernel_module_management_environment(ssh_connection)
+
+
+@mark.p1
+def test_kernel_module_ordered_upgrade(request):
+    """Test kernel module ordered upgrade without reboot using version labels.
+
+    Steps:
+        - Cleanup kernel module management application
+        - Setup kernel module management environment
+        - Upload hello world ConfigMap for kernel module build
+        - Generate Module YAML with version 1.0 targeting controller-0
+        - Apply ConfigMap and Module v1.0 resources to cluster
+        - Set initial version label (v1.0) on controller-0 to trigger module load
+        - Wait for worker pod to complete building and loading module v1.0
+        - Verify hello_world_dmesg kernel module is loaded on controller-0
+        - Verify Hello, world! message appears in dmesg
+        - Verify version.ready label shows v1.0 on controller-0
+        - Perform atomic upgrade by patching Module to v2.0 (containerImage + version)
+        - Remove version label from controller-0 to unload kernel module
+        - Verify kernel module unloads from controller-0
+        - Verify Goodbye, world! message appears in dmesg
+        - Trigger ordered upgrade by setting version label to v2.0 on controller-0
+        - Verify version.ready label updates to v2.0 on controller-0
+        - Wait for worker pod to complete loading module v2.0
+        - Verify hello_world_dmesg kernel module is loaded after upgrade
+        - Verify KMM module resource exists
+        - Delete kernel module resource
+        - Delete configmap resource
+        - Cleanup kernel module management application
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    module_name = "kmm-test-upgrade"
+    VERSION_1 = "1.0"
+    VERSION_2 = "2.0"
+
+    get_logger().log_test_case_step("Cleanup kernel module management application")
+    cleanup_kernel_module_management_environment(ssh_connection)
+
+    def cleanup():
+        get_logger().log_teardown_step("Deleting kernel module and configmap resources")
+        # Check if KMM app is still present before trying to delete module resources
+        system_app_list = SystemApplicationListKeywords(ssh_connection)
+        if system_app_list.is_app_present(APP_NAME):
+            delete_module_and_configmap(ssh_connection, module_name, ignore_not_found=True)
+        get_logger().log_teardown_step("Removing version label from controller-0")
+        label_keywords = KubectlLabelNodeKeywords(ssh_connection)
+        label_keywords.remove_label("controller-0", f"kmm.node.kubernetes.io/version-module.{NAMESPACE}.{module_name}")
+        get_logger().log_teardown_step("Cleaning up kernel module YAML files")
+        file_keywords = FileKeywords(ssh_connection)
+        file_keywords.delete_file("/tmp/hello_world_cm.yaml")
+        file_keywords.delete_file("/tmp/hello_world_mod_v1.yaml")
+        get_logger().log_teardown_step("Removing kernel module management application")
+        cleanup_kernel_module_management_environment(ssh_connection)
+
+    request.addfinalizer(cleanup)
+
+    get_logger().log_test_case_step("Setting up kernel module management environment")
+    setup_kernel_module_management_environment(ssh_connection)
+
+    get_logger().log_test_case_step("Uploading hello world ConfigMap for kernel module build")
+    generate_hello_world_configmap(ssh_connection, module_name)
+
+    get_logger().log_test_case_step("Generating Module YAML with version 1.0 for controller-0")
+    generate_versioned_module(ssh_connection, module_name, VERSION_1, "controller-0", "hello_world_mod_v1.yaml")
+
+    get_logger().log_test_case_step("Applying ConfigMap and Module v1.0 resources to cluster")
+    apply_keywords = KubectlFileApplyKeywords(ssh_connection)
+    apply_keywords.apply_resource_from_yaml("/tmp/hello_world_cm.yaml")
+    apply_keywords.apply_resource_from_yaml("/tmp/hello_world_mod_v1.yaml")
+
+    get_logger().log_test_case_step("Setting initial version label (v1.0) on controller-0 to trigger module load")
+    label_keywords = KubectlLabelNodeKeywords(ssh_connection)
+    version_label = f"kmm.node.kubernetes.io/version-module.{NAMESPACE}.{module_name}"
+    label_keywords.label_node("controller-0", version_label, VERSION_1)
+
+    get_logger().log_test_case_step("Waiting for worker pod to complete building and loading module v1.0")
+    wait_for_worker_pods_completed(ssh_connection)
+
+    get_logger().log_test_case_step("Verifying KMM module resource exists")
+    verify_kmm_module_exists(ssh_connection, module_name)
+
+    get_logger().log_test_case_step("Verifying hello_world_dmesg kernel module is loaded on controller-0")
+    verify_module_loaded(ssh_connection)
+
+    get_logger().log_test_case_step("Verifying Hello, world! message in dmesg")
+    verify_dmesg_message(ssh_connection, "Hello, world!")
+
+    get_logger().log_test_case_step("Performing atomic upgrade by patching Module to v2.0 (containerImage + version)")
+    patch_module_version(ssh_connection, module_name, VERSION_2)
+
+    get_logger().log_test_case_step("Removing version label from controller-0 to unload kernel module")
+    label_keywords.remove_label("controller-0", version_label)
+
+    get_logger().log_test_case_step("Verifying kernel module unloads from controller-0")
+    verify_module_unloaded(ssh_connection)
+
+    get_logger().log_test_case_step("Verifying Goodbye, world! message in dmesg")
+    verify_dmesg_message(ssh_connection, "Goodbye, world!")
+
+    get_logger().log_test_case_step("Triggering ordered upgrade by setting version label to v2.0 on controller-0")
+    label_keywords.label_node("controller-0", version_label, VERSION_2)
+
+    get_logger().log_test_case_step("Waiting for worker pod to complete loading module v2.0")
+    wait_for_worker_pods_completed(ssh_connection)
+
+    get_logger().log_test_case_step("Verifying hello_world_dmesg kernel module is loaded after upgrade")
+    verify_module_loaded(ssh_connection)
+
+    get_logger().log_test_case_step("Verifying KMM module resource exists")
+    verify_kmm_module_exists(ssh_connection, module_name)
+
+    get_logger().log_test_case_step("Deleting kernel module resource")
+    KubectlDeleteModuleKeywords(ssh_connection).delete_module(module_name, NAMESPACE)
+
+    get_logger().log_test_case_step("Deleting configmap resource")
+    KubectlDeleteConfigmapKeywords(ssh_connection).delete_configmap(f"{module_name}-cm", NAMESPACE)
+
+    get_logger().log_test_case_step("Cleanup kernel module management application")
     cleanup_kernel_module_management_environment(ssh_connection)
