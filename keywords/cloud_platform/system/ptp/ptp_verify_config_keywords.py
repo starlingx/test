@@ -769,8 +769,8 @@ class PTPVerifyConfigKeywords(BaseKeyword):
         observed_frequency_traceable = get_time_properties_data_set_object.get_frequency_traceable()
         validate_equals(observed_current_utc_offset, expected_current_utc_offset, "currentUtcOffset value within GET TIME_PROPERTIES_DATA_SET")
         validate_equals(observed_current_utc_off_set_valid, expected_current_utc_offset_valid, "currentUtcOffsetValid value within GET TIME_PROPERTIES_DATA_SET")
-        validate_equals(observed_time_traceable, expected_time_traceable, "timeTraceable value within GET TIME_PROPERTIES_DATA_SET")
-        validate_equals(observed_frequency_traceable, expected_frequency_traceable, "frequencyTraceable value within GET TIME_PROPERTIES_DATA_SET")
+        validate_list_contains(observed_time_traceable, expected_time_traceable, "timeTraceable value within GET TIME_PROPERTIES_DATA_SET")
+        validate_list_contains(observed_frequency_traceable, expected_frequency_traceable, "frequencyTraceable value within GET TIME_PROPERTIES_DATA_SET")
 
     def validate_time_properties_data_set_with_retry(
         self,
@@ -811,8 +811,8 @@ class PTPVerifyConfigKeywords(BaseKeyword):
 
             current_utc_offset_match = time_properties_obj.get_current_utc_offset() == expected_current_utc_offset
             current_utc_offset_valid_match = time_properties_obj.get_current_utc_off_set_valid() == expected_current_utc_offset_valid
-            time_traceable_match = time_properties_obj.get_time_traceable() == expected_time_traceable
-            frequency_traceable_match = time_properties_obj.get_frequency_traceable() == expected_frequency_traceable
+            time_traceable_match = time_properties_obj.get_time_traceable() in expected_time_traceable
+            frequency_traceable_match = time_properties_obj.get_frequency_traceable() in expected_frequency_traceable
 
             if not (current_utc_offset_match and current_utc_offset_valid_match and time_traceable_match and frequency_traceable_match):
                 get_logger().log_info(f"[{hostname}][{name}] Time properties data set mismatch - currentUtcOffset: {time_properties_obj.get_current_utc_offset()} (expected: {expected_current_utc_offset}), currentUtcOffsetValid: {time_properties_obj.get_current_utc_off_set_valid()} (expected: {expected_current_utc_offset_valid}), timeTraceable: {time_properties_obj.get_time_traceable()} (expected: {expected_time_traceable}), frequencyTraceable: {time_properties_obj.get_frequency_traceable()} (expected: {expected_frequency_traceable})")
@@ -879,8 +879,8 @@ class PTPVerifyConfigKeywords(BaseKeyword):
         validate_equals(observed_clock_accuracy, expected_clock_accuracy, "clockAccuracy value within GET GRANDMASTER_SETTINGS_NP")
         validate_equals(observed_offset_scaled_log_variance, expected_offset_scaled_log_variance, "offsetScaledLogVariance value within GET GRANDMASTER_SETTINGS_NP")
         validate_equals(observed_current_utc_offset_valid, expected_current_utc_offset_valid, "currentUtcOffsetValid value within GET GRANDMASTER_SETTINGS_NP")
-        validate_equals(observed_time_traceable, expected_time_traceable, "timeTraceable value within GET GRANDMASTER_SETTINGS_NP")
-        validate_equals(observed_frequency_traceable, expected_frequency_traceable, "frequencyTraceable value within GET GRANDMASTER_SETTINGS_NP")
+        validate_list_contains(observed_time_traceable, expected_time_traceable, "timeTraceable value within GET GRANDMASTER_SETTINGS_NP")
+        validate_list_contains(observed_frequency_traceable, expected_frequency_traceable, "frequencyTraceable value within GET GRANDMASTER_SETTINGS_NP")
         validate_equals(observed_time_source, expected_time_source, "timeSource value within GET GRANDMASTER_SETTINGS_NP")
 
     def validate_grandmaster_settings_np_with_retry(
@@ -927,8 +927,8 @@ class PTPVerifyConfigKeywords(BaseKeyword):
             clock_accuracy_match = grandmaster_obj.get_clock_accuracy() == expected_clock_accuracy
             offset_scaled_log_variance_match = grandmaster_obj.get_offset_scaled_log_variance() == expected_offset_scaled_log_variance
             current_utc_offset_valid_match = grandmaster_obj.get_current_utc_off_set_valid() == expected_current_utc_offset_valid
-            time_traceable_match = grandmaster_obj.get_time_traceable() == expected_time_traceable
-            frequency_traceable_match = grandmaster_obj.get_frequency_traceable() == expected_frequency_traceable
+            time_traceable_match = grandmaster_obj.get_time_traceable() in expected_time_traceable
+            frequency_traceable_match = grandmaster_obj.get_frequency_traceable() in expected_frequency_traceable
             time_source_match = grandmaster_obj.get_time_source() == expected_time_source
 
             if not (clock_class_match and clock_accuracy_match and offset_scaled_log_variance_match and current_utc_offset_valid_match and time_traceable_match and frequency_traceable_match and time_source_match):

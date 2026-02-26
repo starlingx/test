@@ -198,7 +198,10 @@ class AlarmListKeywords(BaseKeyword):
 
         # Perform the comparisons, making each condition clear.
         id_matches = observed_id == expected_id
-        reason_text_matches = re.fullmatch(expected_reason_text_pattern, observed_reason_text)
+        if isinstance(expected_reason_text_pattern, list):
+            reason_text_matches = any(re.fullmatch(pattern, observed_reason_text) for pattern in expected_reason_text_pattern)
+        else:
+            reason_text_matches = re.fullmatch(expected_reason_text_pattern, observed_reason_text)
         entity_id_matches = observed_entity_id == expected_entity_id
         severity_matches = expected_severity is None or observed_severity == expected_severity
 

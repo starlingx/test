@@ -24,11 +24,13 @@ class TimePropertiesDataSet:
 
         if "time_traceable" not in expected_dict:
             raise Exception("Every expected dict should have a time_traceable.")
-        self.time_traceable = expected_dict["time_traceable"]
+        time_traceable = expected_dict["time_traceable"]
+        self.time_traceable = time_traceable if isinstance(time_traceable, list) else [time_traceable]
 
         if "frequency_traceable" not in expected_dict:
             raise Exception("Every expected dict should have a frequency_traceable.")
-        self.frequency_traceable = expected_dict["frequency_traceable"]
+        frequency_traceable = expected_dict["frequency_traceable"]
+        self.frequency_traceable = frequency_traceable if isinstance(frequency_traceable, list) else [frequency_traceable]
 
     def get_current_utc_offset(self) -> int:
         """

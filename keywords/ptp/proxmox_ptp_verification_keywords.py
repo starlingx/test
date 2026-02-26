@@ -89,8 +89,8 @@ class ProxmoxPTPVerificationKeywords(BaseKeyword):
 
             current_utc_offset_match = time_properties_obj.get_current_utc_offset() == expected_time_properties.get_current_utc_offset()
             current_utc_offset_valid_match = time_properties_obj.get_current_utc_off_set_valid() == expected_time_properties.get_current_utc_offset_valid()
-            time_traceable_match = time_properties_obj.get_time_traceable() == expected_time_properties.get_time_traceable()
-            frequency_traceable_match = time_properties_obj.get_frequency_traceable() == expected_time_properties.get_frequency_traceable()
+            time_traceable_match = time_properties_obj.get_time_traceable() in expected_time_properties.get_time_traceable()
+            frequency_traceable_match = time_properties_obj.get_frequency_traceable() in expected_time_properties.get_frequency_traceable()
 
             if not (current_utc_offset_match and current_utc_offset_valid_match and time_traceable_match and frequency_traceable_match):
                 get_logger().log_info(f"[Proxmox VM] Time properties data set mismatch - currentUtcOffset: {time_properties_obj.get_current_utc_offset()} (expected: {expected_time_properties.get_current_utc_offset()}), currentUtcOffsetValid: {time_properties_obj.get_current_utc_off_set_valid()} (expected: {expected_time_properties.get_current_utc_offset_valid()}), timeTraceable: {time_properties_obj.get_time_traceable()} (expected: {expected_time_properties.get_time_traceable()}), frequencyTraceable: {time_properties_obj.get_frequency_traceable()} (expected: {expected_time_properties.get_frequency_traceable()})")
