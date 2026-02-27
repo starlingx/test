@@ -845,19 +845,19 @@ def test_ptp_operation_phc_ctl_time_change(request):
                         {
                             "alarm_id": "100.119",
                             "state": StatusConstants.alarm_clear,
-                            "reason_text": "controller-0 Precision Time Protocol \\(PTP\\) clocking is out of tolerance by (\\d+\\.\\d+) (milli|micro)secs",
+                            "reason_text": "controller-0 Precision Time Protocol \\(PTP\\) clocking is out of tolerance by (\\d+\\.\\d+) (milli|micro)secs \\(configured threshold: minor:(\\d+) nsec, major:(\\d+) nsec\\)",
                             "entity_id": "host=controller-0.instance=ptp3.ptp=out-of-tolerance"
                         },
                         {
                             "alarm_id": "100.119",
                             "state": StatusConstants.alarm_clear,
-                            "reason_text": "controller-0 Precision Time Protocol \\(PTP\\) clocking is out of tolerance by (\\d+\\.\\d+) (milli|micro)secs",
+                            "reason_text": "controller-0 Precision Time Protocol \\(PTP\\) clocking is out of tolerance by (\\d+\\.\\d+) (milli|micro)secs \\(configured threshold: minor:(\\d+) nsec, major:(\\d+) nsec\\)",
                             "entity_id": "host=controller-0.instance=ptp1.ptp=out-of-tolerance"
                         },
                         {
                             "alarm_id": "100.119",
                             "state": StatusConstants.alarm_clear,
-                            "reason_text": "controller-1 Precision Time Protocol \\(PTP\\) clocking is out of tolerance by (\\d+\\.\\d+) (milli|micro)secs",
+                            "reason_text": "controller-1 Precision Time Protocol \\(PTP\\) clocking is out of tolerance by (\\d+\\.\\d+) (milli|micro)secs \\(configured threshold: minor:(\\d+) nsec, major:(\\d+) nsec\\)",
                             "entity_id": "host=controller-1.instance=ptp1.ptp=out-of-tolerance"
                         },
                     ],
@@ -888,13 +888,13 @@ def test_ptp_operation_phc_ctl_time_change(request):
                         {
                             "alarm_id": "100.119",
                             "state": StatusConstants.alarm_clear,
-                            "reason_text": "controller-1 Precision Time Protocol \\(PTP\\) clocking is out of tolerance by (\\d+\\.\\d+) (milli|micro)secs",
+                            "reason_text": "controller-1 Precision Time Protocol \\(PTP\\) clocking is out of tolerance by (\\d+\\.\\d+) (milli|micro)secs \\(configured threshold: minor:(\\d+) nsec, major:(\\d+) nsec\\)",
                             "entity_id": "host=controller-1.instance=ptp1.ptp=out-of-tolerance"
                         },
                         {
                             "alarm_id": "100.119",
                             "state": StatusConstants.alarm_clear,
-                            "reason_text": "controller-1 Precision Time Protocol \\(PTP\\) clocking is out of tolerance by (\\d+\\.\\d+) (milli|micro)secs",
+                            "reason_text": "controller-1 Precision Time Protocol \\(PTP\\) clocking is out of tolerance by (\\d+\\.\\d+) (milli|micro)secs \\(configured threshold: minor:(\\d+) nsec, major:(\\d+) nsec\\)",
                             "entity_id": "host=controller-1.instance=ptp4.ptp=out-of-tolerance"
                         },
                     ],
