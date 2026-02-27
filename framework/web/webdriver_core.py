@@ -9,10 +9,10 @@ from framework.logging.automation_logger import get_logger
 from framework.web.action.web_action_click import WebActionClick
 from framework.web.action.web_action_get_text import WebActionGetText
 from framework.web.action.web_action_hover import WebActionHover
-from framework.web.action.web_action_is_exists import WebActionIsExists
 from framework.web.action.web_action_send_keys import WebActionSendKeys
 from framework.web.action.web_action_set_text import WebActionSetText
 from framework.web.condition.web_condition import WebCondition
+from framework.web.condition.web_condition_element_visible import WebConditionElementVisible
 from framework.web.condition.web_condition_text_equals import WebConditionTextEquals
 from framework.web.web_action_executor import WebActionExecutor
 from framework.web.web_locator import WebLocator
@@ -208,11 +208,9 @@ class WebDriverCore:
 
         Returns:
             bool: Returns True if the element exists, False otherwise
-
         """
-        action = WebActionIsExists(self.driver, locator)
-        action_executor = WebActionExecutor(action)
-        return action_executor.execute_action()
+        element_is_displayed = WebConditionElementVisible(locator)
+        return element_is_displayed.is_condition_satisfied(self.driver)
 
     def is_condition_satisfied(self, condition: WebCondition) -> bool:
         """
