@@ -84,6 +84,7 @@ class RedFishClient:
         get_logger().log_debug(f"Response from RedFish API on URL: {self.bmc_ip}{path}\n:" f"Status: {status}\n" f"Data: {resp.dict}")
 
         self.status_code = resp.status
+        self.logout()
 
         return resp
 
@@ -103,6 +104,7 @@ class RedFishClient:
         get_logger().log_debug("running RedFish API:\n" f"METHOD: POST\n" f"URL: {self.bmc_ip}{path}\n" f"ARGS: {args}\n" f"BODY: {body}\n" f"HEADERS: {headers}")
         resp = self._get_connection().post(path=path, args=args, body=body, headers=headers)
         get_logger().log_debug(f"Response from RedFish API on URL: {self.bmc_ip}{path}\n:" f"Status: {resp.status}\n")
+        self.logout()
         return resp
 
     def patch(self, path: str, args: Optional[Dict[str, Any]] = None, body: Optional[Dict[str, Any]] = None, headers: Optional[Dict[str, Any]] = None) -> Any:
@@ -118,7 +120,15 @@ class RedFishClient:
         Returns:
             Any: Response object from the REST API call
         """
-        return self._get_connection().patch(path=path, args=args, body=body, headers=headers)
+        resp = self._get_connection().patch(path=path, args=args, body=body, headers=headers)
+        self.logout()
+        return resp
+
+    def logout(self) -> None:
+        """Log out and close the session."""
+        if self.client_obj is not None:
+            self.client_obj.logout()
+            self.client_obj = None
 
     def get_status_code(self) -> int:
         """
