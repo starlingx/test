@@ -15,61 +15,97 @@ class UnlockKpiBlocks:
         Get unlock KPI blocks for pair mode - measures phase durations.
         
         Phases:
-        1. Lock Host: Lock action -> mtcAgent.log Disable complete (excluded from KPI)
-        2. Shutdown: mtcAgent.log Unlock action -> daemon.log Service stopped
-        3. Blackout: daemon.log Service stopped -> kern.log Kernel boot (excluded from KPI)
-        4. OS Startup: kern.log Kernel boot -> daemon.log Multi-user system
-        5. Platform Startup: daemon.log Multi-user system -> Host available
-        6. K8s Startup: daemon.log CPU plugin started -> Pod recovery done
+        1. Lock Host Pattern: Initial lock action marker
+        2. Lock Host: Lock action -> Disable complete
+        3. Shutdown: Unlock action -> System rebooting
+        4. Pod Drain: Force pod drain -> Pods drained
+        5. Lazy Reboot: Lazy reboot command -> Failsafe reboot (optional)
+        6. Blackout: System rebooting -> Kernel boot
+        7. OS Network Config: Kernel boot -> Network online
+        8. OS Platform Service Config: Kernel boot -> Multi-user system
+        9. Platform Ready: Multi-user system -> Host available
+        10. K8s Startup: Kubelet starting -> Pod recovery done
         
         Returns:
             List[Dict[str, Any]]: Block definitions for pair mode timing
         """
         return [
             {
+                "label": "LOCK HOST PATTERN",
+                "file": ["mtcAgent.log*"],
+                "patterns": ["Info : {hostname} Lock Action"],
+                "max_time_delta": 2000
+            },
+            {
                 "label": "LOCK HOST",
                 "file": ["mtcAgent.log*"],
                 "start": "Info : {hostname} Lock Action",
-                "stop": "Info : {hostname} Disable Complete",
-                "exclude_from_kpi": True
+                "stop": "Info : {hostname} Disable Complete"
             },
             {
                 "label": "SHUTDOWN PHASE",
-                "file": ["mtcAgent.log*", "daemon.log*"],
+                "file": ["mtcAgent.log*", "auth.log*"],
                 "start": "Info : {hostname} Unlock Action",
-                "stop": "info Stopped Service Management API Unit.",
-                "exclude_from_kpi": False
+                "stop": "notice System is rebooting",
+                "max_time_delta": 600
+            },
+            {
+                "label": "POD DRAIN",
+                "file": ["mtcAgent.log*"],
+                "start": "{hostname} force pod drain script launched",
+                "stop": "pods drained",
+                "max_time_delta": 600
+            },
+            {
+                "label": "LAZY REBOOT",
+                "file": ["mtcClient.log*"],
+                "start": "lazy reboot command received",
+                "stop": "failsafe reboot script launched",
+                "max_time_delta": 600,
+                "optional": True
             },
             {
                 "label": "BLACKOUT PHASE",
-                "file": ["daemon.log*", "kern.log*"],
-                "start": "info Stopped Service Management API Unit.",
+                "file": ["auth.log*", "kern.log*"],
+                "start": "notice System is rebooting",
                 "stop": "Kernel command line:",
-                "exclude_from_kpi": True
+                "max_time_delta": 600
             },
             {
-                "label": "OS STARTUP PHASE",
+                "label": "OS: NETWORK CONFIG PHASE",
+                "file": ["kern.log*", "daemon.log*"],
+                "start": "Kernel command line:",
+                "stop": "Reached target Network is Online",
+                "max_time_delta": 600
+            },
+            {
+                "label": "OS: PLATFORM SVC CONFIG PHASE",
                 "file": ["kern.log*", "daemon.log*"],
                 "start": "Kernel command line:",
                 "stop": "Reached target Multi-User System",
-                "max_time_delta": 300
-            },
-            {
-                "label": "PLATFORM STARTUP PHASE",
-                "file": ["daemon.log*", "nfv-vim.log*"],
-                "start": "Reached target Multi-User System",
-                "stop": [
-                    "nfvi_host_admin_state=unlocked, nfvi_host_oper_state=enabled, nfvi_host_avail_status=available",
-                    "nfvi_host_admin_state=unlocked, nfvi_host_oper_state=enabled, nfvi_host_avail_status=degraded"
-                ]
+                "max_time_delta": 600
             },
             {
                 "label": "K8s STARTUP PHASE",
-                "file": "daemon.log*",
-                "start": "info Started Kubernetes Isolated CPU Plugin Daemon.",
+                "file": ["daemon.log*"],
+                "start": "info Starting Kubernetes Kubelet Server",
                 "stop": "info k8s-pod-recovery.service: Succeeded.",
-                "max_time_delta": 1200
+                "max_time_delta": 600
+            },
+            {
+                "label": "PLATFORM READY PHASE",
+                "file": ["daemon.log*", "mtcAgent.log*"],
+                "start": "Reached target Multi-User System",
+                "stop": "Info : controller-0 unlocked-enabled-available",
+                "max_time_delta": 600
             }
+            # {
+            #     "label": "K8s STARTUP PHASE",
+            #     "file": ["daemon.log*"],
+            #     "start": "info Starting Kubernetes Kubelet Server",
+            #     "stop": "info k8s-pod-recovery.service: Succeeded.",
+            #     "max_time_delta": 600
+            # }
         ]
 
     @staticmethod
