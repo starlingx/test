@@ -1127,14 +1127,7 @@ def test_dc_subcloud_update_description(request):
 
     test_description = "test description"
 
-    lab_config = ConfigurationManager.get_lab_config()
-    subclouds = lab_config.get_subclouds()
-    assert len(subclouds) != 0, "Failed. No subclouds were found"
-
-    # Get the first subcloud from the list
-    subcloud = subclouds[0]
-    subcloud_name = subcloud.get_lab_name()
-
+    subcloud_name = ConfigurationManager.get_lab_config().get_subcloud_names()[0]
     subcloud_show_object = DcManagerSubcloudShowKeywords(ssh_connection).get_dcmanager_subcloud_show(subcloud_name).get_dcmanager_subcloud_show_object()
     original_description = subcloud_show_object.get_description()
 
@@ -1166,14 +1159,7 @@ def test_dc_subcloud_update_location(request):
 
     test_location = "test location"
 
-    lab_config = ConfigurationManager.get_lab_config()
-    subclouds = lab_config.get_subclouds()
-    assert len(subclouds) != 0, "Failed. No subclouds were found"
-
-    # Get the first subcloud from the list
-    subcloud = subclouds[0]
-    subcloud_name = subcloud.get_lab_name()
-
+    subcloud_name = ConfigurationManager.get_lab_config().get_subcloud_names()[0]
     subcloud_show_object = DcManagerSubcloudShowKeywords(ssh_connection).get_dcmanager_subcloud_show(subcloud_name).get_dcmanager_subcloud_show_object()
     original_location = subcloud_show_object.get_location()
 

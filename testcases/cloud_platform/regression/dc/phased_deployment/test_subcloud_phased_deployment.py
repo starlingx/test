@@ -74,7 +74,7 @@ def test_phased_deployment(request):
         - execute the subcloud manage
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
-    subcloud_name = get_undeployed_subcloud_name(ssh_connection)
+    subcloud_name = ConfigurationManager.get_lab_config().get_subcloud_names()[0]
     dcm_sc_deploy_kw = DCManagerSubcloudDeployKeywords(ssh_connection)
     dcm_sc_manager_kw = DcManagerSubcloudManagerKeywords(ssh_connection)
 
@@ -127,7 +127,7 @@ def test_subcloud_deploy_abort_resume(request):
         - execute the subcloud manage
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
-    subcloud_name = get_undeployed_subcloud_name(ssh_connection)
+    subcloud_name = ConfigurationManager.get_lab_config().get_subcloud_names()[0]
     dcm_sc_deploy_kw = DCManagerSubcloudDeployKeywords(ssh_connection)
     dcm_sc_manager_kw = DcManagerSubcloudManagerKeywords(ssh_connection)
 
@@ -184,7 +184,7 @@ def test_bootstrap_failure_replay():
         - execute the subcloud manage
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
-    subcloud_name = get_undeployed_subcloud_name(ssh_connection)
+    subcloud_name = ConfigurationManager.get_lab_config().get_subcloud_names()[0]
 
     # Get the subcloud deployment assets
     deployment_assets_config = ConfigurationManager.get_deployment_assets_config()

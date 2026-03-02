@@ -30,9 +30,7 @@ def test_verify_one_release_per_subcloud_on_central(request):
     release = CloudPlatformVersionManagerClass().get_sw_version()
 
     # Gets the lowest subcloud (the subcloud with the lowest id).
-    dcmanager_subcloud_list_keywords = DcManagerSubcloudListKeywords(central_ssh)
-    lowest_subcloud = dcmanager_subcloud_list_keywords.get_dcmanager_subcloud_list().get_healthy_subcloud_with_lowest_id()
-    subcloud_name = lowest_subcloud.get_name()
+    subcloud_name = ConfigurationManager.get_lab_config().get_subcloud_names()[0]
 
     validate_subcloud_health(subcloud_name)
 
@@ -103,9 +101,7 @@ def test_verify_two_releases_per_subcloud_on_central(request):
     release = CloudPlatformVersionManagerClass().get_sw_version()
 
     # Gets the lowest subcloud (the subcloud with the lowest id).
-    dcmanager_subcloud_list_keywords = DcManagerSubcloudListKeywords(central_ssh)
-    lowest_subcloud = dcmanager_subcloud_list_keywords.get_dcmanager_subcloud_list().get_healthy_subcloud_with_lowest_id()
-    subcloud_name = lowest_subcloud.get_name()
+    subcloud_name = ConfigurationManager.get_lab_config().get_subcloud_names()[0]
 
     validate_subcloud_health(subcloud_name)
 
@@ -190,9 +186,7 @@ def test_verify_one_release_per_subcloud_on_local(request):
     release = CloudPlatformVersionManagerClass().get_sw_version()
 
     # Gets the lowest subcloud (the subcloud with the lowest id).
-    dcmanager_subcloud_list_keywords = DcManagerSubcloudListKeywords(central_ssh)
-    lowest_subcloud = dcmanager_subcloud_list_keywords.get_dcmanager_subcloud_list().get_healthy_subcloud_with_lowest_id()
-    subcloud_name = lowest_subcloud.get_name()
+    subcloud_name = ConfigurationManager.get_lab_config().get_subcloud_names()[0]
     subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
 
     validate_subcloud_health(subcloud_name)
@@ -256,9 +250,7 @@ def test_verify_two_releases_per_subcloud_on_local(request):
     release = CloudPlatformVersionManagerClass().get_sw_version()
 
     # Gets the lowest subcloud (the subcloud with the lowest id).
-    dcmanager_subcloud_list_keywords = DcManagerSubcloudListKeywords(central_ssh)
-    lowest_subcloud = dcmanager_subcloud_list_keywords.get_dcmanager_subcloud_list().get_healthy_subcloud_with_lowest_id()
-    subcloud_name = lowest_subcloud.get_name()
+    subcloud_name = ConfigurationManager.get_lab_config().get_subcloud_names()[0]
     subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
 
     # Prechecks Before Back-Up:

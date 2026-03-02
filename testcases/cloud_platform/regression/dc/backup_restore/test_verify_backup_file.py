@@ -129,9 +129,8 @@ def test_verify_backup_central_simplex(request):
         - Remove files created while the Tc was running.
     """
     central_ssh = LabConnectionKeywords().get_active_controller_ssh()
-    dcm_sc_list_kw = DcManagerSubcloudListKeywords(central_ssh)
-    subcloud = dcm_sc_list_kw.get_dcmanager_subcloud_list().get_healthy_subcloud_by_type(LabTypeEnum.SIMPLEX.value)
-    subcloud_name = subcloud.get_name()
+    subcloud_name = ConfigurationManager.get_lab_config().get_subcloud_names()[0]
+
     # get subcloud ssh
     subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
     # Prechecks Before Back-Up:
@@ -156,17 +155,16 @@ def test_verify_backup_central_duplex(request):
         - Remove files created while the Tc was running.
     """
     central_ssh = LabConnectionKeywords().get_active_controller_ssh()
-    dcm_sc_list_kw = DcManagerSubcloudListKeywords(central_ssh)
-    subcloud = dcm_sc_list_kw.get_dcmanager_subcloud_list().get_healthy_subcloud_by_type(LabTypeEnum.DUPLEX.value)
-    subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud.get_name())
+    subcloud_name = ConfigurationManager.get_lab_config().get_subcloud_names()[0]
+    subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
 
     # Prechecks Before Back-Up:
-    get_logger().log_info(f"Performing pre-checks on {subcloud.get_name()}")
+    get_logger().log_info(f"Performing pre-checks on {subcloud_name}")
     obj_health = HealthKeywords(subcloud_ssh)
     obj_health.validate_healty_cluster()  # Checks alarms, pods, app health
 
     request.addfinalizer(teardown_central)
-    verify_backup_central(central_ssh, subcloud.get_name())
+    verify_backup_central(central_ssh, subcloud_name())
 
 
 @mark.p0
@@ -182,20 +180,19 @@ def test_verify_backup_local_simplex(request):
         - Remove files created while the Tc was running.
     """
     central_ssh = LabConnectionKeywords().get_active_controller_ssh()
-    dcm_sc_list_kw = DcManagerSubcloudListKeywords(central_ssh)
-    subcloud = dcm_sc_list_kw.get_dcmanager_subcloud_list().get_healthy_subcloud_by_type(LabTypeEnum.SIMPLEX.value)
-    subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud.get_name())
+    subcloud_name = ConfigurationManager.get_lab_config().get_subcloud_names()[0]
+    subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
 
     # Prechecks Before Back-Up:
-    get_logger().log_info(f"Performing pre-checks on {subcloud.get_name()}")
+    get_logger().log_info(f"Performing pre-checks on {subcloud_name()}")
     obj_health = HealthKeywords(subcloud_ssh)
     obj_health.validate_healty_cluster()  # Checks alarms, pods, app health
 
     def teardown():
-        teardown_local(subcloud.get_name())
+        teardown_local(subcloud_name())
 
     request.addfinalizer(teardown)
-    verify_backup_local_custom_path(central_ssh, subcloud_ssh, subcloud.get_name())
+    verify_backup_local_custom_path(central_ssh, subcloud_ssh, subcloud_name())
 
 
 @mark.p0
@@ -211,20 +208,19 @@ def test_verify_backup_local_duplex(request):
         - Remove files created while the Tc was running.
     """
     central_ssh = LabConnectionKeywords().get_active_controller_ssh()
-    dcm_sc_list_kw = DcManagerSubcloudListKeywords(central_ssh)
-    subcloud = dcm_sc_list_kw.get_dcmanager_subcloud_list().get_healthy_subcloud_by_type(LabTypeEnum.DUPLEX.value)
-    subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud.get_name())
+    subcloud_name = ConfigurationManager.get_lab_config().get_subcloud_names()[0]
+    subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
 
     # Prechecks Before Back-Up:
-    get_logger().log_info(f"Performing pre-checks on {subcloud.get_name()}")
+    get_logger().log_info(f"Performing pre-checks on {subcloud_name}")
     obj_health = HealthKeywords(subcloud_ssh)
     obj_health.validate_healty_cluster()  # Checks alarms, pods, app health
 
     def teardown():
-        teardown_local(subcloud.get_name())
+        teardown_local(subcloud_name)
 
     request.addfinalizer(teardown)
-    verify_backup_local_custom_path(central_ssh, subcloud_ssh, subcloud.get_name())
+    verify_backup_local_custom_path(central_ssh, subcloud_ssh, subcloud_name)
 
 @mark.p0
 @mark.lab_has_subcloud

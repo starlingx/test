@@ -18,11 +18,9 @@ def test_subcloud_prestage():
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     # Gets the lowest subcloud (the subcloud with the lowest id).
     dcm_sc_list_kw = DcManagerSubcloudListKeywords(ssh_connection)
-    lowest_subcloud = dcm_sc_list_kw.get_dcmanager_subcloud_list().get_healthy_subcloud_with_lowest_id()
-    sc_name = lowest_subcloud.get_name()
 
+    sc_name = ConfigurationManager.get_lab_config().get_subcloud_names()[0]
     subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(sc_name)
-
     SystemHostSwactKeywords(subcloud_ssh).ensure_duplex_subcloud_c0_is_active(sc_name)
 
     # validate Healthy status
