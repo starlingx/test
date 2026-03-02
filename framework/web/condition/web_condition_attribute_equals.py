@@ -34,12 +34,17 @@ class WebConditionAttributeEquals(WebCondition):
             bool: True if the value of the attribute matches the expected_value
 
         """
-        web_element = webdriver.find_element(self.get_web_locator().get_by(), self.get_web_locator().get_locator())
-        web_element_actual_attribute_value = web_element.get_attribute(self.attribute_name)
+        try:
+            web_element = webdriver.find_element(self.get_web_locator().get_by(), self.get_web_locator().get_locator())
+            web_element_actual_attribute_value = web_element.get_attribute(self.attribute_name)
 
-        get_logger().log_debug(f"Attribute {self.attribute_name} Expected: '{self.expected_value}' | Actual: '{web_element_actual_attribute_value}'")
+            get_logger().log_debug(f"Attribute {self.attribute_name} Expected: '{self.expected_value}' | Actual: '{web_element_actual_attribute_value}'")
 
-        return web_element_actual_attribute_value == self.expected_value
+            return web_element_actual_attribute_value == self.expected_value
+
+        except Exception:
+            get_logger().log_debug("Exception occurred evaluating WebConditionAttributeEquals, returning false")
+            return False
 
     def __str__(self) -> str:
         """
