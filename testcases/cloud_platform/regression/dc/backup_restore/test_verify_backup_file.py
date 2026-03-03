@@ -164,7 +164,7 @@ def test_verify_backup_central_duplex(request):
     obj_health.validate_healty_cluster()  # Checks alarms, pods, app health
 
     request.addfinalizer(teardown_central)
-    verify_backup_central(central_ssh, subcloud_name())
+    verify_backup_central(central_ssh, subcloud_name)
 
 
 @mark.p0
@@ -184,15 +184,15 @@ def test_verify_backup_local_simplex(request):
     subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
 
     # Prechecks Before Back-Up:
-    get_logger().log_info(f"Performing pre-checks on {subcloud_name()}")
+    get_logger().log_info(f"Performing pre-checks on {subcloud_name}")
     obj_health = HealthKeywords(subcloud_ssh)
     obj_health.validate_healty_cluster()  # Checks alarms, pods, app health
 
     def teardown():
-        teardown_local(subcloud_name())
+        teardown_local(subcloud_name)
 
     request.addfinalizer(teardown)
-    verify_backup_local_custom_path(central_ssh, subcloud_ssh, subcloud_name())
+    verify_backup_local_custom_path(central_ssh, subcloud_ssh, subcloud_name)
 
 
 @mark.p0
