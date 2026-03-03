@@ -36,3 +36,18 @@ class KubectlGetSystemInventoryKeywords(BaseKeyword):
         self.validate_success_return_code(self.ssh_connection)
 
         return KubectlSystemInventoryOutput(output, sysinv_name)
+
+    def system_inventory_exists(self, sysinv_name: str, namespace: str = "default") -> bool:
+        """
+        Check if a SystemInventory resource exists.
+
+        Args:
+            sysinv_name (str): Name of the SystemInventory resource
+            namespace (str): Kubernetes namespace. Defaults to "default"
+
+        Returns:
+            bool: True if SystemInventory exists, False otherwise
+        """
+        cmd = f"kubectl get systeminventory {sysinv_name} -n {namespace}"
+        self.ssh_connection.send(export_k8s_config(cmd))
+        return self.ssh_connection.get_return_code() == 0
