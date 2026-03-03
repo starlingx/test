@@ -99,13 +99,6 @@ class UnlockKpiBlocks:
                 "stop": "Info : controller-0 unlocked-enabled-available",
                 "max_time_delta": 600
             }
-            # {
-            #     "label": "K8s STARTUP PHASE",
-            #     "file": ["daemon.log*"],
-            #     "start": "info Starting Kubernetes Kubelet Server",
-            #     "stop": "info k8s-pod-recovery.service: Succeeded.",
-            #     "max_time_delta": 600
-            # }
         ]
 
     @staticmethod
