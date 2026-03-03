@@ -580,7 +580,10 @@ def test_ptp_operation_gnss_off_and_on(request):
         When analyzing test results, pay attention to:
         1. **Clock Class Transitions**:
         - 6 → 7: Brief GNSS signal loss, entering holdover
-        - 6 → 248: Complete GNSS signal loss, uncalibrated
+        - 6 → 248: Complete GNSS signal loss, uncalibrated, 
+        - 6 → 248: entering holdover-unstable(freerun) i.e. not locked at least for 
+                   "locked_to_holdover_threshold_seconds" time
+                   before transitioning state from locked to holdover.
         - 248 → 6: GNSS signal recovery
 
         2. **Port State Changes**:
@@ -620,14 +623,14 @@ def test_ptp_operation_gnss_off_and_on(request):
                             "alarm_id": "100.119",
                             "state": StatusConstants.alarm_set,
                             "severity": "major",
-                            "reason_text": "controller-0 1PPS signal loss state: LockStatus.HOLDOVER",
+                            "reason_text": ["controller-0 1PPS signal loss state: LockStatus.HOLDOVER", "controller-0 1PPS signal loss state: holdover-unstable(freerun)"],
                             "entity_id": "host=controller-0.interface={{ controller_0.nic1.base_port }}.ptp=1PPS-signal-loss"
                         },
                         {
                             "alarm_id": "100.119",
                             "state": StatusConstants.alarm_set,
                             "severity": "major",
-                            "reason_text": "controller-0 GNSS signal loss state: LockStatus.HOLDOVER",
+                            "reason_text": ["controller-0 GNSS signal loss state: LockStatus.HOLDOVER", "controller-0 GNSS signal loss state: holdover-unstable(freerun)"],
                             "entity_id": "host=controller-0.interface={{ controller_0.nic1.base_port }}.ptp=GNSS-signal-loss"
                         },
                     ],
@@ -640,22 +643,22 @@ def test_ptp_operation_gnss_off_and_on(request):
                             "name": "ptp1",
                             "controller-0": {
                                 "parent_data_set": {
-                                    "gm_clock_class": 7,
+                                    "gm_clock_class": [7, 248],
                                     "gm_clock_accuracy": "0xfe",
                                     "gm_offset_scaled_log_variance": "0xffff"
                                 },
                                 "time_properties_data_set": {
                                     "current_utc_offset": 37,
                                     "current_utc_offset_valid": 0,
-                                    "time_traceable": 1,
-                                    "frequency_traceable": 1
+                                    "time_traceable": [1, 0],
+                                    "frequency_traceable": [1, 0]
                                 },
                                 "grandmaster_settings": {
-                                    "clock_class": 7,
+                                    "clock_class": [7, 248],
                                     "clock_accuracy": "0xfe",
                                     "offset_scaled_log_variance": "0xffff",
-                                    "time_traceable": 1,
-                                    "frequency_traceable": 1,
+                                    "time_traceable": [1, 0],
+                                    "frequency_traceable": [1, 0],
                                     "time_source": "0xa0",
                                     "current_utc_offset_valid": 0
                                 },
@@ -675,22 +678,22 @@ def test_ptp_operation_gnss_off_and_on(request):
                             "name": "ptp3",
                             "controller-0": {
                                 "parent_data_set": {
-                                    "gm_clock_class": 7,
+                                    "gm_clock_class": [7, 248],
                                     "gm_clock_accuracy": "0xfe",
                                     "gm_offset_scaled_log_variance": "0xffff"
                                 },
                                 "time_properties_data_set": {
                                     "current_utc_offset": 37,
                                     "current_utc_offset_valid": 0,
-                                    "time_traceable": 1,
-                                    "frequency_traceable": 1
+                                    "time_traceable": [1, 0],
+                                    "frequency_traceable": [1, 0]
                                 },
                                 "grandmaster_settings": {
-                                    "clock_class": 7,
+                                    "clock_class": [7, 248],
                                     "clock_accuracy": "0xfe",
                                     "offset_scaled_log_variance": "0xffff",
-                                    "time_traceable": 1,
-                                    "frequency_traceable": 1,
+                                    "time_traceable": [1, 0],
+                                    "frequency_traceable": [1, 0],
                                     "time_source": "0xa0",
                                     "current_utc_offset_valid": 0
                                 },
@@ -710,18 +713,18 @@ def test_ptp_operation_gnss_off_and_on(request):
                             "name": "ptp4",
                             "controller-1": {
                                 "parent_data_set": {
-                                    "gm_clock_class": 7,
+                                    "gm_clock_class": [7, 248],
                                     "gm_clock_accuracy": "0xfe",
                                     "gm_offset_scaled_log_variance": "0xffff"
                                 },
                                 "time_properties_data_set": {
                                     "current_utc_offset": 37,
                                     "current_utc_offset_valid": 0,
-                                    "time_traceable": 1,
-                                    "frequency_traceable": 1
+                                    "time_traceable": [1, 0],
+                                    "frequency_traceable": [1, 0]
                                 },
                                 "grandmaster_settings": {
-                                    "clock_class": [165, 248],
+                                    "clock_class": [135, 165, 248],
                                     "clock_accuracy": "0xfe",
                                     "offset_scaled_log_variance": "0xffff",
                                     "time_traceable": 0,
@@ -777,14 +780,14 @@ def test_ptp_operation_gnss_off_and_on(request):
                             "alarm_id": "100.119",
                             "state": StatusConstants.alarm_clear,
                             "severity": "major",
-                            "reason_text": "controller-0 1PPS signal loss state: LockStatus.HOLDOVER",
+                            "reason_text": ["controller-0 1PPS signal loss state: LockStatus.HOLDOVER", "controller-0 1PPS signal loss state: holdover-unstable(freerun)"],
                             "entity_id": "host=controller-0.interface={{ controller_0.nic1.base_port }}.ptp=1PPS-signal-loss"
                         },
                         {
                             "alarm_id": "100.119",
                             "state": StatusConstants.alarm_clear,
                             "severity": "major",
-                            "reason_text": "controller-0 GNSS signal loss state: LockStatus.HOLDOVER",
+                            "reason_text": ["controller-0 GNSS signal loss state: LockStatus.HOLDOVER", "controller-0 GNSS signal loss state: holdover-unstable(freerun)"],
                             "entity_id": "host=controller-0.interface={{ controller_0.nic1.base_port }}.ptp=GNSS-signal-loss"
                         },
                     ],
