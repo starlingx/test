@@ -1,3 +1,5 @@
+import re
+
 from pytest import FixtureRequest, mark
 
 from config.configuration_manager import ConfigurationManager
@@ -170,6 +172,12 @@ def test_rollback_platform_integ_app(request: FixtureRequest):
     current_app_info = SystemApplicationShowKeywords(active_ssh_connection).get_system_application_show(platform_integ_apps_name)
     current_version = current_app_info.get_system_application_object().get_version()
 
+    # Validate tarball version differs from installed version
+    app_config = ConfigurationManager.get_app_config()
+    tarball_filename = app_config.get_platform_integ_app_tarball().split("/")[-1]
+    tarball_version = re.search(r"platform-integ-apps-(.+)\.tgz", tarball_filename).group(1)
+    validate_not_equals(current_version, tarball_version, "Tarball version must differ from installed version")
+
     def teardown():
         get_logger().log_teardown_step("Test- Teardown: Check if restore needed")
         # Check current version on system
@@ -237,6 +245,7 @@ def test_rollback_platform_integ_app(request: FixtureRequest):
     system_application_update_input = SystemApplicationUpdateInput()
     system_application_update_input.set_app_name(platform_integ_apps_name)
     system_application_update_input.set_tar_file_path(f"{app_config.get_base_application_path()}{tarball_filename}")
+    system_application_update_input.set_timeout_in_seconds(120)
     SystemApplicationUpdateKeywords(active_ssh_connection).system_application_update(system_application_update_input)
 
     # Verify the application version has changed (rollback)
@@ -311,6 +320,12 @@ def test_update_platform_integ_app(request: FixtureRequest):
     current_app_info = SystemApplicationShowKeywords(active_ssh_connection).get_system_application_show(platform_integ_apps_name)
     current_version = current_app_info.get_system_application_object().get_version()
 
+    # Validate tarball version differs from installed version
+    app_config = ConfigurationManager.get_app_config()
+    tarball_filename = app_config.get_platform_integ_app_tarball().split("/")[-1]
+    tarball_version = re.search(r"platform-integ-apps-(.+)\.tgz", tarball_filename).group(1)
+    validate_not_equals(current_version, tarball_version, "Tarball version must differ from installed version")
+
     # Transfer tarball from local machine to /home/sysadmin
     get_logger().log_test_case_step("Transfer rollback tarball from local machine to /home/sysadmin")
     app_config = ConfigurationManager.get_app_config()
@@ -335,6 +350,7 @@ def test_update_platform_integ_app(request: FixtureRequest):
     system_application_update_input = SystemApplicationUpdateInput()
     system_application_update_input.set_app_name(platform_integ_apps_name)
     system_application_update_input.set_tar_file_path(f"{app_config.get_base_application_path()}{tarball_filename}")
+    system_application_update_input.set_timeout_in_seconds(120)
     SystemApplicationUpdateKeywords(active_ssh_connection).system_application_update(system_application_update_input)
 
     # Verify the application version has changed (rollback)
@@ -357,6 +373,7 @@ def test_update_platform_integ_app(request: FixtureRequest):
     system_application_update_input = SystemApplicationUpdateInput()
     system_application_update_input.set_app_name(platform_integ_apps_name)
     system_application_update_input.set_tar_file_path(upgrade_tarball_path)
+    system_application_update_input.set_timeout_in_seconds(120)
     SystemApplicationUpdateKeywords(active_ssh_connection).system_application_update(system_application_update_input)
 
     # Check if the application was upgraded
