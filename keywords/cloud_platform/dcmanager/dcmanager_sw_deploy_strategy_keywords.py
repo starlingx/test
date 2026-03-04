@@ -22,27 +22,31 @@ class DcmanagerSwDeployStrategy(BaseKeyword):
         self.ssh_connection = ssh_connection
         self.usm_config = ConfigurationManager.get_usm_config()
 
-    def dcmanager_sw_deploy_strategy_create(self, subcloud_name: str = None, sw_version: str = None, subcloud_group: str = None, with_delete: bool = False, delete_only: bool = False):
+    def dcmanager_sw_deploy_strategy_create(self, subcloud_name: str = None, release: str = None, subcloud_group: str = None, with_delete: bool = False, delete_only: bool = False, rollback: bool = False, snapshot: bool = False):
         """
         Runs dcmanager sw-deploy-strategy create command.
 
         Args:
             subcloud_name (str): The subcloud name.
-            sw_version (str): The software version to be deployed.
+            release (str): The software version to be deployed.
             with_delete (bool): If true, adds parameter --with-delete
-            delete_only (bool): If true, adds paramater --delete_only
+            delete_only (bool): If true, adds paramater --delete-only
             subcloud_group (str): The subcloud group name.
+            rollback (bool): If true, adds parameter --rollback
+            snapshot (bool): If true, adds parameter --snapshot
         """
-        release_id = f"--release-id {sw_version}" if sw_version else ""
+        release_id = f"--release-id {release}" if release else ""
         delete = "--with-delete" if with_delete else ""
         clean_up_delete = "--delete-only" if delete_only else ""
+        rollback = "--rollback" if rollback else ""
+        snapshot = "--snapshot" if snapshot else ""
         
         if subcloud_group:
-            command = source_openrc(f"dcmanager sw-deploy-strategy create --group {subcloud_group} {release_id} {delete} {clean_up_delete}")
+            command = source_openrc(f"dcmanager sw-deploy-strategy create --group {rollback} {snapshot} {subcloud_group} {release_id} {delete} {clean_up_delete}")
             target = subcloud_group
             is_group = True
         else:
-            command = source_openrc(f"dcmanager sw-deploy-strategy create {subcloud_name} {release_id} {delete} {clean_up_delete}")
+            command = source_openrc(f"dcmanager sw-deploy-strategy create {rollback} {snapshot} {subcloud_name} {release_id} {delete} {clean_up_delete}")
             target = subcloud_name
             is_group = False
 
@@ -136,7 +140,7 @@ class DcmanagerSwDeployStrategy(BaseKeyword):
             polling_sleep_time=check_interval,
         )
 
-    def dc_manager_sw_deploy_strategy_create_apply_delete(self, subcloud_name: str = None, release: str = None, subcloud_group: str = None, with_delete: bool = False, delete_only: bool = False):
+    def dc_manager_sw_deploy_strategy_create_apply_delete(self, subcloud_name: str = None, release: str = None, subcloud_group: str = None, with_delete: bool = False, delete_only: bool = False, rollback: bool = False, snapshot: bool = False):
         """
         Runs dcmanager sw-deploy-strategy create / apply / delete commands.
 
@@ -144,11 +148,15 @@ class DcmanagerSwDeployStrategy(BaseKeyword):
             subcloud_name (str): The subcloud name.
             release (str): The software version to be deployed.
             subcloud_group (str): The subcloud group name.
+            with_delete (bool): If true, adds parameter --with-delete
+            delete_only (bool): If true, adds paramater --delete-only
+            rollback (bool): If true, adds parameter --rollback
+            snapshot (bool): If true, adds parameter --snapshot
         """
         target = subcloud_group if subcloud_group else subcloud_name
         is_group = bool(subcloud_group)
         get_logger().log_test_case_step(f"Create the sw-deploy strategy for {target} with {release}")
-        self.dcmanager_sw_deploy_strategy_create(subcloud_name=subcloud_name, sw_version=release, subcloud_group=subcloud_group, with_delete=with_delete, delete_only=delete_only)
+        self.dcmanager_sw_deploy_strategy_create(subcloud_name=subcloud_name, release=release, subcloud_group=subcloud_group, with_delete=with_delete, delete_only=delete_only, rollback=rollback, snapshot=snapshot)
         get_logger().log_test_case_step("Apply the sw-deploy strategy")
         self.dcmanager_sw_deploy_strategy_apply(target, is_group=is_group)
         get_logger().log_test_case_step("Delete the sw-deploy strategy")

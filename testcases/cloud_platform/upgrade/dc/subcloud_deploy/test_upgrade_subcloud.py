@@ -1,9 +1,10 @@
 from pytest import mark
+import re
 
 from config.configuration_manager import ConfigurationManager
 from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
-from framework.validation.validation import validate_equals, validate_not_equals
+from framework.validation.validation import validate_equals, validate_not_equals, validate_not_none
 from keywords.cloud_platform.dcmanager.dcmanager_prestage_strategy_keywords import DcmanagerPrestageStrategyKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_list_keywords import DcManagerSubcloudListKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_sw_deploy_strategy_keywords import DcmanagerSwDeployStrategy
@@ -165,6 +166,15 @@ def test_prestage_subcloud():
     usm_config = ConfigurationManager.get_usm_config()
     subcloud_group = usm_config.get_subcloud_group()
     subcloud_name = usm_config.get_subcloud_name()
+    release = usm_config.get_to_release_ids()[0]
+    
+    # Extract version from release string
+    validate_not_none(release, "Release is not valid.")
+    match = re.search(r"(\d+)\.(\d+)", release)
+    if match:
+        major = match.group(1)
+        minor = match.group(2).zfill(2)
+        release_number = f"{major}.{minor}"
     
     # Use subcloud from config if specified
     if subcloud_name != "None":
@@ -178,7 +188,7 @@ def test_prestage_subcloud():
 
     # dcmanager prestage-strategy create / apply / delete
     dcman_prestage_kw = DcmanagerPrestageStrategyKeywords(central_ssh)
-    dcman_prestage_kw.dc_manager_prestage_strategy_create_apply_delete(sw_deploy=True, subcloud_group=subcloud_group, subcloud_name=subcloud_name)
+    dcman_prestage_kw.dc_manager_prestage_strategy_create_apply_delete(release=release_number, sw_deploy=True, subcloud_group=subcloud_group, subcloud_name=subcloud_name)
     
     msg = "Fetch software list after dcmanager prestage-strategy on "
     fetch_sw_list(central_ssh, f"{msg} Systemcontroller")
@@ -200,51 +210,89 @@ def test_upgrade_subcloud_from_central_cloud():
     # get central cloud ssh
     central_ssh = LabConnectionKeywords().get_active_controller_ssh()
     dcm_sc_list_kw = DcManagerSubcloudListKeywords(central_ssh)
-
-    # get latest (N) and N-1 releases using software list
-    latest_release, n_minus_1_release = get_latest_and_n_minus_1_release(central_ssh)
-
-    # get the subcloud with the release and ssh
-    subcloud_obj = dcm_sc_list_kw.get_one_subcloud_by_release(n_minus_1_release)
-    subcloud_name_from_setup = subcloud_obj.get_name()
-    subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name_from_setup)
     
     # Get subcloud name and group from USM config
     usm_config = ConfigurationManager.get_usm_config()
     subcloud_name = usm_config.get_subcloud_name()
     subcloud_group = usm_config.get_subcloud_group()
+    snapshot = usm_config.get_snapshot()
+    release = usm_config.get_to_release_ids()[0]
     
-    # Use subcloud from config if specified
-    if subcloud_name != "None":
-        subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
+    # Get all subclouds for validation
+    subcloud_objs = dcm_sc_list_kw.get_dcmanager_subcloud_list().get_dcmanager_subcloud_list_objects()
+    subcloud_names = [subcloud_obj.get_name() for subcloud_obj in subcloud_objs]
+    
+    # dcmanager sw-deploy-strategy create / apply / delete
+    dcman_sw_deploy_kw = DcmanagerSwDeployStrategy(central_ssh)
+    dcman_sw_deploy_kw.dc_manager_sw_deploy_strategy_create_apply_delete(release=release, subcloud_group=subcloud_group, subcloud_name=subcloud_name, snapshot=snapshot)
+    msg = "Fetch software list after dcmanager sw-deploy-strategy on "
+    fetch_sw_list(central_ssh, f"{msg} Systemcontroller")
+    
+    # Validate all subclouds
+    for sc_name in subcloud_names:
+        subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(sc_name)
+        sw_list = fetch_sw_list(subcloud_ssh, f"{msg} subcloud ==> {sc_name}")
 
-    # get latest release version from software list (has only number part of the release)
-    sw_list = SoftwareListKeywords(central_ssh).get_software_list().get_software_lists()
-    full_sw_name = ""
-    for sw in sw_list:
-        if latest_release in sw.get_release():
-            full_sw_name = sw.get_release()
+        # verify latest release (N) on the subcloud is in state "deploying".
+        for sw in sw_list:
+            get_logger().log_info(f"Release: {sw.get_release()} is {sw.get_state()}")
+            if release in sw.get_release():
+                validate_equals(sw.get_state(),"deploying", f"Latest release is deploying on subcloud {sc_name}.")
+                break
 
-    validate_not_equals(full_sw_name, "", f"Release {latest_release} not found in the software list.")
+        # verify software deploy operation has completed successfully on the subcloud
+        sw_deploy_show_obj = (SoftwareDeployShowKeywords(subcloud_ssh).get_software_deploy_show(sudo=False).get_software_deploy_show())
+        from_release = sw_deploy_show_obj.get_from_release()
+        to_release = sw_deploy_show_obj.get_to_release()
+        deploy_state = sw_deploy_show_obj.get_state()
+        get_logger().log_info(f"Software deploy show - From: {from_release}, To: {to_release}, State: {deploy_state}")
+        validate_equals(deploy_state, "deploy-completed", f"Software deploy operation completed successfully on subcloud {sc_name}.")
+
+@mark.p2
+@mark.lab_has_subcloud
+def test_rollback_subcloud_from_central_cloud():
+    """
+    Rollback 1 subcloud or a group of subclouds from release N to N-1 with dcmanager via Central Cloud
+
+    Assumes that:
+    - The Subcloud is in the complete stage.
+    - There is no dcmanager orchestration in the Central Cloud.
+    - The Subcloud is online and reachable.
+    """
+
+    # get central cloud ssh
+    central_ssh = LabConnectionKeywords().get_active_controller_ssh()
+    dcm_sc_list_kw = DcManagerSubcloudListKeywords(central_ssh)
+    
+    # Get subcloud name and group from USM config
+    usm_config = ConfigurationManager.get_usm_config()
+    subcloud_name = usm_config.get_subcloud_name()
+    subcloud_group = usm_config.get_subcloud_group()
+    rollback = usm_config.get_rollback()
+    release = usm_config.get_to_release_ids()[0] if usm_config.get_to_release_ids() else None
+    
+    # Validate rollback is true
+    validate_equals(rollback, True, "Rollback must be true to execute this test.")
+    
+    # Get all subclouds for validation
+    subcloud_objs = dcm_sc_list_kw.get_dcmanager_subcloud_list().get_dcmanager_subcloud_list_objects()
+    subcloud_names = [subcloud_obj.get_name() for subcloud_obj in subcloud_objs]
 
     # dcmanager sw-deploy-strategy create / apply / delete
     dcman_sw_deploy_kw = DcmanagerSwDeployStrategy(central_ssh)
-    dcman_sw_deploy_kw.dc_manager_sw_deploy_strategy_create_apply_delete(release=full_sw_name, subcloud_group=subcloud_group, subcloud_name=subcloud_name)
+    dcman_sw_deploy_kw.dc_manager_sw_deploy_strategy_create_apply_delete(subcloud_group=subcloud_group, subcloud_name=subcloud_name, rollback=rollback)
     msg = "Fetch software list after dcmanager sw-deploy-strategy on "
     fetch_sw_list(central_ssh, f"{msg} Systemcontroller")
-    sw_list = fetch_sw_list(subcloud_ssh, f"{msg} subcloud ==> {subcloud_name}")
 
-    # verify latest release (N) on the subcloud is in state "deploying".
-    for sw in sw_list:
-        get_logger().log_info(f"Release: {sw.get_release()} is {sw.get_state()}")
-        if latest_release in sw.get_release():
-            validate_equals(sw.get_state(),"deploying", "Latest release is deploying on subcloud.")
-            break
+    # Validate all subclouds only if release was passed on get_to_release_ids
+    if release:
+        for sc_name in subcloud_names:
+            subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(sc_name)
+            sw_list = fetch_sw_list(subcloud_ssh, f"{msg} subcloud ==> {sc_name}")
 
-    # verify software deploy operation has completed successfully on the subcloud
-    sw_deploy_show_obj = (SoftwareDeployShowKeywords(subcloud_ssh).get_software_deploy_show(sudo=False).get_software_deploy_show())
-    from_release = sw_deploy_show_obj.get_from_release()
-    to_release = sw_deploy_show_obj.get_to_release()
-    deploy_state = sw_deploy_show_obj.get_state()
-    get_logger().log_info(f"Software deploy show - From: {from_release}, To: {to_release}, State: {deploy_state}")
-    validate_equals(deploy_state, "deploy-completed", "Software deploy operation completed successfully on subcloud.")
+            # verify latest release (N) on the subcloud is in state "available".
+            for sw in sw_list:
+                get_logger().log_info(f"Release: {sw.get_release()} is {sw.get_state()}")
+                if release in sw.get_release():
+                    validate_equals(sw.get_state(),"available", f"Latest release is available on subcloud {sc_name}.")
+                    break

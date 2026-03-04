@@ -55,7 +55,7 @@ def test_patch_apply(request):
 
     # Create software deploy strategy
     get_logger().log_info(f"Create sw-deploy strategy for {subcloud_name}.")
-    DcmanagerSwDeployStrategy(central_ssh).dcmanager_sw_deploy_strategy_create(subcloud_name=subcloud_name, sw_version=latest_deployed_release)
+    DcmanagerSwDeployStrategy(central_ssh).dcmanager_sw_deploy_strategy_create(subcloud_name=subcloud_name, release=latest_deployed_release)
 
     # Apply the previously created strategy
     get_logger().log_info(f"Apply strategy for {subcloud_name}.")
