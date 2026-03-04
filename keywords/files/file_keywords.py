@@ -1,7 +1,12 @@
 import math
+import os
 import shlex
 import time
 
+import yaml
+from jinja2 import Template
+
+from config.configuration_manager import ConfigurationManager
 from framework.exceptions.keyword_exception import KeywordException
 from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
@@ -16,6 +21,30 @@ class FileKeywords(BaseKeyword):
 
     def __init__(self, ssh_connection: SSHConnection):
         self.ssh_connection = ssh_connection
+
+    def generate_file_from_template(self, template_file: str, replacement_dictionary: dict, target_file_name: str, target_remote_location: str) -> str:
+        """
+        Generates a file from a Jinja2 template and uploads it to the remote host.
+
+        Args:
+            template_file (str): Path to the Jinja2 template file.
+            replacement_dictionary (dict): Dictionary of placeholder keys and replacement values.
+            target_file_name (str): Name of the generated file.
+            target_remote_location (str): Remote directory path where the file will be uploaded.
+
+        Returns:
+            str: Remote path of the uploaded file.
+        """
+        with open(template_file, "r") as f:
+            rendered = Template(f.read()).render(replacement_dictionary)
+        log_folder = ConfigurationManager.get_logger_config().get_test_case_resources_log_location()
+        local_path = os.path.join(log_folder, target_file_name)
+        with open(local_path, "w") as f:
+            f.write(rendered)
+        get_logger().log_info(f"Generated file from template: {local_path}")
+        target_remote_file = f"{target_remote_location}/{target_file_name}"
+        self.upload_file(local_path, target_remote_file)
+        return target_remote_file
 
     def download_file(self, remote_file_path: str, local_file_path: str) -> bool:
         """
