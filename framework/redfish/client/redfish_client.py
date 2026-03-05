@@ -1,5 +1,7 @@
+import json
 import time
 from typing import Any, Dict, Optional
+from urllib import response
 
 import redfish
 from redfish.rest.v1 import HttpClient
@@ -51,7 +53,7 @@ class RedFishClient:
             try:
                 get_logger().log_info(f"Getting a Redfish client to {self.bmc_ip} ....")
                 self.client_obj = redfish.redfish_client(base_url=f"https://{self.bmc_ip}", username=self.username, password=self.password, timeout=30)
-                self.client_obj.login(auth="session")
+                self.client_obj.login(auth=redfish.AuthMethod.BASIC, username=self.username, password=self.password)
                 get_logger().log_info(f"Redfish client established for {self.bmc_ip} ....")
                 return self.client_obj
             except Exception as e:
@@ -81,7 +83,9 @@ class RedFishClient:
         while resp.is_processing and time.time() < end_time:
             time.sleep(1)
         status = resp.status
-        get_logger().log_debug(f"Response from RedFish API on URL: {self.bmc_ip}{path}\n:" f"Status: {status}\n" f"Data: {resp.dict}")
+        get_logger().log_debug(f"Response from RedFish API on URL: {self.bmc_ip}{path}\n:"
+                               f"Status: {status}\n"
+                               f"Data: \n{json.dumps(resp.dict, indent=2)}")
 
         self.status_code = resp.status
         self.logout()

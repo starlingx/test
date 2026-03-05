@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional, Any
 
 
 class Node:
@@ -6,19 +6,24 @@ class Node:
     Class to handle lab nodes
     """
 
-    def __init__(self, name: str, node: []):
-        self.name = name
-        self.ip = node['ip']
-        self.node_type = node['node_type']
-        self.node_capabilities: [str] = node['node_capabilities']
-        self.bm_ip = None
-        self.bm_username = None
-        self.bm_ip = None
-        if 'bm_ip' in node:
-            self.bm_ip = node['bm_ip']
-        self.bm_username = None
-        if 'bm_username' in node:
-            self.bm_username = node['bm_username']
+    def __init__(self,
+                 name: str,
+                 node: dict[str, Any],
+                 lab_config: dict[str, Any] = {},):
+        self.name: str = name
+        self.node_type: str = node['node_type']
+        self.node_capabilities: List[str] = node['node_capabilities']
+
+        self.ip: str = node['ip']
+        self.ssh_port: int = int(node.get("ssh_port",
+                                          lab_config.get("ssh_port", 22)))
+
+        self.bm_ip: Optional[str] = node.get('bm_ip')
+        self.bm_port: int = int(node.get("bm_port", 443))
+
+        self.bm_username: Optional[str] = node.get('bm_username')
+        self.bm_password: str = node.get('bm_password',
+                                         lab_config.get('bm_password', ''))
 
         # Values below are on the host object but not written to the config
         self.subfunctions = []
@@ -39,6 +44,14 @@ class Node:
         """
         return self.ip
 
+    def get_ssh_port(self) -> int:
+        """
+        Getter for ssh_port
+        Returns: the ssh_port for the node
+
+        """
+        return self.ssh_port
+
     def get_type(self) -> str:
         """
         Getter for type
@@ -47,7 +60,7 @@ class Node:
         """
         return self.node_type
 
-    def get_node_capabilities(self) -> [str]:
+    def get_node_capabilities(self) -> List[str]:
         """
         Gets the node capabilities
         Returns: the node capabilities
@@ -55,7 +68,7 @@ class Node:
         """
         return self.node_capabilities
 
-    def set_node_capabilities(self, capabilities: [str]):
+    def set_node_capabilities(self, capabilities: List[str]):
         """
         Setter for node capabilities -- replaces the list
         Args:
@@ -78,7 +91,7 @@ class Node:
         if capability not in self.node_capabilities:
             self.node_capabilities.append(capability)
 
-    def set_subfunctions(self, subfunctions: [str]):
+    def set_subfunctions(self, subfunctions: List[str]):
         """
         Setter for sub functions
         Args:
@@ -89,7 +102,7 @@ class Node:
         """
         self.subfunctions = subfunctions
 
-    def get_subfunctions(self) -> [str]:
+    def get_subfunctions(self) -> List[str]:
         """
         Getter for subfunctions
         Returns:
@@ -108,13 +121,27 @@ class Node:
         """
         self.bm_ip = bm_ip
 
-    def get_bm_ip(self) -> str:
+    def get_bm_ip(self) -> Optional[str]:
         """
         Getter for bm ip
         Returns:
 
         """
         return self.bm_ip
+
+    def set_bm_port(self, bm_port: int):
+        """
+        Setter for bm_port
+        Args:
+            bm_port (int): the bm port
+        """
+        self.bm_port = bm_port
+
+    def get_bm_port(self) -> int:
+        """
+        Getter for bm port
+        """
+        return self.bm_port
 
     def set_bm_username(self, bm_username: str):
         """
@@ -127,13 +154,32 @@ class Node:
         """
         self.bm_username = bm_username
 
-    def get_bm_username(self) -> str:
+    def get_bm_username(self) -> Optional[str]:
         """
         Getter for bm username
         Returns:
 
         """
         return self.bm_username
+
+    def set_bm_password(self, bm_password: str):
+        """
+        Setter for bm password
+        Args:
+            bm_password (): the bm password
+
+        Returns:
+
+        """
+        self.bm_password = bm_password
+
+    def get_bm_password(self) -> str:
+        """
+        Getter for bm password
+        Returns:
+
+        """
+        return self.bm_password
 
     def to_log_strings(self) -> List[str]:
         """
@@ -143,7 +189,7 @@ class Node:
         """
         log_strings = []
         log_strings.append(f"Node name: {self.get_name()}")
-        log_strings.append(f"     ip: {self.get_ip()}")
         log_strings.append(f"     type: {self.get_type()}")
-
+        log_strings.append(f"     ip: {self.get_ip()}")
+        log_strings.append(f"     port: {self.get_ssh_port()}")
         return log_strings

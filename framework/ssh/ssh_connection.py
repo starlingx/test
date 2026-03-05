@@ -1,7 +1,7 @@
 import codecs
 import re
 import time
-from typing import List
+from typing import List, Optional
 
 import paramiko
 from paramiko.client import SSHClient
@@ -52,7 +52,7 @@ class SSHConnection:
         self.jump_host = jump_host
         self.is_connected = False
 
-        self.last_return_code = None  # The last Return Code
+        self.last_return_code: Optional[int] = None  # The last Return Code
 
         # these are values are used for commands that require ssh pass on remote nodes
         self.use_ssh_pass = False
@@ -424,12 +424,12 @@ class SSHConnection:
 
         return 0, current_buffer_decoded
 
-    def get_return_code(self) -> str:
+    def get_return_code(self) -> Optional[int]:
         """
         Return the last return code captured by this SSH connection.
 
         Returns:
-            str: The last return code from the most recent SSH command.
+            Optional[int]: The last return code from the most recent SSH command.
         """
         return self.last_return_code
 
