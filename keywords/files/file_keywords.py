@@ -89,6 +89,8 @@ class FileKeywords(BaseKeyword):
         """
         Creates a file based on its content with the echo command.
 
+        Note: Only suitable for simple single-line content without special characters.
+
         Args:
             file_name (str): the file name.
             content (str): content to be added in the file.
@@ -98,6 +100,27 @@ class FileKeywords(BaseKeyword):
         """
         self.ssh_connection.send(f"echo '{content}' > {file_name}")
         return self.file_exists(file_name)
+
+    def create_file_with_heredoc(self, file_path: str, content: str, delimiter: str = "EOF", is_sudo: bool = False) -> bool:
+        """
+        Create file with heredoc.
+
+        Args:
+            file_path (str): path to the file
+            content (str): content of the file
+            delimiter (str): heredoc delimiter (default: EOF)
+            is_sudo (bool): whether to use sudo for file creation (default: False)
+
+        Returns:
+            bool: True if file created successfully
+        """
+        cmd = f"cat > {file_path} << '{delimiter}'\n{content}\n{delimiter}"
+        if is_sudo:
+            self.ssh_connection.send_as_sudo(cmd)
+            return self.validate_file_exists_with_sudo(file_path)
+        else:
+            self.ssh_connection.send(cmd)
+            return self.file_exists(file_path)
 
     def delete_file(self, file_name: str) -> bool:
         """
@@ -514,20 +537,3 @@ class FileKeywords(BaseKeyword):
                 get_logger().log_error(f"Expected line '{expected_line}' not found in {file_path}")
                 return False
         return True
-
-    def create_file_with_heredoc(self, file_path: str, content: str, delimiter: str = "EOF") -> bool:
-        """
-        Create file with heredoc along with file executable permission
-
-        Args:
-            file_path (str): path to the file
-            content (str): content of the file
-            delimiter (str): heredoc delimiter
-
-        Returns:
-            bool: True if file created successfully
-        """
-        cmd = f"cat > {file_path} << '{delimiter}'\n{content}\n{delimiter}"
-        self.ssh_connection.send_as_sudo(cmd)
-        self.make_executable(file_path)
-        return self.validate_file_exists_with_sudo(file_path)

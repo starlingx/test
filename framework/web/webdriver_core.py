@@ -7,6 +7,7 @@ from selenium import webdriver
 from config.configuration_manager import ConfigurationManager
 from framework.logging.automation_logger import get_logger
 from framework.web.action.web_action_click import WebActionClick
+from framework.web.action.web_action_click_js import WebActionClickJs
 from framework.web.action.web_action_get_text import WebActionGetText
 from framework.web.action.web_action_hover import WebActionHover
 from framework.web.action.web_action_send_keys import WebActionSendKeys
@@ -106,6 +107,21 @@ class WebDriverCore:
 
         """
         action = WebActionClick(self.driver, locator, conditions)
+        action_executor = WebActionExecutor(action)
+        action_executor.execute_action()
+
+    def click_js(self, locator: WebLocator, conditions: List[WebCondition] = []) -> None:
+        """
+        Click on the target element using JavaScript
+
+        Args:
+            locator (WebLocator): The locator of the element that we want to click on.
+            conditions (List[WebCondition]): Conditions that must be satisfied for the Action to be declared successful.
+
+        Returns: None
+
+        """
+        action = WebActionClickJs(self.driver, locator, conditions)
         action_executor = WebActionExecutor(action)
         action_executor.execute_action()
 
