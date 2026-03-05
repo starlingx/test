@@ -110,32 +110,36 @@ def test_dcmanager_software_delete_only() -> None:
     
     # Get configuration from USM config
     usm_config = ConfigurationManager.get_usm_config()
+    deploy_delete = usm_config.get_deploy_delete()
     subcloud_group = usm_config.get_subcloud_group()
     subcloud_name = usm_config.get_subcloud_name()
 
-    # Use subcloud from config if specified
-    if subcloud_name != "None":
-        subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
+    if deploy_delete is True:    
+        # Use subcloud from config if specified
+        if subcloud_name != "None":
+            subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
 
-    # initial software list from subcloud before delete-only strategy
-    initial_sw_list = fetch_sw_list(subcloud_ssh, f"Fetch initial software list from subcloud ==> {subcloud_name or subcloud_name_from_setup}")
-    
-    # dcmanager sw-deploy-strategy create / apply / delete
-    dcman_sw_deploy_kw = DcmanagerSwDeployStrategy(central_ssh)
-    dcman_sw_deploy_kw.dc_manager_sw_deploy_strategy_create_apply_delete(subcloud_name=subcloud_name, subcloud_group=subcloud_group, with_delete=False, delete_only=True)
-    
-    # software list from subcloud after delete-only strategy
-    final_sw_list = fetch_sw_list(subcloud_ssh, f"Fetch final software list from subcloud after delete-only strategy ==> {subcloud_name or subcloud_name_from_setup}")
-    
-    # validate state changes
-    for sw in final_sw_list:
-        release_name = sw.get_release()
-        state = sw.get_state()
+        # initial software list from subcloud before delete-only strategy
+        initial_sw_list = fetch_sw_list(subcloud_ssh, f"Fetch initial software list from subcloud ==> {subcloud_name or subcloud_name_from_setup}")
         
-        if latest_release in release_name:
-            validate_equals(state, "deployed", f"Latest release {latest_release} should be deployed after delete-only strategy")
-        elif n_minus_1_release in release_name:
-            validate_equals(state, "unavailable", f"N-1 release {n_minus_1_release} should be unavailable after delete-only strategy")
+        # dcmanager sw-deploy-strategy create / apply / delete
+        dcman_sw_deploy_kw = DcmanagerSwDeployStrategy(central_ssh)
+        dcman_sw_deploy_kw.dc_manager_sw_deploy_strategy_create_apply_delete(subcloud_name=subcloud_name, subcloud_group=subcloud_group, with_delete=False, delete_only=True)
+        
+        # software list from subcloud after delete-only strategy
+        final_sw_list = fetch_sw_list(subcloud_ssh, f"Fetch final software list from subcloud after delete-only strategy ==> {subcloud_name or subcloud_name_from_setup}")
+        
+        # validate state changes
+        for sw in final_sw_list:
+            release_name = sw.get_release()
+            state = sw.get_state()
+            
+            if latest_release in release_name:
+                validate_equals(state, "deployed", f"Latest release {latest_release} should be deployed after delete-only strategy")
+            elif n_minus_1_release in release_name:
+                validate_equals(state, "unavailable", f"N-1 release {n_minus_1_release} should be unavailable after delete-only strategy")
+    else:
+        get_logger().log_info("Not running software delete-only as deploy delete is disabled.")
 
 
 
