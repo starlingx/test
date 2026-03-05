@@ -66,8 +66,10 @@ def test_kdump_excecutable_hooks(request):
     get_logger().log_info("Create pre-hook and post-hook executable files")
 
     # Create pre-hook and post hook wth proper exit code
-    prehook_success_file = FileKeywords(ssh_connection).create_file_with_heredoc(pre_hook_success_filepath, pre_hook_success_content)
-    posthook_success_file = FileKeywords(ssh_connection).create_file_with_heredoc(post_hook_success_filepath, post_hook_success_content)
+    prehook_success_file = FileKeywords(ssh_connection).create_file_with_heredoc(pre_hook_success_filepath, pre_hook_success_content, is_sudo=True)
+    FileKeywords(ssh_connection).make_executable(pre_hook_success_filepath)
+    posthook_success_file = FileKeywords(ssh_connection).create_file_with_heredoc(post_hook_success_filepath, post_hook_success_content, is_sudo=True)
+    FileKeywords(ssh_connection).make_executable(post_hook_success_filepath)
     validate_equals(prehook_success_file and posthook_success_file, True, "Creation of pre-hook and post-hook files")
 
     # Get current timestamp for comparison
@@ -147,11 +149,15 @@ def test_kdump_successful_and_failed_excecutable_hooks(request):
 
     get_logger().log_info("Create pre-hook and post-hook executable files")
     # Create pre-hook and post hook wth proper exit code
-    prehook_success_file = FileKeywords(ssh_connection).create_file_with_heredoc(pre_hook_success_filepath, pre_hook_success_content)
-    posthook_success_file = FileKeywords(ssh_connection).create_file_with_heredoc(post_hook_success_filepath, post_hook_success_content)
+    prehook_success_file = FileKeywords(ssh_connection).create_file_with_heredoc(pre_hook_success_filepath, pre_hook_success_content, is_sudo=True)
+    FileKeywords(ssh_connection).make_executable(pre_hook_success_filepath)
+    posthook_success_file = FileKeywords(ssh_connection).create_file_with_heredoc(post_hook_success_filepath, post_hook_success_content, is_sudo=True)
+    FileKeywords(ssh_connection).make_executable(post_hook_success_filepath)
     # Create pre-hook and post hook with exit code 1
-    prehook_fail_file = FileKeywords(ssh_connection).create_file_with_heredoc(pre_hook_fail_filepath, pre_hook_fail_content)
-    posthook_fail_file = FileKeywords(ssh_connection).create_file_with_heredoc(post_hook_fail_filepath, post_hook_fail_content)
+    prehook_fail_file = FileKeywords(ssh_connection).create_file_with_heredoc(pre_hook_fail_filepath, pre_hook_fail_content, is_sudo=True)
+    FileKeywords(ssh_connection).make_executable(pre_hook_fail_filepath)
+    posthook_fail_file = FileKeywords(ssh_connection).create_file_with_heredoc(post_hook_fail_filepath, post_hook_fail_content, is_sudo=True)
+    FileKeywords(ssh_connection).make_executable(post_hook_fail_filepath)
     validate_equals(all([prehook_success_file, posthook_success_file, prehook_fail_file, posthook_fail_file]), True, "Creation of pre-hook and post-hook files")
 
     # Get current timestamp for comparison
@@ -240,11 +246,15 @@ def test_kdump_excecutable_hooks_with_standby_controller(request):
     get_logger().log_info("Create pre-hook and post-hook executable files")
 
     # Create pre-hook and post hook wth proper exit code
-    prehook_success_file = FileKeywords(ssh_connection).create_file_with_heredoc(pre_hook_success_filepath, pre_hook_success_content)
-    posthook_success_file = FileKeywords(ssh_connection).create_file_with_heredoc(post_hook_success_filepath, post_hook_success_content)
+    prehook_success_file = FileKeywords(ssh_connection).create_file_with_heredoc(pre_hook_success_filepath, pre_hook_success_content, is_sudo=True)
+    FileKeywords(ssh_connection).make_executable(pre_hook_success_filepath)
+    posthook_success_file = FileKeywords(ssh_connection).create_file_with_heredoc(post_hook_success_filepath, post_hook_success_content, is_sudo=True)
+    FileKeywords(ssh_connection).make_executable(post_hook_success_filepath)
     # Create pre-hook and post hook with exit code 1
-    prehook_fail_file = FileKeywords(ssh_connection).create_file_with_heredoc(pre_hook_fail_filepath, pre_hook_fail_content)
-    posthook_fail_file = FileKeywords(ssh_connection).create_file_with_heredoc(post_hook_fail_filepath, post_hook_fail_content)
+    prehook_fail_file = FileKeywords(ssh_connection).create_file_with_heredoc(pre_hook_fail_filepath, pre_hook_fail_content, is_sudo=True)
+    FileKeywords(ssh_connection).make_executable(pre_hook_fail_filepath)
+    posthook_fail_file = FileKeywords(ssh_connection).create_file_with_heredoc(post_hook_fail_filepath, post_hook_fail_content, is_sudo=True)
+    FileKeywords(ssh_connection).make_executable(post_hook_fail_filepath)
     validate_equals(all([prehook_success_file, posthook_success_file, prehook_fail_file, posthook_fail_file]), True, "Creation of pre-hook and post-hook files")
 
     # Get current timestamp for comparison
@@ -290,11 +300,15 @@ def test_kdump_excecutable_hooks_with_standby_controller(request):
 
     # Create pre-hook and post hook wth proper exit code
 
-    prehook_success_file = FileKeywords(standby_ssh_connection).create_file_with_heredoc(pre_hook_success_filepath, pre_hook_success_content)
-    posthook_success_file = FileKeywords(standby_ssh_connection).create_file_with_heredoc(post_hook_success_filepath, post_hook_success_content)
+    prehook_success_file = FileKeywords(standby_ssh_connection).create_file_with_heredoc(pre_hook_success_filepath, pre_hook_success_content, is_sudo=True)
+    FileKeywords(standby_ssh_connection).make_executable(pre_hook_success_filepath)
+    posthook_success_file = FileKeywords(standby_ssh_connection).create_file_with_heredoc(post_hook_success_filepath, post_hook_success_content, is_sudo=True)
+    FileKeywords(standby_ssh_connection).make_executable(post_hook_success_filepath)
     # Create pre-hook and post hook with exit code 1
-    prehook_fail_file = FileKeywords(standby_ssh_connection).create_file_with_heredoc(pre_hook_fail_filepath, pre_hook_fail_content)
-    posthook_fail_file = FileKeywords(standby_ssh_connection).create_file_with_heredoc(post_hook_fail_filepath, post_hook_fail_content)
+    prehook_fail_file = FileKeywords(standby_ssh_connection).create_file_with_heredoc(pre_hook_fail_filepath, pre_hook_fail_content, is_sudo=True)
+    FileKeywords(standby_ssh_connection).make_executable(pre_hook_fail_filepath)
+    posthook_fail_file = FileKeywords(standby_ssh_connection).create_file_with_heredoc(post_hook_fail_filepath, post_hook_fail_content, is_sudo=True)
+    FileKeywords(standby_ssh_connection).make_executable(post_hook_fail_filepath)
     validate_equals(all([prehook_success_file, posthook_success_file, prehook_fail_file, posthook_fail_file]), True, "Creation of pre-hook and post-hook files")
 
     # Get current timestamp for comparison
@@ -381,11 +395,15 @@ def test_kdump_excecutable_hooks_compute_host(request):
     get_logger().log_info("Create pre-hook and post-hook executable files")
 
     # Create pre-hook and post hook wth proper exit code
-    prehook_success_file = FileKeywords(compute_ssh_connection).create_file_with_heredoc(pre_hook_success_filepath, pre_hook_success_content)
-    posthook_success_file = FileKeywords(compute_ssh_connection).create_file_with_heredoc(post_hook_success_filepath, post_hook_success_content)
+    prehook_success_file = FileKeywords(compute_ssh_connection).create_file_with_heredoc(pre_hook_success_filepath, pre_hook_success_content, is_sudo=True)
+    FileKeywords(compute_ssh_connection).make_executable(pre_hook_success_filepath)
+    posthook_success_file = FileKeywords(compute_ssh_connection).create_file_with_heredoc(post_hook_success_filepath, post_hook_success_content, is_sudo=True)
+    FileKeywords(compute_ssh_connection).make_executable(post_hook_success_filepath)
     # Create pre-hook and post hook with exit code 1
-    prehook_fail_file = FileKeywords(compute_ssh_connection).create_file_with_heredoc(pre_hook_fail_filepath, pre_hook_fail_content)
-    posthook_fail_file = FileKeywords(compute_ssh_connection).create_file_with_heredoc(post_hook_fail_filepath, post_hook_fail_content)
+    prehook_fail_file = FileKeywords(compute_ssh_connection).create_file_with_heredoc(pre_hook_fail_filepath, pre_hook_fail_content, is_sudo=True)
+    FileKeywords(compute_ssh_connection).make_executable(pre_hook_fail_filepath)
+    posthook_fail_file = FileKeywords(compute_ssh_connection).create_file_with_heredoc(post_hook_fail_filepath, post_hook_fail_content, is_sudo=True)
+    FileKeywords(compute_ssh_connection).make_executable(post_hook_fail_filepath)
     validate_equals(all([prehook_success_file, posthook_success_file, prehook_fail_file, posthook_fail_file]), True, "Creation of pre-hook and post-hook files")
 
     # Get current timestamp for comparison
@@ -470,11 +488,15 @@ def test_kdump_excecutable_hooks_storage_host(request):
     get_logger().log_info("Create pre-hook and post-hook executable files")
 
     # Create pre-hook and post hook wth proper exit code
-    prehook_success_file = FileKeywords(storage_ssh_connection).create_file_with_heredoc(pre_hook_success_filepath, pre_hook_success_content)
-    posthook_success_file = FileKeywords(storage_ssh_connection).create_file_with_heredoc(post_hook_success_filepath, post_hook_success_content)
+    prehook_success_file = FileKeywords(storage_ssh_connection).create_file_with_heredoc(pre_hook_success_filepath, pre_hook_success_content, is_sudo=True)
+    FileKeywords(storage_ssh_connection).make_executable(pre_hook_success_filepath)
+    posthook_success_file = FileKeywords(storage_ssh_connection).create_file_with_heredoc(post_hook_success_filepath, post_hook_success_content, is_sudo=True)
+    FileKeywords(storage_ssh_connection).make_executable(post_hook_success_filepath)
     # Create pre-hook and post hook with exit code 1
-    prehook_fail_file = FileKeywords(storage_ssh_connection).create_file_with_heredoc(pre_hook_fail_filepath, pre_hook_fail_content)
-    posthook_fail_file = FileKeywords(storage_ssh_connection).create_file_with_heredoc(post_hook_fail_filepath, post_hook_fail_content)
+    prehook_fail_file = FileKeywords(storage_ssh_connection).create_file_with_heredoc(pre_hook_fail_filepath, pre_hook_fail_content, is_sudo=True)
+    FileKeywords(storage_ssh_connection).make_executable(pre_hook_fail_filepath)
+    posthook_fail_file = FileKeywords(storage_ssh_connection).create_file_with_heredoc(post_hook_fail_filepath, post_hook_fail_content, is_sudo=True)
+    FileKeywords(storage_ssh_connection).make_executable(post_hook_fail_filepath)
     validate_equals(all([prehook_success_file, posthook_success_file, prehook_fail_file, posthook_fail_file]), True, "Creation of pre-hook and post-hook files")
 
     # Get current timestamp for comparison
