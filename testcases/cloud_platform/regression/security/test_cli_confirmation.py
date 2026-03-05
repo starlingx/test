@@ -6,7 +6,7 @@ from framework.validation.validation import validate_str_contains
 from keywords.cloud_platform.command_wrappers import source_openrc
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.cloud_platform.system.host.system_host_lock_keywords import SystemHostLockKeywords
-from keywords.cloud_platform.system.service.system_service_keywords import SystemServiceKeywords
+from keywords.cloud_platform.system.service.system_service_parameter_keywords import SystemServiceParameterKeywords
 
 
 def cli_confirmations_enabled(request: FixtureRequest):
@@ -14,7 +14,7 @@ def cli_confirmations_enabled(request: FixtureRequest):
     Function to enable CLI confirmations in setup and disable in teardown.
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
-    service_keywords = SystemServiceKeywords(ssh_connection)
+    service_keywords = SystemServiceParameterKeywords(ssh_connection)
 
     get_logger().log_info("Enabling CLI confirmations in setup")
     service_keywords.modify_service_parameter("platform", "client", "cli_confirmations", "enabled")
@@ -32,7 +32,7 @@ def cli_confirmations_enabled(request: FixtureRequest):
 
     def teardown():
         teardown_ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
-        teardown_service_keywords = SystemServiceKeywords(teardown_ssh_connection)
+        teardown_service_keywords = SystemServiceParameterKeywords(teardown_ssh_connection)
         get_logger().log_info("Disabling CLI confirmations in teardown")
         teardown_service_keywords.modify_service_parameter("platform", "client", "cli_confirmations", "disabled")
         teardown_service_keywords.apply_service_parameters("platform")
@@ -81,7 +81,7 @@ def test_yes_flag_with_cli_disabled():
     Verifies that --yes flag works properly when CLI confirmations are disabled.
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
-    service_keywords = SystemServiceKeywords(ssh_connection)
+    service_keywords = SystemServiceParameterKeywords(ssh_connection)
 
     get_logger().log_info("Ensuring CLI confirmations are disabled")
     service_keywords.modify_service_parameter("platform", "client", "cli_confirmations", "disabled")

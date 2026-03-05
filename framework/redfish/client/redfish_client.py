@@ -1,7 +1,6 @@
 import json
 import time
 from typing import Any, Dict, Optional
-from urllib import response
 
 import redfish
 from redfish.rest.v1 import HttpClient
@@ -83,9 +82,7 @@ class RedFishClient:
         while resp.is_processing and time.time() < end_time:
             time.sleep(1)
         status = resp.status
-        get_logger().log_debug(f"Response from RedFish API on URL: {self.bmc_ip}{path}\n:"
-                               f"Status: {status}\n"
-                               f"Data: \n{json.dumps(resp.dict, indent=2)}")
+        get_logger().log_debug(f"Response from RedFish API on URL: {self.bmc_ip}{path}\n:" f"Status: {status}\n" f"Data: \n{json.dumps(resp.dict, indent=2)}")
 
         self.status_code = resp.status
         self.logout()

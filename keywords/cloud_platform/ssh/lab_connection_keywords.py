@@ -158,28 +158,6 @@ class LabConnectionKeywords(BaseKeyword):
 
         return connection
 
-    def get_storage_ssh(self, storage_name: str) -> SSHConnection:
-        """
-        Gets an SSH connection to the 'Storage' node whose name is specified by the argument 'storage_name'.
-
-        Args:
-            storage_name (str): The name of the 'Storage' node.
-
-        Returns:
-            SSHConnection: the SSH connection to the 'Storage' node whose name is specified by the argument 'storage_name'.
-
-        NOTE: this 'ssh connection' actually uses ssh_pass to make a call from the active controller connection.
-
-        """
-        connection = self.get_active_controller_ssh()
-        connection.set_name(storage_name)
-        lab_config = ConfigurationManager.get_lab_config()
-
-        # setup this connection to use ssh pass
-        connection.setup_ssh_pass(storage_name, lab_config.get_admin_credentials().get_user_name(), lab_config.get_admin_credentials().get_password())
-
-        return connection
-
     def get_subcloud_ssh(self, subcloud_name: str) -> SSHConnection:
         """Gets an SSH connection to the 'Subcloud' node whose name is specified by the argument 'subcloud_name'.
 
@@ -267,10 +245,7 @@ class LabConnectionKeywords(BaseKeyword):
         return connection.get_return_code() == 0
 
     @contextmanager
-    def create_bmc_ssh_tunnel(
-        self,
-        host_name: str
-    ) -> Generator[SSHTunnel, None, None]:
+    def create_bmc_ssh_tunnel(self, host_name: str) -> Generator[SSHTunnel, None, None]:
         """Create an SSH tunnel to the bmc via the active controller.
 
         Use as a context manager to auto-close the tunnel:

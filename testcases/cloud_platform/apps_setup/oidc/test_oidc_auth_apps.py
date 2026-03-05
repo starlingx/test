@@ -1,28 +1,23 @@
 from config.configuration_manager import ConfigurationManager
-from keywords.files.file_keywords import FileKeywords
-from keywords.files.yaml_keywords import YamlKeywords
-from keywords.linux.keyring.keyring_keywords import KeyringKeywords
-from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
-from keywords.cloud_platform.system.addrpool.system_addrpool_list_keywords import SystemAddrpoolListKeywords
-from keywords.cloud_platform.system.helm.system_helm_keywords import SystemHelmKeywords
-
-from keywords.cloud_platform.system.application.system_application_list_keywords import SystemApplicationListKeywords
-from keywords.cloud_platform.system.application.system_application_upload_keywords import SystemApplicationUploadKeywords
-from keywords.cloud_platform.system.application.system_application_apply_keywords import SystemApplicationApplyKeywords
-from keywords.cloud_platform.system.application.system_application_remove_keywords import SystemApplicationRemoveKeywords
-from keywords.cloud_platform.system.application.system_application_delete_keywords import SystemApplicationDeleteKeywords
-from keywords.cloud_platform.system.application.system_application_upload_keywords import SystemApplicationUploadInput
-from keywords.cloud_platform.system.application.system_application_remove_keywords import SystemApplicationRemoveInput
-from keywords.cloud_platform.system.application.system_application_delete_keywords import SystemApplicationDeleteInput
-from keywords.cloud_platform.system.application.object.system_application_status_enum import SystemApplicationStatusEnum
-from keywords.cloud_platform.system.service.system_service_keywords import SystemServiceKeywords
-
-from keywords.k8s.pods.kubectl_apply_pods_keywords import KubectlApplyPodsKeywords
-from keywords.k8s.secret.kubectl_create_secret_keywords import KubectlCreateSecretsKeywords
-from keywords.k8s.secret.kubectl_get_secret_keywords import KubectlGetSecretsKeywords
-
 from framework.resources.resource_finder import get_stx_resource_path
 from framework.validation.validation import validate_equals, validate_not_equals
+from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
+from keywords.cloud_platform.system.addrpool.system_addrpool_list_keywords import SystemAddrpoolListKeywords
+from keywords.cloud_platform.system.application.object.system_application_status_enum import SystemApplicationStatusEnum
+from keywords.cloud_platform.system.application.system_application_apply_keywords import SystemApplicationApplyKeywords
+from keywords.cloud_platform.system.application.system_application_delete_keywords import SystemApplicationDeleteInput, SystemApplicationDeleteKeywords
+from keywords.cloud_platform.system.application.system_application_list_keywords import SystemApplicationListKeywords
+from keywords.cloud_platform.system.application.system_application_remove_keywords import SystemApplicationRemoveInput, SystemApplicationRemoveKeywords
+from keywords.cloud_platform.system.application.system_application_upload_keywords import SystemApplicationUploadInput, SystemApplicationUploadKeywords
+from keywords.cloud_platform.system.helm.system_helm_keywords import SystemHelmKeywords
+from keywords.cloud_platform.system.service.system_service_parameter_keywords import SystemServiceParameterKeywords
+from keywords.files.file_keywords import FileKeywords
+from keywords.files.yaml_keywords import YamlKeywords
+from keywords.k8s.pods.kubectl_apply_pods_keywords import KubectlApplyPodsKeywords
+from keywords.k8s.pods.kubectl_get_pods_keywords import KubectlGetPodsKeywords
+from keywords.k8s.secret.kubectl_create_secret_keywords import KubectlCreateSecretsKeywords
+from keywords.k8s.secret.kubectl_get_secret_keywords import KubectlGetSecretsKeywords
+from keywords.linux.keyring.keyring_keywords import KeyringKeywords
 
 
 def test_install_oidc():
@@ -66,14 +61,14 @@ def test_install_oidc():
         oidc_app_status = system_applications.get_application(oidc_name).get_status()
         validate_equals(oidc_app_status, "uploaded", f"{oidc_name} upload status validation")
 
-
     # Configures and applies Kubernetes OIDC service parameters
-    sys_service = SystemServiceKeywords(ssh_connection)
-    sys_service.add_service_parameter("kubernetes", "kube_apiserver oidc-client-id", "stx-oidc-client-app")
-    sys_service.add_service_parameter("kubernetes", "kube_apiserver oidc-groups-claim", "groups")
-    sys_service.add_service_parameter("kubernetes", "kube_apiserver oidc-issuer-url", f"https://{oam_ip}:30556/dex")
-    sys_service.add_service_parameter("kubernetes", "kube_apiserver oidc-username-claim", "email")
-    sys_service.apply_kubernetes_service_parameters()
+    sys_service = SystemServiceParameterKeywords(ssh_connection)
+    sys_service.add_service_parameter("kubernetes", "kube_apiserver", "oidc-client-id", "stx-oidc-client-app")
+    sys_service.add_service_parameter("kubernetes", "kube_apiserver", "oidc-groups-claim", "groups")
+    sys_service.add_service_parameter("kubernetes", "kube_apiserver", "oidc-issuer-url", f"https://{oam_ip}:30556/dex")
+    sys_service.add_service_parameter("kubernetes", "kube_apiserver", "oidc-username-claim", "email")
+    sys_service.apply_service_parameters("kubernetes")
+    KubectlGetPodsKeywords(ssh_connection).wait_for_kubernetes_to_restart()
 
     # Creates and applies OIDC auth yaml
     file_keywords.create_directory(file_path_oidc)
@@ -86,7 +81,7 @@ def test_install_oidc():
     secret_output = KubectlGetSecretsKeywords(ssh_connection).get_secret_json_output(secret_name="system-local-ca", namespace="cert-manager")
     cert_data = secret_output.get_data()
     cert = "ca" if "ca.crt" in cert_data else "tls"
-    
+
     # Creates dex and local LDAP certs
     dex_ca_cert = KubectlGetSecretsKeywords(ssh_connection).get_secret_with_custom_output(secret_name="system-local-ca", namespace="cert-manager", output_format="jsonpath", extra_parameters=f'"{{.data.{cert}\\.crt}}"', base64=True)
     file_keywords.create_file_with_echo("/home/sysadmin/oidc/dex-ca-cert.crt", dex_ca_cert)
@@ -110,9 +105,9 @@ def test_install_oidc():
     # Applies the app and verifies if it became applied
     system_application_apply_output = SystemApplicationApplyKeywords(ssh_connection).system_application_apply(oidc_name)
     system_application_object = system_application_apply_output.get_system_application_object()
-    validate_not_equals(system_application_object, None, f"System application object should not be None")
-    validate_equals(system_application_object.get_name(), oidc_name, f"Application name validation")
-    validate_equals(system_application_object.get_status(), SystemApplicationStatusEnum.APPLIED.value, f"Application status validation")
+    validate_not_equals(system_application_object, None, "System application object should not be None")
+    validate_equals(system_application_object.get_name(), oidc_name, "Application name validation")
+    validate_equals(system_application_object.get_status(), SystemApplicationStatusEnum.APPLIED.value, "Application status validation")
 
 
 def test_uninstall_oidc():
@@ -128,7 +123,7 @@ def test_uninstall_oidc():
     oidc_name = app_config.get_oidc_app_name()
     lab_connect_keywords = LabConnectionKeywords()
     ssh_connection = lab_connect_keywords.get_active_controller_ssh()
-    
+
     # Verifies if the app is present in the system
     system_applications = SystemApplicationListKeywords(ssh_connection).get_system_application_list()
     validate_equals(system_applications.is_in_application_list(oidc_name), True, f"The {oidc_name} application should be uploaded/applied on the system")
@@ -138,11 +133,11 @@ def test_uninstall_oidc():
     system_application_remove_input.set_app_name(oidc_name)
     system_application_remove_input.set_force_removal(False)
     system_application_output = SystemApplicationRemoveKeywords(ssh_connection).system_application_remove(system_application_remove_input)
-    validate_equals(system_application_output.get_system_application_object().get_status(), SystemApplicationStatusEnum.UPLOADED.value, f"Application removal status validation")
+    validate_equals(system_application_output.get_system_application_object().get_status(), SystemApplicationStatusEnum.UPLOADED.value, "Application removal status validation")
 
     # Deletes the application
     system_application_delete_input = SystemApplicationDeleteInput()
     system_application_delete_input.set_app_name(oidc_name)
     system_application_delete_input.set_force_deletion(False)
     delete_msg = SystemApplicationDeleteKeywords(ssh_connection).get_system_application_delete(system_application_delete_input)
-    validate_equals(delete_msg, f"Application {oidc_name} deleted.\n", f"Application deletion message validation")
+    validate_equals(delete_msg, f"Application {oidc_name} deleted.\n", "Application deletion message validation")

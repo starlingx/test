@@ -43,6 +43,7 @@ class SSHConnection:
             jump_host (HostConfiguration, optional): Configuration for a jump host, if needed.
         """
         self.client = SSHClient()
+        self.jump_host_client: Optional[SSHClient] = None
         self.name = name
         self.host = host
         self.user = user
@@ -61,7 +62,7 @@ class SSHConnection:
         self.ssh_pass_password = None
         self.output_start_line = -1  # for parsing out lines that come by default when using ssh pass
 
-    def _connect_to_jump_host(self, allow_agent: bool = True, look_for_keys: bool = True) -> None:
+    def _connect_to_jump_host(self, allow_agent: bool = True, look_for_keys: bool = True) -> SSHClient:
         """
         Connect to the configured jump host using SSH.
 
@@ -73,14 +74,16 @@ class SSHConnection:
             look_for_keys (bool): Re-use saved private keys (Paramiko arg). Default is True.
 
         Returns:
-            None:
+            SSHClient: The connected jump host SSH client.
         """
+        jump_client = SSHClient()
+        jump_client.set_missing_host_key_policy(paramiko.AutoAddPolicy)
         try:
             host = self.jump_host.get_host()
             user_name = self.jump_host.get_credentials().get_user_name()
             password = self.jump_host.get_credentials().get_password()
             jump_host_ssh_port = self.jump_host.get_ssh_port()
-            self.client.connect(
+            jump_client.connect(
                 host,
                 username=user_name,
                 password=password,
@@ -89,8 +92,10 @@ class SSHConnection:
                 look_for_keys=look_for_keys,
                 port=jump_host_ssh_port,
             )
+            return jump_client
 
         except BaseException as exception:
+            jump_client.close()
             get_logger().log_error(f"Failed to Connect to Jump-Host {host} with username/password =" f" {user_name}/{password} with timeout {self.timeout}s")
             get_logger().log_error(f"Exception: {exception}")
             raise BaseException("Failed to connect to Jump-Host")
@@ -112,8 +117,9 @@ class SSHConnection:
         try:
             # if a jump host is configured, create that connection first
             if self.jump_host:
-                self._connect_to_jump_host(allow_agent, look_for_keys)
-                sock = self.client.get_transport().open_channel("direct-tcpip", (self.host, self.ssh_port), ("", 0), timeout=self.timeout)
+                self._close_jump_host()
+                self.jump_host_client = self._connect_to_jump_host(allow_agent, look_for_keys)
+                sock = self.jump_host_client.get_transport().open_channel("direct-tcpip", (self.host, self.ssh_port), ("", 0), timeout=self.timeout)
 
             self.client.connect(
                 self.host,
@@ -130,7 +136,7 @@ class SSHConnection:
             get_logger().log_error(f"Failed to Connect to host {self.host} with username/password =" f" {self.user}/{self.password} with timeout {self.timeout}s")
             get_logger().log_error(f"Exception: {exception}")
             is_connection_success = False
-            # connection failed but if a jump host is used, we may still have that connection. Reset the client object
+            self._close_jump_host()
             self.client = SSHClient()
             self.is_connected = False
 
@@ -433,16 +439,26 @@ class SSHConnection:
         """
         return self.last_return_code
 
+    def _close_jump_host(self) -> None:
+        """Close the jump host SSH client if it exists."""
+        if self.jump_host_client:
+            try:
+                self.jump_host_client.close()
+            except Exception:
+                pass
+            self.jump_host_client = None
+
     def close(self) -> None:
         """
-        Close the SSH connection.
+        Close the SSH connection and the jump host connection if any.
 
-        This shuts down the underlying Paramiko SSH client.
+        This shuts down the underlying Paramiko SSH client(s).
 
         Returns:
             None:
         """
         self.client.close()
+        self._close_jump_host()
 
     def set_name(self, name: str) -> None:
         """
