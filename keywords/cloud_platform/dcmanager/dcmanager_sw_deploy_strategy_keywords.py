@@ -42,11 +42,11 @@ class DcmanagerSwDeployStrategy(BaseKeyword):
         snapshot = "--snapshot" if snapshot else ""
         
         if subcloud_group:
-            command = source_openrc(f"dcmanager sw-deploy-strategy create --group {rollback} {snapshot} {subcloud_group} {release_id} {delete} {clean_up_delete}")
+            command = source_openrc(f"dcmanager sw-deploy-strategy create --group {subcloud_group} {rollback} {snapshot} {release_id} {delete} {clean_up_delete}")
             target = subcloud_group
             is_group = True
         else:
-            command = source_openrc(f"dcmanager sw-deploy-strategy create {rollback} {snapshot} {subcloud_name} {release_id} {delete} {clean_up_delete}")
+            command = source_openrc(f"dcmanager sw-deploy-strategy create {subcloud_name} {rollback} {snapshot} {release_id} {delete} {clean_up_delete}")
             target = subcloud_name
             is_group = False
 
