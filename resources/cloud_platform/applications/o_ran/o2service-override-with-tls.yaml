@@ -1,4 +1,0 @@
-applicationconfig: ${APPLICATION_CONFIG}
-servercrt: ${SERVER_CERT}
-serverkey: ${SERVER_KEY}
-smocacrt: ${SMO_CA_CERT}
