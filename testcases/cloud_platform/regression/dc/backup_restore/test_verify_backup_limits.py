@@ -78,6 +78,10 @@ def test_verify_one_release_per_subcloud_on_central(request):
 
     validate_not_equals(second_backup_datetime, first_backup_datetime, "The backup created time has changed.")
 
+    def teardown():
+        teardown_central(subcloud_name)
+
+    request.addfinalizer(teardown)
 
 @mark.p2
 @mark.lab_has_subcloud
@@ -167,6 +171,10 @@ def test_verify_two_releases_per_subcloud_on_central(request):
     validate_equals(old_release_1_exists, True, f"Release {old_release_1} exists")
     validate_equals(old_release_2_exists, False, f"Release {old_release_2} has been deleted.")
 
+    def teardown():
+        teardown_central(subcloud_name)
+
+    request.addfinalizer(teardown)
 
 @mark.p2
 @mark.lab_has_subcloud
@@ -227,6 +235,10 @@ def test_verify_one_release_per_subcloud_on_local(request):
 
     validate_not_equals(second_backup_datetime, first_backup_datetime, "The backup created time has changed.")
 
+    def teardown():
+        teardown_local(subcloud_name)
+
+    request.addfinalizer(teardown)
 
 @mark.p2
 @mark.lab_has_subcloud
@@ -320,6 +332,31 @@ def test_verify_two_releases_per_subcloud_on_local(request):
     validate_equals(old_release_1_exists, True, f"Release {old_release_1} exists")
     validate_equals(old_release_2_exists, False, f"Release {old_release_2} has been deleted.")
 
+    def teardown():
+        teardown_local(subcloud_name)
+
+    request.addfinalizer(teardown)
+
+
+def teardown_central(subcloud_name: str):
+    """Teardown function for central backup.
+
+    Args:
+        subcloud_name (str): subcloud name
+    """
+    central_ssh = LabConnectionKeywords().get_active_controller_ssh()
+    get_logger().log_info("Removing test files during teardown")
+    FileKeywords(central_ssh).delete_folder_with_sudo(f"/opt/dc-vault/backups/{subcloud_name}")
+
+def teardown_local(subcloud_name: str):
+    """Teardown function for local backup.
+
+    Args:
+        subcloud_name (str): subcloud name
+    """
+    subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
+    get_logger().log_info("Removing test files during teardown")
+    FileKeywords(subcloud_ssh).delete_folder_with_sudo("/opt/platform-backup/backups")
 
 def validate_subcloud_health(subcloud_name):
     subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
