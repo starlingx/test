@@ -66,7 +66,7 @@ class SystemHostFSKeywords(BaseKeyword):
         command = f"system host-fs-modify {hostname} {fs_name}"
 
         if fs_size is not None:
-            command += f" {fs_size}"
+            command += f"={fs_size}"
 
         if functions is not None:
             command += f" --functions={functions}"

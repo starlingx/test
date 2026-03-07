@@ -61,6 +61,7 @@ class USMConfig:
         self.license_password = usm_dict.get("license_password", "")
         self.license_from_path = usm_dict.get("license_from_path", "")
         self.license_to_path = usm_dict.get("license_to_path", "/home/sysadmin/")
+        self.docker_fs_size = usm_dict.get("docker_fs_size", 60)
 
     def validate_config(self) -> None:
         """
@@ -481,6 +482,22 @@ class USMConfig:
             int: Maximum seconds to wait for software delete to complete.
         """
         return self.software_delete_timeout_sec
+
+    def get_docker_fs_size(self) -> int:
+        """Get the docker filesystem size.
+
+        Returns:
+            int: Docker filesystem size in GB.
+        """
+        return self.docker_fs_size
+
+    def set_docker_fs_size(self, value: int) -> None:
+        """Set the docker filesystem size.
+
+        Args:
+            value (int): Docker filesystem size in GB.
+        """
+        self.docker_fs_size = value
 
     def set_software_delete_timeout_sec(self, value: int) -> None:
         """Set timeout duration for software delete completion.
