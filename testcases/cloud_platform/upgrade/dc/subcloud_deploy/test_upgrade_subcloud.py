@@ -4,7 +4,7 @@ import re
 from config.configuration_manager import ConfigurationManager
 from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
-from framework.validation.validation import validate_equals, validate_not_equals, validate_not_none
+from framework.validation.validation import validate_equals, validate_list_contains, validate_not_equals, validate_not_none
 from keywords.cloud_platform.dcmanager.dcmanager_prestage_strategy_keywords import DcmanagerPrestageStrategyKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_list_keywords import DcManagerSubcloudListKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_sw_deploy_strategy_keywords import DcmanagerSwDeployStrategy
@@ -137,7 +137,7 @@ def test_dcmanager_software_delete_only() -> None:
             if latest_release in release_name:
                 validate_equals(state, "deployed", f"Latest release {latest_release} should be deployed after delete-only strategy")
             elif n_minus_1_release in release_name:
-                validate_equals(state, "unavailable", f"N-1 release {n_minus_1_release} should be unavailable after delete-only strategy")
+                validate_list_contains(state, ["unavailable", "deployed"], f"N-1 release {n_minus_1_release} should be unavailable (upgrade) or deployed (patch) after delete-only strategy")
     else:
         get_logger().log_info("Not running software delete-only as deploy delete is disabled.")
 
