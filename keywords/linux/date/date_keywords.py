@@ -73,6 +73,6 @@ class DateKeywords(BaseKeyword):
         Returns:
             str: Epoch time as string
         """
-        epoch_time = self.ssh_connection.send(f"date -d '{timestamp}' +%s")
+        epoch_time = self.ssh_connection.send(f'date -d "{timestamp}" +%s')
         self.validate_success_return_code(self.ssh_connection)
         return epoch_time[0].strip()
