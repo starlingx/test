@@ -47,3 +47,19 @@ class SystemNetworkKeywords(BaseKeyword):
         self.validate_success_return_code(self.ssh_connection)
         system_network_output = SystemNetworkShowOutput(output)
         return system_network_output
+
+    def network_add(self, name: str, network_type: str, dynamic: bool, addrpool_uuid: str) -> None:
+        """
+        Add a new network
+        
+        Args:
+            name (str): Network name
+            network_type (str): Network type (e.g., 'admin')
+            dynamic (bool): Dynamic flag
+            addrpool_uuid (str): Address pool name
+        """
+        dynamic_str = "true" if dynamic else "false"
+        cmd = f"system network-add {name} {network_type} {dynamic_str} {addrpool_uuid}"
+        
+        self.ssh_connection.send(source_openrc(cmd))
+        self.validate_success_return_code(self.ssh_connection)

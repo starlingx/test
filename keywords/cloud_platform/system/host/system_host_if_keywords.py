@@ -104,4 +104,15 @@ class SystemHostInterfaceKeywords(BaseKeyword):
         rc = self.ssh_connection.get_return_code()
         if rc != 0:
             get_logger().log_error(f"interface {interface_name} failed to delete")
-        return rc
+
+    def system_host_interface_modify(self, hostname: str, interface_name: str, ifclass: str) -> None:
+        """
+        Modify host interface class
+        
+        Args:
+            hostname (str): The hostname
+            interface_name (str): The interface name
+            ifclass (str): The interface class (e.g., 'platform')
+        """
+        self.ssh_connection.send(source_openrc(f'system host-if-modify {hostname} {interface_name} -c {ifclass}'))
+        self.validate_success_return_code(self.ssh_connection)

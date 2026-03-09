@@ -104,12 +104,27 @@ class SystemAddrpoolListOutput:
             name (str): the name of the desired addrpool
 
         Returns:
-            str: The floating address of the addrpool with the specified name.
+            str: The gateway address of the addrpool with the specified name.
         """
         addrpools = list(filter(lambda pool: name in pool.get_name(), self.system_addrpool))
         if not addrpools:
             raise KeywordException(f"No addrpool with name {name} was found.")
         return addrpools[0].get_gateway_address()
+
+    def get_controller0_address_by_name(self, name: str) -> str:
+        """
+        Gets the controller0 address for the given name.
+
+        Args:
+            name (str): the name of the desired addrpool
+
+        Returns:
+            str: The controller0 address of the addrpool with the specified name.
+        """
+        addrpools = list(filter(lambda pool: name in pool.get_name(), self.system_addrpool))
+        if not addrpools:
+            raise KeywordException(f"No addrpool with name {name} was found.")
+        return addrpools[0].get_controller0_address()
 
     def get_management_floating_address(self) -> str:
         """
@@ -179,6 +194,30 @@ class SystemAddrpoolListOutput:
             net_type = "ipv4"
         return self.get_gateway_address_by_name(f"admin-{net_type}")
 
+    def get_uuid_by_name(self, name: str) -> str:
+        """
+        Gets the UUID for the given name.
+
+        Args:
+            name (str): the name of the desired addrpool
+
+        Returns:
+            str: The UUID of the addrpool with the specified name.
+        """
+        # Add IPv4/IPv6 suffix for admin and management pools
+        if name in ["admin", "management"]:
+            lab_config = ConfigurationManager.get_lab_config()
+            if lab_config.is_ipv6():
+                net_type = "ipv6"
+            else:
+                net_type = "ipv4"
+            name = f"{name}-{net_type}"
+        
+        addrpools = list(filter(lambda pool: name in pool.get_name(), self.system_addrpool))
+        if not addrpools:
+            raise KeywordException(f"No addrpool with name {name} was found.")
+        return addrpools[0].get_uuid()
+    
     @staticmethod
     def is_valid_output(value: Dict[str, str]) -> bool:
         """
