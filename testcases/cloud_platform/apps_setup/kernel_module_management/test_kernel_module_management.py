@@ -16,7 +16,7 @@ from keywords.k8s.module.kubectl_get_module_keywords import KubectlGetModuleKeyw
 from keywords.k8s.pods.kubectl_get_pods_keywords import KubectlGetPodsKeywords
 from keywords.linux.dmesg.dmesg_keywords import DmesgKeywords
 from keywords.linux.lsmod.lsmod_keywords import LsmodKeywords
-from testcases.cloud_platform.regression.containers.test_app_kernel_module_mgmt import (
+from testcases.cloud_platform.regression.k8s_operator_framework.test_app_kernel_module_mgmt import (
     APP_NAME,
     KMM_EXPECTED_PODS,
     NAMESPACE,
