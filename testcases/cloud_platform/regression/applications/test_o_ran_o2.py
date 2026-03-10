@@ -89,16 +89,6 @@ def delete_o_ran_config_files(ssh_connection: SSHConnection):
     logger.log_info('Delete files successfully')
 
 
-def create_smo_service_account(ssh_connection: SSHConnection, smo_service_account: str = 'smo1'):
-    """Create SMO service account.
-
-    Args:
-        ssh_connection (SSHConnection): SSH connection to active controller.
-        smo_service_account (str): Name of the SMO service account. Defaults to 'smo1'.
-    """
-    OranO2Keywords(ssh_connection).create_smo_service_account(smo_service_account)
-
-
 def create_smo_secret(
     ssh_connection: SSHConnection, smo_secret: str = 'smo1-secret', smo_service_account: str = 'smo1'
 ):
@@ -116,37 +106,6 @@ def create_smo_secret(
         smo_secret, "default", "jsonpath", "'{.data.token}'", base64=True
     )
 
-
-def create_app_config_file(
-    ssh_connection: SSHConnection, smo_register_url: str, ocloud_global_id: str = None
-):
-    """Create O2 application configuration file.
-
-    Args:
-        ssh_connection (SSHConnection): SSH connection to active controller.
-        smo_register_url (str): URL for SMO registration.
-        ocloud_global_id (str): Global ID for the O-Cloud. Defaults to None, which generates a random UUID.
-    """
-    OranO2Keywords(ssh_connection).create_app_config_file(smo_register_url, ocloud_global_id)
-
-
-def create_certificates(ssh_connection: SSHConnection):
-    """Create O2 service certificates.
-
-    Args:
-        ssh_connection (SSHConnection): SSH connection to active controller.
-    """
-    OranO2Keywords(ssh_connection).create_certificates()
-
-
-def apply_helm_override(ssh_connection: SSHConnection, tls: bool = False):
-    """Apply helm override and deploy application.
-
-    Args:
-        ssh_connection (SSHConnection): SSH connection to active controller.
-        tls (bool): Whether to use TLS configuration. Defaults to False.
-    """
-    OranO2Keywords(ssh_connection).apply_helm_override(tls)
 
 
 @mark.p0
@@ -170,17 +129,17 @@ def test_o_ran_apply():
     upload_o_ran(ssh_connection)
 
     logger.log_test_case_step("Create SMO service account and secret")
-    create_smo_service_account(ssh_connection)
+    OranO2Keywords(ssh_connection).create_smo_service_account()
     create_smo_secret(ssh_connection)
 
     logger.log_test_case_step("Generate certificates for O2 service")
-    create_certificates(ssh_connection)
+    OranO2Keywords(ssh_connection).create_certificates()
 
     logger.log_test_case_step("Prepare O2 service application configuration file")
-    create_app_config_file(ssh_connection, "http://127.0.0.1")
+    OranO2Keywords(ssh_connection).create_app_config_file("http://127.0.0.1")
 
     logger.log_test_case_step("Update overrides for oran-o2 application and apply")
-    apply_helm_override(ssh_connection)
+    OranO2Keywords(ssh_connection).apply_helm_override()
 
     logger.log_test_case_step("Uninstall O-RAN application")
     uninstall_o_ran(ssh_connection)
