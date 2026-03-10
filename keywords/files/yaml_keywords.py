@@ -1,4 +1,5 @@
 import os
+import textwrap
 
 import yaml
 from jinja2 import Template
@@ -81,6 +82,22 @@ class YamlKeywords(BaseKeyword):
         """
         with open(file_path, "r") as file:
             return yaml.safe_load(file)
+
+    def format_base64_for_yaml(self, base64_string: str) -> str:
+        """Format base64 content for YAML literal block with proper indentation.
+
+        Args:
+            base64_string (str): Base64 encoded string
+
+        Returns:
+            str: Formatted base64 content for YAML with 76-char lines and 4-space indentation
+        """
+        clean_base64 = base64_string.replace("\n", "").replace("\r", "").strip()
+        lines = textwrap.wrap(clean_base64, width=76, break_long_words=True, break_on_hyphens=False)
+        first_line = lines[0]
+        remaining = textwrap.indent("\n".join(lines[1:]), "    ")
+        formatted = f"{first_line}\n{remaining}" if len(lines) > 1 else first_line
+        return formatted
 
     def read_yaml_file_as_string(self, yaml_file: str, encoding: str = "utf-8") -> str:
         """
