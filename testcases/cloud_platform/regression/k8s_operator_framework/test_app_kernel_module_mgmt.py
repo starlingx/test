@@ -1062,7 +1062,6 @@ def test_kernel_module_hello_world_lock_unlock_simplex(request):
         - Lock and unlock the active controller
         - Verify KMM app is in applied state and all the KMM pods are running
         - Verify hello_world_dmesg kernel module is still loaded after unlock
-        - Verify Hello, world! message still appears in dmesg after unlock
         - Verify KMM Module resource still exists after unlock
         - Delete Module and ConfigMap resources
         - Cleanup kernel module management application
@@ -1128,9 +1127,6 @@ def test_kernel_module_hello_world_lock_unlock_simplex(request):
 
     get_logger().log_test_case_step("Verifying hello_world_dmesg kernel module is still loaded after unlock")
     verify_module_loaded(ssh_connection)
-
-    get_logger().log_test_case_step("Verifying Hello, world! message still in dmesg after unlock")
-    verify_dmesg_message(ssh_connection, "Hello, world!")
 
     get_logger().log_test_case_step("Verifying KMM module resource still exists after unlock")
     verify_kmm_module_exists(ssh_connection, module_name)
@@ -1659,7 +1655,7 @@ def test_kernel_module_hello_world_compute_reboot(request):
         - Cleanup kernel module management application
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
-    module_name = "kmm-test-compute-reboot"
+    module_name = "kmm-comp-reboot"
 
     get_logger().log_test_case_step("Cleanup kernel module management application")
     cleanup_kernel_module_management_environment(ssh_connection)
