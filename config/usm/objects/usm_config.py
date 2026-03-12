@@ -62,6 +62,7 @@ class USMConfig:
         self.license_from_path = usm_dict.get("license_from_path", "")
         self.license_to_path = usm_dict.get("license_to_path", "/home/sysadmin/")
         self.docker_fs_size = usm_dict.get("docker_fs_size", 60)
+        self.cleanup_ignore_alarms = usm_dict.get("cleanup_ignore_alarms", ["900.020", "900.022", "900.023"])
 
     def validate_config(self) -> None:
         """
@@ -698,3 +699,19 @@ class USMConfig:
             value (str): Absolute path destination to the license file.
         """
         self.license_to_path = value
+
+    def get_cleanup_ignore_alarms(self) -> list[str]:
+        """Get the list of alarm IDs to ignore during cleanup.
+
+        Returns:
+            list[str]: List of alarm IDs to ignore.
+        """
+        return self.cleanup_ignore_alarms
+
+    def set_cleanup_ignore_alarms(self, value: list[str]) -> None:
+        """Set the list of alarm IDs to ignore during cleanup.
+
+        Args:
+            value (list[str]): List of alarm IDs to ignore.
+        """
+        self.cleanup_ignore_alarms = value
