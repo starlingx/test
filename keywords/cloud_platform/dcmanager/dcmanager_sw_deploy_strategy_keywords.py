@@ -5,6 +5,7 @@ from keywords.base_keyword import BaseKeyword
 from keywords.cloud_platform.command_wrappers import source_openrc
 from keywords.cloud_platform.dcmanager.dcmanager_strategy_step_keywords import DcmanagerStrategyStepKeywords
 from config.configuration_manager import ConfigurationManager
+import time
 
 
 class DcmanagerSwDeployStrategy(BaseKeyword):
@@ -159,5 +160,6 @@ class DcmanagerSwDeployStrategy(BaseKeyword):
         self.dcmanager_sw_deploy_strategy_create(subcloud_name=subcloud_name, release=release, subcloud_group=subcloud_group, with_delete=with_delete, delete_only=delete_only, rollback=rollback, snapshot=snapshot)
         get_logger().log_test_case_step("Apply the sw-deploy strategy")
         self.dcmanager_sw_deploy_strategy_apply(target, is_group=is_group)
+        time.sleep(60)
         get_logger().log_test_case_step("Delete the sw-deploy strategy")
         self.dcmanager_sw_deploy_strategy_delete()
