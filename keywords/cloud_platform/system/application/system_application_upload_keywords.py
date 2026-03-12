@@ -133,8 +133,13 @@ class SystemApplicationUploadKeywords(BaseKeyword):
         if system_application_upload_input.get_automatic_installation():
             automatic_installation_as_param = '-i'
 
+        # 'images' property is optional.
+        images_as_param = ''
+        if system_application_upload_input.get_images():
+            images_as_param = '--images'
+
         # Assembles the command.
-        cmd = f'system application-upload {app_name_as_param} {app_version_as_param} {automatic_installation_as_param} {tar_file_path}'
+        cmd = f'system application-upload {app_name_as_param} {app_version_as_param} {automatic_installation_as_param} {images_as_param} {tar_file_path}'
 
         return cmd
 

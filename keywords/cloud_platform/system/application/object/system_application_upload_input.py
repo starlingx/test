@@ -17,6 +17,7 @@ class SystemApplicationUploadInput:
         self.automatic_installation = False
         self.tar_file_path = None
         self.force = False
+        self.images = False
         self.timeout_in_seconds = 60
         self.check_interval_in_seconds = 3
 
@@ -79,6 +80,18 @@ class SystemApplicationUploadInput:
         Getter for this 'force' parameter.
         """
         return self.force
+
+    def set_images(self, images: bool):
+        """
+        Setter for the 'images' parameter.
+        """
+        self.images = images
+
+    def get_images(self) -> bool:
+        """
+        Getter for this 'images' parameter.
+        """
+        return self.images
 
     def set_timeout_in_seconds(self, timeout_in_seconds: int):
         """
