@@ -62,5 +62,5 @@
   "docker_fs_size": 60,
 
   // Alarms to ignore during cleanup
-  "cleanup_ignore_alarms": ["900.020", "900.022", "900.023", "900.024"]
+  "cleanup_ignore_alarms": ["900.020", "900.022", "900.023", "900.024", "280.002"]
 }
