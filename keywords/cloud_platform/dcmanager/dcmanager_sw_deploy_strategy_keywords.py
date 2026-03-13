@@ -160,6 +160,6 @@ class DcmanagerSwDeployStrategy(BaseKeyword):
         self.dcmanager_sw_deploy_strategy_create(subcloud_name=subcloud_name, release=release, subcloud_group=subcloud_group, with_delete=with_delete, delete_only=delete_only, rollback=rollback, snapshot=snapshot)
         get_logger().log_test_case_step("Apply the sw-deploy strategy")
         self.dcmanager_sw_deploy_strategy_apply(target, is_group=is_group)
-        time.sleep(60)
+        time.sleep(120)
         get_logger().log_test_case_step("Delete the sw-deploy strategy")
         self.dcmanager_sw_deploy_strategy_delete()
