@@ -3,6 +3,7 @@ from framework.ssh.ssh_connection import SSHConnection
 from keywords.base_keyword import BaseKeyword
 from keywords.cloud_platform.command_wrappers import source_openrc
 from keywords.cloud_platform.openstack.endpoint.objects.openstack_endpoint_list_output import OpenStackEndpointListOutput
+from keywords.openstack.command_wrappers import source_admin_openrc
 
 
 class OpenStackEndpointListKeywords(BaseKeyword):
@@ -25,6 +26,16 @@ class OpenStackEndpointListKeywords(BaseKeyword):
         openstack_endpoint_list_output = OpenStackEndpointListOutput(output)
 
         return openstack_endpoint_list_output
+
+    def endpoint_list_admin_openrc(self) -> OpenStackEndpointListOutput:
+        """Execute 'openstack endpoint list' command using admin openrc.
+
+        Returns:
+            OpenStackEndpointListOutput: Parsed output of the 'openstack endpoint list' command.
+        """
+        output = self.ssh_connection.send(source_admin_openrc("openstack endpoint list"))
+        self.validate_success_return_code(self.ssh_connection)
+        return OpenStackEndpointListOutput(output)
 
     def get_k8s_dashboard_url(self) -> str:
         """
