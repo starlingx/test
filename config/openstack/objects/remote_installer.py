@@ -10,6 +10,7 @@ class RemoteInstaller:
         self.app_build = remote_dict["app_build"]
         self.file_location = remote_dict.get("file_location", "/home/sysadmin/")
         self.tar_file_path = remote_dict.get("tar_file_path", "")
+        self.download_file_name = remote_dict.get("download_file_name", "wr-openstack.tgz")
 
     def get_enabled_flag(self) -> str:
         """
@@ -64,6 +65,15 @@ class RemoteInstaller:
 
         """
         return self.tar_file_path
+
+    def get_download_file_name(self) -> str:
+        """
+        Getter for download file name.
+
+        Returns: the download_file_name
+
+        """
+        return self.download_file_name
 
     def get_file_path(self) -> str:
         """

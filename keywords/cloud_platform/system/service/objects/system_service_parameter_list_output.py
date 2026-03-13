@@ -70,6 +70,18 @@ class SystemServiceParameterListOutput:
                 return param
         return None
 
+    def get_docker_registry_url(self) -> str:
+        """
+        Get the docker registry URL from service parameters.
+
+        Returns:
+            str: Docker registry URL or None if not found
+        """
+        for param in self.parameters:
+            if param.get_section() == "docker-registry" and param.get_name() == "url":
+                return param.get_value()
+        return None
+
     def get_raw_output(self) -> str:
         """
         Get the raw output from the command.
