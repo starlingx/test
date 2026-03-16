@@ -357,18 +357,36 @@ class DcManagerSubcloudListOutput:
             deploy_status="complete",
             sync_status="in-sync",
             backup_status="",
-            prestaged=""
+            prestaged="",
+            subcloud_type=None
     ) -> DcManagerSubcloudListObject:
 
-        invalid_backup_status = ["validating", "backing-up", "deleting-backup", "pre-backup", "None"]
+        invalid_backup_status = ["validating", "backing-up", "deleting-backup", "pre-backup"]
         invalid_prestage_status = ["prestaging"]
 
         dcmanager_subcloud_list_obj_filter = DcManagerSubcloudListObjectFilter.get_specific_subcloud_filter(management=management, availability=availability, deploy_status=deploy_status, sync_status=sync_status, backup_status=backup_status, prestaged=prestaged)
         filtered_subclouds = self.get_dcmanager_subcloud_list_objects_filtered(dcmanager_subcloud_list_obj_filter)
 
-        for sc in filtered_subclouds:
-            if sc.get_backup_status() in invalid_backup_status or sc.get_prestage_status() in invalid_prestage_status:
-                filtered_subclouds.remove(sc)
+        filtered_subclouds = [sc for sc in filtered_subclouds if sc.get_backup_status() not in invalid_backup_status and sc.get_prestage_status() not in invalid_prestage_status]
+
+        if subcloud_type is not None:
+            filtered_by_type = []
+            for sc in filtered_subclouds:
+                lab_config = ConfigurationManager.get_lab_config()
+                sc_config = lab_config.get_subcloud(sc.get_name())
+                sc_lab_type = sc_config.get_lab_type()
+                get_logger().log_debug(f"Subcloud {sc.get_name()} has lab_type={sc_lab_type}, comparing with subcloud_type={subcloud_type}")
+                if sc_lab_type.lower() == subcloud_type.lower():
+                    filtered_by_type.append(sc)
+            filtered_subclouds = filtered_by_type
+
+        if not filtered_subclouds:
+            error_message = f"No subcloud found with the specified criteria (management={management}, availability={availability}, deploy_status={deploy_status}, sync_status={sync_status}"
+            if subcloud_type:
+                error_message += f", subcloud_type={subcloud_type}"
+            error_message += ")."
+            get_logger().log_exception(error_message)
+            raise ValueError(error_message)
 
         lowest_subcloud = min(filtered_subclouds, key=lambda subcloud: int(subcloud.get_id()))
         return lowest_subcloud

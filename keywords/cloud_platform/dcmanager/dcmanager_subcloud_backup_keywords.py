@@ -1,5 +1,6 @@
 from typing import Optional
 
+from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
 from framework.validation.validation import validate_equals, validate_equals_with_retry
 from keywords.base_keyword import BaseKeyword
@@ -409,6 +410,7 @@ class DcManagerSubcloudBackupKeywords(BaseKeyword):
         restore_values_path: Optional[str] = None,
         group: Optional[str] = None,
         registry: bool = False,
+        factory: bool = False,
         release: Optional[str] = None,
         subcloud_list: Optional[list] = None,
     ) -> None:
@@ -430,6 +432,15 @@ class DcManagerSubcloudBackupKeywords(BaseKeyword):
         """
         # Command construction
         cmd = f"dcmanager subcloud-backup restore --sysadmin-password {sysadmin_password}"
+        # factory only receives the subcloud parameter, invalidate any other
+        if factory:
+            get_logger().log_info("Factory install ony receives the subcloud as parameter, invalidating any other.")
+            cmd += " --factory"
+            local_only = False
+            with_install = False
+            registry = False
+            release = False
+
         if local_only:
             cmd += " --local-only"
         if subcloud:
@@ -489,6 +500,8 @@ class DcManagerSubcloudBackupKeywords(BaseKeyword):
                 return f"{subcloud} backup restored."
             elif deploy_status == "restore-failed":
                 return f"{subcloud} backup restore failed."
+            elif deploy_status == "factory-restore-complete":
+                return f"{subcloud} backup restored."
             else:
                 return "Restore not done yet."
 

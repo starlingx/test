@@ -128,3 +128,24 @@ class YamlKeywords(BaseKeyword):
             raise yaml.YAMLError(f"Invalid YAML syntax in {yaml_file}: {e}")
 
         return content
+
+    def update_yaml_key_value(self, yaml_file: str, key: str, value: str) -> None:
+        """
+        Updates a key-value pair in a YAML file.
+
+        Args:
+            yaml_file (str): Path to the YAML file.
+            key (str): The key to update.
+            value (str): The new value for the key.
+
+        Raises:
+            FileNotFoundError: If the file does not exist.
+            yaml.YAMLError: If the YAML file has invalid syntax.
+        """
+        with open(yaml_file, 'r') as f:
+            data = yaml.safe_load(f)
+        
+        data[key] = value
+        
+        with open(yaml_file, 'w') as f:
+            yaml.dump(data, f, default_flow_style=False)
