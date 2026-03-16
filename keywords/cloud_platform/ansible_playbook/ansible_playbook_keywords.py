@@ -35,7 +35,7 @@ class AnsiblePlaybookKeywords(BaseKeyword):
         admin_password = ConfigurationManager.get_lab_config().get_admin_credentials().get_password()
 
         command = f'ansible-playbook {backup_playbook_path} -e "ansible_become_pass={admin_password}" -e "admin_password={admin_password}" -e "backup_dir={backup_dir}" {backup_registry_argument}'
-        cmd_out = self.ssh_connection.send(command, reconnect_timeout=3600)
+        cmd_out = self.ssh_connection.send(command, reconnect_timeout=12000)
         self.validate_success_return_code(self.ssh_connection)
         get_logger().log_info("get ansible playbook backup output")
         backup_output = AnsiblePlaybookBackUpRestoreOutput(cmd_out)
