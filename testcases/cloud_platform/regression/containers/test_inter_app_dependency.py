@@ -119,11 +119,11 @@ def test_check_apply_dependency_between_apps(request: FixtureRequest):
     download_docker_images_to_local_registry(ssh_connection, namespaces=[dependent_app_name, app_name])
 
     def remove_docker_images():
-        docker_sync_keywords = DockerSyncImagesKeywords(ssh_connection)
-        docker_sync_keywords.remove_image_from_manifest(IMAGE_NAME, IMAGE_TAG, MANIFEST_NAME)
         kubectl_delete_ns_keyword = KubectlDeleteNamespaceKeywords(ssh_connection)
         kubectl_delete_ns_keyword.cleanup_namespace(dependent_app_name)
         kubectl_delete_ns_keyword.cleanup_namespace(app_name)
+        docker_sync_keywords = DockerSyncImagesKeywords(ssh_connection)
+        docker_sync_keywords.remove_image_from_manifest(IMAGE_NAME, IMAGE_TAG, MANIFEST_NAME)
         crictl_rmi_keywords = CrictlRmiImagesKeywords(ssh_connection)
         crictl_rmi_keywords.crictl_rmi_images(IMAGE_ID)
 
