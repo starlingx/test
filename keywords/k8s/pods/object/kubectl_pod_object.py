@@ -1,3 +1,5 @@
+import re
+
 class KubectlPodObject:
     """
     Class to hold attributes of a 'kubectl get pods' pod entry.
@@ -145,17 +147,16 @@ class KubectlPodObject:
         pod_age = self.get_age()
         total_minutes = 0
 
-        if "m" in pod_age:
-            minutes = int(pod_age.split("m")[0])
-            total_minutes += minutes
-        if "h" in pod_age:
-            hours = int(pod_age.split("h")[0])
-            total_minutes += hours * 60
-        if "d" in pod_age:
-            days = int(pod_age.split("d")[0])
-            total_minutes += days * 1440
-        if "s" in pod_age:
-            pass
+        days = re.search(r'(\d+)d', pod_age)
+        hours = re.search(r'(\d+)h', pod_age)
+        minutes = re.search(r'(\d+)m', pod_age)
+
+        if days:
+            total_minutes += int(days.group(1)) * 1440
+        if hours:
+            total_minutes += int(hours.group(1)) * 60
+        if minutes:
+            total_minutes += int(minutes.group(1))
 
         return total_minutes
 
