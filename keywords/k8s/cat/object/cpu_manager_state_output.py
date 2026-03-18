@@ -18,6 +18,8 @@ class CpuManagerStateOutput:
 
         if "policyName" in dictionary_output:
             self.cpu_manager_state_object.set_policy_name(dictionary_output['policyName'])
+        if "defaultCpuSet" in dictionary_output:
+            self.cpu_manager_state_object.set_default_cpu_set(dictionary_output['defaultCpuSet'])
         if "entries" in dictionary_output:
             self.cpu_manager_state_object.set_entries(dictionary_output['entries'])
 

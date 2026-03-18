@@ -199,6 +199,108 @@ class SystemHostCPUOutput:
         """
         return self.get_processor_count() >= min_num_processors
 
+    def get_log_cores_for_assigned_function(self, assigned_function: str) -> set:
+        """
+        Get the set of logical core IDs for CPUs assigned to a specific function.
+
+        Args:
+            assigned_function (str): The function to filter by (e.g. 'Application-isolated').
+
+        Returns:
+            set: set of logical core IDs assigned to the specified function.
+        """
+        return {cpu.get_log_core() for cpu in self.get_system_host_cpu_objects(assigned_function=assigned_function)}
+
+    def get_number_of_paired_cores(self, cpuset: set) -> int:
+        """
+        Count the number of CPUs in the cpuset that share a physical core with another CPU in the cpuset.
+
+        On a hyperthreaded system, each physical core has multiple logical CPUs (siblings).
+        This function counts how many CPUs in the given cpuset have at least one sibling
+        also present in the cpuset.
+
+        Args:
+            cpuset (set): set of logical CPU IDs to analyze.
+
+        Returns:
+            int: count of CPUs that have at least one sibling also in the cpuset.
+
+        Example:
+            Given cpuset {0, 1, 4} where:
+            - CPU 0 and CPU 16 share physical core 0
+            - CPU 1 and CPU 17 share physical core 1
+            - CPU 4 and CPU 20 share physical core 4
+
+            Result: 0 (none of the CPUs have their HT sibling in the cpuset)
+
+            Given cpuset {0, 16, 1, 17} where:
+            - CPU 0 and CPU 16 share physical core 0
+            - CPU 1 and CPU 17 share physical core 1
+
+            Result: 4 (all CPUs are paired: 0-16 and 1-17)
+        """
+        paired = 0
+        for cpu_id in sorted(cpuset):
+            # Get the CPU object for this logical CPU ID
+            cpu = self.get_system_host_cpu_from_log_core(cpu_id)
+
+            # Find all logical CPUs that share the same physical core (siblings)
+            siblings = {
+                c.get_log_core()
+                for c in self.get_system_host_cpu_objects(processor_id=cpu.get_processor())
+                if c.get_phy_core() == cpu.get_phy_core()
+            }
+
+            # If more than one sibling is in the cpuset, this CPU is paired
+            if len(cpuset.intersection(siblings)) > 1:
+                paired += 1
+        return paired
+
+    def get_number_of_singleton_cores(self, cpuset: set) -> int:
+        """
+        Count the number of CPUs in the cpuset whose HT sibling is not in the cpuset.
+
+        On a hyperthreaded system, each physical core has multiple logical CPUs (siblings).
+        This function counts how many CPUs in the given cpuset do NOT have any sibling
+        also present in the cpuset (i.e., they are alone without their HT pair).
+
+        Args:
+            cpuset (set): set of logical CPU IDs to analyze.
+
+        Returns:
+            int: count of CPUs whose physical core sibling is not in the cpuset.
+
+        Example:
+            Given cpuset {0, 1, 4} where:
+            - CPU 0 and CPU 16 share physical core 0
+            - CPU 1 and CPU 17 share physical core 1
+            - CPU 4 and CPU 20 share physical core 4
+
+            Result: 3 (all CPUs are singletons since none have their HT sibling in the cpuset)
+
+            Given cpuset {0, 16, 1} where:
+            - CPU 0 and CPU 16 share physical core 0
+            - CPU 1 and CPU 17 share physical core 1
+
+            Result: 1 (CPU 1 is singleton, CPUs 0 and 16 are paired)
+        """
+        singletons = 0
+        for cpu_id in sorted(cpuset):
+            # Get the CPU object for this logical CPU ID
+            cpu = self.get_system_host_cpu_from_log_core(cpu_id)
+
+            # Find all logical CPUs that share the same physical core (siblings)
+            siblings = {
+                c.get_log_core()
+                for c in self.get_system_host_cpu_objects(processor_id=cpu.get_processor())
+                if c.get_phy_core() == cpu.get_phy_core()
+            }
+
+            # If only one sibling is in the cpuset, this CPU is a singleton
+            if len(cpuset.intersection(siblings)) == 1:
+                singletons += 1
+        return singletons
+
     def get_function_count(self, assigned_function: str) -> int:
         """
         Count the number of CPUs assigned to a specific function.
