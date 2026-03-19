@@ -1,4 +1,3 @@
-import shlex
 from typing import Optional
 
 from framework.ssh.ssh_connection import SSHConnection
@@ -29,21 +28,18 @@ class GrepKeywords(BaseKeyword):
         Returns:
             str: Extracted fields as string.
         """
-        safe_pattern = shlex.quote(pattern)
-        safe_file_path = shlex.quote(file_path)
-
-        cmd = f"grep {safe_pattern} {safe_file_path}"
+        cmd = f'grep "{pattern}" {file_path}'
 
         if tail_lines:
             cmd += f" | tail -{tail_lines}"
 
         if field_indices:
-            awk_fields = ", ".join([f"${i}" for i in field_indices])
-            cmd += f" | awk '{{print {awk_fields}}}'"
+            awk_fields = ", ".join([f"\${i}" for i in field_indices])
+            cmd += f' | awk "{{print {awk_fields}}}"'
 
         output = self.ssh_connection.send(cmd)
 
         if isinstance(output, list):
-            filtered_output = [line.strip() for line in output if line.strip()]
+            filtered_output = [line.strip().rstrip(":") for line in output if line.strip()]
             return filtered_output[0] if len(filtered_output) == 1 else filtered_output
-        return output.strip() if output and output.strip() else ""
+        return output.strip().rstrip(":") if output and output.strip() else ""

@@ -52,8 +52,8 @@ def test_kdump_excecutable_hooks(request):
     pre_hook_success_msg = "Pre-hook executed successfully"
     post_hook_success_msg = "Post-hook executed successfully"
 
-    pre_hook_success_content = f'#!/bin/sh\necho "$(date): {pre_hook_success_msg}" >> /var/log/kdump-test.log\nexit 0'
-    post_hook_success_content = f'#!/bin/sh\necho "$(date): {post_hook_success_msg}" >> /var/log/kdump-test.log\nexit 0'
+    pre_hook_success_content = f'#!/bin/sh\necho "\$(date) : {pre_hook_success_msg}" >> {kdump_log_path}\nexit 0'
+    post_hook_success_content = f'#!/bin/sh\necho "\$(date) : {post_hook_success_msg}" >> {kdump_log_path}\nexit 0'
 
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     active_controller = SystemHostListKeywords(ssh_connection).get_active_controller()
@@ -66,9 +66,9 @@ def test_kdump_excecutable_hooks(request):
     get_logger().log_info("Create pre-hook and post-hook executable files")
 
     # Create pre-hook and post hook wth proper exit code
-    prehook_success_file = FileKeywords(ssh_connection).create_file_with_heredoc(pre_hook_success_filepath, pre_hook_success_content, is_sudo=True)
+    prehook_success_file = FileKeywords(ssh_connection).create_file_with_heredoc(pre_hook_success_filepath, pre_hook_success_content)
     FileKeywords(ssh_connection).make_executable(pre_hook_success_filepath)
-    posthook_success_file = FileKeywords(ssh_connection).create_file_with_heredoc(post_hook_success_filepath, post_hook_success_content, is_sudo=True)
+    posthook_success_file = FileKeywords(ssh_connection).create_file_with_heredoc(post_hook_success_filepath, post_hook_success_content)
     FileKeywords(ssh_connection).make_executable(post_hook_success_filepath)
     validate_equals(prehook_success_file and posthook_success_file, True, "Creation of pre-hook and post-hook files")
 
@@ -134,10 +134,10 @@ def test_kdump_successful_and_failed_excecutable_hooks(request):
     pre_hook_fail_msg = "Pre-hook execution failed"
     post_hook_fail_msg = "Post-hook execution failed"
 
-    pre_hook_success_content = f'#!/bin/sh\necho "$(date): {pre_hook_success_msg}" >> /var/log/kdump-test.log\nexit 0'
-    post_hook_success_content = f'#!/bin/sh\necho "$(date): {post_hook_success_msg}" >> /var/log/kdump-test.log\nexit 0'
-    pre_hook_fail_content = f'#!/bin/sh\necho "$(date): {pre_hook_fail_msg}" >> /var/log/kdump-test.log\nexit 1'
-    post_hook_fail_content = f'#!/bin/sh\necho "$(date): {post_hook_fail_msg}" >> /var/log/kdump-test.log\nexit 1'
+    pre_hook_success_content = f'#!/bin/sh\necho "\$(date) : {pre_hook_success_msg}" >> {kdump_log_path}\nexit 0'
+    post_hook_success_content = f'#!/bin/sh\necho "\$(date) : {post_hook_success_msg}" >> {kdump_log_path}\nexit 0'
+    pre_hook_fail_content = f'#!/bin/sh\necho "\$(date) : {pre_hook_fail_msg}" >> {kdump_log_path}\nexit 1'
+    post_hook_fail_content = f'#!/bin/sh\necho "\$(date) : {post_hook_fail_msg}" >> {kdump_log_path}\nexit 1'
 
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     active_controller = SystemHostListKeywords(ssh_connection).get_active_controller()
@@ -149,14 +149,14 @@ def test_kdump_successful_and_failed_excecutable_hooks(request):
 
     get_logger().log_info("Create pre-hook and post-hook executable files")
     # Create pre-hook and post hook wth proper exit code
-    prehook_success_file = FileKeywords(ssh_connection).create_file_with_heredoc(pre_hook_success_filepath, pre_hook_success_content, is_sudo=True)
+    prehook_success_file = FileKeywords(ssh_connection).create_file_with_heredoc(pre_hook_success_filepath, pre_hook_success_content)
     FileKeywords(ssh_connection).make_executable(pre_hook_success_filepath)
-    posthook_success_file = FileKeywords(ssh_connection).create_file_with_heredoc(post_hook_success_filepath, post_hook_success_content, is_sudo=True)
+    posthook_success_file = FileKeywords(ssh_connection).create_file_with_heredoc(post_hook_success_filepath, post_hook_success_content)
     FileKeywords(ssh_connection).make_executable(post_hook_success_filepath)
     # Create pre-hook and post hook with exit code 1
-    prehook_fail_file = FileKeywords(ssh_connection).create_file_with_heredoc(pre_hook_fail_filepath, pre_hook_fail_content, is_sudo=True)
+    prehook_fail_file = FileKeywords(ssh_connection).create_file_with_heredoc(pre_hook_fail_filepath, pre_hook_fail_content)
     FileKeywords(ssh_connection).make_executable(pre_hook_fail_filepath)
-    posthook_fail_file = FileKeywords(ssh_connection).create_file_with_heredoc(post_hook_fail_filepath, post_hook_fail_content, is_sudo=True)
+    posthook_fail_file = FileKeywords(ssh_connection).create_file_with_heredoc(post_hook_fail_filepath, post_hook_fail_content)
     FileKeywords(ssh_connection).make_executable(post_hook_fail_filepath)
     validate_equals(all([prehook_success_file, posthook_success_file, prehook_fail_file, posthook_fail_file]), True, "Creation of pre-hook and post-hook files")
 
@@ -225,10 +225,10 @@ def test_kdump_excecutable_hooks_with_standby_controller(request):
     pre_hook_fail_msg = "Pre-hook execution failed"
     post_hook_fail_msg = "Post-hook execution failed"
 
-    pre_hook_success_content = f'#!/bin/sh\necho "$(date): {pre_hook_success_msg}" >> /var/log/kdump-test.log\nexit 0'
-    post_hook_success_content = f'#!/bin/sh\necho "$(date): {post_hook_success_msg}" >> /var/log/kdump-test.log\nexit 0'
-    pre_hook_fail_content = f'#!/bin/sh\necho "$(date): {pre_hook_fail_msg}" >> /var/log/kdump-test.log\nexit 1'
-    post_hook_fail_content = f'#!/bin/sh\necho "$(date): {post_hook_fail_msg}" >> /var/log/kdump-test.log\nexit 1'
+    pre_hook_success_content = f'#!/bin/sh\necho "\$(date) : {pre_hook_success_msg}" >> {kdump_log_path}\nexit 0'
+    post_hook_success_content = f'#!/bin/sh\necho "\$(date) : {post_hook_success_msg}" >> {kdump_log_path}\nexit 0'
+    pre_hook_fail_content = f'#!/bin/sh\necho "\$(date) : {pre_hook_fail_msg}" >> {kdump_log_path}\nexit 1'
+    post_hook_fail_content = f'#!/bin/sh\necho "\$(date) : {post_hook_fail_msg}" >> {kdump_log_path}\nexit 1'
 
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     standby_ssh_connection = LabConnectionKeywords().get_standby_controller_ssh()
@@ -246,19 +246,19 @@ def test_kdump_excecutable_hooks_with_standby_controller(request):
     get_logger().log_info("Create pre-hook and post-hook executable files")
 
     # Create pre-hook and post hook wth proper exit code
-    prehook_success_file = FileKeywords(ssh_connection).create_file_with_heredoc(pre_hook_success_filepath, pre_hook_success_content, is_sudo=True)
+    prehook_success_file = FileKeywords(ssh_connection).create_file_with_heredoc(pre_hook_success_filepath, pre_hook_success_content)
     FileKeywords(ssh_connection).make_executable(pre_hook_success_filepath)
-    posthook_success_file = FileKeywords(ssh_connection).create_file_with_heredoc(post_hook_success_filepath, post_hook_success_content, is_sudo=True)
+    posthook_success_file = FileKeywords(ssh_connection).create_file_with_heredoc(post_hook_success_filepath, post_hook_success_content)
     FileKeywords(ssh_connection).make_executable(post_hook_success_filepath)
     # Create pre-hook and post hook with exit code 1
-    prehook_fail_file = FileKeywords(ssh_connection).create_file_with_heredoc(pre_hook_fail_filepath, pre_hook_fail_content, is_sudo=True)
+    prehook_fail_file = FileKeywords(ssh_connection).create_file_with_heredoc(pre_hook_fail_filepath, pre_hook_fail_content)
     FileKeywords(ssh_connection).make_executable(pre_hook_fail_filepath)
-    posthook_fail_file = FileKeywords(ssh_connection).create_file_with_heredoc(post_hook_fail_filepath, post_hook_fail_content, is_sudo=True)
+    posthook_fail_file = FileKeywords(ssh_connection).create_file_with_heredoc(post_hook_fail_filepath, post_hook_fail_content)
     FileKeywords(ssh_connection).make_executable(post_hook_fail_filepath)
     validate_equals(all([prehook_success_file, posthook_success_file, prehook_fail_file, posthook_fail_file]), True, "Creation of pre-hook and post-hook files")
 
     # Get current timestamp for comparison
-    current_time = DateKeywords(ssh_connection).get_current_time()
+    current_time = DateKeywords(ssh_connection).get_current_epochtime()
 
     pre_uptime_of_host = SystemHostListKeywords(ssh_connection).get_uptime(active_controller_host_name)
     pre_uptime_standby_host = SystemHostListKeywords(ssh_connection).get_uptime(standby_controller_host_name)
@@ -300,19 +300,19 @@ def test_kdump_excecutable_hooks_with_standby_controller(request):
 
     # Create pre-hook and post hook wth proper exit code
 
-    prehook_success_file = FileKeywords(standby_ssh_connection).create_file_with_heredoc(pre_hook_success_filepath, pre_hook_success_content, is_sudo=True)
+    prehook_success_file = FileKeywords(standby_ssh_connection).create_file_with_heredoc(pre_hook_success_filepath, pre_hook_success_content)
     FileKeywords(standby_ssh_connection).make_executable(pre_hook_success_filepath)
-    posthook_success_file = FileKeywords(standby_ssh_connection).create_file_with_heredoc(post_hook_success_filepath, post_hook_success_content, is_sudo=True)
+    posthook_success_file = FileKeywords(standby_ssh_connection).create_file_with_heredoc(post_hook_success_filepath, post_hook_success_content)
     FileKeywords(standby_ssh_connection).make_executable(post_hook_success_filepath)
     # Create pre-hook and post hook with exit code 1
-    prehook_fail_file = FileKeywords(standby_ssh_connection).create_file_with_heredoc(pre_hook_fail_filepath, pre_hook_fail_content, is_sudo=True)
+    prehook_fail_file = FileKeywords(standby_ssh_connection).create_file_with_heredoc(pre_hook_fail_filepath, pre_hook_fail_content)
     FileKeywords(standby_ssh_connection).make_executable(pre_hook_fail_filepath)
-    posthook_fail_file = FileKeywords(standby_ssh_connection).create_file_with_heredoc(post_hook_fail_filepath, post_hook_fail_content, is_sudo=True)
+    posthook_fail_file = FileKeywords(standby_ssh_connection).create_file_with_heredoc(post_hook_fail_filepath, post_hook_fail_content)
     FileKeywords(standby_ssh_connection).make_executable(post_hook_fail_filepath)
     validate_equals(all([prehook_success_file, posthook_success_file, prehook_fail_file, posthook_fail_file]), True, "Creation of pre-hook and post-hook files")
 
     # Get current timestamp for comparison
-    current_time = DateKeywords(standby_ssh_connection).get_current_time()
+    current_time = DateKeywords(standby_ssh_connection).get_current_epochtime()
 
     # pre_uptime_of_host = SystemHostListKeywords(ssh_connection).get_uptime("controller-1")
 
@@ -373,10 +373,10 @@ def test_kdump_excecutable_hooks_compute_host(request):
     pre_hook_fail_msg = "Pre-hook execution failed"
     post_hook_fail_msg = "Post-hook execution failed"
 
-    pre_hook_success_content = f'#!/bin/sh\necho "$(date): {pre_hook_success_msg}" >> /var/log/kdump-test.log\nexit 0'
-    post_hook_success_content = f'#!/bin/sh\necho "$(date): {post_hook_success_msg}" >> /var/log/kdump-test.log\nexit 0'
-    pre_hook_fail_content = f'#!/bin/sh\necho "$(date): {pre_hook_fail_msg}" >> /var/log/kdump-test.log\nexit 1'
-    post_hook_fail_content = f'#!/bin/sh\necho "$(date): {post_hook_fail_msg}" >> /var/log/kdump-test.log\nexit 1'
+    pre_hook_success_content = f'#!/bin/sh\necho "\$(date) : {pre_hook_success_msg}" >> {kdump_log_path}\nexit 0'
+    post_hook_success_content = f'#!/bin/sh\necho "\$(date) : {post_hook_success_msg}" >> {kdump_log_path}\nexit 0'
+    pre_hook_fail_content = f'#!/bin/sh\necho "\$(date) : {pre_hook_fail_msg}" >> {kdump_log_path}\nexit 1'
+    post_hook_fail_content = f'#!/bin/sh\necho "\$(date) : {post_hook_fail_msg}" >> {kdump_log_path}\nexit 1'
 
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     computes = SystemHostListKeywords(ssh_connection).get_computes()
@@ -390,24 +390,33 @@ def test_kdump_excecutable_hooks_compute_host(request):
     # get the prev uptime of the host so we can be sure it re-started
     pre_uptime_of_host = SystemHostListKeywords(ssh_connection).get_uptime(compute.get_host_name())
 
-    delete_kdump_files(compute_ssh_connection, kdump_path)
+    # get_files_in_dir does not work as sftp connection is not working using compute_ssh_connection
+    # crash_files=FileKeywords(compute_ssh_connection).get_files_in_dir(kdump_path)
+    core_files_before_crash = compute_ssh_connection.send_as_sudo(f"ls -l {kdump_path}")
+    get_logger().log_info(f"no of Crash files before crash: {len(core_files_before_crash)}")
 
     get_logger().log_info("Create pre-hook and post-hook executable files")
 
     # Create pre-hook and post hook wth proper exit code
-    prehook_success_file = FileKeywords(compute_ssh_connection).create_file_with_heredoc(pre_hook_success_filepath, pre_hook_success_content, is_sudo=True)
+    prehook_success_file = FileKeywords(compute_ssh_connection).create_file_with_heredoc(pre_hook_success_filepath, pre_hook_success_content)
     FileKeywords(compute_ssh_connection).make_executable(pre_hook_success_filepath)
-    posthook_success_file = FileKeywords(compute_ssh_connection).create_file_with_heredoc(post_hook_success_filepath, post_hook_success_content, is_sudo=True)
+    posthook_success_file = FileKeywords(compute_ssh_connection).create_file_with_heredoc(post_hook_success_filepath, post_hook_success_content)
     FileKeywords(compute_ssh_connection).make_executable(post_hook_success_filepath)
     # Create pre-hook and post hook with exit code 1
-    prehook_fail_file = FileKeywords(compute_ssh_connection).create_file_with_heredoc(pre_hook_fail_filepath, pre_hook_fail_content, is_sudo=True)
+    prehook_fail_file = FileKeywords(compute_ssh_connection).create_file_with_heredoc(pre_hook_fail_filepath, pre_hook_fail_content)
     FileKeywords(compute_ssh_connection).make_executable(pre_hook_fail_filepath)
-    posthook_fail_file = FileKeywords(compute_ssh_connection).create_file_with_heredoc(post_hook_fail_filepath, post_hook_fail_content, is_sudo=True)
+    posthook_fail_file = FileKeywords(compute_ssh_connection).create_file_with_heredoc(post_hook_fail_filepath, post_hook_fail_content)
     FileKeywords(compute_ssh_connection).make_executable(post_hook_fail_filepath)
-    validate_equals(all([prehook_success_file, posthook_success_file, prehook_fail_file, posthook_fail_file]), True, "Creation of pre-hook and post-hook files")
+    get_logger().log_info(f"files created : {prehook_success_file},{posthook_success_file},{prehook_fail_file},{posthook_fail_file}")
+    # validate_equals(all([prehook_success_file, posthook_success_file, prehook_fail_file, posthook_fail_file]), True, "Creation of pre-hook and post-hook files")
+    # Below validation is not working as file_exist uses sftp for validation which is not working for compute_ssh_connection
+    # validate_equals(all([prehook_success_file, posthook_success_file, prehook_fail_file, posthook_fail_file]), True, "Creation of pre-hook and post-hook files")
 
     # Get current timestamp for comparison
-    current_time = DateKeywords(compute_ssh_connection).get_current_time()
+    current_time = DateKeywords(compute_ssh_connection).get_current_epochtime()
+
+    # Sync filesystem to ensure all files are written to disk before crash
+    FileKeywords(compute_ssh_connection).sync_files()
 
     get_logger().log_info("Trigger kernel crash")
     KernelKeywords(compute_ssh_connection).trigger_kernel_crash()
@@ -416,17 +425,17 @@ def test_kdump_excecutable_hooks_compute_host(request):
     is_reboot_successful = SystemHostRebootKeywords(ssh_connection).wait_for_force_reboot(compute.get_host_name(), pre_uptime_of_host, 2400)
     validate_equals(is_reboot_successful, True, "crash reboot")
 
-    get_logger().log_info("verify kdump file generated after kernel crash")
-    core_files = FileKeywords(compute_ssh_connection).get_files_in_dir(kdump_path)
-    for core_file in core_files:
-        if "core" in core_file:
-            file_exists = FileKeywords(compute_ssh_connection).file_exists(f"{kdump_path}/{core_file}")
+    compute_ssh_connection = LabConnectionKeywords().get_compute_ssh(compute.get_host_name())
 
-    validate_equals(file_exists, True, "kdump file created")
+    get_logger().log_info("verify kdump file generated after kernel crash")
+
+    # get_files_in_dir does not work as sftp connection is not working using compute_ssh_connection.using CLI
+    core_files_after_crash = compute_ssh_connection.send_as_sudo(f"ls -l {kdump_path}")
+    get_logger().log_info(f"no of Crash files after crash: {len(core_files_after_crash)}")
+    validate_equals((len(core_files_after_crash) - len(core_files_before_crash)), 1, "kdump file created")
 
     get_logger().log_info("Verify all pre-hooks and post-hooks are executed after kdump")
 
-    # Get the last Pre-hook executed successfully message timestamp
     last_success_pre_hook_timestamp = GrepKeywords(compute_ssh_connection).grep_and_extract_fields(pre_hook_success_msg, kdump_log_path, 1, [1, 2, 3, 4, 5])
     last_success_post_hook_timestamp = GrepKeywords(compute_ssh_connection).grep_and_extract_fields(post_hook_success_msg, kdump_log_path, 1, [1, 2, 3, 4, 5])
     last_fail_pre_hook_timestamp = GrepKeywords(compute_ssh_connection).grep_and_extract_fields(pre_hook_fail_msg, kdump_log_path, 1, [1, 2, 3, 4, 5])
@@ -436,8 +445,6 @@ def test_kdump_excecutable_hooks_compute_host(request):
     validate_equals(int(DateKeywords(compute_ssh_connection).get_custom_epochtime(last_success_post_hook_timestamp)) > int(current_time), True, "Post-hook execution successful")
     validate_equals(int(DateKeywords(compute_ssh_connection).get_custom_epochtime(last_fail_pre_hook_timestamp)) > int(current_time), True, "Failed Pre-hook execution")
     validate_equals(int(DateKeywords(compute_ssh_connection).get_custom_epochtime(last_fail_post_hook_timestamp)) > int(current_time), True, "Failed Post-hook execution")
-
-    delete_kdump_files(compute_ssh_connection, kdump_path)
 
 
 @mark.p0
@@ -466,10 +473,10 @@ def test_kdump_excecutable_hooks_storage_host(request):
     pre_hook_fail_msg = "Pre-hook execution failed"
     post_hook_fail_msg = "Post-hook execution failed"
 
-    pre_hook_success_content = f'#!/bin/sh\necho "$(date): {pre_hook_success_msg}" >> /var/log/kdump-test.log\nexit 0'
-    post_hook_success_content = f'#!/bin/sh\necho "$(date): {post_hook_success_msg}" >> /var/log/kdump-test.log\nexit 0'
-    pre_hook_fail_content = f'#!/bin/sh\necho "$(date): {pre_hook_fail_msg}" >> /var/log/kdump-test.log\nexit 1'
-    post_hook_fail_content = f'#!/bin/sh\necho "$(date): {post_hook_fail_msg}" >> /var/log/kdump-test.log\nexit 1'
+    pre_hook_success_content = f'#!/bin/sh\necho "\$(date) : {pre_hook_success_msg}" >> {kdump_log_path}\nexit 0'
+    post_hook_success_content = f'#!/bin/sh\necho "\$(date) : {post_hook_success_msg}" >> {kdump_log_path}\nexit 0'
+    pre_hook_fail_content = f'#!/bin/sh\necho "\$(date) : {pre_hook_fail_msg}" >> {kdump_log_path}\nexit 1'
+    post_hook_fail_content = f'#!/bin/sh\necho "\$(date) : {post_hook_fail_msg}" >> {kdump_log_path}\nexit 1'
 
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     storages = SystemHostListKeywords(ssh_connection).get_storages()
@@ -478,29 +485,37 @@ def test_kdump_excecutable_hooks_storage_host(request):
 
     # get the first storage
     storage = storages[0]
-    storage_ssh_connection = LabConnectionKeywords().get_compute_ssh(storage.get_host_name())
+    storage_ssh_connection = LabConnectionKeywords().get_storage_ssh(storage.get_host_name())
 
     # get the prev uptime of the host so we can be sure it re-started
     pre_uptime_of_host = SystemHostListKeywords(ssh_connection).get_uptime(storage.get_host_name())
-
-    delete_kdump_files(storage_ssh_connection, kdump_path)
+    # get_files_in_dir does not work as sftp connection is not working using storage_ssh_connection
+    # crash_files=FileKeywords(storage_ssh_connection).get_files_in_dir(kdump_path)
+    core_files_before_crash = storage_ssh_connection.send_as_sudo(f"ls -l {kdump_path}")
+    get_logger().log_info(f"no of Crash files before crash: {len(core_files_before_crash)}")
 
     get_logger().log_info("Create pre-hook and post-hook executable files")
 
     # Create pre-hook and post hook wth proper exit code
-    prehook_success_file = FileKeywords(storage_ssh_connection).create_file_with_heredoc(pre_hook_success_filepath, pre_hook_success_content, is_sudo=True)
+    prehook_success_file = FileKeywords(storage_ssh_connection).create_file_with_heredoc(pre_hook_success_filepath, pre_hook_success_content)
     FileKeywords(storage_ssh_connection).make_executable(pre_hook_success_filepath)
-    posthook_success_file = FileKeywords(storage_ssh_connection).create_file_with_heredoc(post_hook_success_filepath, post_hook_success_content, is_sudo=True)
+    posthook_success_file = FileKeywords(storage_ssh_connection).create_file_with_heredoc(post_hook_success_filepath, post_hook_success_content)
     FileKeywords(storage_ssh_connection).make_executable(post_hook_success_filepath)
     # Create pre-hook and post hook with exit code 1
-    prehook_fail_file = FileKeywords(storage_ssh_connection).create_file_with_heredoc(pre_hook_fail_filepath, pre_hook_fail_content, is_sudo=True)
+    prehook_fail_file = FileKeywords(storage_ssh_connection).create_file_with_heredoc(pre_hook_fail_filepath, pre_hook_fail_content)
     FileKeywords(storage_ssh_connection).make_executable(pre_hook_fail_filepath)
-    posthook_fail_file = FileKeywords(storage_ssh_connection).create_file_with_heredoc(post_hook_fail_filepath, post_hook_fail_content, is_sudo=True)
+    posthook_fail_file = FileKeywords(storage_ssh_connection).create_file_with_heredoc(post_hook_fail_filepath, post_hook_fail_content)
     FileKeywords(storage_ssh_connection).make_executable(post_hook_fail_filepath)
-    validate_equals(all([prehook_success_file, posthook_success_file, prehook_fail_file, posthook_fail_file]), True, "Creation of pre-hook and post-hook files")
+    get_logger().log_info(f"files created : {prehook_success_file},{posthook_success_file},{prehook_fail_file},{posthook_fail_file}")
+    # validate_equals(all([prehook_success_file, posthook_success_file, prehook_fail_file, posthook_fail_file]), True, "Creation of pre-hook and post-hook files")
+    # Below validation is not working as file_exist uses sftp for validation which is not working for compute_ssh_connection
+    # validate_equals(all([prehook_success_file, posthook_success_file, prehook_fail_file, posthook_fail_file]), True, "Creation of pre-hook and post-hook files")
 
     # Get current timestamp for comparison
-    current_time = DateKeywords(storage_ssh_connection).get_current_time()
+    current_time = DateKeywords(storage_ssh_connection).get_current_epochtime()
+
+    # Sync filesystem to ensure all files are written to disk before crash
+    FileKeywords(storage_ssh_connection).sync_files()
 
     get_logger().log_info("Trigger kernel crash")
     KernelKeywords(storage_ssh_connection).trigger_kernel_crash()
@@ -509,13 +524,12 @@ def test_kdump_excecutable_hooks_storage_host(request):
     is_reboot_successful = SystemHostRebootKeywords(ssh_connection).wait_for_force_reboot(storage.get_host_name(), pre_uptime_of_host, 2400)
     validate_equals(is_reboot_successful, True, "crash reboot")
 
-    get_logger().log_info("verify kdump file generated after kernel crash")
-    core_files = FileKeywords(storage_ssh_connection).get_files_in_dir(kdump_path)
-    for core_file in core_files:
-        if "core" in core_file:
-            file_exists = FileKeywords(storage_ssh_connection).file_exists(f"{kdump_path}/{core_file}")
+    storage_ssh_connection = LabConnectionKeywords().get_storage_ssh(storage.get_host_name())
 
-    validate_equals(file_exists, True, "kdump file created")
+    # get_files_in_dir does not work as sftp connection is not working using compute_ssh_connection.using CLI
+    core_files_after_crash = storage_ssh_connection.send_as_sudo(f"ls -l {kdump_path}")
+    get_logger().log_info(f"no of Crash files after crash: {len(core_files_after_crash)}")
+    validate_equals((len(core_files_after_crash) - len(core_files_before_crash)), 1, "kdump file created")
 
     get_logger().log_info("Verify all pre-hooks and post-hooks are executed after kdump")
 
@@ -524,9 +538,8 @@ def test_kdump_excecutable_hooks_storage_host(request):
     last_success_post_hook_timestamp = GrepKeywords(storage_ssh_connection).grep_and_extract_fields(post_hook_success_msg, kdump_log_path, 1, [1, 2, 3, 4, 5])
     last_fail_pre_hook_timestamp = GrepKeywords(storage_ssh_connection).grep_and_extract_fields(pre_hook_fail_msg, kdump_log_path, 1, [1, 2, 3, 4, 5])
     last_fail_post_hook_timestamp = GrepKeywords(storage_ssh_connection).grep_and_extract_fields(post_hook_fail_msg, kdump_log_path, 1, [1, 2, 3, 4, 5])
+
     validate_equals(int(DateKeywords(storage_ssh_connection).get_custom_epochtime(last_success_pre_hook_timestamp)) > int(current_time), True, "Pre-hook execution successful")
     validate_equals(int(DateKeywords(storage_ssh_connection).get_custom_epochtime(last_success_post_hook_timestamp)) > int(current_time), True, "Post-hook execution successful")
     validate_equals(int(DateKeywords(storage_ssh_connection).get_custom_epochtime(last_fail_pre_hook_timestamp)) > int(current_time), True, "Failed Pre-hook execution")
     validate_equals(int(DateKeywords(storage_ssh_connection).get_custom_epochtime(last_fail_post_hook_timestamp)) > int(current_time), True, "Failed Post-hook execution")
-
-    delete_kdump_files(storage_ssh_connection, kdump_path)

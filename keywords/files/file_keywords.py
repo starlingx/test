@@ -566,3 +566,8 @@ class FileKeywords(BaseKeyword):
                 get_logger().log_error(f"Expected line '{expected_line}' not found in {file_path}")
                 return False
         return True
+
+    def sync_files(self) -> None:
+        """Sync all created files befor triggering Kernel crash"""
+        self.ssh_connection.send("sync")
+        self.validate_success_return_code(self.ssh_connection)
