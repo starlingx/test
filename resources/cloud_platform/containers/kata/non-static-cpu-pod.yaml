@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: non-static-cpu-pod
+spec:
+  runtimeClassName: kata
+  containers:
+    - name: non-static-cpu-container
+      image: nginx:stable-alpine

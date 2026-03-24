@@ -4,6 +4,7 @@ from keywords.base_keyword import BaseKeyword
 from keywords.cloud_platform.command_wrappers import source_openrc
 from keywords.cloud_platform.system.host.objects.system_host_label_assign_output import SystemHostLabelAssignOutput
 from keywords.cloud_platform.system.host.objects.system_host_label_list_output import SystemHostLabelListOutput
+from keywords.cloud_platform.system.host.system_host_lock_keywords import SystemHostLockKeywords
 
 
 class SystemHostLabelKeywords(BaseKeyword):
@@ -67,3 +68,31 @@ class SystemHostLabelKeywords(BaseKeyword):
         self.validate_success_return_code(self.ssh_connection)
 
         return output
+
+    def lock_host_assign_labels_and_unlock(self, host_name: str, labels: List[str]) -> None:
+        """
+        Locks the host, assigns the given labels, and unlocks the host.
+        Args:
+            host_name: The name of the host.
+            labels: List of label_key=label_value strings
+
+        """
+        lock_keywords = SystemHostLockKeywords(self.ssh_connection)
+        lock_keywords.lock_host(host_name)
+        labels_str = ' '.join(labels)
+        self.system_host_label_assign(host_name, labels_str)
+        lock_keywords.unlock_host(host_name)
+
+    def lock_host_remove_labels_and_unlock(self, host_name: str, labels: List[str]) -> None:
+        """
+        Locks the host, removes the given labels, and unlocks the host.
+        Args:
+            host_name: The name of the host.
+            labels: List of label_key strings
+
+        """
+        lock_keywords = SystemHostLockKeywords(self.ssh_connection)
+        lock_keywords.lock_host(host_name)
+        labels_str = ' '.join(labels)
+        self.system_host_label_remove(host_name, labels_str)
+        lock_keywords.unlock_host(host_name)
