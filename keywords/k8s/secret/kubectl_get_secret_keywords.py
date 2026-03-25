@@ -1,25 +1,25 @@
 import json
 
 from framework.ssh.ssh_connection import SSHConnection
-from keywords.base_keyword import BaseKeyword
-from keywords.k8s.k8s_command_wrapper import export_k8s_config
+from keywords.k8s.k8s_base_keyword import K8sBaseKeyword
 from keywords.k8s.secret.object.kubectl_get_secret_output import KubectlGetSecretOutput
 from keywords.k8s.secret.object.kubectl_secret_object import KubectlSecretObject
 
 
-class KubectlGetSecretsKeywords(BaseKeyword):
+class KubectlGetSecretsKeywords(K8sBaseKeyword):
     """
     Keyword class for retrieving Kubernetes secrets.
     """
 
-    def __init__(self, ssh_connection: SSHConnection):
+    def __init__(self, ssh_connection: SSHConnection, kubeconfig_path: str = None):
         """
         Constructor.
 
         Args:
             ssh_connection (SSHConnection): The SSH connection object.
+            kubeconfig_path (str, optional): Custom KUBECONFIG path. If None, uses default from config.
         """
-        self.ssh_connection = ssh_connection
+        super().__init__(ssh_connection, kubeconfig_path)
 
     def get_secrets(self, namespace: str = "default") -> KubectlGetSecretOutput:
         """
@@ -32,7 +32,7 @@ class KubectlGetSecretsKeywords(BaseKeyword):
             KubectlGetSecretOutput: Parsed secrets list
         """
         cmd = f"kubectl get secrets -n {namespace}"
-        output = self.ssh_connection.send(export_k8s_config(cmd))
+        output = self.ssh_connection.send(self.k8s_config.export(cmd))
         self.validate_success_return_code(self.ssh_connection)
         return KubectlGetSecretOutput(output)
 
@@ -61,7 +61,7 @@ class KubectlGetSecretsKeywords(BaseKeyword):
             KubectlSecretObject | None: The parsed secret object, or None if not found.
         """
         command = f"kubectl get secret {secret_name} -n {namespace} -o json"
-        output = self.ssh_connection.send(export_k8s_config(command))
+        output = self.ssh_connection.send(self.k8s_config.export(command))
         self.validate_success_return_code(self.ssh_connection)
         if isinstance(output, list):
             output = "".join(output)
@@ -103,6 +103,6 @@ class KubectlGetSecretsKeywords(BaseKeyword):
             command += f"={extra_parameters}"
         if base64:
             command += " | base64 --decode"
-        output = self.ssh_connection.send(export_k8s_config(command))
+        output = self.ssh_connection.send(self.k8s_config.export(command))
 
         return "".join(output)

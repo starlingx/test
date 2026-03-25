@@ -35,6 +35,14 @@ class K8sConfigExporter:
             cls._default_instance = cls()
         return cls._default_instance
 
+    def get_kubeconfig_path(self) -> str:
+        """Get the configured KUBECONFIG path.
+
+        Returns:
+            str: The KUBECONFIG path.
+        """
+        return self.kubeconfig
+
     def export(self, cmd: str) -> str:
         """Export KUBECONFIG environment variable and execute kubectl command.
 

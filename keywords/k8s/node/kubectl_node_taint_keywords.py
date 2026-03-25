@@ -1,22 +1,22 @@
 from framework.ssh.ssh_connection import SSHConnection
-from keywords.base_keyword import BaseKeyword
-from keywords.k8s.k8s_command_wrapper import export_k8s_config
+from keywords.k8s.k8s_base_keyword import K8sBaseKeyword
 from keywords.k8s.node.object.kubectl_node_taint_output import KubectlNodeTaintOutput
 
 
-class KubectlNodeTaintKeywords(BaseKeyword):
+class KubectlNodeTaintKeywords(K8sBaseKeyword):
     """
     Class for kubectl node taint operations
     """
 
-    def __init__(self, ssh_connection: SSHConnection):
+    def __init__(self, ssh_connection: SSHConnection, kubeconfig_path: str = None):
         """
         Constructor
 
         Args:
             ssh_connection(SSHConnection): SSH Connection object
+            kubeconfig_path (str, optional): Custom KUBECONFIG path. If None, uses default from config.
         """
-        self.ssh_connection = ssh_connection
+        super().__init__(ssh_connection, kubeconfig_path)
 
     def get_node_taints(self) -> KubectlNodeTaintOutput:
         """
@@ -31,8 +31,8 @@ class KubectlNodeTaintKeywords(BaseKeyword):
         #   controller-0    node-role.kubernetes.io/control-plane=:NoSchedule
         #   worker-0
         # Note: Nodes without taints will only show the node name without taint data
-        cmd = "kubectl get nodes -o go-template='{{printf \"%-50s %-12s\\n\" \"Node\" \"Taint\"}}{{- range .items}}{{- if $taint := (index .spec \"taints\") }}{{- .metadata.name }}{{ \"\\t\" }}{{- range $taint }}{{- .key }}={{ .value }}:{{ .effect }}{{ \"\\t\" }}{{- end }}{{- \"\\n\" }}{{- end}}{{- end}}'"
-        output = self.ssh_connection.send(export_k8s_config(cmd))
+        cmd = 'kubectl get nodes -o go-template=\'{{printf "%-50s %-12s\\n" "Node" "Taint"}}{{- range .items}}{{- if $taint := (index .spec "taints") }}{{- .metadata.name }}{{ "\\t" }}{{- range $taint }}{{- .key }}={{ .value }}:{{ .effect }}{{ "\\t" }}{{- end }}{{- "\\n" }}{{- end}}{{- end}}\''
+        output = self.ssh_connection.send(self.k8s_config.export(cmd))
         self.validate_success_return_code(self.ssh_connection)
         return KubectlNodeTaintOutput(output)
 

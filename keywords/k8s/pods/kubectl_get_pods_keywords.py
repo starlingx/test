@@ -5,12 +5,11 @@ from framework.exceptions.keyword_exception import KeywordException
 from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
 from framework.validation.validation import validate_equals_with_retry
-from keywords.base_keyword import BaseKeyword
-from keywords.k8s.k8s_command_wrapper import K8sConfigExporter
+from keywords.k8s.k8s_base_keyword import K8sBaseKeyword
 from keywords.k8s.pods.object.kubectl_get_pods_output import KubectlGetPodsOutput
 
 
-class KubectlGetPodsKeywords(BaseKeyword):
+class KubectlGetPodsKeywords(K8sBaseKeyword):
     """
     Class for 'kubectl get pods' keywords
     """
@@ -23,8 +22,7 @@ class KubectlGetPodsKeywords(BaseKeyword):
             ssh_connection (SSHConnection): An SSH connection object to the target system.
             kubeconfig_path (str, optional): Custom KUBECONFIG path. If None, uses default from config.
         """
-        self.ssh_connection = ssh_connection
-        self.k8s_config = K8sConfigExporter(kubeconfig_path)
+        super().__init__(ssh_connection, kubeconfig_path)
 
     def get_pods(self, namespace: str = None, label: str = None) -> KubectlGetPodsOutput:
         """Gets the k8s pods that are available using '-o wide'.

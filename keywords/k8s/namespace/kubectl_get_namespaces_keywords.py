@@ -1,44 +1,44 @@
-from keywords.base_keyword import BaseKeyword
-from keywords.k8s.k8s_command_wrapper import export_k8s_config
+from framework.ssh.ssh_connection import SSHConnection
+from keywords.k8s.k8s_base_keyword import K8sBaseKeyword
 from keywords.k8s.namespace.object.kubectl_get_namespaces_output import KubectlGetNamespacesOutput
 
 
-class KubectlGetNamespacesKeywords(BaseKeyword):
+class KubectlGetNamespacesKeywords(K8sBaseKeyword):
     """
     Class for 'kubectl get ns' keywords
     """
 
-    def __init__(self, ssh_connection):
-        """
-        Constructor
+    def __init__(self, ssh_connection: SSHConnection, kubeconfig_path: str = None):
+        """Constructor.
+
         Args:
-            ssh_connection:
+            ssh_connection (SSHConnection): SSH connection object.
+            kubeconfig_path (str, optional): Custom KUBECONFIG path. If None, uses default from config.
         """
-        self.ssh_connection = ssh_connection
+        super().__init__(ssh_connection, kubeconfig_path)
 
     def get_namespaces(self) -> KubectlGetNamespacesOutput:
-        """
-        Gets the k8s namespaces available.
-        Args:
+        """Get the available k8s namespaces.
 
-        Returns: KubectlGetNamespacesOutput
-
+        Returns:
+            KubectlGetNamespacesOutput: Parsed namespaces output.
         """
-        kubectl_get_namespaces_output = self.ssh_connection.send(export_k8s_config("kubectl get ns"))
+        kubectl_get_namespaces_output = self.ssh_connection.send(self.k8s_config.export("kubectl get ns"))
         self.validate_success_return_code(self.ssh_connection)
         namespaces_list_output = KubectlGetNamespacesOutput(kubectl_get_namespaces_output)
 
         return namespaces_list_output
 
-    def get_namespaces_by_label(self, label) -> KubectlGetNamespacesOutput:
-        """
-        Gets the k8s namespaces available for a given label.
+    def get_namespaces_by_label(self, label: str) -> KubectlGetNamespacesOutput:
+        """Get the available k8s namespaces for a given label.
+
         Args:
+            label (str): The label selector.
 
-        Returns: KubectlGetNamespacesOutput
-
+        Returns:
+            KubectlGetNamespacesOutput: Parsed namespaces output.
         """
-        kubectl_get_namespaces_output = self.ssh_connection.send(export_k8s_config(f"kubectl get ns -l={label}"))
+        kubectl_get_namespaces_output = self.ssh_connection.send(self.k8s_config.export(f"kubectl get ns -l={label}"))
         self.validate_success_return_code(self.ssh_connection)
         namespaces_list_output = KubectlGetNamespacesOutput(kubectl_get_namespaces_output)
 
