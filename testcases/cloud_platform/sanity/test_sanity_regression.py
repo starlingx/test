@@ -1144,7 +1144,9 @@ def test_sriovdp_netdev_single_pod_1vf_lock(request: any):
     assert SystemHostLockKeywords(ssh_connection).lock_host(worker_to_use.get_name()), f"failed to lock host {worker_to_use.get_name()}"
     assert SystemHostLockKeywords(ssh_connection).unlock_host(worker_to_use.get_name()), f"failed to unlock host {worker_to_use.get_name()}"
 
-    # check calicoctl pod is running
+    # re-deploy calicoctl pod after unlock (plain pods are not recreated automatically)
+    KubectlDeletePodsKeywords(ssh_connection).cleanup_pod("calicoctl", namespace="kube-system")
+    KubectlApplyPodsKeywords(ssh_connection).apply_from_yaml("/home/sysadmin/calicoctl_pod.yaml")
     assert KubectlGetPodsKeywords(ssh_connection).wait_for_pod_status("calicoctl", "Running", namespace="kube-system"), "calicoctl did not start in time"
 
     # check that the daemonset pod is running
@@ -1535,7 +1537,8 @@ def sriov_deploy_pods(request: any, net_def_yaml: str, calicoctl_pod_yaml: str, 
     kubectl_apply_pods_keywords.apply_from_yaml("/home/sysadmin/calicoctl_cr.yaml")
     kubectl_apply_pods_keywords.apply_from_yaml("/home/sysadmin/calicoctl_crb.yaml")
 
-    # apply yaml and check pod is rumnning
+    # delete any stale calicoctl pod before applying to ensure a clean start
+    KubectlDeletePodsKeywords(ssh_connection).cleanup_pod("calicoctl", namespace="kube-system")
     kubectl_apply_pods_keywords.apply_from_yaml("/home/sysadmin/calicoctl_pod.yaml")
     assert KubectlGetPodsKeywords(ssh_connection).wait_for_pod_status("calicoctl", "Running", namespace="kube-system"), "calicoctl did not start in time"
 
