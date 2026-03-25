@@ -113,7 +113,7 @@ class DcManagerSubcloudListKeywords(BaseKeyword):
 
             return sc_availability
 
-        validate_equals_with_retry(get_availability, "online", "Validate if subcloud is in online state.")
+        validate_equals_with_retry(get_availability, "online", "Validate if subcloud is in online state.", timeout=300, polling_sleep_time=10)
 
     def validate_subcloud_sync_status(self, subcloud_name: str, expected_sync_status: str) -> None:
         """

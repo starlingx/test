@@ -151,6 +151,32 @@ class DCManagerSubcloudDeployKeywords(BaseKeyword):
             dc_manager_sc_list_kw = DcManagerSubcloudListKeywords(self.ssh_connection)
             dc_manager_sc_list_kw.validate_subcloud_status(subcloud_name, success_status)
 
+    def dcmanager_subcloud_enroll(self, subcloud_name: str, factory_restored: bool = False, wait_for_status: bool = True):
+
+        deployment_assets_config = ConfigurationManager.get_deployment_assets_config()
+        sc_config = ConfigurationManager.get_lab_config().get_subcloud(subcloud_name)
+        sc_assets = deployment_assets_config.get_subcloud_deployment_assets(subcloud_name)
+
+        admin_creds = sc_config.get_admin_credentials()
+        install_file = sc_assets.get_install_file()
+        bootstrap_file = sc_assets.get_bootstrap_file()
+        # Get the subcloud bootstrap address
+        boot_add = sc_config.get_first_controller().get_ip()
+        deploy_file = sc_assets.get_deployment_config_file()
+
+        cmd = f"dcmanager subcloud deploy enroll {subcloud_name} --sysadmin-password {admin_creds.get_password()}"
+        if not factory_restored:
+            cmd += f" --bootstrap-address {boot_add} --bootstrap-values {bootstrap_file} --install-values {install_file} --bmc-password {admin_creds.get_password()}"
+
+        self.ssh_connection.send(source_openrc(cmd))
+        self.validate_success_return_code(self.ssh_connection)
+
+        if wait_for_status:
+            success_status = "enroll-complete"
+            dc_manager_sc_list_kw = DcManagerSubcloudListKeywords(self.ssh_connection)
+            dc_manager_sc_list_kw.validate_subcloud_status(subcloud_name, success_status)
+
+
     def dcmanager_subcloud_deploy_resume(self, subcloud_name: str, wait_for_status: bool = True):
         """Creates the subcloud using 'dcmanager subcloud deploy resume'.
 
