@@ -285,6 +285,8 @@ def configure_testcase_log_handler(logger_config: LoggerConfig, log_file: str) -
     _LOGGER.test_case_log_dir = os.path.join(_LOGGER.get_log_folder(), numbered_folder_name)
     os.makedirs(_LOGGER.test_case_log_dir, exist_ok=True)
     full_log_file_path = os.path.join(_LOGGER.test_case_log_dir, "log.txt")
+    system_log = os.path.join(_LOGGER.test_case_log_dir, "system_logs")
+    os.makedirs(system_log, exist_ok=True)
 
     file_handler = logging.FileHandler(full_log_file_path)
     file_handler.setFormatter(log_formatter)
