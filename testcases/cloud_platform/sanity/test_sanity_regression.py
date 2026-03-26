@@ -1091,6 +1091,7 @@ def test_sriovdp_netdev_single_pod_1vf_lock(request: any):
     Test Steps:
         - Create a network attachment definition for the SR-IOV VFs
         - Create a pod with SR-IOV netdevice NICs
+        - Deploy DaemonSet pod
         - Verify if pod is in Running State
         - Verify if DaemonSet has expected values
         - Lock/unlock host
@@ -1099,23 +1100,23 @@ def test_sriovdp_netdev_single_pod_1vf_lock(request: any):
         - Delete the pods
         - Delete the network attachment definition
 
+    Note:
+        On simplex labs, controller-0 is used for lock/unlock.
+        calicoctl is a plain pod that may be removed by puppet on newer builds
+        during lock/unlock.
+
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
 
-    # Get a worker node from the lab
+    # Get a worker node from the lab; on simplex controller-0 acts as both controller and worker
     lab_config = ConfigurationManager.get_lab_config()
-    computes = []
-    for node in lab_config.get_nodes():
-        if "lab_has_worker" in node.get_node_capabilities():
-            computes.append(node)
-
-    assert len(computes) > 0, "we do not have any worker nodes for this test"
-    worker_to_use = computes[0]  # pick the first one
+    computes = [node for node in lab_config.get_nodes() if "lab_has_worker" in node.get_node_capabilities()]
+    host_to_lock = computes[0].get_name() if computes else SystemHostListKeywords(ssh_connection).get_active_controller().get_host_name()
 
     # Deploy required images
     sriov_deploy_images_to_local_registry(ssh_connection)
 
-    # Deploy required pods
+    # Deploy required pods (applies Calico IPPool — a config change puppet will reconcile on next lock/unlock)
     sriov_deploy_pods(request, "netdef_test-sriovdp.yaml", "calicoctl-ippool-sriov-pool-group0-data1-vf1.yaml", ssh_connection)
 
     # Deploy daemon set pod
@@ -1140,14 +1141,9 @@ def test_sriovdp_netdev_single_pod_1vf_lock(request: any):
 
     assert interface.state == "UP", "interface state was not UP"
 
-    # lock and unlock host and ensure pods come back online and interface is up
-    assert SystemHostLockKeywords(ssh_connection).lock_host(worker_to_use.get_name()), f"failed to lock host {worker_to_use.get_name()}"
-    assert SystemHostLockKeywords(ssh_connection).unlock_host(worker_to_use.get_name()), f"failed to unlock host {worker_to_use.get_name()}"
-
-    # re-deploy calicoctl pod after unlock (plain pods are not recreated automatically)
-    KubectlDeletePodsKeywords(ssh_connection).cleanup_pod("calicoctl", namespace="kube-system")
-    KubectlApplyPodsKeywords(ssh_connection).apply_from_yaml("/home/sysadmin/calicoctl_pod.yaml")
-    assert KubectlGetPodsKeywords(ssh_connection).wait_for_pod_status("calicoctl", "Running", namespace="kube-system"), "calicoctl did not start in time"
+    # lock and unlock host and verify daemonset pod survives
+    assert SystemHostLockKeywords(ssh_connection).lock_host(host_to_lock), f"failed to lock host {host_to_lock}"
+    assert SystemHostLockKeywords(ssh_connection).unlock_host(host_to_lock), f"failed to unlock host {host_to_lock}"
 
     # check that the daemonset pod is running
     def get_running_pods() -> bool:
@@ -1164,6 +1160,13 @@ def test_sriovdp_netdev_single_pod_1vf_lock(request: any):
         return False
 
     validate_equals_with_retry(get_running_pods, True, "Validate pod is running", 300)
+
+    # Verify daemonset has expected values after lock/unlock
+    daemonset = KubectlGetDaemonsetsKeywords(ssh_connection).get_daemonsets().get_daemonset("daemonset-sriovdp-netdev-single-pod")
+    assert daemonset, "no daemonset was found after lock/unlock"
+    assert daemonset.get_desired() == 1, "daemonset desired value was not 1 after lock/unlock"
+    assert daemonset.get_ready() == 1, "daemonset ready value was not 1 after lock/unlock"
+    assert daemonset.get_available() == 1, "daemonset available value was not 1 after lock/unlock"
 
     def get_interface_state() -> str:
         """
@@ -1216,8 +1219,13 @@ def test_sriovdp_netdev_single_pod_1vf_lock_ipv4(request: any):
     # Deploy required images
     sriov_deploy_images_to_local_registry(ssh_connection)
 
-    # Deploy required pods
+    # Deploy required pods (IPv4 uses only a NetworkAttachmentDefinition, no Calico IPPool config change)
     sriov_deploy_pods_ipv4(request, ssh_connection)
+
+    # Stabilization lock/unlock: lets puppet reconcile any pending config change so the
+    # subsequent test lock/unlock has no pending config and will not disrupt plain pods
+    assert SystemHostLockKeywords(ssh_connection).lock_host(worker_to_use.get_name()), f"failed to lock host {worker_to_use.get_name()} during stabilization"
+    assert SystemHostLockKeywords(ssh_connection).unlock_host(worker_to_use.get_name()), f"failed to unlock host {worker_to_use.get_name()} during stabilization"
 
     # Deploy daemon set pod
     deploy_daemonset_pod(request, "daemon_set_daemonset_ipv4.yaml", ssh_connection)
@@ -1260,6 +1268,13 @@ def test_sriovdp_netdev_single_pod_1vf_lock_ipv4(request: any):
         return False
 
     validate_equals_with_retry(get_running_pods, True, "Validate pod is running", 300)
+
+    # Verify daemonset has expected values after lock/unlock
+    daemonset = KubectlGetDaemonsetsKeywords(ssh_connection).get_daemonsets().get_daemonset("daemonset-sriovdp-netdev-single-pod")
+    assert daemonset, "no daemonset was found after lock/unlock"
+    assert daemonset.get_desired() == 1, "daemonset desired value was not 1 after lock/unlock"
+    assert daemonset.get_ready() == 1, "daemonset ready value was not 1 after lock/unlock"
+    assert daemonset.get_available() == 1, "daemonset available value was not 1 after lock/unlock"
 
     def get_interface_state() -> str:
         """
@@ -1516,8 +1531,9 @@ def sriov_deploy_pods(request: any, net_def_yaml: str, calicoctl_pod_yaml: str, 
         Finalizer to remove pods, daemonsets and network definitions
 
         """
-        rc = KubectlDeletePodsKeywords(ssh_connection).cleanup_pod("calicoctl", namespace="kube-system")
-        rc += KubectlDeleteNetworkDefinitionKeywords(ssh_connection).cleanup_network_definition("netdev-sriov")
+        # calicoctl may have been removed by puppet during lock/unlock — ignore if already gone
+        KubectlDeletePodsKeywords(ssh_connection).cleanup_pod("calicoctl", namespace="kube-system")
+        rc = KubectlDeleteNetworkDefinitionKeywords(ssh_connection).cleanup_network_definition("netdev-sriov")
         assert rc == 0
 
     request.addfinalizer(remove_pods_and_network_definitions)
@@ -1538,7 +1554,9 @@ def sriov_deploy_pods(request: any, net_def_yaml: str, calicoctl_pod_yaml: str, 
     kubectl_apply_pods_keywords.apply_from_yaml("/home/sysadmin/calicoctl_crb.yaml")
 
     # delete any stale calicoctl pod before applying to ensure a clean start
-    KubectlDeletePodsKeywords(ssh_connection).cleanup_pod("calicoctl", namespace="kube-system")
+    calicoctl_pods = [p for p in KubectlGetPodsKeywords(ssh_connection).get_pods(namespace="kube-system").get_pods() if p.get_name() == "calicoctl"]
+    if calicoctl_pods:
+        KubectlDeletePodsKeywords(ssh_connection).cleanup_pod("calicoctl", namespace="kube-system")
     kubectl_apply_pods_keywords.apply_from_yaml("/home/sysadmin/calicoctl_pod.yaml")
     assert KubectlGetPodsKeywords(ssh_connection).wait_for_pod_status("calicoctl", "Running", namespace="kube-system"), "calicoctl did not start in time"
 
@@ -1605,11 +1623,13 @@ def deploy_daemonset_pod(request: any, daemonset_pod_yaml: str, ssh_connection: 
 
     request.addfinalizer(remove_daemonset_pod)
 
-    # check that the daemonset pod is running
-    pods = KubectlGetPodsKeywords(ssh_connection).get_pods()
-    pod = pods.get_pods_start_with("daemonset-sriovdp-netdev-single-pod")
+    # wait for the daemonset pod to be scheduled and reach Running (SR-IOV device plugin may need time after unlock)
+    def get_daemonset_pod_count() -> int:
+        return len(KubectlGetPodsKeywords(ssh_connection).get_pods().get_pods_start_with("daemonset-sriovdp-netdev-single-pod"))
 
-    assert len(pod) == 1, "wrong number of pods"
+    validate_equals_with_retry(get_daemonset_pod_count, 1, "Waiting for daemonset pod to be scheduled", 300)
+
+    pod = KubectlGetPodsKeywords(ssh_connection).get_pods().get_pods_start_with("daemonset-sriovdp-netdev-single-pod")
     assert KubectlGetPodsKeywords(ssh_connection).wait_for_pod_status(
         pod[0].get_name(),
         "Running",
