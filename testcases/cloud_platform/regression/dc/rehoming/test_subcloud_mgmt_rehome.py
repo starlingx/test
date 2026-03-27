@@ -1,8 +1,10 @@
 from pytest import fail, mark
 
+from framework.ssh.secure_transfer_file.secure_transfer_file import SecureTransferFile
 from config.configuration_manager import ConfigurationManager
 from framework.logging.automation_logger import get_logger
 from framework.validation.validation import validate_equals, validate_not_equals
+from keywords.files.file_keywords import FileKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_add_keywords import DcManagerSubcloudAddKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_delete_keywords import DcManagerSubcloudDeleteKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_list_keywords import DcManagerSubcloudListKeywords
@@ -39,11 +41,37 @@ def test_rehome_one_subcloud_mgmt_subcloud(request):
     lowest_subcloud = dcmanager_subcloud_list_keywords.get_dcmanager_subcloud_list().get_healthy_subcloud_with_lowest_id()
     subcloud_name = lowest_subcloud.get_name()
     subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
+    lab_config = ConfigurationManager.get_lab_config()
+    dest_user = lab_config.get_admin_credentials().get_user_name()
+    dest_password = lab_config.get_admin_credentials().get_password()
+    dest_host = lab_config.get_secondary_system_controller_config().get_floating_ip()
 
     subcloud_hostname = SystemHostListKeywords(subcloud_ssh).get_active_controller().get_host_name()
 
     subcloud_bootstrap_values = deployment_assets_config.get_subcloud_deployment_assets(subcloud_name).get_bootstrap_file()
     subcloud_install_values = deployment_assets_config.get_subcloud_deployment_assets(subcloud_name).get_install_file()
+
+    file_keywords = FileKeywords(origin_system_controller_ssh)
+    get_logger().log_test_case_step(f"Transfer {subcloud_bootstrap_values} to target controller.")
+    file_keywords.rsync_to_remote_server(
+        local_dest_path=subcloud_bootstrap_values,
+        remote_server=dest_host,
+        remote_user=dest_user,
+        remote_password=dest_password,
+        remote_path=subcloud_bootstrap_values,  # Same path on destination
+        recursive=False,
+        rsync_options="--mkpath"
+    )
+    get_logger().log_test_case_step(f"Transfer {subcloud_install_values} to target controller.")
+    file_keywords.rsync_to_remote_server(
+        local_dest_path=subcloud_install_values,
+        remote_server=dest_host,
+        remote_user=dest_user,
+        remote_password=dest_password,
+        remote_path=subcloud_install_values,  # Same path on destination
+        recursive=False,
+        rsync_options="--mkpath"
+    )
 
     network_list = SystemHostRouteKeywords(subcloud_ssh).get_system_host_route_list_networks(subcloud_hostname)
     subcloud_mgmt_gateway_address = SystemAddrpoolListKeywords(subcloud_ssh).get_system_addrpool_list().get_management_gateway_address()
@@ -106,9 +134,35 @@ def test_rehome_one_n_1_subcloud_mgmt_network(request):
     subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
 
     subcloud_hostname = SystemHostListKeywords(subcloud_ssh).get_active_controller().get_host_name()
+    lab_config = ConfigurationManager.get_lab_config()
+    dest_user = lab_config.get_admin_credentials().get_user_name()
+    dest_password = lab_config.get_admin_credentials().get_password()
+    dest_host = lab_config.get_secondary_system_controller_config().get_floating_ip()
 
     subcloud_bootstrap_values = deployment_assets_config.get_subcloud_deployment_assets(subcloud_name).get_bootstrap_file()
     subcloud_install_values = deployment_assets_config.get_subcloud_deployment_assets(subcloud_name).get_install_file()
+
+    file_keywords = FileKeywords(origin_system_controller_ssh)
+    get_logger().log_test_case_step(f"Transfer {subcloud_bootstrap_values} to target controller.")
+    file_keywords.rsync_to_remote_server(
+        local_dest_path=subcloud_bootstrap_values,
+        remote_server=dest_host,
+        remote_user=dest_user,
+        remote_password=dest_password,
+        remote_path=subcloud_bootstrap_values,  # Same path on destination
+        recursive=False,
+        rsync_options="--mkpath"
+    )
+    get_logger().log_test_case_step(f"Transfer {subcloud_install_values} to target controller.")
+    file_keywords.rsync_to_remote_server(
+        local_dest_path=subcloud_install_values,
+        remote_server=dest_host,
+        remote_user=dest_user,
+        remote_password=dest_password,
+        remote_path=subcloud_install_values,  # Same path on destination
+        recursive=False,
+        rsync_options="--mkpath"
+    )
 
     network_list = SystemHostRouteKeywords(subcloud_ssh).get_system_host_route_list_networks(subcloud_hostname)
     subcloud_mgmt_gateway_address = SystemAddrpoolListKeywords(subcloud_ssh).get_system_addrpool_list().get_management_gateway_address()
