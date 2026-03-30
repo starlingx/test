@@ -34,7 +34,7 @@ class SMKeywords(BaseKeyword):
             str: service status
 
         """
-        service_status = self.ssh_connection.send(f"sm-query service {service_name}")
+        service_status = self.ssh_connection.send_as_sudo(f"sm-query service {service_name}")
         return str(service_status)
 
     def is_service_enabled(self, service_name: str) -> bool:
