@@ -1,21 +1,21 @@
 from framework.ssh.ssh_connection import SSHConnection
-from keywords.base_keyword import BaseKeyword
-from keywords.k8s.k8s_command_wrapper import export_k8s_config
+from keywords.k8s.k8s_base_keyword import K8sBaseKeyword
 
 
-class KubectlDeleteSystemInventoryKeywords(BaseKeyword):
+class KubectlDeleteSystemInventoryKeywords(K8sBaseKeyword):
     """
     Keywords for deleting SystemInventory resources.
     """
 
-    def __init__(self, ssh_connection: SSHConnection):
+    def __init__(self, ssh_connection: SSHConnection, kubeconfig_path: str = None):
         """
         Constructor
 
         Args:
             ssh_connection (SSHConnection): The SSH connection object
+            kubeconfig_path (str, optional): Custom KUBECONFIG path. If None, uses default from config.
         """
-        self.ssh_connection = ssh_connection
+        super().__init__(ssh_connection, kubeconfig_path)
 
     def delete_system_inventory(self, sysinv_name: str, namespace: str) -> str:
         """
@@ -28,6 +28,6 @@ class KubectlDeleteSystemInventoryKeywords(BaseKeyword):
         Returns:
             str: The output from the kubectl delete command.
         """
-        output = self.ssh_connection.send(export_k8s_config(f"kubectl delete -n {namespace} systeminventory {sysinv_name}"))
+        output = self.ssh_connection.send(self.k8s_config.export(f"kubectl delete -n {namespace} systeminventory {sysinv_name}"))
         self.validate_success_return_code(self.ssh_connection)
         return output

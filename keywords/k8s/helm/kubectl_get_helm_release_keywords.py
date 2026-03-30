@@ -1,23 +1,23 @@
 from framework.ssh.ssh_connection import SSHConnection
 from framework.validation.validation import validate_equals_with_retry
-from keywords.base_keyword import BaseKeyword
 from keywords.k8s.helm.object.kubectl_get_helm_release_output import KubectlGetHelmReleaseOutput
-from keywords.k8s.k8s_command_wrapper import export_k8s_config
+from keywords.k8s.k8s_base_keyword import K8sBaseKeyword
 
 
-class KubectlGetHelmReleaseKeywords(BaseKeyword):
+class KubectlGetHelmReleaseKeywords(K8sBaseKeyword):
     """
     Class for 'kubectl get hr' keywords
     """
 
-    def __init__(self, ssh_connection: SSHConnection):
+    def __init__(self, ssh_connection: SSHConnection, kubeconfig_path: str = None):
         """
         Constructor
 
         Args:
             ssh_connection (SSHConnection): An instance of an SSH connection.
+            kubeconfig_path (str, optional): Custom KUBECONFIG path. If None, uses default from config.
         """
-        self.ssh_connection = ssh_connection
+        super().__init__(ssh_connection, kubeconfig_path)
 
     def get_helm_releases_by_namespace(self, namespace: str) -> KubectlGetHelmReleaseOutput:
         """
@@ -30,7 +30,7 @@ class KubectlGetHelmReleaseKeywords(BaseKeyword):
              KubectlGetHelmReleaseOutput: List of KubectlGetHelmReleaseOutput
 
         """
-        kubectl_get_helm_releases_output = self.ssh_connection.send(export_k8s_config(f"kubectl get hr -n {namespace}"))
+        kubectl_get_helm_releases_output = self.ssh_connection.send(self.k8s_config.export(f"kubectl get hr -n {namespace}"))
         self.validate_success_return_code(self.ssh_connection)
         kubectl_list_helm_releases_output = KubectlGetHelmReleaseOutput(kubectl_get_helm_releases_output)
 

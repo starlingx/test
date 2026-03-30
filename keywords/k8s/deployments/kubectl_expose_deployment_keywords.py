@@ -1,30 +1,28 @@
-from keywords.base_keyword import BaseKeyword
-from keywords.k8s.k8s_command_wrapper import export_k8s_config
+from framework.ssh.ssh_connection import SSHConnection
+from keywords.k8s.k8s_base_keyword import K8sBaseKeyword
 
 
-class KubectlExposeDeploymentKeywords(BaseKeyword):
+class KubectlExposeDeploymentKeywords(K8sBaseKeyword):
     """
     Class for Expose Deployment Keywords
     """
 
-    def __init__(self, ssh_connection):
-        """
-        Constructor
+    def __init__(self, ssh_connection: SSHConnection, kubeconfig_path: str = None):
+        """Constructor.
+
         Args:
-            ssh_connection:
+            ssh_connection (SSHConnection): SSH connection object.
+            kubeconfig_path (str, optional): Custom KUBECONFIG path. If None, uses default from config.
         """
-        self.ssh_connection = ssh_connection
+        super().__init__(ssh_connection, kubeconfig_path)
 
-    def expose_deployment(self, deployment_name: str, type: str, name: str):
-        """
-        Exposes the deployment
+    def expose_deployment(self, deployment_name: str, type: str, name: str) -> None:
+        """Expose the deployment as a service.
+
         Args:
-            deployment_name (): the deployment name
-            type (): the type
-            name (): the name
-
-        Returns:
-
+            deployment_name (str): The deployment name.
+            type (str): The service type.
+            name (str): The service name.
         """
-        self.ssh_connection.send(export_k8s_config(f"kubectl expose deployment {deployment_name} --type={type} --name={name}"))
+        self.ssh_connection.send(self.k8s_config.export(f"kubectl expose deployment {deployment_name} --type={type} --name={name}"))
         self.validate_success_return_code(self.ssh_connection)

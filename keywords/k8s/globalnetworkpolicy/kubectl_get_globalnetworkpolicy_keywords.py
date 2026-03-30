@@ -1,22 +1,22 @@
 from framework.ssh.ssh_connection import SSHConnection
-from keywords.base_keyword import BaseKeyword
 from keywords.k8s.globalnetworkpolicy.object.kubectl_get_globalnetworkpolicy_output import KubectlGetGlobalNetworkPolicyOutput
 from keywords.k8s.globalnetworkpolicy.object.kubectl_globalnetworkpolicy_object import KubectlGlobalNetworkPolicyObject
-from keywords.k8s.k8s_command_wrapper import export_k8s_config
+from keywords.k8s.k8s_base_keyword import K8sBaseKeyword
 
 
-class KubectlGetGlobalNetworkPolicyKeywords(BaseKeyword):
+class KubectlGetGlobalNetworkPolicyKeywords(K8sBaseKeyword):
     """
     Class for 'kubectl get globalnetworkpolicies.crd.projectcalico.org' keywords
     """
 
-    def __init__(self, ssh_connection: SSHConnection):
+    def __init__(self, ssh_connection: SSHConnection, kubeconfig_path: str = None):
         """Constructor.
 
         Args:
             ssh_connection (SSHConnection): SSH connection object.
+            kubeconfig_path (str, optional): Custom KUBECONFIG path. If None, uses default from config.
         """
-        self.ssh_connection = ssh_connection
+        super().__init__(ssh_connection, kubeconfig_path)
 
     def get_globalnetworkpolicies(self) -> KubectlGetGlobalNetworkPolicyOutput:
         """Gets the Calico GlobalNetworkPolicies available.
@@ -24,7 +24,7 @@ class KubectlGetGlobalNetworkPolicyKeywords(BaseKeyword):
         Returns:
             KubectlGetGlobalNetworkPolicyOutput: The GlobalNetworkPolicy output.
         """
-        kubectl_get_globalnetworkpolicy_output = self.ssh_connection.send(export_k8s_config("kubectl get globalnetworkpolicies.crd.projectcalico.org"))
+        kubectl_get_globalnetworkpolicy_output = self.ssh_connection.send(self.k8s_config.export("kubectl get globalnetworkpolicies.crd.projectcalico.org"))
         self.validate_success_return_code(self.ssh_connection)
         globalnetworkpolicy_list_output = KubectlGetGlobalNetworkPolicyOutput(kubectl_get_globalnetworkpolicy_output)
 
@@ -77,6 +77,6 @@ class KubectlGetGlobalNetworkPolicyKeywords(BaseKeyword):
         Raises:
             Exception: If kubectl command fails or policy not found.
         """
-        output = self.ssh_connection.send(export_k8s_config(f"kubectl get globalnetworkpolicy {policy_name} -o yaml"))
+        output = self.ssh_connection.send(self.k8s_config.export(f"kubectl get globalnetworkpolicy {policy_name} -o yaml"))
         self.validate_success_return_code(self.ssh_connection)
         return "\n".join(output) if isinstance(output, list) else output

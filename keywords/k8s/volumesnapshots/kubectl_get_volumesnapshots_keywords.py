@@ -1,24 +1,24 @@
 import time
 
 from framework.ssh.ssh_connection import SSHConnection
-from keywords.base_keyword import BaseKeyword
-from keywords.k8s.k8s_command_wrapper import export_k8s_config
+from keywords.k8s.k8s_base_keyword import K8sBaseKeyword
 from keywords.k8s.volumesnapshots.object.kubectl_get_volumesnapshots_output import KubectlGetVolumesnapshotsOutput
 
 
-class KubectlGetVolumesnapshotsKeywords(BaseKeyword):
+class KubectlGetVolumesnapshotsKeywords(K8sBaseKeyword):
     """
     Class for 'kubectl get volumesnapshots.snapshot.storage.k8s.io' keywords
     """
 
-    def __init__(self, ssh_connection: SSHConnection):
+    def __init__(self, ssh_connection: SSHConnection, kubeconfig_path: str = None):
         """
         Initialize the KubectlGetVolumesnapshotsKeywords class.
 
         Args:
             ssh_connection (SSHConnection): An SSH connection object to the target system.
+            kubeconfig_path (str, optional): Custom KUBECONFIG path. If None, uses default from config.
         """
-        self.ssh_connection = ssh_connection
+        super().__init__(ssh_connection, kubeconfig_path)
 
     def get_volumesnapshots(self, namespace: str = None, label: str = None) -> KubectlGetVolumesnapshotsOutput:
         """
@@ -37,7 +37,7 @@ class KubectlGetVolumesnapshotsKeywords(BaseKeyword):
         if namespace:
             arg_namespace = f"-n {namespace}"
 
-        kubectl_get_volumesnapshots_output = self.ssh_connection.send(export_k8s_config(f"kubectl {arg_namespace} -o wide get volumesnapshots.snapshot.storage.k8s.io"))
+        kubectl_get_volumesnapshots_output = self.ssh_connection.send(self.k8s_config.export(f"kubectl {arg_namespace} -o wide get volumesnapshots.snapshot.storage.k8s.io"))
         self.validate_success_return_code(self.ssh_connection)
         volumesnapshots_list_output = KubectlGetVolumesnapshotsOutput(kubectl_get_volumesnapshots_output)
 

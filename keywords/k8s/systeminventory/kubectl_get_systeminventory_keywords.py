@@ -1,22 +1,23 @@
 from framework.logging.automation_logger import get_logger
-from keywords.base_keyword import BaseKeyword
-from keywords.k8s.k8s_command_wrapper import export_k8s_config
+from framework.ssh.ssh_connection import SSHConnection
+from keywords.k8s.k8s_base_keyword import K8sBaseKeyword
 from keywords.k8s.systeminventory.object.kubectl_systeminventory_output import KubectlSystemInventoryOutput
 
 
-class KubectlGetSystemInventoryKeywords(BaseKeyword):
+class KubectlGetSystemInventoryKeywords(K8sBaseKeyword):
     """
     Keywords for kubectl SystemInventory operations.
     """
 
-    def __init__(self, ssh_connection: object) -> None:
+    def __init__(self, ssh_connection: SSHConnection, kubeconfig_path: str = None) -> None:
         """
         Constructor.
 
         Args:
-            ssh_connection (object): SSH connection object
+            ssh_connection (SSHConnection): SSH connection object
+            kubeconfig_path (str, optional): Custom KUBECONFIG path. If None, uses default from config.
         """
-        self.ssh_connection = ssh_connection
+        super().__init__(ssh_connection, kubeconfig_path)
 
     def get_system_inventory_json(self, sysinv_name: str, namespace: str = "default") -> KubectlSystemInventoryOutput:
         """
@@ -32,7 +33,7 @@ class KubectlGetSystemInventoryKeywords(BaseKeyword):
         get_logger().log_info(f"Getting SystemInventory '{sysinv_name}' in namespace '{namespace}'")
 
         cmd = f"kubectl get systeminventory {sysinv_name} -n {namespace} -o json"
-        output = self.ssh_connection.send(export_k8s_config(cmd))
+        output = self.ssh_connection.send(self.k8s_config.export(cmd))
         self.validate_success_return_code(self.ssh_connection)
 
         return KubectlSystemInventoryOutput(output, sysinv_name)
@@ -49,5 +50,5 @@ class KubectlGetSystemInventoryKeywords(BaseKeyword):
             bool: True if SystemInventory exists, False otherwise
         """
         cmd = f"kubectl get systeminventory {sysinv_name} -n {namespace}"
-        self.ssh_connection.send(export_k8s_config(cmd))
+        self.ssh_connection.send(self.k8s_config.export(cmd))
         return self.ssh_connection.get_return_code() == 0

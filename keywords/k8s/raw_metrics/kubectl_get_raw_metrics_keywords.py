@@ -1,22 +1,22 @@
 from framework.ssh.ssh_connection import SSHConnection
-from keywords.base_keyword import BaseKeyword
-from keywords.k8s.k8s_command_wrapper import export_k8s_config
+from keywords.k8s.k8s_base_keyword import K8sBaseKeyword
 from keywords.k8s.raw_metrics.object.kubectl_get_raw_metrics_output import KubectlGetRawMetricsOutput
 
 
-class KubectlGetRawMetricsKeywords(BaseKeyword):
+class KubectlGetRawMetricsKeywords(K8sBaseKeyword):
     """
     Keyword class for get raw metrics
     """
 
-    def __init__(self, ssh_connection: SSHConnection):
+    def __init__(self, ssh_connection: SSHConnection, kubeconfig_path: str = None):
         """
         Constructor
 
         Args:
             ssh_connection(SSHConnection): SSH connection object
+            kubeconfig_path (str, optional): Custom KUBECONFIG path. If None, uses default from config.
         """
-        self.ssh_connection = ssh_connection
+        super().__init__(ssh_connection, kubeconfig_path)
 
     def get_raw_metrics_with_grep(self, grep: str) -> list:
         """
@@ -32,7 +32,7 @@ class KubectlGetRawMetricsKeywords(BaseKeyword):
         Returns:
             list: A list of filtered raw metrics lines matching the grep pattern.
         """
-        command = export_k8s_config(f"kubectl get --raw /metrics |  grep {grep}")
+        command = self.k8s_config.export(f"kubectl get --raw /metrics |  grep {grep}")
         output = self.ssh_connection.send(command)
         raw_metrics_output = KubectlGetRawMetricsOutput(output)
 

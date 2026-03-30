@@ -1,19 +1,19 @@
 from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
-from keywords.base_keyword import BaseKeyword
-from keywords.k8s.k8s_command_wrapper import export_k8s_config
+from keywords.k8s.k8s_base_keyword import K8sBaseKeyword
 
 
-class KubectlLabelNodeKeywords(BaseKeyword):
+class KubectlLabelNodeKeywords(K8sBaseKeyword):
     """Class for kubectl label node keywords."""
 
-    def __init__(self, ssh_connection: SSHConnection):
+    def __init__(self, ssh_connection: SSHConnection, kubeconfig_path: str = None):
         """Constructor.
 
         Args:
             ssh_connection (SSHConnection): SSH connection object.
+            kubeconfig_path (str, optional): Custom KUBECONFIG path. If None, uses default from config.
         """
-        self.ssh_connection = ssh_connection
+        super().__init__(ssh_connection, kubeconfig_path)
 
     def label_node(self, node_name: str, label_key: str, label_value: str) -> None:
         """Label a Kubernetes node.
@@ -24,7 +24,7 @@ class KubectlLabelNodeKeywords(BaseKeyword):
             label_value (str): Label value.
         """
         get_logger().log_info(f"Labeling node {node_name} with {label_key}={label_value}")
-        self.ssh_connection.send(export_k8s_config(f"kubectl label node {node_name} {label_key}={label_value} --overwrite"))
+        self.ssh_connection.send(self.k8s_config.export(f"kubectl label node {node_name} {label_key}={label_value} --overwrite"))
         self.validate_success_return_code(self.ssh_connection)
 
     def remove_label(self, node_name: str, label_key: str) -> None:
@@ -35,5 +35,5 @@ class KubectlLabelNodeKeywords(BaseKeyword):
             label_key (str): Label key to remove.
         """
         get_logger().log_info(f"Removing label {label_key} from node {node_name}")
-        self.ssh_connection.send(export_k8s_config(f"kubectl label node {node_name} {label_key}-"))
+        self.ssh_connection.send(self.k8s_config.export(f"kubectl label node {node_name} {label_key}-"))
         self.validate_success_return_code(self.ssh_connection)

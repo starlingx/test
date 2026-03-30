@@ -1,23 +1,23 @@
 from pytest import fail
 
 from framework.ssh.ssh_connection import SSHConnection
-from keywords.base_keyword import BaseKeyword
-from keywords.k8s.k8s_command_wrapper import export_k8s_config
+from keywords.k8s.k8s_base_keyword import K8sBaseKeyword
 
 
-class KubectlCreateTokenKeywords(BaseKeyword):
+class KubectlCreateTokenKeywords(K8sBaseKeyword):
     """
     Keywords for creating a token with kubectl
     """
 
-    def __init__(self, ssh_connection: SSHConnection):
+    def __init__(self, ssh_connection: SSHConnection, kubeconfig_path: str = None):
         """
         Initializes the KubectlCreateTokenKeywords class with an SSH connection.
 
         Args:
             ssh_connection (SSHConnection): An object representing the SSH connection.
+            kubeconfig_path (str, optional): Custom KUBECONFIG path. If None, uses default from config.
         """
-        self.ssh_connection = ssh_connection
+        super().__init__(ssh_connection, kubeconfig_path)
 
     def create_token(self, namespace: str, user: str) -> list:
         """
@@ -31,7 +31,7 @@ class KubectlCreateTokenKeywords(BaseKeyword):
             list: The output from the kubectl command execution.
         """
         args = f"{user} -n {namespace}"
-        output = self.ssh_connection.send(export_k8s_config(f"kubectl create token {args}"))
+        output = self.ssh_connection.send(self.k8s_config.export(f"kubectl create token {args}"))
         if output and len(output) == 1:
             output = output[0]
         else:

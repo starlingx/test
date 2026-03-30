@@ -1,16 +1,15 @@
 from framework.ssh.ssh_connection import SSHConnection
-from keywords.base_keyword import BaseKeyword
 from keywords.k8s.crd.object.kubectl_hosts_output import KubectlHostsOutput
-from keywords.k8s.k8s_command_wrapper import export_k8s_config
+from keywords.k8s.k8s_base_keyword import K8sBaseKeyword
 
 
-class KubectlHostsKeywords(BaseKeyword):
+class KubectlHostsKeywords(K8sBaseKeyword):
     """
     Kubectl get keywords for CRDs resources
     """
 
-    def __init__(self, ssh_connection: SSHConnection):
-        self.ssh_connection = ssh_connection
+    def __init__(self, ssh_connection: SSHConnection, kubeconfig_path: str = None):
+        super().__init__(ssh_connection, kubeconfig_path)
 
     def get_hosts(self, namespace: str = None) -> KubectlHostsOutput:
         """
@@ -27,7 +26,7 @@ class KubectlHostsKeywords(BaseKeyword):
             arg_namespace = f"-n {namespace}"
 
         cmd = f"kubectl get hosts {arg_namespace}"
-        output = self.ssh_connection.send(export_k8s_config(cmd))
+        output = self.ssh_connection.send(self.k8s_config.export(cmd))
         self.validate_success_return_code(self.ssh_connection)
         get_hosts_output = KubectlHostsOutput(output)
 
