@@ -190,6 +190,7 @@ def test_enroll_sx_subcloud_after_factory_restore(request):
         - Enroll the subcloud.
         - Validate enroll completion and availability.
     """
+    deployment_assets_config = ConfigurationManager.get_deployment_assets_config()
     system_controller_ssh = LabConnectionKeywords().get_active_controller_ssh()
 
     dcm_sc_list_kw = DcManagerSubcloudListKeywords(system_controller_ssh)
@@ -233,8 +234,15 @@ def test_enroll_sx_subcloud_after_factory_restore(request):
 
     request.addfinalizer(teardown)
 
+    bootstrap_values = deployment_assets_config.get_subcloud_deployment_assets(subcloud_name).get_bootstrap_file()
+    install_values = deployment_assets_config.get_subcloud_deployment_assets(subcloud_name).get_install_file()
+    deployment_config_file = deployment_assets_config.get_subcloud_deployment_assets(
+        subcloud_name).get_deployment_config_file()
+
     get_logger().log_test_case_step(f"Restoring subcloud factory backup: {subcloud_name}")
     dc_manager_backup.restore_subcloud_backup(subcloud_password, system_controller_ssh, subcloud=subcloud_name, factory=True, restore_values_path=restore_values)
+
+    run_enroll_operations(system_controller_ssh, subcloud_name, bootstrap_values, install_values, deployment_config_file, phased=True)
 
     get_logger().log_test_case_step("Waiting for subcloud to unlock.")
     dcm_sc_list_kw.validate_subcloud_availability_status(subcloud_name)
