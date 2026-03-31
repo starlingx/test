@@ -10,6 +10,7 @@ from keywords.cloud_platform.dcmanager.dcmanager_subcloud_delete_keywords import
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_deploy_keywords import DCManagerSubcloudDeployKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_list_keywords import DcManagerSubcloudListKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_manager_keywords import DcManagerSubcloudManagerKeywords
+from keywords.cloud_platform.dcmanager.dcmanager_subcloud_show_keywords import DcManagerSubcloudShowKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.files.file_keywords import FileKeywords
 
@@ -195,6 +196,24 @@ def test_enroll_sx_subcloud_after_factory_restore(request):
     dc_manager_backup = DcManagerSubcloudBackupKeywords(system_controller_ssh)
     subcloud_name = ConfigurationManager.get_lab_config().get_subcloud_names()[0]
     subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
+
+    dcmanager_sc_list_kw = DcManagerSubcloudListKeywords(system_controller_ssh)
+    subcloud_list = dcmanager_sc_list_kw.get_dcmanager_subcloud_list()
+
+    if not subcloud_list.is_subcloud_in_output(subcloud_name):
+        get_logger().log_test_case_step(f"{subcloud_name} not added to system controller, creating")
+        DCManagerSubcloudDeployKeywords(system_controller_ssh).dcmanager_subcloud_deploy_create(subcloud_name)
+
+    subcloud_show_obj = DcManagerSubcloudShowKeywords(system_controller_ssh).get_dcmanager_subcloud_show(subcloud_name).get_dcmanager_subcloud_show_object()
+    subcloud_availability = subcloud_show_obj.get_availability()
+    subcloud_management_status = subcloud_show_obj.get_management()
+
+    if subcloud_availability == "online":
+        fail(f"{subcloud_name} already added to system controller, unable to enroll.")
+
+    if subcloud_management_status == "managed" and subcloud_availability == "offline":
+        get_logger().log_test_case_step(f"{subcloud_name} already added to system controller.")
+        DcManagerSubcloudManagerKeywords(system_controller_ssh).get_dcmanager_subcloud_unmanage(subcloud_name, 10)
 
     get_logger().log_test_case_step(f"Verify that {subcloud_name} has completed factory-install process.")
     if not FileKeywords(subcloud_ssh).file_exists("/var/lib/factory-install/complete"):
