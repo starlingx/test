@@ -202,8 +202,6 @@ def test_enroll_sx_subcloud_after_factory_restore(request):
 
     lab_config = ConfigurationManager.get_lab_config().get_subcloud(subcloud_name)
     subcloud_password = lab_config.get_admin_credentials().get_password()
-    get_logger().log_test_case_step(f"Creating subcloud {subcloud_name}.")
-    DCManagerSubcloudDeployKeywords(system_controller_ssh).dcmanager_subcloud_deploy_create(subcloud_name)
 
     home_path = "/home/sysadmin"
 
