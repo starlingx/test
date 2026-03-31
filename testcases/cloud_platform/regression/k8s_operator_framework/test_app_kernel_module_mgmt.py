@@ -4,6 +4,7 @@ from random import choice
 from pytest import mark
 
 from config.configuration_manager import ConfigurationManager
+from config.docker.objects.registry import Registry
 from framework.logging.automation_logger import get_logger
 from framework.resources.resource_finder import get_stx_resource_path
 from framework.ssh.ssh_connection import SSHConnection
@@ -20,6 +21,9 @@ from keywords.cloud_platform.system.host.system_host_list_keywords import System
 from keywords.cloud_platform.system.host.system_host_lock_keywords import SystemHostLockKeywords
 from keywords.cloud_platform.system.host.system_host_reboot_keywords import SystemHostRebootKeywords
 from keywords.cloud_platform.system.host.system_host_swact_keywords import SystemHostSwactKeywords
+from keywords.docker.build.docker_build_keywords import DockerBuildKeywords
+from keywords.docker.images.docker_load_image_keywords import DockerLoadImageKeywords
+from keywords.docker.images.docker_remove_images_keywords import DockerRemoveImagesKeywords
 from keywords.files.file_keywords import FileKeywords
 from keywords.files.yaml_keywords import YamlKeywords
 from keywords.k8s.configmap.kubectl_delete_configmap_keywords import KubectlDeleteConfigmapKeywords
@@ -33,6 +37,7 @@ from keywords.k8s.module.kubectl_patch_module_keywords import KubectlPatchModule
 from keywords.k8s.node.kubectl_label_node_keywords import KubectlLabelNodeKeywords
 from keywords.k8s.pods.kubectl_get_pods_keywords import KubectlGetPodsKeywords
 from keywords.linux.dmesg.dmesg_keywords import DmesgKeywords
+from keywords.linux.kernel.kernel_keywords import KernelKeywords
 from keywords.linux.keyring.keyring_keywords import KeyringKeywords
 from keywords.linux.ls.ls_keywords import LsKeywords
 from keywords.linux.lsmod.lsmod_keywords import LsmodKeywords
@@ -44,6 +49,56 @@ CHART_PATH = "/usr/local/share/applications/helm/kernel-module-management-[0-9]*
 
 # Expected pod name patterns
 KMM_EXPECTED_PODS = ["kmm-operator-controller", "kmm-operator-webhook"]
+
+
+# Docker image build and push functions
+def build_and_push_kmod_image(ssh_connection: SSHConnection) -> None:
+    """Build and push the hello_world kmod image to the local registry using docker.
+
+    Determines the running kernel version, builds the kmod image using the KMM builder image,
+    and pushes it to registry.local:9001 with both amd64-hw and rt-amd64-hw tags so the
+    prebuilt Module CR can match either kernel variant.
+
+    Args:
+        ssh_connection (SSHConnection): SSH connection to active controller.
+
+    """
+    kof_config = ConfigurationManager.get_kof_config()
+    builder_image = kof_config.get_kmm_builder_image()
+    registry = kof_config.get_kmm_container_image_registry()
+
+    kernel_version = KernelKeywords(ssh_connection).get_kernel_version()
+    get_logger().log_info(f"Building kmod image for kernel: {kernel_version}")
+
+    image_tags = ["amd64-hw", "rt-amd64-hw"]
+
+    dockerfile_content = f"FROM {builder_image} as builder\n" f"RUN make KERNEL_DIR=/lib/modules/{kernel_version}/build && " f"mkdir -p /opt/lib/modules/{kernel_version} && " f"cp -v ./* /opt/lib/modules/{kernel_version}\n" f"RUN depmod -b /opt {kernel_version}\n"
+
+    get_logger().log_info("Creating Dockerfile for kmod image build")
+    FileKeywords(ssh_connection).create_file_with_echo("/tmp/kmm-dockerfile", dockerfile_content)
+
+    # Build and tag for both kernel variants
+    docker_build = DockerBuildKeywords(ssh_connection)
+    for tag in image_tags:
+        target_image = f"{registry}:{tag}"
+        get_logger().log_info(f"Building kmod image: {target_image}")
+        docker_build.build("/tmp/kmm-dockerfile", target_image, "/tmp")
+
+    # Docker push requires authentication to registry.local:9001.
+    keyring_keywords = KeyringKeywords(ssh_connection)
+    registry_password = keyring_keywords.get_keyring("sysinv", "services")
+    registry_url = "registry.local:9001"
+    local_registry = Registry("local_registry", registry_url, "sysinv", registry_password)
+
+    # Push both tags to the registry.
+    # registry is e.g. "registry.local:9001/kmm/kmm-hello-world", strip the URL prefix for tag_name
+    image_path = registry.replace(f"{registry_url}/", "")
+    docker_load = DockerLoadImageKeywords(ssh_connection)
+    for tag in image_tags:
+        docker_load.push_docker_image_to_registry(f"{image_path}:{tag}", local_registry)
+
+    get_logger().log_info("Cleaning up Dockerfile")
+    FileKeywords(ssh_connection).delete_file("/tmp/kmm-dockerfile")
 
 
 # ConfigMap generation functions
@@ -1361,11 +1416,12 @@ def test_kernel_module_prebuilt_image(request):
     Steps:
         - Cleanup kernel module management application
         - Setup kernel module management environment
+        - Build and push prebuilt kmod image to local registry
         - Generate Module YAML with prebuilt container image (no build step required)
         - Apply Module resource to cluster
+        - Verify kmm-prebuilt Module CR exists
         - Verify hello_world_dmesg kernel module loads on active controller
         - Verify Hello, world! message appears in dmesg
-        - Verify kmm-prebuilt Module CR exists
         - Delete Module resource to trigger unload
         - Verify hello_world_dmesg kernel module unloads from active controller
         - Verify Goodbye, world! message appears in dmesg
@@ -1384,6 +1440,12 @@ def test_kernel_module_prebuilt_image(request):
             KubectlDeleteModuleKeywords(ssh_connection).delete_module("kmm-prebuilt", NAMESPACE, ignore_not_found=True)
         get_logger().log_teardown_step("Cleaning up kernel module YAML file")
         FileKeywords(ssh_connection).delete_file("/tmp/prebuilt_mod.yaml")
+        get_logger().log_teardown_step("Removing prebuilt kmod docker images")
+        kof_config = ConfigurationManager.get_kof_config()
+        registry = kof_config.get_kmm_container_image_registry()
+        docker_remove = DockerRemoveImagesKeywords(ssh_connection)
+        for tag in ["amd64-hw", "rt-amd64-hw"]:
+            docker_remove.remove_docker_image(f"{registry}:{tag}")
         get_logger().log_teardown_step("Removing kernel module management application")
         cleanup_kernel_module_management_environment(ssh_connection)
 
@@ -1391,6 +1453,9 @@ def test_kernel_module_prebuilt_image(request):
 
     get_logger().log_test_case_step("Setting up kernel module management environment")
     setup_kernel_module_management_environment(ssh_connection)
+
+    get_logger().log_test_case_step("Building and pushing prebuilt kmod image to local registry")
+    build_and_push_kmod_image(ssh_connection)
 
     get_logger().log_test_case_step("Generating Module YAML with prebuilt container image")
     generate_prebuilt_module(ssh_connection)
