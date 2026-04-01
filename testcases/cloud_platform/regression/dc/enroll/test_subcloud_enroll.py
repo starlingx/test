@@ -13,6 +13,7 @@ from keywords.cloud_platform.dcmanager.dcmanager_subcloud_manager_keywords impor
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_show_keywords import DcManagerSubcloudShowKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.files.file_keywords import FileKeywords
+from keywords.cloud_platform.health.health_keywords import HealthKeywords
 
 
 def create_fake_bootstrap_values(bootstrap_values: str, ssh_connection: SSHConnection):
@@ -119,6 +120,11 @@ def test_enroll_one_sx_subcloud():
     if not FileKeywords(subcloud_ssh).file_exists("/var/lib/factory-install/complete"):
         fail("This subcloud was not factory installed, unable to proceed with enroll.")
 
+    # Prechecks For Enrollment:
+    get_logger().log_info(f"Performing pre-checks on {subcloud_name}")
+    obj_health = HealthKeywords(subcloud_ssh)
+    obj_health.validate_healty_cluster()  # Checks alarms, pods, app health
+
     bootstrap_values = deployment_assets_config.get_subcloud_deployment_assets(subcloud_name).get_bootstrap_file()
     install_values = deployment_assets_config.get_subcloud_deployment_assets(subcloud_name).get_install_file()
     deployment_config_file = deployment_assets_config.get_subcloud_deployment_assets(subcloud_name).get_deployment_config_file()
@@ -126,6 +132,11 @@ def test_enroll_one_sx_subcloud():
     run_enroll_operations(system_controller_ssh, subcloud_name, bootstrap_values, install_values, deployment_config_file)
     DcManagerSubcloudListKeywords(system_controller_ssh).validate_subcloud_status(subcloud_name=subcloud_name, status="complete")
     DcManagerSubcloudListKeywords(system_controller_ssh).validate_subcloud_availability_status(subcloud_name)
+
+    # Checks After Enrollment:
+    get_logger().log_info(f"Performing checks post-enrollment on {subcloud_name}")
+    obj_health = HealthKeywords(subcloud_ssh)
+    obj_health.validate_healty_cluster()  # Checks alarms, pods, app health
 
 @mark.p2
 @mark.lab_has_subcloud
@@ -152,6 +163,11 @@ def test_retry_enroll_one_sx_subcloud(request):
     if not FileKeywords(subcloud_ssh).file_exists("/var/lib/factory-install/complete"):
         fail("This subcloud was not factory installed, unable to proceed with enroll.")
 
+    # Prechecks For Enrollment:
+    get_logger().log_info(f"Performing pre-checks on {subcloud_name}")
+    obj_health = HealthKeywords(subcloud_ssh)
+    obj_health.validate_healty_cluster()  # Checks alarms, pods, app health
+
     bootstrap_values = deployment_assets_config.get_subcloud_deployment_assets(subcloud_name).get_bootstrap_file()
     install_values = deployment_assets_config.get_subcloud_deployment_assets(subcloud_name).get_install_file()
     deployment_config_file = deployment_assets_config.get_subcloud_deployment_assets(subcloud_name).get_deployment_config_file()
@@ -175,6 +191,11 @@ def test_retry_enroll_one_sx_subcloud(request):
     DcManagerSubcloudListKeywords(system_controller_ssh).validate_subcloud_status(subcloud_name=subcloud_name,status="complete")
     DcManagerSubcloudListKeywords(system_controller_ssh).validate_subcloud_availability_status(subcloud_name)
     DcManagerSubcloudManagerKeywords(system_controller_ssh).get_dcmanager_subcloud_manage(subcloud_name, 10)
+
+    # Checks After Enrollment:
+    get_logger().log_info(f"Performing checks post enrollment on {subcloud_name}")
+    obj_health = HealthKeywords(subcloud_ssh)
+    obj_health.validate_healty_cluster()  # Checks alarms, pods, app health
 
 @mark.p2
 @mark.lab_has_subcloud
@@ -202,23 +223,23 @@ def test_enroll_sx_subcloud_after_factory_restore(request):
     subcloud_list = dcmanager_sc_list_kw.get_dcmanager_subcloud_list()
 
     if not subcloud_list.is_subcloud_in_output(subcloud_name):
-        get_logger().log_test_case_step(f"{subcloud_name} not added to system controller, creating")
-        DCManagerSubcloudDeployKeywords(system_controller_ssh).dcmanager_subcloud_deploy_create(subcloud_name)
+        fail(f"{subcloud_name} not in subcloud list.")
 
     subcloud_show_obj = DcManagerSubcloudShowKeywords(system_controller_ssh).get_dcmanager_subcloud_show(subcloud_name).get_dcmanager_subcloud_show_object()
-    subcloud_availability = subcloud_show_obj.get_availability()
     subcloud_management_status = subcloud_show_obj.get_management()
 
-    if subcloud_availability == "online":
-        fail(f"{subcloud_name} already added to system controller, unable to enroll.")
-
-    if subcloud_management_status == "managed" and subcloud_availability == "offline":
+    if subcloud_management_status == "managed":
         get_logger().log_test_case_step(f"{subcloud_name} already added to system controller.")
         DcManagerSubcloudManagerKeywords(system_controller_ssh).get_dcmanager_subcloud_unmanage(subcloud_name, 10)
 
     get_logger().log_test_case_step(f"Verify that {subcloud_name} has completed factory-install process.")
     if not FileKeywords(subcloud_ssh).file_exists("/var/lib/factory-install/complete"):
         fail("This subcloud was not factory installed, unable to proceed with enroll.")
+
+    # Prechecks Before Factory Back-Up Restore:
+    get_logger().log_info(f"Performing pre-checks on {subcloud_name}")
+    obj_health = HealthKeywords(subcloud_ssh)
+    obj_health.validate_healty_cluster()  # Checks alarms, pods, app health
 
     lab_config = ConfigurationManager.get_lab_config().get_subcloud(subcloud_name)
     subcloud_password = lab_config.get_admin_credentials().get_password()
@@ -246,4 +267,10 @@ def test_enroll_sx_subcloud_after_factory_restore(request):
 
     get_logger().log_test_case_step("Waiting for subcloud to unlock.")
     dcm_sc_list_kw.validate_subcloud_availability_status(subcloud_name)
+
+    # Checks post enrollment:
+    get_logger().log_info(f"Performing post-enrollment checks on {subcloud_name}")
+    obj_health = HealthKeywords(subcloud_ssh)
+    obj_health.validate_healty_cluster()  # Checks alarms, pods, app health
+
     DcManagerSubcloudManagerKeywords(system_controller_ssh).get_dcmanager_subcloud_manage(subcloud_name, 10)
