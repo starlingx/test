@@ -1,5 +1,6 @@
 from framework.ssh.ssh_connection import SSHConnection
 from keywords.k8s.k8s_base_keyword import K8sBaseKeyword
+from keywords.k8s.pods.object.kubectl_exec_os_release_output import KubectlExecOSReleaseOutput
 
 
 class KubectlExecInPodsKeywords(K8sBaseKeyword):
@@ -53,3 +54,30 @@ class KubectlExecInPodsKeywords(K8sBaseKeyword):
 
         """
         self.ssh_connection.send(self.k8s_config.export(f"kubectl exec {pod_name} -n {namespace} -i -- calicoctl apply -f {config_file}"))
+
+    def get_os_release(self, pod_name: str) -> KubectlExecOSReleaseOutput:
+        """
+        Gets the os-release content from the given pod.
+
+        Args:
+            pod_name (str): the name of the pod
+
+        Returns:
+            KubectlExecOSReleaseOutput: Parsed OS release information
+
+        """
+        output = self.run_pod_exec_cmd(pod_name, "cat /etc/os-release")
+        return KubectlExecOSReleaseOutput(output)
+
+    def get_if_inet6(self, pod_name: str) -> str:
+        """
+        Gets the /proc/net/if_inet6 content from the given pod.
+
+        Args:
+            pod_name (str): the name of the pod
+
+        Returns:
+            str: the output of cat /proc/net/if_inet6
+
+        """
+        return self.run_pod_exec_cmd(pod_name, "cat /proc/net/if_inet6")
