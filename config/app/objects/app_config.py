@@ -62,6 +62,14 @@ class AppConfig:
         if "deployment_manager_app_name" in app_dict:
             self.deployment_manager_app_name = app_dict["deployment_manager_app_name"]
 
+        self.rook_ceph_app_name = "rook-ceph"
+        if "rook_ceph_app_name" in app_dict:
+            self.rook_ceph_app_name = app_dict["rook_ceph_app_name"]
+
+        self.rook_ceph_app_tarball = "fake_path"
+        if "rook_ceph_app_tarball" in app_dict:
+            self.rook_ceph_app_tarball = app_dict["rook_ceph_app_tarball"]
+
     def get_base_application_path(self) -> str:
         """
         Getter for base application path
@@ -201,3 +209,23 @@ class AppConfig:
 
         """
         return self.deployment_manager_app_name
+
+    def get_rook_ceph_app_name(self) -> str:
+        """
+        Getter for rook-ceph app name.
+
+        Returns:
+            str: the rook-ceph app name
+
+        """
+        return self.rook_ceph_app_name
+
+    def get_rook_ceph_app_tarball(self) -> str:
+        """
+        Getter for rook-ceph app tarball.
+
+        Returns:
+            str: the rook-ceph app tarball path
+
+        """
+        return self.rook_ceph_app_tarball
