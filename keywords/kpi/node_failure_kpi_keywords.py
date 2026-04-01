@@ -15,6 +15,7 @@ from config.configuration_manager import ConfigurationManager
 from framework.logging.automation_logger import get_logger
 from framework.resources.resource_finder import get_stx_resource_path
 from framework.ssh.ssh_connection import SSHConnection
+from framework.validation.validation import validate_equals
 from keywords.docker.images.docker_images_keywords import DockerImagesKeywords
 from keywords.docker.images.docker_load_image_keywords import DockerLoadImageKeywords
 from keywords.k8s.namespace.kubectl_create_namespace_keywords import KubectlCreateNamespacesKeywords
@@ -312,7 +313,7 @@ spec:
     yaml_path = "/tmp/kpi_test_deployment.yaml"
 
     ssh_connection.send(f"cat > {yaml_path} << 'EOF'\n{yaml_content}\nEOF")
-    assert ssh_connection.get_return_code() == 0, "Failed to create YAML file on remote system"
+    validate_equals(ssh_connection.get_return_code(), 0, "Successfully created YAML file on remote system")
 
     return yaml_path
 
@@ -333,13 +334,13 @@ def prepare_busybox_image(ssh_connection: SSHConnection, namespace: str):
 
     get_logger().log_info("Pulling busybox image from Docker Hub")
     DockerImagesKeywords(ssh_connection).pull_image("busybox:latest")
-    assert ssh_connection.get_return_code() == 0, "Failed to pull busybox image"
+    validate_equals(ssh_connection.get_return_code(), 0, "Successfully pulled busybox image")
 
     get_logger().log_info("Tagging and pushing busybox image to local registry")
     docker_load_keywords = DockerLoadImageKeywords(ssh_connection)
     docker_load_keywords.tag_docker_image_for_registry("busybox:latest", "busybox:latest", local_registry)
     docker_load_keywords.push_docker_image_to_registry("busybox:latest", local_registry)
-    assert ssh_connection.get_return_code() == 0, "Failed to push busybox image to local registry"
+    validate_equals(ssh_connection.get_return_code(), 0, "Successfully pushed busybox image to local registry")
 
 
 def create_test_deployment(ssh_connection: SSHConnection, namespace: str, target_pods: int, local_registry: str, target_node: str) -> KubectlGetPodsKeywords:
@@ -359,7 +360,7 @@ def create_test_deployment(ssh_connection: SSHConnection, namespace: str, target
     """
     yaml_path = create_deployment_yaml(ssh_connection, namespace, target_pods, local_registry)
     ssh_connection.send(f"source /etc/platform/openrc; export KUBECONFIG=/etc/kubernetes/admin.conf; kubectl apply -f {yaml_path}")
-    assert ssh_connection.get_return_code() == 0, "Failed to create deployment"
+    validate_equals(ssh_connection.get_return_code(), 0, "Successfully created deployment")
     get_logger().log_info(f"Deployment created with {target_pods} replicas pinned to {target_node}")
 
     get_logger().log_info("Waiting for pods to be scheduled and running")
@@ -416,7 +417,7 @@ def wait_for_pods_rescheduled(ssh_connection: SSHConnection, namespace: str, fai
 
         time.sleep(1)
 
-    raise AssertionError(f"Pods were not rescheduled within {timeout} seconds")
+    raise TimeoutError(f"Pods were not rescheduled within {timeout} seconds")
 
 
 def wait_for_node_status(ssh_connection: SSHConnection, node_name: str, expected_status: str, timeout: int = 600) -> tuple:
@@ -486,7 +487,7 @@ def label_node(ssh_connection: SSHConnection, node_name: str, label_key: str = "
 
     """
     ssh_connection.send(f"source /etc/platform/openrc; export KUBECONFIG=/etc/kubernetes/admin.conf; kubectl label nodes {node_name} {label_key}={label_value} --overwrite")
-    assert ssh_connection.get_return_code() == 0, f"Failed to label node {node_name}"
+    validate_equals(ssh_connection.get_return_code(), 0, f"Successfully labeled node {node_name}")
 
 
 def remove_node_label(ssh_connection: SSHConnection, node_name: str, label_key: str = "kpi-test-node"):

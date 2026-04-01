@@ -14,6 +14,7 @@ from pytest import mark
 from config.configuration_manager import ConfigurationManager
 from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
+from framework.validation.validation import validate_equals, validate_greater_than_or_equal, validate_not_none, validate_equals_with_retry
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.cloud_platform.system.host.system_host_list_keywords import SystemHostListKeywords
 from keywords.cloud_platform.system.host.system_host_lock_keywords import SystemHostLockKeywords
@@ -54,7 +55,7 @@ def test_kubernetes_node_failure_kpis_workers(request):
     
     get_logger().log_test_case_step("Verify system has at least 2 dedicated compute nodes")
     computes = SystemHostListKeywords(ssh_connection).get_computes()
-    assert len(computes) >= 2, f"Test requires at least 2 dedicated compute nodes (not AIO controllers), found {len(computes)}"
+    validate_greater_than_or_equal(len(computes), 2, f"At least 2 dedicated compute nodes are required, found {len(computes)}")
     
     target_node = computes[0].get_host_name()
     backup_node = computes[1].get_host_name()
@@ -87,13 +88,13 @@ def test_kubernetes_node_failure_kpis_aio_controllers(request):
     get_logger().log_test_case_step("Verify system is AIO-DX with 2 controllers")
     system_host_keywords = SystemHostListKeywords(ssh_connection)
     controllers = system_host_keywords.get_controllers()
-    assert len(controllers) == 2, f"Test requires AIO-DX system with 2 controllers, found {len(controllers)}"
+    validate_equals(len(controllers), 2, f"Test requires AIO-DX system with 2 controllers, found {len(controllers)}")
     
     standby_controller = system_host_keywords.get_standby_controller()
-    assert standby_controller is not None, "No standby controller found in AIO-DX system"
+    validate_not_none(standby_controller, "No standby controller found in AIO-DX system")
     
     active_controller = system_host_keywords.get_active_controller()
-    assert active_controller is not None, "No active controller found in AIO-DX system"
+    validate_not_none(active_controller, "No active controller found in AIO-DX system")
     
     target_node = standby_controller.get_host_name()
     backup_node = active_controller.get_host_name()
@@ -136,29 +137,45 @@ def execute_node_failure_kpi_test(request, ssh_connection: SSHConnection, target
     pod_getter = create_test_deployment(ssh_connection, namespace, target_pods, local_registry, target_node)
     
     get_logger().log_test_case_step("Verify all pods are on target node")
-    kpi_pods = [p for p in pod_getter.get_pods(namespace).get_pods() if p.get_name().startswith("kpi-test-deployment")]
-    pods_on_target = [p for p in kpi_pods if p.get_node() == target_node]
-    get_logger().log_info(f"Verified: {len(pods_on_target)} pods running on {target_node}")
-    assert len(pods_on_target) == target_pods, f"Expected {target_pods} pods on {target_node}, found {len(pods_on_target)}"
+    
+    def get_pods_on_target_node():
+        """Helper function to get count of pods on target node"""
+        kpi_pods = [p for p in pod_getter.get_pods(namespace).get_pods() if p.get_name().startswith("kpi-test-deployment")]
+        pods_on_target = [p for p in kpi_pods if p.get_node() == target_node]
+        get_logger().log_info(f"Found {len(pods_on_target)} pods running on {target_node}")
+        return len(pods_on_target)
+    
+    validate_equals_with_retry(
+        get_pods_on_target_node,
+        target_pods,
+        f"Expected {target_pods} pods on {target_node}",
+        timeout=300,
+        polling_sleep_time=10
+    )
     
     get_logger().log_test_case_step("Capture initial pod UIDs for tracking")
-    output = ssh_connection.send(f"export KUBECONFIG=/etc/kubernetes/admin.conf; kubectl get pods -n {namespace} -l app=kpi-test -o json")
-    assert ssh_connection.get_return_code() == 0, "Failed to get pod UIDs"
-    initial_pods_json = json.loads("".join(output))
+    
+    def get_pod_uids():
+        """Helper function to get pod UIDs"""
+        output = ssh_connection.send(f"export KUBECONFIG=/etc/kubernetes/admin.conf; kubectl get pods -n {namespace} -l app=kpi-test -o json")
+        validate_equals(ssh_connection.get_return_code(), 0, "Successfully retrieved pod UIDs")
+        return json.loads("".join(output))
+    
+    initial_pods_json = get_pod_uids()
     initial_pod_uids = [pod["metadata"]["uid"] for pod in initial_pods_json.get("items", [])]
-    assert len(initial_pod_uids) == target_pods, f"Expected {target_pods} pod UIDs, found {len(initial_pod_uids)}"
+    validate_equals(len(initial_pod_uids), target_pods, f"Expected {target_pods} pod UIDs, found {len(initial_pod_uids)}")
     get_logger().log_info(f"Captured {len(initial_pod_uids)} initial pod UIDs")
     
     get_logger().log_test_case_step(f"Verify target {node_type} node is currently Ready")
     nodes = KubectlNodesKeywords(ssh_connection).get_kubectl_nodes()
     node = nodes.get_node(target_node)
-    assert node is not None, f"Node {target_node} not found"
-    assert node.get_status() == "Ready", f"Node {target_node} is not Ready"
+    validate_not_none(node, f"Node {target_node} not found")
+    validate_equals(node.get_status(), "Ready", f"Node {target_node} is not Ready")
     
     get_logger().log_test_case_step(f"Verify backup {node_type} node is Ready")
     backup_node_obj = nodes.get_node(backup_node)
-    assert backup_node_obj is not None, f"Backup node {backup_node} not found"
-    assert backup_node_obj.get_status() == "Ready", f"Backup node {backup_node} is not Ready"
+    validate_not_none(backup_node_obj, f"Backup node {backup_node} not found")
+    validate_equals(backup_node_obj.get_status(), "Ready", f"Backup node {backup_node} is not Ready")
     
     get_logger().log_test_case_step(f"Label backup {node_type} node to allow pod rescheduling")
     label_node(ssh_connection, backup_node)
@@ -189,7 +206,7 @@ def execute_node_failure_kpi_test(request, ssh_connection: SSHConnection, target
 
     detection_time, detection_time_str = wait_for_node_status(ssh_connection, target_node, "NotReady", 300)
     
-    assert detection_time is not None, "Node was not detected as NotReady within timeout"
+    validate_not_none(detection_time, "Node was not detected as NotReady within timeout")
     detection_duration = detection_time - failure_start_time
     get_logger().log_info(f"KPI #1 - Node failure detection time: {detection_duration:.2f} seconds")
     
