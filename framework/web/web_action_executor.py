@@ -1,65 +1,61 @@
 import time
 from typing import List
 
+from selenium.webdriver.remote.webelement import WebElement
+
 from framework.logging.automation_logger import get_logger
 from framework.threading.thread_manager import ThreadManager
 from framework.web.action.web_action import WebAction
 from framework.web.web_locator import WebLocator
-from selenium.webdriver.remote.webelement import WebElement
 
 
 class WebActionExecutor:
-    """
-    This class executes WebDriver actions in a retry structure that makes use of stability conditions.
-    """
+    """This class executes WebDriver actions in a retry structure that makes use of stability conditions."""
 
     def __init__(self, web_action: WebAction):
-        """
-        Constructor which will instantiate the driver object.
+        """Constructor which will instantiate the driver object.
+
         Args:
-            web_action: Action that we want to perform.
-
+            web_action (WebAction): Action that we want to perform.
         """
-
         self.web_action = web_action
         self.progressive_sleep = 1
         self.progressive_sleep_increment = 1
 
     def _find_element(self, locator: WebLocator) -> WebElement:
-        """
-        This function will attempt to find this element in the DOM.
+        """Attempt to find this element in the DOM.
+
         Args:
-            locator: Element that we are trying to find in the DOM.
+            locator (WebLocator): Element that we are trying to find in the DOM.
 
-        Returns: A Selenium WebElement.
+        Returns:
+            WebElement: A Selenium WebElement.
         """
-
         webdriver = self.web_action.get_webdriver()
         web_element = webdriver.find_element(locator.get_by(), locator.get_locator())
         return web_element
 
     def _find_all_elements(self, locator: WebLocator) -> List[WebElement]:
-        """
-        This function will attempt to find all the elements in the DOM matching the locator.
+        """Attempt to find all the elements in the DOM matching the locator.
+
         Args:
-            locator: Locator matching the elements that we want to find.
+            locator (WebLocator): Locator matching the elements that we want to find.
 
-        Returns: A list of Selenium WebElement.
+        Returns:
+            List[WebElement]: A list of Selenium WebElement.
         """
-
         webdriver = self.web_action.get_webdriver()
         web_elements = webdriver.find_elements(locator.get_by(), locator.get_locator())
         return web_elements
 
-    def _is_a_condition_satisfied(self):
-        """
-        This function will check if a condition is satisfied.
+    def _is_a_condition_satisfied(self) -> bool:
+        """Check if a condition is satisfied.
+
         Returns:
-            True if there is no condition associated with the action.
+            bool: True if there is no condition associated with the action.
             True if at least one condition associated with the action is satisfied.
             False otherwise.
         """
-
         is_a_condition_satisfied = False
 
         # Assume that the action was a success if there is no condition.
@@ -77,17 +73,15 @@ class WebActionExecutor:
 
         return is_a_condition_satisfied
 
-    def _execute_action(self, *args):
-        """
-        This function will execute the action with the arguments specified
+    def _execute_action(self, *args: object) -> object:
+        """Execute the action with the arguments specified.
+
         Args:
-            *args: Parameters to pass in to the action function.
+            *args (object): Parameters to pass in to the action function.
 
         Returns:
-            The output of the action if it is successful.
-
+            object: The output of the action if it is successful.
         """
-
         state = "NOT_FOUND"
         is_action_done = False
         value = None
@@ -136,7 +130,7 @@ class WebActionExecutor:
                         state = "NOT_FOUND"
 
             except Exception as e:
-                get_logger().log_debug("Exception occurred during action, moving to UNKNOWN state")
+                get_logger().log_debug(f"Exception ({type(e).__name__}) occurred during action moving to UNKNOWN state")
                 state = "UNKNOWN"
 
         if state != "COMPLETE":
@@ -144,17 +138,16 @@ class WebActionExecutor:
 
         return value
 
-    def execute_action(self, *args):
-        """
-        This function will execute the action with the arguments specified
+    def execute_action(self, *args: object) -> object:
+        """Execute the action with the arguments specified.
+
         This is the threaded version that calls _execute_action.
 
         Args:
-            *args: Parameters to pass in to the action function.
+            *args (object): Parameters to pass in to the action function.
 
         Returns:
-            The output of the action if it is successful.
-
+            object: The output of the action if it is successful.
         """
         # Thread the Selenium operation to ensure that we maintain control if it hangs.
         thread_manager_send = ThreadManager(timeout=1.5 * self.web_action.get_timeout())
@@ -163,17 +156,15 @@ class WebActionExecutor:
         value = thread_manager_send.get_thread_object("Selenium").get_result()
         return value
 
-    def _execute_mass_action(self, *args):
-        """
-        This function will execute the action specified on all the WebElements that match the WebLocator.
+    def _execute_mass_action(self, *args: object) -> object:
+        """Execute the action specified on all the WebElements that match the WebLocator.
+
         Args:
-            *args: Parameters to pass in to the action function.
+            *args (object): Parameters to pass in to the action function.
 
         Returns:
-            A List of the outputs of the actions.
-
+            object: A list of the outputs of the actions.
         """
-
         state = "NOT_FOUND"
         is_action_done = False
         values = []
@@ -226,8 +217,7 @@ class WebActionExecutor:
                         state = "NOT_FOUND"
 
             except Exception as e:
-                get_logger().log_debug(e)
-                get_logger().log_debug("Exception occurred during action, moving to UNKNOWN state")
+                get_logger().log_debug(f"Exception ({type(e).__name__}) occurred during action moving to UNKNOWN state")
                 state = "UNKNOWN"
 
         if state != "COMPLETE":
@@ -235,17 +225,16 @@ class WebActionExecutor:
 
         return values
 
-    def execute_mass_action(self, *args):
-        """
-        This function will execute the action specified on all the WebElements that match the WebLocator.
+    def execute_mass_action(self, *args: object) -> object:
+        """Execute the action specified on all the WebElements that match the WebLocator.
+
         This is the threaded version that calls _execute_mass_action.
 
         Args:
-            *args: Parameters to pass in to the action function.
+            *args (object): Parameters to pass in to the action function.
 
         Returns:
-            A List of the outputs of the actions.
-
+            object: A list of the outputs of the actions.
         """
         # Thread the Selenium operation to ensure that we maintain control if it hangs.
         thread_manager_send = ThreadManager(timeout=1.5 * self.web_action.get_timeout())
