@@ -1,7 +1,7 @@
 import datetime
 import re
 from typing import Optional
-
+import time
 from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
 
@@ -41,6 +41,15 @@ class KpiExtractor:
         self.unlock_to_available_pattern = "mtcClient ready"
         self.unlock_to_enabled_pattern = "is ENABLED ; from unlock"
         self.reboot_start_pattern = "Received SIGINT"
+        self.dor_recovery_pattern = "is ENABLED  ; DOR Recovery"
+        self.check_interval = 10
+        self.worker_available_pattern = "mtcClient start worker host services ran and passed"
+        self.worker_reboot_start_pattern = "heartbeat degrade set \(Mgmnt\)"
+        self.worker_enabled_pattern = "is ENABLED \(Gracefully Recovered\)"
+        self.sm_customer_log = '/var/log/sm-customer.log'
+        self.swact_start_pattern = "node-scn"
+        self.swact_end_pattern = "service-group-scn\s+\|\s+controller-services\s+\|\s+go-active\s+\|\s+active"
+        self.uncontrolled_swact_start_pattern = "service-group-scn\s+\|\s+controller-services\s+\|\s+standby\s+\|\s+go-active"
 
     def extract_lock_timing(self, host_name: str) -> float:
         """
@@ -84,7 +93,7 @@ class KpiExtractor:
         """
         Extract timing between two log patterns.
 
-        Uses the most recent occurrence of each pattern.
+        Uses the most recent (last) occurrence of each pattern independently.
 
         Args:
             start_pattern(str): Pattern to search for start timestamp
@@ -97,7 +106,7 @@ class KpiExtractor:
             ValueError: If patterns not found or extraction fails
         """
         start_timestamp = self._get_timestamp_from_pattern(start_pattern)
-        end_timestamp = self._get_timestamp_from_pattern(end_pattern, after_timestamp=start_timestamp)
+        end_timestamp = self._get_timestamp_from_pattern(end_pattern)
 
         get_logger().log_info(f"Start pattern: '{start_pattern}' -> Timestamp: {start_timestamp}")
         get_logger().log_info(f"End pattern: '{end_pattern}' -> Timestamp: {end_timestamp}")
@@ -176,7 +185,7 @@ class KpiExtractor:
         end_pattern = f"{host_name} {self.enabled_pattern}"
         return self._extract_timing_between_patterns(start_pattern, end_pattern)
 
-    def extract_dor_recovery_timing(self, host_name: str) -> float:
+    def extract_dor_recovery_timing(self, host_name: str, wait_timeout: int = 60) -> float:
         """
         Extract DOR (Dead Office Recovery) timing from log message.
 
@@ -184,6 +193,7 @@ class KpiExtractor:
 
         Args:
             host_name(str): Name of the host to extract timing for
+            wait_timeout(int): Maximum time to wait for pattern to appear in logs (seconds)
 
         Returns:
             float: DOR recovery time in seconds
@@ -191,18 +201,58 @@ class KpiExtractor:
         Raises:
             ValueError: If pattern not found or extraction fails
         """
-        pattern = f"{host_name} is ENABLED  ; DOR Recovery"
-        cmd = f"grep -a -E '{pattern}' {self.mtc_agent_log} | tail -1"
-        output = self.ssh_connection.send(cmd)
+        pattern = f"{host_name} {self.dor_recovery_pattern}"
+        start_time = time.time()
+        
+        while time.time() - start_time < wait_timeout:
+            cmd = f"grep -a -E '{pattern}' {self.mtc_agent_log} | tail -1"
+            output = self.ssh_connection.send(cmd)
 
-        if not output or not output[0].strip():
-            raise ValueError(f"Pattern not found in logs: {pattern}")
+            if output and output[0].strip():
+                match = re.search(r"\(\s*(\d+)\s*secs\)", output[0])
+                if match:
+                    return float(match.group(1))
+            
+            if time.time() - start_time < wait_timeout:
+                get_logger().log_debug(f"DOR recovery pattern '{pattern}' not found yet, waiting {self.check_interval}s...")
+                time.sleep(self.check_interval)
+        
+        raise ValueError(f"DOR recovery pattern not found in logs within {wait_timeout}s: {pattern}")
 
-        match = re.search(r"\(\s*(\d+)\s*secs\)", output[0])
-        if not match:
-            raise ValueError(f"DOR recovery time not found in log: {output[0]}")
+    def extract_worker_reboot_to_available_timing(self, host_name: str) -> float:
+        """
+        Extract timing from reboot (unlocked-disabled-failed) to host available (mtcClient ready).
 
-        return float(match.group(1))
+        Args:
+            host_name: Name of the host to extract timing for
+
+        Returns:
+            Time in seconds from reboot to available
+
+        Raises:
+            ValueError: If patterns not found or extraction fails
+        """
+        start_pattern = f'{host_name} {self.worker_reboot_start_pattern}'
+        end_pattern = f'{host_name} {self.worker_available_pattern}'
+        return self._extract_timing_between_patterns(start_pattern, end_pattern)
+    
+    def extract_worker_reboot_to_enabled_timing(self, host_name: str) -> float:
+        """
+        Extract timing from reboot (starting graceful recovery) to host enabled (Gracefully Recovered).
+
+        Args:
+            host_name: Name of the host to extract timing for
+
+        Returns:
+            Time in seconds from reboot to enabled
+
+        Raises:
+            ValueError: If patterns not found or extraction fails
+        """
+        start_pattern = f'{host_name} {self.worker_reboot_start_pattern}'
+        end_pattern = f'{host_name} {self.worker_enabled_pattern}'
+        return self._extract_timing_between_patterns(start_pattern, end_pattern)
+
 
     def extract_max_timing_for_hosts(self, host_names: list, extract_method_name: str) -> float:
         """
@@ -223,16 +273,16 @@ class KpiExtractor:
                 max_timing = timing
         return max_timing
 
-    def _get_timestamp_from_pattern(self, pattern: str, after_timestamp: Optional[datetime.datetime] = None) -> datetime.datetime:
+    def _get_timestamp_from_pattern(self, pattern: str, wait_timeout: int = 180) -> datetime.datetime:
         """
         Get timestamp from log pattern.
 
-        If after_timestamp provided, finds first occurrence after that time.
-        Otherwise uses tail -1 to get the most recent occurrence.
+        Uses tail -1 to get the most recent (last) occurrence.
+        Retries for up to wait_timeout seconds if pattern not found.
 
         Args:
             pattern(str): Pattern to search for in logs
-            after_timestamp(Optional[datetime.datetime]): If provided, find first occurrence after this timestamp
+            wait_timeout(int): Maximum time to wait for pattern to appear in logs (seconds)
 
         Returns:
             datetime.datetime: Parsed timestamp
@@ -240,28 +290,134 @@ class KpiExtractor:
         Raises:
             ValueError: If pattern not found or timestamp parsing fails
         """
-        cmd = f"grep -a -E '{pattern}' {self.mtc_agent_log}"
-        if after_timestamp is None:
-            cmd += " | tail -1"
+        start_time = time.time()
+        
+        while time.time() - start_time < wait_timeout:
+            output = self._search_pattern_in_logs(pattern)
+            
+            if output:
+                timestamp = self._extract_timestamp_from_line(output[0])
+                if timestamp:
+                    return timestamp
+            
+            if time.time() - start_time < wait_timeout:
+                get_logger().log_debug(f"Pattern '{pattern}' not found yet, waiting {self.check_interval}s...")
+                time.sleep(self.check_interval)
+        
+        raise ValueError(f"Pattern not found in logs within {wait_timeout}s: {pattern}")
+
+    def _search_pattern_in_logs(self, pattern: str) -> list:
+        """
+        Search for pattern in log files.
+
+        Gets only the most recent (last) occurrence using tail -1.
+
+        Args:
+            pattern(str): Pattern to search for
+
+        Returns:
+            list: Log lines matching the pattern
+
+        """
+        cmd = f"grep -a -E '{pattern}' {self.mtc_agent_log} | tail -1"
+        output = self.ssh_connection.send(cmd)
+        
+        if output and len(output) > 0 and output[0]:
+            return output
+        return []
+
+    def _extract_timestamp_from_line(self, log_line: str) -> Optional[datetime.datetime]:
+        """
+        Extract timestamp from a single log line.
+
+        Args:
+            log_line(str): Log line to extract timestamp from
+
+        Returns:
+            Optional[datetime.datetime]: Extracted timestamp, or None if not found
+
+        """
+        get_logger().log_info(f"Found log line: {log_line[:200]}...")
+        match = re.search(self.timestamp_pattern, log_line)
+        if match:
+            return datetime.datetime.strptime(match.group(), self.timestamp_format)
+        return None
+
+    def extract_swact_timing(self, standby_controller_name: str) -> float:
+        """
+        Extract controlled swact timing from sm-customer.log.
+
+        Args:
+            standby_controller_name: Name of the standby controller that becomes active
+
+        Returns:
+            Swact timing in seconds
+
+        Raises:
+            ValueError: If patterns not found or extraction fails
+        """
+        start_pattern = f'node-scn\s+\|\s+{standby_controller_name}\s+\|\s+\|\s+swact'
+        end_pattern = self.swact_end_pattern
+        return self._extract_timing_from_sm_log(start_pattern, end_pattern)
+
+    def extract_uncontrolled_swact_timing(self) -> float:
+        """
+        Extract uncontrolled swact timing from sm-customer.log.
+
+        Returns:
+            Uncontrolled swact timing in seconds
+
+        Raises:
+            ValueError: If patterns not found or extraction fails
+        """
+        start_pattern = self.uncontrolled_swact_start_pattern
+        end_pattern = self.swact_end_pattern
+        return self._extract_timing_from_sm_log(start_pattern, end_pattern)
+
+    def _extract_timing_from_sm_log(self, start_pattern: str, end_pattern: str) -> float:
+        """
+        Extract timing between two patterns from sm-customer.log.
+
+        Args:
+            start_pattern: Pattern to search for start timestamp
+            end_pattern: Pattern to search for end timestamp
+
+        Returns:
+            Time difference in seconds
+
+        Raises:
+            ValueError: If patterns not found or extraction fails
+        """
+        start_timestamp = self._get_timestamp_from_sm_log(start_pattern)
+        end_timestamp = self._get_timestamp_from_sm_log(end_pattern)
+
+        time_diff = (end_timestamp - start_timestamp).total_seconds()
+        if time_diff < 0:
+            raise ValueError(f"Negative timing detected: {time_diff}s. End timestamp may be before start timestamp.")
+
+        return time_diff
+
+    def _get_timestamp_from_sm_log(self, pattern: str) -> datetime.datetime:
+        """
+        Get timestamp from sm-customer.log pattern.
+
+        Args:
+            pattern: Pattern to search for in logs
+
+        Returns:
+            Parsed timestamp
+
+        Raises:
+            ValueError: If pattern not found or timestamp parsing fails
+        """
+        cmd = f"grep -a -E '{pattern}' {self.sm_customer_log} | tail -1"
         output = self.ssh_connection.send(cmd)
 
         if not output or not output[0].strip():
-            raise ValueError(f"Pattern not found in logs: {pattern}")
-        if after_timestamp is not None:
-            for line in output:
-                if not line.strip():
-                    continue
-                match = re.search(self.timestamp_pattern, line)
-                if match:
-                    timestamp = datetime.datetime.strptime(match.group(), self.timestamp_format)
-                    if timestamp > after_timestamp:
-                        get_logger().log_info(f"Found log line: {line[:200]}...")
-                        return timestamp
-            raise ValueError(f"No occurrence of pattern '{pattern}' found after {after_timestamp}")
-        else:
-            get_logger().log_info(f"Found log line: {output[0][:200]}...")
-            match = re.search(self.timestamp_pattern, output[0])
-            if not match:
-                raise ValueError(f"Timestamp not found in log output for pattern '{pattern}': {output[0]}")
+            raise ValueError(f"Pattern not found in sm-customer.log: {pattern}")
 
-            return datetime.datetime.strptime(match.group(), self.timestamp_format)
+        match = re.search(self.timestamp_pattern, output[0])
+        if not match:
+            raise ValueError(f"Timestamp not found in log output for pattern '{pattern}': {output[0]}")
+
+        return datetime.datetime.strptime(match.group(), self.timestamp_format)
