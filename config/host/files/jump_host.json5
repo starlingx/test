@@ -1,8 +1,8 @@
 {
   // can be either host name or ip
-  host: "yow-wrcp3-lx.wrs.com",
+  host: "jump_host",
   "credentials": {
-    "user_name": "lwizerda",
-    "password": "3lwizerd"
+    "user_name": "",
+    "password": ""
   }
 }
