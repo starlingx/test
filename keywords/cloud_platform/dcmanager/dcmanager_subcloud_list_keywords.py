@@ -7,6 +7,7 @@ from framework.ssh.ssh_connection import SSHConnection
 from framework.validation.validation import validate_equals_with_retry
 from keywords.base_keyword import BaseKeyword
 from keywords.cloud_platform.command_wrappers import source_openrc
+from keywords.cloud_platform.dcmanager.dcmanager_alarm_summary_keywords import DcManagerAlarmSummaryKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_show_keywords import DcManagerSubcloudShowKeywords
 from keywords.cloud_platform.dcmanager.objects.dcmanager_subcloud_list_object import DcManagerSubcloudListObject
 from keywords.cloud_platform.dcmanager.objects.dcmanager_subcloud_list_object_filter import DcManagerSubcloudListObjectFilter
@@ -164,6 +165,39 @@ class DcManagerSubcloudListKeywords(BaseKeyword):
         if not subclouds:
             raise Exception(f"No subclouds found with release {release}.")
         return subclouds[0]
+
+    def get_healthy_subclouds_without_alarms(self) -> List[DcManagerSubcloudListObject]:
+        """Get healthy subclouds with no critical or major alarms.
+
+        Filters subclouds by dcmanager status (managed, online, deploy complete,
+        in-sync) and then excludes any with critical or major alarms via
+        dcmanager alarm summary.
+
+        Returns:
+            List[DcManagerSubcloudListObject]: Healthy subclouds without critical/major alarms.
+
+        Raises:
+            ValueError: If no healthy subclouds without alarms are found.
+        """
+        healthy_filter = DcManagerSubcloudListObjectFilter.get_healthy_subcloud_filter()
+        healthy_subclouds = self.get_dcmanager_subcloud_list().get_dcmanager_subcloud_list_objects_filtered(healthy_filter)
+
+        if not healthy_subclouds:
+            raise ValueError("No healthy subclouds found in the system.")
+
+        alarm_kw = DcManagerAlarmSummaryKeywords(self.ssh_connection)
+        alarmed_subclouds = {a.get_subcloud_name() for a in alarm_kw.get_alarm_summary_list() if a.get_critical_alarms() > 0 or a.get_major_alarms() > 0}
+
+        filtered = [sc for sc in healthy_subclouds if sc.get_name() not in alarmed_subclouds]
+
+        if len(filtered) < len(healthy_subclouds):
+            excluded = {sc.get_name() for sc in healthy_subclouds} - {sc.get_name() for sc in filtered}
+            get_logger().log_info(f"Excluded subclouds with critical/major alarms: {excluded}")
+
+        if not filtered:
+            raise ValueError("No healthy subclouds without critical/major alarms found.")
+
+        return filtered
 
     def get_all_healthy_subclouds_by_type_and_release(self, lab_type: str, version: str) -> List[DcManagerSubcloudListObject]:
         """Fetch all healthy subclouds by type and software version.
