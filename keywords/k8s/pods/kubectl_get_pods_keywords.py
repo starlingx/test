@@ -171,7 +171,7 @@ class KubectlGetPodsKeywords(K8sBaseKeyword):
 
         raise KeywordException("All pods are not in the expected status")
 
-    def wait_for_pods_to_reach_status(self, expected_status: str | list, pod_names: list = None, namespace: str = None, poll_interval: int = 5, timeout: int = 180) -> bool:
+    def wait_for_pods_to_reach_status(self, expected_status: str | list, pod_names: list = None, namespace: str = None, poll_interval: int = 10, timeout: int = 180) -> bool:
         """Wait for specified pods to reach expected status within timeout period.
 
         This function monitors pods in a given namespace and waits for them to reach
@@ -214,8 +214,11 @@ class KubectlGetPodsKeywords(K8sBaseKeyword):
             pending_pods = [pod.get_name() for pod in initial_pods]
 
         while time.time() < pod_status_timeout:
-            # Get all pods in the namespace
-            pods = self.get_pods(namespace).get_pods()
+            pods_output = self.get_pods_no_validation(namespace)
+            if not pods_output:
+                time.sleep(poll_interval)
+                continue
+            pods = pods_output.get_pods()
 
             # Check each pending pod
             for pod_name in pending_pods[:]:
