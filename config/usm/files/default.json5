@@ -8,7 +8,7 @@
   // Software release paths
   "iso_path": "/opt/software/starlingx.iso",
   "sig_path": "/opt/software/starlingx.sig", 
-  "patch_path": "/opt/software/starlingx.patch",
+  "patch_path": ["/opt/software/starlingx-10.0.1.patch", "/opt/software/starlingx-10.0.2.patch"],
 
   // License
   "license_from_path": "",
@@ -19,7 +19,7 @@
 
   
   // Target release configuration
-  "to_release_ids": ["starlingx-10.0.1"],
+  "to_release_ids": ["starlingx-10.0.1","starlingx-10.0.2"],
 
   // Whether a reboot is required after the operation
   "requires_reboot": false,
