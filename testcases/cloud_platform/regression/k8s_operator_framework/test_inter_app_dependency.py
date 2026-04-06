@@ -12,11 +12,13 @@ from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKey
 from keywords.cloud_platform.system.application.object.system_application_delete_input import SystemApplicationDeleteInput
 from keywords.cloud_platform.system.application.object.system_application_remove_input import SystemApplicationRemoveInput
 from keywords.cloud_platform.system.application.object.system_application_status_enum import SystemApplicationStatusEnum
+from keywords.cloud_platform.system.application.object.system_application_update_input import SystemApplicationUpdateInput
 from keywords.cloud_platform.system.application.object.system_application_upload_input import SystemApplicationUploadInput
 from keywords.cloud_platform.system.application.system_application_apply_keywords import SystemApplicationApplyKeywords
 from keywords.cloud_platform.system.application.system_application_delete_keywords import SystemApplicationDeleteKeywords
 from keywords.cloud_platform.system.application.system_application_list_keywords import SystemApplicationListKeywords
 from keywords.cloud_platform.system.application.system_application_remove_keywords import SystemApplicationRemoveKeywords
+from keywords.cloud_platform.system.application.system_application_update_keywords import SystemApplicationUpdateKeywords
 from keywords.cloud_platform.system.application.system_application_upload_keywords import SystemApplicationUploadKeywords
 from keywords.crictl.crictl_pull_image_keywords import CrictlPullImageKeywords
 from keywords.crictl.crictl_rmi_images_keywords import CrictlRmiImagesKeywords
@@ -379,7 +381,7 @@ def test_check_default_dependency_between_apps(request: FixtureRequest):
     transfer_app_file_to_active_controller(app_name, app_version, ssh_connection)
     refresh_ostree_and_sysinv(ssh_connection)
 
-    # Step 2: Upload application with dependencies
+    # Upload application with dependencies
     start_date_time = DateKeywords(ssh_connection).get_current_datetime()
     get_logger().log_test_case_step(f"Upload app {app_name}")
     app_config = ConfigurationManager.get_app_config()
@@ -389,6 +391,12 @@ def test_check_default_dependency_between_apps(request: FixtureRequest):
     system_application_upload_input.set_tar_file_path(f"{base_path}{app_name}-{app_version}.tgz")
     with pytest.raises(AssertionError):
         SystemApplicationUploadKeywords(ssh_connection).system_application_upload(system_application_upload_input)
+
+    def remove_apps():
+        cleanup_app(app_name, ssh_connection)
+        refresh_ostree_and_sysinv(ssh_connection)
+
+    request.addfinalizer(remove_apps)
 
     # Check for logs in sysinv.log that the application failed to upload
     end_date_time = DateKeywords(ssh_connection).get_current_datetime()
@@ -599,6 +607,423 @@ def test_check_multiple_app_error_dependency_between_apps(request: FixtureReques
         refresh_ostree_and_sysinv(ssh_connection)
 
     request.addfinalizer(remove_apps)
+
+
+def test_check_exact_version_apply_dependency_between_apps(request: FixtureRequest):
+    """
+    Test the apply behavior from functionality of support inter-application dependencies.
+    Apply an application with a dependent app with action apply expecting an exact version of the app, should apply automatic this app
+
+    Test Steps:
+        - Download docker image required by the app
+        - Copy applications files to active controller
+        - Validate that the application with dependency action "apply" can be uploaded and a missing app message appears in "system application-list"
+        - Validate that the application with dependency action "apply" can be applied
+        - Check the dependent application was uploaded and applied
+    Args:
+        request (FixtureRequest): pytest fixture for managing test setup and teardown
+    """
+    app_version = "1.0-1"
+    app_name = "apply-exact-dependency-between-apps"
+    dependent_app_version = "1.1-1"
+    dependent_app_name = "common-dependency-app"
+
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+
+    # Download docker images
+    download_docker_images_to_local_registry(request, ssh_connection, namespaces=[dependent_app_name, app_name])
+
+    # Transfer the dashboard files to the active controller
+    get_logger().log_test_case_step(f"Copy apps {app_name} and {dependent_app_name} to active controller")
+    transfer_app_file_to_active_controller(app_name, app_version, ssh_connection)
+    transfer_app_file_to_active_controller(dependent_app_name, dependent_app_version, ssh_connection)
+    refresh_ostree_and_sysinv(ssh_connection)
+
+    # Upload application with dependencies
+    start_date_time = DateKeywords(ssh_connection).get_current_datetime()
+    get_logger().log_test_case_step(f"Upload app {app_name}")
+    setup_input_object_and_upload(app_name, app_version, ssh_connection)
+    validate_app_progress_message(app_name, f"this app depends on the following missing apps: {dependent_app_name} (compatible version(s): {dependent_app_version})", ssh_connection)
+
+    # Apply application with dependencies
+    get_logger().log_test_case_step(f"Apply app {app_name}")
+    system_application_apply_output = SystemApplicationApplyKeywords(ssh_connection).system_application_apply(app_name)
+    system_application_object = system_application_apply_output.get_system_application_object()
+    validate_not_equals(system_application_object, None, "System application object should not be None")
+    validate_equals(system_application_object.get_name(), app_name, "Application name validation")
+    validate_equals(system_application_object.get_status(), SystemApplicationStatusEnum.APPLIED.value, "Application status validation")
+
+    def remove_apps():
+        cleanup_app(app_name, ssh_connection)
+        cleanup_app(dependent_app_name, ssh_connection)
+        refresh_ostree_and_sysinv(ssh_connection)
+
+    request.addfinalizer(remove_apps)
+
+    # Check for logs in sysinv.log that the dependent application starts uploading
+    end_date_time = DateKeywords(ssh_connection).get_current_datetime()
+    file_keywords = FileKeywords(ssh_connection)
+    output = file_keywords.read_file_with_pattern_range("/var/log/sysinv.log", start_date_time, end_date_time, f"'Dependent app {dependent_app_name} not found. Uploading new app'")
+    validate_not_none(output, "Log appeared at sysinv.log")
+
+    # Check the dependent application was applied
+    get_logger().log_test_case_step("Check the dependent app is applied")
+    system_applications = SystemApplicationListKeywords(ssh_connection).get_system_application_list()
+    validate_equals(system_applications.is_in_application_list(dependent_app_name), True, f"The {dependent_app_name} application should be applied on the system")
+
+    # Check for logs in sysinv.log that the dependent application is applied
+    output = file_keywords.read_file_with_pattern_range("/var/log/sysinv.log", start_date_time, end_date_time, f"'Application {dependent_app_name} ({dependent_app_version}) apply completed'")
+    validate_not_none(output, "Log appeared at sysinv.log")
+
+
+def test_check_exact_version_non_existent_apply_dependency_between_apps(request: FixtureRequest):
+    """
+    Test the apply behavior from functionality of support inter-application dependencies.
+    Apply an application with a dependent app with action apply expecting a non exist version of the app, should fail apply the app
+
+    Test Steps:
+        - Download docker image required by the app
+        - Copy applications files to active controller
+        - Validate that the application with dependency action "apply" can be uploaded and a missing app message appears in "system application-list"
+        - Validate that the application with dependency action "apply" and a non-exist version fail to be applied because missing app with compatible version
+    Args:
+        request (FixtureRequest): pytest fixture for managing test setup and teardown
+    """
+    app_version = "1.0-1"
+    app_name = "apply-dependency-between-apps-with-incorrect-version"
+    non_exist_app_version = "2.1-1"
+    dependent_app_name = "common-dependency-app"
+
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+
+    # Download docker images
+    download_docker_images_to_local_registry(request, ssh_connection, namespaces=[dependent_app_name, app_name])
+
+    # Transfer the dashboard files to the active controller
+    get_logger().log_test_case_step(f"Copy apps {app_name} and {dependent_app_name} to active controller")
+    transfer_app_file_to_active_controller(app_name, app_version, ssh_connection)
+    transfer_app_file_to_active_controller(dependent_app_name, app_version, ssh_connection)
+    refresh_ostree_and_sysinv(ssh_connection)
+
+    # Step 2: Upload application with dependencies
+    start_date_time = DateKeywords(ssh_connection).get_current_datetime()
+    get_logger().log_test_case_step(f"Upload app {app_name}")
+    setup_input_object_and_upload(app_name, app_version, ssh_connection)
+    validate_app_progress_message(app_name, f"this app depends on the following missing apps: {dependent_app_name} (compatible version(s): {non_exist_app_version})", ssh_connection)
+
+    # Apply application with dependencies
+    get_logger().log_test_case_step(f"Apply app {app_name}")
+    with pytest.raises(ValidationFailureError):
+        SystemApplicationApplyKeywords(ssh_connection).system_application_apply(app_name)
+    system_applications = SystemApplicationListKeywords(ssh_connection).get_system_application_list()
+    validate_str_contains(system_applications.get_application(app_name).get_progress(), "Failed to apply dependent apps. Check sysinv logs for details.", f"{app_name} progress validation. Please install them and try to apply again.")
+    validate_equals(system_applications.get_application(app_name).get_status(), SystemApplicationStatusEnum.APPLY_FAILED.value, "Application status validation")
+
+    def remove_apps():
+        cleanup_app(app_name, ssh_connection)
+        cleanup_app(dependent_app_name, ssh_connection)
+        refresh_ostree_and_sysinv(ssh_connection)
+
+    request.addfinalizer(remove_apps)
+
+    # Check for logs in sysinv.log that the dependent application was not found
+    end_date_time = DateKeywords(ssh_connection).get_current_datetime()
+    file_keywords = FileKeywords(ssh_connection)
+    output = file_keywords.read_file_with_pattern_range("/var/log/sysinv.log", start_date_time, end_date_time, f"'No application bundle with name {dependent_app_name} and version {non_exist_app_version} found.'")
+    validate_not_none(output, "Log appeared at sysinv.log")
+    output = file_keywords.read_file_with_pattern_range("/var/log/sysinv.log", start_date_time, end_date_time, f'\'Failed to upload or apply dependent applications. Upload failed: [{{"name": "{dependent_app_name}", "version": "{non_exist_app_version}"}}]\'')
+    validate_not_none(output, "Log appeared at sysinv.log")
+
+
+def test_check_app_dependency_manual_app_update_scenario(request: FixtureRequest):
+    """
+    Test the apply behavior with app manual update dependencies from functionality of support inter-application dependencies.
+    Upload and apply app A with no dependencies. Manual update app A to a new version containing dependency of app B action apply
+
+    Test Steps:
+        - Download docker image required by the app
+        - Copy applications files to active controller
+        - Validate that the application A can be uploaded and applied without any dependencies message
+        - Validate that the application A can be updated to a new version that contains dependency of application B with action "apply"
+        - Check the application A was updated and applied
+        - Check the dependent application B was uploaded and applied
+    Args:
+        request (FixtureRequest): pytest fixture for managing test setup and teardown
+    """
+    app_version = "1.0-1"
+    app_version_update = "1.0-3"
+    app_name_a = "app-1"
+    app_name_b = "app-2"
+
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+
+    # Download docker images
+    download_docker_images_to_local_registry(request, ssh_connection, namespaces=[app_name_a, app_name_b])
+
+    # Transfer the dashboard files to the active controller
+    get_logger().log_test_case_step(f"Copy apps {app_name_a} versions ({app_version} and {app_version_update}) and {app_name_b} to active controller")
+    transfer_app_file_to_active_controller(app_name_a, app_version, ssh_connection)
+    transfer_app_file_to_active_controller(app_name_a, app_version_update, ssh_connection)
+    transfer_app_file_to_active_controller(app_name_b, app_version, ssh_connection)
+    refresh_ostree_and_sysinv(ssh_connection)
+
+    # Upload application
+    start_date_time = DateKeywords(ssh_connection).get_current_datetime()
+    get_logger().log_test_case_step(f"Upload app {app_name_a}")
+    setup_input_object_and_upload(app_name_a, app_version, ssh_connection)
+
+    # Apply application
+    get_logger().log_test_case_step(f"Apply app {app_name_a}")
+    system_application_apply_output = SystemApplicationApplyKeywords(ssh_connection).system_application_apply(app_name_a)
+    system_application_object = system_application_apply_output.get_system_application_object()
+    validate_not_equals(system_application_object, None, "System application object should not be None")
+    validate_equals(system_application_object.get_name(), app_name_a, "Application name validation")
+    validate_equals(system_application_object.get_status(), SystemApplicationStatusEnum.APPLIED.value, "Application status validation")
+
+    # Update application with dependencies on new version
+    get_logger().log_test_case_step(f"Update {app_name_a} with new tarball containing dependency of {app_name_b}")
+    app_config = ConfigurationManager.get_app_config()
+    base_path = app_config.get_base_application_path()
+    system_application_update_input = SystemApplicationUpdateInput()
+    system_application_update_input.set_app_name(app_name_a)
+    system_application_update_input.set_tar_file_path(f"{base_path}{app_name_a}-{app_version_update}.tgz")
+    SystemApplicationUpdateKeywords(ssh_connection).system_application_update(system_application_update_input)
+
+    def remove_apps():
+        cleanup_app(app_name_a, ssh_connection)
+        cleanup_app(app_name_b, ssh_connection)
+        refresh_ostree_and_sysinv(ssh_connection)
+
+    request.addfinalizer(remove_apps)
+
+    # Check for logs in sysinv.log that the dependent application starts uploading
+    end_date_time = DateKeywords(ssh_connection).get_current_datetime()
+    file_keywords = FileKeywords(ssh_connection)
+    output = file_keywords.read_file_with_pattern_range("/var/log/sysinv.log", start_date_time, end_date_time, f"'Dependent app {app_name_b} not found. Uploading new app'")
+    validate_not_none(output, "Log appeared at sysinv.log")
+
+    # Check the dependent application and updated application were applied
+    get_logger().log_test_case_step("Check the apps were applied")
+    system_applications = SystemApplicationListKeywords(ssh_connection).get_system_application_list()
+    validate_equals(system_applications.is_in_application_list(app_name_a), True, f"The {app_name_a} application should be applied on the system")
+    validate_app_progress_message(app_name_a, f"Application update from version {app_version} to version {app_version_update} completed.", ssh_connection)
+    validate_equals(system_applications.is_in_application_list(app_name_b), True, f"The {app_name_b} application should be applied on the system")
+
+    # Check for logs in sysinv.log that the dependent application is applied
+    output = file_keywords.read_file_with_pattern_range("/var/log/sysinv.log", start_date_time, end_date_time, f"'Application {app_name_b} ({app_version}) apply completed'")
+    validate_not_none(output, "Log appeared at sysinv.log")
+
+
+def test_check_dependency_in_three_apps_scenario(request: FixtureRequest):
+    """
+    Test the apply behavior with three apps dependencies from functionality of support inter-application dependencies.
+
+    App C has dependency of App B with action apply
+    App B has dependency of App A with action apply
+    App A has no dependency
+
+    Test Steps:
+        - Download docker image required by the app
+        - Copy applications files to active controller
+        - Validate that the application C with dependency of application B with action "apply" can be uploaded and a missing app message appears in "system application-list"
+        - Validate that the application B with dependency of application A with action "apply" can be uploaded and a missing app message appears in "system application-list"
+        - Validate that the application C can be applied
+        - Check the dependent application A was uploaded and applied
+        - Check the dependent application B was applied
+    Args:
+        request (FixtureRequest): pytest fixture for managing test setup and teardown
+    """
+    app_version = "1.0-1"
+    app_name_a = "app-a"
+    app_name_b = "app-b"
+    app_name_c = "app-c"
+
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+
+    # Download docker images
+    download_docker_images_to_local_registry(request, ssh_connection, namespaces=[app_name_a, app_name_b, app_name_c])
+
+    # Transfer the dashboard files to the active controller
+    get_logger().log_test_case_step(f"Copy apps {app_name_a}, {app_name_b} and {app_name_c} to active controller")
+    transfer_app_file_to_active_controller(app_name_a, app_version, ssh_connection)
+    transfer_app_file_to_active_controller(app_name_b, app_version, ssh_connection)
+    transfer_app_file_to_active_controller(app_name_c, app_version, ssh_connection)
+    refresh_ostree_and_sysinv(ssh_connection)
+
+    # Upload applications with dependencies
+    start_date_time = DateKeywords(ssh_connection).get_current_datetime()
+    get_logger().log_test_case_step(f"Upload app {app_name_c}")
+    setup_input_object_and_upload(app_name_c, app_version, ssh_connection)
+    validate_app_progress_message(app_name_c, f"this app depends on the following missing apps: {app_name_b} (compatible version(s): 1.0-\d+)", ssh_connection)
+
+    get_logger().log_test_case_step(f"Upload app {app_name_b}")
+    setup_input_object_and_upload(app_name_b, app_version, ssh_connection)
+    validate_app_progress_message(app_name_b, f"this app depends on the following missing apps: {app_name_a} (compatible version(s): 1.0-\d+)", ssh_connection)
+
+    # Apply application with dependencies
+    get_logger().log_test_case_step(f"Apply app {app_name_c}")
+    system_application_apply_output = SystemApplicationApplyKeywords(ssh_connection).system_application_apply(app_name_c)
+    system_application_object = system_application_apply_output.get_system_application_object()
+    validate_not_equals(system_application_object, None, "System application object should not be None")
+    validate_equals(system_application_object.get_name(), app_name_c, "Application name validation")
+    validate_equals(system_application_object.get_status(), SystemApplicationStatusEnum.APPLIED.value, "Application status validation")
+
+    def remove_apps():
+        cleanup_app(app_name_a, ssh_connection)
+        cleanup_app(app_name_b, ssh_connection)
+        cleanup_app(app_name_c, ssh_connection)
+        refresh_ostree_and_sysinv(ssh_connection)
+
+    request.addfinalizer(remove_apps)
+
+    # Check all apps were applied
+    get_logger().log_test_case_step("Check all apps are applied")
+    system_applications = SystemApplicationListKeywords(ssh_connection).get_system_application_list()
+    validate_equals(system_applications.is_in_application_list(app_name_b), True, f"The {app_name_b} application should be applied on the system")
+    validate_equals(system_applications.is_in_application_list(app_name_a), True, f"The {app_name_a} application should be applied on the system")
+
+    # Check for logs in sysinv.log
+    end_date_time = DateKeywords(ssh_connection).get_current_datetime()
+    file_keywords = FileKeywords(ssh_connection)
+    output = file_keywords.read_file_with_pattern_range("/var/log/sysinv.log", start_date_time, end_date_time, f"'Application {app_name_c} ({app_version}) upload completed. This app has dependent apps missing: {app_name_b} (compatible version(s): {app_version}). Please install the missing apps first before starting the apply process.'")
+    validate_not_none(output, "Log appeared at sysinv.log")
+    output = file_keywords.read_file_with_pattern_range("/var/log/sysinv.log", start_date_time, end_date_time, f"'Application {app_name_b} ({app_version}) upload completed. This app has dependent apps missing: {app_name_a} (compatible version(s): 1.0-\d+). Please install the missing apps first before starting the apply process.'")
+    validate_not_none(output, "Log appeared at sysinv.log")
+    output = file_keywords.read_file_with_pattern_range("/var/log/sysinv.log", start_date_time, end_date_time, f"'Dependent app {app_name_b} is already uploaded. Skipping upload'")
+    validate_not_none(output, "Log appeared at sysinv.log")
+    output = file_keywords.read_file_with_pattern_range("/var/log/sysinv.log", start_date_time, end_date_time, f"'Dependent app {app_name_a} not found. Uploading new app'")
+    validate_not_none(output, "Log appeared at sysinv.log")
+
+
+def test_check_direct_circular_dependency_between_apps(request: FixtureRequest):
+    """
+    Test the apply behavior with apps with direct circular dependencies from functionality of support inter-application dependencies.
+
+    App A has dependency of App B with action apply
+    App B has dependency of App A with action apply
+
+    Test Steps:
+        - Download docker image required by the app
+        - Copy applications files to active controller
+        - Validate that the application B with dependency of application A with action "apply" can be uploaded and a missing app message appears in "system application-list"
+        - Validate that the application B fail to be applied due to circular dependency detected
+    Args:
+        request (FixtureRequest): pytest fixture for managing test setup and teardown
+    """
+    app_version_a = "1.0-2"
+    app_name_a = "app-circular-direct-1"
+    app_version_b = "1.0-1"
+    app_name_b = "app-circular-direct-2"
+
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+
+    # Download docker images
+    download_docker_images_to_local_registry(request, ssh_connection, namespaces=[app_name_a, app_name_b])
+
+    # Transfer the dashboard files to the active controller
+    get_logger().log_test_case_step(f"Copy apps {app_name_a} and {app_name_b} to active controller")
+    transfer_app_file_to_active_controller(app_name_a, app_version_a, ssh_connection)
+    transfer_app_file_to_active_controller(app_name_b, app_version_b, ssh_connection)
+    refresh_ostree_and_sysinv(ssh_connection)
+
+    # Upload application with dependencies
+    start_date_time = DateKeywords(ssh_connection).get_current_datetime()
+    get_logger().log_test_case_step(f"Upload app {app_name_b}")
+    setup_input_object_and_upload(app_name_b, app_version_b, ssh_connection)
+    validate_app_progress_message(app_name_b, f"this app depends on the following missing apps: {app_name_a} (compatible version(s): {app_version_a})", ssh_connection)
+
+    # Apply application with dependencies
+    get_logger().log_test_case_step(f"Apply app {app_name_b}")
+    with pytest.raises(ValidationFailureError):
+        SystemApplicationApplyKeywords(ssh_connection).system_application_apply(app_name_b)
+    system_applications = SystemApplicationListKeywords(ssh_connection).get_system_application_list()
+    validate_str_contains(system_applications.get_application(app_name_b).get_progress(), "Circular dependency detected.", f"{app_name_b} progress validation. Please install them and try to apply again.")
+    validate_equals(system_applications.get_application(app_name_b).get_status(), SystemApplicationStatusEnum.APPLY_FAILED.value, "Application status validation")
+
+    # Verifies the app is not present in the system
+    system_applications = SystemApplicationListKeywords(ssh_connection).get_system_application_list()
+    validate_equals(system_applications.is_in_application_list(app_name_a), False, f"The {app_name_a} application should not be already uploaded/applied on the system")
+
+    def remove_apps():
+        cleanup_app(app_name_a, ssh_connection)
+        cleanup_app(app_name_b, ssh_connection)
+        refresh_ostree_and_sysinv(ssh_connection)
+
+    request.addfinalizer(remove_apps)
+
+    # Check for logs in sysinv.log that the application failed to apply
+    end_date_time = DateKeywords(ssh_connection).get_current_datetime()
+    file_keywords = FileKeywords(ssh_connection)
+    output = file_keywords.read_file_with_pattern_range("/var/log/sysinv.log", start_date_time, end_date_time, f"Deployment of application {app_name_b} ({app_version_b}) failed: Circular dependency detected.")
+    validate_not_none(output, "Log appeared at sysinv.log")
+
+
+def test_check_indirect_circular_dependency_between_apps(request: FixtureRequest):
+    """
+    Test the apply behavior with three apps dependencies from functionality of support inter-application dependencies.
+
+    App C has dependency of App A with action apply
+    App B has dependency of App A with action apply
+    App A has dependency of App B with action apply
+
+    Test Steps:
+        - Download docker image required by the app
+        - Copy applications files to active controller
+        - Validate that the application C with dependency of application A with action "apply" can be uploaded and a missing app message appears in "system application-list"
+        - Validate that the application C fail to be applied due to circular dependency detected
+
+    Args:
+        request (FixtureRequest): pytest fixture for managing test setup and teardown
+    """
+    app_version = "1.0-1"
+    app_name_a = "app-circular-indirect-1"
+    app_name_b = "app-circular-indirect-2"
+    app_name_c = "app-circular-indirect-3"
+
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+
+    # Download docker images
+    download_docker_images_to_local_registry(request, ssh_connection, namespaces=[app_name_a, app_name_b, app_name_c])
+
+    # Transfer the dashboard files to the active controller
+    get_logger().log_test_case_step(f"Copy apps {app_name_a}, {app_name_b} and {app_name_c} to active controller")
+    transfer_app_file_to_active_controller(app_name_a, app_version, ssh_connection)
+    transfer_app_file_to_active_controller(app_name_b, app_version, ssh_connection)
+    transfer_app_file_to_active_controller(app_name_c, app_version, ssh_connection)
+    refresh_ostree_and_sysinv(ssh_connection)
+
+    # Upload application with dependencies
+    start_date_time = DateKeywords(ssh_connection).get_current_datetime()
+    get_logger().log_test_case_step(f"Upload app {app_name_c}")
+    setup_input_object_and_upload(app_name_c, app_version, ssh_connection)
+    validate_app_progress_message(app_name_c, f"this app depends on the following missing apps: {app_name_a} (compatible version(s): 1.0-2)", ssh_connection)
+
+    # Apply application with dependencies
+    get_logger().log_test_case_step(f"Apply app {app_name_c}")
+    with pytest.raises(ValidationFailureError):
+        SystemApplicationApplyKeywords(ssh_connection).system_application_apply(app_name_c)
+    system_applications = SystemApplicationListKeywords(ssh_connection).get_system_application_list()
+    validate_str_contains(system_applications.get_application(app_name_c).get_progress(), "Circular dependency detected.", f"{app_name_c} progress validation. Please install them and try to apply again.")
+    validate_equals(system_applications.get_application(app_name_c).get_status(), SystemApplicationStatusEnum.APPLY_FAILED.value, "Application status validation")
+
+    # Verifies the dependents apps are not present in the system
+    system_applications = SystemApplicationListKeywords(ssh_connection).get_system_application_list()
+    validate_equals(system_applications.is_in_application_list(app_name_a), False, f"The {app_name_a} application should not be already uploaded/applied on the system")
+    validate_equals(system_applications.is_in_application_list(app_name_b), False, f"The {app_name_b} application should not be already uploaded/applied on the system")
+
+    def remove_apps():
+        cleanup_app(app_name_a, ssh_connection)
+        cleanup_app(app_name_b, ssh_connection)
+        cleanup_app(app_name_c, ssh_connection)
+        refresh_ostree_and_sysinv(ssh_connection)
+
+    request.addfinalizer(remove_apps)
+
+    # Check for logs in sysinv.log that the application failed to apply
+    end_date_time = DateKeywords(ssh_connection).get_current_datetime()
+    file_keywords = FileKeywords(ssh_connection)
+    output = file_keywords.read_file_with_pattern_range("/var/log/sysinv.log", start_date_time, end_date_time, f"Deployment of application {app_name_b} ({app_version}) failed: Circular dependency detected.")
+    validate_not_none(output, "Log appeared at sysinv.log")
 
 
 def test_apps_dependency_class_support_critical(request: FixtureRequest):
