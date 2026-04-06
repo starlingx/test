@@ -4,12 +4,25 @@ from keywords.base_keyword import BaseKeyword
 
 
 class KernelKeywords(BaseKeyword):
-    """
-    Class for linux kernal related command keywords
-    """
+    """Class for linux kernel related command keywords."""
 
     def __init__(self, ssh_connection: SSHConnection):
+        """Initialize KernelKeywords.
+
+        Args:
+            ssh_connection (SSHConnection): SSH connection to the target host.
+        """
         self.ssh_connection = ssh_connection
+
+    def get_kernel_version(self) -> str:
+        """Get the running kernel version via uname -r.
+
+        Returns:
+            str: The kernel version string (e.g., '6.12.0-1-amd64').
+        """
+        output = self.ssh_connection.send("uname -r")
+        self.validate_success_return_code(self.ssh_connection)
+        return output[0].strip()
 
     def trigger_kernel_crash(self):
         """
