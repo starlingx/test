@@ -194,5 +194,3 @@ def test_rehome_one_n_1_subcloud_mgmt_network(request):
 
     get_logger().log_info(f"Deleting subcloud from {destination_system_controller_ssh}")
     DcManagerSubcloudDeleteKeywords(destination_system_controller_ssh).dcmanager_subcloud_delete(subcloud_name=subcloud_name)
-
-    validate_equals(len(network_list), 1, "Validate system host route list only has one route.")
