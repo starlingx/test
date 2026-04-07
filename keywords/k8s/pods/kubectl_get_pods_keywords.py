@@ -67,11 +67,14 @@ class KubectlGetPodsKeywords(K8sBaseKeyword):
         Returns:
             KubectlGetPodsOutput: An object containing the parsed output of the command.
         """
-        arg_namespace = ""
+
+        # If namespace is None, search for all namespaces.
         if namespace:
             arg_namespace = f"-n {namespace}"
+        else:
+            arg_namespace = "--all-namespaces"
 
-        kubectl_get_pods_output = self.ssh_connection.send(self.k8s_config.export(f"kubectl {arg_namespace} -o wide get pods"))
+        kubectl_get_pods_output = self.ssh_connection.send(self.k8s_config.export(f"kubectl -o wide get pods {arg_namespace}"))
         rc = self.ssh_connection.get_return_code()
         if rc != 0:
             return None
@@ -219,7 +222,6 @@ class KubectlGetPodsKeywords(K8sBaseKeyword):
                 time.sleep(poll_interval)
                 continue
             pods = pods_output.get_pods()
-
             # Check each pending pod
             for pod_name in pending_pods[:]:
                 # Find pods matching the prefix (or exact name if no pod_names specified)
