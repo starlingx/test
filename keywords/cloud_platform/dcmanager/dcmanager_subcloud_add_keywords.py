@@ -49,7 +49,7 @@ class DcManagerSubcloudAddKeywords(BaseKeyword):
         dc_manager_sc_list_kw = DcManagerSubcloudListKeywords(self.ssh_connection)
         dc_manager_sc_list_kw.validate_subcloud_status(subcloud_name, "complete")
 
-    def dcmanager_subcloud_add_migrate(self, subcloud_name: str, bootstrap_values: str, install_values: str):
+    def dcmanager_subcloud_add_migrate(self, subcloud_name: str, bootstrap_values: str, install_values: str, release_id: str = None):
         """
         Runs 'dcmanager subcloud add --migrate' command.
 
@@ -57,14 +57,16 @@ class DcManagerSubcloudAddKeywords(BaseKeyword):
             subcloud_name (str): Subcloud name.
             bootstrap_values (str): Bootstrap values file name.
             install_values (str): Install values file name.
+            release_id (str) a str name for the release_id.
         """
         lab_config = ConfigurationManager.get_lab_config()
         subcloud_obj = lab_config.get_subcloud(subcloud_name)
 
         subcloud_ip = subcloud_obj.get_floating_ip()
         subcloud_psswr = subcloud_obj.get_admin_credentials().get_password()
+        release = "" if release_id is None else f"--release {release_id}"
 
-        cmd = source_openrc(f"dcmanager subcloud add --migrate --bootstrap-address {subcloud_ip} " f"--bootstrap-values {bootstrap_values} --install-values {install_values}" f" --sysadmin-password {subcloud_psswr} --bmc-password {subcloud_psswr}")
+        cmd = source_openrc(f"dcmanager subcloud add --migrate --bootstrap-address {subcloud_ip} " f"--bootstrap-values {bootstrap_values} --install-values {install_values}" f" --sysadmin-password {subcloud_psswr} --bmc-password {subcloud_psswr} {release}")
 
         self.ssh_connection.send(cmd)
         self.validate_success_return_code(self.ssh_connection)
