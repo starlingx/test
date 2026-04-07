@@ -14,6 +14,9 @@ from keywords.cloud_platform.sw_patch.software_patch_keywords import SwPatchQuer
 from keywords.cloud_platform.upgrade.software_list_keywords import SoftwareListKeywords
 from keywords.cloud_platform.version_info.cloud_platform_software_version import CloudPlatformSoftwareVersion
 from keywords.cloud_platform.version_info.cloud_platform_version_manager import CloudPlatformVersionManager
+from keywords.k8s.pods.kubectl_get_pods_keywords import KubectlGetPodsKeywords
+from keywords.cloud_platform.fault_management.alarms.alarm_list_keywords import AlarmListKeywords
+from keywords.cloud_platform.system.application.system_application_list_keywords import SystemApplicationListKeywords
 from keywords.files.file_keywords import FileKeywords
 
 
@@ -48,8 +51,25 @@ def test_backup():
 
     # Prechecks Before Back-Up:
     get_logger().log_info("Performing pre-checks before back up")
-    obj_health = HealthKeywords(ssh_connection)
-    obj_health.validate_healty_cluster()  # Checks alarms, pods, app health
+    
+    
+    #  Validate pod health 
+    get_logger().log_info("Validating pod health across all namespaces")
+    kubectl_pods = KubectlGetPodsKeywords(ssh_connection)
+    healthy_status = ["Running", "Succeeded", "Completed"]
+    pods_healthy = kubectl_pods.wait_for_all_pods_status(expected_statuses=healthy_status, timeout=300)
+    validate_equals(pods_healthy, True, "All pods health validation")
+    
+    #  Validate no alarms are present
+    get_logger().log_info("Validating no alarms are present")
+    AlarmListKeywords(ssh_connection).wait_for_all_alarms_cleared()
+    
+    #  Validate all apps are healthy and applied
+    get_logger().log_info("Validating application health")
+    app_healthy_status = ["applied", "uploaded"]
+    SystemApplicationListKeywords(ssh_connection).validate_all_apps_status(app_healthy_status)
+    
+    get_logger().log_info("All cluster health validations passed - Ready for Backup")
 
     get_logger().log_info("Delete old backup files if present in back up directory")
     backup_files = FileKeywords(ssh_connection).get_files_in_dir(backup_dir)
