@@ -125,6 +125,63 @@ def validate_not_equals(observed_value: Any, expected_value: Any, validation_des
         raise Exception("Validation Failed")
 
 
+def validate_not_equals_with_retry(
+    function_to_execute: Callable[[], Any],
+    not_expected_value: Any,
+    validation_description: str,
+    timeout: int = 30,
+    polling_sleep_time: int = 5,
+) -> Any:
+    """Validate that function_to_execute returns a value different from not_expected_value within timeout.
+
+    Repeatedly calls function_to_execute until the result differs from not_expected_value.
+    Supports ValidationResponse for returning a different value than the one being validated.
+
+    Args:
+        function_to_execute (Callable[[], Any]): The function to be executed repeatedly.
+        not_expected_value (Any): The value we do NOT want to see.
+        validation_description (str): Description of this validation for logging purposes.
+        timeout (int): The maximum time (in seconds) to wait for the value to change.
+        polling_sleep_time (int): The interval of time to wait between calls to function_to_execute.
+
+    Returns:
+        Any: The observed value (or value_to_return from ValidationResponse) once it differs from not_expected_value.
+
+    Raises:
+        TimeoutError: If the timeout is reached and the value still equals not_expected_value.
+
+    """
+    get_logger().log_info(f"Attempting Validation - {validation_description}")
+    end_time = time.time() + timeout
+
+    while True:
+
+        # Execute the function and unwrap ValidationResponse if returned.
+        result = function_to_execute()
+        if isinstance(result, ValidationResponse):
+            value_to_validate = result.get_value_to_validate()
+            value_to_return = result.get_value_to_return()
+        else:
+            value_to_validate = result
+            value_to_return = result
+
+        # Success: observed value differs from the not-expected value.
+        if value_to_validate != not_expected_value:
+            get_logger().log_info(f"Validation Successful - {validation_description}")
+            return value_to_return
+        else:
+            get_logger().log_info("Validation Failed")
+            get_logger().log_info(f"Not Expected: {not_expected_value}")
+            get_logger().log_info(f"Observed: {value_to_validate}")
+
+            # Retry if time remains, otherwise raise timeout.
+            if time.time() < end_time:
+                get_logger().log_info(f"Retrying in {polling_sleep_time}s")
+                sleep(polling_sleep_time)
+            else:
+                raise TimeoutError(f"Timeout performing validation - {validation_description}")
+
+
 def validate_str_contains(observed_value: str, expected_value: str, validation_description: str) -> None:
     """
     This function will validate if the observed value contains the expected value.
@@ -351,6 +408,61 @@ def validate_not_none(observed_value: Any, validation_description: str) -> None:
         get_logger().log_error("Expected: Not None")
         get_logger().log_error(f"Observed: {observed_value}")
         raise Exception("Validation Failed")
+
+
+def validate_not_none_with_retry(
+    function_to_execute: Callable[[], Any],
+    validation_description: str,
+    timeout: int = 30,
+    polling_sleep_time: int = 5,
+) -> Any:
+    """Validate that function_to_execute returns a non-None value within timeout.
+
+    Repeatedly calls function_to_execute until the result is not None.
+    Supports ValidationResponse for returning a different value than the one being validated.
+
+    Args:
+        function_to_execute (Callable[[], Any]): The function to be executed repeatedly.
+        validation_description (str): Description of this validation for logging purposes.
+        timeout (int): The maximum time (in seconds) to wait for a non-None value.
+        polling_sleep_time (int): The interval of time to wait between calls to function_to_execute.
+
+    Returns:
+        Any: The observed value (or value_to_return from ValidationResponse) once it is not None.
+
+    Raises:
+        TimeoutError: If the timeout is reached and the value is still None.
+
+    """
+    get_logger().log_info(f"Attempting Validation - {validation_description}")
+    end_time = time.time() + timeout
+
+    while True:
+
+        # Execute the function and unwrap ValidationResponse if returned.
+        result = function_to_execute()
+        if isinstance(result, ValidationResponse):
+            value_to_validate = result.get_value_to_validate()
+            value_to_return = result.get_value_to_return()
+        else:
+            value_to_validate = result
+            value_to_return = result
+
+        # Success: observed value is not None.
+        if value_to_validate is not None:
+            get_logger().log_info(f"Validation Successful - {validation_description}")
+            return value_to_return
+        else:
+            get_logger().log_info("Validation Failed")
+            get_logger().log_info("Expected: Not None")
+            get_logger().log_info(f"Observed: {value_to_validate}")
+
+            # Retry if time remains, otherwise raise timeout.
+            if time.time() < end_time:
+                get_logger().log_info(f"Retrying in {polling_sleep_time}s")
+                sleep(polling_sleep_time)
+            else:
+                raise TimeoutError(f"Timeout performing validation - {validation_description}")
 
 
 def validate_is_digit(observed_value: str, validation_description: str) -> None:
