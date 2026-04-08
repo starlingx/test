@@ -1,0 +1,13 @@
+{
+  // Patch file server configuration for downloading test patches
+  "server": "",
+  "user": "",
+  "password": "",
+  "base_path": "",
+  "patch_subpath": "",
+  "patch_pattern": "",
+  "destination_path": "",
+  "log_path": "",
+  "connection_timeout": 30,
+  "download_timeout": 300
+}
