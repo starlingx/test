@@ -32,6 +32,38 @@ class SecurityConfig:
         self.portieris_registry_credentials = portieris_config.get("registry_credentials", {})
         self.portieris_registry_ca_cert = portieris_config.get("registry_ca_cert", "")
 
+        # OIDC Keycloak configuration
+        oidc_keycloak_config = security_dict.get("oidc_keycloak", {})
+        self.oidc_keycloak_working_dir = oidc_keycloak_config.get("working_dir", "/home/sysadmin/oidc-keycloak/")
+        self.oidc_keycloak_namespace = oidc_keycloak_config.get("namespace", "kube-system")
+        self.oidc_keycloak_upstream_idp_ca_secret_name = oidc_keycloak_config.get("upstream_idp_ca_secret_name", "oidc-upstream-idp-ca")
+        self.oidc_keycloak_upstream_idp_ca_filename = oidc_keycloak_config.get("upstream_idp_ca_filename", "upstream-ca.crt")
+        self.oidc_keycloak_client_id = oidc_keycloak_config.get("client_id", "")
+        self.oidc_keycloak_client_secret = oidc_keycloak_config.get("client_secret", "")
+        self.oidc_keycloak_external_idp_issuer_url = oidc_keycloak_config.get("external_idp_issuer_url", "")
+        self.oidc_keycloak_ca_cert = oidc_keycloak_config.get("keycloak_ca_cert", "")
+        self.oidc_keycloak_oidc_auth_apps_certificate_secret_name = oidc_keycloak_config.get("oidc_auth_apps_certificate_secret_name", "oidc-auth-apps-certificate")
+        crb_config = oidc_keycloak_config.get("cluster_role_binding", {})
+        self.oidc_keycloak_crb_binding_name = crb_config.get("binding_name", "crb_binding_name")
+        self.oidc_keycloak_crb_cluster_role = crb_config.get("cluster_role", "cluster-admin")
+        self.oidc_keycloak_crb_group = crb_config.get("group", "crb_group")
+        self.oidc_keycloak_system_local_ca_cert_filename = oidc_keycloak_config.get("system_local_ca_cert_filename", "system-local-ca.crt")
+        self.oidc_keycloak_kubeconfig_filename = oidc_keycloak_config.get("kubeconfig_filename", "local-oidc-login-kubeconfig.yml")
+        self.oidc_keycloak_login_port = oidc_keycloak_config.get("oidc_login_port", 8000)
+        self.oidc_keycloak_admin_username = oidc_keycloak_config.get("admin", {}).get("username", "admin")
+        self.oidc_keycloak_admin_password = oidc_keycloak_config.get("admin", {}).get("password", "admin")
+        test_user_config = oidc_keycloak_config.get("test_user", {})
+        self.oidc_keycloak_test_username = test_user_config.get("username", "")
+        self.oidc_keycloak_test_password = test_user_config.get("password", "")
+        self.oidc_keycloak_test_totp_secret = test_user_config.get("totp_secret", "")
+        self.oidc_keycloak_connector_id = oidc_keycloak_config.get("connector_id", "keycloak")
+        self.oidc_keycloak_redirect_uri = oidc_keycloak_config.get("redirect_uri", "")
+        static_client_config = oidc_keycloak_config.get("static_client", {})
+        self.oidc_keycloak_static_client_id = static_client_config.get("id", "stx-oidc-client-app")
+        self.oidc_keycloak_static_client_name = static_client_config.get("name", "STX OIDC Client app")
+        self.oidc_keycloak_static_client_secret = static_client_config.get("secret", "")
+        self.oidc_keycloak_static_client_redirect_uris = static_client_config.get("redirect_uris", [])
+
     def get_domain_name(self) -> str:
         """Getter for the domain name.
 
@@ -239,3 +271,211 @@ class SecurityConfig:
             str: TLS secret name.
         """
         return self.nginx_external_ca_test.get("tls_secret_name", "kuard-ingress-tls")
+
+    def get_oidc_keycloak_working_dir(self) -> str:
+        """Getter for OIDC Keycloak working directory on the remote host.
+
+        Returns:
+            str: Working directory path.
+        """
+        return self.oidc_keycloak_working_dir
+
+    def get_oidc_keycloak_namespace(self) -> str:
+        """Getter for the Kubernetes namespace used by OIDC Keycloak secrets.
+
+        Returns:
+            str: Kubernetes namespace.
+        """
+        return self.oidc_keycloak_namespace
+
+    def get_oidc_keycloak_upstream_idp_ca_secret_name(self) -> str:
+        """Getter for the upstream IdP CA secret name.
+
+        Returns:
+            str: Secret name for the upstream IdP CA certificate.
+        """
+        return self.oidc_keycloak_upstream_idp_ca_secret_name
+
+    def get_oidc_keycloak_upstream_idp_ca_filename(self) -> str:
+        """Getter for the upstream IdP CA certificate filename used as the secret key.
+
+        Returns:
+            str: Filename for the upstream CA certificate.
+        """
+        return self.oidc_keycloak_upstream_idp_ca_filename
+
+    def get_oidc_keycloak_ca_cert(self) -> str:
+        """Getter for the Keycloak CA certificate PEM content.
+
+        Returns:
+            str: PEM-encoded Keycloak CA certificate.
+        """
+        return self.oidc_keycloak_ca_cert
+
+    def get_oidc_keycloak_client_id(self) -> str:
+        """Getter for the Keycloak OIDC client ID.
+
+        Returns:
+            str: Keycloak OIDC client ID.
+        """
+        return self.oidc_keycloak_client_id
+
+    def get_oidc_keycloak_client_secret(self) -> str:
+        """Getter for the Keycloak OIDC client secret.
+
+        Returns:
+            str: Keycloak OIDC client secret.
+        """
+        return self.oidc_keycloak_client_secret
+
+    def get_oidc_keycloak_external_idp_issuer_url(self) -> str:
+        """Getter for the Keycloak realm issuer URL.
+
+        Returns:
+            str: Keycloak external IdP issuer URL.
+        """
+        return self.oidc_keycloak_external_idp_issuer_url
+
+    def get_oidc_keycloak_oidc_auth_apps_certificate_secret_name(self) -> str:
+        """Getter for the OIDC auth apps TLS certificate secret name.
+
+        Returns:
+            str: Secret name for the OIDC auth apps TLS certificate.
+        """
+        return self.oidc_keycloak_oidc_auth_apps_certificate_secret_name
+
+    def get_oidc_keycloak_crb_binding_name(self) -> str:
+        """Getter for the ClusterRoleBinding name.
+
+        Returns:
+            str: ClusterRoleBinding name.
+        """
+        return self.oidc_keycloak_crb_binding_name
+
+    def get_oidc_keycloak_crb_cluster_role(self) -> str:
+        """Getter for the cluster role to bind.
+
+        Returns:
+            str: Cluster role name.
+        """
+        return self.oidc_keycloak_crb_cluster_role
+
+    def get_oidc_keycloak_crb_group(self) -> str:
+        """Getter for the group to bind the cluster role to.
+
+        Returns:
+            str: Group name.
+        """
+        return self.oidc_keycloak_crb_group
+
+    def get_oidc_keycloak_system_local_ca_cert_filename(self) -> str:
+        """Getter for the system-local-ca certificate filename.
+
+        Returns:
+            str: Filename for the system-local-ca certificate.
+        """
+        return self.oidc_keycloak_system_local_ca_cert_filename
+
+    def get_oidc_keycloak_kubeconfig_filename(self) -> str:
+        """Getter for the local OIDC login kubeconfig filename.
+
+        Returns:
+            str: Filename for the local OIDC login kubeconfig.
+        """
+        return self.oidc_keycloak_kubeconfig_filename
+
+    def get_oidc_keycloak_login_port(self) -> int:
+        """Getter for the OIDC login browser port.
+
+        Returns:
+            int: Port number for the OIDC login browser URL.
+        """
+        return self.oidc_keycloak_login_port
+
+    def get_oidc_keycloak_admin_username(self) -> str:
+        """Getter for the Keycloak admin username.
+
+        Returns:
+            str: Keycloak admin username.
+        """
+        return self.oidc_keycloak_admin_username
+
+    def get_oidc_keycloak_admin_password(self) -> str:
+        """Getter for the Keycloak admin password.
+
+        Returns:
+            str: Keycloak admin password.
+        """
+        return self.oidc_keycloak_admin_password
+
+    def get_oidc_keycloak_test_username(self) -> str:
+        """Getter for the Keycloak test user username.
+
+        Returns:
+            str: Test user username.
+        """
+        return self.oidc_keycloak_test_username
+
+    def get_oidc_keycloak_test_password(self) -> str:
+        """Getter for the Keycloak test user password.
+
+        Returns:
+            str: Test user password.
+        """
+        return self.oidc_keycloak_test_password
+
+    def get_oidc_keycloak_test_totp_secret(self) -> str:
+        """Getter for the Keycloak test user TOTP secret.
+
+        Returns:
+            str: Base32-encoded TOTP secret for the test user.
+        """
+        return self.oidc_keycloak_test_totp_secret
+
+    def get_oidc_keycloak_connector_id(self) -> str:
+        """Getter for the DEX connector ID.
+
+        Returns:
+            str: DEX connector ID.
+        """
+        return self.oidc_keycloak_connector_id
+
+    def get_oidc_keycloak_redirect_uri(self) -> str:
+        """Getter for the DEX callback redirect URI.
+
+        Returns:
+            str: DEX callback redirect URI.
+        """
+        return self.oidc_keycloak_redirect_uri
+
+    def get_oidc_keycloak_static_client_id(self) -> str:
+        """Getter for the static OIDC client ID.
+
+        Returns:
+            str: Static OIDC client ID.
+        """
+        return self.oidc_keycloak_static_client_id
+
+    def get_oidc_keycloak_static_client_name(self) -> str:
+        """Getter for the static OIDC client name.
+
+        Returns:
+            str: Static OIDC client name.
+        """
+        return self.oidc_keycloak_static_client_name
+
+    def get_oidc_keycloak_static_client_secret(self) -> str:
+        """Getter for the static OIDC client secret.
+
+        Returns:
+            str: Static OIDC client secret.
+        """
+        return self.oidc_keycloak_static_client_secret
+
+    def get_oidc_keycloak_static_client_redirect_uris(self) -> list[str]:
+        """Getter for the static OIDC client redirect URIs.
+
+        Returns:
+            list[str]: List of redirect URIs for the static OIDC client.
+        """
+        return self.oidc_keycloak_static_client_redirect_uris

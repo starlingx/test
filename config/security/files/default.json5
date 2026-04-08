@@ -44,5 +44,82 @@
             "password": "registry_password"
         },
         "registry_ca_cert": "registry_ca_cert"
-    }
+    }, 
+    
+    // OIDC with Keycloak and MFA configuration
+    "oidc_keycloak": {
+        // Working directory on the remote host for OIDC files
+        "working_dir": "/home/sysadmin/oidc-keycloak/",
+
+        // Kubernetes namespace for OIDC secrets
+        "namespace": "kube-system",
+
+        // Name of the upstream IdP CA secret
+        "upstream_idp_ca_secret_name": "oidc-upstream-idp-ca",
+
+        // Filename used as the key inside the secret 
+        "upstream_idp_ca_filename": "upstream-ca.crt",
+
+        // Keycloak OIDC client ID
+        "client_id": "keycloak_oidc_client_id",
+
+        // Keycloak OIDC client secret
+        "client_secret": "keycloak_oidc_client_secret",
+
+        // Keycloak realm issuer URL
+        "external_idp_issuer_url": "https://keycloak_host/realms/keycloak_realm",
+
+        // Name of the OIDC auth apps TLS certificate secret
+        "oidc_auth_apps_certificate_secret_name": "oidc-auth-apps-certificate",
+
+        // ClusterRoleBinding configuration
+        "cluster_role_binding": {
+            "binding_name": "crb_binding_name",
+            "cluster_role": "cluster-admin",
+            "group": "crb_group"
+        },
+
+        // system-local-ca certificate filename saved alongside the kubeconfig
+        "system_local_ca_cert_filename": "system-local-ca.crt",
+
+        // Local OIDC login kubeconfig filename
+        "kubeconfig_filename": "local-oidc-login-kubeconfig.yml",
+
+        // OIDC login browser URL port
+        "oidc_login_port": 8000,
+
+        // Keycloak admin credentials for test lifecycle management
+        "admin": {
+            "username": "keycloak_admin_username",
+            "password": "keycloak_admin_password"
+        },
+
+        // Keycloak test user credentials for OIDC authentication
+        "test_user": {
+            "username": "keycloak_test_username",
+            "password": "keycloak_test_password",
+            "totp_secret": "keycloak_test_totp_secret"
+        },
+
+        // Keycloak OIDC connector ID
+        "connector_id": "keycloak",
+
+        // DEX callback redirect URI
+        "redirect_uri": "https://oam_ip:dex_callback_port/dex/callback",
+
+        // Static OIDC client configuration
+        "static_client": {
+            "id": "stx-oidc-client-app",
+            "name": "STX OIDC Client app",
+            "secret": "oidc_static_client_secret",
+            "redirect_uris": [
+                "http://localhost:8000",
+                "http://oam_ip:oidc_login_port",
+                "https://oam_ip:oidc_client_port/callback"
+            ]
+        },
+
+        // Keycloak CA certificate (PEM encoded)
+        "keycloak_ca_cert": "keycloak_ca_cert_pem"
+    }    
 }

@@ -1,0 +1,53 @@
+# Template for dex helm overrides for OIDC with Keycloak external IdP.
+# Variables:
+#   oam_ip:                  OAM floating IP (IPv6 wrapped in brackets if needed)
+#   client_id:               Keycloak OIDC client ID
+#   client_secret:           Keycloak OIDC client secret
+#   external_idp_issuer_url: Keycloak realm issuer URL
+#   oidc_client_secret:      Static OIDC client secret
+config:
+  connectors:
+  - config:
+      claimMapping:
+        email: email
+        name: name
+        preferred_username: preferred_username
+      clientID: {{ client_id }}
+      clientSecret: {{ client_secret }}
+      getUserInfo: true
+      issuer: {{ external_idp_issuer_url }}
+      rootCA: /etc/ssl/certs/idpca/upstream-ca.crt
+      redirectURI: https://{{ oam_ip }}:30556/dex/callback
+      insecureEnableGroups: true
+      scopes:
+      - profile
+      - email
+      userIDKey: preferred_username
+      userNameKey: preferred_username
+    id: keycloak
+    name: keycloak
+    type: oidc
+  staticClients:
+  - id: stx-oidc-client-app
+    name: STX OIDC Client app
+    redirectURIs:
+    - http://localhost:8000
+    - http://{{ oam_ip }}:8000
+    - https://{{ oam_ip }}:30555/callback
+    secret: {{ oidc_client_secret }}
+volumeMounts:
+  - mountPath: /etc/dex/tls
+    name: https-tls
+  - mountPath: /etc/ssl/certs/idpca
+    name: oidc-idp-ca
+volumes:
+  - name: https-tls
+    secret:
+      defaultMode: 420
+      secretName: oidc-auth-apps-certificate
+  - name: oidc-idp-ca
+    secret:
+      secretName: oidc-upstream-idp-ca
+envVars:
+  - name: SSL_CERT_FILE
+    value: /etc/ssl/certs/idpca/upstream-ca.crt
