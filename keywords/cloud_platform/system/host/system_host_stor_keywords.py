@@ -1,3 +1,6 @@
+import time
+
+from framework.exceptions.keyword_exception import KeywordException
 from framework.ssh.ssh_connection import SSHConnection
 from keywords.base_keyword import BaseKeyword
 from keywords.cloud_platform.command_wrappers import source_openrc
@@ -70,3 +73,52 @@ class SystemHostStorageKeywords(BaseKeyword):
 
         if not success:
             raise RuntimeError("Failed to add any OSD disk. All attempts were unsuccessful.")
+
+    def system_stor_add_specific_disk(self, hostname: str, disk_uuid: str) -> None:
+        """
+        Add OSD to specific disk to the specified host.
+
+        Args:
+            hostname (str): The name of the host which the OSD should be added on.
+            disk_uuid (str): A string of disk UUID to add OSD.
+
+        """
+        self.ssh_connection.send(source_openrc(f"system host-stor-add {hostname} osd {disk_uuid}"))
+        self.validate_success_return_code(self.ssh_connection)
+
+    def system_host_stor_delete(self, osd_uuid: str, force_delete: bool = False) -> None:
+        """
+        Attempts to delete OSD.
+
+        Args:
+            osd_uuid (str): the string of osd uuid.
+            force_delete (bool): use --force option in the command
+
+        """
+        cmd = f"system host-stor-delete {osd_uuid}"
+        if force_delete:
+            cmd += " --force"
+        self.ssh_connection.send(source_openrc(cmd))
+        self.validate_success_return_code(self.ssh_connection)
+
+    def wait_for_all_osd_cleared_on_host(self, host_name: str, timeout: int = 600) -> bool:
+        """
+        Wait for all OSDs to be cleared from host-stor-list
+
+        Args:
+            host_name (str): hostname
+            timeout (int): the amount of time in seconds to wait
+
+        Returns:
+            bool: True if all OSDs are deleted
+
+        """
+        osd_status_timeout = time.time() + timeout
+
+        while time.time() < osd_status_timeout:
+            current_osd_uuids = self.get_system_host_stor_list(host_name).get_all_osd_uuids()
+            if not current_osd_uuids:
+                return True
+            time.sleep(10)
+
+        raise KeywordException("OSDs were not deleted completely.")

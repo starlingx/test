@@ -5,6 +5,8 @@ from framework.logging.automation_logger import get_logger
 from framework.validation.validation import validate_equals, validate_equals_with_retry, validate_str_contains
 from keywords.ceph.ceph_osd_pool_ls_detail_keywords import CephOsdPoolLsDetailKeywords
 from keywords.ceph.ceph_status_keywords import CephStatusKeywords
+from keywords.cloud_platform.fault_management.alarms.alarm_list_keywords import AlarmListKeywords
+from keywords.cloud_platform.fault_management.alarms.objects.alarm_list_output import AlarmListOutput
 from keywords.cloud_platform.health.health_keywords import HealthKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.cloud_platform.system.application.system_application_apply_keywords import SystemApplicationApplyKeywords
@@ -14,6 +16,8 @@ from keywords.cloud_platform.system.host.system_host_fs_keywords import SystemHo
 from keywords.cloud_platform.system.host.system_host_list_keywords import SystemHostListKeywords
 from keywords.cloud_platform.system.host.system_host_lock_keywords import SystemHostLockKeywords
 from keywords.cloud_platform.system.host.system_host_reboot_keywords import SystemHostRebootKeywords
+from keywords.cloud_platform.system.host.system_host_reinstall_keywords import SystemHostReinstallKeywords
+from keywords.cloud_platform.system.host.system_host_stor_keywords import SystemHostStorageKeywords
 from keywords.cloud_platform.system.host.system_host_swact_keywords import SystemHostSwactKeywords
 from keywords.cloud_platform.system.storage.system_storage_backend_keywords import SystemStorageBackendKeywords
 
@@ -817,4 +821,98 @@ def test_helm_overrides_operations():
 
     get_logger().log_test_case_step("Check the healthy after delete the update")
     health_keywords.validate_pods_health(namespace)
+    ceph_status_keywords.wait_for_ceph_health_status(expect_health_status=True)
+
+
+@mark.lab_has_standby_controller
+@mark.lab_has_rook_ceph
+def test_reinstall_standby_host():
+    """
+    Test to validate standby controller re-installation and ceph health.
+
+    Test Steps:
+        - Check the hosts healthy
+        - Check if controller-0 is the active controller
+        - Get the active alarms
+        - Remove OSDs on standby controller in it has OSD
+        - Lock standby controller
+        - Reinstall standby controller
+        - Unlock standby controller
+        - Re-add OSDs on standby controller if necessary
+        - Checking if there are any new active alarms
+        - Checking storage backend health after reinstall.
+
+    Args: None
+
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    system_host_list_keywords = SystemHostListKeywords(ssh_connection)
+    system_host_lock_keywords = SystemHostLockKeywords(ssh_connection)
+    standby_controller = system_host_list_keywords.get_standby_controller().get_host_name()
+    system_host_reinstall_keywords = SystemHostReinstallKeywords(ssh_connection)
+    ceph_status_keywords = CephStatusKeywords(ssh_connection)
+    alarm_list_keywords = AlarmListKeywords(ssh_connection)
+    health_keywords = HealthKeywords(ssh_connection)
+    system_host_swact_keywords = SystemHostSwactKeywords(ssh_connection)
+    system_storage_backend_keywords = SystemStorageBackendKeywords(ssh_connection)
+    system_application_apply_keywords = SystemApplicationApplyKeywords(ssh_connection)
+    system_host_stor_keywords = SystemHostStorageKeywords(ssh_connection)
+    app_status_list = ["applied"]
+    app_name = "rook-ceph"
+    storage_backend = "ceph-rook"
+
+    get_logger().log_test_case_step("Check the storage backend is ceph-rook")
+    validate_equals(system_storage_backend_keywords.get_system_storage_backend_list().is_backend_configured(storage_backend), True, "Checking storage backend")
+
+    get_logger().log_test_case_step("Check the hosts healthy")
+    health_keywords.validate_hosts_health()
+
+    get_logger().log_test_case_step("Check if controller-0 is the active controller")
+    if standby_controller == "controller-0":
+        system_host_swact_keywords.host_swact()
+        standby_controller = system_host_list_keywords.get_standby_controller().get_host_name()
+
+    get_logger().log_test_case_step("Get the active alarms")
+    initial_alarm_list_ids = alarm_list_keywords.get_alarm_list().alarms_id()
+
+    stor_list_obj = system_host_stor_keywords.get_system_host_stor_list(standby_controller)
+    osd_disk_uuids = stor_list_obj.get_host_all_osd_idisk_uuid()
+    get_logger().log_info(f"\n{standby_controller} OSDs idish_uuids:{osd_disk_uuids}\n")
+    if osd_disk_uuids:
+        get_logger().log_info("Storage backend is ceph-rook, remove all OSDs in standby controller" " before reinstall the host")
+        osd_uuids = stor_list_obj.get_all_osd_uuids()
+        get_logger().log_test_case_step(f"Force delete all OSDs:{osd_uuids} from {standby_controller}")
+        for osd_uuid in osd_uuids:
+            system_host_stor_keywords.system_host_stor_delete(osd_uuid, force_delete=True)
+
+        get_logger().log_test_case_step(f"Reapply {app_name}")
+        system_application_apply_keywords.system_application_apply(app_name, timeout=500)
+        SystemApplicationListKeywords(ssh_connection).validate_app_status_in_list(app_name, app_status_list, timeout=360, polling_sleep_time=10)
+
+        get_logger().log_test_case_step(f"Make sure OSDs are removed completely from {standby_controller}")
+        system_host_stor_keywords.wait_for_all_osd_cleared_on_host(standby_controller)
+
+    get_logger().log_test_case_step(f"Lock {standby_controller}")
+    system_host_lock_keywords.lock_host(standby_controller)
+
+    get_logger().log_test_case_step(f"Reinstall {standby_controller}")
+    system_host_reinstall_keywords.reinstall_host(standby_controller)
+
+    get_logger().log_test_case_step(f"Unlock {standby_controller}")
+    system_host_lock_keywords.unlock_host(standby_controller)
+
+    if osd_disk_uuids:
+        get_logger().log_info("Storage backend is ceph-rook, re-add all OSDs for standby controller " "after reinstall the host")
+        get_logger().log_test_case_step(f"Re-add OSDs for {standby_controller}")
+        for osd_disk_uuid in osd_disk_uuids:
+            system_host_stor_keywords.system_stor_add_specific_disk(standby_controller, osd_disk_uuid)
+
+        get_logger().log_test_case_step(f"Reapply {app_name}")
+        system_application_apply_keywords.system_application_apply(app_name, timeout=500)
+        SystemApplicationListKeywords(ssh_connection).validate_app_status_in_list(app_name, app_status_list, timeout=360, polling_sleep_time=10)
+
+    get_logger().log_test_case_step("Checking if there are any new active alarms")
+    validate_equals_with_retry(lambda: AlarmListOutput.is_new_alarm_id_since(initial_alarm_list_ids, alarm_list_keywords.get_alarm_list().alarms_id()), False, "waiting for no new alarms should be present", timeout=600)
+
+    get_logger().log_test_case_step("Checking storage backend health after reinstall.")
     ceph_status_keywords.wait_for_ceph_health_status(expect_health_status=True)
