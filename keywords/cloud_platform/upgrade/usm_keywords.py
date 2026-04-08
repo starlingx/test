@@ -48,9 +48,9 @@ class USMKeywords(BaseKeyword):
         cmd = source_openrc(base_cmd)
         timeout = self.usm_config.get_upload_patch_timeout_sec()
         if sudo:
-            output = self.ssh_connection.send_as_sudo(cmd, reconnect_timeout=timeout)
+            output = self.ssh_connection.send_as_sudo(cmd, command_timeout=timeout, reconnect_timeout=timeout)
         else:
-            output = self.ssh_connection.send(cmd, reconnect_timeout=timeout, get_pty=True)
+            output = self.ssh_connection.send(cmd, command_timeout=timeout, reconnect_timeout=timeout, get_pty=True)
         self.validate_success_return_code(self.ssh_connection)
         get_logger().log_info("Upload completed:\n" + "\n".join(output))
         return SoftwareUploadOutput(output)
@@ -75,9 +75,9 @@ class USMKeywords(BaseKeyword):
         cmd = source_openrc(base_cmd)
         timeout = self.usm_config.get_upload_patch_timeout_sec()
         if sudo:
-            output = self.ssh_connection.send_as_sudo(cmd, reconnect_timeout=timeout)
+            output = self.ssh_connection.send_as_sudo(cmd, command_timeout=timeout, reconnect_timeout=timeout)
         else:
-            output = self.ssh_connection.send(cmd, reconnect_timeout=timeout, get_pty=True)
+            output = self.ssh_connection.send(cmd, command_timeout=timeout, reconnect_timeout=timeout, get_pty=True)
         self.validate_success_return_code(self.ssh_connection)
         get_logger().log_info("Upload directory completed:\n" + "\n".join(output))
 
@@ -123,9 +123,9 @@ class USMKeywords(BaseKeyword):
         cmd = source_openrc(base_cmd)
         timeout = self.usm_config.get_upload_release_timeout_sec()
         if sudo:
-            output = self.ssh_connection.send_as_sudo(cmd, reconnect_timeout=timeout)
+            output = self.ssh_connection.send_as_sudo(cmd, command_timeout=timeout, reconnect_timeout=timeout)
         else:
-            output = self.ssh_connection.send(cmd, reconnect_timeout=timeout, get_pty=True)
+            output = self.ssh_connection.send(cmd, command_timeout=timeout, reconnect_timeout=timeout, get_pty=True)
         self.validate_success_return_code(self.ssh_connection)
         get_logger().log_info("Release upload completed:\n" + "\n".join(output))
 
@@ -200,9 +200,9 @@ class USMKeywords(BaseKeyword):
         base_cmd = "software deploy delete"
         cmd = source_openrc(base_cmd)
         if sudo:
-            output = self.ssh_connection.send_as_sudo(cmd, reconnect_timeout=timeout)
+            output = self.ssh_connection.send_as_sudo(cmd, command_timeout=timeout, reconnect_timeout=timeout)
         else:
-            output = self.ssh_connection.send(cmd, reconnect_timeout=timeout, get_pty=True)
+            output = self.ssh_connection.send(cmd, command_timeout=timeout, reconnect_timeout=timeout, get_pty=True)
         self.validate_success_return_code(self.ssh_connection)
         output = "".join(output)
         return output
@@ -222,9 +222,9 @@ class USMKeywords(BaseKeyword):
         base_cmd = f"software delete {release}"
         cmd = source_openrc(base_cmd)
         if sudo:
-            output = self.ssh_connection.send_as_sudo(cmd, reconnect_timeout=timeout)
+            output = self.ssh_connection.send_as_sudo(cmd, command_timeout=timeout, reconnect_timeout=timeout)
         else:
-            output = self.ssh_connection.send(cmd, reconnect_timeout=timeout, get_pty=True)
+            output = self.ssh_connection.send(cmd, command_timeout=timeout, reconnect_timeout=timeout, get_pty=True)
         self.validate_success_return_code(self.ssh_connection)
         output = "".join(output)
         return output
@@ -244,9 +244,9 @@ class USMKeywords(BaseKeyword):
         base_cmd = f"software deploy start {release}"
         cmd = source_openrc(base_cmd)
         if sudo:
-            output = self.ssh_connection.send_as_sudo(cmd, reconnect_timeout=timeout)
+            output = self.ssh_connection.send_as_sudo(cmd, command_timeout=timeout, reconnect_timeout=timeout)
         else:
-            output = self.ssh_connection.send(cmd, reconnect_timeout=timeout, get_pty=True)
+            output = self.ssh_connection.send(cmd, command_timeout=timeout, reconnect_timeout=timeout, get_pty=True)
         self.validate_success_return_code(self.ssh_connection)
         output = [line.strip() for line in output if line.strip()]
         output = output[0] if output else ""
@@ -291,9 +291,9 @@ class USMKeywords(BaseKeyword):
         base_cmd = f"software deploy host {host}"
         cmd = source_openrc(base_cmd)
         if sudo:
-            output = self.ssh_connection.send_as_sudo(cmd, reconnect_timeout=timeout)
+            output = self.ssh_connection.send_as_sudo(cmd, command_timeout=timeout, reconnect_timeout=timeout)
         else:
-            output = self.ssh_connection.send(cmd, reconnect_timeout=timeout, get_pty=True)
+            output = self.ssh_connection.send(cmd, command_timeout=timeout, reconnect_timeout=timeout, get_pty=True)
         self.validate_success_return_code(self.ssh_connection)
         output = [line.strip() for line in output if line.strip()]
         output = output[0] if output else ""
@@ -313,9 +313,9 @@ class USMKeywords(BaseKeyword):
         base_cmd = "software deploy activate"
         cmd = source_openrc(base_cmd)
         if sudo:
-            output = self.ssh_connection.send_as_sudo(cmd, reconnect_timeout=timeout)
+            output = self.ssh_connection.send_as_sudo(cmd, command_timeout=timeout, reconnect_timeout=timeout)
         else:
-            output = self.ssh_connection.send(cmd, reconnect_timeout=timeout, get_pty=True)
+            output = self.ssh_connection.send(cmd, command_timeout=timeout, reconnect_timeout=timeout, get_pty=True)
         self.validate_success_return_code(self.ssh_connection)
         output = [line.strip() for line in output if line.strip()]
         output = output[0] if output else ""
@@ -418,9 +418,9 @@ class USMKeywords(BaseKeyword):
         base_cmd = "software deploy complete"
         cmd = source_openrc(base_cmd)
         if sudo:
-            output = self.ssh_connection.send_as_sudo(cmd, reconnect_timeout=timeout)
+            output = self.ssh_connection.send_as_sudo(cmd, command_timeout=timeout, reconnect_timeout=timeout)
         else:
-            output = self.ssh_connection.send(cmd, reconnect_timeout=timeout, get_pty=True)
+            output = self.ssh_connection.send(cmd, command_timeout=timeout, reconnect_timeout=timeout, get_pty=True)
         self.validate_success_return_code(self.ssh_connection)
         output = [line.strip() for line in output if line.strip()]
         output = output[0] if output else ""

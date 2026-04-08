@@ -136,7 +136,7 @@ class SSHConnection:
 
         return is_connection_success
 
-    def send(self, cmd: str, reconnect_timeout: int = 600, get_pty: bool = False) -> str:
+    def send(self, cmd: str, command_timeout: int = None, reconnect_timeout: int = None, get_pty: bool = False) -> str:
         """
         Send a command to the SSH session and return the output.
 
@@ -145,28 +145,30 @@ class SSHConnection:
 
         Args:
             cmd (str): The command to execute.
+            command_timeout (int): Optional timeout in seconds for a single command execution.
             reconnect_timeout (int): Time in seconds to retry the connection.
             get_pty (bool): Defaults to False. Whether to request a terminal when running a 'send' command.
 
         Returns:
             str: The output of the command.
         """
-        return self._execute_command("SEND", cmd, reconnect_timeout=reconnect_timeout, get_pty=get_pty)
+        return self._execute_command("SEND", cmd, command_timeout=command_timeout, reconnect_timeout=reconnect_timeout, get_pty=get_pty)
 
-    def send_as_sudo(self, cmd: str, reconnect_timeout: int = 600) -> str:
+    def send_as_sudo(self, cmd: str, command_timeout: int = None, reconnect_timeout: int = None) -> str:
         """
         Sends a command using sudo and returns the output. Waits for reconnect timeout.
 
         Args:
             cmd (str): The command to send.
+            command_timeout (int): Optional timeout in seconds for a single command execution.
             reconnect_timeout (int): How long to wait for SSH reconnection if needed.
 
         Returns:
             str: Output of the executed command.
         """
-        return self._execute_command("SEND_SUDO", cmd, reconnect_timeout=reconnect_timeout)
+        return self._execute_command("SEND_SUDO", cmd, command_timeout=command_timeout, reconnect_timeout=reconnect_timeout)
 
-    def send_expect_prompts(self, cmd: str, prompts: List[PromptResponse], reconnect_timeout: int = 600) -> str:
+    def send_expect_prompts(self, cmd: str, prompts: List[PromptResponse], command_timeout: int = None, reconnect_timeout: int = None) -> str:
         """
         Sends a command, waits for prompts and returns the output.
 
@@ -175,18 +177,20 @@ class SSHConnection:
         Args:
             cmd (str): The command to send.
             prompts (List[PromptResponse]): The prompts to expect.
+            command_timeout (int): Optional timeout in seconds for a single command execution.
             reconnect_timeout (int): The amount of time in seconds to wait for SSH connection.
 
         Returns:
             str: The output of the command.
         """
-        return self._execute_command("SEND_EXPECT_PROMPTS", cmd, prompts=prompts, reconnect_timeout=reconnect_timeout)
+        return self._execute_command("SEND_EXPECT_PROMPTS", cmd, command_timeout=command_timeout, reconnect_timeout=reconnect_timeout, prompts=prompts)
 
     def _execute_command(
         self,
         action: str,
         cmd: str,
-        reconnect_timeout: int = 600,
+        command_timeout: int = None,
+        reconnect_timeout: int = None,
         prompts: List[PromptResponse] = None,
         get_pty: bool = False,
     ) -> str:
@@ -198,6 +202,7 @@ class SSHConnection:
         Args:
             action (str): The action to execute, e.g., SEND, SEND_SUDO, SEND_EXPECT_PROMPTS.
             cmd (str): The command to run.
+            command_timeout (int): Timeout in seconds for a single command execution.
             reconnect_timeout (int): The time in seconds to wait for SSH connection.
             prompts (List[PromptResponse], optional): Expected prompts, if any.
             get_pty (bool): Defaults to False. Whether to request a terminal when running a 'send' command.
@@ -205,6 +210,11 @@ class SSHConnection:
         Returns:
             str: The output of the command.
         """
+        if not command_timeout:
+            command_timeout = 60
+        if not reconnect_timeout:
+            reconnect_timeout = 600
+
         timeout = time.time() + reconnect_timeout
         refresh_timeout = 5
 
@@ -223,7 +233,7 @@ class SSHConnection:
                 if not self.is_connected:
                     self.connect()
 
-                thread_manager = ThreadManager(timeout=reconnect_timeout / 10)
+                thread_manager = ThreadManager(timeout=command_timeout)
 
                 if action == "SEND":
                     thread_manager.start_thread("SSH_Command", self._send, cmd, get_pty=get_pty)

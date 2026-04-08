@@ -58,9 +58,9 @@ class SoftwareDeployPrecheckKeywords(BaseKeyword):
         timeout = self.usm_config.get_precheck_timeout_sec()
 
         if sudo:
-            output = self.ssh_connection.send_as_sudo(cmd, reconnect_timeout=timeout)
+            output = self.ssh_connection.send_as_sudo(cmd, command_timeout=timeout, reconnect_timeout=timeout)
         else:
-            output = self.ssh_connection.send(cmd, reconnect_timeout=timeout, get_pty=True)
+            output = self.ssh_connection.send(cmd, command_timeout=timeout, reconnect_timeout=timeout, get_pty=True)
 
         # Validate the return code using the base keyword helper.
         self.validate_success_return_code(self.ssh_connection)

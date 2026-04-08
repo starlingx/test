@@ -29,7 +29,7 @@ class OpenstackLabKeywords(BaseKeyword):
 
         FileKeywords(self.ssh_connection).make_executable(script_path)
         command = export_k8s_config(f"{script_path} -f {config_file}")
-        cmd_out = self.ssh_connection.send(command, reconnect_timeout=3600)
+        cmd_out = self.ssh_connection.send(command, command_timeout=360, reconnect_timeout=3600)
         get_logger().log_info(cmd_out)
         return cmd_out
 
@@ -50,6 +50,6 @@ class OpenstackLabKeywords(BaseKeyword):
 
         FileKeywords(self.ssh_connection).make_executable(script_path)
         cleanup_cmd = export_k8s_config(script_path)
-        cleanup_out = self.ssh_connection.send(cleanup_cmd, reconnect_timeout=7200)
+        cleanup_out = self.ssh_connection.send(cleanup_cmd, command_timeout=720, reconnect_timeout=7200)
         get_logger().log_info(cleanup_out)
         return cleanup_out

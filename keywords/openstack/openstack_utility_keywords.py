@@ -63,4 +63,4 @@ class OpenstackUtilityKeywords(BaseKeyword):
             return None
         FileKeywords(self.ssh_connection).make_executable(script_path)
         command = export_k8s_config(f"{script_path} {args}")
-        return self.ssh_connection.send(command, reconnect_timeout=timeout)
+        return self.ssh_connection.send(command, command_timeout=timeout, reconnect_timeout=timeout)
