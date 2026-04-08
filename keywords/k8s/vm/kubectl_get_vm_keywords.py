@@ -51,5 +51,4 @@ class KubectlGetVmKeywords(K8sBaseKeyword):
             validation_description=f"VM {vm_name} to reach status {expected_status}",
             timeout=timeout,
             polling_sleep_time=poll_interval,
-            failure_values=["ErrorUnschedulable", "CrashLoopBackOff", "ErrImagePull"],
         )
