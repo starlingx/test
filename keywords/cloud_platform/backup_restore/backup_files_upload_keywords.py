@@ -16,6 +16,32 @@ class BackUpFilesUploadKeywords(BaseKeyword):
         """
         self.ssh_connection = ssh_connection
 
+    def append_backup_files_to_info(self, backup_files: list, info_file_path: str = "/tmp/backup_software_info.txt") -> None:
+        """
+        Append backup file names to the software info file with proper formatting.
+        
+        Args:
+            backup_files (list): List of backup file names
+            info_file_path (str): Path to the info file (default: /tmp/backup_software_info.txt)
+        """
+        if not backup_files:
+            get_logger().log_info("No backup files to append to info file")
+            return
+            
+        get_logger().log_info(f"Appending {len(backup_files)} backup files to {info_file_path}")
+        
+        # Add blank line for separation
+        self.ssh_connection.send(f"echo '' >> {info_file_path}")
+        
+        # Add section header
+        self.ssh_connection.send(f"echo 'Backup Files:' >> {info_file_path}")
+        
+        # Add each backup file name
+        for backup_file in backup_files:
+            self.ssh_connection.send(f"echo '{backup_file}' >> {info_file_path}")
+            
+        get_logger().log_info("Successfully appended backup files to info file")
+
     def backup_file(self, backup_file_path: str, local_backup_folder_path: str) -> bool:
         """
         Check backup files present in backup playbook path scp backup files to local machine.
