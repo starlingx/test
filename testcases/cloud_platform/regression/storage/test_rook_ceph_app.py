@@ -19,6 +19,9 @@ from keywords.cloud_platform.system.application.system_application_remove_keywor
 from keywords.cloud_platform.system.application.system_application_show_keywords import SystemApplicationShowKeywords
 from keywords.cloud_platform.system.application.system_application_update_keywords import SystemApplicationUpdateKeywords
 from keywords.cloud_platform.system.application.system_application_upload_keywords import SystemApplicationUploadKeywords
+from keywords.cloud_platform.system.host.system_host_list_keywords import SystemHostListKeywords
+from keywords.cloud_platform.system.host.system_host_lock_keywords import SystemHostLockKeywords
+from keywords.cloud_platform.system.host.system_host_power_keywords import SystemHostPowerKeywords
 from keywords.files.file_keywords import FileKeywords
 from keywords.linux.mount.mount_keywords import MountKeywords
 
@@ -380,6 +383,56 @@ def test_update_rook_ceph_app(request: FixtureRequest):
     upgraded_version = upgraded_app_info.get_system_application_object().get_version()
     validate_equals(upgraded_version, current_version, "Application version should match original version after upgrade")
     get_logger().log_info(f"Application status after upgrade: {upgraded_app_info.get_system_application_object()}")
+
+
+@mark.p2
+@mark.lab_has_rook_ceph
+@mark.lab_has_standby_controller
+def test_rook_ceph_power_off_power_on(request: FixtureRequest):
+    """
+    Test case: Power off/on a controller and verify rook-ceph recovers.
+
+    Test Steps:
+        - Check ceph health is HEALTH_OK
+        - Lock the standby controller
+        - Power off the locked controller
+        - Wait for host availability to be 'power-off'
+        - Power on the controller
+        - Wait for host to come back online (locked state)
+        - Unlock the controller
+        - Wait for host to be unlocked and available
+        - Check ceph health is HEALTH_OK
+
+    Args:
+        request (FixtureRequest): pytest request fixture for test setup and teardown
+    """
+    active_ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    ceph_status_keywords = CephStatusKeywords(active_ssh_connection)
+    system_host_lock_keywords = SystemHostLockKeywords(active_ssh_connection)
+    system_host_power_keywords = SystemHostPowerKeywords(active_ssh_connection)
+    system_host_list_keywords = SystemHostListKeywords(active_ssh_connection)
+
+    get_logger().log_test_case_step("Check rook-ceph health before power off.")
+    ceph_status_keywords.wait_for_ceph_health_status(expect_health_status=True)
+
+    standby = system_host_list_keywords.get_standby_controller()
+    host_name = standby.get_host_name()
+
+    get_logger().log_test_case_step(f"Lock {host_name}.")
+    system_host_lock_keywords.lock_host(host_name)
+    system_host_lock_keywords.wait_for_host_locked(host_name)
+
+    get_logger().log_test_case_step(f"Power off {host_name}.")
+    system_host_power_keywords.host_power_off(host_name)
+
+    get_logger().log_test_case_step(f"Power on {host_name}.")
+    system_host_power_keywords.host_power_on(host_name)
+
+    get_logger().log_test_case_step(f"Unlock {host_name}.")
+    system_host_lock_keywords.unlock_host(host_name)
+
+    get_logger().log_test_case_step("Check rook-ceph health after power on.")
+    ceph_status_keywords.wait_for_ceph_health_status(expect_health_status=True)
 
 
 @mark.p2
