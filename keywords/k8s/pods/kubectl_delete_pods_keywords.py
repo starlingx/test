@@ -54,3 +54,17 @@ class KubectlDeletePodsKeywords(K8sBaseKeyword):
         if rc != 0:
             get_logger().log_error(f"Pod {pod_name} failed to delete")
         return rc
+
+    def delete_from_yaml(self, yaml_file: str, namespace: str = None, ignore_not_found: bool = True) -> None:
+        """Deletes resources defined in a YAML file.
+
+        Args:
+            yaml_file (str): Path to the YAML file on the controller.
+            namespace (str): Optional namespace override.
+            ignore_not_found (bool): If True, adds --ignore-not-found flag.
+        """
+        ns_arg = f"-n {namespace}" if namespace else ""
+        ignore_arg = "--ignore-not-found" if ignore_not_found else ""
+        cmd = f"kubectl delete -f {yaml_file} {ns_arg} {ignore_arg}".strip()
+        self.ssh_connection.send(self.k8s_config.export(cmd))
+        self.validate_success_return_code(self.ssh_connection)
