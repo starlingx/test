@@ -35,17 +35,24 @@ class SystemHostLabelKeywords(BaseKeyword):
 
         return system_host_label_list_output
 
-    def system_host_label_assign(self, host_name: str, labels: str) -> SystemHostLabelAssignOutput:
+    def system_host_label_assign(self, host_name: str, labels: str, overwrite: bool = False) -> SystemHostLabelAssignOutput:
         """
         This function will run the 'system host-label-assign <host_name> <labels>' command
+
         Args:
             host_name: The name of the host on which we want to assign labels.
             labels: The space-separated list of label_key=label_value
+            overwrite: If True, adds --overwrite flag to overwrite existing label values.
+                      This is required when a label already exists with a different value.
+                      Without this flag, the command fails with "Label already exists" error.
+                      Example: Changing kube-topology-mgr-policy from 'best-effort' to 'restricted'
+                      requires overwrite=True.
 
         Returns: SystemHostLabelAssignOutput
 
         """
-        output = self.ssh_connection.send(source_openrc(f'system host-label-assign {host_name} {labels}'))
+        overwrite_flag = '--overwrite ' if overwrite else ''
+        output = self.ssh_connection.send(source_openrc(f'system host-label-assign {overwrite_flag}{host_name} {labels}'))
         self.validate_success_return_code(self.ssh_connection)
         system_host_label_assign_output = SystemHostLabelAssignOutput(output)
 

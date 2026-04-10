@@ -1,0 +1,22 @@
+# Template variables:
+# - pod_name: name assigned to the pod and its container
+# - num_cpus: number of windriver.com/isolcpus to request and limit
+# - host_name: node name to pin the pod to via nodeName
+apiVersion: v1
+kind: Pod
+metadata:
+  name: "{{ pod_name }}"
+spec:
+  nodeName: "{{ host_name }}"
+  containers:
+  - name: "{{ pod_name }}"
+    image: busybox
+    command: ["sleep", "3600"]
+    resources:
+      requests:
+        memory: 1Gi
+        windriver.com/isolcpus: "{{ num_cpus }}"
+      limits:
+        memory: 2Gi
+        windriver.com/isolcpus: "{{ num_cpus }}"
+  restartPolicy: Never
