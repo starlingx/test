@@ -8,6 +8,7 @@ from config.configuration_manager import ConfigurationManager
 from framework.logging.automation_logger import get_logger
 from framework.web.action.web_action_click import WebActionClick
 from framework.web.action.web_action_click_js import WebActionClickJs
+from framework.web.action.web_action_get_attribute import WebActionGetAttribute
 from framework.web.action.web_action_get_text import WebActionGetText
 from framework.web.action.web_action_hover import WebActionHover
 from framework.web.action.web_action_send_keys import WebActionSendKeys
@@ -214,6 +215,32 @@ class WebDriverCore:
             str: Current URL
         """
         return self.driver.current_url
+
+    def get_attribute(self, locator: WebLocator, attribute_name: str, conditions: List[WebCondition] = []) -> str:
+        """
+        Gets the value of the specified attribute from the element.
+
+        Args:
+            locator (WebLocator): The locator of the element.
+            attribute_name (str): The name of the attribute to retrieve.
+            conditions (List[WebCondition]): Conditions that must be satisfied for the Action to be declared successful.
+
+        Returns:
+            str: The attribute value, or None if not present.
+
+        """
+        action = WebActionGetAttribute(self.driver, locator, conditions)
+        action_executor = WebActionExecutor(action)
+        return action_executor.execute_action(attribute_name)
+
+    def refresh(self) -> None:
+        """
+        Refresh the current page.
+
+        Returns: None
+
+        """
+        self.driver.refresh()
 
     def is_exists(self, locator: WebLocator) -> bool:
         """
