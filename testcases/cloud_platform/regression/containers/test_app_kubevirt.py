@@ -1,6 +1,7 @@
 from pytest import mark
 
 from framework.logging.automation_logger import get_logger
+from framework.resources.resource_finder import get_stx_resource_path
 from framework.ssh.ssh_connection import SSHConnection
 from framework.validation.validation import validate_equals, validate_none
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
@@ -10,15 +11,25 @@ from keywords.cloud_platform.system.application.system_application_list_keywords
 from keywords.cloud_platform.system.application.system_application_remove_keywords import SystemApplicationRemoveInput, SystemApplicationRemoveKeywords
 from keywords.cloud_platform.system.application.system_application_upload_keywords import SystemApplicationUploadInput, SystemApplicationUploadKeywords
 from keywords.cloud_platform.system.host.system_host_list_keywords import SystemHostListKeywords
+from keywords.cloud_platform.system.host.system_host_lock_keywords import SystemHostLockKeywords
 from keywords.cloud_platform.system.host.system_host_reboot_keywords import SystemHostRebootKeywords
+from keywords.cloud_platform.virtctl.virtctl_keywords import VirtctlKeywords
 from keywords.files.file_keywords import FileKeywords
+from keywords.files.yaml_keywords import YamlKeywords
+from keywords.k8s.crd.kubectl_wait_crd_keywords import KubectlWaitCrdKeywords
+from keywords.k8s.files.kubectl_file_apply_keywords import KubectlFileApplyKeywords
 from keywords.k8s.helm.kubectl_get_helm_keywords import KubectlGetHelmKeywords
 from keywords.k8s.pods.kubectl_get_pods_keywords import KubectlGetPodsKeywords
+from keywords.k8s.pods.kubectl_wait_pod_keywords import KubectlWaitPodKeywords
+from keywords.k8s.vm.kubectl_delete_vm_keywords import KubectlDeleteVmKeywords
+from keywords.k8s.vm.kubectl_get_vm_keywords import KubectlGetVmKeywords
+from keywords.k8s.vm.kubectl_get_vmi_keywords import KubectlGetVmiKeywords
 from keywords.linux.ln.ln_keywords import LnKeywords
 from keywords.linux.ls.ls_keywords import LsKeywords
 from keywords.linux.which.which_keywords import WhichKeywords
 
 APP_NAME = "kubevirt-app"
+KUBEVIRT_VM_DIR = "/home/sysadmin/kubevirt"
 KUBEVIRT_NAMESPACE = "kubevirt"
 CDI_NAMESPACE = "cdi"
 CHART_PATH = "/usr/local/share/applications/helm/kubevirt-app-[0-9]*"
@@ -121,6 +132,12 @@ def setup_kubevirt_environment(ssh_connection: SSHConnection) -> None:
     kubectl_pods = KubectlGetPodsKeywords(ssh_connection)
     kubectl_pods.wait_for_pods_to_reach_status(expected_status="Running", pod_names=CDI_EXPECTED_PODS, namespace=CDI_NAMESPACE, timeout=30)
     kubectl_pods.wait_for_pods_to_reach_status(expected_status="Running", pod_names=KUBEVIRT_EXPECTED_PODS, namespace=KUBEVIRT_NAMESPACE, timeout=30)
+
+    # Wait for kubevirt to be fully ready (virt-api pods ready + KubeVirt CR available)
+    get_logger().log_info("Waiting for kubevirt to be fully ready")
+    kubectl_wait = KubectlWaitPodKeywords(ssh_connection)
+    kubectl_wait.wait_for_pods_ready(label="kubevirt.io=virt-api", namespace=KUBEVIRT_NAMESPACE, timeout=120)
+    KubectlWaitCrdKeywords(ssh_connection).wait_for_condition(resource="kv", resource_name="kubevirt", condition="Available", namespace=KUBEVIRT_NAMESPACE, timeout=120)
 
     # setting up virtctl
     get_logger().log_info("Setting up virtctl on all controllers")
@@ -227,3 +244,97 @@ def test_kubevirt_upload_apply_delete(request):
 
     get_logger().log_test_case_step("Verifying kubevirt HelmChart is removed")
     verify_kubevirt_helmchart_removed(ssh_connection)
+
+
+@mark.p2
+@mark.lab_has_standby_controller
+def test_launch_vm_after_lock_unlock_multinode(request):
+    """Test launching VM and verify it works after lock/unlock of standby.
+
+    Steps:
+        - Setup kubevirt environment
+        - Get standby controller name
+        - Create VM YAML with nodeSelector for standby
+        - Deploy VM on standby controller
+        - Verify VM and VMI are running on standby
+        - Login to VM via virtctl console
+        - Lock standby controller
+        - Verify VM is stopped after lock
+        - Unlock standby controller
+        - Verify VM and VMI are still running after unlock
+        - Login to VM via virtctl console after unlock
+    """
+    vm_name = "vm-cirros"
+    vm_yaml_template = "cirros-vm-containerdisk-nodeselector.yaml.j2"
+    remote_yaml_path = f"{KUBEVIRT_VM_DIR}/vm-cirros-standby.yaml"
+
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+
+    get_logger().log_test_case_step("Cleanup kubevirt environment")
+    cleanup_kubevirt_environment(ssh_connection)
+
+    kubectl_vm = KubectlGetVmKeywords(ssh_connection)
+    kubectl_vmi = KubectlGetVmiKeywords(ssh_connection)
+    system_host_lock = SystemHostLockKeywords(ssh_connection)
+    system_host_list = SystemHostListKeywords(ssh_connection)
+
+    get_logger().log_test_case_step("Getting standby controller")
+    standby_name = system_host_list.get_standby_controller().get_host_name()
+    get_logger().log_info(f"Standby controller is {standby_name}")
+
+    def cleanup():
+        get_logger().log_teardown_step(f"Deleting VM {vm_name}")
+        KubectlDeleteVmKeywords(ssh_connection).delete_vm(vm_name, ignore_not_found=True)
+
+        get_logger().log_teardown_step("Cleaning up remote VM directory")
+        FileKeywords(ssh_connection).delete_directory(KUBEVIRT_VM_DIR)
+
+        get_logger().log_teardown_step(f"Unlocking {standby_name} if locked")
+        if system_host_lock.is_host_locked(standby_name):
+            system_host_lock.unlock_host(standby_name)
+
+        get_logger().log_teardown_step("Cleaning up kubevirt environment")
+        cleanup_kubevirt_environment(ssh_connection)
+
+    request.addfinalizer(cleanup)
+
+    get_logger().log_test_case_step("Setting up kubevirt environment")
+    setup_kubevirt_environment(ssh_connection)
+
+    get_logger().log_test_case_step(f"Creating VM YAML with nodeSelector for {standby_name}")
+    file_keywords = FileKeywords(ssh_connection)
+    file_keywords.create_directory(KUBEVIRT_VM_DIR)
+    YamlKeywords(ssh_connection).generate_yaml_file_from_template(
+        get_stx_resource_path(f"resources/cloud_platform/containers/kubevirt/{vm_yaml_template}"),
+        {"node_name": standby_name},
+        "vm-cirros-standby.yaml",
+        KUBEVIRT_VM_DIR,
+    )
+
+    get_logger().log_test_case_step(f"Deploying VM {vm_name} on {standby_name}")
+    KubectlFileApplyKeywords(ssh_connection).apply_resource_from_yaml(remote_yaml_path)
+
+    get_logger().log_test_case_step(f"Verifying VM and VMI {vm_name} are running on {standby_name}")
+    kubectl_vm.wait_for_vm_status(vm_name, "Running", timeout=120)
+    kubectl_vmi.wait_for_vmi_status(vm_name, "Running", timeout=120)
+    vm_host = kubectl_vmi.get_vmi_node(vm_name)
+    validate_equals(vm_host, standby_name, f"VM should be running on {standby_name}")
+
+    get_logger().log_test_case_step(f"Logging into VM {vm_name} via virtctl console")
+    VirtctlKeywords(ssh_connection).login_to_vm(vm_name, "cirros", "gocubsgo")
+
+    get_logger().log_test_case_step(f"Locking standby controller {standby_name}")
+    system_host_lock.lock_host(standby_name)
+
+    get_logger().log_test_case_step(f"Verifying VM {vm_name} is stopped after lock")
+    kubectl_vm.wait_for_vm_status(vm_name, "ErrorUnschedulable", timeout=240)
+
+    get_logger().log_test_case_step(f"Unlocking standby controller {standby_name}")
+    system_host_lock.unlock_host(standby_name)
+
+    get_logger().log_test_case_step(f"Verifying VM and VMI {vm_name} are still running after unlock")
+    kubectl_vm.wait_for_vm_status(vm_name, "Running", timeout=60)
+    kubectl_vmi.wait_for_vmi_status(vm_name, "Running", timeout=60)
+
+    get_logger().log_test_case_step(f"Logging into VM {vm_name} via virtctl console after unlock")
+    VirtctlKeywords(ssh_connection).login_to_vm(vm_name, "cirros", "gocubsgo")
