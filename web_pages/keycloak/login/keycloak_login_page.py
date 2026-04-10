@@ -60,7 +60,7 @@ class KeycloakLoginPage(BasePage):
         return re.sub(r"[^A-Z2-7]", "", secret.upper())
 
     def generate_totp(self, secret: str) -> str:
-        """Generate the current TOTP code using RFC 6238 (no third-party libraries).
+        """Generate the current TOTP code using RFC 6238.
 
         Args:
             secret (str): Base32-encoded TOTP secret.
@@ -72,12 +72,17 @@ class KeycloakLoginPage(BasePage):
         counter = int(datetime.datetime.now(datetime.timezone.utc).timestamp()) // 30
         counter_bytes = struct.pack(">Q", counter)
         hmac_hash = hmac.new(key, counter_bytes, hashlib.sha1).digest()
-        offset = hmac_hash[-1] & 0x0F
-        code = struct.unpack(">I", hmac_hash[offset : offset + 4])[0] & 0x7FFFFFFF
+        offset_byte = hmac_hash[-1] & 0x0F
+        code = struct.unpack(">I", hmac_hash[offset_byte : offset_byte + 4])[0] & 0x7FFFFFFF
         return str(code % 1000000).zfill(6)
 
     def submit_otp(self, input_locator: WebLocator, submit_locator: WebLocator, totp_secret: str) -> None:
-        """Submit a TOTP code, retrying up to 3 times on the next window if rejected.
+        """Submit a TOTP code, waiting for the next window between rejections.
+
+        Tries the current TOTP window. If rejected, waits until the next 30-second
+        window boundary before retrying — this is required because Keycloak's
+        brute-force protection rejects any further submissions on the same execution
+        URL until the current window expires. Retries up to 3 windows total.
 
         Args:
             input_locator (WebLocator): Locator for the OTP input field.
@@ -90,19 +95,19 @@ class KeycloakLoginPage(BasePage):
         url_before = self.driver.get_current_url()
         for attempt in range(1, 4):
             otp_code = self.generate_totp(totp_secret)
-            get_logger().log_info(f"Submitting OTP attempt {attempt}")
+            get_logger().log_info(f"Submitting OTP attempt {attempt}: {otp_code}")
             self.driver.set_text(input_locator, otp_code)
             self.driver.click(submit_locator)
             deadline = time.time() + 8
             while time.time() < deadline:
                 if self.driver.get_current_url() != url_before:
-                    get_logger().log_info(f"OTP accepted - current URL: {self.driver.get_current_url()}")
+                    get_logger().log_info(f"OTP accepted on attempt {attempt}")
                     return
                 time.sleep(0.5)
             if attempt < 3:
-                sleep_time = 31 - (int(time.time()) % 30)
-                get_logger().log_info(f"OTP rejected on attempt {attempt}, waiting {sleep_time}s for next window")
-                time.sleep(sleep_time)
+                seconds_until_next_window = 30 - (int(time.time()) % 30)
+                get_logger().log_info(f"OTP rejected on attempt {attempt}, waiting {seconds_until_next_window}s for next window")
+                time.sleep(seconds_until_next_window)
         raise KeywordException(f"OTP authentication failed after 3 attempts. URL: {self.driver.get_current_url()}")
 
     def wait_for_mfa_page(self, timeout: int = 30) -> str:

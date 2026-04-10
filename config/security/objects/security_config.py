@@ -34,7 +34,8 @@ class SecurityConfig:
 
         # OIDC Keycloak configuration
         oidc_keycloak_config = security_dict.get("oidc_keycloak", {})
-        self.oidc_keycloak_working_dir = oidc_keycloak_config.get("working_dir", "/home/sysadmin/oidc-keycloak/")
+        self.oidc_keycloak_remote_user_home = oidc_keycloak_config.get("remote_user_home", "")
+        self.oidc_keycloak_working_dir = oidc_keycloak_config.get("working_dir", f"{self.oidc_keycloak_remote_user_home}/oidc-keycloak/")
         self.oidc_keycloak_namespace = oidc_keycloak_config.get("namespace", "kube-system")
         self.oidc_keycloak_upstream_idp_ca_secret_name = oidc_keycloak_config.get("upstream_idp_ca_secret_name", "oidc-upstream-idp-ca")
         self.oidc_keycloak_upstream_idp_ca_filename = oidc_keycloak_config.get("upstream_idp_ca_filename", "upstream-ca.crt")
@@ -50,6 +51,7 @@ class SecurityConfig:
         self.oidc_keycloak_system_local_ca_cert_filename = oidc_keycloak_config.get("system_local_ca_cert_filename", "system-local-ca.crt")
         self.oidc_keycloak_kubeconfig_filename = oidc_keycloak_config.get("kubeconfig_filename", "local-oidc-login-kubeconfig.yml")
         self.oidc_keycloak_login_port = oidc_keycloak_config.get("oidc_login_port", 8000)
+        self.oidc_keycloak_invalid_issuer_url = oidc_keycloak_config.get("invalid_issuer_url", "https://invalid-issuer.example.com/realms/nonexistent")
         self.oidc_keycloak_admin_username = oidc_keycloak_config.get("admin", {}).get("username", "admin")
         self.oidc_keycloak_admin_password = oidc_keycloak_config.get("admin", {}).get("password", "admin")
         test_user_config = oidc_keycloak_config.get("test_user", {})
@@ -272,6 +274,14 @@ class SecurityConfig:
         """
         return self.nginx_external_ca_test.get("tls_secret_name", "kuard-ingress-tls")
 
+    def get_oidc_keycloak_remote_user_home(self) -> str:
+        """Getter for the remote user home directory.
+
+        Returns:
+            str: Remote user home directory path.
+        """
+        return self.oidc_keycloak_remote_user_home
+
     def get_oidc_keycloak_working_dir(self) -> str:
         """Getter for OIDC Keycloak working directory on the remote host.
 
@@ -391,6 +401,14 @@ class SecurityConfig:
             int: Port number for the OIDC login browser URL.
         """
         return self.oidc_keycloak_login_port
+
+    def get_oidc_keycloak_invalid_issuer_url(self) -> str:
+        """Getter for the invalid issuer URL used in negative authentication tests.
+
+        Returns:
+            str: Invalid OIDC issuer URL.
+        """
+        return self.oidc_keycloak_invalid_issuer_url
 
     def get_oidc_keycloak_admin_username(self) -> str:
         """Getter for the Keycloak admin username.

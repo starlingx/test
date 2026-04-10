@@ -4,6 +4,7 @@ class KubectlResultObject:
     def __init__(self):
         """Constructor."""
         self.output = None
+        self.browser_prompt_shown = False
 
     def set_output(self, output: str) -> None:
         """Set the kubectl command output.
@@ -21,14 +22,6 @@ class KubectlResultObject:
         """
         return self.output
 
-    def has_output(self) -> bool:
-        """Check if kubectl returned non-empty output.
-
-        Returns:
-            bool: True if output is non-empty, False otherwise.
-        """
-        return self.output is not None and len(self.output.strip()) > 0
-
     def is_kubectl_successful(self) -> bool:
         """Check if kubectl output contains pod table data (not an error).
 
@@ -36,6 +29,22 @@ class KubectlResultObject:
             bool: True if output contains the pods table header, False otherwise.
         """
         return self.output is not None and "NAME" in self.output and "STATUS" in self.output
+
+    def set_browser_prompt_shown(self, value: bool) -> None:
+        """Set whether kubelogin showed a browser prompt.
+
+        Args:
+            value (bool): True if browser prompt was shown.
+        """
+        self.browser_prompt_shown = value
+
+    def is_browser_prompt_shown(self) -> bool:
+        """Check if kubelogin showed a browser URL prompt.
+
+        Returns:
+            bool: True if kubectl timed out waiting for browser interaction.
+        """
+        return self.browser_prompt_shown
 
     def __str__(self) -> str:
         """Return human-readable representation.

@@ -44,12 +44,15 @@
             "password": "registry_password"
         },
         "registry_ca_cert": "registry_ca_cert"
-    }, 
-    
+    },
+
     // OIDC with Keycloak and MFA configuration
     "oidc_keycloak": {
         // Working directory on the remote host for OIDC files
         "working_dir": "/home/sysadmin/oidc-keycloak/",
+
+        // Home directory of the remote user (used to build paths like working_dir and token cache)
+        "remote_user_home": "/home/sysadmin",
 
         // Kubernetes namespace for OIDC secrets
         "namespace": "kube-system",
@@ -57,7 +60,7 @@
         // Name of the upstream IdP CA secret
         "upstream_idp_ca_secret_name": "oidc-upstream-idp-ca",
 
-        // Filename used as the key inside the secret 
+        // Filename used as the key inside the secret (matches --from-file key)
         "upstream_idp_ca_filename": "upstream-ca.crt",
 
         // Keycloak OIDC client ID
@@ -87,6 +90,9 @@
 
         // OIDC login browser URL port
         "oidc_login_port": 8000,
+
+        // Invalid issuer URL used in negative authentication tests
+        "invalid_issuer_url": "https://invalid-issuer.example.com/realms/nonexistent",
 
         // Keycloak admin credentials for test lifecycle management
         "admin": {
@@ -121,5 +127,5 @@
 
         // Keycloak CA certificate (PEM encoded)
         "keycloak_ca_cert": "keycloak_ca_cert_pem"
-    }    
+    }
 }
