@@ -9,7 +9,12 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 
 class KeycloakAdminKeywords(BaseKeyword):
-    """Keywords for Keycloak Admin REST API operations."""
+    """Keywords for Keycloak Admin REST API operations.
+
+    Uses the Keycloak Admin REST API directly via HTTP requests rather than SSH.
+    response.raise_for_status() is used for HTTP error handling in place of
+    validate_success_return_code, which applies to SSH connections only.
+    """
 
     def __init__(self, keycloak_url: str, realm: str, admin_username: str, admin_password: str):
         """Constructor.
@@ -31,6 +36,9 @@ class KeycloakAdminKeywords(BaseKeyword):
 
         Returns:
             str: Admin access token.
+
+        Raises:
+            requests.exceptions.HTTPError: If the token request fails.
         """
         url = f"{self.base_url}/realms/master/protocol/openid-connect/token"
         data = {
@@ -55,9 +63,9 @@ class KeycloakAdminKeywords(BaseKeyword):
 
         Raises:
             KeywordException: If the user is not found in the realm.
+            requests.exceptions.HTTPError: If the API request fails.
         """
-        if not self.token:
-            self.get_admin_token()
+        self.get_admin_token()
         url = f"{self.base_url}/admin/realms/{self.realm}/users"
         headers = {"Authorization": f"Bearer {self.token}"}
         response = requests.get(url, headers=headers, params={"username": username, "exact": "true"}, verify=False)
@@ -72,9 +80,11 @@ class KeycloakAdminKeywords(BaseKeyword):
 
         Args:
             username (str): Keycloak username whose OTP credentials to delete.
+
+        Raises:
+            requests.exceptions.HTTPError: If any API request fails.
         """
-        if not self.token:
-            self.get_admin_token()
+        self.get_admin_token()
         user_id = self.get_user_id(username)
         url = f"{self.base_url}/admin/realms/{self.realm}/users/{user_id}/credentials"
         headers = {"Authorization": f"Bearer {self.token}"}
@@ -87,3 +97,24 @@ class KeycloakAdminKeywords(BaseKeyword):
                 del_response = requests.delete(del_url, headers=headers, verify=False)
                 del_response.raise_for_status()
                 get_logger().log_info(f"Deleted OTP credential '{cred_id}' for user '{username}'")
+
+    def clear_user_brute_force_lockout(self, username: str) -> None:
+        """Clear brute-force lockout for a Keycloak user.
+
+        Resets the failed OTP attempt counter so the next login attempt is
+        accepted. Required after repeated failed OTP submissions which lock
+        the user's authentication execution.
+
+        Args:
+            username (str): Keycloak username to clear lockout for.
+
+        Raises:
+            requests.exceptions.HTTPError: If the API request fails.
+        """
+        self.get_admin_token()
+        user_id = self.get_user_id(username)
+        url = f"{self.base_url}/admin/realms/{self.realm}/attack-detection/brute-force/users/{user_id}"
+        headers = {"Authorization": f"Bearer {self.token}"}
+        response = requests.delete(url, headers=headers, verify=False)
+        response.raise_for_status()
+        get_logger().log_info(f"Cleared brute-force lockout for user '{username}'")
