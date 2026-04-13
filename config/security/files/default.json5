@@ -107,6 +107,34 @@
             "totp_secret": "keycloak_test_totp_secret"
         },
 
+        // Keycloak guard user credentials for RBAC no-resource tests
+        "guard_user": {
+            "username": "keycloak_guard_username",
+            "password": "keycloak_guard_password",
+            "totp_secret": "keycloak_guard_totp_secret"
+        },
+
+        // Guard ClusterRole and ClusterRoleBinding configuration
+        "guard_rbac": {
+            "cluster_role_name": "cluster-guard",
+            "binding_name": "wrcp-guard-binding",
+            "group": "/wrcp-guard"
+        },
+
+        // Keycloak operator user credentials for RBAC operator role tests
+        "operator_user": {
+            "username": "keycloak_operator_username",
+            "password": "keycloak_operator_password",
+            "totp_secret": "keycloak_operator_totp_secret"
+        },
+
+        // Operator ClusterRole and ClusterRoleBinding configuration
+        "operator_rbac": {
+            "cluster_role_name": "cluster-operator",
+            "binding_name": "wrcp-operator-binding",
+            "group": "/wrcp-operator"
+        },
+
         // Keycloak OIDC connector ID
         "connector_id": "keycloak",
 

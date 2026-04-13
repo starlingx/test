@@ -198,6 +198,91 @@ class KeycloakMfaKeywords(BaseKeyword):
         self.file_keywords.create_file_with_echo(kubeconfig_path, updated)
         get_logger().log_info(f"oidc-issuer-url replaced with '{invalid_issuer_url}'")
 
+    def run_kubectl_run_with_browser_login(self, kubeconfig_path: str, login_url: str, pod_name: str, image: str, namespace: str, username: str, password: str, totp_secret: str = None) -> KubectlResultObject:
+        """Start kubectl run in background and authenticate via Keycloak browser login.
+
+        Launches kubectl run in a background thread then completes the Keycloak
+        MFA browser flow concurrently. exec_command is used directly so the
+        kubectl command runs non-blocking while the browser login proceeds.
+
+        Args:
+            kubeconfig_path (str): Path to the OIDC kubeconfig on the remote host.
+            login_url (str): The kubelogin listener URL (e.g. http://[oam_ip]:8000/).
+            pod_name (str): Name for the pod to create.
+            image (str): Container image to use.
+            namespace (str): Namespace to create the pod in.
+            username (str): Keycloak username.
+            password (str): Keycloak password.
+            totp_secret (str): Base32 TOTP secret. Pass None for CONFIGURE_TOTP flow.
+
+        Returns:
+            KubectlResultObject: Result containing output and error state.
+        """
+        kubectl_ssh = self.lab_connection_keywords.get_active_controller_ssh()
+        kubectl_cmd = f"bash -lc 'kubectl --kubeconfig {kubeconfig_path} run {pod_name} --image={image} --restart=Never -n {namespace}'"
+        result = KubectlResultObject()
+
+        def run_kubectl() -> None:
+            if not kubectl_ssh.is_connected:
+                kubectl_ssh.connect()
+            _, stdout, _ = kubectl_ssh.client.exec_command(kubectl_cmd, timeout=None)
+            stdout.channel.set_combine_stderr(True)
+            result.set_output("".join(stdout.readlines()))
+
+        kubectl_thread = threading.Thread(target=run_kubectl, daemon=True)
+        kubectl_thread.start()
+
+        get_logger().log_info(f"Navigating to OIDC login URL: {login_url}")
+        driver = WebDriverCore()
+        keycloak_login_page = KeycloakLoginPage(driver)
+        keycloak_login_page.navigate_to_login_url(login_url)
+        keycloak_login_page.login(username=username, password=password, totp_secret=totp_secret)
+
+        kubectl_thread.join(timeout=300)
+        driver.quit()
+
+        return result
+
+    def run_kubectl_auth_can_i_with_cached_token(self, kubeconfig_path: str, verb: str, resource: str, all_namespaces: bool = False, timeout: int = 30) -> KubectlResultObject:
+        """Run kubectl auth can-i using the cached OIDC token without browser interaction.
+
+        Uses a timeout to confirm kubectl completes without waiting for a browser
+        login prompt. exec_command is used directly so a thread-level read timeout
+        can detect when kubelogin is waiting for browser input.
+
+        Args:
+            kubeconfig_path (str): Path to the OIDC kubeconfig on the remote host.
+            verb (str): The verb to check (e.g. 'list', 'create').
+            resource (str): The resource to check (e.g. 'pods').
+            all_namespaces (bool): Whether to check across all namespaces (-A flag).
+            timeout (int): Maximum seconds to wait for kubectl to complete.
+
+        Returns:
+            KubectlResultObject: Result containing kubectl auth can-i output.
+        """
+        ns_flag = " -A" if all_namespaces else ""
+        kubectl_cmd = f"bash -lc 'kubectl --kubeconfig {kubeconfig_path} auth can-i {verb} {resource}{ns_flag}'"
+        get_logger().log_info(f"Running kubectl auth can-i {verb} {resource}{ns_flag} (timeout={timeout}s)")
+        result = KubectlResultObject()
+        if not self.ssh_connection.is_connected:
+            self.ssh_connection.connect()
+        # exec_command used directly: a thread-level read timeout is required to
+        # detect when kubelogin is waiting for browser input rather than exiting.
+        _, stdout, _ = self.ssh_connection.client.exec_command(kubectl_cmd, timeout=None)
+        stdout.channel.set_combine_stderr(True)
+        output_lines = []
+
+        def read_output() -> None:
+            output_lines.extend(stdout.readlines())
+
+        reader = threading.Thread(target=read_output, daemon=True)
+        reader.start()
+        reader.join(timeout=timeout)
+        output = "".join(output_lines)
+        get_logger().log_info(f"kubectl auth can-i output: {output}")
+        result.set_output(output)
+        return result
+
     def clear_oidc_token_cache(self) -> None:
         """Delete the OIDC token cache using kubectl oidc-login clean.
 

@@ -58,6 +58,22 @@ class SecurityConfig:
         self.oidc_keycloak_test_username = test_user_config.get("username", "")
         self.oidc_keycloak_test_password = test_user_config.get("password", "")
         self.oidc_keycloak_test_totp_secret = test_user_config.get("totp_secret", "")
+        operator_user_config = oidc_keycloak_config.get("operator_user", {})
+        self.oidc_keycloak_operator_username = operator_user_config.get("username", "")
+        self.oidc_keycloak_operator_password = operator_user_config.get("password", "")
+        self.oidc_keycloak_operator_totp_secret = operator_user_config.get("totp_secret", "")
+        operator_rbac_config = oidc_keycloak_config.get("operator_rbac", {})
+        self.oidc_keycloak_operator_cluster_role_name = operator_rbac_config.get("cluster_role_name", "cluster-operator")
+        self.oidc_keycloak_operator_crb_binding_name = operator_rbac_config.get("binding_name", "wrcp-operator-binding")
+        self.oidc_keycloak_operator_crb_group = operator_rbac_config.get("group", "/wrcp-operator")
+        guard_user_config = oidc_keycloak_config.get("guard_user", {})
+        self.oidc_keycloak_guard_username = guard_user_config.get("username", "")
+        self.oidc_keycloak_guard_password = guard_user_config.get("password", "")
+        self.oidc_keycloak_guard_totp_secret = guard_user_config.get("totp_secret", "")
+        guard_rbac_config = oidc_keycloak_config.get("guard_rbac", {})
+        self.oidc_keycloak_guard_cluster_role_name = guard_rbac_config.get("cluster_role_name", "cluster-guard")
+        self.oidc_keycloak_guard_crb_binding_name = guard_rbac_config.get("binding_name", "wrcp-guard-binding")
+        self.oidc_keycloak_guard_crb_group = guard_rbac_config.get("group", "/wrcp-guard")
         self.oidc_keycloak_connector_id = oidc_keycloak_config.get("connector_id", "keycloak")
         self.oidc_keycloak_redirect_uri = oidc_keycloak_config.get("redirect_uri", "")
         static_client_config = oidc_keycloak_config.get("static_client", {})
@@ -497,3 +513,99 @@ class SecurityConfig:
             list[str]: List of redirect URIs for the static OIDC client.
         """
         return self.oidc_keycloak_static_client_redirect_uris
+
+    def get_oidc_keycloak_operator_username(self) -> str:
+        """Getter for the Keycloak operator user username.
+
+        Returns:
+            str: Operator user username.
+        """
+        return self.oidc_keycloak_operator_username
+
+    def get_oidc_keycloak_operator_password(self) -> str:
+        """Getter for the Keycloak operator user password.
+
+        Returns:
+            str: Operator user password.
+        """
+        return self.oidc_keycloak_operator_password
+
+    def get_oidc_keycloak_operator_totp_secret(self) -> str:
+        """Getter for the Keycloak operator user TOTP secret.
+
+        Returns:
+            str: Base32-encoded TOTP secret for the operator user.
+        """
+        return self.oidc_keycloak_operator_totp_secret
+
+    def get_oidc_keycloak_operator_cluster_role_name(self) -> str:
+        """Getter for the operator ClusterRole name.
+
+        Returns:
+            str: Operator ClusterRole name.
+        """
+        return self.oidc_keycloak_operator_cluster_role_name
+
+    def get_oidc_keycloak_operator_crb_binding_name(self) -> str:
+        """Getter for the operator ClusterRoleBinding name.
+
+        Returns:
+            str: Operator ClusterRoleBinding name.
+        """
+        return self.oidc_keycloak_operator_crb_binding_name
+
+    def get_oidc_keycloak_operator_crb_group(self) -> str:
+        """Getter for the operator group to bind the cluster role to.
+
+        Returns:
+            str: Operator group name.
+        """
+        return self.oidc_keycloak_operator_crb_group
+
+    def get_oidc_keycloak_guard_username(self) -> str:
+        """Getter for the Keycloak guard user username.
+
+        Returns:
+            str: Guard user username.
+        """
+        return self.oidc_keycloak_guard_username
+
+    def get_oidc_keycloak_guard_password(self) -> str:
+        """Getter for the Keycloak guard user password.
+
+        Returns:
+            str: Guard user password.
+        """
+        return self.oidc_keycloak_guard_password
+
+    def get_oidc_keycloak_guard_totp_secret(self) -> str:
+        """Getter for the Keycloak guard user TOTP secret.
+
+        Returns:
+            str: Base32-encoded TOTP secret for the guard user.
+        """
+        return self.oidc_keycloak_guard_totp_secret
+
+    def get_oidc_keycloak_guard_cluster_role_name(self) -> str:
+        """Getter for the guard ClusterRole name.
+
+        Returns:
+            str: Guard ClusterRole name.
+        """
+        return self.oidc_keycloak_guard_cluster_role_name
+
+    def get_oidc_keycloak_guard_crb_binding_name(self) -> str:
+        """Getter for the guard ClusterRoleBinding name.
+
+        Returns:
+            str: Guard ClusterRoleBinding name.
+        """
+        return self.oidc_keycloak_guard_crb_binding_name
+
+    def get_oidc_keycloak_guard_crb_group(self) -> str:
+        """Getter for the guard group to bind the cluster role to.
+
+        Returns:
+            str: Guard group name.
+        """
+        return self.oidc_keycloak_guard_crb_group

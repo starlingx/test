@@ -30,6 +30,33 @@ class KubectlResultObject:
         """
         return self.output is not None and "NAME" in self.output and "STATUS" in self.output
 
+    def is_kubectl_run_successful(self, pod_name: str) -> bool:
+        """Check if kubectl run succeeded by looking for pod created confirmation.
+
+        Args:
+            pod_name (str): Name of the pod expected in the output.
+
+        Returns:
+            bool: True if output confirms the pod was created.
+        """
+        return self.output is not None and f"pod/{pod_name} created" in self.output
+
+    def is_kubectl_forbidden(self) -> bool:
+        """Check if kubectl output contains an RBAC forbidden error.
+
+        Returns:
+            bool: True if output contains a forbidden error, False otherwise.
+        """
+        return self.output is not None and "Error from server (Forbidden)" in self.output
+
+    def is_kubectl_auth_denied(self) -> bool:
+        """Check if kubectl auth can-i returned 'no'.
+
+        Returns:
+            bool: True if the output is 'no', False otherwise.
+        """
+        return self.output is not None and self.output.strip() == "no"
+
     def set_browser_prompt_shown(self, value: bool) -> None:
         """Set whether kubelogin showed a browser prompt.
 

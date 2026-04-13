@@ -1,0 +1,11 @@
+# Template for operator ClusterRole with read-only permissions.
+# Variables:
+#   cluster_role: Name of the ClusterRole to create
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ cluster_role }}
+rules:
+  - apiGroups: ["", "apps", "batch", "extensions"]
+    resources: ["pods", "deployments", "replicasets", "statefulsets", "daemonsets", "jobs", "cronjobs", "services", "endpoints", "configmaps", "namespaces", "nodes", "persistentvolumes", "persistentvolumeclaims"]
+    verbs: ["get", "list", "watch"]

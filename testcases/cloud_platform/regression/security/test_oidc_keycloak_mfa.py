@@ -10,6 +10,9 @@ from keywords.cloud_platform.security.keycloak.keycloak_admin_keywords import Ke
 from keywords.cloud_platform.security.keycloak.keycloak_mfa_keywords import KeycloakMfaKeywords
 from keywords.cloud_platform.security.oidc.oidc_environment_keywords import OidcEnvironmentKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
+from keywords.k8s.clusterrole.kubectl_create_clusterrole_keywords import KubectlCreateClusterRoleKeywords
+from keywords.k8s.clusterrolebinding.kubectl_create_clusterrolebinding_keywords import KubectlCreateClusterRoleBindingKeywords
+from keywords.k8s.pods.kubectl_delete_pods_keywords import KubectlDeletePodsKeywords
 
 
 def _get_oidc_token_cache_dir(security_config: SecurityConfig) -> str:
@@ -89,6 +92,244 @@ def _cleanup_oidc_environment(ssh_connection: SSHConnection, security_config: Se
         namespace=security_config.get_oidc_keycloak_namespace(),
         crb_binding_name=security_config.get_oidc_keycloak_crb_binding_name(),
     )
+
+
+@mark.p1
+def test_oidc_kubectl_admin_role_can_create_pod(request: FixtureRequest):
+    """Verify kubectl run succeeds when user has admin role mapped to cluster-admin.
+
+    Clears the OIDC token cache, sets up the OIDC environment, then runs
+    kubectl run nginx with browser-based Keycloak MFA authentication using
+    a user that belongs to the admin group bound to cluster-admin.
+
+    Steps:
+        - Clear OIDC token cache
+        - Set up OIDC environment
+        - Run kubectl run nginx --image=nginx --restart=Never via browser login
+        - Login with admin role user credentials and valid OTP
+        - Validate kubectl run succeeded
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    security_config = ConfigurationManager.get_security_config()
+    lab_config = ConfigurationManager.get_lab_config()
+
+    mfa_keywords = KeycloakMfaKeywords(ssh_connection)
+
+    get_logger().log_test_case_step("Clear OIDC token cache")
+    mfa_keywords.clear_oidc_token_cache()
+
+    get_logger().log_test_case_step("Set up OIDC environment")
+    kubeconfig_path = _setup_oidc_environment(ssh_connection, security_config, lab_config)
+
+    def cleanup():
+        KubectlDeletePodsKeywords(ssh_connection, kubeconfig_path).cleanup_pod("nginx", "default")
+        _cleanup_oidc_environment(ssh_connection, security_config)
+
+    request.addfinalizer(cleanup)
+
+    oam_ip = lab_config.get_floating_ip()
+    if lab_config.is_ipv6():
+        oam_ip = f"[{oam_ip}]"
+
+    get_logger().log_test_case_step("Run kubectl run nginx with browser login as admin role user")
+    login_url = f"http://{oam_ip}:{security_config.get_oidc_keycloak_login_port()}/"
+    result = mfa_keywords.run_kubectl_run_with_browser_login(
+        kubeconfig_path=kubeconfig_path,
+        login_url=login_url,
+        pod_name="nginx",
+        image="nginx",
+        namespace="default",
+        username=security_config.get_oidc_keycloak_test_username(),
+        password=security_config.get_oidc_keycloak_test_password(),
+        totp_secret=security_config.get_oidc_keycloak_test_totp_secret(),
+    )
+    get_logger().log_info(f"kubectl output:\n{result.get_output()}")
+    validate_equals(result.is_kubectl_run_successful("nginx"), True, "kubectl run should succeed for user with admin role")
+
+
+@mark.p1
+def test_oidc_kubectl_operator_role_get_allowed_run_forbidden(request: FixtureRequest):
+    """Verify operator role user can list pods but cannot create pods.
+
+    Creates a cluster-operator ClusterRole with get/list permissions only,
+    binds it to the operator group, then authenticates as the operator user
+    via Keycloak MFA. Validates kubectl get pods succeeds and kubectl run
+    is rejected with an RBAC forbidden error.
+
+    Steps:
+        - Clear OIDC token cache
+        - Create cluster-operator ClusterRole with get/list verbs
+        - Create ClusterRoleBinding for operator group
+        - Set up OIDC environment
+        - Run kubectl get pods -A via browser login as operator user with valid OTP
+        - Validate kubectl get pods succeeds
+        - Run kubectl run nginx --image=nginx --restart=Never as operator user
+        - Validate kubectl run fails with RBAC forbidden error
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    security_config = ConfigurationManager.get_security_config()
+    lab_config = ConfigurationManager.get_lab_config()
+
+    mfa_keywords = KeycloakMfaKeywords(ssh_connection)
+    clusterrole_keywords = KubectlCreateClusterRoleKeywords(ssh_connection)
+    crb_keywords = KubectlCreateClusterRoleBindingKeywords(ssh_connection)
+
+    operator_role = security_config.get_oidc_keycloak_operator_cluster_role_name()
+    operator_binding = security_config.get_oidc_keycloak_operator_crb_binding_name()
+    operator_group = security_config.get_oidc_keycloak_operator_crb_group()
+
+    get_logger().log_test_case_step("Clear OIDC token cache")
+    mfa_keywords.clear_oidc_token_cache()
+
+    get_logger().log_test_case_step("Create cluster-operator ClusterRole with get/list permissions")
+    clusterrole_keywords.create_clusterrole(
+        role_name=operator_role,
+        verbs=["get", "list"],
+        resources=["pods", "services", "deployments", "namespaces", "nodes"],
+    )
+
+    get_logger().log_test_case_step("Create ClusterRoleBinding for operator group")
+    crb_keywords.create_clusterrolebinding_for_group(
+        binding_name=operator_binding,
+        clusterrole=operator_role,
+        group=operator_group,
+    )
+
+    get_logger().log_test_case_step("Set up OIDC environment")
+    kubeconfig_path = _setup_oidc_environment(ssh_connection, security_config, lab_config)
+
+    def cleanup():
+        crb_keywords.delete_clusterrolebinding(operator_binding)
+        clusterrole_keywords.delete_clusterrole(operator_role)
+        _cleanup_oidc_environment(ssh_connection, security_config)
+
+    request.addfinalizer(cleanup)
+
+    oam_ip = lab_config.get_floating_ip()
+    if lab_config.is_ipv6():
+        oam_ip = f"[{oam_ip}]"
+    login_url = f"http://{oam_ip}:{security_config.get_oidc_keycloak_login_port()}/"
+
+    get_logger().log_test_case_step("Run kubectl get pods -A via browser login as operator user")
+    get_result = mfa_keywords.run_kubectl_with_browser_login(
+        kubeconfig_path=kubeconfig_path,
+        login_url=login_url,
+        username=security_config.get_oidc_keycloak_operator_username(),
+        password=security_config.get_oidc_keycloak_operator_password(),
+        totp_secret=security_config.get_oidc_keycloak_operator_totp_secret(),
+    )
+    get_logger().log_info(f"kubectl get pods output:\n{get_result.get_output()}")
+    validate_equals(get_result.is_kubectl_successful(), True, "kubectl get pods should succeed for operator role user")
+
+    get_logger().log_test_case_step("Run kubectl run nginx as operator user - expecting RBAC forbidden")
+    run_result = mfa_keywords.run_kubectl_run_with_browser_login(
+        kubeconfig_path=kubeconfig_path,
+        login_url=login_url,
+        pod_name="nginx",
+        image="nginx",
+        namespace="default",
+        username=security_config.get_oidc_keycloak_operator_username(),
+        password=security_config.get_oidc_keycloak_operator_password(),
+        totp_secret=security_config.get_oidc_keycloak_operator_totp_secret(),
+    )
+    get_logger().log_info(f"kubectl run output:\n{run_result.get_output()}")
+    validate_equals(run_result.is_kubectl_forbidden(), True, "kubectl run should be forbidden for operator role user")
+
+
+@mark.p1
+def test_oidc_kubectl_guard_role_get_denied_and_auth_can_i_denied(request: FixtureRequest):
+    """Verify authentication succeeds but all kubectl operations are denied for guard role user.
+
+    Creates a cluster-guard ClusterRole with no resource permissions, binds it
+    to the guard group, then authenticates as jthomas via Keycloak MFA. Validates
+    that kubectl get pods is forbidden, and kubectl auth can-i confirms no
+    permissions for list pods or create pods.
+
+    Steps:
+        - Clear OIDC token cache
+        - Create cluster-guard ClusterRole with no resource permissions
+        - Create ClusterRoleBinding for guard group
+        - Set up OIDC environment
+        - Run kubectl get pods -A via browser login as guard user with valid OTP
+        - Validate kubectl get pods is forbidden (authentication succeeded, RBAC denied)
+        - Run kubectl auth can-i list pods -A using cached token
+        - Validate result is 'no'
+        - Run kubectl auth can-i create pods using cached token
+        - Validate result is 'no'
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    security_config = ConfigurationManager.get_security_config()
+    lab_config = ConfigurationManager.get_lab_config()
+
+    mfa_keywords = KeycloakMfaKeywords(ssh_connection)
+    clusterrole_keywords = KubectlCreateClusterRoleKeywords(ssh_connection)
+    crb_keywords = KubectlCreateClusterRoleBindingKeywords(ssh_connection)
+
+    guard_role = security_config.get_oidc_keycloak_guard_cluster_role_name()
+    guard_binding = security_config.get_oidc_keycloak_guard_crb_binding_name()
+    guard_group = security_config.get_oidc_keycloak_guard_crb_group()
+
+    get_logger().log_test_case_step("Clear OIDC token cache")
+    mfa_keywords.clear_oidc_token_cache()
+
+    get_logger().log_test_case_step("Create cluster-guard ClusterRole with no resource permissions")
+    clusterrole_keywords.create_clusterrole(
+        role_name=guard_role,
+        verbs=["get", "list"],
+        resources=["configmaps"],
+    )
+
+    get_logger().log_test_case_step("Create ClusterRoleBinding for guard group")
+    crb_keywords.create_clusterrolebinding_for_group(
+        binding_name=guard_binding,
+        clusterrole=guard_role,
+        group=guard_group,
+    )
+
+    get_logger().log_test_case_step("Set up OIDC environment")
+    kubeconfig_path = _setup_oidc_environment(ssh_connection, security_config, lab_config)
+
+    def cleanup():
+        crb_keywords.delete_clusterrolebinding(guard_binding)
+        clusterrole_keywords.delete_clusterrole(guard_role)
+        _cleanup_oidc_environment(ssh_connection, security_config)
+
+    request.addfinalizer(cleanup)
+
+    oam_ip = lab_config.get_floating_ip()
+    if lab_config.is_ipv6():
+        oam_ip = f"[{oam_ip}]"
+    login_url = f"http://{oam_ip}:{security_config.get_oidc_keycloak_login_port()}/"
+
+    get_logger().log_test_case_step("Run kubectl get pods -A via browser login as guard user")
+    get_result = mfa_keywords.run_kubectl_with_browser_login(
+        kubeconfig_path=kubeconfig_path,
+        login_url=login_url,
+        username=security_config.get_oidc_keycloak_guard_username(),
+        password=security_config.get_oidc_keycloak_guard_password(),
+        totp_secret=security_config.get_oidc_keycloak_guard_totp_secret(),
+    )
+    get_logger().log_info(f"kubectl get pods output:\n{get_result.get_output()}")
+    validate_equals(get_result.is_kubectl_forbidden(), True, "kubectl get pods should be forbidden for guard role user")
+
+    get_logger().log_test_case_step("Run kubectl auth can-i list pods -A using cached token")
+    can_i_list_result = mfa_keywords.run_kubectl_auth_can_i_with_cached_token(
+        kubeconfig_path=kubeconfig_path,
+        verb="list",
+        resource="pods",
+        all_namespaces=True,
+    )
+    get_logger().log_info(f"kubectl auth can-i list pods output: {can_i_list_result.get_output()}")
+    validate_equals(can_i_list_result.is_kubectl_auth_denied(), True, "kubectl auth can-i list pods should return 'no' for guard role user")
+
+    get_logger().log_test_case_step("Run kubectl auth can-i create pods using cached token")
+    can_i_create_result = mfa_keywords.run_kubectl_auth_can_i_with_cached_token(
+        kubeconfig_path=kubeconfig_path,
+        verb="create",
+        resource="pods",
+    )
+    get_logger().log_info(f"kubectl auth can-i create pods output: {can_i_create_result.get_output()}")
+    validate_equals(can_i_create_result.is_kubectl_auth_denied(), True, "kubectl auth can-i create pods should return 'no' for guard role user")
 
 
 @mark.p1
