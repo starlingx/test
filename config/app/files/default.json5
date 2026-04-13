@@ -7,6 +7,7 @@
   
   platform_integ_app_tarball: "fake_path",
   metrics_server_app_tarball: "fake_path",
+  rook_ceph_app_tarball: "fake_path",
 
   // Optional Overrides of app_names.
 
@@ -20,5 +21,6 @@
   //  node_interface_metrics_exporter_app_name: "",
   //  platform_integ_apps_app_name: "",
   //  sriov_fec_operator_app_name: "",
+  //  rook_ceph_app_name: "",
 
 }
