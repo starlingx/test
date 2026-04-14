@@ -14,20 +14,19 @@ class CloudPlatformVersionManagerClass:
         """
         self.sw_version: ProductVersion = None
 
-    def _get_product_version_object(self, version_name) -> ProductVersion:
+    def _get_product_version_object(self, version_name: str) -> ProductVersion:
         """
         This function will find the Product Version object that matches the version_name provided.
+
         Args:
             version_name (str): The version_name as a String
 
-        Returns (ProductVersion): The value from CloudPlatformSoftwareVersion matching the version_name provided
+        Returns:
+            ProductVersion: The value from CloudPlatformSoftwareVersion matching the version_name provided
         """
-
         # Build a list of all the ProductVersion available.
         cloud_platform_software_version_vars = vars(CloudPlatformSoftwareVersion)
-        cloud_platform_product_version_names = [
-            var_name for var_name in list(cloud_platform_software_version_vars.keys()) if "STARLINGX" in var_name
-        ]
+        cloud_platform_product_version_names = [var_name for var_name in list(cloud_platform_software_version_vars.keys()) if "STARLINGX" in var_name]
         cloud_platform_product_versions = [cloud_platform_software_version_vars.get(version_name) for version_name in cloud_platform_product_version_names]
 
         # If the version is not in the list of versions, create a default value.
@@ -48,7 +47,6 @@ class CloudPlatformVersionManagerClass:
         Returns: The active ProductVersion.
 
         """
-
         system_output = GetSystemKeywords().get_system()
         system_object = system_output.get_system_object()
         sw_version = system_object.get_software_version()
@@ -57,9 +55,11 @@ class CloudPlatformVersionManagerClass:
         return product_version
 
     def get_sw_version(self) -> ProductVersion:
-        """
+        """Get Software Version.
+
         This function will return the Cloud Software Version observed on the system.
-        Returns:
+
+        Returns: Software version
 
         """
         if not self.sw_version:
@@ -67,18 +67,20 @@ class CloudPlatformVersionManagerClass:
         return self.sw_version
 
     def get_last_major_release(self) -> ProductVersion:
-        """
+        """Get latest Product Version.
+
         This function will return the latest Product Version defined in CloudPlatformSoftwareVersion
         class.
         """
-        return CloudPlatformSoftwareVersion.STARLINGX_10_0
+        return CloudPlatformSoftwareVersion.STARLINGX_11_0
 
     def get_second_last_major_release(self) -> ProductVersion:
-        """
+        """Get second-latest Product Version.
+
         This function will return the second-latest Product Version defined in
-         CloudPlatformSoftwareVersion class.
+        CloudPlatformSoftwareVersion class.
         """
-        return CloudPlatformSoftwareVersion.STARLINGX_9_0
+        return CloudPlatformSoftwareVersion.STARLINGX_10_0
 
 
 CloudPlatformVersionManager = CloudPlatformVersionManagerClass()

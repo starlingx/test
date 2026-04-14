@@ -19,7 +19,7 @@ class DcmanagerSubcloudPrestage(BaseKeyword):
         """
         self.ssh_connection = ssh_connection
 
-    def dcmanager_subcloud_prestage(self, subcloud_name: str, syspass: str, for_sw_deploy: bool = False) -> None:
+    def dcmanager_subcloud_prestage(self, subcloud_name: str, syspass: str, for_sw_deploy: bool = False, wait_completion: bool = True) -> None:
         """
         Runs dcmanager subcloud prestage command.
 
@@ -27,6 +27,7 @@ class DcmanagerSubcloudPrestage(BaseKeyword):
             subcloud_name (str): The name of the subcloud to check.
             syspass (str): The sysadmin password to be passed to the command.
             for_sw_deploy (bool): whether to enable --for-sw-deploy flag.
+            wait_completion (bool): whether to wait for prestage to complete
 
         """
         cmd_options = "--for-sw-deploy" if for_sw_deploy else ""
@@ -38,8 +39,9 @@ class DcmanagerSubcloudPrestage(BaseKeyword):
         # Wait for the subcloud to acheive 'prestaging-packages' status
         self.wait_for_prestage(prestaging_packages=True, subcloud=subcloud_name, check_interval=2, timeout=10)
 
-        # Wait for the subcloud to complete prestage operation
-        self.wait_for_prestage(subcloud=subcloud_name)
+        if wait_completion:
+            # Wait for the subcloud to complete prestage operation
+            self.wait_for_prestage(subcloud=subcloud_name)
 
     def wait_for_prestage(
         self,
@@ -69,12 +71,9 @@ class DcmanagerSubcloudPrestage(BaseKeyword):
             if prestaging_packages:
                 return prestaged == "prestaging"
             else:
-                return prestaged == "complete"
+                if prestaged == "failed":
+                    return "prestage failed"
+                else:
+                    return prestaged == "complete"
 
-        validate_equals_with_retry(
-            function_to_execute=check_prestage,
-            expected_value=True,
-            validation_description=f"Waiting for {subcloud} prestage.",
-            timeout=timeout,
-            polling_sleep_time=check_interval,
-        )
+        validate_equals_with_retry(function_to_execute=check_prestage, expected_value=True, validation_description=f"Waiting for {subcloud} prestage.", timeout=timeout, polling_sleep_time=check_interval, failure_values=["prestage failed"])
