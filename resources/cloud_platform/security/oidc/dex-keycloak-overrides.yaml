@@ -27,6 +27,8 @@ config:
     id: keycloak
     name: keycloak
     type: oidc
+  expiry:
+    idTokens: 24h
   staticClients:
   - id: stx-oidc-client-app
     name: STX OIDC Client app

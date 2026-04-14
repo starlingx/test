@@ -118,3 +118,79 @@ class KeycloakAdminKeywords(BaseKeyword):
         response = requests.delete(url, headers=headers, verify=False)
         response.raise_for_status()
         get_logger().log_info(f"Cleared brute-force lockout for user '{username}'")
+
+    def disable_user(self, username: str) -> None:
+        """Disable a Keycloak user account.
+
+        Args:
+            username (str): Keycloak username to disable.
+
+        Raises:
+            requests.exceptions.HTTPError: If the API request fails.
+        """
+        self.get_admin_token()
+        user_id = self.get_user_id(username)
+        url = f"{self.base_url}/admin/realms/{self.realm}/users/{user_id}"
+        headers = {"Authorization": f"Bearer {self.token}"}
+        response = requests.put(url, headers=headers, json={"enabled": False}, verify=False)
+        response.raise_for_status()
+        get_logger().log_info(f"Disabled user '{username}'")
+
+    def enable_user(self, username: str) -> None:
+        """Enable a Keycloak user account.
+
+        Args:
+            username (str): Keycloak username to enable.
+
+        Raises:
+            requests.exceptions.HTTPError: If the API request fails.
+        """
+        self.get_admin_token()
+        user_id = self.get_user_id(username)
+        url = f"{self.base_url}/admin/realms/{self.realm}/users/{user_id}"
+        headers = {"Authorization": f"Bearer {self.token}"}
+        response = requests.put(url, headers=headers, json={"enabled": True}, verify=False)
+        response.raise_for_status()
+        get_logger().log_info(f"Enabled user '{username}'")
+
+    def get_group_id(self, group_name: str) -> str:
+        """Get the Keycloak group ID for a given group name.
+
+        Args:
+            group_name (str): Keycloak group name to look up (without leading slash).
+
+        Returns:
+            str: Keycloak group UUID.
+
+        Raises:
+            KeywordException: If the group is not found in the realm.
+            requests.exceptions.HTTPError: If the API request fails.
+        """
+        self.get_admin_token()
+        url = f"{self.base_url}/admin/realms/{self.realm}/groups"
+        headers = {"Authorization": f"Bearer {self.token}"}
+        response = requests.get(url, headers=headers, params={"search": group_name}, verify=False)
+        response.raise_for_status()
+        groups = response.json()
+        if not groups:
+            raise KeywordException(f"Group '{group_name}' not found in realm '{self.realm}'")
+        return groups[0]["id"]
+
+    def add_user_to_group(self, username: str, group_name: str) -> None:
+        """Add a Keycloak user to a group.
+
+        Args:
+            username (str): Keycloak username to add to the group.
+            group_name (str): Keycloak group name (without leading slash).
+
+        Raises:
+            requests.exceptions.HTTPError: If the API request fails.
+        """
+        self.get_admin_token()
+        user_id = self.get_user_id(username)
+        group_id = self.get_group_id(group_name)
+        url = f"{self.base_url}/admin/realms/{self.realm}/users/{user_id}/groups/{group_id}"
+        headers = {"Authorization": f"Bearer {self.token}"}
+        response = requests.put(url, headers=headers, verify=False)
+        response.raise_for_status()
+        get_logger().log_info(f"Added user '{username}' to group '{group_name}'")

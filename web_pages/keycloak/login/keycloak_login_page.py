@@ -187,3 +187,56 @@ class KeycloakLoginPage(BasePage):
             if not totp_secret:
                 raise KeywordException("OTP challenge page appeared but no totp_secret was provided.")
             self.handle_otp_challenge(totp_secret)
+
+    def login_no_mfa(self, username: str, password: str) -> None:
+        """Perform Keycloak login for a user with no MFA configured.
+
+        Enters credentials and waits for the page to redirect away from the
+        login URL, indicating authentication completed without any OTP step.
+
+        Args:
+            username (str): Keycloak username.
+            password (str): Keycloak password.
+
+        Raises:
+            KeywordException: If login did not complete within 30 seconds.
+        """
+        self.enter_credentials(username, password)
+        deadline = time.time() + 30
+        while time.time() < deadline:
+            if "login-actions" not in self.driver.get_current_url():
+                get_logger().log_info(f"Login completed - current URL: {self.driver.get_current_url()}")
+                return
+            time.sleep(0.5)
+        raise KeywordException(f"Login did not complete within 30 seconds. URL: {self.driver.get_current_url()}")
+
+    def login_with_invalid_otp(self, username: str, password: str) -> None:
+        """Perform Keycloak login with valid credentials but a deliberately invalid OTP.
+
+        Enters username and password, waits for the OTP challenge page, then
+        submits '000000' as the OTP code. Keycloak rejects the invalid code and
+        stays on the OTP challenge page. Returns after rejection is confirmed.
+
+        Args:
+            username (str): Keycloak username.
+            password (str): Keycloak password.
+
+        Raises:
+            KeywordException: If the OTP challenge page does not appear after credentials.
+            KeywordException: If Keycloak did not reject the invalid OTP within 10 seconds.
+        """
+        self.enter_credentials(username, password)
+        page = self.wait_for_mfa_page()
+        if page != "otp":
+            raise KeywordException(f"Expected OTP challenge page but got '{page}'. User may not have OTP enrolled.")
+        get_logger().log_info("OTP challenge page detected - submitting invalid OTP code")
+        url_before = self.driver.get_current_url()
+        self.driver.set_text(self.locators.get_locator_otp_input(), "000000")
+        self.driver.click(self.locators.get_locator_sign_in_button())
+        deadline = time.time() + 10
+        while time.time() < deadline:
+            if self.driver.get_current_url() == url_before:
+                get_logger().log_info("Invalid OTP rejected by Keycloak - authentication failed as expected")
+                return
+            time.sleep(0.5)
+        raise KeywordException(f"Keycloak did not reject the invalid OTP within 10 seconds. URL: {self.driver.get_current_url()}")

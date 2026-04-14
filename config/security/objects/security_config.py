@@ -74,6 +74,10 @@ class SecurityConfig:
         self.oidc_keycloak_guard_username = guard_user_config.get("username", "")
         self.oidc_keycloak_guard_password = guard_user_config.get("password", "")
         self.oidc_keycloak_guard_totp_secret = guard_user_config.get("totp_secret", "")
+        disabled_user_config = oidc_keycloak_config.get("disabled_user", {})
+        self.oidc_keycloak_disabled_username = disabled_user_config.get("username", "")
+        self.oidc_keycloak_disabled_password = disabled_user_config.get("password", "")
+        self.oidc_keycloak_disabled_totp_secret = disabled_user_config.get("totp_secret", "")
         guard_rbac_config = oidc_keycloak_config.get("guard_rbac", {})
         self.oidc_keycloak_guard_cluster_role_name = guard_rbac_config.get("cluster_role_name", "cluster-guard")
         self.oidc_keycloak_guard_crb_binding_name = guard_rbac_config.get("binding_name", "wrcp-guard-binding")
@@ -637,3 +641,27 @@ class SecurityConfig:
             str: Guard group name.
         """
         return self.oidc_keycloak_guard_crb_group
+
+    def get_oidc_keycloak_disabled_username(self) -> str:
+        """Getter for the Keycloak disabled user username.
+
+        Returns:
+            str: Disabled user username.
+        """
+        return self.oidc_keycloak_disabled_username
+
+    def get_oidc_keycloak_disabled_password(self) -> str:
+        """Getter for the Keycloak disabled user password.
+
+        Returns:
+            str: Disabled user password.
+        """
+        return self.oidc_keycloak_disabled_password
+
+    def get_oidc_keycloak_disabled_totp_secret(self) -> str:
+        """Getter for the Keycloak disabled user TOTP secret.
+
+        Returns:
+            str: Base32-encoded TOTP secret for the disabled user.
+        """
+        return self.oidc_keycloak_disabled_totp_secret

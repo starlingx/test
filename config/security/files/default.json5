@@ -121,11 +121,24 @@
             "totp_secret": "keycloak_guard_totp_secret"
         },
 
+        // Keycloak disabled user credentials for user disable/enable tests
+        "disabled_user": {
+            "username": "keycloak_disabled_username",
+            "password": "keycloak_disabled_password",
+            "totp_secret": "keycloak_disabled_totp_secret"
+        },
+
         // Guard ClusterRole and ClusterRoleBinding configuration
         "guard_rbac": {
             "cluster_role_name": "cluster-guard",
             "binding_name": "wrcp-guard-binding",
             "group": "/wrcp-guard"
+        },
+
+        // Keycloak non-MFA user credentials for OIDC authentication without OTP
+        "no_mfa_user": {
+            "username": "keycloak_no_mfa_username",
+            "password": "keycloak_no_mfa_password"
         },
 
         // Keycloak operator user credentials for RBAC operator role tests
