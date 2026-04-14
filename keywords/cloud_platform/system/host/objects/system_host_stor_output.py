@@ -95,3 +95,21 @@ class SystemHostStorageOutput:
             list[str]: A list with the state of each OSD.
         """
         return [item.get_state() for item in self.system_host_storages]
+
+    def get_all_osd_uuids(self) -> list[str]:
+        """
+        Returns the list of OSD UUIDs.
+
+        Returns:
+            list[str]: A list of UUIDs for storages with function 'osd' on the host.
+        """
+        return [item.get_uuid() for item in self.system_host_storages]
+
+    def get_host_all_osd_idisk_uuid(self) -> list[str]:
+        """
+        Retrieve the list of OSD idisk_uuid.
+
+        Returns:
+            list[str]: A list of idisk_uuid for storages with function 'osd' on the host.
+        """
+        return [item.get_idisk_uuid() for item in self.system_host_storages]
