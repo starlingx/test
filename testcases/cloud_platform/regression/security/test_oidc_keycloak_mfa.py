@@ -45,7 +45,7 @@ def _get_keycloak_admin(security_config: SecurityConfig) -> KeycloakAdminKeyword
     )
 
 
-def _setup_oidc_environment(ssh_connection: SSHConnection, security_config: SecurityConfig, lab_config: LabConfig, kubeconfig_filename: str = None) -> str:
+def _setup_oidc_environment(ssh_connection: SSHConnection, security_config: SecurityConfig, lab_config: LabConfig, kubeconfig_filename: str = None, create_admin_crb: bool = True) -> str:
     """Set up the full OIDC Keycloak environment on the remote host.
 
     Args:
@@ -53,6 +53,7 @@ def _setup_oidc_environment(ssh_connection: SSHConnection, security_config: Secu
         security_config (SecurityConfig): Security configuration object.
         lab_config (LabConfig): Lab configuration object.
         kubeconfig_filename (str): Optional override for the kubeconfig filename.
+        create_admin_crb (bool): Whether to create the wrcp-admin ClusterRoleBinding.
 
     Returns:
         str: Full path to the generated kubeconfig file on the remote host.
@@ -70,13 +71,13 @@ def _setup_oidc_environment(ssh_connection: SSHConnection, security_config: Secu
         client_id=security_config.get_oidc_keycloak_client_id(),
         client_secret=security_config.get_oidc_keycloak_client_secret(),
         external_idp_issuer_url=security_config.get_oidc_keycloak_external_idp_issuer_url(),
-        crb_binding_name=security_config.get_oidc_keycloak_crb_binding_name(),
-        crb_cluster_role=security_config.get_oidc_keycloak_crb_cluster_role(),
-        crb_group=security_config.get_oidc_keycloak_crb_group(),
         ca_cert_filename=security_config.get_oidc_keycloak_system_local_ca_cert_filename(),
         kubeconfig_filename=kubeconfig_filename or security_config.get_oidc_keycloak_kubeconfig_filename(),
         oidc_client_id=security_config.get_oidc_keycloak_static_client_id(),
         oidc_client_secret=security_config.get_oidc_keycloak_static_client_secret(),
+        crb_binding_name=security_config.get_oidc_keycloak_crb_binding_name() if create_admin_crb else None,
+        crb_cluster_role=security_config.get_oidc_keycloak_crb_cluster_role() if create_admin_crb else None,
+        crb_group=security_config.get_oidc_keycloak_crb_group() if create_admin_crb else None,
     )
 
 
@@ -105,9 +106,12 @@ def test_oidc_kubectl_admin_role_can_create_pod(request: FixtureRequest):
     Steps:
         - Clear OIDC token cache
         - Set up OIDC environment
-        - Run kubectl run nginx --image=nginx --restart=Never via browser login
+        - Run kubectl run test-pod --image=busybox --restart=Never via browser login
         - Login with admin role user credentials and valid OTP
         - Validate kubectl run succeeded
+        - Validate cached OIDC token exists after browser login
+        - Run kubectl get pods -A using the cached OIDC token (no browser required)
+        - Validate kubectl succeeds using the cached token
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     security_config = ConfigurationManager.get_security_config()
@@ -122,7 +126,7 @@ def test_oidc_kubectl_admin_role_can_create_pod(request: FixtureRequest):
     kubeconfig_path = _setup_oidc_environment(ssh_connection, security_config, lab_config)
 
     def cleanup():
-        KubectlDeletePodsKeywords(ssh_connection, kubeconfig_path).cleanup_pod("nginx", "default")
+        KubectlDeletePodsKeywords(ssh_connection, "/etc/kubernetes/admin.conf").cleanup_pod("test-pod", "default")
         _cleanup_oidc_environment(ssh_connection, security_config)
 
     request.addfinalizer(cleanup)
@@ -130,21 +134,34 @@ def test_oidc_kubectl_admin_role_can_create_pod(request: FixtureRequest):
     oam_ip = lab_config.get_floating_ip()
     if lab_config.is_ipv6():
         oam_ip = f"[{oam_ip}]"
+    login_url = f"http://{oam_ip}:{security_config.get_oidc_keycloak_login_port()}/"
+
+    get_logger().log_test_case_step("Reset OTP credentials and clear brute force lockout before browser login")
+    keycloak_admin = _get_keycloak_admin(security_config)
+    keycloak_admin.delete_user_otp_credentials(security_config.get_oidc_keycloak_admin2_username())
+    keycloak_admin.clear_user_brute_force_lockout(security_config.get_oidc_keycloak_admin2_username())
 
     get_logger().log_test_case_step("Run kubectl run nginx with browser login as admin role user")
-    login_url = f"http://{oam_ip}:{security_config.get_oidc_keycloak_login_port()}/"
-    result = mfa_keywords.run_kubectl_run_with_browser_login(
+    run_result = mfa_keywords.run_kubectl_run_with_browser_login(
         kubeconfig_path=kubeconfig_path,
         login_url=login_url,
-        pod_name="nginx",
-        image="nginx",
+        pod_name="test-pod",
+        image="busybox",
         namespace="default",
-        username=security_config.get_oidc_keycloak_test_username(),
-        password=security_config.get_oidc_keycloak_test_password(),
-        totp_secret=security_config.get_oidc_keycloak_test_totp_secret(),
+        username=security_config.get_oidc_keycloak_admin2_username(),
+        password=security_config.get_oidc_keycloak_admin2_password(),
+        totp_secret=None,
     )
-    get_logger().log_info(f"kubectl output:\n{result.get_output()}")
-    validate_equals(result.is_kubectl_run_successful("nginx"), True, "kubectl run should succeed for user with admin role")
+    get_logger().log_info(f"kubectl run output:\n{run_result.get_output()}")
+    validate_equals(run_result.is_kubectl_run_successful("test-pod"), True, "kubectl run should succeed for user with admin role")
+
+    get_logger().log_test_case_step("Validate cached OIDC token exists after browser login")
+    mfa_keywords.validate_token_cache_exists(_get_oidc_token_cache_dir(security_config))
+
+    get_logger().log_test_case_step("Run kubectl get pods -A using cached OIDC token (no browser required)")
+    cached_result = mfa_keywords.run_kubectl_with_cached_token(kubeconfig_path)
+    get_logger().log_info(f"kubectl output:\n{cached_result.get_output()}")
+    validate_equals(cached_result.is_kubectl_successful(), True, "kubectl should succeed using cached OIDC token after admin browser login")
 
 
 @mark.p1
@@ -161,9 +178,10 @@ def test_oidc_kubectl_operator_role_get_allowed_run_forbidden(request: FixtureRe
         - Create cluster-operator ClusterRole with get/list verbs
         - Create ClusterRoleBinding for operator group
         - Set up OIDC environment
-        - Run kubectl get pods -A via browser login as operator user with valid OTP
+        - Reset OTP credentials and clear brute force lockout for operator user
+        - Run kubectl get pods -A via browser login as operator user (CONFIGURE_TOTP)
         - Validate kubectl get pods succeeds
-        - Run kubectl run nginx --image=nginx --restart=Never as operator user
+        - Run kubectl run test-pod --image=busybox --restart=Never using cached token
         - Validate kubectl run fails with RBAC forbidden error
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
@@ -196,7 +214,7 @@ def test_oidc_kubectl_operator_role_get_allowed_run_forbidden(request: FixtureRe
     )
 
     get_logger().log_test_case_step("Set up OIDC environment")
-    kubeconfig_path = _setup_oidc_environment(ssh_connection, security_config, lab_config)
+    kubeconfig_path = _setup_oidc_environment(ssh_connection, security_config, lab_config, create_admin_crb=False)
 
     def cleanup():
         crb_keywords.delete_clusterrolebinding(operator_binding)
@@ -210,27 +228,28 @@ def test_oidc_kubectl_operator_role_get_allowed_run_forbidden(request: FixtureRe
         oam_ip = f"[{oam_ip}]"
     login_url = f"http://{oam_ip}:{security_config.get_oidc_keycloak_login_port()}/"
 
+    get_logger().log_test_case_step("Reset OTP credentials and clear brute force lockout for operator user")
+    keycloak_admin = _get_keycloak_admin(security_config)
+    keycloak_admin.delete_user_otp_credentials(security_config.get_oidc_keycloak_operator_username())
+    keycloak_admin.clear_user_brute_force_lockout(security_config.get_oidc_keycloak_operator_username())
+
     get_logger().log_test_case_step("Run kubectl get pods -A via browser login as operator user")
     get_result = mfa_keywords.run_kubectl_with_browser_login(
         kubeconfig_path=kubeconfig_path,
         login_url=login_url,
         username=security_config.get_oidc_keycloak_operator_username(),
         password=security_config.get_oidc_keycloak_operator_password(),
-        totp_secret=security_config.get_oidc_keycloak_operator_totp_secret(),
+        totp_secret=None,
     )
     get_logger().log_info(f"kubectl get pods output:\n{get_result.get_output()}")
     validate_equals(get_result.is_kubectl_successful(), True, "kubectl get pods should succeed for operator role user")
 
-    get_logger().log_test_case_step("Run kubectl run nginx as operator user - expecting RBAC forbidden")
-    run_result = mfa_keywords.run_kubectl_run_with_browser_login(
+    get_logger().log_test_case_step("Run kubectl run test-pod as operator user using cached token - expecting RBAC forbidden")
+    run_result = mfa_keywords.run_kubectl_run_with_cached_token(
         kubeconfig_path=kubeconfig_path,
-        login_url=login_url,
-        pod_name="nginx",
-        image="nginx",
+        pod_name="operator-test-pod",
+        image="busybox",
         namespace="default",
-        username=security_config.get_oidc_keycloak_operator_username(),
-        password=security_config.get_oidc_keycloak_operator_password(),
-        totp_secret=security_config.get_oidc_keycloak_operator_totp_secret(),
     )
     get_logger().log_info(f"kubectl run output:\n{run_result.get_output()}")
     validate_equals(run_result.is_kubectl_forbidden(), True, "kubectl run should be forbidden for operator role user")
@@ -287,7 +306,7 @@ def test_oidc_kubectl_guard_role_get_denied_and_auth_can_i_denied(request: Fixtu
     )
 
     get_logger().log_test_case_step("Set up OIDC environment")
-    kubeconfig_path = _setup_oidc_environment(ssh_connection, security_config, lab_config)
+    kubeconfig_path = _setup_oidc_environment(ssh_connection, security_config, lab_config, create_admin_crb=False)
 
     def cleanup():
         crb_keywords.delete_clusterrolebinding(guard_binding)

@@ -107,6 +107,13 @@
             "totp_secret": "keycloak_test_totp_secret"
         },
 
+        // Keycloak admin2 user credentials for admin role OIDC tests
+        "admin2_user": {
+            "username": "keycloak_admin2_username",
+            "password": "keycloak_admin2_password",
+            "totp_secret": "keycloak_admin2_totp_secret"
+        },
+
         // Keycloak guard user credentials for RBAC no-resource tests
         "guard_user": {
             "username": "keycloak_guard_username",

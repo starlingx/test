@@ -97,7 +97,7 @@ class KeycloakMfaKeywords(BaseKeyword):
         expired_id_token = "eyJhbGciOiJSUzI1NiJ9.eyJleHAiOjB9.invalid"
         content = "".join(self.file_keywords.read_file(cache_file))
         updated = re.sub(r'"id_token"\s*:\s*"[^"]+"', f'"id_token":"{expired_id_token}"', content)
-        self.file_keywords.create_file_with_echo(cache_file, updated)
+        self.file_keywords.create_file_with_heredoc(cache_file, updated)
         get_logger().log_info("id_token replaced with expired token in cache")
 
     def invalidate_cached_refresh_token(self, cache_dir: str) -> None:
@@ -120,7 +120,7 @@ class KeycloakMfaKeywords(BaseKeyword):
         get_logger().log_info(f"Invalidating refresh_token in cache file: {cache_file}")
         content = "".join(self.file_keywords.read_file(cache_file))
         updated = re.sub(r'"refresh_token"\s*:\s*"[^"]+"', '"refresh_token":"invalid"', content)
-        self.file_keywords.create_file_with_echo(cache_file, updated)
+        self.file_keywords.create_file_with_heredoc(cache_file, updated)
         get_logger().log_info("refresh_token replaced with invalid value in cache")
 
     def validate_token_cache_exists(self, cache_dir: str) -> None:
@@ -180,6 +180,40 @@ class KeycloakMfaKeywords(BaseKeyword):
         result.set_browser_prompt_shown("Please visit the following URL in your browser" in output)
         return result
 
+    def run_kubectl_run_with_cached_token(self, kubeconfig_path: str, pod_name: str, image: str, namespace: str, timeout: int = 30) -> KubectlResultObject:
+        """Run kubectl run using the cached OIDC token without browser interaction.
+
+        Args:
+            kubeconfig_path (str): Path to the OIDC kubeconfig on the remote host.
+            pod_name (str): Name for the pod to create.
+            image (str): Container image to use.
+            namespace (str): Namespace to create the pod in.
+            timeout (int): Maximum seconds to wait for kubectl to complete.
+
+        Returns:
+            KubectlResultObject: Result containing kubectl output.
+        """
+        kubectl_cmd = f"bash -lc 'kubectl --kubeconfig {kubeconfig_path} run {pod_name} --image={image} --restart=Never -n {namespace}'"
+        get_logger().log_info(f"Running kubectl run using cached OIDC token (timeout={timeout}s)")
+        result = KubectlResultObject()
+        if not self.ssh_connection.is_connected:
+            self.ssh_connection.connect()
+        _, stdout, _ = self.ssh_connection.client.exec_command(kubectl_cmd, timeout=None)
+        stdout.channel.set_combine_stderr(True)
+        output_lines = []
+
+        def read_output() -> None:
+            for line in stdout:
+                output_lines.append(line)
+
+        reader = threading.Thread(target=read_output, daemon=True)
+        reader.start()
+        reader.join(timeout=timeout)
+        output = "".join(output_lines)
+        get_logger().log_info(f"kubectl run output: {output}")
+        result.set_output(output)
+        return result
+
     def patch_kubeconfig_issuer_url(self, kubeconfig_path: str, invalid_issuer_url: str) -> None:
         """Replace the oidc-issuer-url in an existing kubeconfig with an invalid value.
 
@@ -195,7 +229,7 @@ class KeycloakMfaKeywords(BaseKeyword):
         get_logger().log_info(f"Patching oidc-issuer-url in kubeconfig: {kubeconfig_path}")
         content = "".join(self.file_keywords.read_file(kubeconfig_path))
         updated = re.sub(r"--oidc-issuer-url=[^\s'\"]+", f"--oidc-issuer-url={invalid_issuer_url}", content)
-        self.file_keywords.create_file_with_echo(kubeconfig_path, updated)
+        self.file_keywords.create_file_with_heredoc(kubeconfig_path, updated)
         get_logger().log_info(f"oidc-issuer-url replaced with '{invalid_issuer_url}'")
 
     def run_kubectl_run_with_browser_login(self, kubeconfig_path: str, login_url: str, pod_name: str, image: str, namespace: str, username: str, password: str, totp_secret: str = None) -> KubectlResultObject:

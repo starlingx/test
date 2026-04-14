@@ -32,12 +32,12 @@ class OidcEnvironmentKeywords(BaseKeyword):
         self.kubectl_delete_secrets = KubectlDeleteSecretsKeywords(ssh_connection)
         self.kubectl_crb = KubectlCreateClusterRoleBindingKeywords(ssh_connection)
 
-    def setup(self, oam_ip: str, namespace: str, secret_name: str, oidc_app_name: str, working_dir: str, ca_cert_pem: str, client_id: str, client_secret: str, external_idp_issuer_url: str, crb_binding_name: str, crb_cluster_role: str, crb_group: str, ca_cert_filename: str, kubeconfig_filename: str, oidc_client_id: str, oidc_client_secret: str) -> str:
+    def setup(self, oam_ip: str, namespace: str, secret_name: str, oidc_app_name: str, working_dir: str, ca_cert_pem: str, client_id: str, client_secret: str, external_idp_issuer_url: str, ca_cert_filename: str, kubeconfig_filename: str, oidc_client_id: str, oidc_client_secret: str, crb_binding_name: str = None, crb_cluster_role: str = None, crb_group: str = None) -> str:
         """Set up the full OIDC Keycloak environment.
 
         Imports the upstream IdP CA secret, applies dex Helm overrides,
-        applies oidc-auth-apps, creates the ClusterRoleBinding, extracts
-        the system-local-ca certificate, and generates the local kubeconfig.
+        applies oidc-auth-apps, optionally creates the ClusterRoleBinding,
+        extracts the system-local-ca certificate, and generates the local kubeconfig.
 
         Args:
             oam_ip (str): OAM floating IP, bracket-wrapped if IPv6.
@@ -49,13 +49,13 @@ class OidcEnvironmentKeywords(BaseKeyword):
             client_id (str): Keycloak OIDC client ID.
             client_secret (str): Keycloak OIDC client secret.
             external_idp_issuer_url (str): Keycloak realm issuer URL.
-            crb_binding_name (str): ClusterRoleBinding name.
-            crb_cluster_role (str): Cluster role to bind.
-            crb_group (str): Group to bind the cluster role to.
             ca_cert_filename (str): Filename for the system-local-ca certificate.
             kubeconfig_filename (str): Filename for the local OIDC kubeconfig.
             oidc_client_id (str): Static OIDC client ID for kubeconfig.
             oidc_client_secret (str): Static OIDC client secret for kubeconfig.
+            crb_binding_name (str): ClusterRoleBinding name. Skipped if None.
+            crb_cluster_role (str): Cluster role to bind. Skipped if None.
+            crb_group (str): Group to bind the cluster role to. Skipped if None.
 
         Returns:
             str: Full path to the generated kubeconfig file on the remote host.
@@ -86,7 +86,8 @@ class OidcEnvironmentKeywords(BaseKeyword):
         validate_equals(system_app_apply_output.get_system_application_object().get_status(), "applied", f"{oidc_app_name} should be in applied state")
 
         get_logger().log_info("Step 4: Create ClusterRoleBinding for wrcp-admin group")
-        self.kubectl_crb.create_clusterrolebinding_for_group(binding_name=crb_binding_name, clusterrole=crb_cluster_role, group=crb_group)
+        if crb_binding_name and crb_cluster_role and crb_group:
+            self.kubectl_crb.create_clusterrolebinding_for_group(binding_name=crb_binding_name, clusterrole=crb_cluster_role, group=crb_group)
 
         get_logger().log_info("Step 5: Extract and save the system-local-ca certificate")
         ca_cert_path = f"{working_dir}{ca_cert_filename}"

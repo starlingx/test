@@ -58,6 +58,10 @@ class SecurityConfig:
         self.oidc_keycloak_test_username = test_user_config.get("username", "")
         self.oidc_keycloak_test_password = test_user_config.get("password", "")
         self.oidc_keycloak_test_totp_secret = test_user_config.get("totp_secret", "")
+        admin2_user_config = oidc_keycloak_config.get("admin2_user", {})
+        self.oidc_keycloak_admin2_username = admin2_user_config.get("username", "")
+        self.oidc_keycloak_admin2_password = admin2_user_config.get("password", "")
+        self.oidc_keycloak_admin2_totp_secret = admin2_user_config.get("totp_secret", "")
         operator_user_config = oidc_keycloak_config.get("operator_user", {})
         self.oidc_keycloak_operator_username = operator_user_config.get("username", "")
         self.oidc_keycloak_operator_password = operator_user_config.get("password", "")
@@ -465,6 +469,30 @@ class SecurityConfig:
             str: Base32-encoded TOTP secret for the test user.
         """
         return self.oidc_keycloak_test_totp_secret
+
+    def get_oidc_keycloak_admin2_username(self) -> str:
+        """Getter for the Keycloak admin2 user username.
+
+        Returns:
+            str: Admin2 user username.
+        """
+        return self.oidc_keycloak_admin2_username
+
+    def get_oidc_keycloak_admin2_password(self) -> str:
+        """Getter for the Keycloak admin2 user password.
+
+        Returns:
+            str: Admin2 user password.
+        """
+        return self.oidc_keycloak_admin2_password
+
+    def get_oidc_keycloak_admin2_totp_secret(self) -> str:
+        """Getter for the Keycloak admin2 user TOTP secret.
+
+        Returns:
+            str: Base32-encoded TOTP secret for the admin2 user.
+        """
+        return self.oidc_keycloak_admin2_totp_secret
 
     def get_oidc_keycloak_connector_id(self) -> str:
         """Getter for the DEX connector ID.
