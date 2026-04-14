@@ -102,18 +102,19 @@ class SystemHostFSKeywords(BaseKeyword):
         self.ssh_connection.send(source_openrc(f"system host-fs-delete {hostname} {fs_name}"))
         self.validate_success_return_code(self.ssh_connection)
 
-    def wait_for_fs_ready(self, hostname: str, fs_name: str, timeout: int = 300, sleep_time: int = 30) -> None:
+    def wait_for_fs_state(self, hostname: str, fs_name: str, expected_state: str = "Ready", timeout: int = 300, sleep_time: int = 30) -> None:
         """
-        Wait until the given FS on the host reaches state 'Ready'.
+        Wait until the given FS on the host reaches the expected state.
 
         Args:
             hostname (str): Host name to check
             fs_name (str): FS name to wait for
+            expected_state (str): Expected state to wait for. Defaults to "Ready".
             timeout (int): Max time in seconds to wait
             sleep_time (int): Interval between checks
 
         Raises:
-            TimeoutError: If FS does not reach 'Ready' state within timeout
+            TimeoutError: If FS does not reach expected state within timeout
 
         Returns:
             None: This function does not return any value
@@ -122,10 +123,10 @@ class SystemHostFSKeywords(BaseKeyword):
         while time.time() < end_time:
             fs_output = self.get_system_host_fs_list(hostname)
             fs = fs_output.get_host_fs(fs_name)
-            if fs and fs.get_state() == "Ready":
+            if fs and fs.get_state() == expected_state:
                 return
             time.sleep(sleep_time)
-        raise TimeoutError(f"FS '{fs_name}' on host '{hostname}' did not reach 'Ready' state within {timeout} seconds")
+        raise TimeoutError(f"FS '{fs_name}' on host '{hostname}' did not reach '{expected_state}' state within {timeout} seconds")
 
     def get_hosts_without_monitor(self) -> list[str]:
         """

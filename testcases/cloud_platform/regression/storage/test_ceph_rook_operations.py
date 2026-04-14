@@ -754,7 +754,7 @@ def test_monitor_operations_rook_ceph():
 
     get_logger().log_test_case_step("Deleting host-fs entries from target hosts.")
     for host in target_hosts:
-        system_host_fs_keywords.wait_for_fs_ready(hostname=host, fs_name="ceph")
+        system_host_fs_keywords.wait_for_fs_state(hostname=host, fs_name="ceph")
         system_host_fs_keywords.system_host_fs_delete(hostname=host, fs_name="ceph")
 
     get_logger().log_test_case_step("Unlock all previously locked nodes.")
