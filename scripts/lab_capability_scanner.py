@@ -380,6 +380,13 @@ def scan_hosts(lab_config: LabConfig, ssh_connection: SSHConnection) -> list[Nod
         if worker_count == 0 and storage_count == 0:
             lab_config.add_lab_capability("lab_is_duplex")
 
+    # Count compute (worker) nodes and add min_N capabilities.
+    compute_count = sum(1 for host in hosts if host.get_personality() == "worker")
+    if compute_count >= 2:
+        lab_config.add_lab_capability("lab_has_min_2_compute")
+    if compute_count >= 3:
+        lab_config.add_lab_capability("lab_has_min_3_compute")
+
     # Look at the Capabilities of each host individually.
     for host in hosts:
 
@@ -517,6 +524,7 @@ def scan_hosts(lab_config: LabConfig, ssh_connection: SSHConnection) -> list[Nod
             node.append_node_capability("lab_has_dsa")
             lab_config.add_lab_capability("lab_has_dsa")
         nodes.append(node)
+
     return nodes
 
 
@@ -886,7 +894,6 @@ if __name__ == "__main__":
     # find the lab_type
     lab_type = get_lab_type(lab_config)
     lab_config.set_lab_type(lab_type)
-
 
     # check if the lab is an aio
     if is_aio(lab_config):
