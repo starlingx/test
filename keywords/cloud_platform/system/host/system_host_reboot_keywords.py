@@ -114,3 +114,12 @@ class SystemHostRebootKeywords(BaseKeyword):
             time.sleep(refresh_time)
 
         return False
+
+    def host_force_reboot(self) -> None:
+        """Force reboot the host using sudo reboot -f.
+
+        Sends the reboot command via the class SSH connection.
+        Initialize this class with the SSH connection to the target host.
+        """
+        get_logger().log_info("Force rebooting host")
+        self.ssh_connection.send_as_sudo("reboot -f")

@@ -236,7 +236,7 @@ def setup_registry_secret(ssh_connection: SSHConnection, request: FixtureRequest
 
 
 @mark.p1
-def test_kubevirt_upload_apply_delete(request):
+def test_kubevirt_upload_apply_delete(request: FixtureRequest):
     """
     Test kubevirt application upload, apply and delete.
 
@@ -301,7 +301,7 @@ def test_kubevirt_upload_apply_delete(request):
 
 @mark.p2
 @mark.lab_has_standby_controller
-def test_launch_vm_after_lock_unlock_multinode(request):
+def test_launch_vm_after_lock_unlock_multinode(request: FixtureRequest):
     """
     Test launching VM and verify it works after lock/unlock of standby.
 
@@ -396,7 +396,7 @@ def test_launch_vm_after_lock_unlock_multinode(request):
 
 @mark.p2
 @mark.lab_has_min_2_compute
-def test_launch_vm_after_lock_unlock_compute(request):
+def test_launch_vm_after_lock_unlock_compute(request: FixtureRequest):
     """
     Test launching VM on compute and verify it works after lock/unlock.
 
@@ -499,4 +499,124 @@ def test_launch_vm_after_lock_unlock_compute(request):
     kubectl_vmi.wait_for_vmi_status(vm_name, "Running", timeout=60)
 
     get_logger().log_test_case_step(f"Verifying VM {vm_name} console is accessible after unlock")
+    VirtctlKeywords(ssh_connection).verify_vm_console_accessible(vm_name)
+
+
+@mark.p2
+@mark.lab_has_min_2_compute
+def test_launch_vm_after_reboot_compute(request: FixtureRequest):
+    """
+    Test launching VM on compute and verify it works after compute reboot.
+
+    Args:
+        request (FixtureRequest): Pytest fixture request for teardown registration.
+
+    Test Steps:
+        - Setup kubevirt environment
+        - Create registry secret for image pulls
+        - Get compute hostnames and generate VM YAML with node affinity
+        - Deploy VM with nodeAffinity targeting compute nodes
+        - Verify VM and VMI are running on a compute node
+        - Login to VM via virtctl console
+        - Force reboot the compute node hosting the VM
+        - Verify VM migrates to another compute
+        - Verify VM and VMI are running after migration
+        - Wait for rebooted compute to come back online
+        - Verify kubevirt application is in applied state after reboot
+        - Verify kubevirt pods are running after reboot
+        - Verify VM console is accessible after reboot
+    """
+    vm_name = "vm-cirros-1"
+    vm_yaml_resource = "resources/cloud_platform/containers/kubevirt/cirros-vm-containerdisk-compute.yaml"
+    vm_namespace = "default"
+
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+
+    get_logger().log_setup_step("Cleanup kubevirt environment")
+    cleanup_kubevirt_environment(ssh_connection)
+
+    kubectl_vm = KubectlGetVmKeywords(ssh_connection)
+    kubectl_vmi = KubectlGetVmiKeywords(ssh_connection)
+    system_host_list = SystemHostListKeywords(ssh_connection)
+    system_host_lock = SystemHostLockKeywords(ssh_connection)
+
+    rebooted_compute = None
+
+    def cleanup():
+        if rebooted_compute and not system_host_lock.is_host_unlocked(rebooted_compute):
+            get_logger().log_teardown_step(f"Waiting for {rebooted_compute} to come back online")
+            system_host_lock.wait_for_host_unlocked(rebooted_compute)
+
+        get_logger().log_teardown_step(f"Deleting VM {vm_name}")
+        KubectlDeleteVmKeywords(ssh_connection).delete_vm(vm_name, ignore_not_found=True)
+
+        get_logger().log_teardown_step("Cleaning up remote VM directory")
+        FileKeywords(ssh_connection).delete_directory(KUBEVIRT_VM_DIR)
+
+        get_logger().log_teardown_step("Cleaning up kubevirt environment")
+        cleanup_kubevirt_environment(ssh_connection)
+
+    request.addfinalizer(cleanup)
+
+    get_logger().log_setup_step("Setting up kubevirt environment")
+    setup_kubevirt_environment(ssh_connection)
+
+    get_logger().log_setup_step("Creating registry secret for image pulls")
+    setup_registry_secret(ssh_connection, request, vm_namespace)
+
+    get_logger().log_test_case_step("Getting compute hostnames for node affinity")
+    computes = system_host_list.get_computes()
+    compute_names = [compute.get_host_name() for compute in computes]
+    get_logger().log_info(f"Compute hostnames for VM affinity: {compute_names}")
+
+    get_logger().log_test_case_step("Generating VM YAML from template and uploading to remote host")
+    file_keywords = FileKeywords(ssh_connection)
+    file_keywords.create_directory(KUBEVIRT_VM_DIR)
+    yaml_keywords = YamlKeywords(ssh_connection)
+    remote_yaml_path = yaml_keywords.generate_yaml_file_from_template(
+        template_file=get_stx_resource_path(vm_yaml_resource),
+        replacement_dictionary={"compute_hostnames": compute_names},
+        target_file_name="cirros-vm-containerdisk-compute.yaml",
+        target_remote_location=KUBEVIRT_VM_DIR,
+    )
+
+    get_logger().log_test_case_step(f"Deploying VM {vm_name}")
+    KubectlFileApplyKeywords(ssh_connection).apply_resource_from_yaml(remote_yaml_path)
+
+    get_logger().log_test_case_step(f"Verifying VM and VMI {vm_name} are running on a compute node")
+    kubectl_vm.wait_for_vm_status(vm_name, "Running", timeout=120)
+    kubectl_vmi.wait_for_vmi_status(vm_name, "Running", timeout=120)
+    initial_node = kubectl_vmi.get_vmi_node(vm_name)
+    get_logger().log_info(f"VM {vm_name} is running on {initial_node}")
+
+    get_logger().log_test_case_step(f"Logging into VM {vm_name} via virtctl console")
+    VirtctlKeywords(ssh_connection).login_to_vm(vm_name, "cirros", "gocubsgo")
+
+    get_logger().log_test_case_step(f"Rebooting compute node {initial_node}")
+    rebooted_compute = initial_node
+    compute_ssh = LabConnectionKeywords().get_ssh_for_hostname(initial_node)
+    pre_uptime = system_host_list.get_uptime(initial_node)
+    SystemHostRebootKeywords(compute_ssh).host_force_reboot()
+
+    get_logger().log_test_case_step(f"Verifying VM {vm_name} migrated away from {initial_node}")
+    new_node = kubectl_vmi.wait_for_vmi_node_change(vm_name, initial_node, timeout=240)
+    get_logger().log_info(f"VM {vm_name} migrated to {new_node}")
+
+    get_logger().log_test_case_step(f"Verifying VM and VMI {vm_name} are running after migration")
+    kubectl_vm.wait_for_vm_status(vm_name, "Running", timeout=120)
+    kubectl_vmi.wait_for_vmi_status(vm_name, "Running", timeout=120)
+
+    get_logger().log_test_case_step(f"Waiting for compute {initial_node} to complete reboot")
+    reboot_success = SystemHostRebootKeywords(ssh_connection).wait_for_force_reboot(initial_node, pre_uptime)
+    validate_equals(reboot_success, True, f"{initial_node} should reboot successfully")
+
+    get_logger().log_test_case_step(f"Verifying {APP_NAME} is in applied state after reboot")
+    SystemApplicationListKeywords(ssh_connection).validate_app_status(APP_NAME, "applied", timeout=30)
+
+    get_logger().log_test_case_step("Verifying kubevirt pods are running after reboot")
+    kubectl_pods = KubectlGetPodsKeywords(ssh_connection)
+    kubectl_pods.wait_for_pods_to_reach_status(expected_status="Running", pod_names=CDI_EXPECTED_PODS, namespace=CDI_NAMESPACE, timeout=120)
+    kubectl_pods.wait_for_pods_to_reach_status(expected_status="Running", pod_names=KUBEVIRT_EXPECTED_PODS, namespace=KUBEVIRT_NAMESPACE, timeout=120)
+
+    get_logger().log_test_case_step(f"Verifying VM {vm_name} console is accessible after reboot")
     VirtctlKeywords(ssh_connection).verify_vm_console_accessible(vm_name)
