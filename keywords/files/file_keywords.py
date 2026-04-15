@@ -55,7 +55,7 @@ class FileKeywords(BaseKeyword):
             local_file_path (str): Absolute path (incl file name) to be copied to.
 
         Returns:
-             bool: True if download is successful, False otherwise.
+            bool: True if download is successful, False otherwise.
 
         Raises:
             KeywordException: if unable to copy file.

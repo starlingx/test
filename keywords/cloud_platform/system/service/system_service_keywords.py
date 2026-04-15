@@ -1,8 +1,12 @@
+from typing import List
+
 from framework.ssh.ssh_connection import SSHConnection
 from keywords.base_keyword import BaseKeyword
 from keywords.cloud_platform.command_wrappers import source_openrc
 from keywords.cloud_platform.system.service.objects.system_service_output import SystemServiceOutput
+from keywords.cloud_platform.system.service.objects.system_service_parameter_list_object import SystemServiceParameterListObject
 from keywords.cloud_platform.system.service.objects.system_service_parameter_list_output import SystemServiceParameterListOutput
+from keywords.cloud_platform.system.service.objects.system_service_parameter_object import SystemServiceParameterObject
 from keywords.cloud_platform.system.service.objects.system_service_parameter_output import SystemServiceParameterOutput
 from keywords.cloud_platform.system.service.objects.system_service_show_output import SystemServiceShowOutput
 from keywords.k8s.pods.kubectl_get_pods_keywords import KubectlGetPodsKeywords
@@ -143,3 +147,85 @@ class SystemServiceKeywords(BaseKeyword):
         self.validate_success_return_code(self.ssh_connection)
         # Wait for Kubernetes to restart and stabilize after parameter changes
         KubectlGetPodsKeywords(self.ssh_connection).wait_for_kubernetes_to_restart()
+
+    def _delete_service_parameter_by_uuid(self, uuid: str) -> str:
+        """
+        Deletes a service parameter by its UUID.
+
+        Args:
+            uuid (str): The UUID of the service parameter to delete.
+
+        Returns:
+            str: The command output.
+        """
+        command = source_openrc(f"system service-parameter-delete {uuid}")
+        output = self.ssh_connection.send(command)
+        self.validate_success_return_code(self.ssh_connection)
+        return output
+
+    def _find_service_parameter(
+        self,
+        parameter_list: SystemServiceParameterListOutput,
+        service: str,
+        section: str,
+        name: str,
+    ) -> SystemServiceParameterListObject:
+        """Find a service parameter by service, section, and name.
+
+        Args:
+            parameter_list (SystemServiceParameterListOutput): The full parameter list.
+            service (str): The service name.
+            section (str): The section name.
+            name (str): The parameter name.
+
+        Returns:
+            SystemServiceParameterListObject: The matching parameter.
+
+        Raises:
+            AssertionError: If the parameter is not found.
+        """
+        for param in parameter_list.get_parameters():
+            if param.service == service and param.section == section and param.name == name:
+                return param
+        raise AssertionError(f"Service parameter {service} {section} {name} not found")
+
+    def delete_service_parameter(self, service_parameter: SystemServiceParameterObject) -> None:
+        """
+        Deletes a service parameter.
+
+        Args:
+            service_parameter (SystemServiceParameterObject): A SystemServiceParameterObject:
+                service (str): The service name (e.g., 'platform')
+                section (str): The section name (e.g., 'client')
+                name (str): The parameter name (e.g., 'cli_confirmations')
+        """
+        system_service_parameter_list = self.get_system_service_parameter_list()
+        service_parameter_selected = self._find_service_parameter(system_service_parameter_list, service_parameter.service, service_parameter.section, service_parameter.name)
+        self._delete_service_parameter_by_uuid(service_parameter_selected.uuid)
+
+    def delete_service_parameters(self, service_parameters: List[SystemServiceParameterListObject]) -> None:
+        """
+        Deletes multiple service parameters.
+
+        Args:
+            service_parameters (List[SystemServiceParameterListObject]): A list of SystemServiceParameterListObjects containing at least:
+                service (str): The service name (e.g., 'platform')
+                section (str): The section name (e.g., 'client')
+                name (str): The parameter name (e.g., 'cli_confirmations')
+        """
+        system_service_parameter_list = self.get_system_service_parameter_list()
+        for service_parameter in service_parameters:
+            service_parameter_selected = self._find_service_parameter(system_service_parameter_list, service_parameter.service, service_parameter.section, service_parameter.name)
+            self._delete_service_parameter_by_uuid(service_parameter_selected.uuid)
+
+    def cleanup_service_parameters(self, service_parameters: List[SystemServiceParameterListObject]) -> None:
+        """
+        Cleans up service parameters, ignoring any that's already cleaned.
+        """
+        system_service_parameter_list = self.get_system_service_parameter_list()
+        for service_parameter in service_parameters:
+            try:
+                service_parameter_selected = self._find_service_parameter(system_service_parameter_list, service_parameter.service, service_parameter.section, service_parameter.name)
+            except (AssertionError, Exception):
+                continue
+            self._delete_service_parameter_by_uuid(service_parameter_selected.uuid)
