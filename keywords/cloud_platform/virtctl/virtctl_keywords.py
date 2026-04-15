@@ -53,6 +53,9 @@ class VirtctlKeywords(BaseKeyword):
             username (str): VM login username.
             password (str): VM login password.
             namespace (str): Namespace of the VM. Defaults to 'default'.
+
+        Raises:
+            KeywordException: If the console login fails.
         """
         get_logger().log_info(f"Opening virtctl console to VM {vm_name}")
 
@@ -65,4 +68,34 @@ class VirtctlKeywords(BaseKeyword):
         ]
 
         self._ssh_connection.send_expect_prompts(f"virtctl console {vm_name}{namespace_flag}", prompts)
+        self.validate_success_return_code(self._ssh_connection)
         get_logger().log_info(f"Successfully logged into VM {vm_name}")
+
+    def verify_vm_console_accessible(
+        self,
+        vm_name: str,
+        namespace: str = "default",
+    ) -> None:
+        """Verify a VM is accessible via virtctl console without full login.
+
+        Connects to the VM console and checks for the 'Successfully connected' message.
+        Useful when the VM may already be logged in from a previous session (e.g., after
+        live migration) and the login prompt is not expected.
+
+        Args:
+            vm_name (str): Name of the VM to connect to.
+            namespace (str): Namespace of the VM. Defaults to 'default'.
+
+        Raises:
+            KeywordException: If the console connection fails.
+        """
+        get_logger().log_info(f"Verifying VM {vm_name} console is accessible")
+
+        namespace_flag = f" -n {namespace}" if namespace != "default" else ""
+        prompts = [
+            PromptResponse("Successfully connected", None),
+        ]
+
+        self._ssh_connection.send_expect_prompts(f"virtctl console {vm_name}{namespace_flag}", prompts)
+        self.validate_success_return_code(self._ssh_connection)
+        get_logger().log_info(f"VM {vm_name} console is accessible")

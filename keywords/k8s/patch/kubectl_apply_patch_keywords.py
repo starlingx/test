@@ -50,6 +50,6 @@ class KubectlApplyPatchKeywords(K8sBaseKeyword):
         if namespace:
             args += f"-n {namespace} "
         if args_sa:
-            args += f"-p {args_sa} "
+            args += f"-p '{args_sa}' "
         self.ssh_connection.send(self.k8s_config.export(f"kubectl patch serviceaccount {name} {args}"))
         self.validate_success_return_code(self.ssh_connection)

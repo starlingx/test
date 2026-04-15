@@ -1,5 +1,6 @@
-from pytest import mark
+from pytest import FixtureRequest, mark
 
+from config.configuration_manager import ConfigurationManager
 from framework.logging.automation_logger import get_logger
 from framework.resources.resource_finder import get_stx_resource_path
 from framework.ssh.ssh_connection import SSHConnection
@@ -19,8 +20,12 @@ from keywords.files.yaml_keywords import YamlKeywords
 from keywords.k8s.crd.kubectl_wait_crd_keywords import KubectlWaitCrdKeywords
 from keywords.k8s.files.kubectl_file_apply_keywords import KubectlFileApplyKeywords
 from keywords.k8s.helm.kubectl_get_helm_keywords import KubectlGetHelmKeywords
+from keywords.k8s.patch.kubectl_apply_patch_keywords import KubectlApplyPatchKeywords
 from keywords.k8s.pods.kubectl_get_pods_keywords import KubectlGetPodsKeywords
 from keywords.k8s.pods.kubectl_wait_pod_keywords import KubectlWaitPodKeywords
+from keywords.k8s.secret.kubectl_create_secret_keywords import KubectlCreateSecretsKeywords
+from keywords.k8s.secret.kubectl_delete_secret_keywords import KubectlDeleteSecretsKeywords
+from keywords.k8s.secret.kubectl_get_secret_keywords import KubectlGetSecretsKeywords
 from keywords.k8s.vm.kubectl_delete_vm_keywords import KubectlDeleteVmKeywords
 from keywords.k8s.vm.kubectl_get_vm_keywords import KubectlGetVmKeywords
 from keywords.k8s.vm.kubectl_get_vmi_keywords import KubectlGetVmiKeywords
@@ -30,6 +35,7 @@ from keywords.linux.which.which_keywords import WhichKeywords
 
 APP_NAME = "kubevirt-app"
 KUBEVIRT_VM_DIR = "/home/sysadmin/kubevirt"
+KUBEVIRT_REGISTRY_SECRET = "default-registry-key"
 KUBEVIRT_NAMESPACE = "kubevirt"
 CDI_NAMESPACE = "cdi"
 CHART_PATH = "/usr/local/share/applications/helm/kubevirt-app-[0-9]*"
@@ -186,6 +192,47 @@ def cleanup_kubevirt_environment(ssh_connection: SSHConnection) -> None:
         system_app_delete.get_system_application_delete(delete_input)
         # remove virtctl
         remove_virtctl(ssh_connection)
+
+
+def setup_registry_secret(ssh_connection: SSHConnection, request: FixtureRequest, namespace: str = "default") -> None:
+    """Create a docker-registry secret and patch the default service account for image pulls.
+
+    Reads the local registry credentials from the docker configuration and creates
+    a Kubernetes secret in the given namespace. Then patches the default service account
+    to use that secret for image pulls. Registers a finalizer to clean up the secret
+    on teardown.
+
+    Args:
+        ssh_connection (SSHConnection): SSH connection to active controller.
+        request (FixtureRequest): Pytest request object for registering teardown.
+        namespace (str): Namespace to create the secret in. Defaults to 'default'.
+    """
+    local_registry = ConfigurationManager.get_docker_config().get_local_registry()
+    secret_names = KubectlGetSecretsKeywords(ssh_connection).get_secret_names(namespace=namespace)
+
+    if KUBEVIRT_REGISTRY_SECRET not in secret_names:
+        get_logger().log_info(f"Creating registry secret {KUBEVIRT_REGISTRY_SECRET} in namespace {namespace}")
+        KubectlCreateSecretsKeywords(ssh_connection).create_secret_for_registry(
+            registry=local_registry,
+            secret_name=KUBEVIRT_REGISTRY_SECRET,
+            namespace=namespace,
+        )
+
+        def teardown_secret():
+            get_logger().log_teardown_step(f"Deleting registry secret {KUBEVIRT_REGISTRY_SECRET}")
+            KubectlDeleteSecretsKeywords(ssh_connection).cleanup_secret(KUBEVIRT_REGISTRY_SECRET, namespace)
+
+        request.addfinalizer(teardown_secret)
+    else:
+        get_logger().log_info(f"Registry secret {KUBEVIRT_REGISTRY_SECRET} already exists in namespace {namespace}")
+
+    get_logger().log_info(f"Patching default service account with imagePullSecrets in {namespace}")
+    args_sa = '{"imagePullSecrets":[{"name":"' + KUBEVIRT_REGISTRY_SECRET + '"}]}'
+    KubectlApplyPatchKeywords(ssh_connection).apply_patch_saccount(
+        "default",
+        namespace,
+        args_sa,
+    )
 
 
 @mark.p1
@@ -355,6 +402,7 @@ def test_launch_vm_after_lock_unlock_compute(request):
 
     Test Steps:
         - Setup kubevirt environment
+        - Create registry secret and patch default service account for image pulls
         - Get compute hostnames and generate VM YAML with node affinity
         - Deploy VM with nodeAffinity targeting compute nodes
         - Verify VM and VMI are running on a compute node
@@ -367,6 +415,7 @@ def test_launch_vm_after_lock_unlock_compute(request):
     """
     vm_name = "vm-cirros-1"
     vm_yaml_resource = "resources/cloud_platform/containers/kubevirt/cirros-vm-containerdisk-compute.yaml"
+    vm_namespace = "default"
 
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
 
@@ -397,6 +446,9 @@ def test_launch_vm_after_lock_unlock_compute(request):
 
     get_logger().log_setup_step("Setting up kubevirt environment")
     setup_kubevirt_environment(ssh_connection)
+
+    get_logger().log_setup_step("Creating registry secret for image pulls")
+    setup_registry_secret(ssh_connection, request, vm_namespace)
 
     get_logger().log_test_case_step("Getting compute hostnames for node affinity")
     computes = SystemHostListKeywords(ssh_connection).get_computes()
@@ -446,5 +498,5 @@ def test_launch_vm_after_lock_unlock_compute(request):
     kubectl_vm.wait_for_vm_status(vm_name, "Running", timeout=60)
     kubectl_vmi.wait_for_vmi_status(vm_name, "Running", timeout=60)
 
-    get_logger().log_test_case_step(f"Logging into VM {vm_name} via virtctl console after unlock")
-    VirtctlKeywords(ssh_connection).login_to_vm(vm_name, "cirros", "gocubsgo")
+    get_logger().log_test_case_step(f"Verifying VM {vm_name} console is accessible after unlock")
+    VirtctlKeywords(ssh_connection).verify_vm_console_accessible(vm_name)
