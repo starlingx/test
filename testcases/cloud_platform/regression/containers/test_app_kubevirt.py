@@ -14,6 +14,7 @@ from keywords.cloud_platform.system.application.system_application_upload_keywor
 from keywords.cloud_platform.system.host.system_host_list_keywords import SystemHostListKeywords
 from keywords.cloud_platform.system.host.system_host_lock_keywords import SystemHostLockKeywords
 from keywords.cloud_platform.system.host.system_host_reboot_keywords import SystemHostRebootKeywords
+from keywords.cloud_platform.system.host.system_host_swact_keywords import SystemHostSwactKeywords
 from keywords.cloud_platform.virtctl.virtctl_keywords import VirtctlKeywords
 from keywords.files.file_keywords import FileKeywords
 from keywords.files.yaml_keywords import YamlKeywords
@@ -620,3 +621,108 @@ def test_launch_vm_after_reboot_compute(request: FixtureRequest):
 
     get_logger().log_test_case_step(f"Verifying VM {vm_name} console is accessible after reboot")
     VirtctlKeywords(ssh_connection).verify_vm_console_accessible(vm_name)
+
+
+@mark.p2
+@mark.lab_has_standby_controller
+def test_verify_vm_after_swact(request: FixtureRequest):
+    """
+    Test launching VM on active controller and verify it works after swact.
+
+    Args:
+        request (FixtureRequest): Pytest fixture request for teardown registration.
+
+    Test Steps:
+        - Setup kubevirt environment
+        - Create registry secret for image pulls
+        - Deploy VM with nodeSelector for active controller
+        - Verify VM is running on active controller
+        - Perform swact
+        - Reconnect SSH to new active controller
+        - Verify kubevirt application is in applied state after swact
+        - Verify kubevirt pods are running after swact
+        - Verify VM continues running after swact
+    """
+    vm_name = "vm-cirros"
+    vm_yaml_template = "cirros-vm-containerdisk-nodeselector.yaml.j2"
+    remote_yaml_path = f"{KUBEVIRT_VM_DIR}/vm-cirros-active.yaml"
+    vm_namespace = "default"
+
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+
+    get_logger().log_setup_step("Cleanup kubevirt environment")
+    cleanup_kubevirt_environment(ssh_connection)
+
+    get_logger().log_setup_step("Getting active controller")
+    active_name = SystemHostListKeywords(ssh_connection).get_active_controller().get_host_name()
+    get_logger().log_info(f"Active controller is {active_name}")
+
+    def cleanup():
+        new_ssh = LabConnectionKeywords().get_active_controller_ssh()
+
+        get_logger().log_teardown_step(f"Deleting VM {vm_name}")
+        KubectlDeleteVmKeywords(new_ssh).delete_vm(vm_name, ignore_not_found=True)
+
+        get_logger().log_teardown_step("Cleaning up remote VM directory")
+        FileKeywords(new_ssh).delete_directory(KUBEVIRT_VM_DIR)
+
+        get_logger().log_teardown_step("Cleaning up kubevirt environment")
+        cleanup_kubevirt_environment(new_ssh)
+
+        get_logger().log_teardown_step(f"Swacting back to original active controller {active_name}")
+        current_active = SystemHostListKeywords(new_ssh).get_active_controller().get_host_name()
+        if current_active != active_name:
+            SystemHostSwactKeywords(new_ssh).host_swact()
+
+    request.addfinalizer(cleanup)
+
+    get_logger().log_setup_step("Setting up kubevirt environment")
+    setup_kubevirt_environment(ssh_connection)
+
+    get_logger().log_setup_step("Creating registry secret for image pulls")
+    setup_registry_secret(ssh_connection, request, vm_namespace)
+
+    get_logger().log_test_case_step(f"Creating VM YAML with nodeSelector for {active_name}")
+    FileKeywords(ssh_connection).create_directory(KUBEVIRT_VM_DIR)
+    YamlKeywords(ssh_connection).generate_yaml_file_from_template(
+        get_stx_resource_path(f"resources/cloud_platform/containers/kubevirt/{vm_yaml_template}"),
+        {"node_name": active_name},
+        "vm-cirros-active.yaml",
+        KUBEVIRT_VM_DIR,
+    )
+
+    get_logger().log_test_case_step(f"Deploying VM {vm_name} on active controller {active_name}")
+    KubectlFileApplyKeywords(ssh_connection).apply_resource_from_yaml(remote_yaml_path)
+
+    get_logger().log_test_case_step(f"Verifying VM {vm_name} is running on {active_name}")
+    kubectl_vm = KubectlGetVmKeywords(ssh_connection)
+    kubectl_vmi = KubectlGetVmiKeywords(ssh_connection)
+    kubectl_vm.wait_for_vm_status(vm_name, "Running", timeout=120)
+    kubectl_vmi.wait_for_vmi_status(vm_name, "Running", timeout=120)
+    vm_host = kubectl_vmi.get_vmi_node(vm_name)
+    validate_equals(vm_host, active_name, f"VM should be running on {active_name}")
+
+    get_logger().log_test_case_step("Performing swact")
+    SystemHostSwactKeywords(ssh_connection).host_swact()
+
+    get_logger().log_test_case_step("Reconnecting to new active controller after swact")
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    kubectl_vm = KubectlGetVmKeywords(ssh_connection)
+    kubectl_vmi = KubectlGetVmiKeywords(ssh_connection)
+
+    get_logger().log_test_case_step(f"Verifying {APP_NAME} is in applied state after swact")
+    SystemApplicationListKeywords(ssh_connection).validate_app_status(APP_NAME, "applied", timeout=30)
+
+    get_logger().log_test_case_step("Verifying kubevirt pods are running after swact")
+    kubectl_pods = KubectlGetPodsKeywords(ssh_connection)
+    kubectl_pods.wait_for_pods_to_reach_status(expected_status="Running", pod_names=CDI_EXPECTED_PODS, namespace=CDI_NAMESPACE, timeout=120)
+    kubectl_pods.wait_for_pods_to_reach_status(expected_status="Running", pod_names=KUBEVIRT_EXPECTED_PODS, namespace=KUBEVIRT_NAMESPACE, timeout=120)
+
+    get_logger().log_test_case_step(f"Verifying VM {vm_name} is running after swact")
+    kubectl_vm.wait_for_vm_status(vm_name, "Running", timeout=240)
+    kubectl_vmi.wait_for_vmi_status(vm_name, "Running", timeout=120)
+
+    get_logger().log_test_case_step(f"Verifying VM {vm_name} is still on original node {active_name}")
+    vm_node_after_swact = kubectl_vmi.get_vmi_node(vm_name)
+    get_logger().log_info(f"VM {vm_name} is running on {vm_node_after_swact}")
+    validate_equals(vm_node_after_swact, active_name, f"VM should remain on {active_name} after swact")
