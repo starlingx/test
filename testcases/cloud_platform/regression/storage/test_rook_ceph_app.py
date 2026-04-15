@@ -11,6 +11,7 @@ from keywords.cloud_platform.system.application.object.system_application_remove
 from keywords.cloud_platform.system.application.object.system_application_status_enum import SystemApplicationStatusEnum
 from keywords.cloud_platform.system.application.object.system_application_update_input import SystemApplicationUpdateInput
 from keywords.cloud_platform.system.application.object.system_application_upload_input import SystemApplicationUploadInput
+from keywords.cloud_platform.system.application.system_application_abort_keywords import SystemApplicationAbortKeywords
 from keywords.cloud_platform.system.application.system_application_apply_keywords import SystemApplicationApplyKeywords
 from keywords.cloud_platform.system.application.system_application_delete_keywords import SystemApplicationDeleteKeywords
 from keywords.cloud_platform.system.application.system_application_list_keywords import SystemApplicationListKeywords
@@ -379,3 +380,42 @@ def test_update_rook_ceph_app(request: FixtureRequest):
     upgraded_version = upgraded_app_info.get_system_application_object().get_version()
     validate_equals(upgraded_version, current_version, "Application version should match original version after upgrade")
     get_logger().log_info(f"Application status after upgrade: {upgraded_app_info.get_system_application_object()}")
+
+
+@mark.p2
+@mark.lab_has_rook_ceph
+def test_rook_ceph_abort_during_remove(request: FixtureRequest):
+    """
+    Test case: Abort rook-ceph application during remove operation.
+
+    Test Steps:
+        - Check rook-ceph health via 'ceph -s'
+        - Run 'system application-remove rook-ceph' immediately followed by 'system application-abort rook-ceph'
+        - Validate that rook-ceph status transitions to 'uploaded' after abort
+        - Re-apply rook-ceph application
+        - Check rook-ceph health via 'ceph -s'
+
+    Args:
+        request (FixtureRequest): pytest request fixture for test setup and teardown
+    """
+    active_ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    rook_ceph_name = setup(request, active_ssh_connection)
+    ceph_status_keywords = CephStatusKeywords(active_ssh_connection)
+    system_app_abort_keywords = SystemApplicationAbortKeywords(active_ssh_connection)
+    system_app_list_keywords = SystemApplicationListKeywords(active_ssh_connection)
+    system_app_apply_keywords = SystemApplicationApplyKeywords(active_ssh_connection)
+
+    get_logger().log_test_case_step("Check rook-ceph health before remove.")
+    ceph_status_keywords.wait_for_ceph_health_status(expect_health_status=True)
+
+    get_logger().log_test_case_step("Run application-remove && application-abort without waiting for remove to finish.")
+    system_app_abort_keywords.system_application_remove_and_abort(rook_ceph_name)
+
+    get_logger().log_test_case_step("Validate rook-ceph status is 'uploaded' after abort.")
+    system_app_list_keywords.validate_app_status(rook_ceph_name, "uploaded", timeout=600, polling_sleep_time=10)
+
+    get_logger().log_test_case_step("Re-apply rook-ceph application.")
+    system_app_apply_keywords.system_application_apply(rook_ceph_name, timeout=1500, polling_sleep_time=10)
+
+    get_logger().log_test_case_step("Check rook-ceph health after re-apply.")
+    ceph_status_keywords.wait_for_ceph_health_status(expect_health_status=True)
