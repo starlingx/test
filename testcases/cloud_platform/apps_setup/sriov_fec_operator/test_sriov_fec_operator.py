@@ -27,6 +27,8 @@ def _cleanup_sriov_fec_operator():
         get_logger().log_setup_step("Removing and deleting sriov fec operator application...")
         sriov_fec_app_output = SystemApplicationRemoveKeywords(ssh_connection).system_application_remove_and_delete_app(sriov_fec_name)
         validate_equals(sriov_fec_app_output, f"Application {sriov_fec_name} deleted.\n", "SRIOV FEC deletion validation")
+        get_pod_obj = KubectlGetPodsKeywords(ssh_connection)
+        get_pod_obj.wait_for_pods_to_be_deleted(namespace="sriov-fec-system")
     else:
         sriov_fec_uploaded = SystemApplicationUploadKeywords(ssh_connection).is_already_uploaded(sriov_fec_name)
         if sriov_fec_uploaded:
@@ -88,8 +90,7 @@ def test_install_sriov_fec_operator():
     # Step : Check sriov-fec-operator pods
     get_logger().log_test_case_step("check if pod is running")
     get_pod_obj = KubectlGetPodsKeywords(ssh_connection)
-    pod_names = get_pod_obj.get_pods(namespace="sriov-fec-system").get_unique_pod_matching_prefix(starts_with="sriov")
-    pod_status = get_pod_obj.wait_for_pod_status(pod_names, "Running", "sriov-fec-system")
+    pod_status = get_pod_obj.wait_for_pods_to_reach_status(expected_status="Running", namespace="sriov-fec-system")
     validate_equals(pod_status, True, f"Verify {'sriov'} pods are running")
 
 
@@ -135,3 +136,5 @@ def test_uninstall_sriov_fec_operator():
     # Verify if the application was deleted
     delete_msg = SystemApplicationDeleteKeywords(ssh_connection).get_system_application_delete(system_application_delete_input)
     validate_equals(delete_msg, f"Application {sriov_fec_name} deleted.\n", "Application deletion message validation")
+    get_pod_obj = KubectlGetPodsKeywords(ssh_connection)
+    get_pod_obj.wait_for_pods_to_be_deleted(namespace="sriov-fec-system")

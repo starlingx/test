@@ -67,7 +67,6 @@ class KubectlGetPodsKeywords(K8sBaseKeyword):
         Returns:
             KubectlGetPodsOutput: An object containing the parsed output of the command.
         """
-
         # If namespace is None, search for all namespaces.
         if namespace:
             arg_namespace = f"-n {namespace}"
@@ -210,13 +209,15 @@ class KubectlGetPodsKeywords(K8sBaseKeyword):
         get_logger().log_info(f"Waiting for pods {pod_names} to reach {expected_statuses} status in namespace {namespace}")
 
         # Initialize pending pods - if no pod_names given, get all pods in namespace
+        pending_pods = []
         if pod_names:
-            pending_pods = list(pod_names)
-        else:
-            initial_pods = self.get_pods(namespace).get_pods()
-            pending_pods = [pod.get_name() for pod in initial_pods]
+            pending_pods = list(pod_names)        
 
         while time.time() < pod_status_timeout:
+            if pod_names is None:
+                all_pods = self.get_pods(namespace).get_pods()
+                pending_pods = [pod.get_name() for pod in all_pods]
+
             pods_output = self.get_pods_no_validation(namespace)
             if not pods_output:
                 time.sleep(poll_interval)
@@ -305,3 +306,33 @@ class KubectlGetPodsKeywords(K8sBaseKeyword):
         self.wait_for_pod_status(pod_name="kube-apiserver-controller-0", expected_status="Running", namespace="kube-system", timeout=timeout)
 
         return self.wait_for_pod_max_age(pod_name="kube-apiserver-controller-0", max_age=3, namespace="kube-system", timeout=timeout)
+
+    def wait_for_pods_to_be_deleted(self, namespace: str, poll_interval: int = 10, timeout: int = 180) -> None:
+        """Wait for a pods belongs to a namespace be delete
+
+        This function monitors pods in a given namespace and waits for them to be deleted
+
+        Args:
+            namespace (str): Kubernetes namespace to search in.
+            poll_interval (int): Time in seconds between status checks. Defaults to 10.
+            timeout (int): Maximum time in seconds to waitaing the pods be deleted.
+            Defaults to 180.
+
+        Returns:
+            bool: True if all specified pods where deleted within timeout.
+
+        Raises:
+            KeywordException: If pods still exist within timeout
+        """
+        def is_name_space_pods_deleted() -> bool:
+            output = self.ssh_connection.send(self.k8s_config.export(f"kubectl get pods -n {namespace}"))
+            return f"No resources found in {namespace} namespace" in output[0]
+
+        validate_equals_with_retry(
+            function_to_execute=is_name_space_pods_deleted,
+            expected_value=True,
+            validation_description="The namespace pods were deleted",
+            timeout=timeout,
+            polling_sleep_time=poll_interval,
+        )
+
