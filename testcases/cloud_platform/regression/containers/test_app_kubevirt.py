@@ -46,7 +46,8 @@ VIRTCTL_PATH = "/var/opt/kubevirt/virtctl"
 
 
 def setup_virtctl_on_controller(ssh_connection: SSHConnection) -> bool:
-    """Setup virtctl on a single controller.
+    """
+    Setup virtctl on a single controller.
 
     Args:
         ssh_connection (SSHConnection): SSH connection to controller.
@@ -68,7 +69,8 @@ def setup_virtctl_on_controller(ssh_connection: SSHConnection) -> bool:
 
 
 def setup_virtctl(ssh_connection: SSHConnection) -> None:
-    """Setup virtctl client executable to be accessible from sysadmin's PATH.
+    """
+    Setup virtctl client executable to be accessible from sysadmin's PATH.
 
     Args:
         ssh_connection (SSHConnection): SSH connection to active controller.
@@ -90,7 +92,8 @@ def setup_virtctl(ssh_connection: SSHConnection) -> None:
 
 
 def remove_virtctl(ssh_connection: SSHConnection) -> None:
-    """Remove virtctl client executable from sysadmin's PATH.
+    """
+    Remove virtctl client executable from sysadmin's PATH.
 
     Args:
         ssh_connection (SSHConnection): SSH connection to active controller.
@@ -109,7 +112,8 @@ def remove_virtctl(ssh_connection: SSHConnection) -> None:
 
 
 def setup_kubevirt_environment(ssh_connection: SSHConnection) -> None:
-    """Setup kubevirt application.
+    """
+    Setup kubevirt application.
 
     Args:
         ssh_connection (SSHConnection): SSH connection to active controller.
@@ -157,7 +161,8 @@ def verify_kubevirt_helmchart_removed(ssh_connection: SSHConnection) -> None:
 
 
 def cleanup_kubevirt_environment(ssh_connection: SSHConnection) -> None:
-    """Clean up kubevirt test resources.
+    """
+    Clean up kubevirt test resources.
 
     Args:
         ssh_connection (SSHConnection): SSH connection to active controller.
@@ -185,9 +190,10 @@ def cleanup_kubevirt_environment(ssh_connection: SSHConnection) -> None:
 
 @mark.p1
 def test_kubevirt_upload_apply_delete(request):
-    """Test kubevirt application upload, apply and delete.
+    """
+    Test kubevirt application upload, apply and delete.
 
-    Steps:
+    Test Steps:
         - Cleanup kubevirt application
         - Upload and Apply kubevirt application
         - Reapply the application
@@ -200,7 +206,7 @@ def test_kubevirt_upload_apply_delete(request):
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
 
-    get_logger().log_test_case_step("Cleanup kubevirt application")
+    get_logger().log_setup_step("Cleanup kubevirt application")
     cleanup_kubevirt_environment(ssh_connection)
 
     def cleanup():
@@ -209,7 +215,7 @@ def test_kubevirt_upload_apply_delete(request):
 
     request.addfinalizer(cleanup)
 
-    get_logger().log_test_case_step("Setting up kubevirt environment")
+    get_logger().log_setup_step("Setting up kubevirt environment")
     setup_kubevirt_environment(ssh_connection)
 
     get_logger().log_test_case_step(f"Reapplying {APP_NAME} application")
@@ -249,9 +255,10 @@ def test_kubevirt_upload_apply_delete(request):
 @mark.p2
 @mark.lab_has_standby_controller
 def test_launch_vm_after_lock_unlock_multinode(request):
-    """Test launching VM and verify it works after lock/unlock of standby.
+    """
+    Test launching VM and verify it works after lock/unlock of standby.
 
-    Steps:
+    Test Steps:
         - Setup kubevirt environment
         - Get standby controller name
         - Create VM YAML with nodeSelector for standby
@@ -270,7 +277,7 @@ def test_launch_vm_after_lock_unlock_multinode(request):
 
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
 
-    get_logger().log_test_case_step("Cleanup kubevirt environment")
+    get_logger().log_setup_step("Cleanup kubevirt environment")
     cleanup_kubevirt_environment(ssh_connection)
 
     kubectl_vm = KubectlGetVmKeywords(ssh_connection)
@@ -278,7 +285,7 @@ def test_launch_vm_after_lock_unlock_multinode(request):
     system_host_lock = SystemHostLockKeywords(ssh_connection)
     system_host_list = SystemHostListKeywords(ssh_connection)
 
-    get_logger().log_test_case_step("Getting standby controller")
+    get_logger().log_setup_step("Getting standby controller")
     standby_name = system_host_list.get_standby_controller().get_host_name()
     get_logger().log_info(f"Standby controller is {standby_name}")
 
@@ -298,7 +305,7 @@ def test_launch_vm_after_lock_unlock_multinode(request):
 
     request.addfinalizer(cleanup)
 
-    get_logger().log_test_case_step("Setting up kubevirt environment")
+    get_logger().log_setup_step("Setting up kubevirt environment")
     setup_kubevirt_environment(ssh_connection)
 
     get_logger().log_test_case_step(f"Creating VM YAML with nodeSelector for {standby_name}")
@@ -331,6 +338,109 @@ def test_launch_vm_after_lock_unlock_multinode(request):
 
     get_logger().log_test_case_step(f"Unlocking standby controller {standby_name}")
     system_host_lock.unlock_host(standby_name)
+
+    get_logger().log_test_case_step(f"Verifying VM and VMI {vm_name} are still running after unlock")
+    kubectl_vm.wait_for_vm_status(vm_name, "Running", timeout=60)
+    kubectl_vmi.wait_for_vmi_status(vm_name, "Running", timeout=60)
+
+    get_logger().log_test_case_step(f"Logging into VM {vm_name} via virtctl console after unlock")
+    VirtctlKeywords(ssh_connection).login_to_vm(vm_name, "cirros", "gocubsgo")
+
+
+@mark.p2
+@mark.lab_has_min_2_compute
+def test_launch_vm_after_lock_unlock_compute(request):
+    """
+    Test launching VM on compute and verify it works after lock/unlock.
+
+    Test Steps:
+        - Setup kubevirt environment
+        - Get compute hostnames and generate VM YAML with node affinity
+        - Deploy VM with nodeAffinity targeting compute nodes
+        - Verify VM and VMI are running on a compute node
+        - Login to VM via virtctl console
+        - Lock the compute node hosting the VM
+        - Verify VM migrates to another compute and is still running
+        - Unlock the compute node
+        - Verify VM and VMI are still running after unlock
+        - Login to VM via virtctl console after unlock
+    """
+    vm_name = "vm-cirros-1"
+    vm_yaml_resource = "resources/cloud_platform/containers/kubevirt/cirros-vm-containerdisk-compute.yaml"
+
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+
+    get_logger().log_setup_step("Cleanup kubevirt environment")
+    cleanup_kubevirt_environment(ssh_connection)
+
+    kubectl_vm = KubectlGetVmKeywords(ssh_connection)
+    kubectl_vmi = KubectlGetVmiKeywords(ssh_connection)
+    system_host_lock = SystemHostLockKeywords(ssh_connection)
+
+    locked_compute = None
+
+    def cleanup():
+        get_logger().log_teardown_step(f"Deleting VM {vm_name}")
+        KubectlDeleteVmKeywords(ssh_connection).delete_vm(vm_name, ignore_not_found=True)
+
+        get_logger().log_teardown_step("Cleaning up remote VM directory")
+        FileKeywords(ssh_connection).delete_directory(KUBEVIRT_VM_DIR)
+
+        if locked_compute and system_host_lock.is_host_locked(locked_compute):
+            get_logger().log_teardown_step(f"Unlocking {locked_compute}")
+            system_host_lock.unlock_host(locked_compute)
+
+        get_logger().log_teardown_step("Cleaning up kubevirt environment")
+        cleanup_kubevirt_environment(ssh_connection)
+
+    request.addfinalizer(cleanup)
+
+    get_logger().log_setup_step("Setting up kubevirt environment")
+    setup_kubevirt_environment(ssh_connection)
+
+    get_logger().log_test_case_step("Getting compute hostnames for node affinity")
+    computes = SystemHostListKeywords(ssh_connection).get_computes()
+    compute_names = [compute.get_host_name() for compute in computes]
+    get_logger().log_info(f"Compute hostnames for VM affinity: {compute_names}")
+
+    get_logger().log_test_case_step("Generating VM YAML from template and uploading to remote host")
+    file_keywords = FileKeywords(ssh_connection)
+    file_keywords.create_directory(KUBEVIRT_VM_DIR)
+    yaml_keywords = YamlKeywords(ssh_connection)
+    remote_yaml_path = yaml_keywords.generate_yaml_file_from_template(
+        template_file=get_stx_resource_path(vm_yaml_resource),
+        replacement_dictionary={"compute_hostnames": compute_names},
+        target_file_name="cirros-vm-containerdisk-compute.yaml",
+        target_remote_location=KUBEVIRT_VM_DIR,
+    )
+
+    get_logger().log_test_case_step(f"Deploying VM {vm_name}")
+    KubectlFileApplyKeywords(ssh_connection).apply_resource_from_yaml(remote_yaml_path)
+
+    get_logger().log_test_case_step(f"Verifying VM and VMI {vm_name} are running on a compute node")
+    kubectl_vm.wait_for_vm_status(vm_name, "Running", timeout=120)
+    kubectl_vmi.wait_for_vmi_status(vm_name, "Running", timeout=120)
+    initial_node = kubectl_vmi.get_vmi_node(vm_name)
+    get_logger().log_info(f"VM {vm_name} is running on {initial_node}")
+
+    get_logger().log_test_case_step(f"Logging into VM {vm_name} via virtctl console")
+    VirtctlKeywords(ssh_connection).login_to_vm(vm_name, "cirros", "gocubsgo")
+
+    get_logger().log_test_case_step(f"Locking compute node {initial_node}")
+    locked_compute = initial_node
+    system_host_lock.lock_host(initial_node)
+
+    get_logger().log_test_case_step(f"Verifying VM {vm_name} migrated away from {initial_node}")
+    new_node = kubectl_vmi.wait_for_vmi_node_change(vm_name, initial_node, timeout=240)
+    get_logger().log_info(f"VM migrated to {new_node}")
+
+    get_logger().log_test_case_step(f"Verifying VM and VMI {vm_name} are still running after migration")
+    kubectl_vm.wait_for_vm_status(vm_name, "Running", timeout=120)
+    kubectl_vmi.wait_for_vmi_status(vm_name, "Running", timeout=120)
+
+    get_logger().log_test_case_step(f"Unlocking compute node {initial_node}")
+    system_host_lock.unlock_host(initial_node)
+    locked_compute = None
 
     get_logger().log_test_case_step(f"Verifying VM and VMI {vm_name} are still running after unlock")
     kubectl_vm.wait_for_vm_status(vm_name, "Running", timeout=60)
