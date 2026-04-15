@@ -9,6 +9,7 @@ from keywords.cloud_platform.health.health_keywords import HealthKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.files.file_keywords import FileKeywords
 
+default_central_backup_path = "/opt/dc-vault/backups/"
 
 def backup_create_failure_local(subcloud_name: str, local: bool = False):
     """Function to run backup operation for local back up.
@@ -68,9 +69,7 @@ def test_verify_backup_space_failure(request):
         - Attempt subcloud backup with no space left on local storage.
 
     """
-    central_ssh = LabConnectionKeywords().get_active_controller_ssh()
-    lowest_subcloud = DcManagerSubcloudListKeywords(central_ssh).get_dcmanager_subcloud_list().get_specific_subcloud_with_lowest_id()
-    subcloud_name = lowest_subcloud.get_name()
+    subcloud_name = ConfigurationManager.get_lab_config().get_subcloud_names()[0]
     # get subcloud ssh
     subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
 
@@ -82,7 +81,7 @@ def test_verify_backup_space_failure(request):
     created_file_path = FileKeywords(subcloud_ssh).create_file_to_fill_disk_space("/home/sysadmin")
 
     def teardown():
-        teardown_local(lowest_subcloud.get_name(), created_file_path)
+        teardown_local(subcloud_name, created_file_path)
 
     request.addfinalizer(teardown)
     backup_create_failure_local(subcloud_name, local=True)
@@ -98,8 +97,7 @@ def test_verify_backup_space_failure_default_storage(request):
 
     """
     central_ssh = LabConnectionKeywords().get_active_controller_ssh()
-    lowest_subcloud = DcManagerSubcloudListKeywords(central_ssh).get_dcmanager_subcloud_list().get_specific_subcloud_with_lowest_id()
-    subcloud_name = lowest_subcloud.get_name()
+    subcloud_name = ConfigurationManager.get_lab_config().get_subcloud_names()[0]
     # get subcloud ssh
     subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
 
@@ -108,10 +106,13 @@ def test_verify_backup_space_failure_default_storage(request):
     obj_health = HealthKeywords(subcloud_ssh)
     obj_health.validate_healty_cluster()  # Checks alarms, pods, app health
 
+    device = "/dev/drbd6"
+    reserved_blocks = FileKeywords(central_ssh).remove_reserved_blocks(device)
     created_file_path = FileKeywords(central_ssh).create_file_to_fill_disk_space()
 
     def teardown():
-        teardown_central(lowest_subcloud.get_name(), created_file_path)
+        FileKeywords(central_ssh).restore_reserved_blocks(device, reserved_blocks)
+        teardown_central(f"{default_central_backup_path}{subcloud_name}/", created_file_path)
 
     request.addfinalizer(teardown)
     backup_create_failure_local(subcloud_name)
@@ -128,9 +129,7 @@ def test_verify_backup_failure_home_folder_too_large(request):
         - Check that the backup fails
 
     """
-    central_ssh = LabConnectionKeywords().get_active_controller_ssh()
-    lowest_subcloud = DcManagerSubcloudListKeywords(central_ssh).get_dcmanager_subcloud_list().get_specific_subcloud_with_lowest_id()
-    subcloud_name = lowest_subcloud.get_name()
+    subcloud_name = ConfigurationManager.get_lab_config().get_subcloud_names()[0]
     # get subcloud ssh
     subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
 
@@ -144,7 +143,7 @@ def test_verify_backup_failure_home_folder_too_large(request):
     created_file_path = FileKeywords(subcloud_ssh).create_file_to_fill_disk_space(dest_dir=home_folder, file_size=2001)
 
     def teardown():
-        teardown_local(lowest_subcloud.get_name(), created_file_path)
+        teardown_local(subcloud_name, created_file_path)
 
     request.addfinalizer(teardown)
     backup_create_failure_local(subcloud_name, local=True)

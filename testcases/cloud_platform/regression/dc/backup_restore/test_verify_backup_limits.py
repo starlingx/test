@@ -37,11 +37,13 @@ def test_verify_one_release_per_subcloud_on_central(request):
     # Gets the lowest subcloud sysadmin password needed for backup creation.
     lab_config = ConfigurationManager.get_lab_config().get_subcloud(subcloud_name)
     subcloud_password = lab_config.get_admin_credentials().get_password()
-
     dc_manager_backup = DcManagerSubcloudBackupKeywords(central_ssh)
-
     central_path = "/opt/dc-vault/backups"
-    subcloud_backup_path = f"{central_path}/{subcloud_name}/{release}"
+
+    def teardown():
+        teardown_central(subcloud_name, release=str(release))
+
+    request.addfinalizer(teardown)
 
     dcmanager_subcloud_obj = DcManagerSubcloudShowKeywords(central_ssh).get_dcmanager_subcloud_show(subcloud_name).get_dcmanager_subcloud_show_object()
 
@@ -57,7 +59,7 @@ def test_verify_one_release_per_subcloud_on_central(request):
     get_logger().log_info("Checking if first backup was created on Central")
     DcManagerSubcloudBackupKeywords(central_ssh).wait_for_backup_status_complete(subcloud_name, expected_status="complete-central")
 
-    get_logger().log_info(f"First {subcloud_name} backup created at {subcloud_backup_path}.")
+    get_logger().log_info(f"First {subcloud_name} backup created at {central_path}/{release}.")
     first_backup_datetime = dcmanager_subcloud_obj.get_backup_datetime()
 
     # Removes previously created backup files, avoiding a false 'backup completed' flag.
@@ -77,11 +79,6 @@ def test_verify_one_release_per_subcloud_on_central(request):
     second_backup_datetime = dcmanager_subcloud_obj.get_backup_datetime()
 
     validate_not_equals(second_backup_datetime, first_backup_datetime, "The backup created time has changed.")
-
-    def teardown():
-        teardown_central(subcloud_name)
-
-    request.addfinalizer(teardown)
 
 @mark.p2
 @mark.lab_has_subcloud
@@ -123,6 +120,11 @@ def test_verify_two_releases_per_subcloud_on_central(request):
     release_central_path = f"{central_path}/{subcloud_name}/{release}"
     old_release_1_central_path = f"{central_path}/{subcloud_name}/{old_release_1}"
     old_release_2_central_path = f"{central_path}/{subcloud_name}/{old_release_2}"
+
+    def teardown():
+        teardown_central(subcloud_name, release=str("*"))
+
+    request.addfinalizer(teardown)
 
     get_logger().log_info(f"Create {subcloud_name} backup on Central Cloud")
 
@@ -170,11 +172,6 @@ def test_verify_two_releases_per_subcloud_on_central(request):
 
     validate_equals(old_release_1_exists, True, f"Release {old_release_1} exists")
     validate_equals(old_release_2_exists, False, f"Release {old_release_2} has been deleted.")
-
-    def teardown():
-        teardown_central(subcloud_name)
-
-    request.addfinalizer(teardown)
 
 @mark.p2
 @mark.lab_has_subcloud
@@ -338,15 +335,16 @@ def test_verify_two_releases_per_subcloud_on_local(request):
     request.addfinalizer(teardown)
 
 
-def teardown_central(subcloud_name: str):
+def teardown_central(subcloud_name: str, release: str):
     """Teardown function for central backup.
 
     Args:
         subcloud_name (str): subcloud name
+        release (str): release name.
     """
     central_ssh = LabConnectionKeywords().get_active_controller_ssh()
     get_logger().log_info("Removing test files during teardown")
-    FileKeywords(central_ssh).delete_folder_with_sudo(f"/opt/dc-vault/backups/{subcloud_name}")
+    FileKeywords(central_ssh).delete_folder_with_sudo(f"/opt/dc-vault/backups/{subcloud_name}/{release}")
 
 def teardown_local(subcloud_name: str):
     """Teardown function for local backup.
