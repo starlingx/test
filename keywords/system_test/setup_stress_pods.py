@@ -1,6 +1,6 @@
 import os
 from time import time
-from typing import Any, List, Tuple
+from typing import Any, List, Optional, Tuple
 
 from config.configuration_manager import ConfigurationManager
 from framework.logging.automation_logger import get_logger
@@ -37,17 +37,19 @@ class SetupStressPods:
         """
         self.ssh_connection = ssh_connection
         self.file_keywords = FileKeywords(ssh_connection)
-        self.images = ["gcr.io/kubernetes-e2e-test-images/resource-consumer:1.4", "alexeiled/stress-ng", "centos/tools:latest", "datawiseio/fio:latest"]
+        self.images = ["gcr.io/kubernetes-e2e-test-images/resource-consumer:1.4", "alexeiled/stress-ng", "centos/tools:latest", "xridge/fio:latest"]
         self.scale_factor = 30
         self.services_path = "resources/cloud_platform/system_test/pod_scaling/services"
         self.deployments_path = "resources/cloud_platform/system_test/pod_scaling/deployments"
 
-    def setup_stress_pods(self, benchmark: str, namespace=None) -> Tuple[float, float]:
+    def setup_stress_pods(self, benchmark: str, namespace: Optional[str] = None) -> Tuple[float, float]:
         """
         Set up and scale stress pods for benchmark testing.
 
         Args:
             benchmark (str): The benchmark type to set up
+            namespace (Optional[str]): The Kubernetes namespace to use.
+                Defaults to '{benchmark}-benchmark' if not provided.
 
         Returns:
             Tuple[float, float]: Tuple of deploy time and scale up time in seconds
@@ -85,7 +87,7 @@ class SetupStressPods:
         start_deploy = time()
         for dep_yaml in deployment_files:
             pod_applier.apply_from_yaml(f"{remote_deployments_dir}/{dep_yaml}", namespace=namespace)
-        
+
         validate_equals(pod_getter.wait_for_all_pods_status(expected_statuses=["Running", "Completed"]), True, "Logs reached expected state")
         deploy_time = time() - start_deploy
         get_logger().log_info(f"Time to deploy pods for the first time: {deploy_time:.2f} seconds")
@@ -96,13 +98,14 @@ class SetupStressPods:
 
         return deploy_time, scale_up_time
 
-
-    def deploy_stress_pods(self, benchmark: str, namespace=None) -> Tuple[float, float]:
+    def deploy_stress_pods(self, benchmark: str, namespace: Optional[str] = None) -> Tuple[float, float]:
         """
         Set up stress pods for benchmark testing.
 
         Args:
             benchmark (str): The benchmark type to set up
+            namespace (Optional[str]): The Kubernetes namespace to use.
+                Defaults to '{benchmark}-benchmark' if not provided.
 
         Returns:
             Tuple[float, float]: Tuple of deploy time and scale up time in seconds
@@ -140,17 +143,14 @@ class SetupStressPods:
         start_deploy = time()
         for dep_yaml in deployment_files:
             pod_applier.apply_from_yaml(f"{remote_deployments_dir}/{dep_yaml}", namespace=namespace)
-        
+
         validate_equals(pod_getter.wait_for_all_pods_status(expected_statuses=["Running", "Completed"]), True, "Logs reached expected state")
         deploy_time = time() - start_deploy
         get_logger().log_info(f"Time to deploy pods for the first time: {deploy_time:.2f} seconds")
 
         return deploy_time
 
-
-
-    def _setup_upload_files(self, local_services_dir: str, remote_services_dir: str, 
-                           local_deployments_dir: str, remote_deployments_dir: str) -> None:
+    def _setup_upload_files(self, local_services_dir: str, remote_services_dir: str, local_deployments_dir: str, remote_deployments_dir: str) -> None:
         """
         Upload necessary files to the controller node for the pod scaling test.
 
