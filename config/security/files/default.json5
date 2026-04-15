@@ -88,6 +88,12 @@
         // Local OIDC login kubeconfig filename
         "kubeconfig_filename": "local-oidc-login-kubeconfig.yml",
 
+        // Remote standalone OIDC login kubeconfig filename (kubectl on test machine)
+        "remote_kubeconfig_filename": "remote-oidc-login-kubeconfig.yml",
+
+        // kubelogin plugin download URL
+        "kubelogin_download_url": "https://github.com/int128/kubelogin/releases/download/v1.34.2/kubelogin_linux_amd64.zip",
+
         // OIDC login browser URL port
         "oidc_login_port": 8000,
 

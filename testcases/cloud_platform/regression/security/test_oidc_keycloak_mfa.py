@@ -95,6 +95,32 @@ def _cleanup_oidc_environment(ssh_connection: SSHConnection, security_config: Se
     )
 
 
+def _setup_remote_oidc_environment(ssh_connection: SSHConnection, security_config: SecurityConfig, lab_config: LabConfig) -> tuple[str, str]:
+    """Set up the remote standalone OIDC kubectl environment on the test machine.
+
+    Downloads the system-local-ca certificate from the controller and generates
+    the remote kubeconfig locally on the test machine.
+
+    Args:
+        ssh_connection (SSHConnection): Active controller SSH connection.
+        security_config (SecurityConfig): Security configuration object.
+        lab_config (LabConfig): Lab configuration object.
+
+    Returns:
+        tuple[str, str]: Local path to the CA cert and local path to the kubeconfig.
+    """
+    oam_ip = lab_config.get_floating_ip()
+    if lab_config.is_ipv6():
+        oam_ip = f"[{oam_ip}]"
+    return OidcEnvironmentKeywords(ssh_connection).setup_remote(
+        oam_ip=oam_ip,
+        ca_cert_filename=security_config.get_oidc_keycloak_system_local_ca_cert_filename(),
+        kubeconfig_filename=security_config.get_oidc_keycloak_remote_kubeconfig_filename(),
+        oidc_client_id=security_config.get_oidc_keycloak_static_client_id(),
+        oidc_client_secret=security_config.get_oidc_keycloak_static_client_secret(),
+    )
+
+
 @mark.p1
 def test_oidc_kubectl_invalid_otp_fails(request: FixtureRequest):
     """Verify login fails on incorrect OTP and kubectl errors or times out.
@@ -526,6 +552,52 @@ def test_oidc_keycloak_mfa_first_login(request: FixtureRequest):
     )
     get_logger().log_info(f"kubectl output:\n{result.get_output()}")
     validate_equals(result.is_kubectl_successful(), True, "kubectl should succeed after first login CONFIGURE_TOTP flow")
+
+
+@mark.p1
+def test_oidc_keycloak_remote_standalone_first_login(request: FixtureRequest):
+    """Verify first-time remote standalone kubectl login works with Keycloak MFA.
+
+    Runs kubectl on the local test machine using a kubeconfig generated locally.
+    The system-local-ca certificate is downloaded from the controller. kubectl
+    and the kubelogin plugin must be installed on the local test machine.
+    Resets the test user TOTP enrollment to force the CONFIGURE_TOTP flow.
+
+    Steps:
+        - Set up OIDC environment (dex, oidc-auth-apps, CRB)
+        - Set up local OIDC environment (download CA cert, generate local kubeconfig)
+        - Reset user TOTP enrollment via Keycloak Admin API
+        - Authenticate via Keycloak CONFIGURE_TOTP flow (first-time TOTP registration)
+        - Validate kubectl get pods -A succeeds using the obtained token
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    security_config = ConfigurationManager.get_security_config()
+    lab_config = ConfigurationManager.get_lab_config()
+
+    mfa_keywords = KeycloakMfaKeywords(ssh_connection)
+
+    request.addfinalizer(lambda: _cleanup_oidc_environment(ssh_connection, security_config))
+
+    get_logger().log_test_case_step("Set up OIDC environment")
+    _setup_oidc_environment(ssh_connection, security_config, lab_config)
+
+    get_logger().log_test_case_step("Set up local OIDC environment")
+    _, local_kubeconfig_path = _setup_remote_oidc_environment(ssh_connection, security_config, lab_config)
+
+    get_logger().log_test_case_step("Reset OTP credentials to force CONFIGURE_TOTP flow")
+    keycloak_admin = _get_keycloak_admin(security_config)
+    keycloak_admin.delete_user_otp_credentials(security_config.get_oidc_keycloak_test_username())
+    keycloak_admin.clear_user_brute_force_lockout(security_config.get_oidc_keycloak_test_username())
+
+    get_logger().log_test_case_step("Authenticate via Keycloak MFA first login (CONFIGURE_TOTP)")
+    result = mfa_keywords.run_kubectl_remote_with_browser_login(
+        kubeconfig_path=local_kubeconfig_path,
+        username=security_config.get_oidc_keycloak_test_username(),
+        password=security_config.get_oidc_keycloak_test_password(),
+        totp_secret=None,
+    )
+    get_logger().log_info(f"kubectl output:\n{result.get_output()}")
+    validate_equals(result.is_kubectl_successful(), True, "kubectl should succeed after remote standalone first login CONFIGURE_TOTP flow")
 
 
 @mark.p1

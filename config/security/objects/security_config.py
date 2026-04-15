@@ -50,6 +50,8 @@ class SecurityConfig:
         self.oidc_keycloak_crb_group = crb_config.get("group", "crb_group")
         self.oidc_keycloak_system_local_ca_cert_filename = oidc_keycloak_config.get("system_local_ca_cert_filename", "system-local-ca.crt")
         self.oidc_keycloak_kubeconfig_filename = oidc_keycloak_config.get("kubeconfig_filename", "local-oidc-login-kubeconfig.yml")
+        self.oidc_keycloak_remote_kubeconfig_filename = oidc_keycloak_config.get("remote_kubeconfig_filename", "remote-oidc-login-kubeconfig.yml")
+        self.oidc_keycloak_kubelogin_download_url = oidc_keycloak_config.get("kubelogin_download_url", "")
         self.oidc_keycloak_login_port = oidc_keycloak_config.get("oidc_login_port", 8000)
         self.oidc_keycloak_invalid_issuer_url = oidc_keycloak_config.get("invalid_issuer_url", "https://invalid-issuer.example.com/realms/nonexistent")
         self.oidc_keycloak_admin_username = oidc_keycloak_config.get("admin", {}).get("username", "admin")
@@ -417,6 +419,22 @@ class SecurityConfig:
             str: Filename for the local OIDC login kubeconfig.
         """
         return self.oidc_keycloak_kubeconfig_filename
+
+    def get_oidc_keycloak_remote_kubeconfig_filename(self) -> str:
+        """Getter for the remote OIDC login kubeconfig filename.
+
+        Returns:
+            str: Filename for the remote OIDC login kubeconfig.
+        """
+        return self.oidc_keycloak_remote_kubeconfig_filename
+
+    def get_oidc_keycloak_kubelogin_download_url(self) -> str:
+        """Getter for the kubelogin plugin download URL.
+
+        Returns:
+            str: Download URL for the kubelogin zip release.
+        """
+        return self.oidc_keycloak_kubelogin_download_url
 
     def get_oidc_keycloak_login_port(self) -> int:
         """Getter for the OIDC login browser port.

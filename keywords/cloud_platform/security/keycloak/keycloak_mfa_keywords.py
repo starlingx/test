@@ -1,5 +1,7 @@
 import re
+import subprocess
 import threading
+import time
 
 from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
@@ -195,6 +197,74 @@ class KeycloakMfaKeywords(BaseKeyword):
         get_logger().log_info(f"kubectl output after invalid OTP: {output}")
         result = KubectlResultObject()
         result.set_output(output)
+        return result
+
+    def run_kubectl_remote_with_browser_login(self, kubeconfig_path: str, username: str, password: str, totp_secret: str = None) -> KubectlResultObject:
+        """Run kubectl get pods -A on the test machine and authenticate via Keycloak browser login.
+
+        Launches kubectl as a local subprocess. kubelogin fails to open the
+        browser in a headless environment and prints the login URL to stdout.
+        A reader thread drains stdout line by line to avoid pipe buffer deadlocks.
+        Once the browser URL is detected, Selenium navigates to it and completes
+        the Keycloak MFA flow. kubectl and the kubelogin plugin must be installed
+        on the local test machine.
+
+        Args:
+            kubeconfig_path (str): Local path to the OIDC kubeconfig file.
+            username (str): Keycloak username.
+            password (str): Keycloak password.
+            totp_secret (str): Base32 TOTP secret. Pass None for CONFIGURE_TOTP flow.
+
+        Returns:
+            KubectlResultObject: Result containing output and error state.
+        """
+        kubectl_cmd = ["kubectl", "--kubeconfig", kubeconfig_path, "get", "pods", "-A"]
+        proc = subprocess.Popen(kubectl_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+
+        output_lines = []
+        login_url = None
+        deadline = time.time() + 60
+
+        for line in proc.stdout:
+            output_lines.append(line)
+            if "Please visit the following URL in your browser" in line:
+                parts = line.split("http", 1)
+                if len(parts) > 1:
+                    login_url = "http" + parts[1].strip()
+                break
+            if time.time() > deadline:
+                break
+
+        remaining_lines = []
+
+        def drain_stdout() -> None:
+            for line in proc.stdout:
+                remaining_lines.append(line)
+
+        drain_thread = threading.Thread(target=drain_stdout, daemon=True)
+        drain_thread.start()
+
+        if login_url is None:
+            get_logger().log_error("kubelogin browser URL not found in kubectl output within deadline; aborting login")
+            proc.kill()
+            drain_thread.join(timeout=10)
+            result = KubectlResultObject()
+            result.set_output("".join(output_lines))
+            return result
+
+        get_logger().log_info(f"kubelogin browser URL: {login_url}")
+        driver = WebDriverCore()
+        keycloak_login_page = KeycloakLoginPage(driver)
+        keycloak_login_page.navigate_to_login_url(login_url)
+        keycloak_login_page.login(username=username, password=password, totp_secret=totp_secret)
+        driver.quit()
+
+        drain_thread.join(timeout=60)
+        proc.wait(timeout=10)
+        output_lines.extend(remaining_lines)
+
+        result = KubectlResultObject()
+        result.set_output("".join(output_lines))
         return result
 
     def expire_cached_id_token(self, cache_dir: str) -> None:
