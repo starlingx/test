@@ -30,7 +30,7 @@ class USMConfig:
         self.copy_from_remote = usm_dict.get("copy_from_remote", False)
         self.iso_path = usm_dict.get("iso_path", "")
         self.sig_path = usm_dict.get("sig_path", "")
-        self.patch_path = usm_dict.get("patch_path", "")
+        self.patch_path = usm_dict.get("patch_path", [])
         self.patch_dir = usm_dict.get("patch_dir", "")
         self.dest_dir = usm_dict.get("dest_dir", "/scratch/usm_files/")
         self.to_release_ids = usm_dict.get("to_release_ids", [])
@@ -93,7 +93,7 @@ class USMConfig:
                 raise ValueError("Upgrade requires iso_path and sig_path")
 
         if self.usm_operation_type == "patch":
-            if not self.patch_path and not self.patch_dir:
+            if not isinstance(self.patch_path, list) or not self.patch_path or not self.self.patch_dir:
                 raise ValueError("Patch requires either patch_path or patch_dir")
 
         # Validate timeout values
@@ -188,19 +188,19 @@ class USMConfig:
         """
         self.sig_path = value
 
-    def get_patch_path(self) -> str:
-        """Get the path to a single patch file.
+    def get_patch_path(self) -> list[str]:
+        """Get the path list to patch files.
 
         Returns:
-            str: Absolute path to a single .patch file.
+            list[str]: Absolute path list to .patch files.
         """
         return self.patch_path
 
-    def set_patch_path(self, value: str) -> None:
+    def set_patch_path(self, value: list[str]) -> None:
         """Set the path to a single patch file.
 
         Args:
-            value (str): Absolute path to a single .patch file.
+            value (list[str]): One or more absolute path to patch file.
         """
         self.patch_path = value
 
