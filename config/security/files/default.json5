@@ -91,6 +91,9 @@
         // Remote standalone OIDC login kubeconfig filename (kubectl on test machine)
         "remote_kubeconfig_filename": "remote-oidc-login-kubeconfig.yml",
 
+        // Remote CLI container OIDC login kubeconfig filename
+        "remotecli_kubeconfig_filename": "remotecli-oidc-login-kubeconfig.yml",
+
         // kubelogin plugin download URL
         "kubelogin_download_url": "https://github.com/int128/kubelogin/releases/download/v1.34.2/kubelogin_linux_amd64.zip",
 
@@ -181,5 +184,24 @@
 
         // Keycloak CA certificate (PEM encoded)
         "keycloak_ca_cert": "keycloak_ca_cert_pem"
+    },
+
+    // Remote CLI container configuration
+    "remote_cli": {
+        // Build server IP/hostname for downloading the wrs-remote-clients tarball
+        "build_server_ip": "remote_cli_build_server_ip",
+        // Build server username
+        "build_server_user": "remote_cli_build_server_user",
+        // Build server password
+        "build_server_password": "remote_cli_build_server_password",
+        // Path to the wrs-remote-clients tarball on the build server
+        "tarball_remote_path": "remote_cli_tarball_remote_path",
+        // Local directory to extract the tarball into on the test machine
+        "install_dir": "remote_cli_install_dir",
+        // Local working directory on the test machine for the remote CLI container
+        "working_dir": "remote_cli_working_dir",
+        // Docker image reference for the remote CLI container
+        // If empty, the full image is read from docker_image_version.sh in the extracted tarball
+        "docker_image": ""
     }
 }

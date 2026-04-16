@@ -51,6 +51,15 @@ class SecurityConfig:
         self.oidc_keycloak_system_local_ca_cert_filename = oidc_keycloak_config.get("system_local_ca_cert_filename", "system-local-ca.crt")
         self.oidc_keycloak_kubeconfig_filename = oidc_keycloak_config.get("kubeconfig_filename", "local-oidc-login-kubeconfig.yml")
         self.oidc_keycloak_remote_kubeconfig_filename = oidc_keycloak_config.get("remote_kubeconfig_filename", "remote-oidc-login-kubeconfig.yml")
+        self.oidc_keycloak_remotecli_kubeconfig_filename = oidc_keycloak_config.get("remotecli_kubeconfig_filename", "remotecli-oidc-login-kubeconfig.yml")
+        remote_cli_config = security_dict.get("remote_cli", {})
+        self.remote_cli_tarball_remote_path = remote_cli_config.get("tarball_remote_path", "")
+        self.remote_cli_build_server_ip = remote_cli_config.get("build_server_ip", "")
+        self.remote_cli_build_server_user = remote_cli_config.get("build_server_user", "")
+        self.remote_cli_build_server_password = remote_cli_config.get("build_server_password", "")
+        self.remote_cli_install_dir = remote_cli_config.get("install_dir", "/tmp/remote_cli_install")
+        self.remote_cli_working_dir = remote_cli_config.get("working_dir", "/tmp/remote_cli_wd")
+        self.remote_cli_docker_image = remote_cli_config.get("docker_image", "")
         self.oidc_keycloak_kubelogin_download_url = oidc_keycloak_config.get("kubelogin_download_url", "")
         self.oidc_keycloak_login_port = oidc_keycloak_config.get("oidc_login_port", 8000)
         self.oidc_keycloak_invalid_issuer_url = oidc_keycloak_config.get("invalid_issuer_url", "https://invalid-issuer.example.com/realms/nonexistent")
@@ -427,6 +436,70 @@ class SecurityConfig:
             str: Filename for the remote OIDC login kubeconfig.
         """
         return self.oidc_keycloak_remote_kubeconfig_filename
+
+    def get_oidc_keycloak_remotecli_kubeconfig_filename(self) -> str:
+        """Getter for the remote CLI container OIDC login kubeconfig filename.
+
+        Returns:
+            str: Filename for the remote CLI OIDC login kubeconfig.
+        """
+        return self.oidc_keycloak_remotecli_kubeconfig_filename
+
+    def get_remote_cli_tarball_remote_path(self) -> str:
+        """Getter for the path to the wrs-remote-clients tarball on the build server.
+
+        Returns:
+            str: Remote path to the tarball on the build server.
+        """
+        return self.remote_cli_tarball_remote_path
+
+    def get_remote_cli_build_server_ip(self) -> str:
+        """Getter for the build server IP or hostname.
+
+        Returns:
+            str: Build server IP or hostname.
+        """
+        return self.remote_cli_build_server_ip
+
+    def get_remote_cli_build_server_user(self) -> str:
+        """Getter for the build server username.
+
+        Returns:
+            str: Build server username.
+        """
+        return self.remote_cli_build_server_user
+
+    def get_remote_cli_build_server_password(self) -> str:
+        """Getter for the build server password.
+
+        Returns:
+            str: Build server password.
+        """
+        return self.remote_cli_build_server_password
+
+    def get_remote_cli_install_dir(self) -> str:
+        """Getter for the local directory to extract the remote CLI tarball into.
+
+        Returns:
+            str: Local install directory path.
+        """
+        return self.remote_cli_install_dir
+
+    def get_remote_cli_working_dir(self) -> str:
+        """Getter for the remote CLI container working directory on the test machine.
+
+        Returns:
+            str: Local working directory path.
+        """
+        return self.remote_cli_working_dir
+
+    def get_remote_cli_docker_image(self) -> str:
+        """Getter for the remote CLI Docker image reference.
+
+        Returns:
+            str: Docker image reference.
+        """
+        return self.remote_cli_docker_image
 
     def get_oidc_keycloak_kubelogin_download_url(self) -> str:
         """Getter for the kubelogin plugin download URL.
