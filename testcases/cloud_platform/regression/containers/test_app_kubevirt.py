@@ -1052,3 +1052,89 @@ def test_launch_vm_with_affinity(request: FixtureRequest):
 
     get_logger().log_test_case_step(f"Logging into VM {vm_name} via virtctl console")
     VirtctlKeywords(ssh_connection).login_to_vm(vm_name, "cirros", "gocubsgo")
+
+
+@mark.p2
+def test_launch_vm_with_nodeselector(request: FixtureRequest):
+    """
+    Test launching a VM with nodeSelector constraining scheduling to a labelled node.
+
+    Labels a worker node with app=kload, then deploys a VM with nodeSelector
+    requiring that label and verifies the VM is scheduled on that node.
+
+    Args:
+        request (FixtureRequest): Pytest fixture request for teardown registration.
+
+    Test Steps:
+        - Cleanup kubevirt environment
+        - Get a worker node to label
+        - Setup kubevirt environment
+        - Create registry secret for image pulls
+        - Label worker node with app=kload
+        - Deploy VM with nodeSelector app=kload
+        - Verify VM is running on the labelled node
+        - Login to VM via virtctl console
+    """
+    vm_name = "vm-nodeselector-kload"
+    vm_yaml_template = "vm-nodeselector-kload.yaml.j2"
+    remote_yaml_path = f"{KUBEVIRT_VM_DIR}/vm-nodeselector-kload.yaml"
+    vm_namespace = "default"
+
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+
+    get_logger().log_setup_step("Cleanup kubevirt environment")
+    cleanup_kubevirt_environment(ssh_connection)
+
+    get_logger().log_setup_step("Getting a worker node to label")
+    workers = SystemHostListKeywords(ssh_connection).get_workers()
+    target_node = workers[0].get_host_name()
+    get_logger().log_info(f"Target node for nodeSelector: {target_node}")
+
+    label_keywords = KubectlLabelNodeKeywords(ssh_connection)
+
+    def cleanup():
+        get_logger().log_teardown_step(f"Deleting VM {vm_name}")
+        KubectlDeleteVmKeywords(ssh_connection).delete_vm(vm_name, ignore_not_found=True)
+
+        get_logger().log_teardown_step("Cleaning up remote VM directory")
+        FileKeywords(ssh_connection).delete_directory(KUBEVIRT_VM_DIR)
+
+        get_logger().log_teardown_step(f"Removing label app from node {target_node}")
+        label_keywords.remove_label(target_node, "app")
+
+        get_logger().log_teardown_step("Cleaning up kubevirt environment")
+        cleanup_kubevirt_environment(ssh_connection)
+
+    request.addfinalizer(cleanup)
+
+    get_logger().log_setup_step("Setting up kubevirt environment")
+    setup_kubevirt_environment(ssh_connection)
+
+    get_logger().log_setup_step("Creating registry secret for image pulls")
+    setup_registry_secret(ssh_connection, request, vm_namespace)
+
+    get_logger().log_test_case_step(f"Labelling node {target_node} with app=kload")
+    label_keywords.label_node(target_node, "app", "kload")
+
+    get_logger().log_test_case_step("Creating VM YAML with nodeSelector app=kload")
+    FileKeywords(ssh_connection).create_directory(KUBEVIRT_VM_DIR)
+    YamlKeywords(ssh_connection).generate_yaml_file_from_template(
+        get_stx_resource_path(f"resources/cloud_platform/containers/kubevirt/{vm_yaml_template}"),
+        {"vm_name": vm_name},
+        "vm-nodeselector-kload.yaml",
+        KUBEVIRT_VM_DIR,
+    )
+
+    get_logger().log_test_case_step(f"Deploying VM {vm_name} with nodeSelector app=kload")
+    KubectlFileApplyKeywords(ssh_connection).apply_resource_from_yaml(remote_yaml_path)
+
+    get_logger().log_test_case_step(f"Verifying VM {vm_name} is running on {target_node}")
+    kubectl_vm = KubectlGetVmKeywords(ssh_connection)
+    kubectl_vmi = KubectlGetVmiKeywords(ssh_connection)
+    kubectl_vm.wait_for_vm_status(vm_name, "Running", timeout=120)
+    kubectl_vmi.wait_for_vmi_status(vm_name, "Running", timeout=120)
+    vm_host = kubectl_vmi.get_vmi_node(vm_name)
+    validate_equals(vm_host, target_node, f"VM should be scheduled on labelled node {target_node}")
+
+    get_logger().log_test_case_step(f"Logging into VM {vm_name} via virtctl console")
+    VirtctlKeywords(ssh_connection).login_to_vm(vm_name, "cirros", "gocubsgo")
