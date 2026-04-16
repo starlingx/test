@@ -1,15 +1,14 @@
 from typing import List
 
-from pytest import fail, mark
+from pytest import mark
 
 from config.configuration_manager import ConfigurationManager
 from framework.logging.automation_logger import get_logger
-from framework.validation.validation import validate_equals
+from framework.validation.validation import validate_equals, validate_greater_than_or_equal
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_backup_keywords import DcManagerSubcloudBackupKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_group_keywords import DcmanagerSubcloudGroupKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_list_keywords import DcManagerSubcloudListKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_update_keywords import DcManagerSubcloudUpdateKeywords
-from keywords.cloud_platform.dcmanager.objects.dcmanager_subcloud_list_object_filter import DcManagerSubcloudListObjectFilter
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_show_keywords import DcManagerSubcloudShowKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.cloud_platform.version_info.cloud_platform_version_manager import CloudPlatformVersionManagerClass
@@ -543,17 +542,19 @@ def test_delete_backup_group_on_central(request):
 
     central_ssh = LabConnectionKeywords().get_active_controller_ssh()
     release = CloudPlatformVersionManagerClass().get_sw_version()
+    subcloud_name = ConfigurationManager.get_lab_config().get_subcloud_names()[0]
 
-    # Retrieves the subclouds. Considers only subclouds that are online, managed, and synced.
-    dcmanager_subcloud_list_input = DcManagerSubcloudListObjectFilter.get_healthy_subcloud_filter()
-    dcmanager_subcloud_list_keywords = DcManagerSubcloudListKeywords(central_ssh)
-    dcmanager_subcloud_list_objects_filtered = dcmanager_subcloud_list_keywords.get_dcmanager_subcloud_list().get_dcmanager_subcloud_list_objects_filtered(dcmanager_subcloud_list_input)
+    subcloud_list = []
+    for subcloud_name in ConfigurationManager.get_lab_config().get_subcloud_names():
+        sc_config = ConfigurationManager.get_lab_config().get_subcloud(subcloud_name)
 
-    subcloud_list = [subcloud.get_name() for subcloud in dcmanager_subcloud_list_objects_filtered]
-    if len(subcloud_list) < 2:
-        get_logger().log_info("At least two subclouds managed are required to run the test")
-        fail("At least two subclouds managed are required to run the test")
+        # Only adds Simplex and in-sync subclouds.
+        if sc_config.get_lab_type() == "Simplex":
+            sync_status = DcManagerSubcloudListKeywords(central_ssh).get_dcmanager_subcloud_list().get_subcloud_by_name(subcloud_name).get_sync()
+            if sync_status == "in-sync":
+                subcloud_list.append(subcloud_name)
 
+    validate_greater_than_or_equal(len(subcloud_list), 1, "Validate subcloud list is composed for more than one subcloud")
     for subcloud_name in subcloud_list:
         # Prechecks Before Back-Up:
         subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
@@ -561,8 +562,9 @@ def test_delete_backup_group_on_central(request):
         obj_health = HealthKeywords(subcloud_ssh)
         obj_health.validate_healty_cluster()  # Checks alarms, pods, app health
 
-    # Gets the subcloud sysadmin password needed for backup creation.
-    subcloud_password = ConfigurationManager.get_lab_config().get_subcloud(subcloud_list[0]).get_admin_credentials().get_password()
+    # Gets the lowest subcloud sysadmin password needed for backup creation.
+    lab_config = ConfigurationManager.get_lab_config().get_subcloud(subcloud_name)
+    subcloud_password = lab_config.get_admin_credentials().get_password()
 
     # Force subclouds to be in Default group.
     for subcloud_name in subcloud_list:
@@ -590,7 +592,7 @@ def test_delete_backup_group_on_central(request):
 
     # Create a subcloud backup
     get_logger().log_info(f"Create backup on Central Cloud for subcloud group: {group_name}")
-    dc_manager_backup.create_subcloud_backup(subcloud_password, central_ssh, group=group_name, release=release, subcloud_list=subcloud_list)
+    dc_manager_backup.create_subcloud_backup(subcloud_password, central_ssh, group=group_name, release=str(release), subcloud_list=subcloud_list)
 
     for subcloud_name in subcloud_list:
         get_logger().log_info("Checking if backup was created on Central")
@@ -598,7 +600,7 @@ def test_delete_backup_group_on_central(request):
 
     # Delete the backup created
     get_logger().log_info(f"Delete backup on Central Cloud for subcloud group: {group_name}")
-    dc_manager_backup.delete_subcloud_backup(central_ssh, release=release, group=group_name, subcloud_list=subcloud_list)
+    dc_manager_backup.delete_subcloud_backup(central_ssh, release=str(release), group=group_name, subcloud_list=subcloud_list)
 
 @mark.p2
 @mark.lab_has_min_2_subclouds
@@ -619,16 +621,19 @@ def test_delete_backup_group_on_local(request):
     group_name = "Test"
     central_ssh = LabConnectionKeywords().get_active_controller_ssh()
     release = CloudPlatformVersionManagerClass().get_sw_version()
+    subcloud_name = ConfigurationManager.get_lab_config().get_subcloud_names()[0]
 
-    # Retrieves the subclouds. Considers only subclouds that are online, managed, and synced.
-    dcmanager_subcloud_list_input = DcManagerSubcloudListObjectFilter.get_healthy_subcloud_filter()
-    dcmanager_subcloud_list_keywords = DcManagerSubcloudListKeywords(central_ssh)
-    dcmanager_subcloud_list_objects_filtered = dcmanager_subcloud_list_keywords.get_dcmanager_subcloud_list().get_dcmanager_subcloud_list_objects_filtered(dcmanager_subcloud_list_input)
+    subcloud_list = []
+    for subcloud_name in ConfigurationManager.get_lab_config().get_subcloud_names():
+        sc_config = ConfigurationManager.get_lab_config().get_subcloud(subcloud_name)
 
-    subcloud_list = [subcloud.name for subcloud in dcmanager_subcloud_list_objects_filtered]
-    if len(subcloud_list) < 2:
-        get_logger().log_info("At least two subclouds managed are required to run the test")
-        fail("At least two subclouds managed are required to run the test")
+        # Only adds Simplex and in-sync subclouds.
+        if sc_config.get_lab_type() == "Simplex":
+            sync_status = DcManagerSubcloudListKeywords(central_ssh).get_dcmanager_subcloud_list().get_subcloud_by_name(subcloud_name).get_sync()
+            if sync_status == "in-sync":
+                subcloud_list.append(subcloud_name)
+
+    validate_greater_than_or_equal(len(subcloud_list), 1, "Validate subcloud list is composed for more than one subcloud")
 
     for subcloud_name in subcloud_list:
         # Prechecks Before Back-Up:
@@ -637,8 +642,9 @@ def test_delete_backup_group_on_local(request):
         obj_health = HealthKeywords(subcloud_ssh)
         obj_health.validate_healty_cluster()  # Checks alarms, pods, app health
 
-    # Gets the subcloud sysadmin password needed for backup creation.
-    subcloud_password = ConfigurationManager.get_lab_config().get_subcloud(subcloud_list[0]).get_admin_credentials().get_password()
+    # Gets the lowest subcloud sysadmin password needed for backup creation.
+    lab_config = ConfigurationManager.get_lab_config().get_subcloud(subcloud_name)
+    subcloud_password = lab_config.get_admin_credentials().get_password()
 
     # Force subclouds to be in Default group.
     for subcloud_name in subcloud_list:
@@ -667,7 +673,7 @@ def test_delete_backup_group_on_local(request):
 
     # Create a subcloud backup and check it on local path
     get_logger().log_info(f"Create and check if backup was was created on Central Cloud for subcloud group: {group_name}")
-    dc_manager_backup.create_subcloud_backup(subcloud_password, central_ssh, local_only=True, group=group_name, release=release, subcloud_list=subcloud_list)
+    dc_manager_backup.create_subcloud_backup(subcloud_password, central_ssh, local_only=True, group=group_name, release=str(release), subcloud_list=subcloud_list)
 
     for subcloud_name in subcloud_list:
         get_logger().log_info(f"Checking if backup was created on {subcloud_name}")
@@ -675,7 +681,7 @@ def test_delete_backup_group_on_local(request):
 
     # Delete the backup created and verify the backup is deleted
     get_logger().log_info(f"Delete and check if backup was removed on SubClouds for subcloud group: {group_name}")
-    dc_manager_backup.delete_subcloud_backup(central_ssh, release=release, local_only=True, group=group_name, sysadmin_password=subcloud_password, subcloud_list=subcloud_list)
+    dc_manager_backup.delete_subcloud_backup(central_ssh, release=str(release), local_only=True, group=group_name, sysadmin_password=subcloud_password, subcloud_list=subcloud_list)
 
 def create_subcloud_group(subcloud_list: List[str]) -> None:
     """

@@ -31,30 +31,25 @@ def get_undeployed_subcloud_name(ssh_connection: SSHConnection) -> str:
     """
     dcm_sc_list_kw = DcManagerSubcloudListKeywords(ssh_connection)
 
-    subcloud_name = dcm_sc_list_kw.get_dcmanager_subcloud_list().get_undeployed_subcloud_name()
-    if subcloud_name is None:
+    undeployed_subcloud_name = dcm_sc_list_kw.get_dcmanager_subcloud_list().get_undeployed_subcloud_name()
+    config_subcloud_name = ConfigurationManager.get_lab_config().get_subcloud_names()[0]
+    if config_subcloud_name != undeployed_subcloud_name:
         get_logger().log_info("No Undeployed Subcloud found deleting existing one")
-        # Gets the lowest subcloud (the subcloud with the lowest id).
-        get_logger().log_info("Obtaining subcloud with the lowest ID.")
-        lowest_subcloud = dcm_sc_list_kw.get_dcmanager_subcloud_list().get_subcloud_with_lowest_id()
-        get_logger().log_info(f"Subcloud with the lowest ID obtained: ID={lowest_subcloud.get_id()}, Name={lowest_subcloud.get_name()}, Management state={lowest_subcloud.get_management()}")
-        subcloud_name = lowest_subcloud.get_name()
         dcm_sc_manager_kw = DcManagerSubcloudManagerKeywords(ssh_connection)
         # poweroff the subcloud.
-        get_logger().log_test_case_step(f"Poweroff subcloud={subcloud_name}.")
-        dcm_sc_manager_kw.set_subcloud_poweroff(subcloud_name)
+        get_logger().log_test_case_step(f"Poweroff subcloud={config_subcloud_name}.")
+        dcm_sc_manager_kw.set_subcloud_poweroff(config_subcloud_name)
         # Unmanage the subcloud.
-        if lowest_subcloud.get_management() == "managed":
-            get_logger().log_test_case_step(f"Unmanage subcloud={subcloud_name}.")
-            dcm_sc_manage_output = dcm_sc_manager_kw.get_dcmanager_subcloud_unmanage(subcloud_name, timeout=10)
-            get_logger().log_info(f"The management state of the subcloud {subcloud_name} was changed to {dcm_sc_manage_output.get_dcmanager_subcloud_manage_object().get_management()}.")
+        if dcm_sc_list_kw.get_dcmanager_subcloud_list().get_subcloud_by_name(config_subcloud_name).get_management() == "managed":
+            get_logger().log_test_case_step(f"Unmanage subcloud={config_subcloud_name}.")
+            dcm_sc_manage_output = dcm_sc_manager_kw.get_dcmanager_subcloud_unmanage(config_subcloud_name, timeout=10)
+            get_logger().log_info(f"The management state of the subcloud {config_subcloud_name} was changed to {dcm_sc_manage_output.get_dcmanager_subcloud_manage_object().get_management()}.")
 
         # delete the subcloud.
         dcm_sc_del_kw = DcManagerSubcloudDeleteKeywords(ssh_connection)
-        dcm_sc_del_kw.dcmanager_subcloud_delete(subcloud_name)
+        dcm_sc_del_kw.dcmanager_subcloud_delete(config_subcloud_name)
 
-    return subcloud_name
-
+    return config_subcloud_name
 
 @mark.p0
 @mark.lab_has_min_2_subclouds
@@ -74,7 +69,7 @@ def test_phased_deployment(request):
         - execute the subcloud manage
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
-    subcloud_name = ConfigurationManager.get_lab_config().get_subcloud_names()[0]
+    subcloud_name = get_undeployed_subcloud_name(ssh_connection)
     dcm_sc_deploy_kw = DCManagerSubcloudDeployKeywords(ssh_connection)
     dcm_sc_manager_kw = DcManagerSubcloudManagerKeywords(ssh_connection)
 
@@ -108,7 +103,6 @@ def test_phased_deployment(request):
     manage_status = dcmanager_subcloud_manage_output.get_dcmanager_subcloud_manage_object().get_management()
     get_logger().log_info(f"The management state of the subcloud {subcloud_name} is {manage_status}")
 
-
 @mark.p0
 @mark.lab_has_min_2_subclouds
 def test_subcloud_deploy_abort_resume(request):
@@ -127,7 +121,7 @@ def test_subcloud_deploy_abort_resume(request):
         - execute the subcloud manage
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
-    subcloud_name = ConfigurationManager.get_lab_config().get_subcloud_names()[0]
+    subcloud_name = get_undeployed_subcloud_name(ssh_connection)
     dcm_sc_deploy_kw = DCManagerSubcloudDeployKeywords(ssh_connection)
     dcm_sc_manager_kw = DcManagerSubcloudManagerKeywords(ssh_connection)
 
@@ -163,7 +157,6 @@ def test_subcloud_deploy_abort_resume(request):
     manage_status = dcmanager_subcloud_manage_output.get_dcmanager_subcloud_manage_object().get_management()
     get_logger().log_info(f"The management state of the subcloud {subcloud_name} is {manage_status}")
 
-
 def test_bootstrap_failure_replay():
     """Test bootstrap failure and resume
 
@@ -184,7 +177,7 @@ def test_bootstrap_failure_replay():
         - execute the subcloud manage
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
-    subcloud_name = ConfigurationManager.get_lab_config().get_subcloud_names()[0]
+    subcloud_name = get_undeployed_subcloud_name(ssh_connection)
 
     # Get the subcloud deployment assets
     deployment_assets_config = ConfigurationManager.get_deployment_assets_config()

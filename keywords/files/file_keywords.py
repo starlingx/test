@@ -3,14 +3,13 @@ import os
 import shlex
 import time
 
-import yaml
 from jinja2 import Template
 
 from config.configuration_manager import ConfigurationManager
 from framework.exceptions.keyword_exception import KeywordException
 from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
-from framework.validation.validation import validate_equals_with_retry
+from framework.validation.validation import validate_equals_with_retry, validate_less_than_or_equal
 from keywords.base_keyword import BaseKeyword
 
 
@@ -177,18 +176,23 @@ class FileKeywords(BaseKeyword):
         self.ssh_connection.send(cleanup_cmd)
         return not self.file_exists(directory_path)
 
-    def get_files_in_dir(self, file_dir: str) -> list[str]:
+    def get_files_in_dir(self, file_dir: str, is_sudo: bool = False) -> list[str]:
         """
         Gets a list of filenames in the given dir.
 
         Args:
             file_dir (str): the directory.
+            is_sudo (bool): run the list command in bash as sudo.
 
         Returns:
             list[str]: list of filenames.
         """
-        sftp_client = self.ssh_connection.get_sftp_client()
-        return sftp_client.listdir(file_dir)
+        if is_sudo:
+            output = self.ssh_connection.send_as_sudo(f"ls {file_dir}")
+            return [line.strip() for line in output if line.strip() and not line.strip().endswith('$')]
+        else:
+            sftp_client = self.ssh_connection.get_sftp_client()
+            return sftp_client.listdir(file_dir)
 
     def read_large_file(self, file_name: str, grep_pattern: str = None) -> list[str]:
         """
@@ -522,10 +526,10 @@ class FileKeywords(BaseKeyword):
         Returns:
             str: Created file path.
         """
-        get_space_cmd = f"echo $(($(stat -f --format=\"%a*%S\" {dest_dir})))| awk '{{print $1 / (1024*1024*1024) }}'"
-        available_space = self.ssh_connection.send_as_sudo(get_space_cmd)[0].strip("\n")
-        rounded_size = math.ceil(float(available_space))
-        start_size = math.trunc(1023 * float(rounded_size))
+        get_space_cmd = f"echo $(($(stat -f --format=\"%a*%S\" {dest_dir}))) | awk '{{print int($1 / (1024*1024))}}'"
+        available_space_mb = int(self.ssh_connection.send_as_sudo(get_space_cmd)[0].strip("\n"))
+        start_size = available_space_mb - 1  # leave 256MB, not enough for backup to succeed
+
         if file_size:
             file_size_to_be_created = file_size
             expected_remaining_space = math.ceil((start_size - file_size) / 1023)
@@ -538,15 +542,32 @@ class FileKeywords(BaseKeyword):
         get_logger().log_info(f"Creating file 'test' with size {file_size_to_be_created}. Total: {start_size}")
         self.ssh_connection.send_as_sudo(f"dd if=/dev/zero of={dest_dir}/giant_test_file bs=1M count={file_size_to_be_created}")
 
-        def get_remaining_space() -> float:
-            get_space_cmd = f"echo $(($(stat -f --format=\"%a*%S\" {dest_dir})))| awk '{{print $1 / (1024*1024*1024) }}'"
+        def get_remaining_space() -> int:
+            get_space_cmd = f"echo $(($(stat -f --format=\"%a*%S\" {dest_dir}))) | awk '{{print int($1 / (1024*1024))}}'"
             remaining_space = self.ssh_connection.send_as_sudo(get_space_cmd)[0].strip("\n")
-            remaining_space = math.trunc(float(remaining_space))
-            return remaining_space
+            return int(remaining_space)
 
-        validate_equals_with_retry(get_remaining_space, expected_remaining_space, f"Remaining size is {get_remaining_space()}. Expected {expected_remaining_space}", timeout=5, polling_sleep_time=0.5)
+        if file_size:
+            validate_equals_with_retry(get_remaining_space, expected_remaining_space,
+                                       f"Remaining size is {get_remaining_space()} MB. Expected {expected_remaining_space} MB",
+                                       timeout=5, polling_sleep_time=1)
+        else:
+            remaining = get_remaining_space()
+            validate_less_than_or_equal(remaining, 1, f"Remaining size is {remaining} MB. Expected <= 256 MB")
+
         path_to_file = f"{dest_dir}/giant_test_file"
         return path_to_file
+
+    def remove_reserved_blocks(self, device: str) -> int:
+        """Remove reserved blocks from filesystem to enable disk space filling."""
+        output = self.ssh_connection.send_as_sudo(f"tune2fs -l {device} | grep 'Reserved block count'")
+        reserved = int(output[0].split()[-1])
+        self.ssh_connection.send_as_sudo(f"tune2fs -r 0 {device}")
+        return reserved
+
+    def restore_reserved_blocks(self, device: str, reserved: int) -> None:
+        """Restore reserved blocks to filesystem."""
+        self.ssh_connection.send_as_sudo(f"tune2fs -r {reserved} {device}")
 
     def validate_file_content(self, file_path: str, expected_lines: list[str]) -> bool:
         """
