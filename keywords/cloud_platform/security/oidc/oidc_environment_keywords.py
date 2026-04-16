@@ -6,6 +6,7 @@ from framework.resources.resource_finder import get_stx_resource_path
 from framework.ssh.ssh_connection import SSHConnection
 from framework.validation.validation import validate_equals
 from keywords.base_keyword import BaseKeyword
+from keywords.cloud_platform.security.remote_cli.object.remote_cli_oidc_setup_output import RemoteCliOidcSetupOutput
 from keywords.cloud_platform.system.application.system_application_apply_keywords import SystemApplicationApplyKeywords
 from keywords.cloud_platform.system.helm.system_helm_override_keywords import SystemHelmOverrideKeywords
 from keywords.files.file_keywords import FileKeywords
@@ -118,7 +119,7 @@ class OidcEnvironmentKeywords(BaseKeyword):
 
         return kubeconfig_path
 
-    def setup_remote(self, oam_ip: str, ca_cert_filename: str, kubeconfig_filename: str, oidc_client_id: str, oidc_client_secret: str) -> tuple[str, str]:
+    def setup_remote(self, oam_ip: str, ca_cert_filename: str, kubeconfig_filename: str, oidc_client_id: str, oidc_client_secret: str) -> RemoteCliOidcSetupOutput:
         """Set up the local OIDC kubectl environment on the test machine.
 
         Downloads the system-local-ca certificate from the controller to the
@@ -133,7 +134,7 @@ class OidcEnvironmentKeywords(BaseKeyword):
             oidc_client_secret (str): Static OIDC client secret for kubeconfig.
 
         Returns:
-            tuple[str, str]: Local path to the CA cert and local path to the kubeconfig.
+            RemoteCliOidcSetupOutput: Output object containing local paths to the CA cert and kubeconfig.
         """
         log_folder = ConfigurationManager.get_logger_config().get_test_case_resources_log_location()
 
@@ -161,7 +162,54 @@ class OidcEnvironmentKeywords(BaseKeyword):
         local_kubeconfig_path = self.yaml_keywords.generate_yaml_file_from_template(template_file, replacement_dict, kubeconfig_filename, "", copy_to_remote=False)
         validate_equals(os.path.exists(local_kubeconfig_path), True, f"Local kubeconfig should exist at '{local_kubeconfig_path}'")
 
-        return local_ca_cert_path, local_kubeconfig_path
+        return RemoteCliOidcSetupOutput(local_ca_cert_path, local_kubeconfig_path)
+
+    def setup_remotecli(self, oam_ip: str, ca_cert_filename: str, kubeconfig_filename: str, oidc_client_id: str, oidc_client_secret: str) -> RemoteCliOidcSetupOutput:
+        """Set up the OIDC kubectl environment for use inside the remote CLI container.
+
+        Downloads the system-local-ca certificate from the controller to the
+        local log resources directory and generates the remote CLI kubeconfig
+        locally. The kubeconfig uses --skip-open-browser so kubelogin prints
+        the login URL to stdout instead of opening a browser, which is required
+        when kubectl runs inside a headless container.
+
+        Args:
+            oam_ip (str): OAM floating IP (bracket-wrapped for IPv6).
+            ca_cert_filename (str): Filename for the system-local-ca certificate.
+            kubeconfig_filename (str): Filename for the remote CLI OIDC kubeconfig.
+            oidc_client_id (str): Static OIDC client ID for kubeconfig.
+            oidc_client_secret (str): Static OIDC client secret for kubeconfig.
+
+        Returns:
+            RemoteCliOidcSetupOutput: Output object containing local paths to the CA cert and kubeconfig.
+        """
+        log_folder = ConfigurationManager.get_logger_config().get_test_case_resources_log_location()
+
+        get_logger().log_info("Step 1: Download system-local-ca certificate to local machine")
+        ca_cert_content = self.kubectl_get_secrets.get_secret_with_custom_output(
+            secret_name="system-local-ca",
+            namespace="cert-manager",
+            output_format="jsonpath",
+            extra_parameters="'{.data.ca\\.crt}'",
+            base64=True,
+        )
+        local_ca_cert_path = os.path.join(log_folder, ca_cert_filename)
+        with open(local_ca_cert_path, "w") as f:
+            f.write(ca_cert_content if isinstance(ca_cert_content, str) else "\n".join(ca_cert_content))
+        validate_equals(os.path.exists(local_ca_cert_path), True, f"Local CA cert should exist at '{local_ca_cert_path}'")
+
+        get_logger().log_info("Step 2: Generate remote CLI OIDC kubeconfig locally")
+        template_file = get_stx_resource_path("resources/cloud_platform/security/oidc/remotecli-oidc-login-kubeconfig.yml")
+        replacement_dict = {
+            "ca_cert_filename": ca_cert_filename,
+            "oam_ip": oam_ip,
+            "oidc_client_id": oidc_client_id,
+            "oidc_client_secret": oidc_client_secret,
+        }
+        local_kubeconfig_path = self.yaml_keywords.generate_yaml_file_from_template(template_file, replacement_dict, kubeconfig_filename, "", copy_to_remote=False)
+        validate_equals(os.path.exists(local_kubeconfig_path), True, f"Local kubeconfig should exist at '{local_kubeconfig_path}'")
+
+        return RemoteCliOidcSetupOutput(local_ca_cert_path, local_kubeconfig_path)
 
     def cleanup(self, secret_name: str, namespace: str, crb_binding_name: str) -> None:
         """Clean up the OIDC Keycloak environment.

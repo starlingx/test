@@ -9,6 +9,8 @@ from framework.validation.validation import validate_equals
 from keywords.cloud_platform.security.keycloak.keycloak_admin_keywords import KeycloakAdminKeywords
 from keywords.cloud_platform.security.keycloak.keycloak_mfa_keywords import KeycloakMfaKeywords
 from keywords.cloud_platform.security.oidc.oidc_environment_keywords import OidcEnvironmentKeywords
+from keywords.cloud_platform.security.remote_cli.object.remote_cli_oidc_setup_output import RemoteCliOidcSetupOutput
+from keywords.cloud_platform.security.remote_cli.remote_cli_keywords import RemoteCliKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.k8s.clusterrole.kubectl_create_clusterrole_keywords import KubectlCreateClusterRoleKeywords
 from keywords.k8s.clusterrolebinding.kubectl_create_clusterrolebinding_keywords import KubectlCreateClusterRoleBindingKeywords
@@ -95,7 +97,7 @@ def _cleanup_oidc_environment(ssh_connection: SSHConnection, security_config: Se
     )
 
 
-def _setup_remote_oidc_environment(ssh_connection: SSHConnection, security_config: SecurityConfig, lab_config: LabConfig) -> tuple[str, str]:
+def _setup_remote_oidc_environment(ssh_connection: SSHConnection, security_config: SecurityConfig, lab_config: LabConfig) -> RemoteCliOidcSetupOutput:
     """Set up the remote standalone OIDC kubectl environment on the test machine.
 
     Downloads the system-local-ca certificate from the controller and generates
@@ -107,7 +109,7 @@ def _setup_remote_oidc_environment(ssh_connection: SSHConnection, security_confi
         lab_config (LabConfig): Lab configuration object.
 
     Returns:
-        tuple[str, str]: Local path to the CA cert and local path to the kubeconfig.
+        RemoteCliOidcSetupOutput: Output object containing local paths to the CA cert and kubeconfig.
     """
     oam_ip = lab_config.get_floating_ip()
     if lab_config.is_ipv6():
@@ -119,6 +121,124 @@ def _setup_remote_oidc_environment(ssh_connection: SSHConnection, security_confi
         oidc_client_id=security_config.get_oidc_keycloak_static_client_id(),
         oidc_client_secret=security_config.get_oidc_keycloak_static_client_secret(),
     )
+
+
+def _teardown_remote_cli(ssh_connection: SSHConnection, remote_cli: RemoteCliKeywords) -> None:
+    """Delete the ServiceAccount, ClusterRoleBinding, and temp files created by remote CLI setup.
+
+    Args:
+        ssh_connection (SSHConnection): Active controller SSH connection.
+        remote_cli (RemoteCliKeywords): Remote CLI keywords instance used during setup.
+    """
+    get_logger().log_info("Teardown: deleting Kubernetes resources from controller")
+    remote_cli.kubectl_delete_sa.cleanup_serviceaccount(remote_cli.SERVICE_ACCOUNT_NAME, remote_cli.SERVICE_ACCOUNT_NAMESPACE)
+    remote_cli.kubectl_crb.delete_clusterrolebinding(remote_cli.SERVICE_ACCOUNT_NAME)
+    ssh_connection.send(f"rm -f {remote_cli.ADMIN_LOGIN_YAML} {remote_cli.TEMP_KUBECONFIG_NAME}")
+    get_logger().log_info("Remote CLI teardown complete")
+
+
+def _setup_remotecli_oidc_environment(ssh_connection: SSHConnection, security_config: SecurityConfig, lab_config: LabConfig) -> RemoteCliOidcSetupOutput:
+    """Set up the remote CLI container OIDC kubectl environment on the test machine.
+
+    Downloads the system-local-ca certificate from the controller and generates
+    the remote CLI kubeconfig locally with --skip-open-browser so kubelogin
+    prints the login URL to stdout when running inside the container.
+
+    Args:
+        ssh_connection (SSHConnection): Active controller SSH connection.
+        security_config (SecurityConfig): Security configuration object.
+        lab_config (LabConfig): Lab configuration object.
+
+    Returns:
+        RemoteCliOidcSetupOutput: Output object containing local paths to the CA cert and kubeconfig.
+    """
+    oam_ip = lab_config.get_floating_ip()
+    if lab_config.is_ipv6():
+        oam_ip = f"[{oam_ip}]"
+    return OidcEnvironmentKeywords(ssh_connection).setup_remotecli(
+        oam_ip=oam_ip,
+        ca_cert_filename=security_config.get_oidc_keycloak_system_local_ca_cert_filename(),
+        kubeconfig_filename=security_config.get_oidc_keycloak_remotecli_kubeconfig_filename(),
+        oidc_client_id=security_config.get_oidc_keycloak_static_client_id(),
+        oidc_client_secret=security_config.get_oidc_keycloak_static_client_secret(),
+    )
+
+
+@mark.p1
+def test_oidc_keycloak_remotecli_first_login(request: FixtureRequest):
+    """Verify first-time OIDC kubectl login works via the remote CLI container with Keycloak MFA.
+
+    Sets up the remote CLI container on the test machine by creating a
+    ServiceAccount and ClusterRoleBinding on the controller, generating a
+    temp-kubeconfig with a token, and running configure_client.sh locally.
+    Then generates the OIDC kubeconfig with --skip-open-browser so kubelogin
+    prints the login URL to stdout inside the container. Resets the test user
+    TOTP enrollment to force the CONFIGURE_TOTP flow.
+
+    Steps:
+        - Set up OIDC environment (dex, oidc-auth-apps, CRB)
+        - Set up remote CLI container on test machine (ServiceAccount, kubeconfig, configure_client.sh)
+        - Generate OIDC kubeconfig for remote CLI container
+        - Reset user TOTP enrollment via Keycloak Admin API
+        - Run kubectl get pods -A inside the container via Keycloak CONFIGURE_TOTP browser login
+        - Validate kubectl succeeds
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    security_config = ConfigurationManager.get_security_config()
+    lab_config = ConfigurationManager.get_lab_config()
+
+    oam_ip = lab_config.get_floating_ip()
+    if lab_config.is_ipv6():
+        oam_ip = f"[{oam_ip}]"
+
+    remote_cli = RemoteCliKeywords(ssh_connection)
+
+    def cleanup():
+        _teardown_remote_cli(ssh_connection, remote_cli)
+        _cleanup_oidc_environment(ssh_connection, security_config)
+
+    request.addfinalizer(cleanup)
+
+    get_logger().log_test_case_step("Set up OIDC environment")
+    _setup_oidc_environment(ssh_connection, security_config, lab_config)
+
+    get_logger().log_test_case_step("Set up remote CLI container on test machine")
+    remote_cli.setup(
+        oam_ip=oam_ip,
+        build_server_user=security_config.get_remote_cli_build_server_user(),
+        build_server_password=security_config.get_remote_cli_build_server_password(),
+        tarball_remote_path=security_config.get_remote_cli_tarball_remote_path(),
+        build_server_ip=security_config.get_remote_cli_build_server_ip(),
+        install_dir=security_config.get_remote_cli_install_dir(),
+        working_dir=security_config.get_remote_cli_working_dir(),
+        docker_image=security_config.get_remote_cli_docker_image(),
+    )
+
+    get_logger().log_test_case_step("Generate OIDC kubeconfig for remote CLI container")
+    local_kubeconfig_path = _setup_remotecli_oidc_environment(ssh_connection, security_config, lab_config).get_remote_cli_oidc_setup_object().get_kubeconfig_path()
+
+    get_logger().log_test_case_step("Reset OTP credentials to force CONFIGURE_TOTP flow")
+    keycloak_admin = _get_keycloak_admin(security_config)
+    keycloak_admin.delete_user_otp_credentials(security_config.get_oidc_keycloak_test_username())
+    keycloak_admin.clear_user_brute_force_lockout(security_config.get_oidc_keycloak_test_username())
+
+    get_logger().log_test_case_step("Run kubectl get pods -A inside remote CLI container via Keycloak CONFIGURE_TOTP browser login")
+    container_kubeconfig_path = remote_cli.prepare_oidc_kubeconfig_for_container(
+        local_kubeconfig_path=local_kubeconfig_path,
+        working_dir=security_config.get_remote_cli_working_dir(),
+        install_dir=security_config.get_remote_cli_install_dir(),
+    )
+    result = remote_cli.run_kubectl_in_container_with_browser_login(
+        install_dir=security_config.get_remote_cli_install_dir(),
+        working_dir=security_config.get_remote_cli_working_dir(),
+        kubectl_cmd=f"kubectl --kubeconfig {container_kubeconfig_path} get pods -A",
+        container_kubeconfig_path=container_kubeconfig_path,
+        username=security_config.get_oidc_keycloak_test_username(),
+        password=security_config.get_oidc_keycloak_test_password(),
+        totp_secret=None,
+    )
+    get_logger().log_info(f"kubectl output:\n{result.get_output()}")
+    validate_equals(result.is_kubectl_successful(), True, "kubectl should succeed after remote CLI first login CONFIGURE_TOTP flow")
 
 
 @mark.p1
@@ -582,7 +702,7 @@ def test_oidc_keycloak_remote_standalone_first_login(request: FixtureRequest):
     _setup_oidc_environment(ssh_connection, security_config, lab_config)
 
     get_logger().log_test_case_step("Set up local OIDC environment")
-    _, local_kubeconfig_path = _setup_remote_oidc_environment(ssh_connection, security_config, lab_config)
+    local_kubeconfig_path = _setup_remote_oidc_environment(ssh_connection, security_config, lab_config).get_remote_cli_oidc_setup_object().get_kubeconfig_path()
 
     get_logger().log_test_case_step("Reset OTP credentials to force CONFIGURE_TOTP flow")
     keycloak_admin = _get_keycloak_admin(security_config)

@@ -16,13 +16,14 @@ class KubectlCreateClusterRoleBindingKeywords(K8sBaseKeyword):
         super().__init__(ssh_connection, kubeconfig_path)
 
     def create_clusterrolebinding_for_group(self, binding_name: str, clusterrole: str, group: str) -> None:
-        """Create a cluster role binding for a group.
+        """Create a cluster role binding for a group, replacing it if it already exists.
 
         Args:
             binding_name (str): Name of the cluster role binding.
             clusterrole (str): Name of the cluster role to bind.
             group (str): Group to bind the role to (e.g. '/wrcp-admin').
         """
+        self.ssh_connection.send(self.k8s_config.export(f"kubectl delete clusterrolebinding {binding_name} --ignore-not-found"))
         cmd = f"kubectl create clusterrolebinding {binding_name} --clusterrole={clusterrole} --group={group}"
         self.ssh_connection.send(self.k8s_config.export(cmd))
         self.validate_success_return_code(self.ssh_connection)
