@@ -1,0 +1,36 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{podName}}
+  annotations:
+spec:
+  restartPolicy: Always
+  containers:
+  - name: {{podName}}
+    image: fshiga01/dpdk-test:24.07
+    volumeMounts:
+    - mountPath: /mnt/huge-1048576kB
+      name: hugepage
+    - mountPath: /sys/devices
+      name: uio
+    command: ["/bin/bash", "-ec", "sleep infinity"]
+    securityContext:
+      privileged: true
+      capabilities:
+        add:
+          ["IPC_LOCK", "SYS_ADMIN"]
+    resources:
+      requests:
+        intel.com/intel_fec_acc200: 1
+        memory: 4Gi
+      limits:
+        intel.com/intel_fec_acc200: 1
+        hugepages-1Gi: 2Gi
+        memory: 4Gi
+  volumes:
+  - name: hugepage
+    emptyDir:
+      medium: HugePages
+  - name: uio
+    hostPath:
+      path: /sys/devices
