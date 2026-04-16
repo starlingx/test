@@ -51,3 +51,28 @@ class KubectlNodeTaintKeywords(K8sBaseKeyword):
             if not taint_output.is_taints_enabled(expected_taint):
                 return False
         return True
+
+    def add_taint(self, node_name: str, taint: str) -> None:
+        """Add a taint to a Kubernetes node.
+
+        Args:
+            node_name (str): Name of the node to taint.
+            taint (str): Taint specification (e.g., 'key=value:NoSchedule').
+        """
+        cmd = f"kubectl taint nodes {node_name} {taint}"
+        self.ssh_connection.send(self.k8s_config.export(cmd))
+        self.validate_success_return_code(self.ssh_connection)
+
+    def remove_taint(self, node_name: str, taint: str) -> None:
+        """Remove a taint from a Kubernetes node.
+
+        Args:
+            node_name (str): Name of the node to untaint.
+            taint (str): Taint specification to remove (e.g., 'key=value:NoSchedule').
+                A trailing '-' is appended automatically if not present.
+        """
+        if not taint.endswith("-"):
+            taint = f"{taint}-"
+        cmd = f"kubectl taint nodes {node_name} {taint}"
+        self.ssh_connection.send(self.k8s_config.export(cmd))
+        self.validate_success_return_code(self.ssh_connection)

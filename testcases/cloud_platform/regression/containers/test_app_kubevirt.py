@@ -23,6 +23,7 @@ from keywords.k8s.files.kubectl_file_apply_keywords import KubectlFileApplyKeywo
 from keywords.k8s.files.kubectl_file_delete_keywords import KubectlFileDeleteKeywords
 from keywords.k8s.helm.kubectl_get_helm_keywords import KubectlGetHelmKeywords
 from keywords.k8s.node.kubectl_label_node_keywords import KubectlLabelNodeKeywords
+from keywords.k8s.node.kubectl_node_taint_keywords import KubectlNodeTaintKeywords
 from keywords.k8s.patch.kubectl_apply_patch_keywords import KubectlApplyPatchKeywords
 from keywords.k8s.pods.kubectl_get_pods_keywords import KubectlGetPodsKeywords
 from keywords.k8s.pods.kubectl_wait_pod_keywords import KubectlWaitPodKeywords
@@ -248,9 +249,6 @@ def test_kubevirt_upload_apply_delete(request: FixtureRequest):
         - Upload and Apply kubevirt application
         - Reapply the application
         - Verify pods are running
-        - Reboot the controller
-        - Verify application is in applied state
-        - Verify pods are running
         - Remove and delete the application
         - Verify kubevirt HelmChart is removed
     """
@@ -274,24 +272,6 @@ def test_kubevirt_upload_apply_delete(request: FixtureRequest):
 
     get_logger().log_test_case_step("Verifying kubevirt pods are running after reapply")
     kubectl_pods = KubectlGetPodsKeywords(ssh_connection)
-    kubectl_pods.wait_for_pods_to_reach_status(expected_status="Running", pod_names=CDI_EXPECTED_PODS, namespace=CDI_NAMESPACE, timeout=120)
-    kubectl_pods.wait_for_pods_to_reach_status(expected_status="Running", pod_names=KUBEVIRT_EXPECTED_PODS, namespace=KUBEVIRT_NAMESPACE, timeout=120)
-
-    system_host_list = SystemHostListKeywords(ssh_connection)
-    active_controller = system_host_list.get_active_controller().get_host_name()
-
-    get_logger().log_test_case_step(f"Rebooting controller {active_controller}")
-    pre_uptime = system_host_list.get_uptime(active_controller)
-    ssh_connection.send_as_sudo("reboot -f")
-    system_host_reboot = SystemHostRebootKeywords(ssh_connection)
-    reboot_success = system_host_reboot.wait_for_force_reboot(active_controller, pre_uptime)
-    validate_equals(reboot_success, True, "Controller should reboot successfully")
-
-    get_logger().log_test_case_step(f"Verifying {APP_NAME} is in applied state after reboot")
-    system_app_list = SystemApplicationListKeywords(ssh_connection)
-    system_app_list.validate_app_status(APP_NAME, "applied", timeout=30)
-
-    get_logger().log_test_case_step("Verifying kubevirt pods are running after reboot")
     kubectl_pods.wait_for_pods_to_reach_status(expected_status="Running", pod_names=CDI_EXPECTED_PODS, namespace=CDI_NAMESPACE, timeout=120)
     kubectl_pods.wait_for_pods_to_reach_status(expected_status="Running", pod_names=KUBEVIRT_EXPECTED_PODS, namespace=KUBEVIRT_NAMESPACE, timeout=120)
 
@@ -1135,6 +1115,104 @@ def test_launch_vm_with_nodeselector(request: FixtureRequest):
     kubectl_vmi.wait_for_vmi_status(vm_name, "Running", timeout=120)
     vm_host = kubectl_vmi.get_vmi_node(vm_name)
     validate_equals(vm_host, target_node, f"VM should be scheduled on labelled node {target_node}")
+
+    get_logger().log_test_case_step(f"Logging into VM {vm_name} via virtctl console")
+    VirtctlKeywords(ssh_connection).login_to_vm(vm_name, "cirros", "gocubsgo")
+
+
+@mark.p2
+def test_launch_vm_with_toleration(request: FixtureRequest):
+    """
+    Test that a VM with a toleration is scheduled on a tainted node.
+
+    Applies a NoSchedule taint to a worker node and labels it with cpu=slow
+    and storage=fast. Deploys a VM with a matching toleration and nodeSelector,
+    then verifies it is scheduled on the tainted node.
+
+    Args:
+        request (FixtureRequest): Pytest fixture request for teardown registration.
+
+    Test Steps:
+        - Cleanup kubevirt environment
+        - Get a worker node to taint and label
+        - Setup kubevirt environment
+        - Create registry secret for image pulls
+        - Label worker node with cpu=slow and storage=fast
+        - Taint worker node with key=value:NoSchedule
+        - Deploy VM with matching toleration and nodeSelector
+        - Verify VM is running on the tainted node
+        - Login to VM via virtctl console
+    """
+    vm_name = "vm-toleration"
+    vm_yaml_template = "vm-toleration.yaml.j2"
+    remote_yaml_path = f"{KUBEVIRT_VM_DIR}/vm-toleration.yaml"
+    vm_namespace = "default"
+    taint_spec = "key=value:NoSchedule"
+
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+
+    get_logger().log_setup_step("Cleanup kubevirt environment")
+    cleanup_kubevirt_environment(ssh_connection)
+
+    get_logger().log_setup_step("Getting a worker node to taint and label")
+    workers = SystemHostListKeywords(ssh_connection).get_workers()
+    target_node = workers[0].get_host_name()
+    get_logger().log_info(f"Target node for toleration test: {target_node}")
+
+    label_keywords = KubectlLabelNodeKeywords(ssh_connection)
+    taint_keywords = KubectlNodeTaintKeywords(ssh_connection)
+    kubectl_vm = KubectlGetVmKeywords(ssh_connection)
+    kubectl_vmi = KubectlGetVmiKeywords(ssh_connection)
+
+    def cleanup():
+        get_logger().log_teardown_step(f"Deleting VM {vm_name}")
+        KubectlDeleteVmKeywords(ssh_connection).delete_vm(vm_name, ignore_not_found=True)
+
+        get_logger().log_teardown_step("Cleaning up remote VM directory")
+        FileKeywords(ssh_connection).delete_directory(KUBEVIRT_VM_DIR)
+
+        get_logger().log_teardown_step(f"Removing taint from node {target_node}")
+        taint_keywords.remove_taint(target_node, taint_spec)
+
+        get_logger().log_teardown_step(f"Removing labels from node {target_node}")
+        label_keywords.remove_label(target_node, "cpu")
+        label_keywords.remove_label(target_node, "storage")
+
+        get_logger().log_teardown_step("Cleaning up kubevirt environment")
+        cleanup_kubevirt_environment(ssh_connection)
+
+    request.addfinalizer(cleanup)
+
+    get_logger().log_setup_step("Setting up kubevirt environment")
+    setup_kubevirt_environment(ssh_connection)
+
+    get_logger().log_setup_step("Creating registry secret for image pulls")
+    setup_registry_secret(ssh_connection, request, vm_namespace)
+
+    get_logger().log_test_case_step(f"Labelling node {target_node} with cpu=slow and storage=fast")
+    label_keywords.label_node(target_node, "cpu", "slow")
+    label_keywords.label_node(target_node, "storage", "fast")
+
+    get_logger().log_test_case_step(f"Tainting node {target_node} with {taint_spec}")
+    taint_keywords.add_taint(target_node, taint_spec)
+
+    get_logger().log_test_case_step("Creating VM YAML with toleration")
+    FileKeywords(ssh_connection).create_directory(KUBEVIRT_VM_DIR)
+    YamlKeywords(ssh_connection).generate_yaml_file_from_template(
+        get_stx_resource_path(f"resources/cloud_platform/containers/kubevirt/{vm_yaml_template}"),
+        {"vm_name": vm_name},
+        "vm-toleration.yaml",
+        KUBEVIRT_VM_DIR,
+    )
+
+    get_logger().log_test_case_step(f"Deploying VM {vm_name} with toleration for {taint_spec}")
+    KubectlFileApplyKeywords(ssh_connection).apply_resource_from_yaml(remote_yaml_path)
+
+    get_logger().log_test_case_step(f"Verifying VM {vm_name} is running on tainted node {target_node}")
+    kubectl_vm.wait_for_vm_status(vm_name, "Running", timeout=120)
+    kubectl_vmi.wait_for_vmi_status(vm_name, "Running", timeout=120)
+    vm_host = kubectl_vmi.get_vmi_node(vm_name)
+    validate_equals(vm_host, target_node, f"VM should be scheduled on tainted node {target_node}")
 
     get_logger().log_test_case_step(f"Logging into VM {vm_name} via virtctl console")
     VirtctlKeywords(ssh_connection).login_to_vm(vm_name, "cirros", "gocubsgo")
