@@ -1,3 +1,5 @@
+import re
+
 from pytest import fail, mark
 
 from config.configuration_manager import ConfigurationManager
@@ -108,6 +110,55 @@ def test_major_release_prestage_retry_after_fail():
 
     if subcloud_sw_version != last_major_release:
         fail(f"{subcloud_name} in running {subcloud_sw_version} version, should be {last_major_release}.")
+
+    # Prechecks Before Prestage
+    get_logger().log_info(f"Performing pre-checks on {subcloud_name}")
+    obj_health = HealthKeywords(subcloud_ssh)
+    obj_health.validate_healty_cluster()  # Checks alarms, pods, app health
+
+    # Gets the lowest subcloud sysadmin password needed for prestage, backup creation and deletion on central_path.
+    lab_config = ConfigurationManager.get_lab_config().get_subcloud(subcloud_name)
+    subcloud_password = lab_config.get_admin_credentials().get_password()
+
+    prestage_subcloud(central_ssh, subcloud_name, subcloud_password, for_sw_deploy=True, expect_fail=True)
+
+    # Retry prestage subcloud
+    prestage_subcloud(central_ssh, subcloud_name, subcloud_password, for_sw_deploy=True)
+
+    subcloud_upgrade(central_ssh, subcloud_name)
+
+    # validate Healthy status
+    HealthKeywords(subcloud_ssh).validate_healty_cluster()
+
+
+@mark.p0
+@mark.lab_has_subcloud
+def test_minor_release_prestage_retry_after_fail():
+    """Verify minor release prestage retry after fail and do subcloud upgrade
+
+    Test Steps:
+        - Verify subcloud health
+        - Prestage subcloud
+        - Kill prestage playbook to make prestage fail
+        - Retry prestage
+        - Upgrade subcloud after prestage complete
+    """
+    central_ssh = LabConnectionKeywords().get_active_controller_ssh()
+    latest_deployed_release_with_patch = max(SoftwareListKeywords(central_ssh).get_software_list().get_product_version_with_patch_by_state("deployed"))
+    latest_deployed_release = max(SoftwareListKeywords(central_ssh).get_software_list().get_product_version_by_state("deployed"))
+    get_logger().log_info(f"Subcloud release {latest_deployed_release_with_patch}")
+
+    # Verify that controller has a patch to apply
+    patch = re.findall(r"(\.\d+)", latest_deployed_release_with_patch)[1]
+
+    if not patch or patch == ".0":
+        fail(f"Controller is running major version {latest_deployed_release}, not minor.")
+    subcloud_name = ConfigurationManager.get_lab_config().get_subcloud_names()[0]
+    subcloud_sw_version = DcManagerSubcloudShowKeywords(central_ssh).get_dcmanager_subcloud_show(subcloud_name).get_dcmanager_subcloud_show_object().get_software_version()
+    subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
+
+    if subcloud_sw_version != latest_deployed_release:
+        fail(f"{subcloud_name} is running {subcloud_sw_version} version, should be {latest_deployed_release}.")
 
     # Prechecks Before Prestage
     get_logger().log_info(f"Performing pre-checks on {subcloud_name}")

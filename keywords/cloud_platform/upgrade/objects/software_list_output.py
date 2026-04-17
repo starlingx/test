@@ -81,6 +81,23 @@ class SoftwareListOutput:
                 product_version.append(match.group(1) if match else "")
         return product_version
 
+    def get_product_version_with_patch_by_state(self, state: str) -> List[str]:
+        """
+        Get software version of all releases with a given state.
+
+        Args:
+            state (str): Desired software release state (e.g., "deployed").
+
+        Returns:
+            List[str]: Matching release names.
+        """
+        product_version = []
+        for entry in self.output_values:
+            if entry["State"] == state:
+                match = re.search(r"(\d+\.\d+\.\d+)", entry["Release"])
+                product_version.append(match.group(1) if match else "")
+        return product_version
+
     def get_release_state_by_release_name(self, release_name: str) -> str:
         """
         Get the state of a release by its name.
