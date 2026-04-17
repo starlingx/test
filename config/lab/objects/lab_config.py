@@ -64,9 +64,9 @@ class LabConfig:
                 subcloud_config_location = get_stx_resource_path((lab_dict["subclouds"][subcloud]))
                 self.subclouds.append(LabConfig(subcloud_config_location))
 
-        if "nodes" in lab_dict:
-            for node in lab_dict["nodes"]:
-                self.nodes.append(Node(node, lab_dict["nodes"][node]))
+        node_dicts = lab_dict.get("nodes", {})
+        for node_name, node_dict in node_dicts.items():
+            self.nodes.append(Node(node_name, node_dict, lab_dict))
 
         self.ipv6 = True
         if ":" not in self.floating_ip:
@@ -203,7 +203,7 @@ class LabConfig:
         """
         return self.nodes
 
-    def get_node(self, lab_node_name: str) -> Node:
+    def get_node(self, lab_node_name: str) -> Optional[Node]:
         """
         Get a lab node by name.
 
@@ -344,14 +344,25 @@ class LabConfig:
         """
         return self.jump_server_config
 
-    def get_ssh_port(self) -> int:
+    def get_ssh_port(self,
+                     lab_node_name: Optional[str] = None) -> int:
         """
         Getter for the SSH port.
+
+        Args:
+            lab_node_name (str): The name of the lab node ex. Controller-0
 
         Returns:
             int: The SSH port number
         """
-        return self.ssh_port
+        if not lab_node_name:
+            return self.ssh_port
+
+        node = self.get_node(lab_node_name)
+        if not node:
+            raise RuntimeError(f"Node {lab_node_name} not found")
+
+        return node.get_ssh_port()
 
     def get_lab_capabilities(self) -> List[str]:
         """

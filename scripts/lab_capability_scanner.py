@@ -50,8 +50,12 @@ def find_capabilities(lab_config: LabConfig) -> list[str]:
         list[str]: A list of capabilities found in the lab.
     """
     lab_config.lab_capabilities = []
-
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+
+    if query_if_lab_is_virtual(ssh_connection):
+        get_logger().log_info(f"'{lab_config.get_lab_name()}' is a Virtual Lab")
+        lab_config.add_lab_capability("lab_is_virtual")
+
     lab_config.set_horizon_url(get_horizon_url())
 
     # Check if this is a DC system by checking distributed_cloud_role
@@ -77,6 +81,10 @@ def find_capabilities(lab_config: LabConfig) -> list[str]:
     nodes = scan_hosts(lab_config, ssh_connection)
     lab_config.set_nodes(nodes)
 
+def query_if_lab_is_virtual(ssh_connection: SSHConnection) -> bool:
+    output = ssh_connection.send("facter is_virtual").strip()
+    is_virtual = bool(output.lower() == "true")
+    return is_virtual
 
 def find_secondary_controller_capabilities(lab_config: LabConfig):
     """Find secondary system controller capabilities from given lab.
