@@ -16,6 +16,7 @@ from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKey
 from keywords.cloud_platform.system.host.system_host_swact_keywords import SystemHostSwactKeywords
 from keywords.cloud_platform.upgrade.software_list_keywords import SoftwareListKeywords
 from keywords.cloud_platform.version_info.cloud_platform_version_manager import CloudPlatformVersionManagerClass
+from keywords.files.file_keywords import FileKeywords
 from keywords.linux.pkill.pkill_keywords import PkillKeywords
 
 
@@ -42,20 +43,19 @@ def subcloud_upgrade(central_ssh, subcloud_name):
     validate_equals(strategy_status, "complete", f"Software deploy completed successfully for subcloud {subcloud_name}.")
 
 
-def prestage_subcloud(central_ssh, subcloud_name, subcloud_password, for_sw_deploy: bool = False, expect_fail: bool = False):
+def prestage_subcloud(central_ssh, subcloud_name, subcloud_password, release: str = None, for_sw_deploy: bool = False, kill_proccess: bool = False, expect_fail: bool = False):
     """Prestage subcloud"""
 
     get_logger().log_info(f"Subcloud selected for prestage: {subcloud_name}")
-    wait_completion = not expect_fail
-    DcmanagerSubcloudPrestage(central_ssh).dcmanager_subcloud_prestage(subcloud_name, subcloud_password, for_sw_deploy=for_sw_deploy, wait_completion=wait_completion)
-
-    # validate prestage status
+    wait_completion = not kill_proccess
+    DcmanagerSubcloudPrestage(central_ssh).dcmanager_subcloud_prestage(subcloud_name, subcloud_password, release=release, for_sw_deploy=for_sw_deploy, wait_completion=wait_completion)
     if expect_fail:
-        # kill prestage playbook
-        prestage_playbook = "/usr/share/ansible/stx-ansible/playbooks/prestage_sw_packages.yml"
-        PkillKeywords(central_ssh).pkill_by_pattern(prestage_playbook, send_as_sudo=True)
         prestage_result = "failed"
         success_msg = f"subcloud {subcloud_name} prestage failed."
+        if kill_proccess:
+            # kill prestage playbook
+            prestage_playbook = "/usr/share/ansible/stx-ansible/playbooks/prestage_sw_packages.yml"
+            PkillKeywords(central_ssh).pkill_by_pattern(prestage_playbook, send_as_sudo=True)
     else:
         prestage_result = "complete"
         success_msg = f"subcloud {subcloud_name} prestage success."
@@ -120,7 +120,7 @@ def test_major_release_prestage_retry_after_fail():
     lab_config = ConfigurationManager.get_lab_config().get_subcloud(subcloud_name)
     subcloud_password = lab_config.get_admin_credentials().get_password()
 
-    prestage_subcloud(central_ssh, subcloud_name, subcloud_password, for_sw_deploy=True, expect_fail=True)
+    prestage_subcloud(central_ssh, subcloud_name, subcloud_password, for_sw_deploy=True, kill_proccess=True, expect_fail=True)
 
     # Retry prestage subcloud
     prestage_subcloud(central_ssh, subcloud_name, subcloud_password, for_sw_deploy=True)
@@ -165,11 +165,10 @@ def test_minor_release_prestage_retry_after_fail():
     obj_health = HealthKeywords(subcloud_ssh)
     obj_health.validate_healty_cluster()  # Checks alarms, pods, app health
 
-    # Gets the lowest subcloud sysadmin password needed for prestage, backup creation and deletion on central_path.
     lab_config = ConfigurationManager.get_lab_config().get_subcloud(subcloud_name)
     subcloud_password = lab_config.get_admin_credentials().get_password()
 
-    prestage_subcloud(central_ssh, subcloud_name, subcloud_password, for_sw_deploy=True, expect_fail=True)
+    prestage_subcloud(central_ssh, subcloud_name, subcloud_password, for_sw_deploy=True, kill_proccess=True, expect_fail=True)
 
     # Retry prestage subcloud
     prestage_subcloud(central_ssh, subcloud_name, subcloud_password, for_sw_deploy=True)
@@ -178,3 +177,63 @@ def test_minor_release_prestage_retry_after_fail():
 
     # validate Healthy status
     HealthKeywords(subcloud_ssh).validate_healty_cluster()
+
+
+@mark.p0
+@mark.lab_has_subcloud
+def test_prestage_fails_if_deploy_is_running(request):
+    """Verify prestage fails in case a deploy is running
+
+    Test Steps:
+        Verify subcloud health
+        - Prestage subcloud with N release
+        - Simulate release in state "deploying"
+        - Verify that prestage for N release fails
+        - Simulate release in state "removing"
+        - Verify that prestage for N-1 release fails
+        - Simulate release in state "available"
+        - Verify that prestage succeds
+    """
+    central_ssh = LabConnectionKeywords().get_active_controller_ssh()
+    last_major_release = CloudPlatformVersionManagerClass().get_last_major_release()
+    get_logger().log_info(f"Subcloud release {last_major_release}")
+
+    subcloud_name = ConfigurationManager.get_lab_config().get_subcloud_names()[0]
+    subcloud_sw_version = DcManagerSubcloudShowKeywords(central_ssh).get_dcmanager_subcloud_show(subcloud_name).get_dcmanager_subcloud_show_object().get_software_version()
+    subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
+
+    if subcloud_sw_version != last_major_release:
+        fail(f"{subcloud_name} in running {subcloud_sw_version} version, should be {last_major_release}.")
+
+    # Prechecks Before Prestage
+    get_logger().log_info(f"Performing pre-checks on {subcloud_name}")
+    obj_health = HealthKeywords(subcloud_ssh)
+    obj_health.validate_healty_cluster()  # Checks alarms, pods, app health
+
+    lab_config = ConfigurationManager.get_lab_config().get_subcloud(subcloud_name)
+    subcloud_password = lab_config.get_admin_credentials().get_password()
+    prestage_subcloud(central_ssh, subcloud_name, subcloud_password, for_sw_deploy=True)
+
+    sw_release = max(SoftwareListKeywords(subcloud_ssh).get_software_list().get_release_name_by_state("available"))
+    get_logger().log_info(f"Release available {sw_release}.")
+    release_metadata = f"/opt/software/metadata/available/{sw_release}-metadata.xml"
+    if FileKeywords(subcloud_ssh).file_exists(release_metadata):
+
+        def teardown():
+            if FileKeywords(subcloud_ssh).file_exists(release_metadata):
+                FileKeywords(subcloud_ssh).move_file(source=release_metadata, destination="/opt/software/metadata/available/", sudo=True)
+
+        request.addfinalizer(teardown)
+
+        FileKeywords(subcloud_ssh).move_file(source=release_metadata, destination="/opt/software/metadata/deploying/", sudo=True)
+        release_metadata = f"/opt/software/metadata/deploying/{sw_release}-metadata.xml"
+        prestage_subcloud(central_ssh, subcloud_name, subcloud_password, for_sw_deploy=True, expect_fail=True)
+        prestage_subcloud(central_ssh, subcloud_name, subcloud_password, expect_fail=True)
+
+        FileKeywords(subcloud_ssh).move_file(source=release_metadata, destination="/opt/software/metadata/removing/", sudo=True)
+        release_metadata = f"/opt/software/metadata/removing/{sw_release}-metadata.xml"
+        prestage_subcloud(central_ssh, subcloud_name, subcloud_password, release=last_major_release, for_sw_deploy=True, expect_fail=True)
+        prestage_subcloud(central_ssh, subcloud_name, subcloud_password, release=last_major_release, expect_fail=True)
+
+        FileKeywords(subcloud_ssh).move_file(source=release_metadata, destination="/opt/software/metadata/available/", sudo=True)
+        prestage_subcloud(central_ssh, subcloud_name, subcloud_password)
