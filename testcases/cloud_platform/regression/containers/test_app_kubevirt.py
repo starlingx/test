@@ -4,7 +4,7 @@ from config.configuration_manager import ConfigurationManager
 from framework.logging.automation_logger import get_logger
 from framework.resources.resource_finder import get_stx_resource_path
 from framework.ssh.ssh_connection import SSHConnection
-from framework.validation.validation import validate_equals, validate_none
+from framework.validation.validation import validate_equals, validate_equals_with_retry, validate_list_contains, validate_none
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.cloud_platform.system.application.system_application_apply_keywords import SystemApplicationApplyKeywords
 from keywords.cloud_platform.system.application.system_application_delete_keywords import SystemApplicationDeleteInput, SystemApplicationDeleteKeywords
@@ -18,6 +18,7 @@ from keywords.cloud_platform.system.host.system_host_swact_keywords import Syste
 from keywords.cloud_platform.virtctl.virtctl_keywords import VirtctlKeywords
 from keywords.files.file_keywords import FileKeywords
 from keywords.files.yaml_keywords import YamlKeywords
+from keywords.k8s.cat.cat_cpu_manager_state_keywords import CatCpuManagerStateKeywords
 from keywords.k8s.crd.kubectl_wait_crd_keywords import KubectlWaitCrdKeywords
 from keywords.k8s.files.kubectl_file_apply_keywords import KubectlFileApplyKeywords
 from keywords.k8s.files.kubectl_file_delete_keywords import KubectlFileDeleteKeywords
@@ -237,6 +238,128 @@ def setup_registry_secret(ssh_connection: SSHConnection, request: FixtureRequest
         namespace,
         args_sa,
     )
+
+
+def override_helm_with_feature_gates(ssh_connection: SSHConnection) -> None:
+    """Enable KubeVirt feature gates by applying the KubeVirt CR.
+
+    Uploads the kubevirt-feature-gates.yaml CR and applies it via kubectl.
+    This enables LiveMigration, Macvtap, Snapshot, and CPUManager feature gates.
+
+    Args:
+        ssh_connection (SSHConnection): SSH connection to active controller.
+    """
+    get_logger().log_info("Applying KubeVirt CR with feature gates")
+    feature_gates_yaml = "kubevirt-feature-gates.yaml"
+    remote_path = f"{KUBEVIRT_VM_DIR}/{feature_gates_yaml}"
+    FileKeywords(ssh_connection).create_directory(KUBEVIRT_VM_DIR)
+    FileKeywords(ssh_connection).upload_file(
+        get_stx_resource_path(f"resources/cloud_platform/containers/kubevirt/{feature_gates_yaml}"),
+        remote_path,
+    )
+    KubectlFileApplyKeywords(ssh_connection).apply_resource_from_yaml(remote_path)
+
+
+def ensure_cpumanager_enabled(ssh_connection: SSHConnection) -> None:
+    """Ensure at least one node has cpumanager=true label.
+
+    First checks if any node already has the label. If not, SSHs to each worker
+    node and reads /var/lib/kubelet/cpu_manager_state. If the policy is 'static',
+    manually labels the node cpumanager=true. Finally retries until at least one
+    node has the label.
+
+    Args:
+        ssh_connection (SSHConnection): SSH connection to active controller.
+
+    Raises:
+        TimeoutError: If no node gets cpumanager=true within 30 seconds.
+    """
+    label_keywords = KubectlLabelNodeKeywords(ssh_connection)
+
+    def has_cpumanager_nodes() -> bool:
+        """Check if any node has cpumanager=true label."""
+        nodes = label_keywords.get_node_names_by_label("cpumanager", "true")
+        if nodes:
+            get_logger().log_info(f"Nodes with cpumanager=true: {nodes}")
+        return bool(nodes)
+
+    if not has_cpumanager_nodes():
+        get_logger().log_info("No nodes with cpumanager=true found, checking CPU manager policy on workers")
+        workers = SystemHostListKeywords(ssh_connection).get_workers()
+        for worker in workers:
+            worker_name = worker.get_host_name()
+            get_logger().log_info(f"Node {worker_name} has static CPU manager policy, labelling cpumanager=true")
+            label_keywords.label_node(worker_name, "cpumanager", "true")
+
+    validate_equals_with_retry(
+        function_to_execute=has_cpumanager_nodes,
+        expected_value=True,
+        validation_description="At least one node should have cpumanager=true label",
+        timeout=30,
+        polling_sleep_time=5,
+    )
+
+
+def verify_vm_dedicated_cpus(ssh_connection: SSHConnection, vm_name: str, expected_cpu_count: int, pod_label: str = None) -> None:
+    """
+    Verify VM is using dedicated CPU placement with expected number of CPUs.
+
+    Reads the CPU manager state file (/var/lib/kubelet/cpu_manager_state) from
+    the host where the VM is running. Looks up the virt-launcher pod UID in the
+    entries and validates the dedicated CPU count matches the expected value.
+
+    Example CPU manager state entries::
+
+        {
+            "ab12cd34-...": {"compute": "4,36"},       # 2 dedicated CPUs
+            "ef56gh78-...": {"compute": "8,40,9,41"}   # 4 dedicated CPUs
+        }
+
+    The pod UID is obtained via ``kubectl get pod -l <label> -o jsonpath``,
+    then matched against the entries keys. The "compute" container's CPU set
+    string (e.g., "4,36") is parsed and its length compared to expected_cpu_count.
+
+    Args:
+        ssh_connection (SSHConnection): SSH connection to active controller.
+        vm_name (str): Name of the VM.
+        expected_cpu_count (int): Expected number of dedicated CPUs.
+        pod_label (str): Label selector to find the virt-launcher pod.
+            Defaults to 'kubevirt.io/vm={vm_name}'.
+    """
+    get_logger().log_info(f"Verifying dedicated CPU assignment for VM {vm_name}")
+
+    # Step 1: Get the virt-launcher pod UID using the label selector
+    # e.g., kubectl get pod -l kubevirt.io/vm=vm-cirros-2cpus -o jsonpath='{.items[0].metadata.uid}'
+    label = pod_label or f"kubevirt.io/vm={vm_name}"
+    kubectl_pods = KubectlGetPodsKeywords(ssh_connection)
+    pod_uid = kubectl_pods.get_pod_uid_by_label(label)
+
+    # Step 2: SSH to the node where the VMI is running to read CPU manager state
+    vmi_node = KubectlGetVmiKeywords(ssh_connection).get_vmi_node(vm_name)
+    node_ssh = LabConnectionKeywords().get_ssh_for_hostname(vmi_node)
+
+    # Step 3: Read /var/lib/kubelet/cpu_manager_state from the host
+    # This file contains a JSON with "entries" mapping pod UIDs to their CPU assignments
+    cpu_manager_output = CatCpuManagerStateKeywords(node_ssh).get_cpu_manager_state()
+    cpu_manager_state = cpu_manager_output.get_cpu_manager_state_object()
+
+    # Step 4: Verify the pod UID exists in the CPU manager entries
+    # Entries look like: {"<pod-uid>": {"compute": "4,36"}, ...}
+    entries = cpu_manager_state.get_entries()
+    entries_keys = list(entries.keys())
+    validate_list_contains(pod_uid, entries_keys, f"VM {vm_name} should have dedicated CPU entry in CPU manager state")
+
+    # Step 5: Verify the "compute" container has dedicated CPUs assigned
+    # e.g., entries["ab12cd34-..."]["compute"] = "4,36" means CPUs 4 and 36 are pinned
+    dedicated_cpus = entries[pod_uid].get("compute", "")
+    validate_equals(bool(dedicated_cpus), True, f"VM {vm_name} should have dedicated CPUs assigned")
+
+    # Step 6: Parse the CPU range string and verify the count matches expected
+    # e.g., "4,36" -> [4, 36] -> len=2, "4-5,36-37" -> [4, 5, 36, 37] -> len=4
+    actual_count = len(cpu_manager_state.parse_cpu_range(dedicated_cpus))
+    validate_equals(actual_count, expected_cpu_count, f"VM {vm_name} CPU count (CPUs: {dedicated_cpus})")
+
+    get_logger().log_info(f"VM {vm_name} is correctly pinned to {actual_count} dedicated CPUs: {dedicated_cpus}")
 
 
 @mark.p1
@@ -1216,3 +1339,85 @@ def test_launch_vm_with_toleration(request: FixtureRequest):
 
     get_logger().log_test_case_step(f"Logging into VM {vm_name} via virtctl console")
     VirtctlKeywords(ssh_connection).login_to_vm(vm_name, "cirros", "gocubsgo")
+
+
+@mark.p1
+def test_launch_vm_with_two_cpu(request: FixtureRequest):
+    """
+    Test launching a VM with 2 dedicated CPUs using KubeVirt.
+
+    Enables the CPUManager feature gate via KubeVirt CR, ensures at least
+    one node has cpumanager=true, then deploys a VM with dedicatedCpuPlacement.
+    Verifies the VM reaches Running state, checks CPU count via lscpu inside
+    the VM, and verifies dedicated CPU pinning on the host.
+
+    Args:
+        request (FixtureRequest): Pytest fixture request for teardown registration.
+
+    Test Steps:
+        - Cleanup and setup kubevirt environment
+        - Create registry secret for image pulls
+        - Apply KubeVirt CR with CPUManager feature gate
+        - Verify cpumanager=true label on at least one node
+        - Deploy VM with 2 dedicated CPUs
+        - Verify VM reaches Running state
+        - Verify VMI is ready with IP assignment
+        - Verify CPU count via lscpu inside the VM
+        - Verify dedicated CPU pinning on the host
+    """
+    vm_name = "vm-cirros-2cpus"
+    vm_yaml_resource = "resources/cloud_platform/containers/kubevirt/cirros-vm-containerdisk-2-cores.yaml"
+    remote_yaml_path = f"{KUBEVIRT_VM_DIR}/cirros-vm-containerdisk-2-cores.yaml"
+    vm_namespace = "default"
+
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+
+    get_logger().log_setup_step("Cleanup kubevirt environment")
+    cleanup_kubevirt_environment(ssh_connection)
+
+    def cleanup():
+        get_logger().log_teardown_step(f"Deleting VM {vm_name}")
+        KubectlDeleteVmKeywords(ssh_connection).delete_vm(vm_name, ignore_not_found=True)
+
+        get_logger().log_teardown_step("Cleaning up remote VM directory")
+        FileKeywords(ssh_connection).delete_directory(KUBEVIRT_VM_DIR)
+
+        get_logger().log_teardown_step("Cleaning up kubevirt environment")
+        cleanup_kubevirt_environment(ssh_connection)
+
+    request.addfinalizer(cleanup)
+
+    get_logger().log_setup_step("Setting up kubevirt environment")
+    setup_kubevirt_environment(ssh_connection)
+
+    get_logger().log_setup_step("Creating registry secret for image pulls")
+    setup_registry_secret(ssh_connection, request, vm_namespace)
+
+    get_logger().log_test_case_step("Applying KubeVirt CR with feature gates")
+    override_helm_with_feature_gates(ssh_connection)
+
+    get_logger().log_test_case_step("Verifying cpumanager=true label on at least one node")
+    ensure_cpumanager_enabled(ssh_connection)
+
+    get_logger().log_test_case_step("Uploading VM YAML to remote host")
+    file_keywords = FileKeywords(ssh_connection)
+    file_keywords.create_directory(KUBEVIRT_VM_DIR)
+    file_keywords.upload_file(get_stx_resource_path(vm_yaml_resource), remote_yaml_path)
+
+    get_logger().log_test_case_step(f"Deploying VM {vm_name} with 2 dedicated CPUs")
+    KubectlFileApplyKeywords(ssh_connection).apply_resource_from_yaml(remote_yaml_path)
+
+    get_logger().log_test_case_step(f"Verifying VM {vm_name} reaches Running state")
+    kubectl_vm = KubectlGetVmKeywords(ssh_connection)
+    kubectl_vmi = KubectlGetVmiKeywords(ssh_connection)
+    kubectl_vm.wait_for_vm_status(vm_name, "Running", timeout=120)
+    kubectl_vmi.wait_for_vmi_status(vm_name, "Running", timeout=120)
+
+    get_logger().log_test_case_step(f"Verifying VMI {vm_name} is ready with IP assignment")
+    kubectl_vmi.wait_for_vmi_ready(vm_name, timeout=60)
+
+    get_logger().log_test_case_step(f"Verifying VM {vm_name} has 2 CPUs via console")
+    VirtctlKeywords(ssh_connection).check_vm_cpu_count(vm_name, expected_cpus=2)
+
+    get_logger().log_test_case_step(f"Verifying VM {vm_name} is using dedicated CPU placement")
+    verify_vm_dedicated_cpus(ssh_connection, vm_name, expected_cpu_count=2)

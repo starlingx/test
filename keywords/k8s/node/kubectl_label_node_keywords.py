@@ -37,3 +37,34 @@ class KubectlLabelNodeKeywords(K8sBaseKeyword):
         get_logger().log_info(f"Removing label {label_key} from node {node_name}")
         self.ssh_connection.send(self.k8s_config.export(f"kubectl label node {node_name} {label_key}-"))
         self.validate_success_return_code(self.ssh_connection)
+
+    def get_node_names_by_label(self, label_key: str, label_value: str) -> list[str]:
+        """
+        Get node names that have a specific label.
+
+        Example usage::
+
+            # Get all nodes with cpumanager=true
+            nodes = label_keywords.get_node_names_by_label("cpumanager", "true")
+            # Returns: ["compute-0", "compute-1"]
+
+            # No matching nodes
+            nodes = label_keywords.get_node_names_by_label("foo", "bar")
+            # Returns: []
+
+        Args:
+            label_key (str): Label key to filter by.
+            label_value (str): Label value to filter by.
+
+        Returns:
+            list[str]: List of node names matching the label.
+        """
+        # kubectl get nodes -l cpumanager=true -o jsonpath='{.items[*].metadata.name}'
+        # Output: "compute-0 compute-1" → split into ["compute-0", "compute-1"]
+        cmd = f"kubectl get nodes -l {label_key}={label_value} -o jsonpath='{{.items[*].metadata.name}}'"
+        output = self.ssh_connection.send(self.k8s_config.export(cmd))
+        self.validate_success_return_code(self.ssh_connection)
+        names_str = output[0].strip() if isinstance(output, list) and output else str(output).strip()
+        if not names_str:
+            return []
+        return names_str.split()

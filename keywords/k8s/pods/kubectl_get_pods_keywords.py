@@ -57,12 +57,11 @@ class KubectlGetPodsKeywords(K8sBaseKeyword):
         return pods_list_output
 
     def get_pods_no_validation(self, namespace: str = None) -> KubectlGetPodsOutput:
-        """
-        Get the k8s pods that are available using '-o wide'.
+        """Get the k8s pods that are available using '-o wide'.
 
         Args:
-            namespace (str, optional): The namespace to search for pods. If None, it will search in
-        all namespaces.
+            namespace (str, optional): The namespace to search for pods.
+                If None, it will search in all namespaces.
 
         Returns:
             KubectlGetPodsOutput: An object containing the parsed output of the command.
@@ -211,7 +210,7 @@ class KubectlGetPodsKeywords(K8sBaseKeyword):
         # Initialize pending pods - if no pod_names given, get all pods in namespace
         pending_pods = []
         if pod_names:
-            pending_pods = list(pod_names)        
+            pending_pods = list(pod_names)
 
         while time.time() < pod_status_timeout:
             if pod_names is None:
@@ -308,22 +307,19 @@ class KubectlGetPodsKeywords(K8sBaseKeyword):
         return self.wait_for_pod_max_age(pod_name="kube-apiserver-controller-0", max_age=3, namespace="kube-system", timeout=timeout)
 
     def wait_for_pods_to_be_deleted(self, namespace: str, poll_interval: int = 10, timeout: int = 180) -> None:
-        """Wait for a pods belongs to a namespace be delete
+        """Wait for all pods in a namespace to be deleted.
 
-        This function monitors pods in a given namespace and waits for them to be deleted
+        Monitors pods in a given namespace and waits for them to be deleted.
 
         Args:
             namespace (str): Kubernetes namespace to search in.
             poll_interval (int): Time in seconds between status checks. Defaults to 10.
-            timeout (int): Maximum time in seconds to waitaing the pods be deleted.
-            Defaults to 180.
-
-        Returns:
-            bool: True if all specified pods where deleted within timeout.
+            timeout (int): Maximum time in seconds to wait. Defaults to 180.
 
         Raises:
-            KeywordException: If pods still exist within timeout
+            TimeoutError: If pods still exist within timeout.
         """
+
         def is_name_space_pods_deleted() -> bool:
             output = self.ssh_connection.send(self.k8s_config.export(f"kubectl get pods -n {namespace}"))
             return f"No resources found in {namespace} namespace" in output[0]
@@ -336,3 +332,24 @@ class KubectlGetPodsKeywords(K8sBaseKeyword):
             polling_sleep_time=poll_interval,
         )
 
+    def get_pod_uid_by_label(self, label: str, namespace: str = "default") -> str:
+        """
+        Get the UID of a pod matching a label selector.
+
+        Args:
+            label (str): Label selector (e.g., 'kubevirt.io/vm=vm-cirros-2cpus').
+            namespace (str): Namespace to search in. Defaults to 'default'.
+
+        Returns:
+            str: The UID of the first matching pod.
+
+        Raises:
+            KeywordException: If no pod matches the label selector.
+        """
+        cmd = f"kubectl get pod -l {label} -n {namespace} -o jsonpath='{{.items[0].metadata.uid}}'"
+        output = self.ssh_connection.send(self.k8s_config.export(cmd))
+        self.validate_success_return_code(self.ssh_connection)
+        uid = output[0].strip() if isinstance(output, list) and output else str(output).strip()
+        if not uid:
+            raise KeywordException(f"No pod found matching label {label} in namespace {namespace}")
+        return uid

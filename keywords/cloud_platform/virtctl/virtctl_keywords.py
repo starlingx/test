@@ -1,8 +1,11 @@
 """Keywords for virtctl client operations."""
 
+import re
+
 from framework.logging.automation_logger import get_logger
 from framework.ssh.prompt_response import PromptResponse
 from framework.ssh.ssh_connection import SSHConnection
+from framework.validation.validation import validate_equals
 from keywords.base_keyword import BaseKeyword
 
 
@@ -99,3 +102,49 @@ class VirtctlKeywords(BaseKeyword):
         self._ssh_connection.send_expect_prompts(f"virtctl console {vm_name}{namespace_flag}", prompts)
         self.validate_success_return_code(self._ssh_connection)
         get_logger().log_info(f"VM {vm_name} console is accessible")
+
+    def check_vm_cpu_count(self, vm_name: str, expected_cpus: int, username: str = "cirros", password: str = "gocubsgo", namespace: str = "default") -> None:
+        """
+        Verify the VM has the expected number of CPUs via virtctl console.
+
+        Connects to the VM console, sends a newline to get the login prompt,
+        logs in with username/password, runs 'lscpu' to get the CPU count,
+        then exits and disconnects. Follows the same pattern as
+        login_to_vm_and_check_status_cirros in CGCSAuto.
+
+        Args:
+            vm_name (str): Name of the VM to check.
+            expected_cpus (int): Expected number of CPUs.
+            username (str): VM login username. Defaults to 'cirros'.
+            password (str): VM login password. Defaults to 'gocubsgo'.
+            namespace (str): Namespace of the VM. Defaults to 'default'.
+
+        Raises:
+            KeywordException: If the CPU count doesn't match or console fails.
+        """
+        get_logger().log_info(f"Checking CPU count for VM {vm_name}, expecting {expected_cpus}")
+
+        namespace_flag = f" -n {namespace}" if namespace != "default" else ""
+        prompts = [
+            PromptResponse(f"{vm_name}", ""),
+            PromptResponse("login:", username),
+            PromptResponse("assword:", password),
+            PromptResponse("$", "lscpu | grep 'CPU(s):'"),
+            PromptResponse("$", "exit"),
+            PromptResponse("login:", None),
+        ]
+
+        self._ssh_connection.send_expect_prompts(f"virtctl console {vm_name}{namespace_flag}", prompts)
+        self.validate_success_return_code(self._ssh_connection)
+
+        lscpu_output = prompts[4].get_complete_output()
+        get_logger().log_info(f"lscpu output: {lscpu_output}")
+
+        match = re.findall(r"CPU\(s\):\s+(\d+)", lscpu_output)
+        if match:
+            cpu_count = int(match[0])
+            validate_equals(cpu_count, expected_cpus, f"VM {vm_name} should have {expected_cpus} CPUs")
+            get_logger().log_info(f"VM {vm_name} has {cpu_count} CPUs as expected")
+        else:
+            get_logger().log_error(f"Could not parse lscpu output: {lscpu_output}")
+            validate_equals(0, expected_cpus, f"VM {vm_name} lscpu output could not be parsed")
