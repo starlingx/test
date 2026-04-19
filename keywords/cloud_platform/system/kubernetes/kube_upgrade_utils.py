@@ -47,3 +47,63 @@ def build_control_plane_batches(active_version: str, target_version: str, all_ve
     ordered_versions = [versions_by_minor[m] for m in sorted(versions_by_minor.keys())]
 
     return [ordered_versions[i : i + MAX_CONTROL_PLANE_SKEW] for i in range(0, len(ordered_versions), MAX_CONTROL_PLANE_SKEW)]
+
+
+def find_target_beyond_skew(active_version: str, available_versions: List[str]) -> str:
+    """Find the first available version that is more than 3 minor versions ahead.
+
+    Args:
+        active_version (str): Current active Kubernetes version.
+        available_versions (List[str]): Available versions from kube-version-list.
+
+    Returns:
+        str: A version that is 4+ minor versions ahead of active.
+
+    Raises:
+        ValueError: If no version beyond the skew limit is available.
+    """
+    active_minor = parse_minor_version(active_version)
+    for v in sorted(available_versions, key=parse_minor_version):
+        if parse_minor_version(v) - active_minor > MAX_CONTROL_PLANE_SKEW:
+            return v
+    raise ValueError(f"No available version is more than {MAX_CONTROL_PLANE_SKEW} minor versions " f"ahead of {active_version}. Available: {available_versions}")
+
+
+def find_target_at_least_two_ahead(active_version: str, available_versions: List[str]) -> str:
+    """Find the first available version that is at least 2 minor versions ahead.
+
+    Args:
+        active_version (str): Current active Kubernetes version.
+        available_versions (List[str]): Available versions from kube-version-list.
+
+    Returns:
+        str: A version that is 2+ minor versions ahead of active.
+
+    Raises:
+        ValueError: If no version at least 2 minor versions ahead is available.
+    """
+    active_minor = parse_minor_version(active_version)
+    for v in sorted(available_versions, key=parse_minor_version):
+        if parse_minor_version(v) - active_minor >= 2:
+            return v
+    raise ValueError(f"No available version is at least 2 minor versions ahead of " f"{active_version}. Available: {available_versions}")
+
+
+def find_version_one_before_target(target_version: str, all_versions: List[str]) -> str:
+    """Find the available version that is one minor version before the target.
+
+    Args:
+        target_version (str): Target Kubernetes version (e.g. 'v1.34.1').
+        all_versions (List[str]): All versions from kube-version-list.
+
+    Returns:
+        str: The version one minor version before target.
+
+    Raises:
+        ValueError: If no version one minor before target is found.
+    """
+    target_minor = parse_minor_version(target_version)
+    for v in all_versions:
+        if parse_minor_version(v) == target_minor - 1:
+            return v
+    raise ValueError(f"No version with minor {target_minor - 1} found. Available: {all_versions}")
