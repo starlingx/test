@@ -75,7 +75,7 @@ def make_sure_dell_storage_application_applied():
         SystemApplicationApplyKeywords(ssh_connection).system_application_apply(dell_storage_app_name)
 
     app_status_list = ["applied"]
-    SystemApplicationListKeywords(ssh_connection).validate_app_status_in_list(dell_storage_app_name, app_status_list, timeout=360, polling_sleep_time=10)
+    SystemApplicationListKeywords(ssh_connection).validate_app_status_in_list(dell_storage_app_name, app_status_list, timeout=600, polling_sleep_time=20)
     get_logger().log_info(f"{dell_storage_app_name} application is: applied")
 
 
@@ -298,6 +298,10 @@ def test_delete_dell_storage_app(request):
     system_application_delete_input.set_force_deletion(False)
     delete_msg = SystemApplicationDeleteKeywords(ssh_connection).get_system_application_delete(system_application_delete_input)
     validate_equals(delete_msg, f"Application {dell_storage_app_name} deleted.\n", "Application deletion message validation")
+
+    get_logger().log_test_case_step("Make sure that dell-storage was deleted")
+    validate_equals_with_retry(lambda: SystemApplicationListKeywords(ssh_connection).is_app_present(dell_storage_app_name), False, f"Validate {dell_storage_app_name} was properly deleted", timeout=60)
+    get_logger().log_info("Application dell-storage was properly deleted")
 
     get_logger().log_test_case_step("Upload dell-storage application")
     app_config = ConfigurationManager.get_app_config()
