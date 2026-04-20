@@ -498,14 +498,18 @@ class FileKeywords(BaseKeyword):
 
         return True
 
-    def copy_file(self, src_file: str, dest_file: str):
+    def copy_file(self, src_file: str, dest_file: str, sudo: bool = False):
         """Copies a file from the source path to the destination path.
 
         Args:
             src_file  (str): The source file path.
             dest_file (str): The destination file path.
+            sudo (bool): Whether to use sudo privileges. Defaults to False.
         """
-        self.ssh_connection.send(f"cp {src_file} {dest_file}")
+        if sudo:
+            self.ssh_connection.send_as_sudo(f"cp {src_file} {dest_file}")
+        else:
+            self.ssh_connection.send(f"cp {src_file} {dest_file}")
 
     def make_executable(self, file_path: str) -> None:
         """Make file executable.

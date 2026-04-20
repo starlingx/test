@@ -8,7 +8,7 @@ from framework.logging.automation_logger import get_logger
 from framework.validation.validation import validate_equals
 from keywords.bmc.ipmitool.chassis.bootdev.ipmitool_chassis_bootdev_keywords import IPMIToolChassisBootdevKeywords
 from keywords.cloud_platform.ansible_playbook.ansible_playbook_keywords import AnsiblePlaybookKeywords
-from keywords.cloud_platform.ansible_playbook.restore_files_upload_keywords import RestoreFilesUploadKeywords
+from keywords.cloud_platform.backup_restore.restore_files_upload_keywords import RestoreFilesUploadKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.cloud_platform.sw_patch.software_patch_keywords import SwPatchQueryKeywords
 from keywords.cloud_platform.system.host.system_host_list_keywords import SystemHostListKeywords
@@ -41,8 +41,12 @@ def test_restore():
     ssh_connection = LabConnectionKeywords().get_ssh_for_hostname("controller-0")
 
     get_logger().log_info("Copy backup files from local to target controller")
-    restore_file_status = RestoreFilesUploadKeywords(ssh_connection).restore_file(local_backup_folder_path, backup_dir)
+    restore_keywords = RestoreFilesUploadKeywords(ssh_connection)
+    restore_file_status = restore_keywords.restore_file(local_backup_folder_path, backup_dir)
     validate_equals(restore_file_status, True, "Backup file copy to controller")
+    
+    software_list_status = restore_keywords.upload_backup_software_info(local_backup_folder_path, backup_dir)
+    validate_equals(software_list_status, True, "Software info file copy to controller")
     get_logger().log_info("Backup file copy to controller completed successfully")
 
     time_kpi_restore = TimeKPI(time.time())
@@ -59,8 +63,8 @@ def test_restore():
 
     # Verify software state matches pre-backup state
     get_logger().log_info("Verifying software state post-restore")
-    pre_backup_content = FileKeywords(ssh_connection).read_file(f"{backup_dir}/pre_backup_software_list.txt")
-    pre_backup_list = [line.strip() for line in pre_backup_content if line.strip()]
+    pre_backup_content = FileKeywords(ssh_connection).read_file(f"{backup_dir}/backup_software_info.txt")
+    pre_backup_list = [line.strip() for line in pre_backup_content if line.strip() and line.strip() != "Backup Files:" and not line.strip().endswith(".tgz")]
 
     current_version = CloudPlatformVersionManager.get_sw_version()
     if current_version.is_after_or_equal_to(CloudPlatformSoftwareVersion.STARLINGX_10_0):
@@ -92,8 +96,12 @@ def test_restore_multi_host():
     ssh_connection = LabConnectionKeywords().get_ssh_for_hostname("controller-0")
 
     get_logger().log_info("Copy backup files from local to target controller")
-    restore_file_status = RestoreFilesUploadKeywords(ssh_connection).restore_file(local_backup_folder_path, backup_dir)
+    restore_keywords = RestoreFilesUploadKeywords(ssh_connection)
+    restore_file_status = restore_keywords.restore_file(local_backup_folder_path, backup_dir)
     validate_equals(restore_file_status, True, "Backup file copy to controller")
+    
+    software_list_status = restore_keywords.upload_backup_software_info(local_backup_folder_path, backup_dir)
+    validate_equals(software_list_status, True, "Software info file copy to controller")
     get_logger().log_info("Backup file copy to controller completed successfully")
 
     time_kpi_restore = TimeKPI(time.time())
@@ -146,8 +154,8 @@ def test_restore_multi_host():
 
     # Verify software state matches pre-backup state
     get_logger().log_info("Verifying software state post-restore")
-    pre_backup_content = FileKeywords(ssh_connection).read_file(f"{backup_dir}/pre_backup_software_list.txt")
-    pre_backup_list = [line.strip() for line in pre_backup_content if line.strip()]
+    pre_backup_content = FileKeywords(ssh_connection).read_file(f"{backup_dir}/backup_software_info.txt")
+    pre_backup_list = [line.strip() for line in pre_backup_content if line.strip() and line.strip() != "Backup Files:" and not line.strip().endswith(".tgz")]
 
     current_version = CloudPlatformVersionManager.get_sw_version()
     if current_version.is_after_or_equal_to(CloudPlatformSoftwareVersion.STARLINGX_10_0):
