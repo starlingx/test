@@ -1,10 +1,11 @@
 import threading
+from typing import Optional
+
+from sshtunnel import SSHTunnelForwarder
 
 from config.host.objects.host_configuration import HostConfiguration
 from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_tunnel_info import SSHTunnelInfo
-from sshtunnel import SSHTunnelForwarder
-from typing import Optional
 
 
 class SSHTunnel:
@@ -41,7 +42,7 @@ class SSHTunnel:
     def __exit__(self, exc_type, exc_val, exc_tb):
         """Context manager exit: close the tunnel."""
         self.close()
-        return False    # Do not suppress exceptions
+        return False  # Do not suppress exceptions
 
     def get_tunnel_info(self) -> SSHTunnelInfo:
         """Getter for tunnel_info"""
@@ -82,7 +83,9 @@ class SSHTunnel:
 
     def create_tunnel(self) -> bool:
         """Create an SSH tunnel (port forwarding) from local to remote.
-        Returns: True if successful, False otherwise.
+
+        Returns:
+            bool: True if successful, False otherwise.
         """
         with self._lock:
             if not self._create_jump_box_tunnel():

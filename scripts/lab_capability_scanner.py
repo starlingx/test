@@ -81,10 +81,20 @@ def find_capabilities(lab_config: LabConfig) -> list[str]:
     nodes = scan_hosts(lab_config, ssh_connection)
     lab_config.set_nodes(nodes)
 
+
 def query_if_lab_is_virtual(ssh_connection: SSHConnection) -> bool:
+    """Query whether the lab is virtual using facter.
+
+    Args:
+        ssh_connection (SSHConnection): The SSH connection to the host.
+
+    Returns:
+        bool: True if the lab is virtual, False otherwise.
+    """
     output = ssh_connection.send("facter is_virtual").strip()
     is_virtual = bool(output.lower() == "true")
     return is_virtual
+
 
 def find_secondary_controller_capabilities(lab_config: LabConfig):
     """Find secondary system controller capabilities from given lab.

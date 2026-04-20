@@ -211,7 +211,7 @@ class LabConfig:
             lab_node_name (str): The name of the lab node ex. Controller-0
 
         Returns:
-            Node: The lab node with the given name
+            Optional[Node]: The lab node with the given name, or None if not found.
         """
         for node in self.nodes:
             if node.get_name() == lab_node_name:
@@ -344,13 +344,12 @@ class LabConfig:
         """
         return self.jump_server_config
 
-    def get_ssh_port(self,
-                     lab_node_name: Optional[str] = None) -> int:
+    def get_ssh_port(self, lab_node_name: Optional[str] = None) -> int:
         """
         Getter for the SSH port.
 
         Args:
-            lab_node_name (str): The name of the lab node ex. Controller-0
+            lab_node_name (Optional[str]): The name of the lab node ex. Controller-0
 
         Returns:
             int: The SSH port number

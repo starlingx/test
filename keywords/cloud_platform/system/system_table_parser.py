@@ -25,16 +25,41 @@ class SystemTableParser:
     def __init__(self, system_output):
         self.system_output = system_output
 
-    def get_output_values_list(self):
-        """
-        Getter for output values list
-        Returns: the output values list
+    def get_output_values_list(self) -> list[dict[str, str]]:
+        """Getter for output values list.
 
-        """
+        Returns:
+            list[dict[str, str]]: the output values list
 
-        headers = []
-        output_values_list = []
-        last_output_value = None
+        Sample Output:
+            t[0][n] => row '0' column 'n'  => header[n]
+            t[1][n] => row '1' column 'n'  => row[1]column[n]
+
+            {
+                header[0]: row[1]column[0]
+                header[1]: row[1]column[1]
+                ...
+                header[n]: row[1]column[n]
+            }
+            ->
+            {
+                header[0]: row[2]column[0]
+                header[1]: row[2]column[1]
+                ...
+                header[n]: row[2]column[n]
+            }
+            ...
+            ->
+            {
+                header[0]: row[m]column[0]
+                header[1]: row[m]column[1]
+                ...
+                header[n]: row[m]column[n]
+            }
+        """
+        headers: list[str] = []
+        output_values_list: list[dict[str, str]] = []
+        last_output_value: dict[str, str] = {}
 
         is_in_headers_block = False
         is_in_content_block = False
@@ -47,26 +72,26 @@ class SystemTableParser:
                 continue
 
             # We have hit a separator which enters Headers, Content, or Ends the table
-            if line.__contains__('+--'):
+            if line.__contains__("+--"):
 
                 # Find out in which part of the table we are, based on the "+----" separator.
-                if not is_in_headers_block and not is_in_content_block: # First separator -> Enter Headers
+                if not is_in_headers_block and not is_in_content_block:  # First separator -> Enter Headers
                     is_in_headers_block = True
                     is_in_content_block = False
-                    number_of_columns = line.count('+') - 1
+                    number_of_columns = line.count("+") - 1
                     headers = [""] * number_of_columns
-                    continue # This is a separator line, don't try to parse anything.
-                elif is_in_headers_block and not is_in_content_block: # Second separator -> Go to Content
+                    continue  # This is a separator line, don't try to parse anything.
+                elif is_in_headers_block and not is_in_content_block:  # Second separator -> Go to Content
                     is_in_headers_block = False
                     is_in_content_block = True
-                    continue # This is a separator line, don't try to parse anything.
-                else: # Last separator -> The table is complete
+                    continue  # This is a separator line, don't try to parse anything.
+                else:  # Last separator -> The table is complete
                     is_in_headers_block = False
                     is_in_content_block = False
 
             # Build the list of headers, which could be multi-lined.
             if is_in_headers_block:
-                headers_line = line.split('|')[1:-1]
+                headers_line = line.split("|")[1:-1]
                 if len(headers_line) != number_of_columns:
                     get_logger().log_error(f"Number of headers should be {number_of_columns} based on the number of '+' but the number of values was {len(headers_line)}.")
                     raise KeywordException("Number of headers and + separator do not match expected value")
@@ -76,7 +101,7 @@ class SystemTableParser:
 
             # Build the list of values, which could be multi-lined.
             if is_in_content_block:
-                values_line = line.split('|')[1:-1]
+                values_line = line.split("|")[1:-1]
                 if len(values_line) != number_of_columns:
                     get_logger().log_error(f"Number of values should be {number_of_columns} based on the number of '+' but the number of values was {len(values_line)}.")
                     raise KeywordException("Number of headers and values do not match expected value")
@@ -90,7 +115,7 @@ class SystemTableParser:
                         last_output_value[headers[i]] = values_line[i].strip()
                     output_values_list.append(last_output_value)
 
-                else: # Otherwise, this is the continuation of the previous line.
+                else:  # Otherwise, this is the continuation of the previous line.
                     for i in range(number_of_columns):
                         last_output_value[headers[i]] += values_line[i].strip()
 
