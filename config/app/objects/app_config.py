@@ -17,6 +17,9 @@ class AppConfig:
         self.base_application_path = app_dict["base_application_path"]
         self.platform_integ_app_tarball = app_dict["platform_integ_app_tarball"]
         self.metrics_server_app_tarball = app_dict["metrics_server_app_tarball"]
+        self.metrics_server_app_tarball_n2 = "fake_path"
+        if "metrics_server_app_tarball_n2" in app_dict:
+            self.metrics_server_app_tarball_n2 = app_dict["metrics_server_app_tarball_n2"]
 
         self.istio_app_name = "istio"
         if "istio_app_name" in app_dict:
@@ -69,6 +72,7 @@ class AppConfig:
         self.rook_ceph_app_tarball = "fake_path"
         if "rook_ceph_app_tarball" in app_dict:
             self.rook_ceph_app_tarball = app_dict["rook_ceph_app_tarball"]
+
 
     def get_base_application_path(self) -> str:
         """
@@ -189,6 +193,16 @@ class AppConfig:
 
         """
         return self.metrics_server_app_tarball
+
+    def get_metrics_server_app_tarball_n2(self) -> str:
+        """
+        Getter for metrics server N-2 app tarball
+
+        Returns:
+            str: the metrics server N-2 app tarball path
+
+        """
+        return self.metrics_server_app_tarball_n2
 
     def get_sriov_fec_operator_app_name(self) -> str:
         """
