@@ -52,6 +52,37 @@ class HostProfileYamlKeywords:
         self.write_yaml(list(list_doc), local_filename)
         self.upload_file(local_filename, remote_filename)
 
+    def edit_yaml_host_interface_mtu(self, interface_name: str, mtu: int, remote_filename: str):
+        """Edit the MTU of an ethernet interface in the Host kind overrides section.
+
+        Args:
+            interface_name (str): Name of the ethernet interface to modify.
+            mtu (int): New MTU value to set.
+            remote_filename (str): Path to the remote deployment config YAML file.
+        """
+        local_filename = self.download_file(remote_filename)
+        with open(local_filename) as stream:
+            list_doc = list(yaml.safe_load_all(stream))
+
+        for document in list_doc:
+            if not isinstance(document, dict):
+                continue
+            if document.get("kind") != "Host":
+                continue
+            try:
+                ethernet_list = document["spec"]["overrides"]["interfaces"]["ethernet"]
+                for iface in ethernet_list:
+                    if iface.get("name") == interface_name:
+                        iface["mtu"] = mtu
+            except (KeyError, TypeError):
+                pass
+
+        if "status" not in list_doc[-1].keys():
+            list_doc[-1]["status"] = {"deploymentScope": "principal"}
+
+        self.write_yaml(list(list_doc), local_filename)
+        self.upload_file(local_filename, remote_filename)
+
     def write_yaml(self, yaml_data: list, output_filename: str):
         """Writes the received data to a yaml file.
 
