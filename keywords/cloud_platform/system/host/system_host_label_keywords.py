@@ -76,18 +76,19 @@ class SystemHostLabelKeywords(BaseKeyword):
 
         return output
 
-    def lock_host_assign_labels_and_unlock(self, host_name: str, labels: List[str]) -> None:
+    def lock_host_assign_labels_and_unlock(self, host_name: str, labels: List[str], overwrite: bool = True) -> None:
         """
         Locks the host, assigns the given labels, and unlocks the host.
         Args:
             host_name: The name of the host.
             labels: List of label_key=label_value strings
+            overwrite: If True, overwrites existing labels. Defaults to True.
 
         """
         lock_keywords = SystemHostLockKeywords(self.ssh_connection)
         lock_keywords.lock_host(host_name)
         labels_str = ' '.join(labels)
-        self.system_host_label_assign(host_name, labels_str)
+        self.system_host_label_assign(host_name, labels_str, overwrite=overwrite)
         lock_keywords.unlock_host(host_name)
 
     def lock_host_remove_labels_and_unlock(self, host_name: str, labels: List[str]) -> None:
