@@ -1,0 +1,8 @@
+apiVersion: snapshot.storage.k8s.io/v1
+kind: VolumeSnapshot
+metadata:
+  name: netapp-pvc-snapshot
+spec:
+  volumeSnapshotClassName: csi-snapshot
+  source:
+    persistentVolumeClaimName: basic
