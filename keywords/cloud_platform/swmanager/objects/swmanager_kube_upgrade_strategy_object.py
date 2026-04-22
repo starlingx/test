@@ -20,6 +20,10 @@ class SwManagerKubeUpgradeStrategyObject:
         self.current_phase_completion: Optional[str] = None
         self.state: Optional[str] = None
         self.inprogress: Optional[str] = None
+        self.apply_result: Optional[str] = None
+        self.apply_reason: Optional[str] = None
+        self.abort_result: Optional[str] = None
+        self.abort_reason: Optional[str] = None
 
     def set_strategy_uuid(self, strategy_uuid: str) -> None:
         """Sets the strategy_uuid of the kube-upgrade-strategy."""
@@ -116,6 +120,38 @@ class SwManagerKubeUpgradeStrategyObject:
     def get_inprogress(self) -> Optional[str]:
         """Gets the inprogress of the kube-upgrade-strategy."""
         return self.inprogress
+
+    def set_apply_result(self, apply_result: str) -> None:
+        """Sets the apply_result of the kube-upgrade-strategy."""
+        self.apply_result = apply_result
+
+    def get_apply_result(self) -> Optional[str]:
+        """Gets the apply_result of the kube-upgrade-strategy."""
+        return self.apply_result
+
+    def set_apply_reason(self, apply_reason: str) -> None:
+        """Sets the apply_reason of the kube-upgrade-strategy."""
+        self.apply_reason = apply_reason
+
+    def get_apply_reason(self) -> Optional[str]:
+        """Gets the apply_reason of the kube-upgrade-strategy."""
+        return self.apply_reason
+
+    def set_abort_result(self, abort_result: str) -> None:
+        """Sets the abort_result of the kube-upgrade-strategy."""
+        self.abort_result = abort_result
+
+    def get_abort_result(self) -> Optional[str]:
+        """Gets the abort_result of the kube-upgrade-strategy."""
+        return self.abort_result
+
+    def set_abort_reason(self, abort_reason: str) -> None:
+        """Sets the abort_reason of the kube-upgrade-strategy."""
+        self.abort_reason = abort_reason
+
+    def get_abort_reason(self) -> Optional[str]:
+        """Gets the abort_reason of the kube-upgrade-strategy."""
+        return self.abort_reason
 
     def get_current_phase_completion_percentage(self) -> Optional[int]:
         """Get the current phase completion percentage.

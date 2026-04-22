@@ -65,3 +65,36 @@ class KubeHostUpgradeListKeywords(BaseKeyword):
             polling_sleep_time,
             failure_statuses,
         )
+
+    def wait_for_host_control_plane_version(
+        self,
+        hostname: str,
+        expected_version: str,
+        timeout: int = 600,
+        polling_sleep_time: int = 10,
+    ) -> None:
+        """Waits for a host's control plane version to reach the expected value.
+
+        Polls 'system kube-host-upgrade-list' until the control plane version
+        of the specified host matches expected_version, or raises on timeout.
+
+        Args:
+            hostname (str): Hostname to monitor.
+            expected_version (str): Control plane version to wait for.
+            timeout (int): Maximum wait time in seconds.
+            polling_sleep_time (int): Seconds between polls.
+
+        Raises:
+            TimeoutError: If expected version is not reached within timeout.
+        """
+
+        def get_host_control_plane_version() -> str:
+            return self.kube_host_upgrade_list().get_host_upgrade_by_hostname(hostname).get_control_plane_version()
+
+        validate_equals_with_retry(
+            get_host_control_plane_version,
+            expected_version,
+            f"Host '{hostname}' control plane version is '{expected_version}'",
+            timeout,
+            polling_sleep_time,
+        )

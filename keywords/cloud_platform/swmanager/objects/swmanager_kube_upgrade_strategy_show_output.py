@@ -40,6 +40,10 @@ class SwManagerKubeUpgradeStrategyShowOutput:
         self.swmanager_kube_upgrade_strategy.set_current_phase_completion(kube_upgrade_strat.get("current-phase-completion"))
         self.swmanager_kube_upgrade_strategy.set_state(kube_upgrade_strat.get("state"))
         self.swmanager_kube_upgrade_strategy.set_inprogress(kube_upgrade_strat.get("inprogress"))
+        self.swmanager_kube_upgrade_strategy.set_apply_result(kube_upgrade_strat.get("apply-result"))
+        self.swmanager_kube_upgrade_strategy.set_apply_reason(kube_upgrade_strat.get("apply-reason"))
+        self.swmanager_kube_upgrade_strategy.set_abort_result(kube_upgrade_strat.get("abort-result"))
+        self.swmanager_kube_upgrade_strategy.set_abort_reason(kube_upgrade_strat.get("abort-reason"))
 
     def get_swmanager_kube_upgrade_strategy_show(self) -> SwManagerKubeUpgradeStrategyObject:
         """

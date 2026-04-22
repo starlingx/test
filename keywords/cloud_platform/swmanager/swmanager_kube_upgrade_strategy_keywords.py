@@ -60,6 +60,13 @@ class SwManagerKubeUpgradeStrategyKeywords(BaseKeyword):
         # Wait for strategy to complete
         return self.wait_for_applied(timeout=timeout)
 
+    def apply_kube_upgrade_strategy_without_waiting(self) -> None:
+        """Apply the Kubernetes upgrade strategy without waiting for completion."""
+        get_logger().log_info("Applying Kubernetes upgrade strategy (non-blocking)")
+        command = source_openrc("sw-manager kube-upgrade-strategy apply")
+        self.ssh_connection.send(command)
+        self.validate_success_return_code(self.ssh_connection)
+
     def abort_kube_upgrade_strategy(self) -> SwManagerKubeUpgradeStrategyObject:
         """Abort the Kubernetes upgrade strategy.
 
@@ -279,3 +286,24 @@ class SwManagerKubeUpgradeStrategyKeywords(BaseKeyword):
         validate_equals_with_retry(function_to_execute=check_aborted, expected_value=True, validation_description="Waiting for kube-upgrade-strategy to be aborted", timeout=timeout, polling_sleep_time=10)
 
         return self.show_kube_upgrade_strategy().get_swmanager_kube_upgrade_strategy_show()
+
+    def wait_for_kube_upgrade_step(self, target_state: str, timeout: int = 600) -> None:
+        """Wait for the current step of the kube-upgrade-strategy to reach the target state.
+
+        Args:
+            target_state (str): The current-step value to wait for (e.g. 'kube-host-upgrade-control-plane').
+            timeout (int): Maximum wait time in seconds.
+        """
+
+        def check_step() -> bool:
+            try:
+                strategy_output = self.show_kube_upgrade_strategy()
+                strategy_obj = strategy_output.get_swmanager_kube_upgrade_strategy_show()
+                current_step = strategy_obj.get_current_step()
+                get_logger().log_info(f"Current step: {current_step}, waiting for: {target_state}")
+                return current_step is not None and target_state in current_step
+            except ConnectionRefusedError:
+                get_logger().log_info("sw-manager service temporarily unavailable, retrying")
+                return False
+
+        validate_equals_with_retry(function_to_execute=check_step, expected_value=True, validation_description=f"Waiting for kube-upgrade-strategy step to reach {target_state}", timeout=timeout, polling_sleep_time=10)

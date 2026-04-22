@@ -86,6 +86,29 @@ class AlarmListKeywords(BaseKeyword):
         alarm_ids = ", ".join([alarm.get_alarm_id() for alarm in alarms])
         raise TimeoutError(f"The alarms with the following IDs: {alarm_ids} could not be cleared within {self.get_timeout_in_seconds()} seconds.")
 
+    def wait_for_all_alarms_cleared_excluding(self, excluded_alarm_ids: list[str]) -> None:
+        """Wait for all alarms to be cleared except those with IDs in the exclusion list.
+
+        Args:
+            excluded_alarm_ids (list[str]): Alarm IDs to ignore (e.g. ['900.007']).
+
+        Raises:
+            TimeoutError: If non-excluded alarms are not cleared within the timeout.
+        """
+        now = time.time()
+        end_time = now + self.get_timeout_in_seconds()
+        while now < end_time:
+            alarms = [a for a in self.alarm_list() if a.get_alarm_id() not in excluded_alarm_ids]
+            if not alarms:
+                get_logger().log_info(f"All alarms cleared (excluding {excluded_alarm_ids}).")
+                return
+            alarm_ids = ", ".join([a.get_alarm_id() for a in alarms])
+            get_logger().log_info(f"Active alarms (excluding {excluded_alarm_ids}): {alarm_ids}. Remaining time: {(end_time - now):.3f}s.")
+            time.sleep(self.get_check_interval_in_seconds())
+            now = time.time()
+        alarm_ids = ", ".join([a.get_alarm_id() for a in alarms])
+        raise TimeoutError(f"Alarms {alarm_ids} not cleared within {self.get_timeout_in_seconds()}s.")
+
     def wait_for_alarms_cleared(self, alarms: list[AlarmListObject]) -> None:
         """
         Wait for alarms be cleared
