@@ -1,3 +1,4 @@
+from framework.exceptions.validation_failure_error import ValidationFailureError
 from framework.ssh.ssh_connection import SSHConnection
 from framework.validation.validation import validate_equals_with_retry
 from keywords.base_keyword import BaseKeyword
@@ -19,29 +20,38 @@ class DcmanagerSubcloudPrestage(BaseKeyword):
         """
         self.ssh_connection = ssh_connection
 
-    def dcmanager_subcloud_prestage(self, subcloud_name: str, syspass: str, for_sw_deploy: bool = False, wait_completion: bool = True) -> None:
+    def dcmanager_subcloud_prestage(self, subcloud_name: str, syspass: str, release: str = None, for_sw_deploy: bool = False, wait_completion: bool = True) -> bool:
         """
         Runs dcmanager subcloud prestage command.
 
         Args:
             subcloud_name (str): The name of the subcloud to check.
             syspass (str): The sysadmin password to be passed to the command.
+            release (str): Release to use for prestage.
             for_sw_deploy (bool): whether to enable --for-sw-deploy flag.
             wait_completion (bool): whether to wait for prestage to complete
+        Returns:
+            bool: If prestage succeeded.
 
         """
-        cmd_options = "--for-sw-deploy" if for_sw_deploy else ""
+        cmd_options = f"--release {release}" if release else ""
+        cmd_options += " --for-sw-deploy" if for_sw_deploy else ""
         command = source_openrc(f"dcmanager subcloud prestage {cmd_options} {subcloud_name}" f" --sysadmin-password {syspass}")
 
         self.ssh_connection.send(command)
         self.validate_success_return_code(self.ssh_connection)
 
-        # Wait for the subcloud to acheive 'prestaging-packages' status
-        self.wait_for_prestage(prestaging_packages=True, subcloud=subcloud_name, check_interval=2, timeout=10)
+        try:
+            # Wait for the subcloud to acheive 'prestaging-packages' status
+            self.wait_for_prestage(prestaging_packages=True, subcloud=subcloud_name, check_interval=2, timeout=10)
 
-        if wait_completion:
-            # Wait for the subcloud to complete prestage operation
-            self.wait_for_prestage(subcloud=subcloud_name)
+            if wait_completion:
+                # Wait for the subcloud to complete prestage operation
+                self.wait_for_prestage(subcloud=subcloud_name)
+
+            return True
+        except ValidationFailureError:
+            return False
 
     def wait_for_prestage(
         self,
