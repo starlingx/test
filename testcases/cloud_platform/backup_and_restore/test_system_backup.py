@@ -33,7 +33,8 @@ def test_backup():
     """
     lab_type = ConfigurationManager.get_lab_config().get_lab_type()
     backup_dir = "/opt/backups"
-    local_backup_folder_path = f"/tmp/bnr/{lab_type}"
+    bnr_base_path = ConfigurationManager.get_backup_restore_config().get_local_backup_base_path()
+    local_backup_folder_path = f"{bnr_base_path}/{lab_type}"
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
 
     # Capture the state of software releases (or patches for older versions) before backup

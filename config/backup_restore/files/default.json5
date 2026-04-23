@@ -1,0 +1,5 @@
+{
+  // Base path for storing backup files locally.
+  // Override this with a shared path when backup and restore
+  "local_backup_base_path": "/tmp/bnr"
+}

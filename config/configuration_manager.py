@@ -1,4 +1,5 @@
 from config.app.objects.app_config import AppConfig
+from config.backup_restore.objects.backup_restore_config import BackupRestoreConfig
 from config.configuration_file_locations_manager import ConfigurationFileLocationsManager
 from config.database.objects.database_config import DatabaseConfig
 from config.deployment_assets.objects.deployment_assets_config import DeploymentAssetsConfig
@@ -42,6 +43,7 @@ class ConfigurationManagerClass:
         self.openstack_config: OpenstackConfig = None
         self.storage_config: StorageConfig = None
         self.kof_config: KofConfig = None
+        self.backup_restore_config: BackupRestoreConfig = None
 
     def is_config_loaded(self) -> bool:
         """
@@ -132,6 +134,10 @@ class ConfigurationManagerClass:
         if not kof_config_file:
             kof_config_file = get_stx_resource_path("config/kof/files/default.json5")
 
+        backup_restore_config_file = config_file_locations.get_backup_restore_config_file()
+        if not backup_restore_config_file:
+            backup_restore_config_file = get_stx_resource_path("config/backup_restore/files/default.json5")
+
         if not self.loaded:
             try:
                 self.lab_config = LabConfig(lab_config_file)
@@ -150,6 +156,7 @@ class ConfigurationManagerClass:
                 self.openstack_config = OpenstackConfig(openstack_config_file)
                 self.storage_config = StorageConfig(storage_config_file)
                 self.kof_config = KofConfig(kof_config_file)
+                self.backup_restore_config = BackupRestoreConfig(backup_restore_config_file)
                 self.loaded = True
             except FileNotFoundError as e:
                 print(f"Unable to load the config using file: {str(e.filename)} ")
@@ -313,6 +320,16 @@ class ConfigurationManagerClass:
         """
         return self.kof_config
 
+    def get_backup_restore_config(self) -> BackupRestoreConfig:
+        """
+        Getter for backup restore config
+
+        Returns:
+            BackupRestoreConfig: the backup restore config
+
+        """
+        return self.backup_restore_config
+
     def get_config_pytest_args(self) -> [str]:
         """
         Returns the configuration file locations as pytest args.
@@ -354,6 +371,8 @@ class ConfigurationManagerClass:
             pytest_config_args.append(f"--storage_config_file={self.configuration_locations_manager.get_storage_config_file()}")
         if self.configuration_locations_manager.kof_config_file:
             pytest_config_args.append(f"--kof_config_file={self.configuration_locations_manager.get_kof_config_file()}")
+        if self.configuration_locations_manager.backup_restore_config_file:
+            pytest_config_args.append(f"--backup_restore_config_file={self.configuration_locations_manager.get_backup_restore_config_file()}")
 
         return pytest_config_args
 
