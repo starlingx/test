@@ -22,6 +22,7 @@ from keywords.cloud_platform.system.application.system_application_upload_keywor
 from keywords.cloud_platform.system.host.system_host_list_keywords import SystemHostListKeywords
 from keywords.cloud_platform.system.host.system_host_lock_keywords import SystemHostLockKeywords
 from keywords.cloud_platform.system.host.system_host_power_keywords import SystemHostPowerKeywords
+from keywords.cloud_platform.system.host.system_host_stor_keywords import SystemHostStorageKeywords
 from keywords.files.file_keywords import FileKeywords
 from keywords.linux.mount.mount_keywords import MountKeywords
 
@@ -471,4 +472,74 @@ def test_rook_ceph_abort_during_remove(request: FixtureRequest):
     system_app_apply_keywords.system_application_apply(rook_ceph_name, timeout=1500, polling_sleep_time=10)
 
     get_logger().log_test_case_step("Check rook-ceph health after re-apply.")
+    ceph_status_keywords.wait_for_ceph_health_status(expect_health_status=True)
+
+
+@mark.p2
+@mark.lab_has_rook_ceph
+@mark.lab_has_min_3_osd
+def test_rook_ceph_add_remove_one_osd(request: FixtureRequest):
+    """
+    Test case: Add and remove 1 OSD, checking rook-ceph health.
+
+    Iterates through hosts starting from controller-0, then controller-1, and so on
+    until finding a host with an available disk. Adds an OSD on that disk, applies
+    rook-ceph, verifies health, then removes the OSD, applies rook-ceph again, and
+    verifies health is restored.
+
+    Test Steps:
+        - Check ceph health is HEALTH_OK
+        - Record initial OSD count
+        - Find a host with an available disk (tries all hosts in order)
+        - Add OSD and apply rook-ceph
+        - Verify OSD count increased by 1 and ceph health is HEALTH_OK
+        - Delete the newly added OSD and apply rook-ceph
+        - Verify OSD count is back to original and ceph health is HEALTH_OK
+
+    Args:
+        request (FixtureRequest): pytest request fixture for test setup and teardown
+    """
+    active_ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    rook_ceph_name = setup(request, active_ssh_connection)
+    ceph_status_keywords = CephStatusKeywords(active_ssh_connection)
+    host_stor_keywords = SystemHostStorageKeywords(active_ssh_connection)
+    host_list_keywords = SystemHostListKeywords(active_ssh_connection)
+
+    get_logger().log_test_case_step("Check rook-ceph health before adding OSD.")
+    ceph_status_keywords.wait_for_ceph_health_status(expect_health_status=True)
+
+    get_logger().log_test_case_step("Record initial OSD count.")
+    all_hostnames = host_list_keywords.get_system_host_list().get_host_names()
+    initial_osd_count = sum(host_stor_keywords.get_system_host_stor_list(h).get_osd_storage_count() for h in all_hostnames)
+    get_logger().log_info(f"Initial OSD count: {initial_osd_count}")
+
+    get_logger().log_test_case_step("Find a host with an available disk and add OSD.")
+    target_hostname, added_osd_uuid = host_stor_keywords.find_and_add_osd(all_hostnames)
+    get_logger().log_info(f"Added OSD {added_osd_uuid} on {target_hostname}.")
+
+    def cleanup():
+        get_logger().log_teardown_step("Ensure added OSD is removed if still present.")
+        current_osd_uuids = host_stor_keywords.get_system_host_stor_list(target_hostname).get_all_osd_uuids()
+        if added_osd_uuid in current_osd_uuids:
+            host_stor_keywords.system_host_stor_delete(added_osd_uuid)
+            SystemApplicationApplyKeywords(active_ssh_connection).system_application_apply_with_retry(rook_ceph_name)
+        ceph_status_keywords.wait_for_ceph_health_status(expect_health_status=True)
+
+    request.addfinalizer(cleanup)
+
+    get_logger().log_test_case_step(f"Apply rook-ceph after adding OSD on {target_hostname}.")
+    SystemApplicationApplyKeywords(active_ssh_connection).system_application_apply_with_retry(rook_ceph_name)
+
+    get_logger().log_test_case_step("Verify OSD count increased by 1 and ceph health is OK after adding OSD.")
+    osd_count_after_add = sum(host_stor_keywords.get_system_host_stor_list(h).get_osd_storage_count() for h in all_hostnames)
+    validate_equals(osd_count_after_add, initial_osd_count + 1, "OSD count should have increased by 1.")
+    ceph_status_keywords.wait_for_ceph_health_status(expect_health_status=True)
+
+    get_logger().log_test_case_step(f"Delete OSD {added_osd_uuid} and apply rook-ceph.")
+    host_stor_keywords.system_host_stor_delete(added_osd_uuid)
+    SystemApplicationApplyKeywords(active_ssh_connection).system_application_apply_with_retry(rook_ceph_name)
+
+    get_logger().log_test_case_step("Verify OSD count is back to original and ceph health is OK after removing OSD.")
+    osd_count_after_remove = sum(host_stor_keywords.get_system_host_stor_list(h).get_osd_storage_count() for h in all_hostnames)
+    validate_equals(osd_count_after_remove, initial_osd_count, "OSD count should be back to original.")
     ceph_status_keywords.wait_for_ceph_health_status(expect_health_status=True)

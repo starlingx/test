@@ -3,22 +3,27 @@ from typing import Union
 from framework.rest.rest_response import RestResponse
 from keywords.cloud_platform.system.host.objects.system_host_stor_object import SystemHostStorageObject
 from keywords.cloud_platform.system.system_table_parser import SystemTableParser
+from keywords.cloud_platform.system.system_vertical_table_parser import SystemVerticalTableParser
 
 
 class SystemHostStorageOutput:
     """
-    This class parses the output of 'system host-stor-list' commands into a list of SystemHostStorageObject.
+    Parse the output of host storage commands.
+
+    This class parses the output of 'system host-stor-list' and 'system host-stor-add' commands
+    into a list of SystemHostStorageObject.
     """
 
-    def __init__(self, system_host_stor_output: Union[str, RestResponse]) -> None:
+    def __init__(self, system_host_stor_output: Union[str, RestResponse], is_vertical_table: bool = False) -> None:
         """
         Constructor for SystemHostStorageOutput.
 
         Args:
             system_host_stor_output (Union[str, RestResponse]):
                 Either:
-                - A raw string output from the `system host-stor-list` command.
+                - A raw string output from the `system host-stor-list` or `system host-stor-add` command.
                 - A `RestResponse` object containing the storage list in JSON/dict format.
+            is_vertical_table (bool): If True, parses the output as a vertical table (single item).
         """
         self.system_host_storages: list[SystemHostStorageObject] = []
 
@@ -28,6 +33,9 @@ class SystemHostStorageOutput:
                 storages = json_object["istors"]
             else:
                 storages = [json_object]
+        elif is_vertical_table:
+            parsed = SystemVerticalTableParser(system_host_stor_output).get_output_values_dict()
+            storages = [parsed]
         else:
             system_table_parser = SystemTableParser(system_host_stor_output)
             storages = system_table_parser.get_output_values_list()

@@ -1,5 +1,6 @@
 from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
+from framework.validation.validation import validate_equals_with_retry
 from keywords.base_keyword import BaseKeyword
 from keywords.cloud_platform.command_wrappers import source_openrc
 from keywords.cloud_platform.system.application.object.system_application_output import SystemApplicationOutput
@@ -54,6 +55,43 @@ class SystemApplicationApplyKeywords(BaseKeyword):
             system_application_output.get_system_application_object().set_status("applied")
 
         return system_application_output
+
+    def system_application_apply_with_retry(self, app_name: str, timeout: int = 1800, retry_interval: int = 30) -> None:
+        """
+        Apply an application, retrying if the command is rejected.
+
+        Handles the case where 'system application-apply' is rejected with
+        "Long running operations are in progress" by retrying until accepted.
+        Once accepted, waits for the apply to complete with fail-fast on 'apply-failed'.
+
+        Args:
+            app_name (str): The application name.
+            timeout (int): Total timeout in seconds.
+            retry_interval (int): Seconds between retries.
+        """
+
+        def try_apply():
+            cmd = self.get_command(app_name)
+            self.ssh_connection.send(source_openrc(cmd))
+            return self.ssh_connection.get_return_code()
+
+        # Concern 1: retry command submission until accepted
+        validate_equals_with_retry(
+            try_apply,
+            0,
+            f"Application-apply {app_name} accepted",
+            timeout=timeout,
+            polling_sleep_time=retry_interval,
+        )
+
+        # Concern 2: wait for apply to complete
+        SystemApplicationListKeywords(self.ssh_connection).validate_app_status(
+            app_name,
+            "applied",
+            timeout=timeout,
+            polling_sleep_time=retry_interval,
+            failure_values=["apply-failed"],
+        )
 
     def is_already_applied(self, app_name: str) -> bool:
         """
