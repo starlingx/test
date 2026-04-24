@@ -1,5 +1,6 @@
 import os
 import textwrap
+from typing import Optional
 
 import yaml
 from jinja2 import Template
@@ -16,12 +17,15 @@ class YamlKeywords(BaseKeyword):
     This class is responsible for handling of Yaml files.
     """
 
-    def __init__(self, ssh_connection: SSHConnection):
-        """
-        Constructor
+    def __init__(self, ssh_connection: Optional[SSHConnection] = None):
+        """Constructor.
 
         Args:
-            ssh_connection (SSHConnection): The SSH connection object.
+            ssh_connection (Optional[SSHConnection]): The SSH connection
+                object. Required for remote operations such as
+                generate_yaml_file_from_template with copy_to_remote=True.
+                Can be omitted for local-only operations such as
+                render_yaml_from_template and load_yaml.
         """
         self.ssh_connection = ssh_connection
 
@@ -68,6 +72,33 @@ class YamlKeywords(BaseKeyword):
             FileKeywords(self.ssh_connection).upload_file(rendered_yaml_file_location, target_remote_file)
             return target_remote_file
         return rendered_yaml_file_location
+
+    def render_yaml_from_template(self, template_file: str, replacement_dictionary: dict) -> str:
+        """Render a Jinja2 template and validate the output as valid YAML.
+
+        Performs local rendering only with no SSH, file copy, or logging
+        side effects. Use generate_yaml_file_from_template() when remote
+        file upload or log folder persistence is needed.
+
+        Args:
+            template_file (str): Path to the Jinja2 template file.
+            replacement_dictionary (dict): Placeholder keys and their
+                replacement values.
+
+        Returns:
+            str: Rendered and validated YAML string.
+
+        Raises:
+            yaml.YAMLError: If the rendered output is not valid YAML.
+            FileNotFoundError: If the template file does not exist.
+        """
+        with open(template_file, "r") as f:
+            rendered = Template(f.read()).render(replacement_dictionary)
+
+        # Validate YAML (supports single or multi-document YAML)
+        list(yaml.safe_load_all(rendered))
+
+        return rendered
 
     def load_yaml(self, file_path: str) -> dict:
         """
