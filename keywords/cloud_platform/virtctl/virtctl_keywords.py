@@ -7,6 +7,7 @@ from framework.ssh.prompt_response import PromptResponse
 from framework.ssh.ssh_connection import SSHConnection
 from framework.validation.validation import validate_equals
 from keywords.base_keyword import BaseKeyword
+from keywords.k8s.k8s_command_wrapper import export_k8s_config
 
 
 class VirtctlKeywords(BaseKeyword):
@@ -148,3 +149,50 @@ class VirtctlKeywords(BaseKeyword):
         else:
             get_logger().log_error(f"Could not parse lscpu output: {lscpu_output}")
             validate_equals(0, expected_cpus, f"VM {vm_name} lscpu output could not be parsed")
+
+    def image_upload(
+        self,
+        image_path: str,
+        pvc_name: str,
+        pvc_size: str,
+        uploadproxy_url: str,
+        insecure: bool = True,
+        access_mode: str = "ReadWriteMany",
+        namespace: str = "default",
+        storage_class: str = None,
+        command_timeout: int = 600,
+        no_create: bool = False,
+    ) -> str:
+        """
+        Upload image to CDI using virtctl image-upload.
+
+        Runs ``virtctl image-upload dv`` to upload a QCOW2 or raw image into a
+        DataVolume backed by a PVC. Handles the case where the DataVolume already
+        exists and is populated.
+
+        Args:
+            image_path (str): Path to the image file on the remote host.
+            pvc_name (str): Name of the DataVolume to upload into.
+            pvc_size (str): Size of the DataVolume (e.g., "5Gi").
+            uploadproxy_url (str): CDI uploadproxy URL.
+            insecure (bool): Skip TLS verification. Defaults to True.
+            access_mode (str): Access mode for PVC. Defaults to "ReadWriteMany".
+            namespace (str): Kubernetes namespace. Defaults to "default".
+            storage_class (str): Storage class name. Defaults to None.
+            command_timeout (int): Timeout in seconds for the upload command. Defaults to 600.
+            no_create (bool): If True, adds --no-create flag to skip DV creation. Defaults to False.
+
+        Returns:
+            str: Command output.
+
+        Raises:
+            AssertionError: If image upload fails.
+        """
+        get_logger().log_info(f"Uploading image {image_path} to DataVolume {pvc_name}")
+        insecure_flag = "--insecure" if insecure else ""
+        storage_class_flag = f"--storage-class={storage_class}" if storage_class else ""
+        no_create_flag = "--no-create" if no_create else ""
+        cmd = f"bash -lc 'virtctl image-upload dv {pvc_name} {insecure_flag} " f"--access-mode {access_mode} --size {pvc_size} " f"--image-path {image_path} --uploadproxy-url {uploadproxy_url} " f"{storage_class_flag} {no_create_flag} --namespace {namespace}'"
+        self._ssh_connection.send(export_k8s_config(cmd), command_timeout=command_timeout)
+        self.validate_success_return_code(self._ssh_connection)
+        get_logger().log_info(f"Image uploaded successfully to DataVolume {pvc_name}")

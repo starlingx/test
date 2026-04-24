@@ -1,0 +1,16 @@
+apiVersion: cdi.kubevirt.io/v1beta1
+kind: DataVolume
+metadata:
+  name: {{ dv_name }}
+spec:
+  source:
+    upload: {}
+  pvc:
+    accessModes:
+    - {{ access_mode }}
+{% if storage_class %}
+    storageClassName: {{ storage_class }}
+{% endif %}
+    resources:
+      requests:
+        storage: {{ size }}
