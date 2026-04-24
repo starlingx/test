@@ -25,6 +25,11 @@
       "filename": "debian-11-generic-amd64.qcow2"
     },
 
+    "debian-12-generic": {
+      "url": "https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-generic-amd64.qcow2",
+      "filename": "debian-12-generic-amd64.qcow2"
+    },
+
     "ubuntu-jammy": {
       "url": "https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img",
       "filename": "jammy-server-cloudimg-amd64.img"
