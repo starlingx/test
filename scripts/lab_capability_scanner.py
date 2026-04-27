@@ -31,6 +31,7 @@ from keywords.cloud_platform.rest.configuration.devices.system_host_device_keywo
 from keywords.cloud_platform.rest.configuration.interfaces.get_interfaces_keywords import GetInterfacesKeywords
 from keywords.cloud_platform.rest.configuration.storage.get_storage_backends_keyword import GetStorageBackendKeywords
 from keywords.cloud_platform.rest.configuration.storage.get_storage_keywords import GetStorageKeywords
+from keywords.k8s.storageclass.kubectl_get_storageclass_keywords import KubectlGetStorageclassKeywords
 from keywords.cloud_platform.rest.configuration.system.get_system_keywords import GetSystemKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.cloud_platform.system.host.objects.system_host_if_output import SystemHostInterfaceOutput
@@ -691,6 +692,37 @@ def is_aio(lab_config: LabConfig) -> bool:
     return len(worker_nodes) == 0
 
 
+STORAGE_TYPE_TO_MARKER = {
+    "ceph-rbd": "lab_has_ceph_rbd",
+    "cephfs": "lab_has_cephfs",
+    "netapp-iscsi": "lab_has_netapp_iscsi",
+    "netapp-fc": "lab_has_netapp_fc",
+    "netapp-nfs": "lab_has_netapp_nfs",
+}
+
+
+def detect_storage_class_capabilities(lab_config: LabConfig) -> None:
+    """Detect storage capabilities via Kubernetes StorageClasses.
+
+    Uses 'kubectl get sc -o yaml' to classify storage backends and
+    adds the corresponding lab capability markers.
+
+    Args:
+        lab_config (LabConfig): The lab configuration object.
+    """
+    try:
+        ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+        sc_output = KubectlGetStorageclassKeywords(ssh_connection).get_storageclasses()
+        for storage_type in sc_output.get_available_storage_types():
+            marker = STORAGE_TYPE_TO_MARKER.get(storage_type)
+            if marker:
+                lab_config.add_lab_capability(marker)
+            else:
+                get_logger().log_warning(f"Unknown storage type '{storage_type}', no marker mapped")
+    except Exception as e:
+        get_logger().log_warning(f"Failed to detect storage class capabilities: {e}")
+
+
 def is_rook_ceph() -> bool:
     """
     Checks if the lab is using Rook Ceph.
@@ -898,6 +930,9 @@ if __name__ == "__main__":
     # check if the lab is using ceph
     if is_ceph():
         lab_config.add_lab_capability("lab_has_ceph")
+
+    # detect storage class capabilities via kubectl
+    detect_storage_class_capabilities(lab_config)
 
     if ConfigurationManager.get_database_config().use_database():
         # insert lab into db if it doesn't already exist
