@@ -8,6 +8,7 @@ from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKey
 from keywords.cloud_platform.system.application.system_application_apply_keywords import SystemApplicationApplyKeywords
 from keywords.cloud_platform.system.helm.system_helm_override_keywords import SystemHelmOverrideKeywords
 from keywords.cloud_platform.system.kubernetes.kubernetes_version_list_keywords import SystemKubernetesListKeywords
+from keywords.cloud_platform.system.storage.system_storage_backend_keywords import SystemStorageBackendKeywords
 from keywords.files.file_keywords import FileKeywords
 from keywords.k8s.delete_resource.kubectl_delete_resource_keywords import KubectlDeleteResourceKeywords
 from keywords.k8s.files.kubectl_file_apply_keywords import KubectlFileApplyKeywords
@@ -96,6 +97,7 @@ def _ensure_volumesnapshotclass_exists(ssh_connection: SSHConnection, storage_ty
     """
     snapshot_class_name = f"{storage_type}-snapshot"
     k8s_config = K8sConfigExporter()
+    system_storage_backend_keywords = SystemStorageBackendKeywords(ssh_connection)
 
     get_logger().log_info(f"Check whether volumesnapshotclass '{snapshot_class_name}' exists")
     ssh_connection.send(k8s_config.export(f"kubectl get volumesnapshotclasses.snapshot.storage.k8s.io " f"{snapshot_class_name} --no-headers 2>/dev/null"))
@@ -104,6 +106,8 @@ def _ensure_volumesnapshotclass_exists(ssh_connection: SSHConnection, storage_ty
     if rc == 0:
         get_logger().log_info(f"VolumeSnapshotClass '{snapshot_class_name}' already exists.")
         return
+    elif system_storage_backend_keywords.get_system_storage_backend_list().is_backend_configured("ceph-rook"):
+        raise ValueError(f"For rook-ceph, {snapshot_class_name} should be applied by default")
 
     get_logger().log_test_case_step(f"Create {storage_type} volume snapshot class via helm override")
     SystemHelmOverrideKeywords(ssh_connection).update_helm_override_via_set(
@@ -123,7 +127,6 @@ def _ensure_volumesnapshotclass_exists(ssh_connection: SSHConnection, storage_ty
 
 
 @mark.p1
-@mark.lab_has_ceph
 def test_cephfs_volume_snapshot_create_restore(request):
     """
     CephFS volume snapshot create and restore
@@ -224,7 +227,6 @@ def test_cephfs_volume_snapshot_create_restore(request):
 
 
 @mark.p1
-@mark.lab_has_ceph
 def test_rbd_volume_snapshot_create_restore(request):
     """
     RBD provisioner volume snapshot create and restore
