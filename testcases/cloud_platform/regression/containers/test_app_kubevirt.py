@@ -504,6 +504,118 @@ def test_launch_vm_after_lock_unlock_compute(request: FixtureRequest):
 
 
 @mark.p2
+@mark.lab_is_simplex
+def test_launch_vm_after_lock_unlock(request: FixtureRequest):
+    """
+    Test launching VM and verify it recovers after lock/unlock of the node.
+
+    This test targets simplex systems where there is only one node.
+    Locking the node causes the VM to become unschedulable, and unlocking
+    allows it to recover.
+
+    Test Steps:
+        - Setup kubevirt environment
+        - Create registry secret for image pulls
+        - Deploy VM on the active controller with nodeSelector
+        - Verify VM and VMI are running on the node
+        - Login to VM via virtctl console
+        - Lock the node
+        - Verify VM becomes ErrorUnschedulable after lock
+        - Unlock the node
+        - Verify kubevirt application is in applied state after unlock
+        - Verify kubevirt pods are running after unlock
+        - Verify VM and VMI recover to Running state after unlock
+        - Verify VM console is accessible after unlock
+    """
+    vm_name = "vm-cirros"
+    vm_yaml_template = "cirros-vm-containerdisk-nodeselector.yaml.j2"
+    remote_yaml_path = f"{KUBEVIRT_VM_DIR}/vm-cirros-node.yaml"
+    vm_namespace = "default"
+
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+
+    get_logger().log_setup_step("Cleanup kubevirt environment")
+    cleanup_kubevirt_environment(ssh_connection)
+
+    target_node = SystemHostListKeywords(ssh_connection).get_active_controller().get_host_name()
+    get_logger().log_info(f"Target node is {target_node}")
+
+    system_host_lock = SystemHostLockKeywords(ssh_connection)
+    kubectl_vm = KubectlGetVmKeywords(ssh_connection)
+    kubectl_vmi = KubectlGetVmiKeywords(ssh_connection)
+
+    def cleanup():
+        new_ssh = LabConnectionKeywords().get_active_controller_ssh()
+
+        get_logger().log_teardown_step(f"Unlocking {target_node} if locked")
+        lock_kw = SystemHostLockKeywords(new_ssh)
+        if lock_kw.is_host_locked(target_node):
+            lock_kw.unlock_host(target_node)
+
+        get_logger().log_teardown_step(f"Deleting VM {vm_name}")
+        KubectlDeleteVmKeywords(new_ssh).delete_vm(vm_name, ignore_not_found=True)
+
+        get_logger().log_teardown_step("Cleaning up remote VM directory")
+        FileKeywords(new_ssh).delete_directory(KUBEVIRT_VM_DIR)
+
+        get_logger().log_teardown_step("Cleaning up kubevirt environment")
+        cleanup_kubevirt_environment(new_ssh)
+
+    request.addfinalizer(cleanup)
+
+    get_logger().log_setup_step("Setting up kubevirt environment")
+    setup_kubevirt_environment(ssh_connection)
+
+    get_logger().log_setup_step("Creating registry secret for image pulls")
+    setup_registry_secret(ssh_connection, request, vm_namespace)
+
+    get_logger().log_test_case_step(f"Creating VM YAML with nodeSelector for {target_node}")
+    FileKeywords(ssh_connection).create_directory(KUBEVIRT_VM_DIR)
+    YamlKeywords(ssh_connection).generate_yaml_file_from_template(
+        get_stx_resource_path(f"resources/cloud_platform/containers/kubevirt/{vm_yaml_template}"),
+        {"node_name": target_node},
+        "vm-cirros-node.yaml",
+        KUBEVIRT_VM_DIR,
+    )
+
+    get_logger().log_test_case_step(f"Deploying VM {vm_name} on {target_node}")
+    KubectlFileApplyKeywords(ssh_connection).apply_resource_from_yaml(remote_yaml_path)
+
+    get_logger().log_test_case_step(f"Verifying VM and VMI {vm_name} are running on {target_node}")
+    kubectl_vm.wait_for_vm_status(vm_name, "Running", timeout=120)
+    kubectl_vmi.wait_for_vmi_status(vm_name, "Running", timeout=120)
+    vm_host = kubectl_vmi.get_vmi_node(vm_name)
+    validate_equals(vm_host, target_node, f"VM should be running on {target_node}")
+
+    get_logger().log_test_case_step(f"Logging into VM {vm_name} via virtctl console")
+    VirtctlKeywords(ssh_connection).login_to_vm(vm_name, "cirros", "gocubsgo")
+
+    get_logger().log_test_case_step(f"Locking node {target_node}")
+    system_host_lock.lock_host(target_node)
+
+    get_logger().log_test_case_step(f"Verifying VM {vm_name} is ErrorUnschedulable after lock")
+    kubectl_vm.wait_for_vm_status(vm_name, "ErrorUnschedulable", timeout=240)
+
+    get_logger().log_test_case_step(f"Unlocking node {target_node}")
+    system_host_lock.unlock_host(target_node)
+
+    get_logger().log_test_case_step(f"Verifying {APP_NAME} is in applied state after unlock")
+    SystemApplicationListKeywords(ssh_connection).validate_app_status(APP_NAME, "applied", timeout=60)
+
+    get_logger().log_test_case_step("Verifying kubevirt pods are running after unlock")
+    kubectl_pods = KubectlGetPodsKeywords(ssh_connection)
+    kubectl_pods.wait_for_pods_to_reach_status(expected_status="Running", pod_names=CDI_EXPECTED_PODS, namespace=CDI_NAMESPACE, timeout=120)
+    kubectl_pods.wait_for_pods_to_reach_status(expected_status="Running", pod_names=KUBEVIRT_EXPECTED_PODS, namespace=KUBEVIRT_NAMESPACE, timeout=120)
+
+    get_logger().log_test_case_step(f"Verifying VM and VMI {vm_name} recover to Running state after unlock")
+    kubectl_vm.wait_for_vm_status(vm_name, "Running", timeout=300)
+    kubectl_vmi.wait_for_vmi_status(vm_name, "Running", timeout=120)
+
+    get_logger().log_test_case_step(f"Verifying VM {vm_name} console is accessible after unlock")
+    VirtctlKeywords(ssh_connection).verify_vm_console_accessible(vm_name)
+
+
+@mark.p2
 @mark.lab_has_standby_controller
 def test_verify_vm_after_swact(request: FixtureRequest):
     """
