@@ -91,8 +91,12 @@ def query_if_lab_is_virtual(ssh_connection: SSHConnection) -> bool:
     Returns:
         bool: True if the lab is virtual, False otherwise.
     """
-    output = ssh_connection.send("facter is_virtual").strip()
-    is_virtual = bool(output.lower() == "true")
+    is_virtual = False
+    output = ssh_connection.send(cmd="facter is_virtual")
+    if isinstance(output, list):
+        output = "".join(output)
+    if isinstance(output, str):
+        is_virtual = bool(output.strip().lower() == "true")
     return is_virtual
 
 
