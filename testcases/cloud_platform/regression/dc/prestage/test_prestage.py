@@ -181,8 +181,8 @@ def test_minor_release_prestage_retry_after_fail():
 
 @mark.p0
 @mark.lab_has_subcloud
-def test_prestage_fails_if_deploy_is_running(request):
-    """Verify prestage fails in case a deploy is running
+def test_prestage_for_multiple_deployment_states(request):
+    """Verify prestage for multiple release deployment states
 
     Test Steps:
         Verify subcloud health
@@ -191,8 +191,14 @@ def test_prestage_fails_if_deploy_is_running(request):
         - Verify that prestage for N release fails
         - Simulate release in state "removing"
         - Verify that prestage for N-1 release fails
+        - Simulate release in state "unavailable"
+        - Verify that prestage for N release succeeds
+        - Simulate release in state "deployed"
+        - Verify that prestage for N release succeeds
+        - Simulate release in state "committed"
+        - Verify that prestage for N release succeeds
         - Simulate release in state "available"
-        - Verify that prestage succeds
+        - Verify that prestage succeeds
     """
     central_ssh = LabConnectionKeywords().get_active_controller_ssh()
     last_major_release = CloudPlatformVersionManagerClass().get_last_major_release()
@@ -234,6 +240,21 @@ def test_prestage_fails_if_deploy_is_running(request):
         release_metadata = f"/opt/software/metadata/removing/{sw_release}-metadata.xml"
         prestage_subcloud(central_ssh, subcloud_name, subcloud_password, release=last_major_release, for_sw_deploy=True, expect_fail=True)
         prestage_subcloud(central_ssh, subcloud_name, subcloud_password, release=last_major_release, expect_fail=True)
+
+        FileKeywords(subcloud_ssh).move_file(source=release_metadata, destination="/opt/software/metadata/unavailable/", sudo=True)
+        release_metadata = f"/opt/software/metadata/unavailable/{sw_release}-metadata.xml"
+        prestage_subcloud(central_ssh, subcloud_name, subcloud_password, for_sw_deploy=True)
+        prestage_subcloud(central_ssh, subcloud_name, subcloud_password)
+
+        FileKeywords(subcloud_ssh).move_file(source=release_metadata, destination="/opt/software/metadata/deployed/", sudo=True)
+        release_metadata = f"/opt/software/metadata/deployed/{sw_release}-metadata.xml"
+        prestage_subcloud(central_ssh, subcloud_name, subcloud_password, for_sw_deploy=True)
+        prestage_subcloud(central_ssh, subcloud_name, subcloud_password)
+
+        FileKeywords(subcloud_ssh).move_file(source=release_metadata, destination="/opt/software/metadata/committed/", sudo=True)
+        release_metadata = f"/opt/software/metadata/committed/{sw_release}-metadata.xml"
+        prestage_subcloud(central_ssh, subcloud_name, subcloud_password, for_sw_deploy=True)
+        prestage_subcloud(central_ssh, subcloud_name, subcloud_password)
 
         FileKeywords(subcloud_ssh).move_file(source=release_metadata, destination="/opt/software/metadata/available/", sudo=True)
         prestage_subcloud(central_ssh, subcloud_name, subcloud_password)
