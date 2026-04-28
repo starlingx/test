@@ -7,6 +7,7 @@
   
   platform_integ_app_tarball: "fake_path",
   metrics_server_app_tarball: "fake_path",
+  metrics_server_app_tarball_n2: "fake_path",
   rook_ceph_app_tarball: "fake_path",
 
   // Optional Overrides of app_names.
