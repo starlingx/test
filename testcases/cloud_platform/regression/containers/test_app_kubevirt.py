@@ -20,7 +20,9 @@ from keywords.files.file_keywords import FileKeywords
 from keywords.files.yaml_keywords import YamlKeywords
 from keywords.k8s.crd.kubectl_wait_crd_keywords import KubectlWaitCrdKeywords
 from keywords.k8s.files.kubectl_file_apply_keywords import KubectlFileApplyKeywords
+from keywords.k8s.files.kubectl_file_delete_keywords import KubectlFileDeleteKeywords
 from keywords.k8s.helm.kubectl_get_helm_keywords import KubectlGetHelmKeywords
+from keywords.k8s.node.kubectl_label_node_keywords import KubectlLabelNodeKeywords
 from keywords.k8s.patch.kubectl_apply_patch_keywords import KubectlApplyPatchKeywords
 from keywords.k8s.pods.kubectl_get_pods_keywords import KubectlGetPodsKeywords
 from keywords.k8s.pods.kubectl_wait_pod_keywords import KubectlWaitPodKeywords
@@ -934,4 +936,119 @@ def test_launch_vm_after_reboot(request: FixtureRequest):
     kubectl_vmi.wait_for_vmi_status(vm_name, "Running", timeout=120)
 
     get_logger().log_test_case_step(f"Verifying VM {vm_name} console is accessible after reboot")
+    VirtctlKeywords(ssh_connection).login_to_vm(vm_name, "cirros", "gocubsgo")
+
+
+@mark.p2
+def test_launch_vm_with_affinity(request: FixtureRequest):
+    """
+    Test launching a VM with nodeSelector and pod affinity/anti-affinity rules.
+
+    Labels a worker node with cpu=slow and storage=fast, creates a helper pod
+    with security=S1 on that node to satisfy podAffinity, then deploys a VM
+    with nodeSelector and affinity rules. Verifies the VM is scheduled on the
+    labelled node alongside the S1 pod.
+
+    Args:
+        request (FixtureRequest): Pytest fixture request for teardown registration.
+
+    Test Steps:
+        - Cleanup kubevirt environment
+        - Get a worker node to label
+        - Setup kubevirt environment
+        - Create registry secret for image pulls
+        - Label worker node with cpu=slow and storage=fast
+        - Create helper pod with security=S1 label on the target node
+        - Deploy VM with nodeSelector and podAffinity/podAntiAffinity rules
+        - Verify VM is running on the labelled node
+        - Login to VM via virtctl console
+    """
+    vm_name = "vm-cirros-affinity"
+    vm_yaml_template = "cirros-vm-affinity.yaml.j2"
+    remote_yaml_path = f"{KUBEVIRT_VM_DIR}/vm-cirros-affinity.yaml"
+    vm_namespace = "default"
+    helper_pod_name = "affinity-s1-pod"
+
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+
+    get_logger().log_setup_step("Cleanup kubevirt environment")
+    cleanup_kubevirt_environment(ssh_connection)
+
+    get_logger().log_setup_step("Getting a worker node to label")
+    workers = SystemHostListKeywords(ssh_connection).get_workers()
+    target_node = workers[0].get_host_name()
+    get_logger().log_info(f"Target node for affinity: {target_node}")
+
+    label_keywords = KubectlLabelNodeKeywords(ssh_connection)
+
+    def cleanup():
+        get_logger().log_teardown_step(f"Deleting VM {vm_name}")
+        KubectlDeleteVmKeywords(ssh_connection).delete_vm(vm_name, ignore_not_found=True)
+
+        get_logger().log_teardown_step(f"Deleting helper pod {helper_pod_name}")
+        KubectlFileDeleteKeywords(ssh_connection).delete_resources(
+            f"{KUBEVIRT_VM_DIR}/affinity-s1-pod.yaml",
+            ignore_not_found=True,
+        )
+
+        get_logger().log_teardown_step("Cleaning up remote VM directory")
+        FileKeywords(ssh_connection).delete_directory(KUBEVIRT_VM_DIR)
+
+        get_logger().log_teardown_step(f"Removing labels from node {target_node}")
+        label_keywords.remove_label(target_node, "cpu")
+        label_keywords.remove_label(target_node, "storage")
+
+        get_logger().log_teardown_step("Cleaning up kubevirt environment")
+        cleanup_kubevirt_environment(ssh_connection)
+
+    request.addfinalizer(cleanup)
+
+    get_logger().log_setup_step("Setting up kubevirt environment")
+    setup_kubevirt_environment(ssh_connection)
+
+    get_logger().log_setup_step("Creating registry secret for image pulls")
+    setup_registry_secret(ssh_connection, request, vm_namespace)
+
+    get_logger().log_test_case_step(f"Labelling node {target_node} with cpu=slow and storage=fast")
+    label_keywords.label_node(target_node, "cpu", "slow")
+    label_keywords.label_node(target_node, "storage", "fast")
+
+    get_logger().log_test_case_step(f"Creating helper pod with security=S1 label on {target_node}")
+    file_keywords = FileKeywords(ssh_connection)
+    file_keywords.create_directory(KUBEVIRT_VM_DIR)
+    helper_pod_yaml = "affinity-s1-pod.yaml.j2"
+    YamlKeywords(ssh_connection).generate_yaml_file_from_template(
+        get_stx_resource_path(f"resources/cloud_platform/containers/kubevirt/{helper_pod_yaml}"),
+        {"target_node": target_node},
+        "affinity-s1-pod.yaml",
+        KUBEVIRT_VM_DIR,
+    )
+    KubectlFileApplyKeywords(ssh_connection).apply_resource_from_yaml(f"{KUBEVIRT_VM_DIR}/affinity-s1-pod.yaml")
+    KubectlGetPodsKeywords(ssh_connection).wait_for_pods_to_reach_status(
+        expected_status="Running",
+        pod_names=[helper_pod_name],
+        namespace=vm_namespace,
+        timeout=60,
+    )
+
+    get_logger().log_test_case_step("Creating VM YAML with affinity rules")
+    YamlKeywords(ssh_connection).generate_yaml_file_from_template(
+        get_stx_resource_path(f"resources/cloud_platform/containers/kubevirt/{vm_yaml_template}"),
+        {"vm_name": vm_name},
+        "vm-cirros-affinity.yaml",
+        KUBEVIRT_VM_DIR,
+    )
+
+    get_logger().log_test_case_step(f"Deploying VM {vm_name} with affinity rules")
+    KubectlFileApplyKeywords(ssh_connection).apply_resource_from_yaml(remote_yaml_path)
+
+    get_logger().log_test_case_step(f"Verifying VM {vm_name} is running on labelled node {target_node}")
+    kubectl_vm = KubectlGetVmKeywords(ssh_connection)
+    kubectl_vmi = KubectlGetVmiKeywords(ssh_connection)
+    kubectl_vm.wait_for_vm_status(vm_name, "Running", timeout=120)
+    kubectl_vmi.wait_for_vmi_status(vm_name, "Running", timeout=120)
+    vm_host = kubectl_vmi.get_vmi_node(vm_name)
+    validate_equals(vm_host, target_node, f"VM should be scheduled on labelled node {target_node}")
+
+    get_logger().log_test_case_step(f"Logging into VM {vm_name} via virtctl console")
     VirtctlKeywords(ssh_connection).login_to_vm(vm_name, "cirros", "gocubsgo")
