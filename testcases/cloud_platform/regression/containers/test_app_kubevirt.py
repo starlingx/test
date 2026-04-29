@@ -1727,3 +1727,73 @@ def test_launch_ubuntu_lunar_vm_with_cdi_upload(request: FixtureRequest) -> None
 
     get_logger().log_test_case_step(f"Login to VM {vm_name} via virtctl console")
     VirtctlKeywords(ssh_connection).login_to_vm(vm_name, "ubuntu", "password")
+
+
+def test_launch_vm_with_configured_memory_512m(request: FixtureRequest) -> None:
+    """
+    Test launching Cirros VM with configured memory using containerDisk.
+
+    This test validates deploying a virtual machine with specific memory configuration
+    using KubeVirt with containerDisk image. It demonstrates launching a Cirros VM with
+    512MB of memory using a pre-built container disk image, then verifies the VM is
+    running and the memory allocation is correct.
+
+    Args:
+        request (FixtureRequest): Pytest fixture request for teardown registration.
+
+    Test Steps:
+        - Cleanup and then Setup kubevirt environment
+        - Setting up kubevirt environment
+        - Setting up registry secret for image pulls in default namespace
+        - Copy VM yaml file to controller
+        - Deploy VM with 512MB memory
+        - Verify the status of VM
+        - Verify the IP and controller of VM
+        - Login to VM via virtctl console
+        - Verify memory allocation on VM
+        - Cleanup: Delete VM and remove kubevirt application
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    vm_name = "vm-cirros-512mi"
+    vm_manifest = "cirros-vm-512mi.yaml"
+    remote_yaml_path = f"{KUBEVIRT_VM_DIR}/{vm_manifest}"
+
+    get_logger().log_setup_step("Cleanup and then Setup kubevirt environment")
+    cleanup_kubevirt_environment(ssh_connection)
+
+    def cleanup() -> None:
+        """Clean up VM and kubevirt environment."""
+        get_logger().log_teardown_step(f"Delete VM {vm_name}")
+        KubectlDeleteVmKeywords(ssh_connection).delete_vm(vm_name, ignore_not_found=True)
+        get_logger().log_teardown_step("Removing kubevirt application if not already removed")
+        cleanup_kubevirt_environment(ssh_connection)
+
+    request.addfinalizer(cleanup)
+
+    get_logger().log_setup_step("Setting up kubevirt environment")
+    setup_kubevirt_environment(ssh_connection)
+
+    get_logger().log_setup_step("Setting up registry secret for image pulls in default namespace")
+    setup_registry_secret(ssh_connection, request, namespace="default")
+
+    get_logger().log_test_case_step("Copy VM yaml file to controller")
+    FileKeywords(ssh_connection).create_directory(KUBEVIRT_VM_DIR)
+    FileKeywords(ssh_connection).upload_file(
+        get_stx_resource_path(f"resources/cloud_platform/containers/kubevirt/{vm_manifest}"),
+        remote_yaml_path,
+    )
+
+    get_logger().log_test_case_step(f"Deploy VM {vm_name}")
+    kubectl_apply = KubectlFileApplyKeywords(ssh_connection)
+    kubectl_apply.apply_resource_from_yaml(remote_yaml_path)
+
+    get_logger().log_test_case_step(f"Verify the status of VM {vm_name}")
+    kubectl_vm = KubectlGetVmKeywords(ssh_connection)
+    kubectl_vm.wait_for_vm_status(vm_name, "Running", timeout=180)
+
+    get_logger().log_test_case_step(f"Verify the IP and controller of VM {vm_name}")
+    kubectl_vmi = KubectlGetVmiKeywords(ssh_connection)
+    kubectl_vmi.wait_for_vmi_ready(vm_name, timeout=60)
+
+    get_logger().log_test_case_step(f"Verify memory allocation on VM {vm_name}")
+    VirtctlKeywords(ssh_connection).check_vm_memory(vm_name, expected_memory_mb=512)
