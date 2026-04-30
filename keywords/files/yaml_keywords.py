@@ -29,7 +29,7 @@ class YamlKeywords(BaseKeyword):
         """
         self.ssh_connection = ssh_connection
 
-    def generate_yaml_file_from_template(self, template_file: str, replacement_dictionary: dict, target_file_name: str, target_remote_location: str, copy_to_remote: bool = True) -> str:
+    def generate_yaml_file_from_template(self, template_file: str, replacement_dictionary: dict, target_file_name: str, target_remote_location: str, copy_to_remote: bool = True, preserve_order: bool = False) -> str:
         """
         This function will generate a YAML file from the specified template.
 
@@ -46,6 +46,9 @@ class YamlKeywords(BaseKeyword):
             target_file_name (str): Name of the generated YAML file.
             target_remote_location (str): Remote directory path where the file will be uploaded if `copy_to_remote` is True.
             copy_to_remote (bool): Flag indicating whether to upload the file to a remote location. Defaults to True.
+            preserve_order (bool): When True, writes the rendered Jinja2 output directly without
+                re-serializing through yaml.dump, preserving the original key order from the template.
+                Defaults to False for backward compatibility.
 
         Returns:
             str: Path to the generated YAML file, either local or remote depending on `copy_to_remote`.
@@ -57,8 +60,11 @@ class YamlKeywords(BaseKeyword):
         # Render the YAML file by replacing the tokens.
         template = Template(yaml_template)
         rendered_yaml_string = template.render(replacement_dictionary)
-        yaml_data_list = list(yaml.safe_load_all(rendered_yaml_string))
-        rendered_yaml = "---\n".join([yaml.dump(data, default_flow_style=False) for data in yaml_data_list])
+        if preserve_order:
+            rendered_yaml = rendered_yaml_string
+        else:
+            yaml_data_list = list(yaml.safe_load_all(rendered_yaml_string))
+            rendered_yaml = "---\n".join([yaml.dump(data, default_flow_style=False) for data in yaml_data_list])
 
         # Create the new file in the log folder.
         log_folder = ConfigurationManager.get_logger_config().get_test_case_resources_log_location()
