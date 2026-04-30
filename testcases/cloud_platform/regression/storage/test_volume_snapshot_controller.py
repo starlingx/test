@@ -17,6 +17,7 @@ from keywords.k8s.pods.kubectl_delete_pods_keywords import KubectlDeletePodsKeyw
 from keywords.k8s.pods.kubectl_exec_in_pods_keywords import KubectlExecInPodsKeywords
 from keywords.k8s.pods.kubectl_get_pod_jsonpath_keywords import KubectlGetPodJsonpathKeywords
 from keywords.k8s.pods.kubectl_get_pods_keywords import KubectlGetPodsKeywords
+from keywords.k8s.pvc.kubectl_get_pvc_keywords import KubectlGetPvcKeywords
 from keywords.k8s.volumesnapshots.kubectl_get_volumesnapshots_keywords import KubectlGetVolumesnapshotsKeywords
 
 # Mapping of k8s version to expected snapshot-controller image tag
@@ -77,6 +78,7 @@ def _cleanup_snapshot_test_resources(
 
     for pvc_name in pvc_names:
         delete_resource_keywords.delete_resource("pvc", pvc_name)
+        KubectlGetPvcKeywords(ssh_connection).wait_for_pvc_to_be_deleted(pvc_name)
 
     for snapshot_name in snapshot_names:
         delete_resource_keywords.delete_resource(VOLUME_SNAPSHOT_RESOURCE_TYPE, snapshot_name)
@@ -198,6 +200,7 @@ def test_cephfs_volume_snapshot_create_restore(request):
 
     get_logger().log_test_case_step(f"Create a {storage_type} PVC and make sure it is in Bound status")
     KubectlFileApplyKeywords(ssh_connection).apply_resource_from_yaml(pvc_yaml)
+    KubectlGetPvcKeywords(ssh_connection).wait_for_pvcs_to_reach_status(expected_status="Bound", pvc_names=pvc_name)
 
     get_logger().log_test_case_step(f"Create a {storage_type} pod")
     KubectlFileApplyKeywords(ssh_connection).apply_resource_from_yaml(pod_yaml)
@@ -217,6 +220,7 @@ def test_cephfs_volume_snapshot_create_restore(request):
 
     get_logger().log_test_case_step("Create a restored PVC from the VolumeSnapshot created")
     KubectlFileApplyKeywords(ssh_connection).apply_resource_from_yaml(pvc_restore_yaml)
+    KubectlGetPvcKeywords(ssh_connection).wait_for_pvcs_to_reach_status(expected_status="Bound", pvc_names=pvc_restore_name)
 
     get_logger().log_test_case_step("Create a new pod that will use this restored PVC")
     KubectlFileApplyKeywords(ssh_connection).apply_resource_from_yaml(new_pod_yaml)
@@ -298,6 +302,7 @@ def test_rbd_volume_snapshot_create_restore(request):
 
     get_logger().log_test_case_step(f"Create a {storage_type} PVC and make sure it is in Bound status")
     KubectlFileApplyKeywords(ssh_connection).apply_resource_from_yaml(pvc_yaml)
+    KubectlGetPvcKeywords(ssh_connection).wait_for_pvcs_to_reach_status(expected_status="Bound", pvc_names=pvc_name)
 
     get_logger().log_test_case_step(f"Create a {storage_type} pod")
     KubectlFileApplyKeywords(ssh_connection).apply_resource_from_yaml(pod_yaml)
@@ -317,6 +322,7 @@ def test_rbd_volume_snapshot_create_restore(request):
 
     get_logger().log_test_case_step("Create a restored PVC from the VolumeSnapshot created")
     KubectlFileApplyKeywords(ssh_connection).apply_resource_from_yaml(pvc_restore_yaml)
+    KubectlGetPvcKeywords(ssh_connection).wait_for_pvcs_to_reach_status(expected_status="Bound", pvc_names=pvc_restore_name)
 
     get_logger().log_test_case_step("Create a new pod that will use this restored PVC")
     KubectlFileApplyKeywords(ssh_connection).apply_resource_from_yaml(new_pod_yaml)
