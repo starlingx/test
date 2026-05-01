@@ -25,6 +25,15 @@ class ProductVersion:
         """
         return self.version_name
 
+    def get_base_version(self) -> str:
+        """
+        Returns the version string without the patch suffix (e.g., '25.03' from '25.03-0').
+
+        Returns:
+            str: The base version string before the first hyphen.
+        """
+        return self.version_name.split("-")[0]
+
     def __hash__(self) -> int:
         """
         Returns the hash of the product version based on its name.
