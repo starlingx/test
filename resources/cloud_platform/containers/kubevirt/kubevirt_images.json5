@@ -1,0 +1,33 @@
+// ============================================================================
+// KubeVirt VM Image Configuration
+// ============================================================================
+//
+// This configuration stores cloud image URLs used by KubeVirt test cases
+// for CDI (Containerized Data Importer) upload workflows.
+//
+// Usage:
+//   from keywords.cloud_platform.kubevirt.kubevirt_image_keywords import KubevirtImageKeywords
+//   kubevirt_images = KubevirtImageKeywords(ssh_connection)
+//   local_path = kubevirt_images.download_image("debian-11-generic")
+//
+// Pattern:
+//   Each entry contains:
+//   - url: Full download URL for the cloud image
+//   - filename: Expected filename after download
+//
+// ============================================================================
+
+{
+  "images": {
+
+    "debian-11-generic": {
+      "url": "https://cloud.debian.org/images/cloud/bullseye/latest/debian-11-generic-amd64.qcow2",
+      "filename": "debian-11-generic-amd64.qcow2"
+    },
+
+    "ubuntu-jammy": {
+      "url": "https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img",
+      "filename": "jammy-server-cloudimg-amd64.img"
+    }
+  }
+}

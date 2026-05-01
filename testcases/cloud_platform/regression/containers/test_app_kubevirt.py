@@ -31,11 +31,14 @@ from keywords.k8s.pods.kubectl_wait_pod_keywords import KubectlWaitPodKeywords
 from keywords.k8s.secret.kubectl_create_secret_keywords import KubectlCreateSecretsKeywords
 from keywords.k8s.secret.kubectl_delete_secret_keywords import KubectlDeleteSecretsKeywords
 from keywords.k8s.secret.kubectl_get_secret_keywords import KubectlGetSecretsKeywords
+from keywords.k8s.service.kubectl_get_service_keywords import KubectlGetServiceKeywords
+from keywords.k8s.vm.kubectl_datavolume_keywords import KubectlDatavolumeKeywords
 from keywords.k8s.vm.kubectl_delete_vm_keywords import KubectlDeleteVmKeywords
 from keywords.k8s.vm.kubectl_get_vm_keywords import KubectlGetVmKeywords
 from keywords.k8s.vm.kubectl_get_vmi_keywords import KubectlGetVmiKeywords
 from keywords.linux.ln.ln_keywords import LnKeywords
 from keywords.linux.ls.ls_keywords import LsKeywords
+from keywords.linux.wget.wget_manifest_keywords import ImageManifestKeywords
 from keywords.linux.which.which_keywords import WhichKeywords
 
 APP_NAME = "kubevirt-app"
@@ -1421,3 +1424,108 @@ def test_launch_vm_with_two_cpu(request: FixtureRequest):
 
     get_logger().log_test_case_step(f"Verifying VM {vm_name} is using dedicated CPU placement")
     verify_vm_dedicated_cpus(ssh_connection, vm_name, expected_cpu_count=2)
+
+
+@mark.p1
+def test_launch_debian11_vm_with_cdi_upload(request: FixtureRequest):
+    """
+    Test launching Debian VM with CDI image upload.
+
+    This test validates the complete workflow of deploying a Debian virtual machine
+    using KubeVirt with CDI (Containerized Data Importer) for image management. It
+    downloads a Debian 11 bullseye QCOW2 cloud image, uploads it to persistent
+    storage via virtctl image-upload, and launches a VM with cloud-init.
+
+    Args:
+        request (FixtureRequest): Pytest fixture request for teardown registration.
+
+    Test Steps:
+        - Setup kubevirt environment
+        - Copy VM yaml file to controller
+        - Download Debian 11 bullseye QCOW2 image
+        - Upload image to CDI using virtctl image-upload
+        - Apply VM manifest with cloud-init configuration
+        - Verify VM reaches Running state within 180 seconds
+        - Verify VMI is ready with IP assignment
+        - Cleanup: Delete VM, DataVolume, and remove image file
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    vm_name = "debian1180"
+    pvc_name = "debian1180qcow"
+    pvc_size = "5Gi"
+    image_name = "debian-11-generic"
+    vm_manifest = "vm-debian.yaml"
+    remote_yaml_path = f"{KUBEVIRT_VM_DIR}/{vm_manifest}"
+
+    kubevirt_images = ImageManifestKeywords(
+        ssh_connection,
+        get_stx_resource_path("resources/cloud_platform/containers/kubevirt/kubevirt_images.json5"),
+    )
+    image_filename = kubevirt_images.get_image_filename(image_name)
+    local_image_path = f"{KUBEVIRT_VM_DIR}/{image_filename}"
+
+    get_logger().log_setup_step("Cleanup and then Setup kubevirt environment")
+    cleanup_kubevirt_environment(ssh_connection)
+
+    def cleanup() -> None:
+        """Clean up VM, DataVolume, image file, and kubevirt environment."""
+        get_logger().log_teardown_step(f"Delete VM {vm_name}")
+        KubectlDeleteVmKeywords(ssh_connection).delete_vm(vm_name, ignore_not_found=True)
+        get_logger().log_teardown_step(f"Delete DataVolume {pvc_name}")
+        KubectlDatavolumeKeywords(ssh_connection).delete_datavolume(pvc_name)
+        get_logger().log_teardown_step("Cleaning up image file")
+        FileKeywords(ssh_connection).delete_file(local_image_path)
+        get_logger().log_teardown_step("Removing kubevirt application if not already removed")
+        cleanup_kubevirt_environment(ssh_connection)
+
+    request.addfinalizer(cleanup)
+
+    get_logger().log_setup_step("Setting up kubevirt environment")
+    setup_kubevirt_environment(ssh_connection)
+
+    get_logger().log_test_case_step("Copy VM yaml file to controller")
+    FileKeywords(ssh_connection).create_directory(KUBEVIRT_VM_DIR)
+    FileKeywords(ssh_connection).upload_file(
+        get_stx_resource_path(f"resources/cloud_platform/containers/kubevirt/{vm_manifest}"),
+        remote_yaml_path,
+    )
+
+    get_logger().log_test_case_step("Download Debian bullseye QCOW2 image")
+    kubevirt_images.download_image(image_name, KUBEVIRT_VM_DIR)
+
+    get_logger().log_test_case_step("Create DataVolume and wait for upload ready")
+    dv_yaml_path = YamlKeywords(ssh_connection).generate_yaml_file_from_template(
+        get_stx_resource_path("resources/cloud_platform/containers/kubevirt/datavolume-template.yaml.j2"),
+        {"dv_name": pvc_name, "size": pvc_size, "access_mode": "ReadWriteOnce", "storage_class": None},
+        f"dv-{pvc_name}.yaml",
+        KUBEVIRT_VM_DIR,
+    )
+    KubectlDatavolumeKeywords(ssh_connection).create_datavolume(dv_yaml_path, pvc_name, timeout=300)
+
+    get_logger().log_test_case_step("Upload image to CDI using virtctl")
+    endpoint = KubectlGetServiceKeywords(ssh_connection).get_service_endpoint("cdi-uploadproxy", namespace="cdi")
+    uploadproxy_url = f"https://{endpoint}"
+    VirtctlKeywords(ssh_connection).image_upload(
+        image_path=local_image_path,
+        pvc_name=pvc_name,
+        pvc_size=pvc_size,
+        uploadproxy_url=uploadproxy_url,
+        insecure=True,
+        access_mode="ReadWriteOnce",
+        no_create=True,
+    )
+
+    get_logger().log_test_case_step(f"Deploy VM {vm_name}")
+    kubectl_apply = KubectlFileApplyKeywords(ssh_connection)
+    kubectl_apply.apply_resource_from_yaml(remote_yaml_path)
+
+    get_logger().log_test_case_step(f"Verify the status of VM {vm_name}")
+    kubectl_vm = KubectlGetVmKeywords(ssh_connection)
+    kubectl_vm.wait_for_vm_status(vm_name, "Running", timeout=180)
+
+    get_logger().log_test_case_step(f"Verify the IP and controller of VM {vm_name}")
+    kubectl_vmi = KubectlGetVmiKeywords(ssh_connection)
+    kubectl_vmi.wait_for_vmi_ready(vm_name, timeout=60)
+
+    get_logger().log_test_case_step(f"Login to VM {vm_name} via virtctl console")
+    VirtctlKeywords(ssh_connection).login_to_vm(vm_name, "debian", "password")

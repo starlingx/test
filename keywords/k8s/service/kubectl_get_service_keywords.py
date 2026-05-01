@@ -1,3 +1,7 @@
+import re
+from typing import Optional
+
+from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
 from keywords.k8s.k8s_base_keyword import K8sBaseKeyword
 from keywords.k8s.service.object.kubectl_get_service_output import KubectlGetServicesOutput
@@ -73,4 +77,32 @@ class KubectlGetServiceKeywords(K8sBaseKeyword):
         if len(node_port) > 0:
             return node_port[0]
 
+        return None
+
+    def get_service_endpoint(self, service_name: str, namespace: str = None) -> Optional[str]:
+        """Get the endpoint (IP:PORT) of a service via kubectl describe.
+
+        Parses the Endpoints line from ``kubectl describe svc`` output.
+
+        Args:
+            service_name (str): Name of the service.
+            namespace (str): Namespace of the service. Defaults to None.
+
+        Returns:
+            Optional[str]: Endpoint string in IP:PORT format, or None if not found.
+        """
+        cmd = f"kubectl describe svc {service_name}"
+        if namespace:
+            cmd = f"{cmd} -n {namespace}"
+        output = self.ssh_connection.send(self.k8s_config.export(cmd))
+        self.validate_success_return_code(self.ssh_connection)
+        output_str = "\n".join(output) if isinstance(output, list) else output
+
+        match = re.search(r"Endpoints:\s+([^\s]+)", output_str)
+        if match:
+            endpoint = match.group(1)
+            get_logger().log_info(f"Service {service_name} endpoint: {endpoint}")
+            return endpoint
+
+        get_logger().log_info(f"No endpoint found for service {service_name}")
         return None
