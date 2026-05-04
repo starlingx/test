@@ -5,14 +5,24 @@ from config.configuration_manager import ConfigurationManager
 
 
 class DatabaseConnectionManager:
+    """Manages a connection to a specific database."""
 
-    def __init__(self):
+    def __init__(self, database_name: str = None):
+        """Initializes the connection manager for a specific database.
+
+        Args:
+            database_name (str): The name of the database entry in the config. When ``None``, the default database is used.
+        """
         db_config = ConfigurationManager.get_database_config()
-        self.host = db_config.get_host_name()
-        self.dbname = db_config.get_db_name()
-        self.db_port = db_config.get_db_port()
-        self.user = db_config.get_user_name()
-        self.password = db_config.get_password()
+        if database_name is not None:
+            db_entry = db_config.get_database_entry(database_name)
+        else:
+            db_entry = db_config.get_default_database_entry()
+        self.host = db_entry.get_host_name()
+        self.dbname = db_entry.get_db_name()
+        self.db_port = db_entry.get_db_port()
+        self.user = db_entry.get_user_name()
+        self.password = db_entry.get_password()
 
     @contextmanager
     def open_conn_and_get_cur(

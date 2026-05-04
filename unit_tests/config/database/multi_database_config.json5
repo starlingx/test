@@ -1,0 +1,20 @@
+{
+  use_database: true,
+  default_database: 'default',
+  databases: {
+    default: {
+      host_name: 'default_host',
+      db_name: 'default_db',
+      db_port: 5432,
+      user_name: 'default_user',
+      password: 'defaultPassword$',
+    },
+    reporting: {
+      host_name: 'reporting_host',
+      db_name: 'reporting_db',
+      db_port: 5433,
+      user_name: 'reporting_user',
+      password: 'reportingPassword$',
+    },
+  },
+}

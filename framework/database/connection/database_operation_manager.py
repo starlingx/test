@@ -6,25 +6,30 @@ from framework.logging.automation_logger import get_logger
 
 
 class DatabaseOperationManager:
-    """
-    This class allows you to perform database operations
-    """
+    """This class allows you to perform database operations."""
 
-    def __init__(self):
-        self.database_connection_manager = DatabaseConnectionManager()
+    def __init__(self, database_name: str = None):
+        """Initializes the operation manager for a specific database.
+
+        Args:
+            database_name (str): The name of the database entry in the config. When ``None``, the default database is used.
+        """
+        self.database_connection_manager = DatabaseConnectionManager(database_name)
 
     def execute_query(self, query, cursor_factory=None, expect_results=True):
-        """
-        This function will open up a connection to the database and execute the
+        """This function will open up a connection to the database and execute the
         specified query.
+
         Args:
             query: The query that we want to execute.
             cursor_factory: set to RealDictCursor to allow for selecting name columns
             expect_results: set to false if nothing is returned by the query ex. updates
-        Returns: The result of the query if any.
+
+        Returns:
+            The result of the query if any.
         """
 
-        # Loop until we get something or the error is not an DNS error
+        # Loop until we get something or the error is not a DNS error
         while True:
             try:
                 with self.database_connection_manager.open_conn_and_get_cur(cursor_factory=cursor_factory) as cursor:
@@ -45,6 +50,12 @@ class DatabaseOperationManager:
                     sleep(60)
 
     def execute_values(self, query, data):
+        """Executes a batch insert/update using psycopg2 execute_values.
+
+        Args:
+            query: The query template with a VALUES placeholder.
+            data: The data to insert.
+        """
         try:
             with self.database_connection_manager.open_conn_and_get_cur() as cursor:
                 psycopg2.extras.execute_values(cursor, query, data, template=None)
