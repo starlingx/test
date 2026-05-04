@@ -7,9 +7,8 @@ from framework.ssh.ssh_connection import SSHConnection
 from framework.validation.validation import validate_equals, validate_equals_with_retry, validate_list_contains, validate_none
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.cloud_platform.system.application.system_application_apply_keywords import SystemApplicationApplyKeywords
-from keywords.cloud_platform.system.application.system_application_delete_keywords import SystemApplicationDeleteInput, SystemApplicationDeleteKeywords
 from keywords.cloud_platform.system.application.system_application_list_keywords import SystemApplicationListKeywords
-from keywords.cloud_platform.system.application.system_application_remove_keywords import SystemApplicationRemoveInput, SystemApplicationRemoveKeywords
+from keywords.cloud_platform.system.application.system_application_remove_keywords import SystemApplicationRemoveKeywords
 from keywords.cloud_platform.system.application.system_application_upload_keywords import SystemApplicationUploadInput, SystemApplicationUploadKeywords
 from keywords.cloud_platform.system.host.system_host_list_keywords import SystemHostListKeywords
 from keywords.cloud_platform.system.host.system_host_lock_keywords import SystemHostLockKeywords
@@ -183,23 +182,10 @@ def cleanup_kubevirt_environment(ssh_connection: SSHConnection) -> None:
     """
     get_logger().log_info("Cleaning up kubevirt test resources")
 
-    system_app_list = SystemApplicationListKeywords(ssh_connection)
-    if system_app_list.is_app_present(APP_NAME):
-        get_logger().log_info(f"Removing {APP_NAME} application")
-        system_app_apply = SystemApplicationApplyKeywords(ssh_connection)
-        if system_app_apply.is_applied_or_failed(APP_NAME):
-            remove_input = SystemApplicationRemoveInput()
-            remove_input.set_app_name(APP_NAME)
-            system_app_remove = SystemApplicationRemoveKeywords(ssh_connection)
-            system_app_remove.system_application_remove(remove_input)
-
-        delete_input = SystemApplicationDeleteInput()
-        delete_input.set_app_name(APP_NAME)
-        delete_input.set_force_deletion(True)
-        system_app_delete = SystemApplicationDeleteKeywords(ssh_connection)
-        system_app_delete.get_system_application_delete(delete_input)
-        # remove virtctl
-        remove_virtctl(ssh_connection)
+    system_app_remove = SystemApplicationRemoveKeywords(ssh_connection)
+    system_app_remove.cleanup_app_if_present(app_name=APP_NAME, force_removal=False, force_deletion=True, timeout_in_seconds=300)
+    # remove virtctl
+    remove_virtctl(ssh_connection)
 
 
 def setup_registry_secret(ssh_connection: SSHConnection, request: FixtureRequest, namespace: str = "default") -> None:
