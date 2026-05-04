@@ -62,43 +62,53 @@ class SSHConnection:
         self.ssh_pass_password = None
         self.output_start_line = -1  # for parsing out lines that come by default when using ssh pass
 
-    def _connect_to_jump_host(self, allow_agent: bool = True, look_for_keys: bool = True) -> SSHClient:
+    def _connect_to_jump_host(self, allow_agent: bool = True, look_for_keys: bool = True, retries: int = 3, retry_delay: int = 5) -> SSHClient:
         """
         Connect to the configured jump host using SSH.
 
         Uses paramiko to establish the SSH session with the jump host, based on
-        credentials provided in the `jump_host` configuration.
+        credentials provided in the `jump_host` configuration. Retries on transient
+        failures such as 'Error reading SSH protocol banner'.
 
         Args:
             allow_agent (bool): Connect to SSH agent (Paramiko arg). Default is True.
             look_for_keys (bool): Re-use saved private keys (Paramiko arg). Default is True.
+            retries (int): Number of connection attempts before giving up. Default is 3.
+            retry_delay (int): Seconds to wait between attempts. Default is 5.
 
         Returns:
             SSHClient: The connected jump host SSH client.
         """
-        jump_client = SSHClient()
-        jump_client.set_missing_host_key_policy(paramiko.AutoAddPolicy)
-        try:
-            host = self.jump_host.get_host()
-            user_name = self.jump_host.get_credentials().get_user_name()
-            password = self.jump_host.get_credentials().get_password()
-            jump_host_ssh_port = self.jump_host.get_ssh_port()
-            jump_client.connect(
-                host,
-                username=user_name,
-                password=password,
-                timeout=self.timeout,
-                allow_agent=allow_agent,
-                look_for_keys=look_for_keys,
-                port=jump_host_ssh_port,
-            )
-            return jump_client
+        host = self.jump_host.get_host()
+        user_name = self.jump_host.get_credentials().get_user_name()
+        password = self.jump_host.get_credentials().get_password()
+        jump_host_ssh_port = self.jump_host.get_ssh_port()
 
-        except BaseException as exception:
-            jump_client.close()
-            get_logger().log_error(f"Failed to Connect to Jump-Host {host} with username/password =" f" {user_name}/{password} with timeout {self.timeout}s")
-            get_logger().log_error(f"Exception: {exception}")
-            raise BaseException("Failed to connect to Jump-Host")
+        last_exception = None
+        for attempt in range(1, retries + 1):
+            jump_client = SSHClient()
+            jump_client.set_missing_host_key_policy(paramiko.AutoAddPolicy)
+            try:
+                jump_client.connect(
+                    host,
+                    username=user_name,
+                    password=password,
+                    timeout=self.timeout,
+                    allow_agent=allow_agent,
+                    look_for_keys=look_for_keys,
+                    port=jump_host_ssh_port,
+                )
+                return jump_client
+            except BaseException as exception:
+                jump_client.close()
+                last_exception = exception
+                get_logger().log_error(f"Failed to Connect to Jump-Host {host} (attempt {attempt}/{retries}): {exception}")
+                if attempt < retries:
+                    get_logger().log_info(f"Retrying jump host connection in {retry_delay}s...")
+                    time.sleep(retry_delay)
+
+        get_logger().log_error(f"Could not connect to gateway {host}:{jump_host_ssh_port} : {last_exception}")
+        raise BaseException("Failed to connect to Jump-Host")
 
     def connect(self, allow_agent: bool = True, look_for_keys: bool = False) -> bool:
         """

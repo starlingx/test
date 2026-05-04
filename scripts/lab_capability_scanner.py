@@ -194,12 +194,8 @@ def create_subcloud_config_file_if_needed(host: LabConfig, subcloud_name: str, s
     subcloud_config.set_floating_ip("")
     subcloud_config.set_lab_name(subcloud_name)
 
-    new_config = "{"
-    new_config += get_main_lab_config(subcloud_config)
-    new_config += "}"
-
     with open(subcloud_config_file_path, "w") as config:
-        config.write(json5.dumps(json5.loads(new_config), indent=4))
+        config.write(get_main_lab_config(subcloud_config))
 
 
 def is_sriov(host_interface_list_output: SystemHostInterfaceOutput) -> bool:
@@ -727,17 +723,12 @@ def write_config(lab_config: LabConfig) -> None:
     Returns:
         None:
     """
-    new_config = "{"
-    new_config += get_main_lab_config(lab_config)
-    new_config += get_nodes_config(lab_config)
-    new_config += get_subclouds_config(lab_config)
-    new_config += get_secondary_controller_config(lab_config)
-    new_config += "}"
+    config_dict = _build_config_dict(lab_config)
 
     lab_config_file = lab_config.get_lab_config_file()
     shutil.move(lab_config_file, f"{lab_config_file}_bak")
     with open(lab_config_file, "w") as config:
-        config.write(json5.dumps(json5.loads(new_config), indent=4))
+        config.write(json5.dumps(config_dict, indent=4))
 
 
 def clean_subcloud_config_files(lab_config: LabConfig) -> None:
@@ -773,6 +764,70 @@ def clean_subcloud_config_files(lab_config: LabConfig) -> None:
                 os.remove(subcloud_backup_path)
 
 
+def _build_config_dict(lab_config: LabConfig) -> dict:
+    """Build a plain Python dict representing the full lab configuration.
+
+    Using a dict and delegating serialization to json5.dumps means all values
+    (including file paths with backslashes) are escaped correctly without any
+    manual string manipulation.
+
+    Args:
+        lab_config (LabConfig): The lab configuration object.
+
+    Returns:
+        dict: The lab configuration as a serializable dictionary.
+    """
+    config = {
+        "floating_ip": lab_config.get_floating_ip(),
+        "lab_name": lab_config.get_lab_name(),
+        "lab_type": lab_config.get_lab_type(),
+        "admin_credentials": {
+            "user_name": lab_config.get_admin_credentials().get_user_name(),
+            "password": lab_config.get_admin_credentials().get_password(),
+        },
+        "bm_password": lab_config.get_bm_password(),
+        "use_jump_server": lab_config.is_use_jump_server(),
+    }
+
+    if lab_config.is_use_jump_server():
+        config["jump_server_config"] = lab_config.get_jump_host_configuration().get_host_config_file()
+
+    if lab_config.get_ssh_port():
+        config["ssh_port"] = lab_config.get_ssh_port()
+
+    config["horizon_url"] = lab_config.get_horizon_url()
+
+    if lab_config.get_system_controller_ip():
+        config["system_controller_ip"] = lab_config.get_system_controller_ip()
+
+    if lab_config.get_system_controller_name():
+        config["system_controller_name"] = lab_config.get_system_controller_name()
+
+    config["lab_capabilities"] = lab_config.get_lab_capabilities()
+
+    if lab_config.get_nodes():
+        config["nodes"] = {
+            node.get_name(): {
+                "ip": node.get_ip(),
+                "node_type": node.get_type(),
+                "bm_ip": node.get_bm_ip(),
+                "bm_username": node.get_bm_username(),
+                "node_capabilities": node.get_node_capabilities(),
+            }
+            for node in lab_config.get_nodes()
+        }
+
+    if lab_config.get_subclouds():
+        subclouds_sorted = sorted(lab_config.get_subclouds(), key=lambda sc: sc.get_lab_name())
+        config["subclouds"] = {sc.get_lab_name(): sc.get_lab_config_file() for sc in subclouds_sorted}
+
+    secondary = lab_config.get_secondary_system_controller_config()
+    if secondary:
+        config["secondary_system_controller"] = secondary.get_lab_config_file()
+
+    return config
+
+
 def get_main_lab_config(lab_config: LabConfig) -> str:
     """
     Gets the configuration lines for the 'main' lab.
@@ -782,103 +837,18 @@ def get_main_lab_config(lab_config: LabConfig) -> str:
 
     Returns:
         str: The formatted configuration for the main lab.
+
+    Note:
+        Kept for use by create_subcloud_config_file_if_needed. Delegates to
+        _build_config_dict so all escaping is handled by json5.dumps.
     """
-    main_config = f'floating_ip: "{lab_config.get_floating_ip()}",'
-    main_config += f'lab_name: "{lab_config.get_lab_name()}",'
-    main_config += f'lab_type: "{lab_config.get_lab_type()}",'
-    main_config += "admin_credentials: {"
-    main_config += f'user_name: "{lab_config.get_admin_credentials().get_user_name()}",'
-    main_config += f'password: "{lab_config.get_admin_credentials().get_password()}",'
-    main_config += "},"
-    main_config += f'bm_password: "{lab_config.get_bm_password()}",'
-    use_jump_server = "true" if lab_config.is_use_jump_server() else "false"
-    main_config += f"use_jump_server: {use_jump_server},"
-    if lab_config.is_use_jump_server():
-        main_config += f'jump_server_config: "{lab_config.get_jump_host_configuration().get_host_config_file()}",'
-    if lab_config.get_ssh_port():
-        main_config += f"ssh_port: {lab_config.get_ssh_port()},"
-    main_config += f'horizon_url: "{lab_config.get_horizon_url()}",'
-    if lab_config.get_system_controller_ip():
-        main_config += f'system_controller_ip: "{lab_config.get_system_controller_ip()}",'
-    if lab_config.get_system_controller_name():
-        main_config += f'system_controller_name: "{lab_config.get_system_controller_name()}",'
-    lab_capabilities_as_str = ", \n".join('"{}"'.format(capability) for capability in lab_config.get_lab_capabilities())
-    main_config += f'"lab_capabilities": [\n{lab_capabilities_as_str}],\n'
-
-    return main_config
-
-
-def get_nodes_config(lab_config: LabConfig) -> str:
-    """
-    Retrieves the configuration settings for the nodes.
-
-    Args:
-        lab_config (LabConfig): The lab configuration object.
-
-    Returns:
-        str: The formatted configuration for the nodes.
-    """
-    if not lab_config.get_nodes():
-        return ""
-
-    node_config = '"nodes": {'
-    for node in lab_config.get_nodes():
-        node_config += f'"{node.get_name()}": ' + "{"
-        node_config += f'"ip": "{node.get_ip()}",'
-        node_config += f'"node_type": "{node.get_type()}",'
-        node_config += f'"bm_ip": "{node.get_bm_ip()}",'
-        node_config += f'"bm_username": "{node.get_bm_username()}",'
-        node_capabilities_as_str = ", \n".join('"{}"'.format(capability) for capability in node.get_node_capabilities())
-        node_config += f'"node_capabilities": [\n{node_capabilities_as_str}],\n'
-        node_config += "},"
-    node_config += "},"
-
-    return node_config
-
-
-def get_secondary_controller_config(lab_config: LabConfig) -> str:
-    """Getter for the secondary system controller configs
-
-    The portion in lab config file where are specified the secondary
-    system controller config file paths).
-
-    Args:
-        lab_config (LabConfig): The secondary system controllers
-                                LabConfig object.
-
-    Returns:
-        str: The formatted secondary controller configuration.
-    """
-    secondary_controller = lab_config.get_secondary_system_controller_config()
-    if not secondary_controller:
-        return ""
-
-    secondary_controller_config = f'"secondary_system_controller": "{secondary_controller.get_lab_config_file()}",'
-
-    return secondary_controller_config
-
-
-def get_subclouds_config(lab_config: LabConfig) -> str:
-    """
-    Getter for the subcloud configs (the portion in lab config file where are specified the subcloud config file paths).
-
-    Args:
-        lab_config (LabConfig): The subcloud LabConfig object.
-
-    Returns:
-        str: The formatted subcloud configuration.
-    """
-    if not lab_config.get_subclouds():
-        return ""
-
-    subcloud_config = '"subclouds": {'
-    subclouds: list[LabConfig] = lab_config.get_subclouds()
-    subclouds_sorted = sorted(subclouds, key=lambda subcloud: subcloud.get_lab_name())
-    for subcloud in subclouds_sorted:
-        subcloud_config += f'"{subcloud.get_lab_name()}": "{subcloud.get_lab_config_file()}",'
-    subcloud_config += "},"
-
-    return subcloud_config
+    config = _build_config_dict(lab_config)
+    # Strip nodes/subclouds/secondary — this function is only used to seed a
+    # new subcloud stub file which doesn't have those yet.
+    config.pop("nodes", None)
+    config.pop("subclouds", None)
+    config.pop("secondary_system_controller", None)
+    return json5.dumps(config, indent=4)
 
 
 if __name__ == "__main__":
