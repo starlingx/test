@@ -1,14 +1,20 @@
+"""Kubernetes PersistentVolumeClaim object representation."""
+
+from typing import Optional
+
+
 class KubectlPvcObject:
-    """
-    Class to hold attributes of a 'kubectl get pvc' pvc entry.
+    """Represents a single Kubernetes PersistentVolumeClaim resource.
+
+    Stores parsed data from 'kubectl get pvc -o wide' for a single
+    PVC entry.
     """
 
-    def __init__(self, name: str):
-        """
-        Constructor.
+    def __init__(self, name: str) -> None:
+        """Initialize PVC object.
 
         Args:
-            name (str): Name of the pvc.
+            name (str): Name of the PVC.
         """
         self.name = name
         self.namespace = None
@@ -22,190 +28,173 @@ class KubectlPvcObject:
         self.volumemode = None
 
     def get_name(self) -> str:
-        """
-        Getter for NAME entry.
+        """Get the PVC name.
 
         Returns:
-            str: The name of the pvc.
+            str: The name of the PVC.
         """
         return self.name
 
-    def set_namespace(self, namespace: str) -> None:
-        """
-        Setter for NAMESPACE.
-
-        Args:
-            namespace (str): Namespace value.
-        """
-        self.namespace = namespace
-
-    def get_namespace(self) -> str:
-        """
-        Getter for NAMESPACE entry.
+    def get_namespace(self) -> Optional[str]:
+        """Get the namespace.
 
         Returns:
-            str: Namespace value.
+            Optional[str]: The namespace.
         """
         return self.namespace
 
-    def set_status(self, status: str) -> None:
-        """
-        Setter for STATUS.
+    def set_namespace(self, namespace: str) -> None:
+        """Set the namespace.
 
         Args:
-            status (str): status value.
+            namespace (str): The namespace.
         """
-        self.status = status
+        self.namespace = namespace
 
-    def get_status(self) -> str:
-        """
-        Getter for STATUS entry.
+    def get_status(self) -> Optional[str]:
+        """Get the PVC status.
 
         Returns:
-            str: Status value.
+            Optional[str]: The status (e.g., 'Bound', 'Pending').
         """
         return self.status
 
-    def set_volume(self, volume: str) -> None:
-        """
-        Setter for VOLUME.
+    def set_status(self, status: str) -> None:
+        """Set the PVC status.
 
         Args:
-            volume (str): Volume value.
+            status (str): The status.
         """
-        self.volume = volume
+        self.status = status
 
-    def get_volume(self) -> str:
-        """
-        Getter for VOLUME entry.
+    def get_volume(self) -> Optional[str]:
+        """Get the bound PersistentVolume name.
 
         Returns:
-            str: Volume value.
+            Optional[str]: The PV name.
         """
         return self.volume
 
-    def set_capacity(self, capacity: str) -> None:
-        """
-        Setter for CAPACITY.
+    def set_volume(self, volume: str) -> None:
+        """Set the bound PersistentVolume name.
 
         Args:
-            capacity (str): Capacity value.
+            volume (str): The PV name.
         """
-        self.capacity = capacity
+        self.volume = volume
 
-    def get_capacity(self) -> str:
-        """
-        Getter for CAPACITY entry.
+    def get_capacity(self) -> Optional[str]:
+        """Get the storage capacity.
 
         Returns:
-            str: Capacity value.
+            Optional[str]: The capacity (e.g., '5Gi').
         """
         return self.capacity
 
-    def set_access_modes(self, access_modes: str) -> None:
-        """
-        Setter for ACCESS_MODE.
+    def set_capacity(self, capacity: str) -> None:
+        """Set the storage capacity.
 
         Args:
-            access_modes (str): access_modes value.
+            capacity (str): The capacity.
         """
-        self.access_modes = access_modes
+        self.capacity = capacity
 
-    def get_access_modes(self) -> str:
-        """
-        Getter for ACCESS_MODE entry.
+    def get_access_modes(self) -> Optional[str]:
+        """Get the access modes.
 
         Returns:
-            str: Access_modes value.
+            Optional[str]: The access modes (e.g., 'RWO').
         """
         return self.access_modes
 
-    def set_storageclass(self, storageclass: str) -> None:
-        """
-        Setter for STORAGECLASS.
+    def set_access_modes(self, access_modes: str) -> None:
+        """Set the access modes.
 
         Args:
-            storageclass (str): Storageclass address value.
+            access_modes (str): The access modes.
         """
-        self.storageclass = storageclass
+        self.access_modes = access_modes
 
-    def get_storageclass(self) -> str:
-        """
-        Getter for STORAGECLASS entry.
+    def get_storageclass(self) -> Optional[str]:
+        """Get the StorageClass name.
 
         Returns:
-            str: storageclass value.
+            Optional[str]: The StorageClass name.
         """
         return self.storageclass
 
-    def set_volumeattributesclass(self, volumeattributesclass: str) -> None:
-        """
-        Setter for VOLUMEATTRIBUTESCLASS.
+    def set_storageclass(self, storageclass: str) -> None:
+        """Set the StorageClass name.
 
         Args:
-            volumeattributesclass (str): volumeattributesclass value.
+            storageclass (str): The StorageClass name.
         """
-        self.volumeattributesclass = volumeattributesclass
+        self.storageclass = storageclass
 
-    def get_volumeattributesclass(self) -> str:
-        """
-        Getter for VOLUMEATTRIBUTESCLASS entry.
+    def get_volumeattributesclass(self) -> Optional[str]:
+        """Get the volume attributes class.
 
         Returns:
-            str: volumeattributesclass value.
+            Optional[str]: The volume attributes class.
         """
         return self.volumeattributesclass
 
-    def set_age(self, age: str) -> None:
-        """
-        Setter for AGE.
+    def set_volumeattributesclass(self, volumeattributesclass: str) -> None:
+        """Set the volume attributes class.
 
         Args:
-            age (str): Age value.
+            volumeattributesclass (str): The volume attributes class.
         """
-        self.age = age
+        self.volumeattributesclass = volumeattributesclass
 
-    def get_age(self) -> str:
-        """
-        Getter for AGE entry.
+    def get_age(self) -> Optional[str]:
+        """Get the age.
 
         Returns:
-            str: Age value.
+            Optional[str]: The age.
         """
         return self.age
 
-    def set_volumemode(self, volumemode: str) -> None:
-        """
-        Setter for VOLUMEMODE.
+    def set_age(self, age: str) -> None:
+        """Set the age.
 
         Args:
-            volumemode (str): Volumemode value.
+            age (str): The age.
         """
-        self.volumemode = volumemode
+        self.age = age
 
-    def get_volumemode(self) -> str:
-        """
-        Getter for VOLUMEMODE entry.
+    def get_volumemode(self) -> Optional[str]:
+        """Get the volume mode.
 
         Returns:
-            str: Volumemode value.
+            Optional[str]: The volume mode (e.g., 'Filesystem').
         """
         return self.volumemode
 
-    def __str__(self) -> str:
+    def set_volumemode(self, volumemode: str) -> None:
+        """Set the volume mode.
+
+        Args:
+            volumemode (str): The volume mode.
         """
-        String representation of the pvc object.
+        self.volumemode = volumemode
+
+    def __str__(self) -> str:
+        """Get string representation for logging.
 
         Returns:
-            str: pvc name and status.
+            str: Human-readable representation of the PVC.
         """
-        return f"pvc(name={self.name}, status={self.status})"
+        return (
+            f"PVC(name={self.name}, namespace={self.namespace}, "
+            f"status={self.status}, storageclass={self.storageclass}, "
+            f"capacity={self.capacity})"
+        )
 
     def __repr__(self) -> str:
-        """
-        Representation of the pvc object.
+        """Get repr for debugging.
 
         Returns:
-            str: pvc name and status.
+            str: Same as __str__.
         """
         return self.__str__()
