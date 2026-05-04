@@ -30,7 +30,79 @@ from keywords.cloud_platform.system.host.system_host_swact_keywords import Syste
 from keywords.cloud_platform.version_info.cloud_platform_version_manager import CloudPlatformVersionManagerClass
 from keywords.files.file_keywords import FileKeywords
 from keywords.k8s.pods.kubectl_get_pods_keywords import KubectlGetPodsKeywords
-from testcases.cloud_platform.regression.dc.backup_restore.test_verify_backup_file import teardown_central, teardown_local, verify_backup_central, verify_backup_local_custom_path
+
+BACKUP_PATH = "/opt/dc-vault/backups/"
+
+def verify_backup_central(central_ssh: SSHConnection, subcloud_name: str):
+    """Function to central Backup of a subcloud
+
+    Verify backup files are stored in centralized archive
+    Verify backup date and backup state of single subcloud
+
+    Args:
+        central_ssh (SSHConnection): SSH connection to the active controller
+        subcloud_name (str): subcloud name to backup
+    """
+    release = CloudPlatformVersionManagerClass().get_sw_version()
+    # Gets the lowest subcloud sysadmin password needed for backup creation.
+    lab_config = ConfigurationManager.get_lab_config().get_subcloud(subcloud_name)
+    subcloud_password = lab_config.get_admin_credentials().get_password()
+
+    dc_manager_backup = DcManagerSubcloudBackupKeywords(central_ssh)
+    # Path to where the backup file will store.
+    central_path = f"{BACKUP_PATH}{subcloud_name}/{release}"
+    files_in_backup_dir = FileKeywords(central_ssh).get_files_in_dir(central_path, is_sudo=True)
+    if len(files_in_backup_dir) > 0:
+        FileKeywords(central_ssh).delete_folder_with_sudo(central_path)
+
+    # Create a subcloud backup and verify the subcloud backup file in central_path
+    get_logger().log_info(f"Create {subcloud_name} backup on Central Cloud")
+    dc_manager_backup.create_subcloud_backup(subcloud_password, central_ssh, path=central_path, subcloud=subcloud_name)
+
+    get_logger().log_info("Checking if backup was created on Central")
+    DcManagerSubcloudBackupKeywords(central_ssh).wait_for_backup_status_complete(subcloud_name, expected_status="complete-central")
+
+def verify_backup_local(central_ssh: SSHConnection, subcloud_ssh: SSHConnection, subcloud_name: str, release:str, custom_path: bool = False):
+    """Verify backup files are stored locally to custom directory
+
+    Args:
+        central_ssh (SSHConnection): SSH connection to the active controller
+        subcloud_ssh (SSHConnection): SSH connection to the subcloud
+        subcloud_name (str): subcloud name to backup
+        release (str): subcloud release
+        custom_path (bool): If True, store the backup in home directory. Defaults to False
+    """
+    # Gets the lowest subcloud sysadmin password needed for backup creation.
+    lab_config = ConfigurationManager.get_lab_config().get_subcloud(subcloud_name)
+    subcloud_password = lab_config.get_admin_credentials().get_password()
+
+    dc_manager_backup = DcManagerSubcloudBackupKeywords(central_ssh)
+
+    if custom_path:
+        get_user = lab_config.get_admin_credentials().get_user_name()
+        home_path = f"/home/{get_user}/"
+        backup_yaml_path = f"{home_path}subcloud_backup.yaml"
+
+        get_logger().log_info("Creating the custom yaml to store backup")
+        FileKeywords(central_ssh).create_file_with_echo(backup_yaml_path, f'backup_dir: {home_path}')
+
+        get_logger().log_info("Checking if the yaml was created")
+        FileKeywords(central_ssh).file_exists(backup_yaml_path)
+
+        dc_manager_backup.create_subcloud_backup(subcloud_password, subcloud_ssh, path=f"{home_path}{subcloud_name}_platform_backup_*.tgz", subcloud=subcloud_name, local_only=True, backup_yaml=backup_yaml_path)
+    else:
+        backup_path = f"/opt/platform-backup/backups/{release}/"
+        files_in_backup_dir = FileKeywords(subcloud_ssh).get_files_in_dir(backup_path, is_sudo=True)
+
+        if len(files_in_backup_dir) > 0:
+            FileKeywords(subcloud_ssh).delete_folder_with_sudo(backup_path)
+
+        # Create a subcloud backup and verify the subcloud backup file in local custom path.
+        get_logger().log_info(f"Create {subcloud_name} backup locally on {backup_path}")
+        dc_manager_backup.create_subcloud_backup(subcloud_password, subcloud_ssh, path=f"{backup_path}{subcloud_name}_platform_backup_*.tgz", subcloud=subcloud_name, local_only=True)
+
+    get_logger().log_info(f"Checking if backup was created on {subcloud_name}")
+    DcManagerSubcloudBackupKeywords(central_ssh).wait_for_backup_status_complete(subcloud_name, expected_status="complete-local")
 
 
 def ensure_oidc_app_installed(subcloud_ssh: SSHConnection) -> bool:
@@ -205,10 +277,6 @@ def perform_rehome_operation(origin_ssh_connection: SSHConnection, destination_s
     # Ensure software image load is available on destination system controller.
     verify_software_release(destination_ssh_connection)
 
-    # Synchronizes subcloud deployments assets between both source and destination system controllers.
-    get_logger().log_info(f"Synchronizing subcloud {subcloud_name} deployment assets between source and destination system controllers")
-    sync_deployment_assets_between_system_controllers(origin_ssh_connection, destination_ssh_connection, subcloud_name, subcloud_bootstrap_values, subcloud_install_values)
-
     dcm_sc_list_kw_destination = DcManagerSubcloudListKeywords(destination_ssh_connection)
     dcm_sc_kw_origin = DcManagerSubcloudManagerKeywords(origin_ssh_connection)
 
@@ -243,13 +311,14 @@ def rehome_operation_cleanup(remove_subcloud_ssh: SSHConnection, keep_subcloud_s
     DcManagerSubcloudDeleteKeywords(remove_subcloud_ssh).dcmanager_subcloud_delete(subcloud_name)
 
 
-def verify_subcloud_healthy(ssh_connection: SSHConnection, subcloud_name: str) -> None:
+def verify_subcloud_healthy(ssh_connection: SSHConnection, subcloud_name: str, verify_sync = True) -> None:
     """
     Verify that the specified subcloud is healthy.
 
     Args:
         ssh_connection (SSHConnection): SSH connection to the system controller.
         subcloud_name (str): Name of the subcloud.
+        verify_sync (bool): Verify subcloud health with sync status. Defaults to True.
     """
     subcloud = DcManagerSubcloudListKeywords(ssh_connection).get_dcmanager_subcloud_list().get_subcloud_by_name(subcloud_name)
     validate_equals(subcloud.get_management(), "managed", f"Subcloud {subcloud_name} is managed.")
@@ -264,7 +333,8 @@ def verify_subcloud_healthy(ssh_connection: SSHConnection, subcloud_name: str) -
         subcloud = DcManagerSubcloudListKeywords(ssh_connection).get_dcmanager_subcloud_list().get_subcloud_by_name(subcloud_name)
         return subcloud.get_sync()
 
-    validate_equals_with_retry(get_sync, "in-sync", f"Subcloud {subcloud_name} is in-sync.", timeout=60)
+    if verify_sync:
+        validate_equals_with_retry(get_sync, "in-sync", f"Subcloud {subcloud_name} is in-sync.", timeout=60)
 
 
 def validate_updated_host_route(ssh_connection: SSHConnection, subcloud_ssh: SSHConnection, subcloud_name: str, mgmt_floating_address_before_rehome: str, oam_floating_address_before_rehome: str) -> None:
@@ -310,6 +380,33 @@ def validate_updated_host_route(ssh_connection: SSHConnection, subcloud_ssh: SSH
     validate_equals(mgmt_floating_address_after_rehome, mgmt_floating_address_destination, "System controller management floating address on subcloud should match destination system controller after rehoming")
     validate_equals(oam_floating_address_after_rehome, oam_floating_address_destination, "System controller OAM floating address on subcloud should match destination system controller after rehoming")
 
+def teardown_central(central_ssh: SSHConnection, subcloud_name: str) -> None:
+    """
+    Teardown function for central backup. Removes backup files from central storage.
+
+    Args:
+        central_ssh (SSHConnection): SSH connection to the active controller.
+        subcloud_name (str): subcloud name.
+    """
+    release = CloudPlatformVersionManagerClass().get_sw_version()
+    central_path = f"{BACKUP_PATH}{subcloud_name}/{release}"
+    get_logger().log_info(f"Teardown: Removing central backup at {central_path}")
+    FileKeywords(central_ssh).delete_folder_with_sudo(central_path)
+
+
+def teardown_local(subcloud_ssh: SSHConnection, subcloud_name: str) -> None:
+    """
+    Teardown function for local backup. Removes backup files from subcloud.
+
+    Args:
+        subcloud_ssh (SSHConnection): SSH connection to the subcloud.
+        subcloud_name (str): subcloud name.
+    """
+    release = CloudPlatformVersionManagerClass().get_sw_version()
+    local_path = f"/opt/platform-backup/backups/{release}/"
+    get_logger().log_info(f"Teardown: Removing local backup at {local_path}")
+    FileKeywords(subcloud_ssh).delete_folder_with_sudo(local_path)
+
 
 def verify_backup_central_duplex(central_ssh: SSHConnection, subcloud_ssh: SSHConnection, subcloud_name: str) -> None:
     """
@@ -336,7 +433,8 @@ def verify_backup_local_duplex(central_ssh: SSHConnection, subcloud_ssh: SSHConn
     """
     get_logger().log_info(f"Create {subcloud_name} backup on Local Cloud")
     HealthKeywords(subcloud_ssh).validate_healty_cluster()
-    verify_backup_local_custom_path(central_ssh, subcloud_ssh, subcloud_name)
+    release = CloudPlatformVersionManagerClass().get_sw_version()
+    verify_backup_local(central_ssh, subcloud_ssh, subcloud_name, release=str(release), custom_path=True)
 
 
 def dc_swact(ssh_connection: SSHConnection) -> None:
@@ -432,11 +530,11 @@ def test_rehome_duplex_subcloud(request):
     validate_equals(pods_before_rehome, pods_after_rehome, "Pod count should be the same before and after rehoming")
 
     # Verify backup on Central Cloud after rehoming
-    request.addfinalizer(teardown_central)
+    request.addfinalizer(lambda: teardown_central(destination_system_controller_ssh, subcloud_name))
     verify_backup_central_duplex(destination_system_controller_ssh, subcloud_ssh, subcloud_name)
 
     # Verify backup on Local Cloud after rehoming
-    request.addfinalizer(teardown_local)
+    request.addfinalizer(lambda: teardown_local(subcloud_ssh, subcloud_name))
     verify_backup_local_duplex(destination_system_controller_ssh, subcloud_ssh, subcloud_name)
 
     # Validate swact in both directions (controller-0 -> controller-1 and controller-1 -> controller-0)
@@ -747,7 +845,7 @@ def test_rehome_simplex_subcloud_with_central_restore(request):
 
     def teardown():
         get_logger().log_info("Removing test files during teardown")
-        FileKeywords(subcloud_ssh).delete_folder_with_sudo(central_path)
+        FileKeywords(destination_system_controller_ssh).delete_folder_with_sudo(central_path)
 
     request.addfinalizer(teardown)
 
@@ -844,3 +942,62 @@ def test_rehome_duplex_subcloud_c1(request):
     # Validate swact back to original state
     dc_swact(subcloud_ssh)
     verify_subcloud_healthy(origin_system_controller_ssh, subcloud_name)
+
+@mark.p2
+@mark.subcloud_lab_is_simplex
+@mark.lab_has_secondary_system_controller
+def test_rehome_simplex_subcloud_for_prestage(request):
+    """
+    Verifies rehome operation for simplex subcloud.
+
+    Test Steps:
+        1. Select a healthy simplex subcloud
+        2. Count pods and validate health before rehoming
+        3. Perform rehome operation to destination system controller
+        4. Count pods and validate health after rehoming
+
+    """
+    # Initialize SSH connections
+    origin_system_controller_ssh = LabConnectionKeywords().get_active_controller_ssh()
+    destination_system_controller_ssh = LabConnectionKeywords().get_secondary_active_controller_ssh()
+
+    # Get simplex subcloud
+    get_logger().log_info("Selecting healthy simplex subcloud for rehoming and restore test")
+    origin_dcm_list_kw = DcManagerSubcloudListKeywords(origin_system_controller_ssh)
+    subcloud_name = ConfigurationManager.get_lab_config().get_subcloud_names()[0]
+
+    def teardown():
+        if origin_dcm_list_kw.get_dcmanager_subcloud_list().is_subcloud_in_output(subcloud_name):
+            subcloud_manage_state = origin_dcm_list_kw.get_dcmanager_subcloud_list().get_subcloud_by_name(subcloud_name).get_management()
+            if subcloud_manage_state == "unmanaged":
+                DcManagerSubcloudManagerKeywords(origin_system_controller_ssh).get_dcmanager_subcloud_manage(subcloud_name, 10)
+        if DcManagerSubcloudListKeywords(destination_system_controller_ssh).get_dcmanager_subcloud_list().is_subcloud_in_output(subcloud_name):
+            subcloud_manage_state = DcManagerSubcloudListKeywords(destination_system_controller_ssh).get_dcmanager_subcloud_list().get_subcloud_by_name(subcloud_name).get_management()
+            if subcloud_manage_state == "unmanaged":
+                DcManagerSubcloudManagerKeywords(destination_system_controller_ssh).get_dcmanager_subcloud_manage(subcloud_name, 10)
+
+    request.addfinalizer(teardown)
+
+    # Get deployment assets
+    get_logger().log_info(f"Retrieving deployment assets for subcloud {subcloud_name}")
+    deployment_assets_config = ConfigurationManager.get_deployment_assets_config()
+    subcloud_bootstrap_values = deployment_assets_config.get_subcloud_deployment_assets(subcloud_name).get_bootstrap_file()
+    subcloud_install_values = deployment_assets_config.get_subcloud_deployment_assets(subcloud_name).get_install_file()
+
+    # Establish subcloud SSH connection
+    subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
+
+    # Pre-rehome validation: count pods and check health
+    get_logger().log_info("Validating subcloud health and counting pods before rehoming")
+    pods_before_rehome = count_pods_on_subcloud(subcloud_ssh)
+    HealthKeywords(subcloud_ssh).validate_healty_cluster()
+
+    # Perform rehome operation
+    get_logger().log_info(f"Rehoming subcloud {subcloud_name} to destination system controller")
+    perform_rehome_operation(origin_system_controller_ssh, destination_system_controller_ssh, subcloud_name, subcloud_bootstrap_values, subcloud_install_values)
+
+    # Post-rehome validation: count pods and check health
+    get_logger().log_info("Validating subcloud health and counting pods after rehoming")
+    verify_subcloud_healthy(destination_system_controller_ssh, subcloud_name, verify_sync=False)
+    pods_after_rehome = count_pods_on_subcloud(subcloud_ssh)
+    validate_equals(pods_before_rehome, pods_after_rehome, "Pod count should remain consistent after rehoming")
