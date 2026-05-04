@@ -267,3 +267,15 @@ class WebDriverCore:
         """
         is_condition = condition.is_condition_satisfied(self.driver)
         return is_condition
+
+    def switch_to_window(self, index: int) -> None:
+        """
+        Switch the browser focus to the window at the given index.
+
+        Args:
+            index (int): Zero-based index of the window handle to switch to.
+
+        Returns: None
+
+        """
+        self.driver.switch_to.window(self.driver.window_handles[index])
