@@ -257,9 +257,9 @@ def test_rbd_volume_snapshot_create_restore(request):
     storage_type = "rbd"
     pvc_name = f"{storage_type}-pvc"
     pod_name = f"csi-{storage_type}-demo-pod"
-    pvc_restore_name = f"restored-pvc-{storage_type}2"
+    pvc_restore_name = f"restored-pvc-{storage_type}"
     new_pod_name = f"csi-{storage_type}-demo-pod2"
-    snapshot_name = f"{storage_type}-pvc-snapshot2"
+    snapshot_name = f"{storage_type}-pvc-snapshot"
 
     yaml_files = [
         f"{storage_type}-pvc.yaml",
