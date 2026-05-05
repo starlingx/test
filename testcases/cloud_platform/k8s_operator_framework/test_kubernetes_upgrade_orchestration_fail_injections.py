@@ -74,8 +74,8 @@ def test_orchestrated_kube_upgrade_fails_on_control_plane_upgrade(request: Fixtu
     system_kube_keywords = SystemKubernetesListKeywords(ssh_connection)
     pkill_keywords = PkillKeywords(ssh_connection)
 
-    k8s_config = ConfigurationManager.get_k8s_config()
-    target_version = k8s_config.get_k8_target_version()
+    kubernetes_upgrade_config = ConfigurationManager.get_kubernetes_upgrade_config()
+    target_version = kubernetes_upgrade_config.get_k8_target_version()
 
     def teardown() -> None:
         """Cleanup orchestration strategy and kubernetes upgrade."""

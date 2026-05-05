@@ -6,6 +6,7 @@ from config.deployment_assets.objects.deployment_assets_config import Deployment
 from config.docker.objects.docker_config import DockerConfig
 from config.k8s.objects.k8s_config import K8sConfig
 from config.kof.objects.kof_config import KofConfig
+from config.kubernetes_upgrade.objects.kubernetes_upgrade_config import KubernetesUpgradeConfig
 from config.lab.objects.lab_config import LabConfig
 from config.logger.objects.logger_config import LoggerConfig
 from config.openstack.objects.openstack_config import OpenstackConfig
@@ -44,6 +45,7 @@ class ConfigurationManagerClass:
         self.storage_config: StorageConfig = None
         self.kof_config: KofConfig = None
         self.backup_restore_config: BackupRestoreConfig = None
+        self.kubernetes_upgrade_config: KubernetesUpgradeConfig = None
 
     def is_config_loaded(self) -> bool:
         """
@@ -138,6 +140,10 @@ class ConfigurationManagerClass:
         if not backup_restore_config_file:
             backup_restore_config_file = get_stx_resource_path("config/backup_restore/files/default.json5")
 
+        kubernetes_upgrade_config_file = config_file_locations.get_kubernetes_upgrade_config_file()
+        if not kubernetes_upgrade_config_file:
+            kubernetes_upgrade_config_file = get_stx_resource_path("config/kubernetes_upgrade/files/default.json5")
+
         if not self.loaded:
             try:
                 self.lab_config = LabConfig(lab_config_file)
@@ -157,6 +163,7 @@ class ConfigurationManagerClass:
                 self.storage_config = StorageConfig(storage_config_file)
                 self.kof_config = KofConfig(kof_config_file)
                 self.backup_restore_config = BackupRestoreConfig(backup_restore_config_file)
+                self.kubernetes_upgrade_config = KubernetesUpgradeConfig(kubernetes_upgrade_config_file)
                 self.loaded = True
             except FileNotFoundError as e:
                 print(f"Unable to load the config using file: {str(e.filename)} ")
@@ -330,6 +337,16 @@ class ConfigurationManagerClass:
         """
         return self.backup_restore_config
 
+    def get_kubernetes_upgrade_config(self) -> KubernetesUpgradeConfig:
+        """
+        Getter for kubernetes upgrade config
+
+        Returns:
+            KubernetesUpgradeConfig: the kubernetes upgrade config
+
+        """
+        return self.kubernetes_upgrade_config
+
     def get_config_pytest_args(self) -> [str]:
         """
         Returns the configuration file locations as pytest args.
@@ -373,6 +390,8 @@ class ConfigurationManagerClass:
             pytest_config_args.append(f"--kof_config_file={self.configuration_locations_manager.get_kof_config_file()}")
         if self.configuration_locations_manager.backup_restore_config_file:
             pytest_config_args.append(f"--backup_restore_config_file={self.configuration_locations_manager.get_backup_restore_config_file()}")
+        if self.configuration_locations_manager.kubernetes_upgrade_config_file:
+            pytest_config_args.append(f"--kubernetes_upgrade_config_file={self.configuration_locations_manager.get_kubernetes_upgrade_config_file()}")
 
         return pytest_config_args
 

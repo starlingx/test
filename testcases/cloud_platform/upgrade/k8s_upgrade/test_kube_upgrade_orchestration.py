@@ -30,7 +30,7 @@ def test_kubernetes_upgrade(request: FixtureRequest) -> None:
         AssertionError: If any validation step fails.
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
-    k8s_config = ConfigurationManager.get_k8s_config()
+    kubernetes_upgrade_config = ConfigurationManager.get_kubernetes_upgrade_config()
 
     kube_upgrade_keywords = SwManagerKubeUpgradeStrategyKeywords(ssh_connection)
     system_kube_keywords = SystemKubernetesListKeywords(ssh_connection)
@@ -49,7 +49,7 @@ def test_kubernetes_upgrade(request: FixtureRequest) -> None:
     validate_not_none(active_kube_version, f"Active Kubernetes version found {active_kube_version}")
     available_kube_version = kube_version_list.get_version_by_state("available")
     validate_not_none(available_kube_version, f"Available Kubernetes versions found {available_kube_version}")
-    target_version = k8s_config.get_k8_target_version()
+    target_version = kubernetes_upgrade_config.get_k8_target_version()
     get_logger().log_info(f"Target kubernetes version is {target_version}")
 
     get_logger().log_test_case_step("Check target kubernetes version is in available kubernetes list")

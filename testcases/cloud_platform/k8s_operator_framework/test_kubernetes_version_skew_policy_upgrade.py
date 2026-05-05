@@ -271,8 +271,8 @@ def test_abort_orchestration_after_control_plane_then_manual_kubelet_and_retry()
     system_host_lock_keywords = SystemHostLockKeywords(ssh_connection)
     kube_upgrade_show_keywords = KubeUpgradeShowKeywords(ssh_connection)
 
-    k8s_config = ConfigurationManager.get_k8s_config()
-    target_version = k8s_config.get_k8_target_version()
+    kubernetes_upgrade_config = ConfigurationManager.get_kubernetes_upgrade_config()
+    target_version = kubernetes_upgrade_config.get_k8_target_version()
 
     get_logger().log_test_case_step("Check if the system is healthy for Kubernetes upgrade")
     SystemHealthQueryKeywords(ssh_connection).is_system_healthy_for_kube_upgrade()

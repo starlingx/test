@@ -1,0 +1,8 @@
+{
+	// Kubernetes version to upgrade to
+	"k8_target_version": "None",
+
+	// Distributed Cloud
+	"subcloud_group": "Default",
+	"subcloud_name": "None"
+}

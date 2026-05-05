@@ -48,8 +48,8 @@ def test_kubernetes_upgrade_rollback_after_control_plane_simplex(request: Fixtur
     kube_host_upgrade_list_keywords = KubeHostUpgradeListKeywords(ssh_connection)
     system_kube_keywords = SystemKubernetesListKeywords(ssh_connection)
 
-    k8s_config = ConfigurationManager.get_k8s_config()
-    target_version = k8s_config.get_k8_target_version()
+    kubernetes_upgrade_config = ConfigurationManager.get_kubernetes_upgrade_config()
+    target_version = kubernetes_upgrade_config.get_k8_target_version()
 
     def teardown() -> None:
         """Cleanup kubernetes upgrade if still in progress."""

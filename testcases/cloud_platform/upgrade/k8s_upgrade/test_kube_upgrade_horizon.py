@@ -22,10 +22,10 @@ def test_dc_subcloud_kube_upgrade_horizon(request: FixtureRequest):
         - Wait for strategy completion via dcmanager CLI
         - Delete the strategy via Horizon
     """
-    k8s_config = ConfigurationManager.get_k8s_config()
-    target_version = k8s_config.get_k8_target_version()
-    subcloud_name = k8s_config.get_subcloud_name()
-    subcloud_group = k8s_config.get_subcloud_group()
+    kubernetes_upgrade_config = ConfigurationManager.get_kubernetes_upgrade_config()
+    target_version = kubernetes_upgrade_config.get_k8_target_version()
+    subcloud_name = kubernetes_upgrade_config.get_subcloud_name()
+    subcloud_group = kubernetes_upgrade_config.get_subcloud_group()
 
     driver = WebDriverCore()
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()

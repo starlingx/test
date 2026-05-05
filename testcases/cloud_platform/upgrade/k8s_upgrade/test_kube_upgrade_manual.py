@@ -40,8 +40,8 @@ def test_kubernetes_manual_upgrade_simplex(request: FixtureRequest) -> None:
     kube_host_upgrade_list_keywords = KubeHostUpgradeListKeywords(ssh_connection)
     system_kube_keywords = SystemKubernetesListKeywords(ssh_connection)
 
-    k8s_config = ConfigurationManager.get_k8s_config()
-    target_version = k8s_config.get_k8_target_version()
+    kubernetes_upgrade_config = ConfigurationManager.get_kubernetes_upgrade_config()
+    target_version = kubernetes_upgrade_config.get_k8_target_version()
 
     def teardown() -> None:
         """Cleanup kubernetes upgrade if still in progress."""
@@ -191,8 +191,8 @@ def test_kubernetes_manual_upgrade_multi_node(request: FixtureRequest) -> None:
     system_host_list_keywords = SystemHostListKeywords(ssh_connection)
     system_host_lock_unlock_keywords = SystemHostLockKeywords(ssh_connection)
 
-    k8s_config = ConfigurationManager.get_k8s_config()
-    target_version = k8s_config.get_k8_target_version()
+    kubernetes_upgrade_config = ConfigurationManager.get_kubernetes_upgrade_config()
+    target_version = kubernetes_upgrade_config.get_k8_target_version()
 
     get_logger().log_test_case_step("Check if the system is healthy for Kubernetes upgrade")
     SystemHealthQueryKeywords(ssh_connection).is_system_healthy_for_kube_upgrade()

@@ -28,6 +28,7 @@ class ConfigurationFileLocationsManager:
         self.storage_config_file = None
         self.kof_config_file = None
         self.backup_restore_config_file = None
+        self.kubernetes_upgrade_config_file = None
 
     def set_configs_from_pytest_args(self, session: Session):
         """
@@ -104,6 +105,10 @@ class ConfigurationFileLocationsManager:
         backup_restore_config_file = session.config.getoption("--backup_restore_config_file")
         if backup_restore_config_file:
             self.set_backup_restore_config_file(backup_restore_config_file)
+
+        kubernetes_upgrade_config_file = session.config.getoption("--kubernetes_upgrade_config_file")
+        if kubernetes_upgrade_config_file:
+            self.set_kubernetes_upgrade_config_file(kubernetes_upgrade_config_file)
 
     def set_configs_from_options_parser(self, parser: OptionParser = None):
         """
@@ -189,6 +194,10 @@ class ConfigurationFileLocationsManager:
         if backup_restore_config_file:
             self.set_backup_restore_config_file(backup_restore_config_file)
 
+        kubernetes_upgrade_config_file = options.kubernetes_upgrade_config_file
+        if kubernetes_upgrade_config_file:
+            self.set_kubernetes_upgrade_config_file(kubernetes_upgrade_config_file)
+
     @staticmethod
     def add_options(safe_parser: SafeOptionParser):
         """
@@ -215,6 +224,7 @@ class ConfigurationFileLocationsManager:
         safe_parser.add_option("--storage_config_file", action="store", dest="storage_config_file", help="The storage config file")
         safe_parser.add_option("--kof_config_file", action="store", dest="kof_config_file", help="The KOF (Kubernetes Operator Framework) config file")
         safe_parser.add_option("--backup_restore_config_file", action="store", dest="backup_restore_config_file", help="The backup and restore config file")
+        safe_parser.add_option("--kubernetes_upgrade_config_file", action="store", dest="kubernetes_upgrade_config_file", help="The Kubernetes upgrade config file")
 
     def set_lab_config_file(self, lab_config_file: str):
         """
@@ -559,3 +569,22 @@ class ConfigurationFileLocationsManager:
             str: the backup restore config file
         """
         return self.backup_restore_config_file
+
+    def set_kubernetes_upgrade_config_file(self, kubernetes_upgrade_config_file: str):
+        """
+        Setter for kubernetes upgrade config file
+
+        Args:
+            kubernetes_upgrade_config_file (str): the kubernetes upgrade config file
+
+        """
+        self.kubernetes_upgrade_config_file = kubernetes_upgrade_config_file
+
+    def get_kubernetes_upgrade_config_file(self) -> str:
+        """
+        Getter for kubernetes upgrade config file
+
+        Returns:
+            str: the kubernetes upgrade config file
+        """
+        return self.kubernetes_upgrade_config_file
