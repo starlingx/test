@@ -3,6 +3,7 @@
 import re
 from typing import List
 
+from framework.validation.validation import validate_equals_with_retry
 from keywords.cloud_platform.system.system_table_parser import SystemTableParser
 from keywords.cloud_platform.upgrade.objects.software_list_object import SoftwareListObject
 
@@ -98,6 +99,20 @@ class SoftwareListOutput:
                 product_version.append(match.group(1) if match else "")
         return product_version
 
+    def system_has_patch(self) -> str:
+        """
+        Verify if the system has a patch value differant from 0.
+
+        Returns:
+            str: Release value with patch. None if system has no patch.
+        """
+        release = max(self.get_product_version_with_patch_by_state("deployed"))
+        patch = re.findall(r"(\.\d+)", release)[1]
+
+        if not patch or patch == ".0":
+            return None
+        return release
+
     def get_release_state_by_release_name(self, release_name: str) -> str:
         """
         Get the state of a release by its name.
@@ -112,6 +127,30 @@ class SoftwareListOutput:
             if entry["Release"] == release_name:
                 return entry["State"]
         return ""
+
+    def wait_for_release_state(self, release_name: str, expected_state: str, timeout: int = 300) -> None:
+        """
+        Wait for software release to reach the desired state.
+
+        Args:
+            release_name (str): Software release name.
+            expected_state (str): Desired release state to wait for.
+            timeout (int): Timeout for waiting.
+        """
+
+        def check_state() -> bool:
+            """
+            Checks if the prestage has been completed.
+
+            Returns:
+                bool: If prestage status is correct.
+            """
+            release_state = self.get_release_state_by_release_name(release_name)
+            if release_state == "unavailable":
+                return "failed"
+            return release_state == expected_state
+
+        validate_equals_with_retry(function_to_execute=check_state, expected_value=True, validation_description=f"Waiting for release {release_name} to reach {expected_state}.", timeout=timeout, polling_sleep_time=10, failure_values=["failed"])
 
     def __str__(self) -> str:
         """

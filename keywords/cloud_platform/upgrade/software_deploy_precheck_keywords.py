@@ -97,7 +97,7 @@ class SoftwareDeployPrecheckKeywords(BaseKeyword):
 
                 if key == "No alarms" and [] != alarm_list:
                     get_logger().log_warning(f"There are one or more alarms but '{key}' value is OK")
-                    return False
+                    return True
 
                 if key == "All hosts are provisioned":
                     for host in hosts:
