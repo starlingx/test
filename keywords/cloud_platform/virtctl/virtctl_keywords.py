@@ -150,6 +150,57 @@ class VirtctlKeywords(BaseKeyword):
             get_logger().log_error(f"Could not parse lscpu output: {lscpu_output}")
             validate_equals(0, expected_cpus, f"VM {vm_name} lscpu output could not be parsed")
 
+    def check_vm_memory(self, vm_name: str, expected_memory_mb: int, username: str = "cirros", password: str = "gocubsgo", namespace: str = "default") -> None:
+        """
+        Verify the VM has the expected amount of memory via virtctl console.
+
+        Connects to the VM console, sends a newline to get the login prompt,
+        logs in with username/password, runs 'free -m' to get the memory info,
+        then exits and disconnects. Follows the same pattern as
+        check_vm_cpu_count.
+
+        Args:
+            vm_name (str): Name of the VM to check.
+            expected_memory_mb (int): Expected memory in MB.
+            username (str): VM login username. Defaults to 'cirros'.
+            password (str): VM login password. Defaults to 'gocubsgo'.
+            namespace (str): Namespace of the VM. Defaults to 'default'.
+
+        Raises:
+            KeywordException: If the memory doesn't match or console fails.
+        """
+        get_logger().log_info(f"Checking memory for VM {vm_name}, expecting {expected_memory_mb}MB")
+
+        namespace_flag = f" -n {namespace}" if namespace != "default" else ""
+        prompts = [
+            PromptResponse(f"{vm_name}", ""),
+            PromptResponse("login:", username),
+            PromptResponse("assword:", password),
+            PromptResponse("$", "free -m | grep Mem"),
+            PromptResponse("$", "exit"),
+            PromptResponse("login:", None),
+        ]
+
+        self._ssh_connection.send_expect_prompts(f"virtctl console {vm_name}{namespace_flag}", prompts)
+        self.validate_success_return_code(self._ssh_connection)
+
+        free_output = prompts[4].get_complete_output()
+        get_logger().log_info(f"free -m output: {free_output}")
+
+        match = re.findall(r"Mem:\s+(\d+)", free_output)
+        if match:
+            total_memory_mb = int(match[0])
+            # Allow some tolerance (within 10% of expected)
+            tolerance = expected_memory_mb * 0.1
+            if abs(total_memory_mb - expected_memory_mb) <= tolerance:
+                get_logger().log_info(f"VM {vm_name} has {total_memory_mb}MB memory as expected (within tolerance)")
+            else:
+                get_logger().log_error(f"VM {vm_name} memory mismatch: expected {expected_memory_mb}MB, got {total_memory_mb}MB")
+                validate_equals(total_memory_mb, expected_memory_mb, f"VM {vm_name} should have {expected_memory_mb}MB memory")
+        else:
+            get_logger().log_error(f"Could not parse free -m output: {free_output}")
+            validate_equals(0, expected_memory_mb, f"VM {vm_name} free -m output could not be parsed")
+
     def image_upload(
         self,
         image_path: str,
