@@ -1,25 +1,28 @@
-from pytest import mark
+from typing import Iterable
 
 from config.configuration_manager import ConfigurationManager
+from framework.logging.automation_logger import get_logger
+from framework.resources.resource_finder import get_stx_resource_path
+from framework.validation.validation import validate_equals, validate_not_equals
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
-from keywords.cloud_platform.system.application.system_application_upload_keywords import SystemApplicationUploadKeywords
+from keywords.cloud_platform.system.application.object.system_application_status_enum import SystemApplicationStatusEnum
 from keywords.cloud_platform.system.application.system_application_apply_keywords import SystemApplicationApplyKeywords
 from keywords.cloud_platform.system.application.system_application_remove_keywords import SystemApplicationRemoveKeywords
-from keywords.cloud_platform.system.application.system_application_upload_keywords import SystemApplicationUploadInput
-from keywords.cloud_platform.system.application.object.system_application_status_enum import SystemApplicationStatusEnum
-from framework.validation.validation import validate_equals, validate_not_equals
-from framework.logging.automation_logger import get_logger
-from keywords.cloud_platform.system.helm.system_helm_override_keywords import SystemHelmOverrideKeywords
-from keywords.k8s.pods.kubectl_get_pods_keywords import KubectlGetPodsKeywords
-from keywords.linux.lsmod.lsmod_keywords import LsmodKeywords
-from keywords.linux.hardware.hardware_keywords import HardwareKeywords
+from keywords.cloud_platform.system.application.system_application_upload_keywords import SystemApplicationUploadInput, SystemApplicationUploadKeywords
 from keywords.cloud_platform.system.helm.system_helm_chart_attribute_modify_keywords import SystemHelmChartAttributeModifyKeywords
-from keywords.files.file_keywords import FileKeywords
+from keywords.cloud_platform.system.helm.system_helm_override_keywords import SystemHelmOverrideKeywords
+from keywords.cloud_platform.system.host.system_host_list_keywords import SystemHostListKeywords
+from keywords.cloud_platform.version_info.cloud_platform_version_manager import CloudPlatformVersionManagerClass
+from keywords.files.yaml_keywords import YamlKeywords
+from keywords.k8s.node.kubectl_describe_node_keywords import KubectlDescribeNodeKeywords
 from keywords.k8s.pods.kubectl_create_pods_keywords import KubectlCreatePodsKeywords
-from framework.resources.resource_finder import get_stx_resource_path
 from keywords.k8s.pods.kubectl_delete_pods_keywords import KubectlDeletePodsKeywords
 from keywords.k8s.pods.kubectl_exec_in_pods_keywords import KubectlExecInPodsKeywords
-from typing import Iterable
+from keywords.k8s.pods.kubectl_get_pods_keywords import KubectlGetPodsKeywords
+from keywords.linux.hardware.hardware_keywords import HardwareKeywords
+from keywords.linux.lsmod.lsmod_keywords import LsmodKeywords
+
+from pytest import mark
 
 
 def count_qat_env_vars(env_lines: Iterable[str]) -> int:
@@ -44,7 +47,15 @@ def count_qat_env_vars(env_lines: Iterable[str]) -> int:
 @mark.lab_has_qat
 @mark.lab_has_page_size_1gb
 def test_intel_qat_lifecycle(request):
+    """Tests the full lifecycle of Intel QAT device plugins.
+
+    Validates module loading, installs NFD and Intel Device Plugins,
+    enables the QAT Helm chart, deploys a DPDK crypto test pod,
+    and verifies QAT devices are allocated to the container.
+    """
+
     def cleanup_qat_test():
+        """Removes Intel Device Plugins, NFD apps, and the test pod."""
         app_config = ConfigurationManager.get_app_config()
         intel_plugins_app_name = app_config.get_intel_device_plugins_app_name()
         nfd_app_name = app_config.get_node_feature_discovery_app_name()
@@ -80,14 +91,11 @@ def test_intel_qat_lifecycle(request):
 
     if nfd_applied:
         get_logger().log_info("Node Feature Discovery detected. Removing...")
-        nfd_delete_message_output = (
-            SystemApplicationRemoveKeywords(ssh_connection)
-            .system_application_remove_and_delete_app(nfd_app_name)
-        )
+        nfd_delete_message_output = SystemApplicationRemoveKeywords(ssh_connection).system_application_remove_and_delete_app(nfd_app_name)
         validate_equals(nfd_delete_message_output, f"Application {nfd_app_name} deleted.\n", "Node Feature Discovery validation")
 
     get_logger().log_info("NFD not installed. Installing...")
-    nfd_app_output = (SystemApplicationUploadKeywords(ssh_connection).system_application_upload_and_apply_app(nfd_app_name, nfd_file_path))
+    nfd_app_output = SystemApplicationUploadKeywords(ssh_connection).system_application_upload_and_apply_app(nfd_app_name, nfd_file_path)
     nfd_app_object = nfd_app_output.get_system_application_object()
     validate_equals(nfd_app_object.get_name(), nfd_app_name, f"{nfd_app_name} name validation")
     validate_equals(nfd_app_object.get_status(), SystemApplicationStatusEnum.APPLIED.value, f"{nfd_app_name} application status validation")
@@ -96,10 +104,7 @@ def test_intel_qat_lifecycle(request):
     intel_plugins_applied = SystemApplicationApplyKeywords(ssh_connection).is_already_applied(intel_plugins_app_name)
     if intel_plugins_applied:
         get_logger().log_info("Intel Device Plugins detected. Removing...")
-        remove_delete_output = (
-            SystemApplicationRemoveKeywords(ssh_connection)
-            .system_application_remove_and_delete_app(intel_plugins_app_name)
-        )
+        remove_delete_output = SystemApplicationRemoveKeywords(ssh_connection).system_application_remove_and_delete_app(intel_plugins_app_name)
         validate_equals(remove_delete_output, f"Application {intel_plugins_app_name} deleted.\n", "Intel Device Plugin deletion validation")
 
     get_logger().log_info("Intel Device Plugins not installed. Uploading...")
@@ -142,11 +147,33 @@ def test_intel_qat_lifecycle(request):
     pod_status = get_pod_obj.wait_for_pod_status(pod_names, "Running", namespace)
     validate_equals(pod_status, True, f"Verify {pod_prefix} pods are running")
 
+    get_logger().log_test_case_step("Check if resource name from pod is valid")
+    # Before stx 11, the resource name for granite should be 'generic'
+    major = CloudPlatformVersionManagerClass().get_sw_version().get_major_version()
+    resource_name = hw_keywords.get_resource_name()
+    if resource_name == "sym-asym-dc" and int(major) < 26:
+        resource_name = "generic"
+    dictionary = {"resource_name": resource_name}
+    # Getting name from node description
+    controller = SystemHostListKeywords(ssh_connection).get_active_controller().get_host_name()
+    node_description = KubectlDescribeNodeKeywords(ssh_connection).describe_node(controller).get_node_description()
+    node_resource_name = node_description.get_allocated_resources().get_qat_intel_com().get_resource().split("/")[1]
+    assert node_resource_name == resource_name, f"Resource name from node description ({node_resource_name}) does not match expected resource name ({resource_name})"
+
+    get_logger().log_test_case_step("Create yaml for QAT Container using the proper resource name")
+
+    # Set yaml file path using the resource name acquired
+    jinja_template_path = get_stx_resource_path("resources/cloud_platform/networking/qat/qat-dpdk_template.yaml.j2")
+    output_template_path = "qat-dpdk.yaml"
+    node_qat_dpdk_path = "/home/sysadmin/"
+
+    yaml_keywords = YamlKeywords(ssh_connection)
+    yaml_keywords.generate_yaml_file_from_template(jinja_template_path, dictionary, output_template_path, node_qat_dpdk_path)
+
     get_logger().log_test_case_step("Running QAT Container")
-    file_keywords = FileKeywords(ssh_connection)
-    file_keywords.upload_file(get_stx_resource_path("resources/cloud_platform/networking/qat/qat-dpdk.yaml"), "/home/sysadmin/qat-dpdk.yaml")
+
     kubectl_create_pods_keyword = KubectlCreatePodsKeywords(ssh_connection)
-    kubectl_create_pods_keyword.create_from_yaml("/home/sysadmin/qat-dpdk.yaml")
+    kubectl_create_pods_keyword.create_from_yaml(node_qat_dpdk_path+output_template_path)
 
     get_logger().log_test_case_step("check if QAT pod is running")
     namespace = "default"
@@ -158,7 +185,7 @@ def test_intel_qat_lifecycle(request):
 
     kubeclt_exec_in_pods = KubectlExecInPodsKeywords(ssh_connection)
     options = f" -n {namespace}"
-    cmd = 'printenv'
+    cmd = "printenv"
     output = kubeclt_exec_in_pods.run_pod_exec_cmd(pod_prefix, cmd, options=options)
 
     validate_equals(count_qat_env_vars(output), EXPECTED_QAT_DEVICE_COUNT, "Number of QAT devices allocated")

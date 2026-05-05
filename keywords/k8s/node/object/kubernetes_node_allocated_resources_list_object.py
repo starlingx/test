@@ -30,6 +30,7 @@ class KubernetesNodeAllocatedResourcesListObject:
         self.hugepages_1gi: KubernetesNodeAllocatedResourcesObject = None
         self.hugepages_2mi: KubernetesNodeAllocatedResourcesObject = None
         self.windriver_isolcpus: KubernetesNodeAllocatedResourcesObject = None
+        self.qat_intel_com: KubernetesNodeAllocatedResourcesObject = None
 
         # Parse the lines
         self._parse_allocated_resources(lines)
@@ -84,6 +85,8 @@ class KubernetesNodeAllocatedResourcesListObject:
                 self.hugepages_2mi = allocated_resources_object
             if allocated_resources_object.get_resource() == "windriver.com/isolcpus":
                 self.windriver_isolcpus = allocated_resources_object
+            if "qat.intel.com" in allocated_resources_object.get_resource():
+                self.qat_intel_com = allocated_resources_object
 
     def get_cpu(self) -> KubernetesNodeAllocatedResourcesObject:
         """
@@ -140,3 +143,11 @@ class KubernetesNodeAllocatedResourcesListObject:
 
         """
         return self.windriver_isolcpus
+
+    def get_qat_intel_com(self) -> KubernetesNodeAllocatedResourcesObject:
+        """
+        Getter for the qat_intel_com
+        Returns: (KubernetesNodeAllocatedResourcesObject)
+
+        """
+        return self.qat_intel_com
