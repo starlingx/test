@@ -35,9 +35,10 @@ def test_restore():
     """
 
     lab_type = ConfigurationManager.get_lab_config().get_lab_type()
+    lab_name = ConfigurationManager.get_lab_config().get_lab_name()
     backup_dir = "/home/sysadmin"
     bnr_base_path = ConfigurationManager.get_backup_restore_config().get_local_backup_base_path()
-    local_backup_folder_path = f"{bnr_base_path}/{lab_type}"
+    local_backup_folder_path = f"{bnr_base_path}/{lab_type}/{lab_name}"
     restore_mode = "optimized"
     ssh_connection = LabConnectionKeywords().get_ssh_for_hostname("controller-0")
 
@@ -92,9 +93,10 @@ def test_restore_multi_host():
     """
 
     lab_type = ConfigurationManager.get_lab_config().get_lab_type()
+    lab_name = ConfigurationManager.get_lab_config().get_lab_name()
     backup_dir = "/home/sysadmin"
     bnr_base_path = ConfigurationManager.get_backup_restore_config().get_local_backup_base_path()
-    local_backup_folder_path = f"{bnr_base_path}/{lab_type}"
+    local_backup_folder_path = f"{bnr_base_path}/{lab_type}/{lab_name}"
     ssh_connection = LabConnectionKeywords().get_ssh_for_hostname("controller-0")
 
     get_logger().log_info("Copy backup files from local to target controller")
