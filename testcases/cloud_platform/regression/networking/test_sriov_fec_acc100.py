@@ -25,39 +25,39 @@ from keywords.k8s.pods.kubectl_exec_in_pods_keywords import KubectlExecInPodsKey
 from keywords.k8s.pods.kubectl_get_pods_keywords import KubectlGetPodsKeywords
 from keywords.k8s.sriov_fec_node_config.kubectl_get_sriov_fec_node_config_keywords import KubectlGetSriovFecNodeConfigKeywords
 
-ACC200_DEVICE_ID = "57c0"
-VF_DEVICE_ID = "57c1"
+ACC100_DEVICE_ID = "0d5c"
+VF_DEVICE_ID = "0d5d"
 VF_VENDOR_ID = "8086"
 
 
-def get_acc200_devices_address(ssh_connection: SSHConnection) -> list[tuple[str, str]]:
-    """Get ACC200 devices address for all hosts in the system.
+def get_acc100_devices_address(ssh_connection: SSHConnection) -> list[tuple[str, str]]:
+    """Get ACC100 devices address for all hosts in the system.
 
     Args:
         ssh_connection (SSHConnection): SSH connection to the active controller.
 
     Returns:
-        list[tuple[str, str]]: Tuples of hostname and ACC200 device address.
+        list[tuple[str, str]]: Tuples of hostname and ACC100 device address.
     """
     system_host_list_output = SystemHostListKeywords(ssh_connection).get_system_host_list()
-    acc200_devices = []
+    acc100_devices = []
     for host_name in system_host_list_output.get_host_names():
         device_output = SystemHostDeviceKeywords(ssh_connection).get_system_host_device_list(host_name)
-        for device in device_output.get_device_address_by_device_id(ACC200_DEVICE_ID):
-            acc200_devices.append((host_name, device))
+        for device in device_output.get_device_address_by_device_id(ACC100_DEVICE_ID):
+            acc100_devices.append((host_name, device))
 
-    for host_name, address in acc200_devices:
+    for host_name, address in acc100_devices:
         get_logger().log_info(f"Host: {host_name}, Address: {address}")
 
-    return acc200_devices
+    return acc100_devices
 
 
-def generate_acc200_configuration_file(ssh_connection: SSHConnection, acc200_devices: list[tuple[str, str]], pf_driver: str, vf_driver: str, base_path: str) -> None:
-    """Generate ACC200 configuration file and pod YAML file from template.
+def generate_acc100_configuration_file(ssh_connection: SSHConnection, acc100_devices: list[tuple[str, str]], pf_driver: str, vf_driver: str, base_path: str) -> None:
+    """Generate ACC100 configuration file and pod YAML file from template.
 
     Args:
         ssh_connection (SSHConnection): SSH connection to the target host.
-        acc200_devices (list[tuple[str, str]]): Tuples of hostname and ACC200 device address.
+        acc100_devices (list[tuple[str, str]]): Tuples of hostname and ACC100 device address.
         pf_driver (str): PF driver name.
         vf_driver (str): VF driver name.
         base_path (str): Remote directory where files will be saved.
@@ -65,24 +65,24 @@ def generate_acc200_configuration_file(ssh_connection: SSHConnection, acc200_dev
     yaml_kw = YamlKeywords(ssh_connection)
     operator_config_files = []
     pod_config_files = []
-    for index, (host_name, device_adress) in enumerate(acc200_devices):
-        template_path = get_stx_resource_path("resources/cloud_platform/sriov-fec-operator/sriov-fec-operator-acc200.yaml.j2")
+    for index, (host_name, device_adress) in enumerate(acc100_devices):
+        template_path = get_stx_resource_path("resources/cloud_platform/sriov-fec-operator/sriov-fec-operator-acc100.yaml.j2")
         replacement_dict = {
-            "name": f"acc200-{index}",
+            "name": f"acc100-{index}",
             "hostName": host_name,
             "pfDriver": pf_driver,
             "vfDriver": vf_driver,
             "pciAddress": device_adress,
         }
-        remote_file = yaml_kw.generate_yaml_file_from_template(template_path, replacement_dict, f"sriov-fec-operator-{pf_driver}-{vf_driver}-acc200-{index}.yaml", base_path, preserve_order=True)
+        remote_file = yaml_kw.generate_yaml_file_from_template(template_path, replacement_dict, f"sriov-fec-operator-{pf_driver}-{vf_driver}-acc100-{index}.yaml", base_path, preserve_order=True)
         operator_config_files.append(remote_file)
         get_logger().log_info(f"Generated operator config: {remote_file}")
 
-        template_path = get_stx_resource_path("resources/cloud_platform/sriov-fec-operator/sriov-pod-acc200.yaml.j2")
+        template_path = get_stx_resource_path("resources/cloud_platform/sriov-fec-operator/sriov-pod-acc100.yaml.j2")
         replacement_dict = {
-            "podName": f"acc200-{index}",
+            "podName": f"acc100-{index}",
         }
-        remote_file = yaml_kw.generate_yaml_file_from_template(template_path, replacement_dict, f"sriov-pod-k8s-manifest-{pf_driver}-{vf_driver}-acc200-{index}.yaml", base_path, preserve_order=True)
+        remote_file = yaml_kw.generate_yaml_file_from_template(template_path, replacement_dict, f"sriov-pod-k8s-manifest-{pf_driver}-{vf_driver}-acc100-{index}.yaml", base_path, preserve_order=True)
         pod_config_files.append(remote_file)
         get_logger().log_info(f"Generated pod config: {remote_file}")
 
@@ -133,14 +133,14 @@ def upload_install_sriov_fec_operator(ssh_connection: SSHConnection) -> None:
     KubectlGetPodsKeywords(ssh_connection).wait_for_pods_to_reach_status(expected_status="Running", namespace="sriov-fec-system")
 
 
-def apply_acc200_configuration_and_pod(ssh_connection: SSHConnection, pf_driver: str, vf_driver: str, index: int, base_path: str, host_name: str) -> str:
-    """Apply sriov-fec-operator ACC200 configuration and run accelerator pod and verify if pod is running.
+def apply_acc100_configuration_and_pod(ssh_connection: SSHConnection, pf_driver: str, vf_driver: str, index: int, base_path: str, host_name: str) -> str:
+    """Apply sriov-fec-operator ACC100 configuration and run accelerator pod and verify if pod is running.
 
     Args:
         ssh_connection (SSHConnection): SSH connection to the active controller.
         pf_driver (str): PF driver name.
         vf_driver (str): VF driver name.
-        index (int): ACC200 device index.
+        index (int): ACC100 device index.
         base_path (str): Remote directory where the file was created.
         host_name (str): Host name.
 
@@ -148,12 +148,12 @@ def apply_acc200_configuration_and_pod(ssh_connection: SSHConnection, pf_driver:
         str: Name of the created pod.
     """
 
-    operator_file = f"{base_path}/sriov-fec-operator-{pf_driver}-{vf_driver}-acc200-{index}.yaml"
-    pod_file = f"{base_path}/sriov-pod-k8s-manifest-{pf_driver}-{vf_driver}-acc200-{index}.yaml"
+    operator_file = f"{base_path}/sriov-fec-operator-{pf_driver}-{vf_driver}-acc100-{index}.yaml"
+    pod_file = f"{base_path}/sriov-pod-k8s-manifest-{pf_driver}-{vf_driver}-acc100-{index}.yaml"
 
-    get_logger().log_info("Apply sriov-fec-operator ACC200 card configuration file")
+    get_logger().log_info("Apply sriov-fec-operator ACC100 card configuration file")
     KubectlFileApplyKeywords(ssh_connection).apply_resource_from_yaml(operator_file)
-    get_logger().log_info("Verify if sriov-fec-operator ACC200 card configuration file was applied and pod is running")
+    get_logger().log_info("Verify if sriov-fec-operator ACC100 card configuration file was applied and pod is running")
     KubectlGetSriovFecNodeConfigKeywords(ssh_connection).wait_for_configured_status(
         host_name,
         expected_status="InProgress",
@@ -162,13 +162,13 @@ def apply_acc200_configuration_and_pod(ssh_connection: SSHConnection, pf_driver:
     )
     KubectlGetSriovFecNodeConfigKeywords(ssh_connection).wait_for_configured_status(host_name)
     KubectlGetPodsKeywords(ssh_connection).wait_for_pods_to_reach_status(expected_status="Running", namespace="sriov-fec-system")
-    get_logger().log_info("Run ACC200 pod for accelerator card")
+    get_logger().log_info("Run ACC100 pod for accelerator card")
     KubectlApplyPodsKeywords(ssh_connection).apply_from_yaml(pod_file, namespace="default")
     get_pods_kw = KubectlGetPodsKeywords(ssh_connection)
-    get_logger().log_info("Verify ACC200 pod is running")
-    pod_name = get_pods_kw.get_pods(namespace="default").get_unique_pod_matching_prefix(starts_with="acc200")
+    get_logger().log_info("Verify ACC100 pod is running")
+    pod_name = get_pods_kw.get_pods(namespace="default").get_unique_pod_matching_prefix(starts_with="acc100")
     pod_status = get_pods_kw.wait_for_pod_status(pod_name, "Running", "default")
-    validate_equals(pod_status, True, "ACC200 pod status is running")
+    validate_equals(pod_status, True, "ACC100 pod status is running")
 
     return pod_name
 
@@ -194,21 +194,21 @@ def run_and_verify_bbdev_test(ssh_connection: SSHConnection, pod_name: str, bbde
     validate_str_contains(bbdev_output_str, "Tests Failed :       0", "bbdev tests have no failures")
 
 
-def delete_acc200_configuration_and_pod(ssh_connection: SSHConnection, base_path: str, pf_driver: str, vf_driver: str, index: int, host_name: str) -> None:
-    """Delete ACC200 operator configuration and pod resource files.
+def delete_acc100_configuration_and_pod(ssh_connection: SSHConnection, base_path: str, pf_driver: str, vf_driver: str, index: int, host_name: str) -> None:
+    """Delete ACC100 operator configuration and pod resource files.
 
     Args:
         ssh_connection (SSHConnection): SSH connection to the active controller.
         base_path (str): Remote directory where files are located.
         pf_driver (str): PF driver name.
         vf_driver (str): VF driver name.
-        index (int): ACC200 device index.
+        index (int): ACC100 device index.
         host_name (str): Host Name
     """
-    get_logger().log_info("Delete ACC200 configuration")
+    get_logger().log_info("Delete ACC100 configuration")
     kubectl_delete_kw = KubectlFileDeleteKeywords(ssh_connection)
-    kubectl_delete_kw.delete_resources(f"{base_path}/sriov-fec-operator-{pf_driver}-{vf_driver}-acc200-{index}.yaml")
-    get_logger().log_info("Verify if sriov-fec-operator ACC200 card configuration file was applied and pod is running")
+    kubectl_delete_kw.delete_resources(f"{base_path}/sriov-fec-operator-{pf_driver}-{vf_driver}-acc100-{index}.yaml")
+    get_logger().log_info("Verify if sriov-fec-operator ACC100 card configuration file was applied and pod is running")
     KubectlGetSriovFecNodeConfigKeywords(ssh_connection).wait_for_configured_status(
         host_name,
         expected_status="InProgress",
@@ -217,8 +217,8 @@ def delete_acc200_configuration_and_pod(ssh_connection: SSHConnection, base_path
     )
     KubectlGetSriovFecNodeConfigKeywords(ssh_connection).wait_for_configured_status(host_name)
     KubectlGetPodsKeywords(ssh_connection).wait_for_pods_to_reach_status(expected_status="Running", namespace="sriov-fec-system")
-    get_logger().log_info("Delete ACC200 pod")
-    kubectl_delete_kw.delete_resources(f"{base_path}/sriov-pod-k8s-manifest-{pf_driver}-{vf_driver}-acc200-{index}.yaml")
+    get_logger().log_info("Delete ACC100 pod")
+    kubectl_delete_kw.delete_resources(f"{base_path}/sriov-pod-k8s-manifest-{pf_driver}-{vf_driver}-acc100-{index}.yaml")
 
 
 def cleanup_sriov_fec_operator(ssh_connection: SSHConnection) -> None:
@@ -289,18 +289,18 @@ def _cleanup_sriov_fec_operator_and_pods(ssh_connection: SSHConnection):
 
 @mark.p1
 @mark.lab_has_sriov
-@mark.lab_has_acc200
+@mark.lab_has_acc100
 @mark.lab_has_page_size_1gb
-def test_fec_operator_pf_driver_igb_uio_vf_drive_igb_uio_acc200(request: FixtureRequest):
-    """Verify ACC200 FEC operator with igb_uio pf/vf drivers.
+def test_fec_operator_pf_driver_igb_uio_vf_drive_igb_uio_acc100(request: FixtureRequest):
+    """Verify ACC100 FEC operator with igb_uio pf/vf drivers.
 
-    Install sriov-fec-operator application and configure ACC200
+    Install sriov-fec-operator application and configure ACC100
     accelerator cards with pfDriver and vfDriver set to igb_uio
     drivers and run test-bbdev pods successfully against the
     configured devices.
 
     Preconditions:
-        - Lab has ACC200 accelerator devices
+        - Lab has ACC100 accelerator devices
         - Lab has SR-IOV capability
         - Lab has 1GB page size enabled
 
@@ -309,17 +309,17 @@ def test_fec_operator_pf_driver_igb_uio_vf_drive_igb_uio_acc200(request: Fixture
         - Establish SSH connection to active controller
 
     Test Steps:
-        1. Get all ACC200 accelerators and verify at least one is enabled
-        2. Generate configuration YAML and pod files for each ACC200 device
+        1. Get all ACC100 accelerators and verify at least one is enabled
+        2. Generate configuration YAML and pod files for each ACC100 device
         3. Generate bbdev script
         4. Upload and apply the sriov-fec-operator application
-        5. For each ACC200 device:
-            a. Apply ACC200 configuration and run accelerator pod
+        5. For each ACC100 device:
+            a. Apply ACC100 configuration and run accelerator pod
             b. Run bbdev script inside the pod and verify all tests passed
-            c. Delete ACC200 configuration and pod resources
+            c. Delete ACC100 configuration and pod resources
 
     Teardown:
-        - Delete ACC200 pod and configuration resources
+        - Delete ACC100 pod and configuration resources
         - Remove and delete sriov-fec-operator application
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
@@ -330,7 +330,7 @@ def test_fec_operator_pf_driver_igb_uio_vf_drive_igb_uio_acc200(request: Fixture
     _cleanup_sriov_fec_operator_and_pods(ssh_connection)
 
     def teardown():
-        get_logger().log_teardown_step("Delete ACC200 pod and configuration resources")
+        get_logger().log_teardown_step("Delete ACC100 pod and configuration resources")
         delete_fec_pods(ssh_connection)
 
         get_logger().log_teardown_step("Remove and delete sriov-fec-operator application")
@@ -338,12 +338,12 @@ def test_fec_operator_pf_driver_igb_uio_vf_drive_igb_uio_acc200(request: Fixture
 
     request.addfinalizer(teardown)
 
-    get_logger().log_test_case_step("Get all ACC200 accelerators and verify at least one is enabled")
-    acc200_devices = get_acc200_devices_address(ssh_connection)
-    validate_not_equals(len(acc200_devices), 0, "Enabled ACC200 devices found in the system")
+    get_logger().log_test_case_step("Get all ACC100 accelerators and verify at least one is enabled")
+    acc100_devices = get_acc100_devices_address(ssh_connection)
+    validate_not_equals(len(acc100_devices), 0, "Enabled ACC100 devices found in the system")
 
-    get_logger().log_test_case_step("Generate igb_uio configuration YAML files for each ACC200 device and pod files")
-    generate_acc200_configuration_file(ssh_connection, acc200_devices, pf_driver, vf_driver, base_path)
+    get_logger().log_test_case_step("Generate igb_uio configuration YAML files for each ACC100 device and pod files")
+    generate_acc100_configuration_file(ssh_connection, acc100_devices, pf_driver, vf_driver, base_path)
 
     get_logger().log_test_case_step("Generate bbdev file script")
     bbdev_sh_name = generate_bbdev_script(ssh_connection, pf_driver, vf_driver, base_path)
@@ -351,32 +351,32 @@ def test_fec_operator_pf_driver_igb_uio_vf_drive_igb_uio_acc200(request: Fixture
     get_logger().log_test_case_step("Upload and apply the sriov-fec-operator configuration")
     upload_install_sriov_fec_operator(ssh_connection)
 
-    for index, (host_name, device_address) in enumerate(acc200_devices):
+    for index, (host_name, device_address) in enumerate(acc100_devices):
         get_logger().log_info(f"Processing device {index}: host={host_name}, address={device_address}")
-        get_logger().log_test_case_step("Apply sriov-fec-operator ACC200 configuration and run accelerator pod and verify if pod is running")
-        pod_name = apply_acc200_configuration_and_pod(ssh_connection, pf_driver, vf_driver, index, base_path, host_name)
+        get_logger().log_test_case_step("Apply sriov-fec-operator ACC100 configuration and run accelerator pod and verify if pod is running")
+        pod_name = apply_acc100_configuration_and_pod(ssh_connection, pf_driver, vf_driver, index, base_path, host_name)
 
         get_logger().log_test_case_step("Run bbdev script inside the pod and verify all tests passed.")
         run_and_verify_bbdev_test(ssh_connection, pod_name, bbdev_sh_name, base_path)
 
-        get_logger().log_test_case_step("Delete ACC200 configuration and pod resources.")
-        delete_acc200_configuration_and_pod(ssh_connection, base_path, pf_driver, vf_driver, index, host_name)
+        get_logger().log_test_case_step("Delete ACC100 configuration and pod resources.")
+        delete_acc100_configuration_and_pod(ssh_connection, base_path, pf_driver, vf_driver, index, host_name)
 
 
 @mark.p1
 @mark.lab_has_sriov
-@mark.lab_has_acc200
+@mark.lab_has_acc100
 @mark.lab_has_page_size_1gb
-def test_fec_operator_pf_driver_igb_uio_vf_drive_vfio_pci_acc200(request: FixtureRequest):
-    """Verify ACC200 FEC operator with igb_uio pf/vf drivers.
+def test_fec_operator_pf_driver_igb_uio_vf_drive_vfio_pci_acc100(request: FixtureRequest):
+    """Verify ACC100 FEC operator with igb_uio pf/vf drivers.
 
-    Install sriov-fec-operator application and configure ACC200
+    Install sriov-fec-operator application and configure ACC100
     accelerator cards with pfDriver is set to igb_uio and vfDriver
     set to vfio-pci and run test-bbdev pods successfully against the
     configured devices.
 
     Preconditions:
-        - Lab has ACC200 accelerator devices
+        - Lab has ACC100 accelerator devices
         - Lab has SR-IOV capability
         - Lab has 1GB page size enabled
 
@@ -385,17 +385,17 @@ def test_fec_operator_pf_driver_igb_uio_vf_drive_vfio_pci_acc200(request: Fixtur
         - Establish SSH connection to active controller
 
     Test Steps:
-        1. Get all ACC200 accelerators and verify at least one is enabled
-        2. Generate configuration YAML and pod files for each ACC200 device
+        1. Get all ACC100 accelerators and verify at least one is enabled
+        2. Generate configuration YAML and pod files for each ACC100 device
         3. Generate bbdev script
         4. Upload and apply the sriov-fec-operator application
-        5. For each ACC200 device:
-            a. Apply ACC200 configuration and run accelerator pod
+        5. For each ACC100 device:
+            a. Apply ACC100 configuration and run accelerator pod
             b. Run bbdev script inside the pod and verify all tests passed
-            c. Delete ACC200 configuration and pod resources
+            c. Delete ACC100 configuration and pod resources
 
     Teardown:
-        - Delete ACC200 pod and configuration resources
+        - Delete ACC100 pod and configuration resources
         - Remove and delete sriov-fec-operator application
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
@@ -406,7 +406,7 @@ def test_fec_operator_pf_driver_igb_uio_vf_drive_vfio_pci_acc200(request: Fixtur
     _cleanup_sriov_fec_operator_and_pods(ssh_connection)
 
     def teardown():
-        get_logger().log_teardown_step("Delete ACC200 pod and configuration resources")
+        get_logger().log_teardown_step("Delete ACC100 pod and configuration resources")
         delete_fec_pods(ssh_connection)
 
         get_logger().log_teardown_step("Remove and delete sriov-fec-operator application")
@@ -414,12 +414,12 @@ def test_fec_operator_pf_driver_igb_uio_vf_drive_vfio_pci_acc200(request: Fixtur
 
     request.addfinalizer(teardown)
 
-    get_logger().log_test_case_step("Get all ACC200 accelerators and verify at least one is enabled")
-    acc200_devices = get_acc200_devices_address(ssh_connection)
-    validate_not_equals(len(acc200_devices), 0, "Enabled ACC200 devices found in the system")
+    get_logger().log_test_case_step("Get all ACC100 accelerators and verify at least one is enabled")
+    acc100_devices = get_acc100_devices_address(ssh_connection)
+    validate_not_equals(len(acc100_devices), 0, "Enabled ACC100 devices found in the system")
 
-    get_logger().log_test_case_step("Generate igb_uio configuration YAML files for each ACC200 device and pod files")
-    generate_acc200_configuration_file(ssh_connection, acc200_devices, pf_driver, vf_driver, base_path)
+    get_logger().log_test_case_step("Generate igb_uio configuration YAML files for each ACC100 device and pod files")
+    generate_acc100_configuration_file(ssh_connection, acc100_devices, pf_driver, vf_driver, base_path)
 
     get_logger().log_test_case_step("Generate bbdev file script")
     bbdev_sh_name = generate_bbdev_script(ssh_connection, pf_driver, vf_driver, base_path)
@@ -427,32 +427,32 @@ def test_fec_operator_pf_driver_igb_uio_vf_drive_vfio_pci_acc200(request: Fixtur
     get_logger().log_test_case_step("Upload and apply the sriov-fec-operator configuration")
     upload_install_sriov_fec_operator(ssh_connection)
 
-    for index, (host_name, device_address) in enumerate(acc200_devices):
+    for index, (host_name, device_address) in enumerate(acc100_devices):
         get_logger().log_info(f"Processing device {index}: host={host_name}, address={device_address}")
-        get_logger().log_test_case_step("Apply sriov-fec-operator ACC200 configuration and run accelerator pod and verify if pod is running")
-        pod_name = apply_acc200_configuration_and_pod(ssh_connection, pf_driver, vf_driver, index, base_path, host_name)
+        get_logger().log_test_case_step("Apply sriov-fec-operator ACC100 configuration and run accelerator pod and verify if pod is running")
+        pod_name = apply_acc100_configuration_and_pod(ssh_connection, pf_driver, vf_driver, index, base_path, host_name)
 
         get_logger().log_test_case_step("Run bbdev script inside the pod and verify all tests passed.")
         run_and_verify_bbdev_test(ssh_connection, pod_name, bbdev_sh_name, base_path)
 
-        get_logger().log_test_case_step("Delete ACC200 configuration and pod resources.")
-        delete_acc200_configuration_and_pod(ssh_connection, base_path, pf_driver, vf_driver, index, host_name)
+        get_logger().log_test_case_step("Delete ACC100 configuration and pod resources.")
+        delete_acc100_configuration_and_pod(ssh_connection, base_path, pf_driver, vf_driver, index, host_name)
 
 
 @mark.p1
 @mark.lab_has_sriov
-@mark.lab_has_acc200
+@mark.lab_has_acc100
 @mark.lab_has_page_size_1gb
-def test_fec_operator_pf_driver_vfio_pci_vf_drive_vfio_pci_acc200(request: FixtureRequest):
-    """Verify ACC200 FEC operator with igb_uio pf/vf drivers.
+def test_fec_operator_pf_driver_vfio_pci_vf_drive_vfio_pci_acc100(request: FixtureRequest):
+    """Verify ACC100 FEC operator with igb_uio pf/vf drivers.
 
-    Install sriov-fec-operator application and configure ACC200
+    Install sriov-fec-operator application and configure ACC100
     accelerator cards with pfDriver and vfDriver set to vfio-pci
     drivers and run test-bbdev pods successfully against the
     configured devices.
 
     Preconditions:
-        - Lab has ACC200 accelerator devices
+        - Lab has ACC100 accelerator devices
         - Lab has SR-IOV capability
         - Lab has 1GB page size enabled
 
@@ -461,17 +461,17 @@ def test_fec_operator_pf_driver_vfio_pci_vf_drive_vfio_pci_acc200(request: Fixtu
         - Establish SSH connection to active controller
 
     Test Steps:
-        1. Get all ACC200 accelerators and verify at least one is enabled
-        2. Generate configuration YAML and pod files for each ACC200 device
+        1. Get all ACC100 accelerators and verify at least one is enabled
+        2. Generate configuration YAML and pod files for each ACC100 device
         3. Generate bbdev script
         4. Upload and apply the sriov-fec-operator application
-        5. For each ACC200 device:
-            a. Apply ACC200 configuration and run accelerator pod
+        5. For each ACC100 device:
+            a. Apply ACC100 configuration and run accelerator pod
             b. Run bbdev script inside the pod and verify all tests passed
-            c. Delete ACC200 configuration and pod resources
+            c. Delete ACC100 configuration and pod resources
 
     Teardown:
-        - Delete ACC200 pod and configuration resources
+        - Delete ACC100 pod and configuration resources
         - Remove and delete sriov-fec-operator application
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
@@ -482,7 +482,7 @@ def test_fec_operator_pf_driver_vfio_pci_vf_drive_vfio_pci_acc200(request: Fixtu
     _cleanup_sriov_fec_operator_and_pods(ssh_connection)
 
     def teardown():
-        get_logger().log_teardown_step("Delete ACC200 pod and configuration resources")
+        get_logger().log_teardown_step("Delete ACC100 pod and configuration resources")
         delete_fec_pods(ssh_connection)
 
         get_logger().log_teardown_step("Remove and delete sriov-fec-operator application")
@@ -490,12 +490,12 @@ def test_fec_operator_pf_driver_vfio_pci_vf_drive_vfio_pci_acc200(request: Fixtu
 
     request.addfinalizer(teardown)
 
-    get_logger().log_test_case_step("Get all ACC200 accelerators and verify at least one is enabled")
-    acc200_devices = get_acc200_devices_address(ssh_connection)
-    validate_not_equals(len(acc200_devices), 0, "Enabled ACC200 devices found in the system")
+    get_logger().log_test_case_step("Get all ACC100 accelerators and verify at least one is enabled")
+    acc100_devices = get_acc100_devices_address(ssh_connection)
+    validate_not_equals(len(acc100_devices), 0, "Enabled ACC100 devices found in the system")
 
-    get_logger().log_test_case_step("Generate igb_uio configuration YAML files for each ACC200 device and pod files")
-    generate_acc200_configuration_file(ssh_connection, acc200_devices, pf_driver, vf_driver, base_path)
+    get_logger().log_test_case_step("Generate igb_uio configuration YAML files for each ACC100 device and pod files")
+    generate_acc100_configuration_file(ssh_connection, acc100_devices, pf_driver, vf_driver, base_path)
 
     get_logger().log_test_case_step("Generate bbdev file script")
     bbdev_sh_name = generate_bbdev_script(ssh_connection, pf_driver, vf_driver, base_path)
@@ -503,13 +503,13 @@ def test_fec_operator_pf_driver_vfio_pci_vf_drive_vfio_pci_acc200(request: Fixtu
     get_logger().log_test_case_step("Upload and apply the sriov-fec-operator configuration")
     upload_install_sriov_fec_operator(ssh_connection)
 
-    for index, (host_name, device_address) in enumerate(acc200_devices):
+    for index, (host_name, device_address) in enumerate(acc100_devices):
         get_logger().log_info(f"Processing device {index}: host={host_name}, address={device_address}")
-        get_logger().log_test_case_step("Apply sriov-fec-operator ACC200 configuration and run accelerator pod and verify if pod is running")
-        pod_name = apply_acc200_configuration_and_pod(ssh_connection, pf_driver, vf_driver, index, base_path, host_name)
+        get_logger().log_test_case_step("Apply sriov-fec-operator ACC100 configuration and run accelerator pod and verify if pod is running")
+        pod_name = apply_acc100_configuration_and_pod(ssh_connection, pf_driver, vf_driver, index, base_path, host_name)
 
         get_logger().log_test_case_step("Run bbdev script inside the pod and verify all tests passed.")
         run_and_verify_bbdev_test(ssh_connection, pod_name, bbdev_sh_name, base_path)
 
-        get_logger().log_test_case_step("Delete ACC200 configuration and pod resources.")
-        delete_acc200_configuration_and_pod(ssh_connection, base_path, pf_driver, vf_driver, index, host_name)
+        get_logger().log_test_case_step("Delete ACC100 configuration and pod resources.")
+        delete_acc100_configuration_and_pod(ssh_connection, base_path, pf_driver, vf_driver, index, host_name)
