@@ -41,7 +41,6 @@ def test_kubernetes_manual_upgrade_simplex(request: FixtureRequest) -> None:
     system_kube_keywords = SystemKubernetesListKeywords(ssh_connection)
 
     kubernetes_upgrade_config = ConfigurationManager.get_kubernetes_upgrade_config()
-    target_version = kubernetes_upgrade_config.get_k8_target_version()
 
     def teardown() -> None:
         """Cleanup kubernetes upgrade if still in progress."""
@@ -63,6 +62,10 @@ def test_kubernetes_manual_upgrade_simplex(request: FixtureRequest) -> None:
     validate_not_none(active_kube_version, f"Active Kubernetes version found: {active_kube_version}")
     available_kube_versions = kube_version_list.get_version_by_state("available")
     validate_not_none(available_kube_versions, f"Available Kubernetes versions found: {available_kube_versions}")
+
+    target_version = kubernetes_upgrade_config.resolve_target_version(available_kube_versions)
+    get_logger().log_info(f"Resolved target Kubernetes version: {target_version}")
+
     validate_list_contains(target_version, available_kube_versions, "Target version is in available list")
 
     get_logger().log_test_case_step(f"Start Kubernetes upgrade to {target_version}")
@@ -192,7 +195,6 @@ def test_kubernetes_manual_upgrade_multi_node(request: FixtureRequest) -> None:
     system_host_lock_unlock_keywords = SystemHostLockKeywords(ssh_connection)
 
     kubernetes_upgrade_config = ConfigurationManager.get_kubernetes_upgrade_config()
-    target_version = kubernetes_upgrade_config.get_k8_target_version()
 
     get_logger().log_test_case_step("Check if the system is healthy for Kubernetes upgrade")
     SystemHealthQueryKeywords(ssh_connection).is_system_healthy_for_kube_upgrade()
@@ -202,6 +204,10 @@ def test_kubernetes_manual_upgrade_multi_node(request: FixtureRequest) -> None:
     validate_not_none(active_kube_version, f"Active Kubernetes version found: {active_kube_version}")
     available_kube_versions = kube_version_list.get_version_by_state("available")
     validate_not_none(available_kube_versions, f"Available Kubernetes versions found: {available_kube_versions}")
+
+    target_version = kubernetes_upgrade_config.resolve_target_version(available_kube_versions)
+    get_logger().log_info(f"Resolved target Kubernetes version: {target_version}")
+
     validate_list_contains(target_version, available_kube_versions, "Target version is in available list")
 
     get_logger().log_test_case_step(f"Start Kubernetes upgrade to {target_version}")

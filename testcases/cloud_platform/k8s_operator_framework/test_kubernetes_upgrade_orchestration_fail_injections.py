@@ -75,7 +75,6 @@ def test_orchestrated_kube_upgrade_fails_on_control_plane_upgrade(request: Fixtu
     pkill_keywords = PkillKeywords(ssh_connection)
 
     kubernetes_upgrade_config = ConfigurationManager.get_kubernetes_upgrade_config()
-    target_version = kubernetes_upgrade_config.get_k8_target_version()
 
     def teardown() -> None:
         """Cleanup orchestration strategy and kubernetes upgrade."""
@@ -98,6 +97,10 @@ def test_orchestrated_kube_upgrade_fails_on_control_plane_upgrade(request: Fixtu
     validate_not_none(active_kube_version, f"Active Kubernetes version found: {active_kube_version}")
     available_kube_versions = kube_version_list.get_version_by_state("available")
     validate_not_none(available_kube_versions, f"Available Kubernetes versions found: {available_kube_versions}")
+
+    target_version = kubernetes_upgrade_config.resolve_target_version(available_kube_versions)
+    get_logger().log_info(f"Resolved target Kubernetes version: {target_version}")
+
     validate_list_contains(target_version, available_kube_versions, "Target version is in available list")
 
     get_logger().log_test_case_step(f"Create Kubernetes upgrade strategy for version {target_version}")

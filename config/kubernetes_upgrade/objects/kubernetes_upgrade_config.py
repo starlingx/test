@@ -53,3 +53,21 @@ class KubernetesUpgradeConfig:
             str: The subcloud name.
         """
         return self.subcloud_name
+
+    def resolve_target_version(self, available_versions: list) -> str:
+        """
+        Resolve the target Kubernetes version for upgrade.
+
+        If a target version is configured, returns it directly.
+        Otherwise, selects the highest available version by semantic version sorting.
+
+        Args:
+            available_versions (list): List of available Kubernetes version strings (e.g. ["v1.28.4", "v1.29.1"]).
+
+        Returns:
+            str: The resolved target Kubernetes version.
+        """
+        target = self.k8_target_version
+        if target and target != "None":
+            return target
+        return sorted(available_versions, key=lambda v: list(map(int, v.lstrip("v").split("."))))[-1]

@@ -49,7 +49,6 @@ def test_kubernetes_upgrade_rollback_after_control_plane_simplex(request: Fixtur
     system_kube_keywords = SystemKubernetesListKeywords(ssh_connection)
 
     kubernetes_upgrade_config = ConfigurationManager.get_kubernetes_upgrade_config()
-    target_version = kubernetes_upgrade_config.get_k8_target_version()
 
     def teardown() -> None:
         """Cleanup kubernetes upgrade if still in progress."""
@@ -72,6 +71,10 @@ def test_kubernetes_upgrade_rollback_after_control_plane_simplex(request: Fixtur
     validate_not_none(active_kube_version, f"Active Kubernetes version found: {active_kube_version}")
     available_kube_versions = kube_version_list.get_version_by_state("available")
     validate_not_none(available_kube_versions, f"Available Kubernetes versions found: {available_kube_versions}")
+
+    target_version = kubernetes_upgrade_config.resolve_target_version(available_kube_versions)
+    get_logger().log_info(f"Resolved target Kubernetes version: {target_version}")
+
     validate_list_contains(target_version, available_kube_versions, "Target version is in available list")
 
     original_version = active_kube_version
