@@ -53,3 +53,23 @@ class KubectlApplyPatchKeywords(K8sBaseKeyword):
             args += f"-p '{args_sa}' "
         self.ssh_connection.send(self.k8s_config.export(f"kubectl patch serviceaccount {name} {args}"))
         self.validate_success_return_code(self.ssh_connection)
+
+    def patch_host(self, host_name: str, namespace: str, patch_data: str, patch_type: str = "merge", subresource: str = None):
+        """
+        Apply patch to a Kubernetes Host resource.
+
+        Args:
+            host_name (str): Name of the host to patch.
+            namespace (str): Namespace where the host resource exists.
+            patch_data (str): Patch data as JSON string.
+            patch_type (str): Type of patch operation.
+            subresource (str): Subresource to patch.
+
+        """
+        cmd = f"kubectl -n {namespace} patch host {host_name} -p '{patch_data}' --type={patch_type}"
+        
+        if subresource:
+            cmd += f" --subresource={subresource}"
+        
+        self.ssh_connection.send(self.k8s_config.export(cmd))
+        self.validate_success_return_code(self.ssh_connection)
