@@ -1,9 +1,9 @@
-import re
-
+from packaging.version import parse
 from pytest import fail, mark
 
 from config.configuration_manager import ConfigurationManager
 from framework.logging.automation_logger import get_logger
+from framework.ssh.ssh_connection import SSHConnection
 from framework.validation.validation import validate_equals
 from keywords.cloud_platform.dcmanager.dcmanager_prestage_strategy_keywords import DcmanagerPrestageStrategyKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_strategy_step_keywords import DcmanagerStrategyStepKeywords
@@ -11,13 +11,88 @@ from keywords.cloud_platform.dcmanager.dcmanager_subcloud_list_keywords import D
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_prestage import DcmanagerSubcloudPrestage
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_show_keywords import DcManagerSubcloudShowKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_sw_deploy_strategy_keywords import DcmanagerSwDeployStrategy
+from keywords.cloud_platform.dcmanager.rehoming_utils import perform_rehome_operation, verify_subcloud_healthy
 from keywords.cloud_platform.health.health_keywords import HealthKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
+from keywords.cloud_platform.system.host.system_host_list_keywords import SystemHostListKeywords
+from keywords.cloud_platform.system.host.system_host_lock_keywords import SystemHostLockKeywords
 from keywords.cloud_platform.system.host.system_host_swact_keywords import SystemHostSwactKeywords
+from keywords.cloud_platform.upgrade.software_deploy_precheck_keywords import SoftwareDeployPrecheckKeywords
 from keywords.cloud_platform.upgrade.software_list_keywords import SoftwareListKeywords
+from keywords.cloud_platform.upgrade.usm_keywords import USMKeywords
 from keywords.cloud_platform.version_info.cloud_platform_version_manager import CloudPlatformVersionManagerClass
 from keywords.files.file_keywords import FileKeywords
 from keywords.linux.pkill.pkill_keywords import PkillKeywords
+
+
+def upload_patches(ssh_connection: SSHConnection):
+    """Upload patches to system"""
+    usm_keywords = USMKeywords(ssh_connection)
+    usm_config = ConfigurationManager.get_usm_config()
+    patch_file_list = usm_config.get_patch_path()
+
+    release_ids = []
+    for patch_file_path in patch_file_list:
+        upload_patch_out = usm_keywords.upload_patch_file(patch_file_path, os_region_name="SystemController")
+        upload_patch_obj = upload_patch_out.get_software_uploaded()
+        if not upload_patch_obj:
+            raise Exception(f"Failed to upload patch file: {patch_file_path}")
+        uploaded_file = upload_patch_obj[0].get_uploaded_file()
+        release = upload_patch_obj[0].get_release()
+        get_logger().log_info(f"Uploaded patch file: {uploaded_file} with release ID: {release}")
+        release_ids.append(release)
+    return release_ids
+
+
+def deploy_host_and_swact(ssh_connection: SSHConnection, hostname: str):
+    """Do software deploy host on all hosts"""
+    usm_keywords = USMKeywords(ssh_connection)
+    active_controller = SystemHostListKeywords(ssh_connection).get_active_controller()
+    standby_controller = SystemHostListKeywords(ssh_connection).get_standby_controller()
+
+    if SystemHostLockKeywords(ssh_connection).is_host_unlocked(hostname):
+        SystemHostLockKeywords(ssh_connection).lock_host(hostname)
+    usm_keywords.software_deploy_host(hostname)
+    SystemHostLockKeywords(ssh_connection).unlock_host(hostname)
+    SystemHostSwactKeywords(ssh_connection).host_swact()
+    SystemHostSwactKeywords(ssh_connection).wait_for_swact(active_controller, standby_controller)
+
+
+def apply_patches(ssh_connection: SSHConnection, release_ids: list[str]):
+    """Apply patches on system"""
+    usm_keywords = USMKeywords(ssh_connection)
+    for release_id in release_ids:
+        SoftwareDeployPrecheckKeywords(ssh_connection).deploy_precheck(release_id)
+        usm_keywords.deploy_start(release_id)
+        usm_keywords.wait_for_deploy_state("deploy-start-done")
+
+        upgrade_order = usm_keywords.deploy_host_upgrade_order()
+        for host in upgrade_order:
+            deploy_host_and_swact(ssh_connection, host)
+
+        usm_keywords.wait_for_deploy_state("deploy-host-done")
+        usm_keywords.wait_for_deploy_host_list_state("deploy-host-deployed")
+        usm_keywords.software_deploy_activate()
+        usm_keywords.wait_for_deploy_state("deploy-activate-done")
+        usm_keywords.software_deploy_complete()
+        usm_keywords.software_deploy_delete()
+        SoftwareListKeywords(ssh_connection).get_software_list().wait_for_release_state(release_id, "deployed")
+
+
+def subcloud_rehome(subcloud_name: str, origin_ssh: SSHConnection, destination_ssh: SSHConnection):
+    """Rehome subcloud"""
+    # Gets the subcloud bootstrap and install values files
+    get_logger().log_info(f"Getting deployment assets for subcloud {subcloud_name}")
+    deployment_assets_config = ConfigurationManager.get_deployment_assets_config()
+    subcloud_bootstrap_values = deployment_assets_config.get_subcloud_deployment_assets(subcloud_name).get_bootstrap_file()
+    subcloud_install_values = deployment_assets_config.get_subcloud_deployment_assets(subcloud_name).get_install_file()
+
+    get_logger().log_info(f"Rehoming subcloud {subcloud_name} to {destination_ssh}")
+    perform_rehome_operation(origin_ssh, destination_ssh, subcloud_name, subcloud_bootstrap_values, subcloud_install_values, sync_assets=False)
+
+    # Validations after rehome operation
+    get_logger().log_info(f"Validating subcloud {subcloud_name} is healthy after rehome attempt")
+    verify_subcloud_healthy(destination_ssh, subcloud_name, check_sync=False)
 
 
 def subcloud_upgrade(central_ssh, subcloud_name):
@@ -144,15 +219,11 @@ def test_minor_release_prestage_retry_after_fail():
         - Upgrade subcloud after prestage complete
     """
     central_ssh = LabConnectionKeywords().get_active_controller_ssh()
-    latest_deployed_release_with_patch = max(SoftwareListKeywords(central_ssh).get_software_list().get_product_version_with_patch_by_state("deployed"))
+    if not (latest_deployed_release_with_patch := SoftwareListKeywords(central_ssh).get_software_list().system_has_patch()):
+        fail(f"Controller is running version {latest_deployed_release_with_patch}, does not have a patch.")
     latest_deployed_release = max(SoftwareListKeywords(central_ssh).get_software_list().get_product_version_by_state("deployed"))
     get_logger().log_info(f"Subcloud release {latest_deployed_release_with_patch}")
 
-    # Verify that controller has a patch to apply
-    patch = re.findall(r"(\.\d+)", latest_deployed_release_with_patch)[1]
-
-    if not patch or patch == ".0":
-        fail(f"Controller is running major version {latest_deployed_release}, not minor.")
     subcloud_name = ConfigurationManager.get_lab_config().get_subcloud_names()[0]
     subcloud_sw_version = DcManagerSubcloudShowKeywords(central_ssh).get_dcmanager_subcloud_show(subcloud_name).get_dcmanager_subcloud_show_object().get_software_version()
     subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
@@ -185,7 +256,7 @@ def test_prestage_for_multiple_deployment_states(request):
     """Verify prestage for multiple release deployment states
 
     Test Steps:
-        Verify subcloud health
+        - Verify subcloud health
         - Prestage subcloud with N release
         - Simulate release in state "deploying"
         - Verify that prestage for N release fails
@@ -258,3 +329,86 @@ def test_prestage_for_multiple_deployment_states(request):
 
         FileKeywords(subcloud_ssh).move_file(source=release_metadata, destination="/opt/software/metadata/available/", sudo=True)
         prestage_subcloud(central_ssh, subcloud_name, subcloud_password)
+
+
+@mark.p0
+@mark.lab_has_subcloud
+@mark.lab_has_secondary_system_controller
+def test_subcloud_with_higher_patch_is_patchable_after_rehoming(request):
+    """Verify
+
+    Test Steps:
+        - Verify subcloud health
+        -
+    """
+    origin_system_controller_ssh = LabConnectionKeywords().get_active_controller_ssh()
+    if not (origin_release := SoftwareListKeywords(origin_system_controller_ssh).get_software_list().system_has_patch()):
+        fail(f"Controller is running version {origin_release}, does not have a patch.")
+
+    subcloud_name = ConfigurationManager.get_lab_config().get_subcloud_names()[0]
+    subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
+    subcloud_sw_version = max(SoftwareListKeywords(subcloud_ssh).get_software_list().get_product_version_with_patch_by_state("deployed"))
+
+    if subcloud_sw_version != origin_release:
+        fail(f"{subcloud_name} is running {subcloud_sw_version} version, should be {origin_release}.")
+
+    destination_system_controller_ssh = LabConnectionKeywords().get_secondary_active_controller_ssh()
+    if not (destination_release := SoftwareListKeywords(destination_system_controller_ssh).get_software_list().system_has_patch()):
+        fail(f"Secondary Controller is running version {destination_release}, does not have a patch.")
+
+    if parse(origin_release) < parse(destination_release):
+        fail(f"Secondary Controller should be running a lower version than Primary's Controller {origin_release}. Currently running {destination_release}")
+
+    get_logger().log_info(f"Performing pre-checks on {subcloud_name}")
+    obj_health = HealthKeywords(subcloud_ssh)
+    obj_health.validate_healty_cluster()  # Checks alarms, pods, app health
+
+    lab_config = ConfigurationManager.get_lab_config().get_subcloud(subcloud_name)
+    subcloud_password = lab_config.get_admin_credentials().get_password()
+
+    release_id_list = upload_patches(destination_system_controller_ssh)
+    apply_patches(destination_system_controller_ssh, release_id_list)
+
+    prestage_subcloud(destination_system_controller_ssh, subcloud_name, subcloud_password, for_sw_deploy=True)
+
+    subcloud_upgrade(destination_system_controller_ssh, subcloud_name)
+
+
+@mark.p0
+@mark.lab_has_subcloud
+@mark.lab_has_secondary_system_controller
+def test_subcloud_with_lower_patch_is_patchable_after_rehoming(request):
+    """Verify
+
+    Test Steps:
+        - Verify subcloud health
+        -
+    """
+    origin_system_controller_ssh = LabConnectionKeywords().get_active_controller_ssh()
+    if not (origin_release := SoftwareListKeywords(origin_system_controller_ssh).get_software_list().system_has_patch()):
+        fail(f"Controller is running version {origin_release}, does not have a patch.")
+
+    subcloud_name = ConfigurationManager.get_lab_config().get_subcloud_names()[0]
+    subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
+    subcloud_sw_version = max(SoftwareListKeywords(subcloud_ssh).get_software_list().get_product_version_with_patch_by_state("deployed"))
+
+    if subcloud_sw_version != origin_release:
+        fail(f"{subcloud_name} is running {subcloud_sw_version} version, should be {origin_release}.")
+
+    destination_system_controller_ssh = LabConnectionKeywords().get_secondary_active_controller_ssh()
+    if not (destination_release := SoftwareListKeywords(destination_system_controller_ssh).get_software_list().system_has_patch()):
+        fail(f"Secondary Controller is running version {destination_release}, does not have a patch.")
+
+    if parse(origin_release) > parse(destination_release):
+        fail(f"Secondary Controller should be running a higher version than Primary's Controller {origin_release}. Currently running {destination_release}")
+
+    get_logger().log_info(f"Performing pre-checks on {subcloud_name}")
+    obj_health = HealthKeywords(subcloud_ssh)
+    obj_health.validate_healty_cluster()  # Checks alarms, pods, app health
+
+    lab_config = ConfigurationManager.get_lab_config().get_subcloud(subcloud_name)
+    subcloud_password = lab_config.get_admin_credentials().get_password()
+
+    prestage_subcloud(destination_system_controller_ssh, subcloud_name, subcloud_password, for_sw_deploy=True)
+
+    subcloud_upgrade(destination_system_controller_ssh, subcloud_name)

@@ -10,6 +10,7 @@ from keywords.cloud_platform.command_wrappers import source_openrc
 from keywords.cloud_platform.system.host.objects.system_host_object import SystemHostObject
 from keywords.cloud_platform.system.host.system_host_list_keywords import SystemHostListKeywords
 from keywords.cloud_platform.upgrade.objects.software_upload_output import SoftwareUploadOutput
+from keywords.cloud_platform.upgrade.software_deploy_host_list_keywords import SoftwareDeployHostListKeywords
 from keywords.cloud_platform.upgrade.software_deploy_show_keywords import SoftwareDeployShowKeywords
 from keywords.cloud_platform.upgrade.software_list_keywords import SoftwareListKeywords
 
@@ -275,6 +276,47 @@ class USMKeywords(BaseKeyword):
                 break
             time.sleep(5)
         return False
+
+    def wait_for_deploy_host_list_state(self, expected_deploy_state: str, timeout: int = 600) -> bool:
+        """
+        Method to wait for desired state in deploy host-list
+
+        Args:
+            expected_deploy_state (str): Desired state in the deploy host-list output for the specified release.
+            timeout (int): Timeout value to wait for the deploy state to match specified value.
+
+        Returns:
+            bool: True / False
+        """
+
+        def check_host_state() -> str:
+            """
+            Checks if all hosts reached desired state.
+
+            Returns:
+                str: A message indicating whether the hosts reached desired state.
+            """
+            host_list = deploy_host_list_kw.get_software_deploy_host_list().get_host_list()
+            for host in host_list:
+                hostname = host.get_host()
+                host_state = deploy_host_list_kw.get_software_deploy_host_list().get_state_by_host(hostname)
+                if "failed" in host_state:
+                    return "failed"
+                get_logger().log_info(f"Currently {hostname} in state:{host_state} ")
+
+            if deploy_host_list_kw.get_software_deploy_host_list().are_all_hosts_in_state(expected_deploy_state):
+                get_logger().log_info(f"Deploy state updated as {expected_deploy_state}")
+                return "success"
+
+            return "continue waiting"
+
+        deploy_host_list_kw = SoftwareDeployHostListKeywords(self.ssh_connection)
+        validate_equals_with_retry(
+            function_to_execute=check_host_state,
+            expected_value="success",
+            validation_description=f"Deploy state updated as {expected_deploy_state}",
+            timeout=timeout,
+        )
 
     def software_deploy_host(self, host: str, sudo: bool = False) -> str:
         """

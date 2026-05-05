@@ -1,11 +1,12 @@
+import time
+
+from config.configuration_manager import ConfigurationManager
 from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
 from framework.validation.validation import validate_equals_with_retry
 from keywords.base_keyword import BaseKeyword
 from keywords.cloud_platform.command_wrappers import source_openrc
 from keywords.cloud_platform.dcmanager.dcmanager_strategy_step_keywords import DcmanagerStrategyStepKeywords
-from config.configuration_manager import ConfigurationManager
-import time
 
 
 class DcmanagerSwDeployStrategy(BaseKeyword):
@@ -30,9 +31,9 @@ class DcmanagerSwDeployStrategy(BaseKeyword):
         Args:
             subcloud_name (str): The subcloud name.
             release (str): The software version to be deployed.
+            subcloud_group (str): The subcloud group name.
             with_delete (bool): If true, adds parameter --with-delete
             delete_only (bool): If true, adds paramater --delete-only
-            subcloud_group (str): The subcloud group name.
             rollback (bool): If true, adds parameter --rollback
             snapshot (bool): If true, adds parameter --snapshot
         """
@@ -41,7 +42,7 @@ class DcmanagerSwDeployStrategy(BaseKeyword):
         clean_up_delete = "--delete-only" if delete_only else ""
         rollback = "--rollback" if rollback else ""
         snapshot = "--snapshot" if snapshot else ""
-        
+
         if subcloud_group:
             command = source_openrc(f"dcmanager sw-deploy-strategy create --group {subcloud_group} {rollback} {snapshot} {release_id} {delete} {clean_up_delete}")
             target = subcloud_group
@@ -133,13 +134,7 @@ class DcmanagerSwDeployStrategy(BaseKeyword):
                 sw_deployment_status = DcmanagerStrategyStepKeywords(self.ssh_connection).get_dcmanager_strategy_step_show(subcloud).get_dcmanager_strategy_step_show().get_state()
                 return sw_deployment_status
 
-        validate_equals_with_retry(
-            function_to_execute=check_sw_deployment,
-            expected_value=expected_status,
-            validation_description=f"Waiting for sw_deployment_status {expected_status}.",
-            timeout=timeout,
-            polling_sleep_time=check_interval,
-        )
+        validate_equals_with_retry(function_to_execute=check_sw_deployment, expected_value=expected_status, validation_description=f"Waiting for sw_deployment_status {expected_status}.", timeout=timeout, polling_sleep_time=check_interval, failure_values=["failed"])
 
     def dc_manager_sw_deploy_strategy_create_apply_delete(self, subcloud_name: str = None, release: str = None, subcloud_group: str = None, with_delete: bool = False, delete_only: bool = False, rollback: bool = False, snapshot: bool = False):
         """
