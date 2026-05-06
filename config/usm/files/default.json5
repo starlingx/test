@@ -57,6 +57,7 @@
   // Distributed Cloud
   "subcloud_group": "Default",
   "subcloud_name": "None",
+  "max_parallel_subclouds": "None",
 
   // Pre-upgrade setup
   "docker_fs_size": 60,

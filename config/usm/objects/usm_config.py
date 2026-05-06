@@ -56,6 +56,7 @@ class USMConfig:
         self.deploy_complete_timeout_sec = usm_dict.get("deploy_complete_timeout_sec", 900)
         self.subcloud_group = usm_dict.get("subcloud_group", "Default")
         self.subcloud_name = usm_dict.get("subcloud_name", "None")
+        self.max_parallel_subclouds = usm_dict.get("max_parallel_subclouds", "None")
         self.license_server = usm_dict.get("license_server", "")
         self.license_username = usm_dict.get("license_server_username", "")
         self.license_password = usm_dict.get("license_server_password", "")
@@ -571,6 +572,24 @@ class USMConfig:
             value (str): The subcloud name.
         """
         self.subcloud_name = value
+
+    def get_max_parallel_subclouds(self) -> int:
+        """Get the maximum number of subclouds to deploy in parallel.
+
+        Returns:
+            int: Maximum parallel subclouds, or None if not specified.
+        """
+        if self.max_parallel_subclouds == "None":
+            return None
+        return int(self.max_parallel_subclouds)
+
+    def set_max_parallel_subclouds(self, value: str) -> None:
+        """Set the maximum number of subclouds to deploy in parallel.
+
+        Args:
+            value (str): Maximum parallel subclouds, or "None" to use dcmanager default.
+        """
+        self.max_parallel_subclouds = value
 
     def get_deploy_host_timeout_sec(self) -> int:
         """Get timeout duration for software deploy host completion.

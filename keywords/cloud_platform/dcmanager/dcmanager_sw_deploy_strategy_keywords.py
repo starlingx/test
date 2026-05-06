@@ -24,7 +24,7 @@ class DcmanagerSwDeployStrategy(BaseKeyword):
         self.ssh_connection = ssh_connection
         self.usm_config = ConfigurationManager.get_usm_config()
 
-    def dcmanager_sw_deploy_strategy_create(self, subcloud_name: str = None, release: str = None, subcloud_group: str = None, with_delete: bool = False, delete_only: bool = False, rollback: bool = False, snapshot: bool = False):
+    def dcmanager_sw_deploy_strategy_create(self, subcloud_name: str = None, release: str = None, subcloud_group: str = None, with_delete: bool = False, delete_only: bool = False, rollback: bool = False, snapshot: bool = False, max_parallel_subclouds: int = None):
         """
         Runs dcmanager sw-deploy-strategy create command.
 
@@ -36,19 +36,21 @@ class DcmanagerSwDeployStrategy(BaseKeyword):
             delete_only (bool): If true, adds paramater --delete-only
             rollback (bool): If true, adds parameter --rollback
             snapshot (bool): If true, adds parameter --snapshot
+            max_parallel_subclouds (int): Maximum number of subclouds to deploy in parallel.
         """
         release_id = f"--release-id {release}" if release else ""
         delete = "--with-delete" if with_delete else ""
         clean_up_delete = "--delete-only" if delete_only else ""
         rollback = "--rollback" if rollback else ""
         snapshot = "--snapshot" if snapshot else ""
+        max_parallel = f"--max-parallel-subclouds {max_parallel_subclouds}" if max_parallel_subclouds else ""
 
         if subcloud_group:
-            command = source_openrc(f"dcmanager sw-deploy-strategy create --group {subcloud_group} {rollback} {snapshot} {release_id} {delete} {clean_up_delete}")
+            command = source_openrc(f"dcmanager sw-deploy-strategy create --group {subcloud_group} {rollback} {snapshot} {max_parallel} {release_id} {delete} {clean_up_delete}")
             target = subcloud_group
             is_group = True
         else:
-            command = source_openrc(f"dcmanager sw-deploy-strategy create {subcloud_name} {rollback} {snapshot} {release_id} {delete} {clean_up_delete}")
+            command = source_openrc(f"dcmanager sw-deploy-strategy create {subcloud_name} {rollback} {snapshot} {max_parallel} {release_id} {delete} {clean_up_delete}")
             target = subcloud_name
             is_group = False
 
@@ -136,7 +138,7 @@ class DcmanagerSwDeployStrategy(BaseKeyword):
 
         validate_equals_with_retry(function_to_execute=check_sw_deployment, expected_value=expected_status, validation_description=f"Waiting for sw_deployment_status {expected_status}.", timeout=timeout, polling_sleep_time=check_interval, failure_values=["failed"])
 
-    def dc_manager_sw_deploy_strategy_create_apply_delete(self, subcloud_name: str = None, release: str = None, subcloud_group: str = None, with_delete: bool = False, delete_only: bool = False, rollback: bool = False, snapshot: bool = False):
+    def dc_manager_sw_deploy_strategy_create_apply_delete(self, subcloud_name: str = None, release: str = None, subcloud_group: str = None, with_delete: bool = False, delete_only: bool = False, rollback: bool = False, snapshot: bool = False, max_parallel_subclouds: int = None):
         """
         Runs dcmanager sw-deploy-strategy create / apply / delete commands.
 
@@ -148,11 +150,12 @@ class DcmanagerSwDeployStrategy(BaseKeyword):
             delete_only (bool): If true, adds paramater --delete-only
             rollback (bool): If true, adds parameter --rollback
             snapshot (bool): If true, adds parameter --snapshot
+            max_parallel_subclouds (int): Maximum number of subclouds to deploy in parallel.
         """
         target = subcloud_group if subcloud_group else subcloud_name
         is_group = bool(subcloud_group)
         get_logger().log_test_case_step(f"Create the sw-deploy strategy for {target} with {release}")
-        self.dcmanager_sw_deploy_strategy_create(subcloud_name=subcloud_name, release=release, subcloud_group=subcloud_group, with_delete=with_delete, delete_only=delete_only, rollback=rollback, snapshot=snapshot)
+        self.dcmanager_sw_deploy_strategy_create(subcloud_name=subcloud_name, release=release, subcloud_group=subcloud_group, with_delete=with_delete, delete_only=delete_only, rollback=rollback, snapshot=snapshot, max_parallel_subclouds=max_parallel_subclouds)
         get_logger().log_test_case_step("Apply the sw-deploy strategy")
         self.dcmanager_sw_deploy_strategy_apply(target, is_group=is_group)
         time.sleep(120)
