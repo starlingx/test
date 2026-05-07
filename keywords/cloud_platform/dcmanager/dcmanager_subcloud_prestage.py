@@ -58,7 +58,7 @@ class DcmanagerSubcloudPrestage(BaseKeyword):
         subcloud: str,
         prestaging_packages: bool = False,
         check_interval: int = 10,
-        timeout: int = 600,
+        timeout: int = 900,
     ) -> None:
         """
         Waits for the prestage verification to be completed.

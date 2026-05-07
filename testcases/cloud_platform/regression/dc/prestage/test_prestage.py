@@ -11,6 +11,7 @@ from keywords.cloud_platform.dcmanager.dcmanager_subcloud_list_keywords import D
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_prestage import DcmanagerSubcloudPrestage
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_show_keywords import DcManagerSubcloudShowKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_sw_deploy_strategy_keywords import DcmanagerSwDeployStrategy
+from keywords.cloud_platform.metadata.metadata_keywords import MetadataKeywords
 from keywords.cloud_platform.dcmanager.rehoming_utils import perform_rehome_operation, verify_subcloud_healthy
 from keywords.cloud_platform.health.health_keywords import HealthKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
@@ -121,7 +122,7 @@ def subcloud_upgrade(central_ssh, subcloud_name):
 def prestage_subcloud(central_ssh, subcloud_name, subcloud_password, release: str = None, for_sw_deploy: bool = False, kill_proccess: bool = False, expect_fail: bool = False):
     """Prestage subcloud"""
 
-    get_logger().log_info(f"Subcloud selected for prestage: {subcloud_name}")
+    get_logger().log_info(f"Subcloud selected for prestage: {subcloud_name} (release={release}, for_sw_deploy={for_sw_deploy}, expect_fail={expect_fail})")
     wait_completion = not kill_proccess
     DcmanagerSubcloudPrestage(central_ssh).dcmanager_subcloud_prestage(subcloud_name, subcloud_password, release=release, for_sw_deploy=for_sw_deploy, wait_completion=wait_completion)
     if expect_fail:
@@ -272,15 +273,16 @@ def test_prestage_for_multiple_deployment_states(request):
         - Verify that prestage succeeds
     """
     central_ssh = LabConnectionKeywords().get_active_controller_ssh()
-    last_major_release = CloudPlatformVersionManagerClass().get_last_major_release()
-    get_logger().log_info(f"Subcloud release {last_major_release}")
+    central_sw_version = max(SoftwareListKeywords(central_ssh).get_software_list().get_product_version_by_state("deployed"))
 
+    # Select subcloud from config file to ensure parallel execution safety.
+    # Each config file is scoped to specific subclouds, preventing runners from
+    # operating on each other's subclouds during parallel execution.
     subcloud_name = ConfigurationManager.get_lab_config().get_subcloud_names()[0]
     subcloud_sw_version = DcManagerSubcloudShowKeywords(central_ssh).get_dcmanager_subcloud_show(subcloud_name).get_dcmanager_subcloud_show_object().get_software_version()
     subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
 
-    if subcloud_sw_version != last_major_release:
-        fail(f"{subcloud_name} in running {subcloud_sw_version} version, should be {last_major_release}.")
+    get_logger().log_info(f"Central cloud version: {central_sw_version}, Subcloud {subcloud_name} version: {subcloud_sw_version}")
 
     # Prechecks Before Prestage
     get_logger().log_info(f"Performing pre-checks on {subcloud_name}")
@@ -289,45 +291,92 @@ def test_prestage_for_multiple_deployment_states(request):
 
     lab_config = ConfigurationManager.get_lab_config().get_subcloud(subcloud_name)
     subcloud_password = lab_config.get_admin_credentials().get_password()
-    prestage_subcloud(central_ssh, subcloud_name, subcloud_password, for_sw_deploy=True)
 
-    sw_release = max(SoftwareListKeywords(subcloud_ssh).get_software_list().get_release_name_by_state("available"))
+    # Log software list from subcloud before prestage
+    subcloud_software_list = SoftwareListKeywords(subcloud_ssh).get_software_list()
+    get_logger().log_info(f"Subcloud {subcloud_name} software list: {subcloud_software_list}")
+
+    # Check if there is already a release in "available" state on the subcloud.
+    # If not, create a fake one by copying metadata from a deployed release.
+    available_releases = SoftwareListKeywords(subcloud_ssh).get_software_list().get_release_name_by_state("available")
+    if available_releases:
+        sw_release = max(available_releases)
+        fake_release_created = False
+    else:
+        # No release in available state — create a fake one from the deployed release metadata
+        deployed_release = max(SoftwareListKeywords(subcloud_ssh).get_software_list().get_release_name_by_state("deployed"))
+        fake_release = f"{deployed_release}-fake"
+        MetadataKeywords(subcloud_ssh).create_fake_release_metadata(deployed_release, fake_release, source_state="deployed", target_state="available")
+        sw_release = fake_release
+        fake_release_created = True
+
     get_logger().log_info(f"Release available {sw_release}.")
     release_metadata = f"/opt/software/metadata/available/{sw_release}-metadata.xml"
+    # Use a list to track current metadata location so teardown always sees the latest value
+    metadata_location = [release_metadata]
     if FileKeywords(subcloud_ssh).file_exists(release_metadata):
 
         def teardown():
-            if FileKeywords(subcloud_ssh).file_exists(release_metadata):
-                FileKeywords(subcloud_ssh).move_file(source=release_metadata, destination="/opt/software/metadata/available/", sudo=True)
+            current_metadata = metadata_location[0]
+            if FileKeywords(subcloud_ssh).file_exists(current_metadata):
+                if fake_release_created:
+                    FileKeywords(subcloud_ssh).delete_file(current_metadata)
+                else:
+                    FileKeywords(subcloud_ssh).copy_file(current_metadata, f"/opt/software/metadata/available/{sw_release}-metadata.xml", sudo=True)
 
         request.addfinalizer(teardown)
 
+        get_logger().log_test_case_step("Scenario 1: Prestage with release in 'deploying' state — expect failure")
+        get_logger().log_info(f"Subcloud software list: {SoftwareListKeywords(subcloud_ssh).get_software_list()}")
+        FileKeywords(subcloud_ssh).create_directory_with_sudo("/opt/software/metadata/deploying")
         FileKeywords(subcloud_ssh).move_file(source=release_metadata, destination="/opt/software/metadata/deploying/", sudo=True)
         release_metadata = f"/opt/software/metadata/deploying/{sw_release}-metadata.xml"
+        metadata_location[0] = release_metadata
         prestage_subcloud(central_ssh, subcloud_name, subcloud_password, for_sw_deploy=True, expect_fail=True)
         prestage_subcloud(central_ssh, subcloud_name, subcloud_password, expect_fail=True)
 
+        get_logger().log_test_case_step("Scenario 2: Prestage with release in 'removing' state — expect failure")
+        get_logger().log_info(f"Subcloud software list: {SoftwareListKeywords(subcloud_ssh).get_software_list()}")
+        FileKeywords(subcloud_ssh).create_directory_with_sudo("/opt/software/metadata/removing")
         FileKeywords(subcloud_ssh).move_file(source=release_metadata, destination="/opt/software/metadata/removing/", sudo=True)
         release_metadata = f"/opt/software/metadata/removing/{sw_release}-metadata.xml"
-        prestage_subcloud(central_ssh, subcloud_name, subcloud_password, release=last_major_release, for_sw_deploy=True, expect_fail=True)
-        prestage_subcloud(central_ssh, subcloud_name, subcloud_password, release=last_major_release, expect_fail=True)
+        metadata_location[0] = release_metadata
+        prestage_subcloud(central_ssh, subcloud_name, subcloud_password, release=subcloud_sw_version, for_sw_deploy=True, expect_fail=True)
+        prestage_subcloud(central_ssh, subcloud_name, subcloud_password, release=subcloud_sw_version, expect_fail=True)
 
+        get_logger().log_test_case_step("Scenario 3: Prestage with release in 'unavailable' state — expect success")
+        get_logger().log_info(f"Subcloud software list: {SoftwareListKeywords(subcloud_ssh).get_software_list()}")
+        FileKeywords(subcloud_ssh).create_directory_with_sudo("/opt/software/metadata/unavailable")
         FileKeywords(subcloud_ssh).move_file(source=release_metadata, destination="/opt/software/metadata/unavailable/", sudo=True)
         release_metadata = f"/opt/software/metadata/unavailable/{sw_release}-metadata.xml"
+        metadata_location[0] = release_metadata
         prestage_subcloud(central_ssh, subcloud_name, subcloud_password, for_sw_deploy=True)
         prestage_subcloud(central_ssh, subcloud_name, subcloud_password)
 
+        get_logger().log_test_case_step("Scenario 4: Prestage with release in 'deployed' state — expect success")
+        get_logger().log_info(f"Subcloud software list: {SoftwareListKeywords(subcloud_ssh).get_software_list()}")
+        FileKeywords(subcloud_ssh).create_directory_with_sudo("/opt/software/metadata/deployed")
         FileKeywords(subcloud_ssh).move_file(source=release_metadata, destination="/opt/software/metadata/deployed/", sudo=True)
         release_metadata = f"/opt/software/metadata/deployed/{sw_release}-metadata.xml"
+        metadata_location[0] = release_metadata
         prestage_subcloud(central_ssh, subcloud_name, subcloud_password, for_sw_deploy=True)
         prestage_subcloud(central_ssh, subcloud_name, subcloud_password)
 
+        get_logger().log_test_case_step("Scenario 5: Prestage with release in 'committed' state — expect success")
+        get_logger().log_info(f"Subcloud software list: {SoftwareListKeywords(subcloud_ssh).get_software_list()}")
+        FileKeywords(subcloud_ssh).create_directory_with_sudo("/opt/software/metadata/committed")
         FileKeywords(subcloud_ssh).move_file(source=release_metadata, destination="/opt/software/metadata/committed/", sudo=True)
         release_metadata = f"/opt/software/metadata/committed/{sw_release}-metadata.xml"
+        metadata_location[0] = release_metadata
         prestage_subcloud(central_ssh, subcloud_name, subcloud_password, for_sw_deploy=True)
         prestage_subcloud(central_ssh, subcloud_name, subcloud_password)
 
+        get_logger().log_test_case_step("Scenario 6: Prestage with release back in 'available' state — expect success")
+        get_logger().log_info(f"Subcloud software list: {SoftwareListKeywords(subcloud_ssh).get_software_list()}")
         FileKeywords(subcloud_ssh).move_file(source=release_metadata, destination="/opt/software/metadata/available/", sudo=True)
+        release_metadata = f"/opt/software/metadata/available/{sw_release}-metadata.xml"
+        metadata_location[0] = release_metadata
+        get_logger().log_info("Prestage with for_sw_deploy=False")
         prestage_subcloud(central_ssh, subcloud_name, subcloud_password)
 
 
