@@ -1,0 +1,43 @@
+apiVersion: sriovfec.intel.com/v2
+kind: SriovFecClusterConfig
+metadata:
+  name: {{name}}
+  namespace: sriov-fec-system
+spec:
+  priority: 1
+  nodeSelector:
+    kubernetes.io/hostname: {{hostName}}
+  acceleratorSelector:
+    pciAddress: {{pciAddress}}
+  physicalFunction:
+    pfDriver: {{pfDriver}}
+    vfDriver: {{vfDriver}}
+    vfAmount: 2
+    bbDevConfig:
+      n3000:
+        networkType: "FPGA_5GNR"
+        pfMode: false
+        downlink:
+          bandwidth: 3
+          loadBalance: 128
+          queues:
+            vf0: 16
+            vf1: 16
+            vf2: 0
+            vf3: 0
+            vf4: 0
+            vf5: 0
+            vf6: 0
+            vf7: 0
+        uplink:
+          bandwidth: 3
+          loadBalance: 128
+          queues:
+            vf0: 16
+            vf1: 16
+            vf2: 0
+            vf3: 0
+            vf4: 0
+            vf5: 0
+            vf6: 0
+            vf7: 0
