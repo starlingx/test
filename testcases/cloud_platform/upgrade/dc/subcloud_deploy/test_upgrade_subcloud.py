@@ -6,6 +6,7 @@ from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
 from framework.validation.validation import validate_equals, validate_list_contains, validate_not_equals, validate_not_none
 from keywords.cloud_platform.dcmanager.dcmanager_prestage_strategy_keywords import DcmanagerPrestageStrategyKeywords
+from keywords.cloud_platform.dcmanager.dcmanager_subcloud_group_keywords import DcmanagerSubcloudGroupKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_list_keywords import DcManagerSubcloudListKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_sw_deploy_strategy_keywords import DcmanagerSwDeployStrategy
 from keywords.cloud_platform.fault_management.alarms.alarm_list_keywords import AlarmListKeywords
@@ -222,6 +223,12 @@ def test_upgrade_subcloud_from_central_cloud():
     snapshot = usm_config.get_snapshot()
     release = usm_config.get_to_release_ids()[0]
     max_parallel_subclouds = usm_config.get_max_parallel_subclouds()
+
+    # Update subcloud group max_parallel_subclouds if configured
+    if max_parallel_subclouds is not None:
+        DcmanagerSubcloudGroupKeywords(central_ssh).dcmanager_subcloud_group_update(
+            subcloud_group, "max_parallel_subclouds", str(max_parallel_subclouds)
+        )  
     
     # Get all subclouds for validation
     subcloud_objs = dcm_sc_list_kw.get_dcmanager_subcloud_list().get_dcmanager_subcloud_list_objects()
@@ -229,7 +236,7 @@ def test_upgrade_subcloud_from_central_cloud():
     
     # dcmanager sw-deploy-strategy create / apply / delete
     dcman_sw_deploy_kw = DcmanagerSwDeployStrategy(central_ssh)
-    dcman_sw_deploy_kw.dc_manager_sw_deploy_strategy_create_apply_delete(release=release, subcloud_group=subcloud_group, subcloud_name=subcloud_name, snapshot=snapshot, max_parallel_subclouds=max_parallel_subclouds)
+    dcman_sw_deploy_kw.dc_manager_sw_deploy_strategy_create_apply_delete(release=release, subcloud_group=subcloud_group, subcloud_name=subcloud_name, snapshot=snapshot)
     msg = "Fetch software list after dcmanager sw-deploy-strategy on "
     fetch_sw_list(central_ssh, f"{msg} Systemcontroller")
     
@@ -285,8 +292,13 @@ def test_rollback_subcloud_from_central_cloud():
 
     # dcmanager sw-deploy-strategy create / apply / delete
     dcman_sw_deploy_kw = DcmanagerSwDeployStrategy(central_ssh)
+    # Update subcloud group max_parallel_subclouds if configured
     max_parallel_subclouds = usm_config.get_max_parallel_subclouds()
-    dcman_sw_deploy_kw.dc_manager_sw_deploy_strategy_create_apply_delete(subcloud_group=subcloud_group, subcloud_name=subcloud_name, rollback=rollback, max_parallel_subclouds=max_parallel_subclouds)
+    if max_parallel_subclouds is not None:
+        DcmanagerSubcloudGroupKeywords(central_ssh).dcmanager_subcloud_group_update(
+            subcloud_group, "max_parallel_subclouds", str(max_parallel_subclouds)
+        )  
+    dcman_sw_deploy_kw.dc_manager_sw_deploy_strategy_create_apply_delete(subcloud_group=subcloud_group, subcloud_name=subcloud_name, rollback=rollback)
     msg = "Fetch software list after dcmanager sw-deploy-strategy on "
     fetch_sw_list(central_ssh, f"{msg} Systemcontroller")
 
