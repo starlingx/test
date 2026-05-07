@@ -23,12 +23,12 @@ spec:
           cpu: "3"
           memory: "1Gi"
           hugepages-1Gi: "1Gi"
-          qat.intel.com/generic: "4"
+          qat.intel.com/{{ resource_name }}: "4"
         limits:
           cpu: "3"
           memory: "1Gi"
           hugepages-1Gi: "1Gi"
-          qat.intel.com/generic: "4"
+          qat.intel.com/{{ resource_name }}: "4"
       securityContext:
         readOnlyRootFilesystem: true
         allowPrivilegeEscalation: false

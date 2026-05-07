@@ -34,6 +34,15 @@ class ProductVersion:
         """
         return self.version_name.split("-")[0]
 
+    def get_major_version(self) -> str:
+        """
+        Returns the major version string (e.g., '25' from '25.03-0').
+
+        Returns:
+            str: The major version string before the first dot.
+        """
+        return self.version_name.split(".")[0]
+
     def __hash__(self) -> int:
         """
         Returns the hash of the product version based on its name.
