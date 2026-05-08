@@ -487,6 +487,10 @@ def scan_hosts(lab_config: LabConfig, ssh_connection: SSHConnection) -> list[Nod
             node.append_node_capability("lab_has_acc200")
             lab_config.add_lab_capability("lab_has_acc200")
 
+        if host_device_output.has_host_vrb2():
+            node.append_node_capability("lab_has_vrb2")
+            lab_config.add_lab_capability("lab_has_vrb2")
+
         if host_port_output.has_host_columbiaville():
             node.append_node_capability("lab_has_columbiaville")
             lab_config.add_lab_capability("lab_has_columbiaville")

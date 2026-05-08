@@ -115,6 +115,16 @@ class SystemHostDeviceOutput:
         """
         return any(item.vendor_name == "Intel Corporation" and item.class_name == "Processing accelerators" and item.device_id == "57c0" for item in self.system_host_devices)
 
+    def has_host_vrb2(self):
+        """Check if this host has an vrb2 card.
+
+        If there is at least a device with vendor_id equals "Intel Corporation" and class_name equals
+        "Processing accelerators" and device_id equals "57c2" then is considered that an VRB2 was found.
+
+        Returns: True if this host has an VRB2 device.
+        """
+        return any(item.vendor_name == "Intel Corporation" and item.class_name == "Processing accelerators" and item.device_id == "57c2" for item in self.system_host_devices)
+
     def get_device_address_by_device_id(self, device_id: str) -> list[str]:
         """Get enabled device addresses matching the given device ID.
 

@@ -1,0 +1,45 @@
+apiVersion: sriovvrb.intel.com/v1
+kind: SriovVrbClusterConfig
+metadata:
+  name: {{name}}
+  namespace: sriov-fec-system
+spec:
+  priority: 1
+  nodeSelector:
+    kubernetes.io/hostname: {{hostName}}
+  acceleratorSelector:
+    pciAddress: {{pciAddress}}
+  physicalFunction:
+    pfDriver: {{pfDriver}}
+    vfDriver: {{vfDriver}}
+    vfAmount: 64
+    bbDevConfig:
+      vrb2:
+        pfMode: false
+        numVfBundles: 64
+        maxQueueSize: 1024
+        uplink4G:
+          numQueueGroups: 0
+          numAqsPerGroups: 64
+          aqDepthLog2: 5
+        downlink4G:
+          numQueueGroups: 0
+          numAqsPerGroups: 64
+          aqDepthLog2: 5
+        uplink5G:
+          numQueueGroups: 4
+          numAqsPerGroups: 64
+          aqDepthLog2: 5
+        downlink5G:
+          numQueueGroups: 4
+          numAqsPerGroups: 64
+          aqDepthLog2: 5
+        qfft:
+          numQueueGroups: 4
+          numAqsPerGroups: 64
+          aqDepthLog2: 5
+        qmld:
+          numQueueGroups: 4
+          numAqsPerGroups: 64
+          aqDepthLog2: 5
+  drainSkip: true
