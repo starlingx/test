@@ -7,6 +7,7 @@ class StorageCapabilities:
         self.deployment_model = None
         self.replication: int = -1
         self.min_replication: int = -1
+        self.has_long_running_operations: bool = False
 
     def set_replication(self, replication: int):
         """
@@ -67,3 +68,23 @@ class StorageCapabilities:
             str: deployment_model
         """
         return self.deployment_model
+
+    def set_has_long_running_operations(self, has_long_running_operations: bool):
+        """
+        Setter for has_long_running_operations
+
+        Args:
+            has_long_running_operations (bool): has_long_running_operations
+
+        Returns: None
+        """
+        self.has_long_running_operations = has_long_running_operations
+
+    def get_has_long_running_operations(self) -> bool:
+        """
+        Getter for has_long_running_operations
+
+        Returns:
+            bool: has_long_running_operations
+        """
+        return self.has_long_running_operations

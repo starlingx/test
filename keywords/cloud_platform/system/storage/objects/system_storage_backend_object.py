@@ -1,8 +1,6 @@
 import re
 
-from keywords.cloud_platform.system.host.objects.storage_capabilities_object import (
-    StorageCapabilities,
-)
+from keywords.cloud_platform.system.host.objects.storage_capabilities_object import StorageCapabilities
 
 
 class SystemStorageBackendObject:
@@ -159,6 +157,9 @@ class SystemStorageBackendObject:
         # Add space before "deployment_model"
         capabilities_output = re.sub(r"deploy", r" deploy", capabilities_output)
 
+        # Add space before "has_long_running_operations"
+        capabilities_output = re.sub(r"has_long", r" has_long", capabilities_output)
+
         # remove all colon
         capabilities_output = capabilities_output.replace(":", "")
 
@@ -175,8 +176,10 @@ class SystemStorageBackendObject:
                 self.capabilities.set_min_replication(int(value))
             elif key == "deployment_model":
                 self.capabilities.set_deployment_model(value)
+            elif key == "has_long_running_operations":
+                self.capabilities.set_has_long_running_operations(value == "True")
             else:
-                raise ValueError("Cannot set value of StorageCapability for key: {key}")
+                raise ValueError(f"Cannot set value of StorageCapability for key: {key}")
 
     def get_capabilities(self) -> StorageCapabilities:
         """
