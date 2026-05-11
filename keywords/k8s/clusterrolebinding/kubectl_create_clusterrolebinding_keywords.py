@@ -29,6 +29,20 @@ class KubectlCreateClusterRoleBindingKeywords(K8sBaseKeyword):
         self.validate_success_return_code(self.ssh_connection)
         get_logger().log_info(f"ClusterRoleBinding '{binding_name}' created: {clusterrole} -> group {group}")
 
+    def create_clusterrolebinding_for_serviceaccount(self, binding_name: str, clusterrole: str, serviceaccount: str, namespace: str) -> None:
+        """Create a cluster role binding for a service account.
+
+        Args:
+            binding_name (str): Name of the cluster role binding.
+            clusterrole (str): Name of the cluster role to bind.
+            serviceaccount (str): Service account name.
+            namespace (str): Namespace of the service account.
+        """
+        cmd = f"kubectl create clusterrolebinding {binding_name} --clusterrole={clusterrole} --serviceaccount={namespace}:{serviceaccount}"
+        self.ssh_connection.send(self.k8s_config.export(cmd))
+        self.validate_success_return_code(self.ssh_connection)
+        get_logger().log_info(f"ClusterRoleBinding '{binding_name}' created: {clusterrole} -> serviceaccount {namespace}:{serviceaccount}")
+
     def delete_clusterrolebinding(self, binding_name: str) -> None:
         """Delete a cluster role binding.
 
