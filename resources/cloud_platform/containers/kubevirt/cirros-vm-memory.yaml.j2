@@ -1,13 +1,13 @@
 apiVersion: kubevirt.io/v1
 kind: VirtualMachine
 metadata:
-  name: vm-cirros-512mi
+  name: {{ vm_name }}
 spec:
   running: true
   template:
     metadata:
       labels:
-        kubevirt.io/vm: vm-cirros-512mi
+        kubevirt.io/vm: {{ vm_name }}
     spec:
       domain:
         devices:
@@ -17,7 +17,7 @@ spec:
             name: containerdisk
         resources:
           requests:
-            memory: 512Mi
+            memory: {{ memory }}
       volumes:
       - containerDisk:
           image: quay.io/kubevirt/cirros-container-disk-demo
