@@ -1,0 +1,3 @@
+#system helm-override-update power-metrics telegraf power-metrics --values telegraf-enabled.yaml
+nodeSelector:
+  power-metrics: "enabled"
