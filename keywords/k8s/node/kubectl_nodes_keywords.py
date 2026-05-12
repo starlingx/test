@@ -1,6 +1,9 @@
+import json
+
 from framework.ssh.ssh_connection import SSHConnection
 from keywords.cloud_platform.command_wrappers import source_openrc
 from keywords.k8s.k8s_base_keyword import K8sBaseKeyword
+from keywords.k8s.node.object.kubectl_node_labels_output import KubectlNodeLabelsOutput
 from keywords.k8s.node.object.kubectl_nodes_json_output import KubectlNodesJSONOutput
 from keywords.k8s.node.object.kubectl_nodes_output import KubectlNodesOutput
 
@@ -46,3 +49,19 @@ class KubectlNodesKeywords(K8sBaseKeyword):
 
         text = "\n".join(raw_out) if isinstance(raw_out, list) else str(raw_out)
         return KubectlNodesJSONOutput(text)
+
+    def get_node_labels(self, node_name: str) -> KubectlNodeLabelsOutput:
+        """Gets all labels for a specific node.
+
+        Args:
+            node_name (str): Name of the node.
+
+        Returns:
+            KubectlNodeLabelsOutput: Output object with label data and helper methods.
+        """
+        output = self.ssh_connection.send(self.k8s_config.export(f"kubectl get node {node_name} -o json"))
+        self.validate_success_return_code(self.ssh_connection)
+        raw_json = "\n".join(output) if isinstance(output, list) else str(output)
+        node_data = json.loads(raw_json)
+        labels = node_data.get("metadata", {}).get("labels", {})
+        return KubectlNodeLabelsOutput(labels)
