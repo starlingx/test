@@ -25,14 +25,17 @@ class AlarmListKeywords(BaseKeyword):
         self._check_interval_in_seconds = 3
         self._timeout_in_seconds = 600
 
-    def get_alarm_list(self) -> AlarmListOutput:
-        """
-        Keyword to get all alarms.
+    def get_alarm_list(self, uuid: bool = False) -> AlarmListOutput:
+        """Keyword to get all alarms.
+
+        Args:
+            uuid (bool): If True, include UUID column in the output (--uuid flag).
 
         Returns:
             AlarmListOutput: List of alarm objects retrieved from the system.
         """
-        output = self._ssh_connection.send(source_openrc("fm alarm-list --nowrap"))
+        uuid_flag = " --uuid" if uuid else ""
+        output = self._ssh_connection.send(source_openrc(f"fm alarm-list --nowrap{uuid_flag}"))
         self.validate_success_return_code(self._ssh_connection)
         alarms_output = AlarmListOutput(output)
 
