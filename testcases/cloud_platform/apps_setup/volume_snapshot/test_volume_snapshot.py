@@ -1,0 +1,226 @@
+from pytest import mark
+
+from framework.logging.automation_logger import get_logger
+from framework.resources.resource_finder import get_stx_resource_path
+from framework.ssh.ssh_connection import SSHConnection
+from framework.validation.validation import validate_equals
+from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
+from keywords.cloud_platform.system.application.system_application_apply_keywords import SystemApplicationApplyKeywords
+from keywords.cloud_platform.system.helm.system_helm_override_keywords import SystemHelmOverrideKeywords
+from keywords.cloud_platform.system.storage.system_storage_backend_keywords import SystemStorageBackendKeywords
+from keywords.files.file_keywords import FileKeywords
+from keywords.k8s.delete_resource.kubectl_delete_resource_keywords import KubectlDeleteResourceKeywords
+from keywords.k8s.files.kubectl_file_apply_keywords import KubectlFileApplyKeywords
+from keywords.k8s.k8s_command_wrapper import K8sConfigExporter
+from keywords.k8s.pods.kubectl_delete_pods_keywords import KubectlDeletePodsKeywords
+from keywords.k8s.pods.kubectl_exec_in_pods_keywords import KubectlExecInPodsKeywords
+from keywords.k8s.pods.kubectl_get_pods_keywords import KubectlGetPodsKeywords
+from keywords.k8s.pvc.kubectl_get_pvc_keywords import KubectlGetPvcKeywords
+from keywords.k8s.volumesnapshots.kubectl_get_volumesnapshots_keywords import KubectlGetVolumesnapshotsKeywords
+
+REMOTE_HOME = "/home/sysadmin"
+VOLUME_SNAPSHOT_RESOURCE_TYPE = "volumesnapshots.snapshot.storage.k8s.io"
+TEST_FILES_DIR = "resources/cloud_platform/storage/volume_snapshot"
+
+
+def _cleanup_snapshot_test_resources(
+    ssh_connection: SSHConnection,
+    pod_names: list[str],
+    pvc_names: list[str],
+    yaml_file_names: list[str],
+) -> None:
+    """Clean up all resources created during a volume snapshot test.
+
+    Args:
+        ssh_connection (SSHConnection): SSH connection to the active controller.
+        pod_names (list[str]): Pod names to delete.
+        pvc_names (list[str]): PVC names to delete.
+        yaml_file_names (list[str]): YAML file names to remove from the controller.
+    """
+    delete_resource_keywords = KubectlDeleteResourceKeywords(ssh_connection)
+
+    for pod_name in pod_names:
+        KubectlDeletePodsKeywords(ssh_connection).cleanup_pod(pod_name)
+
+    for pvc_name in pvc_names:
+        delete_resource_keywords.delete_resource("pvc", pvc_name)
+        KubectlGetPvcKeywords(ssh_connection).wait_for_pvc_to_be_deleted(pvc_name)
+
+    file_keywords = FileKeywords(ssh_connection)
+    for file_name in yaml_file_names:
+        file_keywords.delete_file(f"{REMOTE_HOME}/{file_name}")
+
+
+def _ensure_volumesnapshotclass_exists(ssh_connection: SSHConnection, storage_type: str) -> None:
+    """Ensure the volumesnapshotclass for the given storage type exists.
+
+    If it does not exist, enable it via helm override and re-apply platform-integ-apps.
+
+    Args:
+        ssh_connection (SSHConnection): SSH connection to the active controller.
+        storage_type (str): Either 'rbd' or 'cephfs'.
+    """
+    snapshot_class_name = f"{storage_type}-snapshot"
+    k8s_config = K8sConfigExporter()
+    system_storage_backend_keywords = SystemStorageBackendKeywords(ssh_connection)
+
+    get_logger().log_info(f"Check whether volumesnapshotclass '{snapshot_class_name}' exists")
+    ssh_connection.send(k8s_config.export(f"kubectl get volumesnapshotclasses.snapshot.storage.k8s.io " f"{snapshot_class_name} --no-headers 2>/dev/null"))
+    rc = ssh_connection.get_return_code()
+
+    if rc == 0:
+        get_logger().log_info(f"VolumeSnapshotClass '{snapshot_class_name}' already exists.")
+        return
+
+    validate_equals((system_storage_backend_keywords.get_system_storage_backend_list().is_backend_configured("ceph-rook")), False, "The storage backend should be ceph")
+
+    get_logger().log_test_case_step(f"Create {storage_type} volume snapshot class via helm override")
+    SystemHelmOverrideKeywords(ssh_connection).update_helm_override_via_set(
+        override_values="snapshotClass.create=True",
+        app_name="platform-integ-apps",
+        chart_name=f"{storage_type}-provisioner",
+        namespace="kube-system",
+    )
+
+    get_logger().log_info("Re-apply platform-integ-apps to apply overrides")
+    SystemApplicationApplyKeywords(ssh_connection).system_application_apply(app_name="platform-integ-apps")
+
+    get_logger().log_info(f"Verify volumesnapshotclass '{snapshot_class_name}' is available")
+    ssh_connection.send(k8s_config.export(f"kubectl get volumesnapshotclasses.snapshot.storage.k8s.io " f"{snapshot_class_name} --no-headers"))
+    rc = ssh_connection.get_return_code()
+    validate_equals(rc, 0, f"{snapshot_class_name} resource isn't available after helm override")
+
+
+@mark.p1
+def test_pre_upgrade_volume_snapshot():
+    """
+    Pre upgrade test - Volume snapshot
+
+    Setup Steps:
+        - Delete cephfs test pods if exist
+        - Delete cephfs test pvcs if exist
+    Test Steps:
+        - Upload CephFS test YAML files to active controller
+        - Create a PVC
+        - Create a pod
+        - Write a file on pod
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    storage_type_list = ["cephfs", "rbd"]
+    for storage_type in storage_type_list:
+        pvc_name = f"{storage_type}-pvc"
+        pod_name = f"csi-{storage_type}-demo-pod"
+        pvc_restore_name = f"restored-pvc-{storage_type}"
+        new_pod_name = f"csi-{storage_type}-demo-pod2"
+        pvc_yaml = f"{REMOTE_HOME}/{storage_type}-pvc.yaml"
+        pod_yaml = f"{REMOTE_HOME}/{storage_type}-pod.yaml"
+
+        yaml_files = [
+            f"{storage_type}-pvc.yaml",
+            f"{storage_type}-pod.yaml",
+            f"{storage_type}-snapshot.yaml",
+            f"{storage_type}-pvc-restore.yaml",
+            f"{storage_type}-new-pod.yaml",
+        ]
+
+        # Setup: clean up any leftover resources from previous runs
+        get_logger().log_test_case_step(f"Delete {storage_type}test pods, PVCs, and snapshots if they exist before test run")
+        _cleanup_snapshot_test_resources(
+            ssh_connection,
+            pod_names=[pod_name, new_pod_name],
+            pvc_names=[pvc_name, pvc_restore_name],
+            yaml_file_names=[],
+        )
+
+        get_logger().log_test_case_step(f"Upload {storage_type} test YAML files to active controller")
+        file_keywords = FileKeywords(ssh_connection)
+        for file_name in yaml_files:
+            local_path = get_stx_resource_path(f"{TEST_FILES_DIR}/{file_name}")
+            remote_path = f"{REMOTE_HOME}/{file_name}"
+            file_keywords.upload_file(local_path, remote_path, overwrite=True)
+
+        get_logger().log_test_case_step(f"Create a {storage_type} PVC and make sure it is in Bound status")
+        KubectlFileApplyKeywords(ssh_connection).apply_resource_from_yaml(pvc_yaml)
+        KubectlGetPvcKeywords(ssh_connection).wait_for_pvcs_to_reach_status(expected_status="Bound", pvc_names=pvc_name)
+
+        get_logger().log_test_case_step(f"Create a {storage_type} pod")
+        KubectlFileApplyKeywords(ssh_connection).apply_resource_from_yaml(pod_yaml)
+        KubectlGetPodsKeywords(ssh_connection).wait_for_pod_status(pod_name, "Running")
+
+        get_logger().log_test_case_step(f"Write a test file on {pod_name} Pod")
+        KubectlExecInPodsKeywords(ssh_connection).run_pod_exec_cmd(pod_name, "bash -c 'touch /data/test.txt'", options="-i")
+
+        get_logger().log_test_case_step(f"Check if the test file present on {storage_type} pod")
+        KubectlExecInPodsKeywords(ssh_connection).run_pod_exec_cmd(pod_name, "bash -c 'test -f /data/test.txt'", options="-i")
+
+
+@mark.p1
+def test_post_upgrade_volume_snapshot():
+    """
+    Post upgrade volume snapshot create and restore
+
+    Test Steps:
+        - Check whether test pods is running
+        - Create a volume snapshot class if necessary
+        - Create a volume snapshot
+        - Create a restored PVC from the VolumeSnapshot created
+        - Create a new pod that will use this restored PVC
+        - Check if the file created on the original pvc is also present on the restored pvc
+
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    storage_type_list = ["cephfs", "rbd"]
+    for storage_type in storage_type_list:
+        pvc_name = f"{storage_type}-pvc"
+        pod_name = f"csi-{storage_type}-demo-pod"
+        pvc_restore_name = f"restored-pvc-{storage_type}"
+        new_pod_name = f"csi-{storage_type}-demo-pod2"
+        snapshot_name = f"{storage_type}-pvc-snapshot"
+
+        pod_yaml = f"{REMOTE_HOME}/{storage_type}-pod.yaml"
+        snapshot_yaml = f"{REMOTE_HOME}/{storage_type}-snapshot.yaml"
+        pvc_restore_yaml = f"{REMOTE_HOME}/{storage_type}-pvc-restore.yaml"
+        new_pod_yaml = f"{REMOTE_HOME}/{storage_type}-new-pod.yaml"
+
+        get_logger().log_test_case_step(f"Check whether {storage_type} PVC is in Bound status")
+        KubectlGetPvcKeywords(ssh_connection).wait_for_pvcs_to_reach_status(expected_status="Bound", pvc_names=pvc_name)
+
+        get_logger().log_test_case_step(f"Check if {pod_name} pod is exist")
+        storage_type_pods = KubectlGetPodsKeywords(ssh_connection).get_pods().get_pods_start_with(pod_name)
+        if len(storage_type_pods) == 0:
+            get_logger().log_test_case_step(f"Create a {storage_type} pod")
+            KubectlFileApplyKeywords(ssh_connection).apply_resource_from_yaml(pod_yaml)
+
+        get_logger().log_test_case_step(f"Check if {pod_name} pod is in running status")
+        KubectlGetPodsKeywords(ssh_connection).wait_for_pod_status(pod_name, "Running")
+
+        get_logger().log_test_case_step(f"Check if the test file present on {pod_name} pod")
+        KubectlExecInPodsKeywords(ssh_connection).run_pod_exec_cmd(pod_name, "bash -c 'test -f /data/test.txt'", options="-i")
+
+        _ensure_volumesnapshotclass_exists(ssh_connection, storage_type)
+
+        get_logger().log_test_case_step(f"Create a {storage_type} volume snapshot")
+        KubectlFileApplyKeywords(ssh_connection).apply_resource_from_yaml(snapshot_yaml)
+
+        get_logger().log_test_case_step(f"Wait for {snapshot_name} readyToUse is true")
+        snapshot_ready = KubectlGetVolumesnapshotsKeywords(ssh_connection).wait_for_volumesnapshot_status(snapshot_name, "true", timeout=120)
+        validate_equals(snapshot_ready, True, f"Verify {snapshot_name} is ready to use")
+
+        get_logger().log_test_case_step(f"Create a {storage_type} restored PVC from the VolumeSnapshot created")
+        KubectlFileApplyKeywords(ssh_connection).apply_resource_from_yaml(pvc_restore_yaml)
+        KubectlGetPvcKeywords(ssh_connection).wait_for_pvcs_to_reach_status(expected_status="Bound", pvc_names=pvc_restore_name)
+
+        get_logger().log_test_case_step(f"Create a new {storage_type} pod that will use this restored PVC")
+        KubectlFileApplyKeywords(ssh_connection).apply_resource_from_yaml(new_pod_yaml)
+        KubectlGetPodsKeywords(ssh_connection).wait_for_pod_status(new_pod_name, "Running")
+
+        get_logger().log_test_case_step(f"Check if the test file present on the restored pod: {new_pod_name}")
+        KubectlExecInPodsKeywords(ssh_connection).run_pod_exec_cmd(new_pod_name, "bash -c 'test -f /data/test.txt'", options="-i")
+
+        get_logger().log_test_case_step(f"Delete {storage_type}test pods and PVCs, after test run")
+        _cleanup_snapshot_test_resources(
+            ssh_connection,
+            pod_names=[pod_name, new_pod_name],
+            pvc_names=[pvc_name, pvc_restore_name],
+            yaml_file_names=[],
+        )
