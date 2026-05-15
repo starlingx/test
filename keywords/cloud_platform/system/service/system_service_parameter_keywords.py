@@ -323,17 +323,20 @@ class SystemServiceParameterKeywords(BaseKeyword):
     def apply_service_parameters(
         self,
         service: str,
+        section: str = "",
     ) -> str:
         """
         Applies service parameters.
 
         Args:
             service (str): The service name (e.g., 'platform', 'kubernetes')
+            section (str): Optional section name (e.g., 'ldap-domain1', 'stx')
 
         Returns:
             str: The command output string
         """
-        command = source_openrc(f"system service-parameter-apply {service}")
+        section_str = f" --section {section}" if section else ""
+        command = source_openrc(f"system service-parameter-apply {service}{section_str}")
         output_str = self.ssh_connection.send(command)
         self.validate_success_return_code(self.ssh_connection)
         return output_str

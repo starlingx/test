@@ -14,6 +14,8 @@ class AlarmListOutput:
 
         for value in output_values:
             alarm_list_object = AlarmListObject()
+            if "UUID" in value:
+                alarm_list_object.set_uuid(value["UUID"])
             if "Alarm ID" in value:
                 alarm_list_object.set_alarm_id(value["Alarm ID"])
             if "Reason Text" in value:

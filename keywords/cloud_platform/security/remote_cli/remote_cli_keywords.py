@@ -125,8 +125,8 @@ class RemoteCliKeywords(BaseKeyword):
             "service_account_name": self.SERVICE_ACCOUNT_NAME,
             "service_account_namespace": self.SERVICE_ACCOUNT_NAMESPACE,
         }
-        self.yaml_keywords.generate_yaml_file_from_template(template, replacement_dict, self.ADMIN_LOGIN_YAML, "", copy_to_remote=True)
-        self.kubectl_file_apply.apply_resource_from_yaml(self.ADMIN_LOGIN_YAML)
+        self.yaml_keywords.generate_yaml_file_from_template(template, replacement_dict, self.ADMIN_LOGIN_YAML, "/tmp", copy_to_remote=True)
+        self.kubectl_file_apply.apply_resource_from_yaml(f"/tmp/{self.ADMIN_LOGIN_YAML}")
 
         get_logger().log_info("Step 5: Generate temp-kubeconfig with token")
         token = self.kubectl_token.create_token(self.SERVICE_ACCOUNT_NAMESPACE, self.SERVICE_ACCOUNT_NAME)
