@@ -21,18 +21,22 @@ class SystemPTPInstanceParameterKeywords(BaseKeyword):
         """
         self.ssh_connection = ssh_connection
 
-    def system_ptp_instance_parameter_add(self, instance_name: str, parameter: str) -> SystemPTPInstanceOutput:
+    def system_ptp_instance_parameter_add(self, instance_name: str, parameter: str, section: str = None) -> SystemPTPInstanceOutput:
         """
         Add a parameter to a PTP instance.
 
         Args:
             instance_name (str): Name or UUID of the PTP instance
             parameter (str): Parameter key=value pair to add
+            section (str): Optional section name (e.g. 'monitoring')
 
         Returns:
             SystemPTPInstanceOutput: Output of the command
         """
-        cmd = f"system ptp-instance-parameter-add {instance_name} {parameter}"
+        if section:
+            cmd = f"system ptp-instance-parameter-add --section {section} {instance_name} {parameter}"
+        else:
+            cmd = f"system ptp-instance-parameter-add {instance_name} {parameter}"
         command = source_openrc(cmd)
         output = self.ssh_connection.send(command)
 
@@ -41,18 +45,22 @@ class SystemPTPInstanceParameterKeywords(BaseKeyword):
 
         return system_ptp_instance_parameter_add_output
 
-    def system_ptp_instance_parameter_delete(self, instance_name: str, parameter: str) -> SystemPTPInstanceOutput:
+    def system_ptp_instance_parameter_delete(self, instance_name: str, parameter: str, section: str = None) -> SystemPTPInstanceOutput:
         """
         Delete a parameter from a PTP instance.
 
         Args:
             instance_name (str): Name or UUID of the PTP instance
             parameter (str): Parameter key to delete
+            section (str): Optional section name (e.g. 'monitoring')
 
         Returns:
             SystemPTPInstanceOutput: Output of the command
         """
-        cmd = f"system ptp-instance-parameter-delete {instance_name} {parameter}"
+        if section:
+            cmd = f"system ptp-instance-parameter-delete --section {section} {instance_name} {parameter}"
+        else:
+            cmd = f"system ptp-instance-parameter-delete {instance_name} {parameter}"
         command = source_openrc(cmd)
         output = self.ssh_connection.send(command)
 

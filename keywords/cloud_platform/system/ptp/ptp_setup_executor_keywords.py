@@ -152,6 +152,10 @@ class PTPSetupExecutorKeywords(BaseKeyword):
         system_ptp_instance_parameter_output = system_ptp_instance_parameter_keywords.system_ptp_instance_parameter_add(name, instance_parameters)
         self.validate_parameters(system_ptp_instance_parameter_output.get_ptp_instance_parameters(), instance_parameters, "add PTP instance parameters")
 
+        monitoring_parameters = ptp_instance_obj.get_monitoring_parameters()
+        if monitoring_parameters:
+            system_ptp_instance_parameter_keywords.system_ptp_instance_parameter_add(name, monitoring_parameters, section="monitoring")
+
     def ptp_interfaces_add_and_assign_hosts(self, ptp_instance_obj: PTPSetup):
         """
         Add ptp interfaces, assign hosts and validate

@@ -1,4 +1,5 @@
 import re
+import time
 from typing import Any, Dict
 
 from framework.logging.automation_logger import get_logger
@@ -57,7 +58,7 @@ class PTPVerifyConfigKeywords(BaseKeyword):
 
         self.verify_systemctl_status()
 
-        self.verify_ptp_pmc_values()
+        self.verify_ptp_pmc_values_with_retry()
 
         self.verify_ptp_config_file_content()
 
@@ -277,9 +278,15 @@ class PTPVerifyConfigKeywords(BaseKeyword):
         input_name: str,
         expected_input_state: str,
         expected_status: str,
+        timeout: int = 60,
+        polling_sleep_time: int = 10,
     ) -> None:
         """
-        Validates the cgu and dpll status.
+        Validates the cgu and dpll status with retry.
+
+        After PTP reconfiguration, the CGU input (e.g. SMA1) may remain in
+        'validating' state and DPLL may be in 'holdover' temporarily.
+        This method retries until the expected state is reached or timeout.
 
         Args:
             hostname (str): The name of the host.
@@ -287,48 +294,66 @@ class PTPVerifyConfigKeywords(BaseKeyword):
             input_name (str): the cgu input name.
             expected_input_state (str): The expected cgu input state.
             expected_status (str): expected of DPLL status.
+            timeout (int): Maximum time in seconds to wait for valid state.
+            polling_sleep_time (int): Seconds between retries.
 
         Returns: None
 
         Raises:
-            Exception: raised when validate fails
+            Exception: raised when validate fails after timeout
         """
         lab_connect_keywords = LabConnectionKeywords()
         ssh_connection = lab_connect_keywords.get_ssh_for_hostname(hostname)
         cat_ptp_cgu_keywords = CatPtpCguKeywords(ssh_connection)
 
-        ptp_cgu_output = cat_ptp_cgu_keywords.cat_ptp_cgu(cgu_location)
-        ptp_cgu_component = ptp_cgu_output.get_cgu_component()
+        end_time = time.time() + timeout
 
-        input_object = ptp_cgu_component.get_cgu_input(input_name)
-        state = input_object.get_state()
+        while True:
+            ptp_cgu_output = cat_ptp_cgu_keywords.cat_ptp_cgu(cgu_location)
+            ptp_cgu_component = ptp_cgu_output.get_cgu_component()
 
-        eec_dpll_object = ptp_cgu_component.get_eec_dpll()
-        eec_dpll_current_reference = eec_dpll_object.get_current_reference()
-        eec_dpll_status = eec_dpll_object.get_status()
+            input_object = ptp_cgu_component.get_cgu_input(input_name)
+            state = input_object.get_state()
 
-        pps_dpll_object = ptp_cgu_component.get_pps_dpll()
-        pps_dpll_current_reference = pps_dpll_object.get_current_reference()
-        pps_dpll_status = pps_dpll_object.get_status()
+            eec_dpll_object = ptp_cgu_component.get_eec_dpll()
+            eec_dpll_current_reference = eec_dpll_object.get_current_reference()
+            eec_dpll_status = eec_dpll_object.get_status()
 
-        if state == expected_input_state and eec_dpll_current_reference == input_name and eec_dpll_status == expected_status and pps_dpll_current_reference == input_name and pps_dpll_status == expected_status:
-            get_logger().log_info(f"Validation Successful - {input_name} state and DPLL status")
-        else:
-            get_logger().log_info(f"Validation Failed - {input_name} state and DPLL status")
-            get_logger().log_info(f"Expected {input_name}: {expected_input_state}")
-            get_logger().log_info(f"Observed {input_name}: {state}")
+            pps_dpll_object = ptp_cgu_component.get_pps_dpll()
+            pps_dpll_current_reference = pps_dpll_object.get_current_reference()
+            pps_dpll_status = pps_dpll_object.get_status()
 
-            get_logger().log_info(f"Expected EEC DPLL current refrence: {input_name}")
-            get_logger().log_info(f"Observed EEC DPLL current refrence: {eec_dpll_current_reference}")
-            get_logger().log_info(f"Expected EEC DPLL status: {expected_status}")
-            get_logger().log_info(f"Observed EEC DPLL status: {eec_dpll_status}")
+            if (state == expected_input_state
+                    and eec_dpll_current_reference == input_name
+                    and eec_dpll_status == expected_status
+                    and pps_dpll_current_reference == input_name
+                    and pps_dpll_status == expected_status):
+                get_logger().log_info(f"Validation Successful - {input_name} state and DPLL status")
+                return
 
-            get_logger().log_info(f"Expected PPS DPLL current refrence: {input_name}")
-            get_logger().log_info(f"Observed PPS DPLL current refrence: {pps_dpll_current_reference}")
-            get_logger().log_info(f"Expected PPS DPLL status: {expected_status}")
-            get_logger().log_info(f"Observed PPS DPLL status: {pps_dpll_status}")
+            if time.time() >= end_time:
+                get_logger().log_info(f"Validation Failed - {input_name} state and DPLL status")
+                get_logger().log_info(f"Expected {input_name}: {expected_input_state}")
+                get_logger().log_info(f"Observed {input_name}: {state}")
 
-            raise Exception("Validation Failed")
+                get_logger().log_info(f"Expected EEC DPLL current reference: {input_name}")
+                get_logger().log_info(f"Observed EEC DPLL current reference: {eec_dpll_current_reference}")
+                get_logger().log_info(f"Expected EEC DPLL status: {expected_status}")
+                get_logger().log_info(f"Observed EEC DPLL status: {eec_dpll_status}")
+
+                get_logger().log_info(f"Expected PPS DPLL current reference: {input_name}")
+                get_logger().log_info(f"Observed PPS DPLL current reference: {pps_dpll_current_reference}")
+                get_logger().log_info(f"Expected PPS DPLL status: {expected_status}")
+                get_logger().log_info(f"Observed PPS DPLL status: {pps_dpll_status}")
+
+                raise Exception("Validation Failed")
+
+            get_logger().log_info(
+                f"{input_name} state is '{state}' (expected '{expected_input_state}'), "
+                f"DPLL status EEC='{eec_dpll_status}'/PPS='{pps_dpll_status}' "
+                f"(expected '{expected_status}'). Retrying in {polling_sleep_time}s..."
+            )
+            time.sleep(polling_sleep_time)
 
     def validate_ptp_config_file_content(
         self,

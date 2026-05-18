@@ -24,6 +24,7 @@
           "name": "ptp1",
           "instance_hostnames": ["compute-0", "controller-0", "controller-1"],
           "instance_parameters": "priority2=100 tx_timestamp_timeout=700 boundary_clock_jbod=1 domainNumber=24 dataset_comparison=G.8275.x",
+          "monitoring_parameters": "holdover_seconds=30",
           "ptp_interface_names": [
             "ptp1if1",
             "ptp1if2",
@@ -37,6 +38,7 @@
           "name": "ptp2",
           "instance_hostnames": [],
           "instance_parameters": "priority2=110 dataset_comparison=G.8275.x tx_timestamp_timeout=700 boundary_clock_jbod=1 domainNumber=24",
+          "monitoring_parameters": "holdover_seconds=30",
           "ptp_interface_names": [
             "ptp2if1",
             "ptp2if2"
@@ -50,6 +52,7 @@
           "name": "ptp3",
           "instance_hostnames": ["controller-0", "compute-0"],
           "instance_parameters": "priority2=100 dataset_comparison=G.8275.x tx_timestamp_timeout=700 boundary_clock_jbod=1 domainNumber=24",
+          "monitoring_parameters": "holdover_seconds=30",
           "ptp_interface_names": [
             "ptp3if1",
             "ptp3if2"
@@ -63,6 +66,7 @@
           "name": "ptp4",
           "instance_hostnames": ["controller-1"],
           "instance_parameters": "boundary_clock_jbod=1 tx_timestamp_timeout=700 priority2=110 dataset_comparison=G.8275.x domainNumber=24",
+          "monitoring_parameters": "holdover_seconds=30",
           "ptp_interface_names": [
             "ptp4if1",
             "ptp4if2"
@@ -76,10 +80,11 @@
       "phc2sys": [
           {
             // PHC1 instance - Synchronizes controller-0 and compute-0 system clocks
-            // Uses controller-0's NIC1 connection to Spirent as reference
+            // Uses controller-0's NIC1 interface as reference with ptp1 UDS socket
             name: "phc1",
             instance_hostnames : ["controller-0", "compute-0"],
-            instance_parameters: "cmdline_opts='-s {{controller_0.nic1.conn_to_proxmox}} -O -37 -m'",
+            instance_parameters: "cmdline_opts='-s {{controller_0.nic1.conn_to_proxmox}} -w -m' uds_address=/var/run/ptp4l-ptp1 domainNumber=24",
+            monitoring_parameters: "holdover_seconds=30",
             ptp_interface_names: [
               "phc1if1",
             ],
@@ -89,6 +94,7 @@
             name: "phc2",
             instance_hostnames : [],
             instance_parameters: "uds_address=/var/run/ptp4l-ptp2 domainNumber=24",
+            monitoring_parameters: "holdover_seconds=30",
             ptp_interface_names: [
               "phc2if1",
             ],
@@ -98,6 +104,7 @@
             name: "phc3",
             instance_hostnames : [],
             instance_parameters: "domainNumber=24 uds_address=/var/run/ptp4l-ptp3",
+            monitoring_parameters: "holdover_seconds=30",
             ptp_interface_names: [
               "phc3if1",
             ],
@@ -107,6 +114,7 @@
             name: "phc4",
             instance_hostnames : ['controller-1'],
             instance_parameters: "domainNumber=24 uds_address=/var/run/ptp4l-ptp4",
+            monitoring_parameters: "holdover_seconds=30",
             ptp_interface_names: [
               "phc4if1",
             ],
@@ -123,6 +131,7 @@
             name: "ts1",
             instance_hostnames : ["controller-0", "compute-0"],
             instance_parameters: "ts2phc.nmea_serialport=/dev/gnss0",
+            monitoring_parameters: "holdover_seconds=30",
             ptp_interface_names: [
               "ts1if1",
             ],
@@ -283,7 +292,7 @@
           },
           "time_properties_data_set": {
             "current_utc_offset": 37,
-            "current_utc_offset_valid": 0,
+            "current_utc_offset_valid": 1,
             "time_traceable": 1,
             "frequency_traceable": 1
           },
@@ -294,7 +303,7 @@
             "time_traceable": 1,
             "frequency_traceable": 1,
             "time_source": "0x20",
-            "current_utc_offset_valid": 0
+            "current_utc_offset_valid": 1
           },
           "port_data_set": [
             {
@@ -315,7 +324,7 @@
           },
           "time_properties_data_set": {
             "current_utc_offset": 37,
-            "current_utc_offset_valid": 0,
+            "current_utc_offset_valid": 1,
             "time_traceable": 1,
             "frequency_traceable": 1
           },
@@ -352,7 +361,7 @@
           },
           "time_properties_data_set": {
             "current_utc_offset": 37,
-            "current_utc_offset_valid": 0,
+            "current_utc_offset_valid": 1,
             "time_traceable": 1,
             "frequency_traceable": 1
           },
@@ -363,12 +372,12 @@
             "time_traceable": 1,
             "frequency_traceable": 1,
             "time_source": "0x20",
-            "current_utc_offset_valid": 0
+            "current_utc_offset_valid": 1
           },
           "port_data_set": [
             {
               "interface" : "{{ compute_0.nic1.nic_connection.interface }}",
-              "port_state": ["LISTENING", "FAULTY"]
+              "port_state": "MASTER"
             }
           ]
         }
@@ -386,7 +395,7 @@
           },
           "time_properties_data_set": {
             "current_utc_offset": 37,
-            "current_utc_offset_valid": 0,
+            "current_utc_offset_valid": 1,
             "time_traceable": 1,
             "frequency_traceable": 1
           },
@@ -397,7 +406,7 @@
             "time_traceable": 1,
             "frequency_traceable": 1,
             "time_source": "0x20",
-            "current_utc_offset_valid": 0
+            "current_utc_offset_valid": 1
           },
           "port_data_set": [
             {
@@ -418,7 +427,7 @@
           },
           "time_properties_data_set": {
             "current_utc_offset": 37,
-            "current_utc_offset_valid": 0,
+            "current_utc_offset_valid": 1,
             "time_traceable": 1,
             "frequency_traceable": 1
           },
@@ -429,7 +438,7 @@
             "time_traceable": 1,
             "frequency_traceable": 1,
             "time_source": "0x20",
-            "current_utc_offset_valid": 0
+            "current_utc_offset_valid": 1
           },
           "port_data_set": [
             {
@@ -449,7 +458,7 @@
           },
           "time_properties_data_set": {
             "current_utc_offset": 37,
-            "current_utc_offset_valid": 0,
+            "current_utc_offset_valid": 1,
             "time_traceable": 1,
             "frequency_traceable": 1
           },

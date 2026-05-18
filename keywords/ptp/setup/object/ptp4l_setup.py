@@ -28,6 +28,7 @@ class PTP4LSetup:
         if "instance_parameters" not in setup_dict:
             raise Exception(f"The ptp4l entry {self.name} must have instance_parameters defined.")
         self.instance_parameters = setup_dict["instance_parameters"]
+        self.monitoring_parameters = setup_dict.get("monitoring_parameters", "")
 
         if "ptp_interface_names" not in setup_dict:
             raise Exception(f"The ptp4l entry {self.name} must have ptp_interface_names defined.")
@@ -75,6 +76,15 @@ class PTP4LSetup:
             str: The  instance parameters as a string
         """
         return self.instance_parameters
+
+    def get_monitoring_parameters(self) -> str:
+        """
+        Gets the monitoring parameters as a string.
+
+        Returns:
+            str: The monitoring parameters as a string
+        """
+        return self.monitoring_parameters
 
     def get_ptp_interfaces(self) -> List[PTPHostInterfaceSetup]:
         """
