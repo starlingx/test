@@ -470,7 +470,7 @@ def test_ceph_rook_backend_services_operation():
     system_storage_backend_keywords.system_storage_backend_modify(backend="ceph-rook", services=new_services)
     get_logger().log_info("Wait for rook-ceph app auto reapply starts")
     app_status_list = ["applying"]
-    SystemApplicationListKeywords(ssh_connection).validate_app_status_in_list(app_name, app_status_list, timeout=360, polling_sleep_time=5)
+    SystemApplicationListKeywords(ssh_connection).validate_app_status_in_list(app_name, app_status_list, timeout=360, polling_sleep_time=1)
     app_status_list = ["applied"]
     SystemApplicationListKeywords(ssh_connection).validate_app_status_in_list(app_name, app_status_list, timeout=360, polling_sleep_time=10)
 
