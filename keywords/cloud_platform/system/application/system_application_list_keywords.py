@@ -106,23 +106,43 @@ class SystemApplicationListKeywords(BaseKeyword):
             get_logger().log_info(f"{application_name} is not found.")
             return False
 
-    def validate_all_apps_status(self, expected_statuses: [str]) -> bool:
-        """Validates That all apps are in the expected status.
+    def validate_all_apps_status(self, expected_statuses: List[str], timeout: int = 0, polling_sleep_time: int = 30) -> bool:
+        """Validates that all apps are in one of the expected statuses, with optional retry.
+
+        Polls until every application is in one of expected_statuses or until timeout.
+        Useful for waiting on applications to finish transitioning before performing
+        operations such as host-lock that are rejected while an app is in transition.
 
         Args:
-            expected_statuses ([str]): list of expected statuses ex. ['applied' , 'uploaded']
+            expected_statuses (List[str]): list of expected statuses ex. ['applied', 'uploaded']
+            timeout (int): Maximum time in seconds to wait for all apps to reach an expected status.
+                Default 0 means a single check with no retry (preserves legacy behaviour).
+            polling_sleep_time (int): Seconds between polls when retrying.
 
         Returns:
-            bool: True if all apps are in the expected status, False otherwise.
+            bool: True if all applications are in one of the expected statuses.
+
+        Raises:
+            TimeoutError: If the timeout elapses before all applications reach an expected status.
         """
-        apps = self.get_system_application_list().get_applications()
-        not_applied_apps = list(filter(lambda app: app.get_status() not in expected_statuses, apps))
-        if len(not_applied_apps) == 0:
-            return True
-        else:
-            for app in not_applied_apps:
+
+        def check_all_in_expected() -> bool:
+            apps = self.get_system_application_list().get_applications()
+            not_in_expected = list(filter(lambda app: app.get_status() not in expected_statuses, apps))
+            if len(not_in_expected) == 0:
+                return True
+            for app in not_in_expected:
                 get_logger().log_info(f"Application {app.get_application()} is in status {app.get_status()}")
-            raise KeywordException("All applications are not in the expected status.")
+            return False
+
+        description = f"All applications are in one of {expected_statuses}"
+        return validate_equals_with_retry(
+            function_to_execute=check_all_in_expected,
+            expected_value=True,
+            validation_description=description,
+            timeout=timeout,
+            polling_sleep_time=polling_sleep_time,
+        )
 
     def is_applied_or_applyfailed_or_removefailed(self, app_name: str) -> bool:
         """Verifies if the application has already been applied or apply-failed or remove-failed.
