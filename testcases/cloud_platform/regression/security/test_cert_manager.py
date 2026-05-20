@@ -33,6 +33,8 @@ def test_override_cert_manager():
 
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    security_config = ConfigurationManager.get_security_config()
+    ssh_user_home = security_config.get_ssh_user_home()
 
     app_name = "cert-manager"
     chart_name = "cert-manager"
@@ -50,7 +52,7 @@ def test_override_cert_manager():
     template_file = get_stx_resource_path(f"resources/cloud_platform/security/cert_manager/{cm_override_file_name}")
     replacement_dictionary = {"cm_label_key": label_key, "cm_label_value": label_value}
     get_logger().log_info(f"Creating resource from file {template_file}")
-    remote_path = YamlKeywords(ssh_connection).generate_yaml_file_from_template(template_file, replacement_dictionary, f"{cm_override_file_name}", "/home/sysadmin")
+    remote_path = YamlKeywords(ssh_connection).generate_yaml_file_from_template(template_file, replacement_dictionary, f"{cm_override_file_name}", ssh_user_home)
 
     get_logger().log_info(f"Helm override for {app_name} with custom values")
     SystemHelmOverrideKeywords(ssh_connection).update_helm_override(remote_path, app_name, chart_name, namespace)
@@ -97,6 +99,8 @@ def test_manual_cert_installation(request: FixtureRequest):
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     lab_config = ConfigurationManager.get_lab_config()
+    security_config = ConfigurationManager.get_security_config()
+    ssh_user_home = security_config.get_ssh_user_home()
     oam_ip = lab_config.get_floating_ip()
 
     cluster_issuer = "system-selfsigning-issuer"
@@ -115,6 +119,18 @@ def test_manual_cert_installation(request: FixtureRequest):
     platform_issuer_file_name = "platform_issuer.yaml"
     namespace = "testcert"
 
+    def teardown_namespace():
+        get_logger().log_info("Deleting testcert namespace")
+        ns_list = KubectlGetNamespacesKeywords(ssh_connection).get_namespaces()
+
+        if ns_list.is_namespace(namespace_name=namespace):
+            get_logger().log_info("Deleting testcert namespace")
+            KubectlDeleteNamespaceKeywords(ssh_connection).cleanup_namespace(namespace=namespace)
+        else:
+            get_logger().log_info("testcert namespace does not exist")
+
+    request.addfinalizer(teardown_namespace)
+
     kubectl_create_ns_keyword = KubectlCreateNamespacesKeywords(ssh_connection)
     kubectl_create_ns_keyword.create_namespaces(namespace)
     ns_list = KubectlGetNamespacesKeywords(ssh_connection).get_namespaces()
@@ -123,16 +139,16 @@ def test_manual_cert_installation(request: FixtureRequest):
 
     cluster_issuer_template_file = get_stx_resource_path(f"resources/cloud_platform/security/cert_manager/{cluster_issuer_file_name}")
     issuer_replacement_dictionary = {"cluster_issuer": cluster_issuer}
-    cluster_issuer_yaml = YamlKeywords(ssh_connection).generate_yaml_file_from_template(cluster_issuer_template_file, issuer_replacement_dictionary, f"{cluster_issuer_file_name}", "/home/sysadmin")
+    cluster_issuer_yaml = YamlKeywords(ssh_connection).generate_yaml_file_from_template(cluster_issuer_template_file, issuer_replacement_dictionary, f"{cluster_issuer_file_name}", ssh_user_home)
     KubectlApplyPodsKeywords(ssh_connection).apply_from_yaml(cluster_issuer_yaml)
 
     root_cacert_template_file = get_stx_resource_path(f"resources/cloud_platform/security/cert_manager/{root_cacert_file_name}")
     root_cacert_replacement_dictionary = {"root_ca_cert": root_ca_cert, "root_ca_secret": root_ca_secret, "cluster_issuer": cluster_issuer, "namespace": namespace}
-    root_cacert_issuer_yaml = YamlKeywords(ssh_connection).generate_yaml_file_from_template(root_cacert_template_file, root_cacert_replacement_dictionary, f"{root_cacert_file_name}", "/home/sysadmin")
+    root_cacert_issuer_yaml = YamlKeywords(ssh_connection).generate_yaml_file_from_template(root_cacert_template_file, root_cacert_replacement_dictionary, f"{root_cacert_file_name}", ssh_user_home)
     KubectlApplyPodsKeywords(ssh_connection).apply_from_yaml(root_cacert_issuer_yaml)
     platform_issuer_template_file = get_stx_resource_path(f"resources/cloud_platform/security/cert_manager/{platform_issuer_file_name}")
     platform_issuer_replacement_dictionary = {"root_ca_secret": root_ca_secret, "platform_issuer": platform_issuer, "namespace": namespace}
-    platform_issuer_yaml = YamlKeywords(ssh_connection).generate_yaml_file_from_template(platform_issuer_template_file, platform_issuer_replacement_dictionary, f"{platform_issuer_file_name}", "/home/sysadmin")
+    platform_issuer_yaml = YamlKeywords(ssh_connection).generate_yaml_file_from_template(platform_issuer_template_file, platform_issuer_replacement_dictionary, f"{platform_issuer_file_name}", ssh_user_home)
     KubectlApplyPodsKeywords(ssh_connection).apply_from_yaml(platform_issuer_yaml)
 
     KubectlGetCertIssuerKeywords(ssh_connection).wait_for_issuer_status(platform_issuer, True, namespace)
@@ -144,7 +160,7 @@ def test_manual_cert_installation(request: FixtureRequest):
 
     registry_local_file = get_stx_resource_path(f"resources/cloud_platform/security/cert_manager/{registry_local_cert_file_name}")
     registry_replacement_dictionary = {"registry_local_cert": registry_local_cert, "registry_local_secret": registry_local_secret, "platform_issuer": platform_issuer, "floating_ip": oam_ip, "namespace": namespace}
-    registry_yaml = YamlKeywords(ssh_connection).generate_yaml_file_from_template(registry_local_file, registry_replacement_dictionary, f"{registry_local_cert_file_name}", "/home/sysadmin")
+    registry_yaml = YamlKeywords(ssh_connection).generate_yaml_file_from_template(registry_local_file, registry_replacement_dictionary, f"{registry_local_cert_file_name}", ssh_user_home)
     KubectlApplyPodsKeywords(ssh_connection).apply_from_yaml(registry_yaml)
     # Check the cert status
     KubectlGetCertStatusKeywords(ssh_connection).wait_for_certs_status(registry_local_cert, True, namespace)
@@ -155,25 +171,11 @@ def test_manual_cert_installation(request: FixtureRequest):
     validate_str_contains_with_retry(get_list_of_secrets, registry_local_secret, "Registry local secret", timeout=10)
     restapi_gui_file = get_stx_resource_path(f"resources/cloud_platform/security/cert_manager/{restapi_gui_cert_file_name}")
     restapi_replacement_dictionary = {"restapi_gui_cert": restapi_gui_cert, "restapi_gui_secret": restapi_gui_secret, "platform_issuer": platform_issuer, "floating_ip": oam_ip, "namespace": namespace}
-    restapi_yaml = YamlKeywords(ssh_connection).generate_yaml_file_from_template(restapi_gui_file, restapi_replacement_dictionary, f"{restapi_gui_cert_file_name}", "/home/sysadmin")
+    restapi_yaml = YamlKeywords(ssh_connection).generate_yaml_file_from_template(restapi_gui_file, restapi_replacement_dictionary, f"{restapi_gui_cert_file_name}", ssh_user_home)
     KubectlApplyPodsKeywords(ssh_connection).apply_from_yaml(restapi_yaml)
     # Check the cert status
     KubectlGetCertStatusKeywords(ssh_connection).wait_for_certs_status(restapi_gui_cert, True, namespace)
     validate_str_contains_with_retry(get_list_of_secrets, restapi_gui_secret, "restapi gui secret", timeout=10)
-
-    def teardown_namespace():
-        # cleanup created dashboard namespace
-        get_logger().log_info("Deleting testcert namespace")
-        ns_list = KubectlGetNamespacesKeywords(ssh_connection).get_namespaces()
-
-        if ns_list.is_namespace(namespace_name=namespace):
-            get_logger().log_info("Deleting testcert namespace")
-            # delete created namespace
-            KubectlDeleteNamespaceKeywords(ssh_connection).cleanup_namespace(namespace=namespace)
-        else:
-            get_logger().log_info("testcert namespace does not exist")
-
-    request.addfinalizer(teardown_namespace)
 
 
 @mark.p1
@@ -219,3 +221,78 @@ def test_cert_manager_helm_chart_version_and_labels():
     pod_labels = pods_keywords.get_pod_labels(cert_manager_pods[0].get_name(), namespace)
     validate_equals("app.kubernetes.io/version" in pod_labels, True, "Verify cert-manager pod has app.kubernetes.io/version label")
     validate_equals("helm.sh/chart" in pod_labels, True, "Verify cert-manager pod has helm.sh/chart label")
+
+
+@mark.p1
+def test_cert_manager_certificate_renewal(request: FixtureRequest):
+    """Verify cert-manager automatically renews a short-lived certificate.
+
+    Creates a short-lived certificate and waits for cert-manager to automatically
+    renew it. Renewal is confirmed by comparing the serial number and notAfter
+    date before and after the renewal window.
+
+    Steps:
+        - Create namespace and self-signed issuer
+        - Deploy short-lived certificate
+        - Capture initial serial number and notAfter date
+        - Wait for cert-manager to renew the certificate
+        - Verify serial number has changed
+        - Verify new notAfter is later than original
+
+    Teardown:
+        - Delete the test namespace
+
+    Args:
+        request (FixtureRequest): pytest request object for finalizer registration.
+    """
+    security_config = ConfigurationManager.get_security_config()
+    namespace = security_config.get_cert_renewal_namespace()
+    issuer_name = security_config.get_cert_renewal_issuer_name()
+    cert_name = security_config.get_cert_renewal_cert_name()
+    secret_name = security_config.get_cert_renewal_secret_name()
+    renewal_timeout = security_config.get_cert_renewal_timeout()
+
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+
+    def teardown():
+        get_logger().log_info(f"Deleting namespace {namespace}")
+        KubectlDeleteNamespaceKeywords(ssh_connection).cleanup_namespace(namespace)
+
+    request.addfinalizer(teardown)
+
+    KubectlCreateNamespacesKeywords(ssh_connection).create_namespaces(namespace)
+
+    template_file = get_stx_resource_path("resources/cloud_platform/security/cert_manager/cert_renewal_test.yaml")
+    replacement_dict = {
+        "namespace": namespace,
+        "issuer_name": issuer_name,
+        "cert_name": cert_name,
+        "secret_name": secret_name,
+        "duration": security_config.get_cert_renewal_duration(),
+        "renew_before": security_config.get_cert_renewal_renew_before(),
+    }
+    rendered_yaml = YamlKeywords(ssh_connection).generate_yaml_file_from_template(template_file, replacement_dict, "cert_renewal_test.yaml", security_config.get_ssh_user_home())
+    KubectlApplyPodsKeywords(ssh_connection).apply_from_yaml(rendered_yaml)
+
+    KubectlGetCertIssuerKeywords(ssh_connection).wait_for_issuer_status(issuer_name, True, namespace)
+    KubectlGetCertStatusKeywords(ssh_connection).wait_for_certs_status(cert_name, True, namespace)
+
+    secret_keywords = KubectlGetSecretsKeywords(ssh_connection)
+    initial_secret = secret_keywords.get_secret_json_output(secret_name, namespace)
+    initial_serial = initial_secret.get_certificate_serial()
+    initial_not_after = initial_secret.get_certificate_not_after()
+    get_logger().log_info(f"Initial certificate serial: {initial_serial}, notAfter: {initial_not_after}")
+
+    def serial_has_changed():
+        renewed_secret = secret_keywords.get_secret_json_output(secret_name, namespace)
+        return renewed_secret.get_certificate_serial() != initial_serial
+
+    validate_equals_with_retry(serial_has_changed, True, "Verify certificate serial number changed after renewal", renewal_timeout, 60)
+
+    renewed_secret = secret_keywords.get_secret_json_output(secret_name, namespace)
+    renewed_serial = renewed_secret.get_certificate_serial()
+    renewed_not_after = renewed_secret.get_certificate_not_after()
+    get_logger().log_info(f"Renewed certificate serial: {renewed_serial}, notAfter: {renewed_not_after}")
+
+    validate_equals(renewed_serial != initial_serial, True, "Verify certificate serial number changed after renewal")
+    validate_equals(renewed_not_after > initial_not_after, True, "Verify renewed certificate notAfter is later than original")

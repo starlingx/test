@@ -173,24 +173,45 @@ class KubectlSecretObject:
                 pass
         return None
 
-    def get_certificate_issuer(self) -> str | None:
-        """
-        Retrieves the Issuer information from the 'tls.crt' data of the parsed secret.
+    def load_x509_certificate(self) -> Optional[object]:
+        """Load and return the parsed x509 certificate from TLS data.
+
+        Returns:
+            Optional[object]: Parsed x509 certificate or None if missing.
         """
         encoded_cert = self.get_tls_crt()
         if not encoded_cert:
             return None
-        decoded_cert = base64.b64decode(encoded_cert)
-        cert = x509.load_pem_x509_certificate(decoded_cert, default_backend())
-        return cert.issuer.rfc4514_string()
+        return x509.load_pem_x509_certificate(base64.b64decode(encoded_cert), default_backend())
+
+    def get_certificate_issuer(self) -> str | None:
+        """
+        Retrieves the Issuer information from the 'tls.crt' data of the parsed secret.
+        """
+        cert = self.load_x509_certificate()
+        return cert.issuer.rfc4514_string() if cert else None
 
     def get_certificate_subject(self) -> str | None:
         """
         Retrieves the Subject information from the 'tls.crt' data of the parsed secret.
         """
-        encoded_cert = self.get_tls_crt()
-        if not encoded_cert:
-            return None
-        decoded_cert = base64.b64decode(encoded_cert)
-        cert = x509.load_pem_x509_certificate(decoded_cert, default_backend())
-        return cert.subject.rfc4514_string()
+        cert = self.load_x509_certificate()
+        return cert.subject.rfc4514_string() if cert else None
+
+    def get_certificate_serial(self) -> Optional[str]:
+        """Retrieve the serial number from the TLS certificate.
+
+        Returns:
+            Optional[str]: Hex serial number string or None if missing.
+        """
+        cert = self.load_x509_certificate()
+        return format(cert.serial_number, "X") if cert else None
+
+    def get_certificate_not_after(self) -> Optional[str]:
+        """Retrieve the expiry date from the TLS certificate.
+
+        Returns:
+            Optional[str]: ISO format expiry datetime string or None if missing.
+        """
+        cert = self.load_x509_certificate()
+        return cert.not_valid_after_utc.isoformat() if cert else None

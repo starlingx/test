@@ -2,6 +2,9 @@
     // dns name for the lab
     "domain_name": "lab_domain_name",
 
+    // Home directory of the SSH user on the lab
+    "ssh_user_home": "ssh_user_home_path",
+
     // ACME server url
     "stepca_server_url": "external_acme_server_url",
 
@@ -49,10 +52,10 @@
     // OIDC with Keycloak and MFA configuration
     "oidc_keycloak": {
         // Working directory on the remote host for OIDC files
-        "working_dir": "/home/sysadmin/oidc-keycloak/",
+        "working_dir": "ssh_user_home_path/oidc-keycloak/",
 
         // Home directory of the remote user (used to build paths like working_dir and token cache)
-        "remote_user_home": "/home/sysadmin",
+        "remote_user_home": "ssh_user_home_path",
 
         // Kubernetes namespace for OIDC secrets
         "namespace": "kube-system",
@@ -203,5 +206,16 @@
         // Docker image reference for the remote CLI container
         // If empty, the full image is read from docker_image_version.sh in the extracted tarball
         "docker_image": ""
+    },
+
+    // Certificate renewal test configuration
+    "cert_renewal": {
+        "namespace": "test-cert-renewal",
+        "issuer_name": "selfsigned-issuer",
+        "cert_name": "test-certificate",
+        "secret_name": "test-certificate-tls",
+        "duration": "1h",
+        "renew_before": "55m",
+        "renewal_timeout": 900
     }
 }

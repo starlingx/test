@@ -13,6 +13,7 @@ class SecurityConfig:
         with open(config) as json_data:
             security_dict = json5.load(json_data)
         self.domain_name = security_dict["domain_name"]
+        self.ssh_user_home = security_dict.get("ssh_user_home", "")
         self.stepca_server_url = security_dict["stepca_server_url"]
         self.stepca_server_issuer = security_dict["stepca_server_issuer"]
 
@@ -60,6 +61,14 @@ class SecurityConfig:
         self.remote_cli_install_dir = remote_cli_config.get("install_dir", "/tmp/remote_cli_install")
         self.remote_cli_working_dir = remote_cli_config.get("working_dir", "/tmp/remote_cli_wd")
         self.remote_cli_docker_image = remote_cli_config.get("docker_image", "")
+        cert_renewal_config = security_dict.get("cert_renewal", {})
+        self.cert_renewal_namespace = cert_renewal_config.get("namespace", "test-cert-renewal")
+        self.cert_renewal_issuer_name = cert_renewal_config.get("issuer_name", "selfsigned-issuer")
+        self.cert_renewal_cert_name = cert_renewal_config.get("cert_name", "test-certificate")
+        self.cert_renewal_secret_name = cert_renewal_config.get("secret_name", "test-certificate-tls")
+        self.cert_renewal_duration = cert_renewal_config.get("duration", "1h")
+        self.cert_renewal_renew_before = cert_renewal_config.get("renew_before", "55m")
+        self.cert_renewal_timeout = cert_renewal_config.get("renewal_timeout", 900)
         self.oidc_keycloak_kubelogin_download_url = oidc_keycloak_config.get("kubelogin_download_url", "")
         self.oidc_keycloak_login_port = oidc_keycloak_config.get("oidc_login_port", 8000)
         self.oidc_keycloak_invalid_issuer_url = oidc_keycloak_config.get("invalid_issuer_url", "https://invalid-issuer.example.com/realms/nonexistent")
@@ -89,6 +98,9 @@ class SecurityConfig:
         self.oidc_keycloak_disabled_username = disabled_user_config.get("username", "")
         self.oidc_keycloak_disabled_password = disabled_user_config.get("password", "")
         self.oidc_keycloak_disabled_totp_secret = disabled_user_config.get("totp_secret", "")
+        no_mfa_user_config = oidc_keycloak_config.get("no_mfa_user", {})
+        self.oidc_keycloak_no_mfa_username = no_mfa_user_config.get("username", "")
+        self.oidc_keycloak_no_mfa_password = no_mfa_user_config.get("password", "")
         guard_rbac_config = oidc_keycloak_config.get("guard_rbac", {})
         self.oidc_keycloak_guard_cluster_role_name = guard_rbac_config.get("cluster_role_name", "cluster-guard")
         self.oidc_keycloak_guard_crb_binding_name = guard_rbac_config.get("binding_name", "wrcp-guard-binding")
@@ -108,6 +120,14 @@ class SecurityConfig:
             str: The domain name.
         """
         return self.domain_name
+
+    def get_ssh_user_home(self) -> str:
+        """Getter for the SSH user home directory.
+
+        Returns:
+            str: Home directory of the SSH user on the lab.
+        """
+        return self.ssh_user_home
 
     def get_stepca_server_url(self) -> str:
         """Getter for the stepca server URL.
@@ -756,3 +776,75 @@ class SecurityConfig:
             str: Base32-encoded TOTP secret for the disabled user.
         """
         return self.oidc_keycloak_disabled_totp_secret
+
+    def get_oidc_keycloak_no_mfa_username(self) -> str:
+        """Getter for the Keycloak non-MFA user username.
+
+        Returns:
+            str: Non-MFA user username.
+        """
+        return self.oidc_keycloak_no_mfa_username
+
+    def get_oidc_keycloak_no_mfa_password(self) -> str:
+        """Getter for the Keycloak non-MFA user password.
+
+        Returns:
+            str: Non-MFA user password.
+        """
+        return self.oidc_keycloak_no_mfa_password
+
+    def get_cert_renewal_namespace(self) -> str:
+        """Getter for cert renewal test namespace.
+
+        Returns:
+            str: Namespace for the cert renewal test.
+        """
+        return self.cert_renewal_namespace
+
+    def get_cert_renewal_issuer_name(self) -> str:
+        """Getter for cert renewal issuer name.
+
+        Returns:
+            str: Issuer name for the cert renewal test.
+        """
+        return self.cert_renewal_issuer_name
+
+    def get_cert_renewal_cert_name(self) -> str:
+        """Getter for cert renewal certificate name.
+
+        Returns:
+            str: Certificate name for the cert renewal test.
+        """
+        return self.cert_renewal_cert_name
+
+    def get_cert_renewal_secret_name(self) -> str:
+        """Getter for cert renewal secret name.
+
+        Returns:
+            str: Secret name for the cert renewal test.
+        """
+        return self.cert_renewal_secret_name
+
+    def get_cert_renewal_duration(self) -> str:
+        """Getter for cert renewal certificate duration.
+
+        Returns:
+            str: Certificate duration (e.g. '10m').
+        """
+        return self.cert_renewal_duration
+
+    def get_cert_renewal_renew_before(self) -> str:
+        """Getter for cert renewal renewBefore value.
+
+        Returns:
+            str: renewBefore value (e.g. '5m').
+        """
+        return self.cert_renewal_renew_before
+
+    def get_cert_renewal_timeout(self) -> int:
+        """Getter for cert renewal polling timeout.
+
+        Returns:
+            int: Timeout in seconds to wait for renewal.
+        """
+        return self.cert_renewal_timeout

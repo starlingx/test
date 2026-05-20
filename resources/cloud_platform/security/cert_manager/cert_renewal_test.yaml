@@ -1,0 +1,22 @@
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: {{ issuer_name }}
+  namespace: {{ namespace }}
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ cert_name }}
+  namespace: {{ namespace }}
+spec:
+  secretName: {{ secret_name }}
+  issuerRef:
+    name: {{ issuer_name }}
+    kind: Issuer
+  dnsNames:
+    - example.com
+  duration: {{ duration }}
+  renewBefore: {{ renew_before }}
