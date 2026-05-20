@@ -12,6 +12,7 @@ from keywords.cloud_platform.system.helm.system_helm_override_keywords import Sy
 from keywords.files.yaml_keywords import YamlKeywords
 from keywords.k8s.certificate.kubectl_get_certificate_keywords import KubectlGetCertStatusKeywords
 from keywords.k8s.certificate.kubectl_get_issuer_keywords import KubectlGetCertIssuerKeywords
+from keywords.k8s.helm.kubectl_get_helm_keywords import KubectlGetHelmKeywords
 from keywords.k8s.namespace.kubectl_create_namespace_keywords import KubectlCreateNamespacesKeywords
 from keywords.k8s.namespace.kubectl_delete_namespace_keywords import KubectlDeleteNamespaceKeywords
 from keywords.k8s.namespace.kubectl_get_namespaces_keywords import KubectlGetNamespacesKeywords
@@ -173,3 +174,48 @@ def test_manual_cert_installation(request: FixtureRequest):
             get_logger().log_info("testcert namespace does not exist")
 
     request.addfinalizer(teardown_namespace)
+
+
+@mark.p1
+def test_cert_manager_fluxcd_helmchart():
+    """Verify FluxCD HelmChart resource information for cert-manager.
+
+    Steps:
+        - Get FluxCD helmcharts using kubectl
+        - Verify that the cert-manager HelmChart resource exists
+    """
+    get_logger().log_info("Verifying cert-manager FluxCD HelmChart information")
+
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    helms = KubectlGetHelmKeywords(ssh_connection).get_helmcharts()
+
+    cert_manager_helm = helms.get_helmchart("cert-manager-cert-manager")
+    validate_equals(cert_manager_helm.get_name(), "cert-manager-cert-manager", "Verify cert-manager HelmChart exists")
+
+
+@mark.p1
+def test_cert_manager_helm_chart_version_and_labels():
+    """Verify Helm chart version and pod label information for cert-manager.
+
+    Steps:
+        - Get FluxCD helmchart information and verify chart name and version
+        - Get pods from cert-manager namespace
+        - Find cert-manager controller pod
+        - Verify app version and helm chart labels on the pod
+    """
+    get_logger().log_info("Verifying cert-manager helm chart version and pod labels")
+
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    namespace = "cert-manager"
+
+    cert_manager_helm = KubectlGetHelmKeywords(ssh_connection).get_helmcharts().get_helmchart("cert-manager-cert-manager")
+    validate_equals(cert_manager_helm.get_chart(), "cert-manager", "Verify cert-manager chart name")
+    validate_equals(cert_manager_helm.get_version() is not None, True, "Verify cert-manager HelmChart has a version")
+
+    pods_keywords = KubectlGetPodsKeywords(ssh_connection)
+    cert_manager_pods = pods_keywords.get_pods(namespace).get_pods_start_with("cm-cert-manager")
+    validate_equals(len(cert_manager_pods) > 0, True, "Verify cert-manager controller pod exists")
+
+    pod_labels = pods_keywords.get_pod_labels(cert_manager_pods[0].get_name(), namespace)
+    validate_equals("app.kubernetes.io/version" in pod_labels, True, "Verify cert-manager pod has app.kubernetes.io/version label")
+    validate_equals("helm.sh/chart" in pod_labels, True, "Verify cert-manager pod has helm.sh/chart label")
