@@ -102,6 +102,7 @@ def test_ceph_rook_host_fs_operation():
 
 @mark.p2
 @mark.lab_has_rook_ceph
+@mark.lab_has_min_2_osd
 def test_ceph_rook_capabilities_testing_open_model(request):
     """
     Test case: [TC_34918] WRCPPV-1015 ceph-rook backend capabilities testing for open model
@@ -147,6 +148,7 @@ def test_ceph_rook_capabilities_testing_open_model(request):
         get_logger().log_info(f"\nCurrent Capabilities deployment model is: {curr_deployment_model}" f"\nCurrent Capabilities replication value is: {curr_replication}" f"\nCurrent Capabilities min_replication value is: {curr_min_replication}\n" f"\nOriginal Capabilities deployment model is: {original_deployment_model}" f"\nOriginal Capabilities replication value is: {original_replication}" f"\nOriginal Capabilities min_replication value is: {original_min_replication}\n")
 
         if curr_replication != original_replication or curr_min_replication != original_min_replication:
+            system_storage_backend_keywords.wait_for_backend_configured("ceph-rook")
             get_logger().log_info(f"\n\nModify replication value to {original_replication} and min_replication value to {original_min_replication}'.\n")
             system_storage_backend_keywords.system_storage_backend_modify(backend="ceph-rook", replication=original_replication, min_replication=original_min_replication)
 
@@ -189,11 +191,13 @@ def test_ceph_rook_capabilities_testing_open_model(request):
     osd_number = ceph_status_output.get_ceph_osd_count()
     get_logger().log_info(f"\nOSD number is: {osd_number};")
 
-    # replication value should not be greater than osd number, and should not be zero
-    if original_replication < osd_number:
-        new_replication_value = osd_number
-    elif original_replication == osd_number and original_replication != 1:
-        new_replication_value = osd_number - 1
+    # replication value is capped at min(3, osd_number) to ensure pools can actually apply the size
+    max_supported_replication = min(3, osd_number)
+
+    if original_replication < max_supported_replication:
+        new_replication_value = max_supported_replication
+    elif original_replication == max_supported_replication and original_replication != 1:
+        new_replication_value = max_supported_replication - 1
     else:
         raise ValueError(f"System has {osd_number} osd, but replication is {original_replication}, TC should not run.")
 
@@ -208,14 +212,19 @@ def test_ceph_rook_capabilities_testing_open_model(request):
     pool_update = ceph_pool_keywords.wait_for_ceph_osd_pool_replicated_size_update(pool_name=".mgr", expected_replicated_size=curr_replication)
     validate_equals(pool_update, True, "Replicated value should be updated.")
 
+    system_storage_backend_keywords.wait_for_backend_configured("ceph-rook")
+
     get_logger().log_test_case_step("\n\nIt should be rejected if modifying min_replication value great than replication value.\n")
     new_min_replication_value = curr_replication + 1
     msg = system_storage_backend_keywords.system_storage_backend_modify_with_error(backend="ceph-rook", min_replication=new_min_replication_value)
-    validate_str_contains(msg, "must be greater than", f"system backend modify should be failed: {msg}")
+    validate_str_contains(msg, "must be less than", f"system backend modify should be failed: {msg}")
 
     curr_min_replication = system_storage_backend_keywords.get_system_storage_backend_list().get_system_storage_backend("ceph-rook").get_capabilities().get_min_replication()
 
     if curr_min_replication > 1:
+        get_logger().log_info("Wait for backend to be fully configured before modifying min_replication.")
+        system_storage_backend_keywords.wait_for_backend_configured("ceph-rook")
+
         new_min_replication_value = 1
         get_logger().log_test_case_step(f"\n\nModify min_replication from {curr_min_replication} to {new_min_replication_value}.\n")
         system_storage_backend_keywords.system_storage_backend_modify(backend="ceph-rook", min_replication=new_min_replication_value)

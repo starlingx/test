@@ -1,3 +1,6 @@
+import time
+
+from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
 from keywords.base_keyword import BaseKeyword
 from keywords.cloud_platform.command_wrappers import source_openrc
@@ -135,3 +138,32 @@ class SystemStorageBackendKeywords(BaseKeyword):
         """
         msg = self.ssh_connection.send(source_openrc(f"system storage-backend-delete {backend}-store"))
         return msg[0]
+
+    def wait_for_backend_configured(self, backend: str, timeout: int = 600, polling_interval: int = 10) -> bool:
+        """
+        Waits for the storage backend to reach 'configured' state and have no long running operations.
+
+        Args:
+            backend (str): the backend name (e.g. 'ceph-rook')
+            timeout (int): maximum time to wait in seconds
+            polling_interval (int): time between checks in seconds
+
+        Returns:
+            bool: True if backend reached configured state within timeout
+        """
+        end_time = time.time() + timeout
+        while time.time() < end_time:
+            backend_obj = self.get_system_storage_backend_list().get_system_storage_backend(backend)
+            state = backend_obj.get_state()
+            capabilities = backend_obj.get_capabilities()
+            has_long_ops = capabilities.get_has_long_running_operations() if capabilities else False
+
+            if state == "configured" and not has_long_ops:
+                get_logger().log_info(f"Backend '{backend}' is configured with no long running operations.")
+                return True
+
+            get_logger().log_info(f"Waiting for backend '{backend}' - state: {state}, has_long_running_operations: {has_long_ops}")
+            time.sleep(polling_interval)
+
+        get_logger().log_info(f"Timeout waiting for backend '{backend}' to reach configured state.")
+        return False
