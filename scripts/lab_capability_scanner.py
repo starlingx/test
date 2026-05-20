@@ -2,6 +2,7 @@ import copy
 import os
 import shutil
 from optparse import OptionParser
+from typing import Optional
 
 import json5
 
@@ -31,12 +32,12 @@ from keywords.cloud_platform.rest.configuration.devices.system_host_device_keywo
 from keywords.cloud_platform.rest.configuration.interfaces.get_interfaces_keywords import GetInterfacesKeywords
 from keywords.cloud_platform.rest.configuration.storage.get_storage_backends_keyword import GetStorageBackendKeywords
 from keywords.cloud_platform.rest.configuration.storage.get_storage_keywords import GetStorageKeywords
-from keywords.k8s.storageclass.kubectl_get_storageclass_keywords import KubectlGetStorageclassKeywords
 from keywords.cloud_platform.rest.configuration.system.get_system_keywords import GetSystemKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.cloud_platform.system.host.objects.system_host_if_output import SystemHostInterfaceOutput
 from keywords.cloud_platform.system.oam.objects.system_oam_show_output import SystemOamShowOutput
 from keywords.cloud_platform.system.oam.system_oam_show_keywords import SystemOamShowKeywords
+from keywords.k8s.storageclass.kubectl_get_storageclass_keywords import KubectlGetStorageclassKeywords
 from keywords.k8s.trident.kubectl_get_trident_backend_config_keywords import KubectlGetTridentBackendConfigKeywords
 from keywords.linux.lspci.lspci_keywords import LspciKeywords
 from testcases.conftest import log_configuration
@@ -566,7 +567,7 @@ def _matches_ip_version(ip_address: str, is_ipv6_lab: bool) -> bool:
     return is_ipv6_lab == is_ipv6_address
 
 
-def get_controller_ip(host_show_output: object, controller_name: str) -> str | None:
+def get_controller_ip(host_show_output: object, controller_name: str) -> Optional[str]:
     """Get the IP address of a controller.
 
     Args:
@@ -574,7 +575,7 @@ def get_controller_ip(host_show_output: object, controller_name: str) -> str | N
         controller_name (str): The name of the controller.
 
     Returns:
-        str | None: The IP address of the controller, or None if not found.
+        Optional[str]: The IP address of the controller, or None if not found.
     """
     host_object = host_show_output.get_system_host_show_object(controller_name)
     host_uuid = host_object.get_uuid()
@@ -776,10 +777,7 @@ def scan_storage_capabilities(lab_config: LabConfig) -> None:
                 lab_config.add_lab_capability(capability_name)
                 get_logger().log_info(f"Storage capability added: {capability_name}")
             else:
-                get_logger().log_warning(
-                    f"StorageClass with driver '{driver_name}' exists but no healthy TBC — "
-                    f"capability '{capability_name}' NOT added"
-                )
+                get_logger().log_warning(f"StorageClass with driver '{driver_name}' exists but no healthy TBC — " f"capability '{capability_name}' NOT added")
 
 
 def write_config(lab_config: LabConfig) -> None:

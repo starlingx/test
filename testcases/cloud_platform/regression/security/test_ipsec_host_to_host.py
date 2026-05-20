@@ -193,8 +193,11 @@ def test_ipsec_status():
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     system_hosts = SystemHostListKeywords(ssh_connection)
     lab_connection_keywords = LabConnectionKeywords()
+    ipsec_keywords = IPSecKeywords(ssh_connection)
 
     hosts = system_hosts.get_system_host_list().get_hosts()
+    ipsec_service = ipsec_keywords.get_ipsec_service_name()
+    get_logger().log_info(f"Using IPSec service name: '{ipsec_service}' (detected from OS version)")
 
     # Check ipsec-server service on controllers
     controllers = system_hosts.get_system_host_list().get_controllers()
@@ -204,15 +207,15 @@ def test_ipsec_status():
         service_status = systemctl_keywords.is_active("ipsec-server")
         validate_equals(service_status, "active", f"ipsec-server service should be active on {controller.get_host_name()}")
 
-    # Check ipsec service on all hosts
+    # Check ipsec/strongswan service on all hosts (name differs between Bullseye and Trixie)
     for host in hosts:
         if host.get_personality() == "worker":
             host_ssh = lab_connection_keywords.get_compute_ssh(host.get_host_name())
         else:
             host_ssh = lab_connection_keywords.get_ssh_for_hostname(host.get_host_name())
         systemctl_keywords = SystemCTLIsActiveKeywords(host_ssh)
-        service_status = systemctl_keywords.is_active("ipsec")
-        validate_equals(service_status, "active", f"ipsec service should be active on {host.get_host_name()}")
+        service_status = systemctl_keywords.is_active(ipsec_service)
+        validate_equals(service_status, "active", f"{ipsec_service} service should be active on {host.get_host_name()}")
 
 
 @mark.p1

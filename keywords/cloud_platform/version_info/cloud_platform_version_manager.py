@@ -1,5 +1,7 @@
+from framework.ssh.ssh_connection import SSHConnection
 from keywords.cloud_platform.rest.configuration.system.get_system_keywords import GetSystemKeywords
 from keywords.cloud_platform.version_info.cloud_platform_software_version import CloudPlatformSoftwareVersion
+from keywords.linux.cat.cat_os_keywords import CatOSKeywords
 from keywords.python.product_version import ProductVersion
 
 
@@ -13,6 +15,7 @@ class CloudPlatformVersionManagerClass:
         Constructor
         """
         self.sw_version: ProductVersion = None
+        self._is_trixie: bool = None
 
     def _get_product_version_object(self, version_name: str) -> ProductVersion:
         """
@@ -81,6 +84,22 @@ class CloudPlatformVersionManagerClass:
         CloudPlatformSoftwareVersion class.
         """
         return CloudPlatformSoftwareVersion.STARLINGX_10_0
+
+    def is_trixie(self, ssh_connection: SSHConnection) -> bool:
+        """Check if the system is running Debian Trixie (strongSwan 6.0).
+
+        Result is cached after the first call.
+
+        Args:
+            ssh_connection (SSHConnection): SSH connection to the active controller.
+
+        Returns:
+            bool: True if running Trixie, False otherwise.
+        """
+        if self._is_trixie is None:
+            codename = CatOSKeywords(ssh_connection).get_os_release().get_os_release().get_version_codename()
+            self._is_trixie = codename.lower() == "trixie"
+        return self._is_trixie
 
 
 CloudPlatformVersionManager = CloudPlatformVersionManagerClass()
