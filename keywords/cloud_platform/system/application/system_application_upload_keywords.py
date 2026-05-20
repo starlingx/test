@@ -28,13 +28,15 @@ class SystemApplicationUploadKeywords(BaseKeyword):
         """
         self.ssh_connection = ssh_connection
 
-    def system_application_upload(self, system_application_upload_input: SystemApplicationUploadInput) -> SystemApplicationOutput:
+    def system_application_upload(self, system_application_upload_input: SystemApplicationUploadInput, timeout: int = 300, polling_sleep_time: int = 5) -> SystemApplicationOutput:
         """
         Executes the upload of an application file by executing the command 'system application-upload'. This method
         returns upon the completion of the 'system application-upload' command, that is, when the 'status' is 'uploaded'.
         Args:
             system_application_upload_input (SystemApplicationUploadInput): the object representing the parameters for
             executing the 'system application-upload' command.
+            timeout (int): Maximum time in seconds to wait for the upload to complete.
+            polling_sleep_time (int): Seconds between status polls.
 
         Returns:
             SystemApplicationOutput: an object representing status values related to the current uploading process of
@@ -65,7 +67,7 @@ class SystemApplicationUploadKeywords(BaseKeyword):
 
         # Tracks the execution of the command 'system application-upload' until its completion or a timeout.
         system_application_list_keywords = SystemApplicationListKeywords(self.ssh_connection)
-        system_application_list_keywords.validate_app_status(app_name, SystemApplicationStatusEnum.UPLOADED.value)
+        system_application_list_keywords.validate_app_status(app_name, SystemApplicationStatusEnum.UPLOADED.value, timeout=timeout, polling_sleep_time=polling_sleep_time)
 
         # If the execution arrived here the status of the application is 'uploaded'.
         system_application_output.get_system_application_object().set_status(SystemApplicationStatusEnum.UPLOADED.value)

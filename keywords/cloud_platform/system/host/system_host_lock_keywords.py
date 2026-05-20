@@ -7,7 +7,11 @@ from keywords.base_keyword import BaseKeyword
 from keywords.cloud_platform.command_wrappers import source_openrc
 from keywords.cloud_platform.fault_management.alarms.alarm_list_keywords import AlarmListKeywords
 from keywords.cloud_platform.fault_management.alarms.objects.alarm_list_object import AlarmListObject
+from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
+from keywords.cloud_platform.system.application.system_application_list_keywords import SystemApplicationListKeywords
 from keywords.cloud_platform.system.host.system_host_list_keywords import SystemHostListKeywords
+from keywords.cloud_platform.system.host.system_host_show_keywords import SystemHostShowKeywords
+from keywords.cloud_platform.system.host.system_host_swact_keywords import SystemHostSwactKeywords
 
 
 class SystemHostLockKeywords(BaseKeyword):
@@ -339,3 +343,56 @@ class SystemHostLockKeywords(BaseKeyword):
         if not is_host_unlocked:
             raise KeywordException("Unlock host did not unlock in the required time.")
         return True
+
+    def lock_unlock_hosts(self) -> None:
+        """Perform a full lock/unlock cycle based on system mode.
+
+        Waits for all applications to finish transitioning before attempting
+        host-lock to avoid 'Rejected: application is in transition' errors.
+
+        For simplex systems: locks (if not already locked) and unlocks the
+        active controller.
+
+        For duplex systems: locks/unlocks the standby controller, swacts,
+        then locks/unlocks the other controller and swacts back.
+
+        Raises:
+            KeywordException: If a lock/unlock or swact operation fails.
+            TimeoutError: If applications do not stabilize before the timeout.
+        """
+        stable_statuses = ["applied", "uploaded", "apply-failed", "remove-failed", "completed"]
+        SystemApplicationListKeywords(self.ssh_connection).validate_all_apps_status(
+            stable_statuses, timeout=600, polling_sleep_time=30
+        )
+        get_logger().log_info("All applications are stable, safe to proceed with host operations")
+
+        hosts = SystemHostListKeywords(self.ssh_connection).get_system_host_list().get_hosts()
+        active_controller = SystemHostListKeywords(self.ssh_connection).get_active_controller().get_host_name()
+
+        if len(hosts) == 1:
+            show_keywords = SystemHostShowKeywords(self.ssh_connection)
+            host_show = show_keywords.get_system_host_show_output(active_controller)
+            if host_show.get_system_host_show_object().get_administrative() == "unlocked":
+                self.lock_host(active_controller)
+            self.unlock_host(active_controller, unlock_accepted_timeout=3000, exclude_alarm_ids=["250.001"])
+            return
+
+        standby_controller = SystemHostListKeywords(self.ssh_connection).get_standby_controller().get_host_name()
+        show_keywords = SystemHostShowKeywords(self.ssh_connection)
+        host_show = show_keywords.get_system_host_show_output(standby_controller)
+        if host_show.get_system_host_show_object().get_administrative() == "unlocked":
+            self.lock_host(standby_controller)
+        self.unlock_host(standby_controller, unlock_accepted_timeout=3000, exclude_alarm_ids=["250.001"])
+
+        SystemHostSwactKeywords(self.ssh_connection).host_swact()
+
+        new_ssh = LabConnectionKeywords().get_active_controller_ssh()
+        new_lock_kw = SystemHostLockKeywords(new_ssh)
+        new_show_kw = SystemHostShowKeywords(new_ssh)
+
+        host_show = new_show_kw.get_system_host_show_output(active_controller)
+        if host_show.get_system_host_show_object().get_administrative() == "unlocked":
+            new_lock_kw.lock_host(active_controller)
+        new_lock_kw.unlock_host(active_controller, exclude_alarm_ids=["250.001"])
+
+        SystemHostSwactKeywords(new_ssh).host_swact(swact_accepted_timeout=600)
