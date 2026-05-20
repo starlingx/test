@@ -190,9 +190,9 @@ class FileKeywords(BaseKeyword):
         if is_sudo:
             output = self.ssh_connection.send_as_sudo(f"ls {file_dir}")
             return [line.strip() for line in output if line.strip() and not line.strip().endswith('$')]
-        else:
-            sftp_client = self.ssh_connection.get_sftp_client()
-            return sftp_client.listdir(file_dir)
+
+        sftp_client = self.ssh_connection.get_sftp_client()
+        return sftp_client.listdir(file_dir)
 
     def read_large_file(self, file_name: str, grep_pattern: str = None) -> list[str]:
         """

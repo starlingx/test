@@ -112,31 +112,67 @@ class LabConnectionKeywords(BaseKeyword):
         """
         Gets an SSH connection to the 'Compute' node whose name is specified by the argument 'compute_name'.
 
+        Establishes a real SSH session to the compute node by using the controller
+        as a proxy via ProxyCommand. This allows full SSH functionality including SFTP.
+
         Args:
             compute_name (str): The name of the 'Compute' node.
 
         Returns:
-            SSHConnection: the SSH connection to the 'Compute' node whose name is specified by the argument 'compute_name'.
-
-        NOTE: this 'ssh connection' actually uses ssh_pass to make a call from the active controller connection.
-
+            SSHConnection: the SSH connection to the 'Compute' node.
         """
-        return self.get_ssh_pass(compute_name)
+        return self._get_proxy_ssh(compute_name)
 
     def get_storage_ssh(self, storage_name: str) -> SSHConnection:
         """
         Gets an SSH connection to the 'Storage' node whose name is specified by the argument 'storage_name'.
 
+        Establishes a real SSH session to the storage node by using the controller
+        as a proxy via ProxyCommand. This allows full SSH functionality including SFTP.
+
         Args:
             storage_name (str): The name of the 'Storage' node.
 
         Returns:
-            SSHConnection: the SSH connection to the 'Storage' node whose name is specified by the argument 'storage_name'.
-
-        NOTE: this 'ssh connection' actually uses ssh_pass to make a call from the active controller connection.
-
+            SSHConnection: the SSH connection to the 'Storage' node.
         """
-        return self.get_ssh_pass(storage_name)
+        return self._get_proxy_ssh(storage_name)
+
+    def _get_proxy_ssh(self, host_name: str) -> SSHConnection:
+        """
+        Gets a real SSH connection to a node by proxying through the active controller.
+
+        Uses paramiko's ProxyCommand to establish a direct SSH session to the target
+        node through the controller. This bypasses AllowTcpForwarding restrictions
+        and provides full SSH functionality including SFTP.
+
+        Args:
+            host_name (str): The hostname of the target node (e.g. 'compute-0').
+
+        Returns:
+            SSHConnection: A real SSH connection to the target node.
+        """
+        lab_config = ConfigurationManager.get_lab_config()
+        credentials = lab_config.get_admin_credentials()
+        username = credentials.get_user_name()
+        password = credentials.get_password()
+        controller_ip = lab_config.get_floating_ip()
+
+        jump_host_config = None
+        if lab_config.is_use_jump_server():
+            jump_host_config = lab_config.get_jump_host_configuration()
+
+        connection = SSHConnectionManager.create_proxy_ssh_connection(
+            target_host=host_name,
+            target_username=username,
+            target_password=password,
+            first_jump_host=jump_host_config,
+            second_jump_host=controller_ip,
+            second_jump_username=username,
+            second_jump_password=password,
+        )
+
+        return connection
 
     def get_ssh_pass(self, host_name: str) -> SSHConnection:
         """

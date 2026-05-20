@@ -27,6 +27,11 @@ class KernelKeywords(BaseKeyword):
     def trigger_kernel_crash(self):
         """
         Makes the system crash, secondary kernel will be loaded, then will produce a vmcore and reboot.
+
+        The connection is expected to be lost after this command executes.
         """
         password = ConfigurationManager.get_lab_config().get_admin_credentials().get_password()
-        self.ssh_connection.send(f'echo {password} | sudo -S bash -c "echo c > /proc/sysrq-trigger"')
+        try:
+            self.ssh_connection.send(f'echo {password} | sudo -S bash -c "echo c > /proc/sysrq-trigger"', command_timeout=10, reconnect_timeout=10)
+        except Exception:
+            pass

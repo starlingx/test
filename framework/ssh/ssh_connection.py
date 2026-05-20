@@ -27,11 +27,13 @@ class SSHConnection:
         timeout: int = 30,
         ssh_port: int = 22,
         jump_host: HostConfiguration = None,
+        proxy_command: str = None,
     ):
         """
         Initialize the SSH connection object.
 
-        This sets up the basic configuration used to create an SSH session, optionally through a jump host.
+        This sets up the basic configuration used to create an SSH session, optionally through a jump host
+        or via a ProxyCommand.
 
         Args:
             name (str): The name of the connection.
@@ -41,6 +43,7 @@ class SSHConnection:
             timeout (int): The timeout for establishing a connection, in seconds.
             ssh_port (int): The port used for SSH. Defaults to 22.
             jump_host (HostConfiguration, optional): Configuration for a jump host, if needed.
+            proxy_command (str, optional): A ProxyCommand string for connecting through a proxy.
         """
         self.client = SSHClient()
         self.jump_host_client: Optional[SSHClient] = None
@@ -51,6 +54,7 @@ class SSHConnection:
         self.timeout = timeout
         self.ssh_port = ssh_port
         self.jump_host = jump_host
+        self.proxy_command = proxy_command
         self.is_connected = False
 
         self.last_return_code: Optional[int] = None  # The last Return Code
@@ -125,8 +129,9 @@ class SSHConnection:
         self.client.set_missing_host_key_policy(paramiko.AutoAddPolicy)
         sock = None
         try:
-            # if a jump host is configured, create that connection first
-            if self.jump_host:
+            if self.proxy_command:
+                sock = paramiko.ProxyCommand(self.proxy_command)
+            elif self.jump_host:
                 self._close_jump_host()
                 self.jump_host_client = self._connect_to_jump_host(allow_agent, look_for_keys)
                 sock = self.jump_host_client.get_transport().open_channel("direct-tcpip", (self.host, self.ssh_port), ("", 0), timeout=self.timeout)
