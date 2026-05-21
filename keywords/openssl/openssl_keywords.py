@@ -63,10 +63,7 @@ class OpenSSLKeywords(BaseKeyword):
             subj (str): Certificate subject string.
             days (int): Certificate validity in days. Defaults to 1024.
         """
-        self.ssh_connection.send(
-            f'openssl req -x509 -new -nodes -key {key_path} -days {days} '
-            f'-out {cert_path} -outform PEM -subj "{subj}"'
-        )
+        self.ssh_connection.send(f"openssl req -x509 -new -nodes -key {key_path} -days {days} " f'-out {cert_path} -outform PEM -subj "{subj}"')
         self.validate_success_return_code(self.ssh_connection)
 
     def create_certificate_signing_request(self, key_path: str, csr_path: str, subj: str) -> None:
@@ -77,9 +74,7 @@ class OpenSSLKeywords(BaseKeyword):
             csr_path (str): Path to write the CSR.
             subj (str): Certificate subject string.
         """
-        self.ssh_connection.send(
-            f'openssl req -new -key {key_path} -out {csr_path} -subj "{subj}"'
-        )
+        self.ssh_connection.send(f'openssl req -new -key {key_path} -out {csr_path} -subj "{subj}"')
         self.validate_success_return_code(self.ssh_connection)
 
     def sign_certificate(self, csr_path: str, ca_cert_path: str, ca_key_path: str, cert_path: str, days: int = 365) -> None:
@@ -92,8 +87,27 @@ class OpenSSLKeywords(BaseKeyword):
             cert_path (str): Path to write the signed certificate.
             days (int): Certificate validity in days. Defaults to 365.
         """
-        self.ssh_connection.send(
-            f'openssl x509 -req -in {csr_path} -CA {ca_cert_path} '
-            f'-CAkey {ca_key_path} -CAcreateserial -out {cert_path} -days {days}'
-        )
+        self.ssh_connection.send(f"openssl x509 -req -in {csr_path} -CA {ca_cert_path} " f"-CAkey {ca_key_path} -CAcreateserial -out {cert_path} -days {days}")
         self.validate_success_return_code(self.ssh_connection)
+
+    def get_cert_info_from_file(self, cert_path: str) -> dict:
+        """Read certificate dates and serial number from a PEM file on the remote host.
+
+        Args:
+            cert_path (str): Absolute path to the PEM certificate file on the remote host.
+
+        Returns:
+            dict: Dictionary with keys 'not_before', 'not_after', and 'serial'.
+        """
+        output = self.ssh_connection.send_as_sudo(f"openssl x509 -in {cert_path} -noout -dates -serial")
+        self.validate_success_return_code(self.ssh_connection)
+        raw = "\n".join(output) if isinstance(output, list) else output
+        result = {}
+        for line in raw.splitlines():
+            if line.startswith("notBefore="):
+                result["not_before"] = line.split("=", 1)[1].strip()
+            elif line.startswith("notAfter="):
+                result["not_after"] = line.split("=", 1)[1].strip()
+            elif line.startswith("serial="):
+                result["serial"] = line.split("=", 1)[1].strip()
+        return result

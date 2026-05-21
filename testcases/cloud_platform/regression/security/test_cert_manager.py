@@ -12,13 +12,16 @@ from keywords.cloud_platform.system.helm.system_helm_override_keywords import Sy
 from keywords.files.yaml_keywords import YamlKeywords
 from keywords.k8s.certificate.kubectl_get_certificate_keywords import KubectlGetCertStatusKeywords
 from keywords.k8s.certificate.kubectl_get_issuer_keywords import KubectlGetCertIssuerKeywords
+from keywords.k8s.delete_resource.kubectl_delete_resource_keywords import KubectlDeleteResourceKeywords
 from keywords.k8s.helm.kubectl_get_helm_keywords import KubectlGetHelmKeywords
+from keywords.k8s.k8s_command_wrapper import export_k8s_config
 from keywords.k8s.namespace.kubectl_create_namespace_keywords import KubectlCreateNamespacesKeywords
 from keywords.k8s.namespace.kubectl_delete_namespace_keywords import KubectlDeleteNamespaceKeywords
 from keywords.k8s.namespace.kubectl_get_namespaces_keywords import KubectlGetNamespacesKeywords
 from keywords.k8s.pods.kubectl_apply_pods_keywords import KubectlApplyPodsKeywords
 from keywords.k8s.pods.kubectl_get_pods_keywords import KubectlGetPodsKeywords
 from keywords.k8s.secret.kubectl_get_secret_keywords import KubectlGetSecretsKeywords
+from keywords.openssl.openssl_keywords import OpenSSLKeywords
 
 
 @mark.p3
@@ -296,3 +299,61 @@ def test_cert_manager_certificate_renewal(request: FixtureRequest):
 
     validate_equals(renewed_serial != initial_serial, True, "Verify certificate serial number changed after renewal")
     validate_equals(renewed_not_after > initial_not_after, True, "Verify renewed certificate notAfter is later than original")
+
+
+@mark.p1
+def test_cert_mon_certificate_renewal_due_to_secret_deletion():
+    """Verify cert-manager renews the openldap certificate after its secret is deleted.
+
+    Validates the cert-mon certificate renewal workflow by confirming that deleting
+    the certificate secret triggers cert-manager to issue a new certificate with an
+    updated serial number and expiration date.
+
+    Steps:
+        - Read the original certificate dates and serial from the openldap cert file
+        - Delete the system-openldap-local-certificate secret in the deployment namespace
+        - Wait for cert-manager to issue a renewed certificate
+        - Verify the renewed certificate has a different serial number
+        - Verify the renewed certificate has a later notAfter date
+        - Describe the Certificate resource and confirm cert-manager issued the renewal
+    """
+    cert_path = "/etc/ldap/certs/openldap-cert.crt"
+    secret_name = "system-openldap-local-certificate"
+    namespace = "deployment"
+    cert_resource_name = "system-openldap-local-certificate"
+    renewal_timeout = 300
+
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    openssl_keywords = OpenSSLKeywords(ssh_connection)
+
+    get_logger().log_info("Reading original certificate info from openldap cert file")
+    original_cert_info = openssl_keywords.get_cert_info_from_file(cert_path)
+    original_serial = original_cert_info.get("serial")
+    original_not_after = original_cert_info.get("not_after")
+    get_logger().log_info(f"Original certificate: serial={original_serial}, notAfter={original_not_after}")
+
+    get_logger().log_info(f"Deleting secret {secret_name} in namespace {namespace} to trigger renewal")
+    KubectlDeleteResourceKeywords(ssh_connection).delete_resource("secret", secret_name, namespace)
+
+    get_logger().log_info("Waiting for cert-manager to issue a renewed certificate")
+
+    def serial_has_changed():
+        renewed_info = openssl_keywords.get_cert_info_from_file(cert_path)
+        return renewed_info.get("serial") != original_serial
+
+    validate_equals_with_retry(serial_has_changed, True, "Verify renewed certificate serial differs from original", renewal_timeout, 10)
+
+    get_logger().log_info("Reading renewed certificate info")
+    renewed_cert_info = openssl_keywords.get_cert_info_from_file(cert_path)
+    renewed_serial = renewed_cert_info.get("serial")
+    renewed_not_after = renewed_cert_info.get("not_after")
+    get_logger().log_info(f"Renewed certificate: serial={renewed_serial}, notAfter={renewed_not_after}")
+
+    validate_equals(renewed_serial != original_serial, True, "Renewed certificate serial should differ from original")
+    validate_equals(renewed_not_after > original_not_after, True, "Renewed certificate notAfter should be later than original")
+
+    get_logger().log_info(f"Describing Certificate resource {cert_resource_name} to confirm cert-manager issued the renewal")
+    describe_output = ssh_connection.send(export_k8s_config(f"kubectl describe certificate {cert_resource_name} -n {namespace}"))
+    raw_describe = "\n".join(describe_output) if isinstance(describe_output, list) else describe_output
+    validate_str_contains(raw_describe, "cert-manager", "Certificate resource description should reference cert-manager")
+    validate_str_contains(raw_describe, "Issuing", "Certificate events should contain Issuing event from cert-manager")
