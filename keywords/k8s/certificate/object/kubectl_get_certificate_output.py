@@ -39,6 +39,15 @@ class KubectlGetCertsOutput:
 
             self.kubectl_certs.append(certs)
 
+    def get_certs(self) -> list[KubectlCertObject]:
+        """Get all certificate objects.
+
+        Returns:
+            list[KubectlCertObject]: List of all certificate objects.
+
+        """
+        return self.kubectl_certs
+
     def get_cert(self, certs_name: str) -> KubectlCertObject:
         """
         This function will get the pod with the name specified from this get_pods_output.
