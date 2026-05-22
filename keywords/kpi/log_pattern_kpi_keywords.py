@@ -27,13 +27,15 @@ class LogPatternKpiKeywords(BaseKeyword):
     - Optional blocks and model info extraction
     """
 
-    def __init__(self, ssh_connection: SSHConnection):
+    def __init__(self, ssh_connection: SSHConnection, max_sequence_duration: float = 7200.0):
         """Initialize with SSH connection.
         
         Args:
             ssh_connection (SSHConnection): SSH connection to remote host
+            max_sequence_duration (float): Maximum duration in seconds for a reasonable sequence (default: 7200s / 2 hours)
         """
         self.ssh_connection = ssh_connection
+        self.max_sequence_duration = max_sequence_duration
 
     def calculate_kpi(self, hostname: str, blocks: List[Dict[str, Any]], 
                             start_date: Optional[str] = None, loops: int = 1,
@@ -45,7 +47,7 @@ class LogPatternKpiKeywords(BaseKeyword):
                             pair_mode: bool = False,
                             max_time_delta: float = 500.0) -> Tuple[List[str], List[List]]:
         """
-        Calculate unlock KPI timing - main entry point.
+        Calculate KPI timing - main entry point.
 
         Args:
             hostname (str): Hostname for {hostname} substitution
@@ -174,7 +176,7 @@ class LogPatternKpiKeywords(BaseKeyword):
             if loops == 1:
                 break
 
-            # Continue from where we left off - advance by 1 second to find next unlock
+            # Continue from where we left off - advance by 1 second to find next sequence
             start_datetime = end_time + timedelta(seconds=1) if end_time else start_datetime
 
             get_logger().log_info("\n-------------------------------------------------------------")
@@ -637,12 +639,11 @@ class LogPatternKpiKeywords(BaseKeyword):
                                     get_logger().log_info(f"REJECTING: {pattern} at {timestamp} (before or equal to start_date {start_date})")
                                 continue
                             
-                            # Additional constraint: prevent jumping to different unlock sequences
-                            # Reasonable unlock sequence should complete within 2 hours (7200s)
+                            # Additional constraint: prevent jumping to different sequences
                             time_from_start = (timestamp - start_date).total_seconds()
-                            if time_from_start > 7200:  # 2 hours max
+                            if time_from_start > self.max_sequence_duration:
                                 if verbose:
-                                    get_logger().log_info(f"Skipping match at {timestamp} (too far from start_date: {time_from_start}s > 7200s)")
+                                    get_logger().log_info(f"Skipping match beyond sequence window ({time_from_start:.0f}s > {self.max_sequence_duration:.0f}s)")
                                 continue
                             
                             # Keep the earliest match after start_date
@@ -1192,7 +1193,7 @@ class LogPatternKpiKeywords(BaseKeyword):
 
             # Find stop pattern - handle OR patterns (lists)
             # For overlapping phases, allow stop pattern to be found before start pattern
-            # if it's within the same unlock sequence timeframe
+            # if it's within the same sequence timeframe
             stop_result = None
             if isinstance(stop_pattern, list):
                 # OR pattern - try each alternative
@@ -1208,11 +1209,11 @@ class LogPatternKpiKeywords(BaseKeyword):
                             logs_dir, block['file'], alt_pattern, start_date, verbose, block['label'],
                             max_time_delta=block.get('max_time_delta', max_time_delta)
                         )
-                    # If still not found, search without time constraints within unlock sequence
+                    # If still not found, search within max sequence duration
                     if not stop_result and start_date:
                         stop_result = self._find_pattern_lpmp_style(
                             logs_dir, block['file'], alt_pattern, start_date, verbose, block['label'],
-                            max_time_delta=7200  # 2 hour max for unlock sequence
+                            max_time_delta=self.max_sequence_duration
                         )
                     if stop_result:
                         break
@@ -1229,11 +1230,11 @@ class LogPatternKpiKeywords(BaseKeyword):
                         logs_dir, block['file'], stop_pattern, start_date, verbose, block['label'],
                         max_time_delta=block.get('max_time_delta', max_time_delta)
                     )
-                # If still not found, search without time constraints within unlock sequence
+                # If still not found, search within max sequence duration
                 if not stop_result and start_date:
                     stop_result = self._find_pattern_lpmp_style(
                         logs_dir, block['file'], stop_pattern, start_date, verbose, block['label'],
-                        max_time_delta=7200  # 2 hour max for unlock sequence
+                        max_time_delta=self.max_sequence_duration
                     )
                 
             if not stop_result:
