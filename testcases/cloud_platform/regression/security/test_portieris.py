@@ -16,6 +16,7 @@ from keywords.cloud_platform.system.application.system_application_upload_keywor
 from keywords.cloud_platform.system.helm.system_helm_keywords import SystemHelmKeywords
 from keywords.docker.trust.docker_trust_keywords import DockerTrustKeywords
 from keywords.files.yaml_keywords import YamlKeywords
+from keywords.k8s.certificate.kubectl_get_certificate_keywords import KubectlGetCertStatusKeywords
 from keywords.k8s.files.kubectl_file_apply_keywords import KubectlFileApplyKeywords
 from keywords.k8s.imagepolicy.kubectl_delete_imagepolicy_keywords import KubectlDeleteImagePolicyKeywords
 from keywords.k8s.namespace.kubectl_create_namespace_keywords import KubectlCreateNamespacesKeywords
@@ -67,6 +68,11 @@ def setup_portieris_environment(ssh_connection: SSHConnection, security_config: 
     pods_output = kubectl_pods.get_pods("portieris")
     running_pods = pods_output.get_pods_with_status("Running")
     validate_equals(len(running_pods) > 0, True, "At least one Portieris pod should be running")
+
+    # Verify portieris-certs certificate is issued by cert-manager
+    get_logger().log_info("Verifying portieris-certs certificate is Ready")
+    cert_keywords = KubectlGetCertStatusKeywords(ssh_connection)
+    cert_keywords.wait_for_certs_status("portieris-certs", True, namespace="portieris", timeout=120)
 
     # Create namespace and registry secret
     kubectl_create_ns = KubectlCreateNamespacesKeywords(ssh_connection)
