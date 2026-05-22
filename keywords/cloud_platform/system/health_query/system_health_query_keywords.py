@@ -2,7 +2,8 @@ from framework.exceptions.keyword_exception import KeywordException
 from framework.ssh.ssh_connection import SSHConnection
 from keywords.base_keyword import BaseKeyword
 from keywords.cloud_platform.command_wrappers import source_openrc
-from keywords.cloud_platform.system.healthquery.objects.system_health_query_kube_upgrade_output import SystemHealthQueryKubeUpgradeOutput
+from keywords.cloud_platform.system.health_query.objects.system_health_query_kube_upgrade_output import SystemHealthQueryKubeUpgradeOutput
+from keywords.cloud_platform.system.health_query.objects.system_health_query_output import SystemHealthQueryOutput
 
 
 class SystemHealthQueryKeywords(BaseKeyword):
@@ -17,6 +18,17 @@ class SystemHealthQueryKeywords(BaseKeyword):
             ssh_connection (SSHConnection): The SSH connection object used for executing commands.
         """
         self.ssh_connection = ssh_connection
+
+    def get_health_status(self) -> SystemHealthQueryOutput:
+        """Get system health status.
+
+        Returns:
+            SystemHealthQueryOutput: Parsed health check results.
+        """
+        command = source_openrc("system health-query")
+        output = self.ssh_connection.send(command)
+        self.validate_success_return_code(self.ssh_connection)
+        return SystemHealthQueryOutput(output)
 
     def get_kube_upgrade_health_status(self) -> SystemHealthQueryKubeUpgradeOutput:
         """Get detailed health status for Kubernetes upgrade.

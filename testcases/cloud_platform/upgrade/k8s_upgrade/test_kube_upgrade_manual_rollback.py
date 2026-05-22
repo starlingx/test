@@ -5,7 +5,7 @@ from framework.logging.automation_logger import get_logger
 from framework.validation.validation import validate_equals, validate_list_contains, validate_not_none
 from keywords.cloud_platform.fault_management.alarms.alarm_list_keywords import AlarmListKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
-from keywords.cloud_platform.system.healthquery.system_health_query_keywords import SystemHealthQueryKeywords
+from keywords.cloud_platform.system.health_query.system_health_query_keywords import SystemHealthQueryKeywords
 from keywords.cloud_platform.system.host.system_host_list_keywords import SystemHostListKeywords
 from keywords.cloud_platform.system.kubernetes.kube_host_upgrade_keywords import KubeHostUpgradeKeywords
 from keywords.cloud_platform.system.kubernetes.kube_host_upgrade_list_keywords import KubeHostUpgradeListKeywords
