@@ -450,7 +450,7 @@ class FileKeywords(BaseKeyword):
             get_logger().log_error(f"Failed to rsync file from {local_dest_path} to {remote_user}@{remote_server}:{remote_path}: {e}")
             raise KeywordException(f"Failed to rsync file from {local_dest_path} to {remote_user}@{remote_server}:{remote_path}: {e}") from e
 
-    def rsync_from_remote_server(self, remote_server: str, remote_user: str, remote_password: str, remote_path: str, local_dest_path: str, recursive: bool = False, rsync_options: str = "") -> None:
+    def rsync_from_remote_server(self, remote_server: str, remote_user: str, remote_password: str, remote_path: str, local_dest_path: str, recursive: bool = False, rsync_options: str = "", command_timeout: int = None) -> None:
         """
         Rsync a file or directory from a remote server to the target host.
 
@@ -470,6 +470,7 @@ class FileKeywords(BaseKeyword):
             local_dest_path (str): Absolute path on the target host where the file or directory should be copied.
             recursive (bool, optional): Whether to copy directories recursively by adding 'r' to options. Defaults to False.
             rsync_options (str, optional): Additional rsync command-line options (e.g., "--progress", "--bwlimit=10000"). Defaults to "".
+            command_timeout (int, optional): SSH command timeout in seconds. Defaults to None (framework default).
 
         Raises:
             KeywordException: If the rsync operation fails due to SSH, rsync, or connection issues.
@@ -490,7 +491,7 @@ class FileKeywords(BaseKeyword):
         get_logger().log_info(f"Executing rsync command: {cmd}")
 
         try:
-            self.ssh_connection.send(cmd)
+            self.ssh_connection.send(cmd, command_timeout=command_timeout)
             self.validate_success_return_code(self.ssh_connection)
         except Exception as e:
             get_logger().log_error(f"Failed to rsync file from {remote_user}@{remote_server}:{remote_path} to {local_dest_path}: {e}")
