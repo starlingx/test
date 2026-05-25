@@ -306,4 +306,4 @@ class SwManagerKubeUpgradeStrategyKeywords(BaseKeyword):
                 get_logger().log_info("sw-manager service temporarily unavailable, retrying")
                 return False
 
-        validate_equals_with_retry(function_to_execute=check_step, expected_value=True, validation_description=f"Waiting for kube-upgrade-strategy step to reach {target_state}", timeout=timeout, polling_sleep_time=10)
+        validate_equals_with_retry(function_to_execute=check_step, expected_value=True, validation_description=f"Waiting for kube-upgrade-strategy step to reach {target_state}", timeout=timeout, polling_sleep_time=5)
