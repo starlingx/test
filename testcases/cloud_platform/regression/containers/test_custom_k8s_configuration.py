@@ -1,3 +1,4 @@
+import time
 from os.path import basename
 
 from pytest import mark
@@ -54,12 +55,6 @@ def volume_for_kube_api_server_list() -> list[SystemServiceParameterObject]:
             value="hostPath:/etc/kubernetes/admission-control-config-file.yaml",
         ),
         SystemServiceParameterObject(
-            service="kubernetes",
-            section="kube_apiserver_volumes",
-            name="admission-control-config",
-            value="hostPath:/etc/kubernetes/admission-control-config-file.yaml",
-        ),
-        SystemServiceParameterListObject(
             service="kubernetes",
             section="kube_apiserver",
             name="admission-control-config-file",
@@ -135,13 +130,15 @@ def delete_parameters_and_files(ssh_connection: SSHConnection, parameters: list[
     get_logger().log_test_case_step("Deleting service parameters")
     service_param_keywords = SystemServiceParameterKeywords(ssh_connection)
     all_params: SystemServiceParameterListOutput = service_param_keywords.list_service_parameters()
+    deleted_uuids = set()
     for param in parameters:
         match = next(
-            (p for p in all_params.get_parameters() if p.get_service() == param.get_service() and p.get_section() == param.get_section() and p.get_name() == param.get_name()),
+            (p for p in all_params.get_parameters() if p.get_service() == param.get_service() and p.get_section() == param.get_section() and p.get_name() == param.get_name() and p.get_uuid() not in deleted_uuids),
             None,
         )
         if match:
             service_param_keywords.delete_service_parameter(match.get_uuid())
+            deleted_uuids.add(match.get_uuid())
     file_keywords = FileKeywords(ssh_connection)
     get_logger().log_test_case_step(f"Deleting remote file {remote_file_path}")
     file_keywords.delete_file(remote_file_path)
@@ -159,13 +156,15 @@ def cleanup_parameters_and_files(ssh_connection: SSHConnection, parameters: list
     get_logger().log_test_case_step("Cleaning up service parameters")
     service_param_keywords = SystemServiceParameterKeywords(ssh_connection)
     all_params: SystemServiceParameterListOutput = service_param_keywords.list_service_parameters()
+    deleted_uuids = set()
     for param in parameters:
         match = next(
-            (p for p in all_params.get_parameters() if p.get_service() == param.get_service() and p.get_section() == param.get_section() and p.get_name() == param.get_name()),
+            (p for p in all_params.get_parameters() if p.get_service() == param.get_service() and p.get_section() == param.get_section() and p.get_name() == param.get_name() and p.get_uuid() not in deleted_uuids),
             None,
         )
         if match:
             service_param_keywords.delete_service_parameter(match.get_uuid())
+            deleted_uuids.add(match.get_uuid())
     file_keywords = FileKeywords(ssh_connection)
     get_logger().log_test_case_step(f"Deleting remote file {remote_file_path}")
     file_keywords.delete_file(remote_file_path)
@@ -209,6 +208,16 @@ def test_add_valid_parameter_volume_for_kube_apiserver_to_k8s_simplex():
     get_logger().log_test_case_step("Applying parameters for Kubernetes")
     SystemServiceParameterKeywords(ssh_connection).apply_service_parameters("kubernetes")
 
+    get_logger().log_test_case_step("Waiting for kube-apiserver to stabilize after service-parameter-apply")
+    timeout = 120
+    poll_interval = 10
+    elapsed = 0
+    while elapsed < timeout:
+        if not AlarmListKeywords(ssh_connection).is_alarm_present("250.001"):
+            break
+        time.sleep(poll_interval)
+        elapsed += poll_interval
+
     get_logger().log_test_case_step("Verifying the new configuration is applied")
     verify_parameters_applied(ssh_connection, volume_for_kube_api_server_list())
 
@@ -220,6 +229,7 @@ def test_add_valid_parameter_volume_for_kube_apiserver_to_k8s_simplex():
 
     get_logger().log_test_case_step("Applying parameters for Kubernetes after deletion")
     SystemServiceParameterKeywords(ssh_connection).apply_service_parameters("kubernetes")
+
     verify_parameters_deleted(ssh_connection, volume_for_kube_api_server_list())
 
     get_logger().log_info("Custom k8s configuration tests passed")
