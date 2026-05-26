@@ -226,8 +226,7 @@ class USMKeywords(BaseKeyword):
         else:
             output = self.ssh_connection.send(cmd, reconnect_timeout=timeout, get_pty=True)
         self.validate_success_return_code(self.ssh_connection)
-        output = "".join(output)
-        return output
+        return "\n".join(line.strip() for line in output)
 
     def deploy_start(self, release: str, sudo: bool = False) -> str:
         """
