@@ -16,6 +16,7 @@ from keywords.cloud_platform.system.application.system_application_list_keywords
 from keywords.cloud_platform.system.application.system_application_remove_keywords import SystemApplicationRemoveInput, SystemApplicationRemoveKeywords
 from keywords.cloud_platform.system.application.system_application_upload_keywords import SystemApplicationUploadInput, SystemApplicationUploadKeywords
 from keywords.cloud_platform.system.helm.system_helm_keywords import SystemHelmKeywords
+from keywords.cloud_platform.system.helm.system_helm_override_keywords import SystemHelmOverrideKeywords
 from keywords.cloud_platform.system.host.system_host_list_keywords import SystemHostListKeywords
 from keywords.cloud_platform.system.host.system_host_lock_keywords import SystemHostLockKeywords
 from keywords.cloud_platform.system.host.system_host_reboot_keywords import SystemHostRebootKeywords
@@ -496,3 +497,121 @@ def test_portieris_cluster_image_policy(request):
     kubectl_file_apply.apply_resource_from_yaml(pod_file)
     pod_running = kubectl_pods.wait_for_pod_status("test-pod", "Running", NAMESPACE, 300)
     validate_equals(pod_running, True, "Signed image pod should be running")
+
+
+@mark.p2
+def test_portieris_helm_override_cpu_core_apply(request):
+    """Test portieris survives helm override for CPU core selection and reapply.
+
+    When a helm override is applied to move portieris pods between platform
+    and application CPU cores (app.starlingx.io/component label), the app
+    lifecycle deletes all pods simultaneously before recreating them. This
+    test verifies that portieris recovers and policy enforcement still works
+    after the helm override and reapply sequence.
+
+    Test Steps:
+        - Setup portieris application and test environment
+        - Apply helm override to set CPU core affinity to application cores
+        - Re-apply portieris application (triggers pod recreation)
+        - Verify portieris pods recover to Running state
+        - Wait for webhook to become ready
+        - Verify image policy enforcement still works (unsigned rejected, signed accepted)
+    """
+    get_logger().log_info("Starting Portieris helm override CPU core apply test")
+
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    security_config = ConfigurationManager.get_security_config()
+
+    def cleanup():
+        cleanup_portieris_environment(ssh_connection)
+
+    request.addfinalizer(cleanup)
+
+    setup_portieris_environment(ssh_connection, security_config)
+
+    # Apply helm override to move pods to application cores
+    get_logger().log_info("Applying helm override for CPU core selection (application cores)")
+    helm_override_keywords = SystemHelmOverrideKeywords(ssh_connection)
+    helm_override_keywords.helm_override_update_with_list_of_values(
+        app_name=APP_NAME,
+        chart_name="portieris",
+        namespace="portieris",
+        reuse_values=True,
+        set_override=["global.app_component=application"],
+    )
+
+    # Re-apply portieris — this triggers lifecycle to delete and recreate all pods
+    get_logger().log_info("Re-applying portieris after helm override (triggers pod recreation)")
+    system_app_apply = SystemApplicationApplyKeywords(ssh_connection)
+    system_app_apply.system_application_apply(APP_NAME)
+
+    # Verify pods recover
+    get_logger().log_info("Verifying portieris pods recover after helm override reapply")
+    kubectl_pods = KubectlGetPodsKeywords(ssh_connection)
+    pods_output = kubectl_pods.get_pods("portieris")
+    running_pods = pods_output.get_pods_with_status("Running")
+    validate_equals(len(running_pods) > 0, True, "Portieris pods should recover after helm override reapply")
+
+    # Wait for webhook to be ready after pod recreation
+    get_logger().log_info("Waiting for portieris webhook to be ready after pod recreation")
+    wait_for_portieris_webhook_ready(ssh_connection)
+
+    # Verify policy enforcement still works
+    get_logger().log_info("Verifying policy enforcement after helm override reapply")
+    yaml_keywords = YamlKeywords(ssh_connection)
+    kubectl_file_apply = KubectlFileApplyKeywords(ssh_connection)
+    docker_trust = DockerTrustKeywords(ssh_connection)
+
+    # Apply image policy
+    policy_template = get_stx_resource_path("resources/cloud_platform/security/portieris/image-policy.yaml")
+    registry_hostname = security_config.get_portieris_registry_hostname()
+    registry_port = security_config.get_portieris_registry_port()
+    replacement_dict = {
+        "registry_server": registry_hostname,
+        "registry_port": registry_port,
+        "signed_repo": "wrcp-test-signed",
+        "trust_server": security_config.get_portieris_trust_server(),
+        "namespace": NAMESPACE,
+    }
+    policy_file = yaml_keywords.generate_yaml_file_from_template(policy_template, replacement_dict, "image-policy.yaml", "/tmp")
+    kubectl_file_apply.apply_resource_from_yaml(policy_file)
+
+    # Verify unsigned image is rejected
+    get_logger().log_info("Verifying unsigned image is rejected after helm override reapply")
+    unsigned_template = get_stx_resource_path("resources/cloud_platform/security/portieris/unsigned-image.yaml")
+    replacement_dict = {
+        "namespace": NAMESPACE,
+        "test_pod_name": "test-pod",
+        "unsigned_image_name": security_config.get_portieris_unsigned_image_name(),
+    }
+    pod_file = yaml_keywords.generate_yaml_file_from_template(unsigned_template, replacement_dict, "unsigned-image-helm-override.yaml", "/tmp")
+    error_output = kubectl_file_apply.kubectl_apply_with_error(pod_file)
+    return_code = ssh_connection.get_return_code()
+    validate_not_equals(return_code, 0, "Unsigned image should be rejected after helm override reapply")
+    validate_str_contains(
+        error_output,
+        "trust.hooks.securityenforcement.admission.cloud.ibm.com",
+        "Output should contain Portieris admission webhook after helm override",
+    )
+
+    # Verify signed image is accepted
+    get_logger().log_info("Verifying signed image is accepted after helm override reapply")
+    trust_output = docker_trust.inspect_docker_trust(
+        security_config.get_portieris_signed_image_name(),
+        security_config.get_portieris_trust_server(),
+    )
+    validate_str_contains(trust_output, "Signers", "Signed image should have valid signatures")
+
+    signed_template = get_stx_resource_path("resources/cloud_platform/security/portieris/signed-image.yaml")
+    replacement_dict = {
+        "namespace": NAMESPACE,
+        "test_pod_name": "test-pod",
+        "signed_image_name": security_config.get_portieris_signed_image_name(),
+        "pull_secret_name": "registry-secret",
+    }
+    pod_file = yaml_keywords.generate_yaml_file_from_template(signed_template, replacement_dict, "signed-image-helm-override.yaml", "/tmp")
+    kubectl_file_apply.apply_resource_from_yaml(pod_file)
+    pod_running = kubectl_pods.wait_for_pod_status("test-pod", "Running", NAMESPACE, 300)
+    validate_equals(pod_running, True, "Signed image pod should be running after helm override reapply")
+
+    get_logger().log_info("Portieris helm override CPU core apply test complete — webhook recovered")
