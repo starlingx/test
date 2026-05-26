@@ -1,0 +1,10 @@
+{
+  "server": "",
+  "user": "",
+  "password": "",
+  "base_path": "",
+  "tarball_pattern": "wr-analytics-[0-9]*.tgz",
+  "destination_path": "/home/sysadmin",
+  "connection_timeout": 30,
+  "download_timeout": 600
+}
