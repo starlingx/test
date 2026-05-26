@@ -1,8 +1,10 @@
+from framework.logging.automation_logger import get_logger
 from framework.validation.validation import validate_equals
 from keywords.base_keyword import BaseKeyword
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.cloud_platform.system.host.objects.system_host_object import SystemHostObject
 from keywords.cloud_platform.system.host.system_host_list_keywords import SystemHostListKeywords
+from keywords.cloud_platform.system.ptp.ptp_parameters_parser import PTPParametersParser
 from keywords.cloud_platform.system.ptp.system_host_if_ptp_keywords import SystemHostIfPTPKeywords
 from keywords.cloud_platform.system.ptp.system_host_ptp_instance_keywords import SystemHostPTPInstanceKeywords
 from keywords.cloud_platform.system.ptp.system_ptp_instance_keywords import SystemPTPInstanceKeywords
@@ -130,9 +132,21 @@ class PTPTeardownExecutorKeywords(BaseKeyword):
 
         for get_ptp_instance_obj in system_ptp_instance_list_output.get_ptp_instance_list():
             system_ptp_instance_show_output = SystemPTPInstanceKeywords(ssh_connection).get_system_ptp_instance_show(get_ptp_instance_obj.get_name())
-            parameters = system_ptp_instance_show_output.get_ptp_instance_parameters()
+            parameters = system_ptp_instance_show_output.get_ptp_instance().get_parameters()
             if parameters:
-                system_ptp_instance_parameter_keywords.system_ptp_instance_parameter_delete(get_ptp_instance_obj.get_name(), parameters)
+                name = get_ptp_instance_obj.get_name()
+                if isinstance(parameters, dict):
+                    global_params = parameters.get("global", [])
+                    monitoring_params = parameters.get("monitoring", [])
+                    if global_params:
+                        param_str = PTPParametersParser(global_params).process_parameters()
+                        system_ptp_instance_parameter_keywords.system_ptp_instance_parameter_delete(name, param_str)
+                    if monitoring_params:
+                        param_str = PTPParametersParser(monitoring_params).process_parameters()
+                        system_ptp_instance_parameter_keywords.system_ptp_instance_parameter_delete(name, param_str, section="monitoring")
+                else:
+                    param_str = PTPParametersParser(parameters).process_parameters()
+                    system_ptp_instance_parameter_keywords.system_ptp_instance_parameter_delete(name, param_str)
 
     def delete_all_ptp_instances(self) -> None:
         """
