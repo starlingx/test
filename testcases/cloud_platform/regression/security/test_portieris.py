@@ -9,6 +9,7 @@ from framework.logging.automation_logger import get_logger
 from framework.resources.resource_finder import get_stx_resource_path
 from framework.ssh.ssh_connection import SSHConnection
 from framework.validation.validation import validate_equals, validate_not_equals, validate_str_contains
+from keywords.cloud_platform.dcmanager.dcmanager_subcloud_list_keywords import DcManagerSubcloudListKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.cloud_platform.system.application.system_application_apply_keywords import SystemApplicationApplyKeywords
 from keywords.cloud_platform.system.application.system_application_delete_keywords import SystemApplicationDeleteInput, SystemApplicationDeleteKeywords
@@ -615,3 +616,109 @@ def test_portieris_helm_override_cpu_core_apply(request):
     validate_equals(pod_running, True, "Signed image pod should be running after helm override reapply")
 
     get_logger().log_info("Portieris helm override CPU core apply test complete — webhook recovered")
+
+
+@mark.p2
+@mark.lab_has_subcloud
+def test_portieris_dc_subcloud_deploy(request):
+    """Test portieris deployment and policy enforcement on a DC subcloud.
+
+    Deploys portieris on a managed subcloud in a distributed cloud environment,
+    then verifies that image policy enforcement works on the subcloud (unsigned
+    image rejected, signed image accepted).
+
+    Test Steps:
+        - Get a healthy managed subcloud from the system controller
+        - SSH to the subcloud
+        - Upload and apply portieris on the subcloud
+        - Verify portieris pods are running on the subcloud
+        - Wait for portieris webhook to be ready on the subcloud
+        - Apply image policy on the subcloud
+        - Verify unsigned image is rejected on the subcloud
+        - Verify signed image is accepted on the subcloud
+    """
+    get_logger().log_info("Starting Portieris DC subcloud deploy test")
+
+    central_ssh = LabConnectionKeywords().get_active_controller_ssh()
+    security_config = ConfigurationManager.get_security_config()
+
+    # Get a healthy managed subcloud
+    get_logger().log_info("Getting a healthy managed subcloud")
+    dcm_sc_list = DcManagerSubcloudListKeywords(central_ssh)
+    lowest_subcloud = dcm_sc_list.get_dcmanager_subcloud_list().get_healthy_subcloud_with_lowest_id()
+    subcloud_name = lowest_subcloud.get_name()
+    get_logger().log_info(f"Selected subcloud: {subcloud_name}")
+
+    # SSH to the subcloud
+    subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
+
+    def cleanup():
+        get_logger().log_info(f"Cleaning up portieris on subcloud {subcloud_name}")
+        cleanup_portieris_environment(subcloud_ssh)
+
+    request.addfinalizer(cleanup)
+
+    # Setup portieris on the subcloud
+    get_logger().log_info(f"Setting up portieris on subcloud {subcloud_name}")
+    setup_portieris_environment(subcloud_ssh, security_config)
+
+    # Verify policy enforcement on the subcloud
+    get_logger().log_info(f"Verifying policy enforcement on subcloud {subcloud_name}")
+    yaml_keywords = YamlKeywords(subcloud_ssh)
+    kubectl_file_apply = KubectlFileApplyKeywords(subcloud_ssh)
+    kubectl_pods = KubectlGetPodsKeywords(subcloud_ssh)
+    docker_trust = DockerTrustKeywords(subcloud_ssh)
+
+    # Apply image policy
+    policy_template = get_stx_resource_path("resources/cloud_platform/security/portieris/image-policy.yaml")
+    registry_hostname = security_config.get_portieris_registry_hostname()
+    registry_port = security_config.get_portieris_registry_port()
+    replacement_dict = {
+        "registry_server": registry_hostname,
+        "registry_port": registry_port,
+        "signed_repo": "wrcp-test-signed",
+        "trust_server": security_config.get_portieris_trust_server(),
+        "namespace": NAMESPACE,
+    }
+    policy_file = yaml_keywords.generate_yaml_file_from_template(policy_template, replacement_dict, "image-policy.yaml", "/tmp")
+    kubectl_file_apply.apply_resource_from_yaml(policy_file)
+
+    # Verify unsigned image is rejected on subcloud
+    get_logger().log_info(f"Verifying unsigned image is rejected on subcloud {subcloud_name}")
+    unsigned_template = get_stx_resource_path("resources/cloud_platform/security/portieris/unsigned-image.yaml")
+    replacement_dict = {
+        "namespace": NAMESPACE,
+        "test_pod_name": "test-pod",
+        "unsigned_image_name": security_config.get_portieris_unsigned_image_name(),
+    }
+    pod_file = yaml_keywords.generate_yaml_file_from_template(unsigned_template, replacement_dict, "unsigned-image-dc.yaml", "/tmp")
+    error_output = kubectl_file_apply.kubectl_apply_with_error(pod_file)
+    return_code = subcloud_ssh.get_return_code()
+    validate_not_equals(return_code, 0, f"Unsigned image should be rejected on subcloud {subcloud_name}")
+    validate_str_contains(
+        error_output,
+        "trust.hooks.securityenforcement.admission.cloud.ibm.com",
+        "Output should contain Portieris admission webhook on subcloud",
+    )
+
+    # Verify signed image is accepted on subcloud
+    get_logger().log_info(f"Verifying signed image is accepted on subcloud {subcloud_name}")
+    trust_output = docker_trust.inspect_docker_trust(
+        security_config.get_portieris_signed_image_name(),
+        security_config.get_portieris_trust_server(),
+    )
+    validate_str_contains(trust_output, "Signers", "Signed image should have valid signatures")
+
+    signed_template = get_stx_resource_path("resources/cloud_platform/security/portieris/signed-image.yaml")
+    replacement_dict = {
+        "namespace": NAMESPACE,
+        "test_pod_name": "test-pod",
+        "signed_image_name": security_config.get_portieris_signed_image_name(),
+        "pull_secret_name": "registry-secret",
+    }
+    pod_file = yaml_keywords.generate_yaml_file_from_template(signed_template, replacement_dict, "signed-image-dc.yaml", "/tmp")
+    kubectl_file_apply.apply_resource_from_yaml(pod_file)
+    pod_running = kubectl_pods.wait_for_pod_status("test-pod", "Running", NAMESPACE, 300)
+    validate_equals(pod_running, True, f"Signed image pod should be running on subcloud {subcloud_name}")
+
+    get_logger().log_info(f"Portieris DC subcloud deploy test complete — policy enforced on {subcloud_name}")
