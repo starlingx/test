@@ -75,6 +75,72 @@ class SSHConnectionManagerClass:
 
         return self.create_ssh_connection(local_host, local_user, None, name)
 
+    def create_proxy_ssh_connection(
+        self,
+        target_host: str,
+        target_username: str,
+        target_password: str,
+        first_jump_host: HostConfiguration = None,
+        second_jump_host: str = None,
+        second_jump_username: str = None,
+        second_jump_password: str = None,
+        timeout: int = 30,
+    ) -> SSHConnection:
+        """
+        Creates a real SSH connection to a target node by proxying through one or two jump hosts.
+
+        Uses paramiko ProxyCommand to establish a direct SSH session to the target
+        through intermediate hosts. This bypasses AllowTcpForwarding restrictions
+        and provides full SSH functionality including SFTP.
+
+        Connection order: RunAgent -> first_jump_host (optional) -> second_jump_host -> target
+
+        Args:
+            target_host: The hostname of the target node.
+            target_username: The SSH username for the target node.
+            target_password: The SSH password for the target node.
+            first_jump_host: Optional configuration for the outer jump host (first hop from the run agent).
+            second_jump_host: The IP or hostname of the jump host closest to the target (runs nc to reach it).
+            second_jump_username: The SSH username for the second jump host.
+            second_jump_password: The SSH password for the second jump host.
+            timeout: The maximum time in seconds to wait for the connection.
+
+        Returns:
+            SSHConnection: A real SSH connection to the target node.
+        """
+        name = target_host
+        if self.ssh_connection_list.get(name):
+            name = name + '_{}'.format(datetime.timestamp(datetime.now()))
+
+        if first_jump_host:
+            first_jump_ip = first_jump_host.get_host()
+            first_jump_user = first_jump_host.get_credentials().get_user_name()
+            first_jump_password = first_jump_host.get_credentials().get_password()
+            proxy_cmd = (
+                f"sshpass -p '{first_jump_password}' ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "
+                f"{first_jump_user}@{first_jump_ip} "
+                f"sshpass -p '{second_jump_password}' ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "
+                f"{second_jump_username}@{second_jump_host} nc {target_host} 22"
+            )
+        else:
+            proxy_cmd = (
+                f"sshpass -p '{second_jump_password}' ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "
+                f"{second_jump_username}@{second_jump_host} nc {target_host} 22"
+            )
+
+        ssh_connection = SSHConnection(
+            name,
+            target_host,
+            target_username,
+            target_password,
+            timeout=timeout,
+            proxy_command=proxy_cmd,
+        )
+        ssh_connection.connect()
+        self.ssh_connection_list[name] = ssh_connection
+
+        return ssh_connection
+
     def get_ssh_connection(self, name) -> SSHConnection:
         """
         Getter for the ssh connection

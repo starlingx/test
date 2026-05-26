@@ -390,9 +390,7 @@ def test_kdump_excecutable_hooks_compute_host(request):
     # get the prev uptime of the host so we can be sure it re-started
     pre_uptime_of_host = SystemHostListKeywords(ssh_connection).get_uptime(compute.get_host_name())
 
-    # get_files_in_dir does not work as sftp connection is not working using compute_ssh_connection
-    # crash_files=FileKeywords(compute_ssh_connection).get_files_in_dir(kdump_path)
-    core_files_before_crash = compute_ssh_connection.send_as_sudo(f"ls -l {kdump_path}")
+    core_files_before_crash = FileKeywords(compute_ssh_connection).get_files_in_dir(kdump_path)
     get_logger().log_info(f"no of Crash files before crash: {len(core_files_before_crash)}")
 
     get_logger().log_info("Create pre-hook and post-hook executable files")
@@ -408,9 +406,7 @@ def test_kdump_excecutable_hooks_compute_host(request):
     posthook_fail_file = FileKeywords(compute_ssh_connection).create_file_with_heredoc(post_hook_fail_filepath, post_hook_fail_content)
     FileKeywords(compute_ssh_connection).make_executable(post_hook_fail_filepath)
     get_logger().log_info(f"files created : {prehook_success_file},{posthook_success_file},{prehook_fail_file},{posthook_fail_file}")
-    # validate_equals(all([prehook_success_file, posthook_success_file, prehook_fail_file, posthook_fail_file]), True, "Creation of pre-hook and post-hook files")
-    # Below validation is not working as file_exist uses sftp for validation which is not working for compute_ssh_connection
-    # validate_equals(all([prehook_success_file, posthook_success_file, prehook_fail_file, posthook_fail_file]), True, "Creation of pre-hook and post-hook files")
+    validate_equals(all([prehook_success_file, posthook_success_file, prehook_fail_file, posthook_fail_file]), True, "Creation of pre-hook and post-hook files")
 
     # Get current timestamp for comparison
     current_time = DateKeywords(compute_ssh_connection).get_current_epochtime()
@@ -429,8 +425,7 @@ def test_kdump_excecutable_hooks_compute_host(request):
 
     get_logger().log_info("verify kdump file generated after kernel crash")
 
-    # get_files_in_dir does not work as sftp connection is not working using compute_ssh_connection.using CLI
-    core_files_after_crash = compute_ssh_connection.send_as_sudo(f"ls -l {kdump_path}")
+    core_files_after_crash = FileKeywords(compute_ssh_connection).get_files_in_dir(kdump_path)
     get_logger().log_info(f"no of Crash files after crash: {len(core_files_after_crash)}")
     validate_equals((len(core_files_after_crash) - len(core_files_before_crash)), 1, "kdump file created")
 
@@ -489,9 +484,8 @@ def test_kdump_excecutable_hooks_storage_host(request):
 
     # get the prev uptime of the host so we can be sure it re-started
     pre_uptime_of_host = SystemHostListKeywords(ssh_connection).get_uptime(storage.get_host_name())
-    # get_files_in_dir does not work as sftp connection is not working using storage_ssh_connection
-    # crash_files=FileKeywords(storage_ssh_connection).get_files_in_dir(kdump_path)
-    core_files_before_crash = storage_ssh_connection.send_as_sudo(f"ls -l {kdump_path}")
+
+    core_files_before_crash = FileKeywords(storage_ssh_connection).get_files_in_dir(kdump_path)
     get_logger().log_info(f"no of Crash files before crash: {len(core_files_before_crash)}")
 
     get_logger().log_info("Create pre-hook and post-hook executable files")
@@ -507,9 +501,7 @@ def test_kdump_excecutable_hooks_storage_host(request):
     posthook_fail_file = FileKeywords(storage_ssh_connection).create_file_with_heredoc(post_hook_fail_filepath, post_hook_fail_content)
     FileKeywords(storage_ssh_connection).make_executable(post_hook_fail_filepath)
     get_logger().log_info(f"files created : {prehook_success_file},{posthook_success_file},{prehook_fail_file},{posthook_fail_file}")
-    # validate_equals(all([prehook_success_file, posthook_success_file, prehook_fail_file, posthook_fail_file]), True, "Creation of pre-hook and post-hook files")
-    # Below validation is not working as file_exist uses sftp for validation which is not working for compute_ssh_connection
-    # validate_equals(all([prehook_success_file, posthook_success_file, prehook_fail_file, posthook_fail_file]), True, "Creation of pre-hook and post-hook files")
+    validate_equals(all([prehook_success_file, posthook_success_file, prehook_fail_file, posthook_fail_file]), True, "Creation of pre-hook and post-hook files")
 
     # Get current timestamp for comparison
     current_time = DateKeywords(storage_ssh_connection).get_current_epochtime()
@@ -526,8 +518,9 @@ def test_kdump_excecutable_hooks_storage_host(request):
 
     storage_ssh_connection = LabConnectionKeywords().get_storage_ssh(storage.get_host_name())
 
-    # get_files_in_dir does not work as sftp connection is not working using compute_ssh_connection.using CLI
-    core_files_after_crash = storage_ssh_connection.send_as_sudo(f"ls -l {kdump_path}")
+    get_logger().log_info("verify kdump file generated after kernel crash")
+
+    core_files_after_crash = FileKeywords(storage_ssh_connection).get_files_in_dir(kdump_path)
     get_logger().log_info(f"no of Crash files after crash: {len(core_files_after_crash)}")
     validate_equals((len(core_files_after_crash) - len(core_files_before_crash)), 1, "kdump file created")
 
