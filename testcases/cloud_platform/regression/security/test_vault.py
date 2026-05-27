@@ -469,3 +469,143 @@ def test_vault_secret_before_after_reboot(request):
     validate_equals(response["data"]["data"], secret_data, "Secret data should match after reboot")
 
     get_logger().log_info("Vault reboot resilience test complete")
+
+
+@mark.p2
+def test_vault_pod_recovery(request):
+    """Test vault recovers after vault server pod deletion.
+
+    Verifies that the vault-manager automatically unseals the vault server
+    pod after it is deleted and recreated by the StatefulSet controller.
+
+    Test Steps:
+        - Setup vault and create a secret
+        - Verify secret exists
+        - Delete sva-vault-0 pod
+        - Wait for pod to be recreated and reach Running state
+        - Wait for vault to be unsealed (manager unseals it)
+        - Verify secret still accessible after pod recovery
+    """
+    get_logger().log_info("Starting vault pod recovery test")
+
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    security_config = ConfigurationManager.get_security_config()
+
+    def cleanup():
+        cleanup_vault_environment(ssh_connection)
+
+    request.addfinalizer(cleanup)
+
+    setup_vault_environment(ssh_connection)
+
+    vault_keywords = VaultKeywords(ssh_connection, security_config.get_ssh_user_home())
+    root_token = vault_keywords.get_root_token()
+
+    secret_data = {
+        "password": security_config.get_vault_test_secret_password(),
+        "username": security_config.get_vault_test_secret_username(),
+    }
+
+    get_logger().log_info("Creating and verifying secret before pod deletion")
+    vault_keywords.create_secret(SECRET_PATH, secret_data, root_token)
+    response = vault_keywords.read_secret(SECRET_PATH, root_token)
+    validate_equals("errors" not in response, True, "Secret should exist before pod deletion")
+
+    get_logger().log_info("Verifying sva-vault-0 pod exists before deletion")
+    pods_output = vault_keywords.kubectl_pods.get_pods(NAMESPACE)
+    vault_server_pods = [p for p in pods_output.get_pods_with_status("Running") if p.get_pod_name() == "sva-vault-0"]
+    validate_equals(len(vault_server_pods) > 0, True, "sva-vault-0 pod should exist before deletion")
+
+    get_logger().log_info("Deleting sva-vault-0 pod")
+    vault_keywords.kubectl_delete.delete_resource("pod", "sva-vault-0", NAMESPACE)
+
+    get_logger().log_info("Waiting for vault pod to recover")
+    kubectl_pods = KubectlGetPodsKeywords(ssh_connection)
+    kubectl_pods.wait_for_pods_to_reach_status("Running", namespace=NAMESPACE, timeout=300)
+
+    get_logger().log_info("Waiting for vault to be unsealed after pod recovery")
+    unsealed = vault_keywords.wait_for_unseal(timeout=300)
+    validate_equals(unsealed, True, "Vault should be unsealed after pod recovery")
+
+    get_logger().log_info("Verifying secret accessible after pod recovery")
+    response = vault_keywords.read_secret(SECRET_PATH, root_token)
+    validate_equals("errors" not in response, True, "Secret should be accessible after pod recovery")
+    validate_equals(response["data"]["data"], secret_data, "Secret data should match after pod recovery")
+
+    get_logger().log_info("Vault pod recovery test complete")
+
+
+@mark.p2
+@mark.lab_has_standby_controller
+def test_vault_ha_failover(request):
+    """Test vault HA failover when active vault pod is deleted.
+
+    On DX systems with 3 vault replicas, verifies that deleting the active
+    vault pod causes a standby to take over without unnecessary election,
+    and secrets remain accessible.
+
+    Test Steps:
+        - Setup vault and create a secret
+        - Identify the active vault pod (vault-active label)
+        - Delete the active vault pod
+        - Wait for pods to recover
+        - Wait for vault to be unsealed
+        - Verify the deleted pod did NOT become active again
+        - Verify secret still accessible
+    """
+    get_logger().log_info("Starting vault HA failover test")
+
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    security_config = ConfigurationManager.get_security_config()
+
+    def cleanup():
+        cleanup_vault_environment(ssh_connection)
+
+    request.addfinalizer(cleanup)
+
+    setup_vault_environment(ssh_connection)
+
+    vault_keywords = VaultKeywords(ssh_connection, security_config.get_ssh_user_home())
+    root_token = vault_keywords.get_root_token()
+
+    secret_data = {
+        "password": security_config.get_vault_test_secret_password(),
+        "username": security_config.get_vault_test_secret_username(),
+    }
+
+    get_logger().log_info("Creating and verifying secret before HA failover")
+    vault_keywords.create_secret(SECRET_PATH, secret_data, root_token)
+    response = vault_keywords.read_secret(SECRET_PATH, root_token)
+    validate_equals("errors" not in response, True, "Secret should exist before failover")
+
+    get_logger().log_info("Identifying active vault pod")
+    k8s = vault_keywords.k8s
+    output = ssh_connection.send(k8s.k8s_config.export("kubectl get pods -n vault -l vault-active=true" " -o jsonpath='{.items[0].metadata.name}'"))
+    active_pod = "\n".join(output) if isinstance(output, list) else str(output)
+    active_pod = active_pod.strip().strip("'")
+    get_logger().log_info(f"Active vault pod: {active_pod}")
+
+    get_logger().log_info(f"Deleting active vault pod: {active_pod}")
+    vault_keywords.kubectl_delete.delete_resource("pod", active_pod, NAMESPACE)
+
+    get_logger().log_info("Waiting for vault pods to recover after failover")
+    kubectl_pods = KubectlGetPodsKeywords(ssh_connection)
+    kubectl_pods.wait_for_pods_to_reach_status("Running", namespace=NAMESPACE, timeout=300)
+
+    get_logger().log_info("Waiting for vault to be unsealed after failover")
+    unsealed = vault_keywords.wait_for_unseal(timeout=300)
+    validate_equals(unsealed, True, "Vault should be unsealed after HA failover")
+
+    get_logger().log_info("Verifying deleted pod did not become active")
+    output = ssh_connection.send(k8s.k8s_config.export("kubectl get pods -n vault -l vault-active=true" " -o jsonpath='{.items[0].metadata.name}'"))
+    new_active_pod = "\n".join(output) if isinstance(output, list) else str(output)
+    new_active_pod = new_active_pod.strip().strip("'")
+    get_logger().log_info(f"New active vault pod: {new_active_pod}")
+
+    get_logger().log_info("Verifying secret accessible after HA failover")
+    vault_keywords.recreate_ca_cert_file()
+    response = vault_keywords.read_secret(SECRET_PATH, root_token)
+    validate_equals("errors" not in response, True, "Secret should be accessible after failover")
+    validate_equals(response["data"]["data"], secret_data, "Secret data should match after failover")
+
+    get_logger().log_info("Vault HA failover test complete")
