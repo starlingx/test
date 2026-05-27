@@ -5,6 +5,10 @@ from keywords.cloud_platform.command_wrappers import source_openrc
 from keywords.cloud_platform.system.helm.objects.system_helm_override_output import SystemHelmOverrideOutput
 from keywords.cloud_platform.system.helm.objects.system_helm_override_show_output import SystemHelmOverrideShowOutput
 
+from framework.logging.automation_logger import get_logger
+from keywords.cloud_platform.system.application.system_application_apply_keywords import SystemApplicationApplyKeywords
+from keywords.files.file_keywords import FileKeywords
+
 
 class SystemHelmOverrideKeywords(BaseKeyword):
     """
@@ -136,3 +140,122 @@ class SystemHelmOverrideKeywords(BaseKeyword):
         command = source_openrc(f"system helm-override-update {app_name} {chart_name} {namespace} {reuse_flag} {set_values}")
         self.ssh_connection.send(command)
         self.validate_success_return_code(self.ssh_connection)
+
+    def apply_if_changed(
+        self,
+        desired_overrides: str,
+        app_name: str,
+        chart_name: str,
+        namespace: str,
+        timeout: int = 3600,
+        polling_sleep_time: int = 30,
+        force_apply: bool = False,
+    ) -> bool:
+        """Apply helm overrides only if they differ from the currently applied overrides.
+
+        Compares the desired override YAML against the current user_overrides on the
+        system. If they match (semantic YAML equality), skips the expensive
+        update + apply sequence. If they differ, writes the override file,
+        updates the helm override, and applies the application.
+
+        Args:
+            desired_overrides (str): YAML string of desired helm overrides.
+            app_name (str): Application name (e.g., "stx-openstack").
+            chart_name (str): Chart name (e.g., "cinder").
+            namespace (str): Namespace (e.g., "openstack").
+            timeout (int): Timeout in seconds for system_application_apply. Default 3600.
+            polling_sleep_time (int): Polling interval in seconds. Default 30.
+            force_apply (bool): If True, always apply regardless of match. Default False.
+
+        Returns:
+            bool: True if the apply was executed, False if it was skipped.
+
+        Raises:
+            ValueError: If app_name, chart_name, or namespace is None/empty.
+        """
+        if not app_name:
+            raise ValueError("app_name must not be None or empty")
+        if not chart_name:
+            raise ValueError("chart_name must not be None or empty")
+        if not namespace:
+            raise ValueError("namespace must not be None or empty")
+
+        app_apply_kw = SystemApplicationApplyKeywords(self.ssh_connection)
+
+        if force_apply:
+            get_logger().log_info(
+                f"Force-applying helm overrides for {app_name}/{chart_name} in {namespace}"
+            )
+            desired_empty = desired_overrides is None or desired_overrides.strip() == ""
+            if desired_empty:
+                app_apply_kw.system_application_apply(
+                    app_name, timeout=timeout, polling_sleep_time=polling_sleep_time
+                )
+            else:
+                self._write_and_apply(
+                    desired_overrides, app_name, chart_name, namespace, timeout, polling_sleep_time
+                )
+            return True
+
+        # Normal path: retrieve current overrides and compare
+        try:
+            show_output = self.get_system_helm_override_show(app_name, chart_name, namespace)
+            show_object = show_output.get_helm_override_show()
+        except Exception as e:
+            get_logger().log_warning(
+                f"Failed to retrieve current overrides for {app_name}/{chart_name} "
+                f"in {namespace}: {e} — proceeding with apply"
+            )
+            self._write_and_apply(
+                desired_overrides, app_name, chart_name, namespace, timeout, polling_sleep_time
+            )
+            return True
+
+        if show_object.user_overrides_match(desired_overrides):
+            get_logger().log_info(
+                f"Helm override apply skipped — overrides already match for "
+                f"{app_name}/{chart_name} in {namespace}"
+            )
+            return False
+
+        get_logger().log_info(
+            f"Helm override apply executed for {app_name}/{chart_name} in {namespace}"
+        )
+        self._write_and_apply(
+            desired_overrides, app_name, chart_name, namespace, timeout, polling_sleep_time
+        )
+        return True
+
+    def _write_and_apply(
+        self,
+        desired_overrides: str,
+        app_name: str,
+        chart_name: str,
+        namespace: str,
+        timeout: int,
+        polling_sleep_time: int,
+    ) -> None:
+        """Write override file to temp dir, update helm override, apply, and clean up.
+
+        Args:
+            desired_overrides (str): YAML string of desired helm overrides.
+            app_name (str): Application name.
+            chart_name (str): Chart name.
+            namespace (str): Namespace.
+            timeout (int): Timeout in seconds for system_application_apply.
+            polling_sleep_time (int): Polling interval in seconds.
+        """
+        file_kw = FileKeywords(self.ssh_connection)
+        app_apply_kw = SystemApplicationApplyKeywords(self.ssh_connection)
+
+        output = self.ssh_connection.send("mktemp -d -p /tmp")
+        tmpdir = output[0].strip() if isinstance(output, list) else output.strip()
+        override_file_path = f"{tmpdir}/helm_overrides.yaml"
+        try:
+            file_kw.create_file_with_heredoc(override_file_path, desired_overrides)
+            self.update_helm_override(override_file_path, app_name, chart_name, namespace)
+            app_apply_kw.system_application_apply(
+                app_name, timeout=timeout, polling_sleep_time=polling_sleep_time
+            )
+        finally:
+            self.ssh_connection.send(f"rm -rf {tmpdir}")
