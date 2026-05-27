@@ -14,6 +14,9 @@ from keywords.cloud_platform.system.application.system_application_delete_keywor
 from keywords.cloud_platform.system.application.system_application_list_keywords import SystemApplicationListKeywords
 from keywords.cloud_platform.system.application.system_application_remove_keywords import SystemApplicationRemoveInput, SystemApplicationRemoveKeywords
 from keywords.cloud_platform.system.application.system_application_upload_keywords import SystemApplicationUploadInput, SystemApplicationUploadKeywords
+from keywords.cloud_platform.system.host.system_host_list_keywords import SystemHostListKeywords
+from keywords.cloud_platform.system.host.system_host_reboot_keywords import SystemHostRebootKeywords
+from keywords.cloud_platform.system.host.system_host_swact_keywords import SystemHostSwactKeywords
 from keywords.cloud_platform.system.vault.vault_keywords import VaultKeywords
 from keywords.files.file_keywords import FileKeywords
 from keywords.k8s.certificate.kubectl_get_certificate_keywords import KubectlGetCertStatusKeywords
@@ -253,3 +256,216 @@ def test_vault_app_lifecycle(request):
     validate_equals(app_list.is_app_present(APP_NAME), False, "Vault should not be present after delete")
 
     get_logger().log_info("Vault app lifecycle test complete")
+
+
+@mark.p2
+@mark.lab_has_standby_controller
+def test_vault_secret_before_after_swact(request):
+    """Test vault secret injection survives controller swact.
+
+    Verifies that vault secrets remain accessible and injection continues
+    to work after a controller swact on DX systems.
+
+    Test Steps:
+        - Setup vault and create a secret
+        - Verify secret injection into test pod
+        - Perform controller swact
+        - Reconnect to new active controller
+        - Re-create CA cert file on new active
+        - Verify secret still accessible via REST API
+        - Verify secret injection still works
+        - Create a new secret to verify write capability
+    """
+    get_logger().log_info("Starting vault swact resilience test")
+
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    security_config = ConfigurationManager.get_security_config()
+
+    def cleanup():
+        cleanup_ssh = LabConnectionKeywords().get_active_controller_ssh()
+        cleanup_vault_environment(cleanup_ssh)
+
+    request.addfinalizer(cleanup)
+
+    setup_vault_environment(ssh_connection)
+
+    vault_keywords = VaultKeywords(ssh_connection, security_config.get_ssh_user_home())
+    root_token = vault_keywords.get_root_token()
+
+    secret_data = {
+        "password": security_config.get_vault_test_secret_password(),
+        "username": security_config.get_vault_test_secret_username(),
+    }
+
+    get_logger().log_info("Creating and verifying secret before swact")
+    vault_keywords.create_secret(SECRET_PATH, secret_data, root_token)
+    response = vault_keywords.read_secret(SECRET_PATH, root_token)
+    validate_equals("errors" not in response, True, "Secret should exist before swact")
+
+    get_logger().log_info("Performing controller swact")
+    swact_success = SystemHostSwactKeywords(ssh_connection).host_swact()
+    validate_equals(swact_success, True, "Controller swact should succeed")
+
+    get_logger().log_info("Reconnecting to new active controller")
+    new_ssh = LabConnectionKeywords().get_active_controller_ssh()
+    new_vault = VaultKeywords(new_ssh, security_config.get_ssh_user_home())
+
+    get_logger().log_info("Re-creating CA cert file on new active controller")
+    new_vault.recreate_ca_cert_file()
+
+    get_logger().log_info("Verifying secret accessible after swact")
+    response = new_vault.read_secret(SECRET_PATH, root_token)
+    validate_equals("errors" not in response, True, "Secret should be accessible after swact")
+    validate_equals(response["data"]["data"], secret_data, "Secret data should match after swact")
+
+    get_logger().log_info("Creating new secret to verify write capability after swact")
+    new_secret_data = {"password": "swact-test", "username": "swact-user"}
+    new_vault.create_secret("basic-secret/swact-test", new_secret_data, root_token)
+    response = new_vault.read_secret("basic-secret/swact-test", root_token)
+    validate_equals("errors" not in response, True, "New secret should be writable after swact")
+
+    get_logger().log_info("Vault swact resilience test complete")
+
+
+@mark.p2
+def test_vault_secret_persistence_reapply(request):
+    """Test vault secrets persist after application remove and reapply.
+
+    Verifies that secrets stored in vault PVC survive an application
+    remove/reapply cycle (PVC is preserved during remove).
+
+    Test Steps:
+        - Setup vault and create a secret
+        - Verify secret exists
+        - Remove vault application (PVC preserved)
+        - Re-apply vault application
+        - Wait for pods and unseal
+        - Re-get root token (may change after reapply)
+        - Re-create CA cert file
+        - Verify original secret still exists (PVC preserved)
+    """
+    get_logger().log_info("Starting vault secret persistence reapply test")
+
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    security_config = ConfigurationManager.get_security_config()
+
+    def cleanup():
+        cleanup_vault_environment(ssh_connection)
+
+    request.addfinalizer(cleanup)
+
+    setup_vault_environment(ssh_connection)
+
+    vault_keywords = VaultKeywords(ssh_connection, security_config.get_ssh_user_home())
+    root_token = vault_keywords.get_root_token()
+
+    secret_data = {
+        "password": security_config.get_vault_test_secret_password(),
+        "username": security_config.get_vault_test_secret_username(),
+    }
+
+    get_logger().log_info("Creating secret before reapply")
+    vault_keywords.create_secret(SECRET_PATH, secret_data, root_token)
+    response = vault_keywords.read_secret(SECRET_PATH, root_token)
+    validate_equals("errors" not in response, True, "Secret should exist before reapply")
+
+    get_logger().log_info("Removing vault application (PVC preserved)")
+    remove_input = SystemApplicationRemoveInput()
+    remove_input.set_app_name(APP_NAME)
+    SystemApplicationRemoveKeywords(ssh_connection).system_application_remove(remove_input)
+
+    get_logger().log_info("Re-applying vault application")
+    app_apply = SystemApplicationApplyKeywords(ssh_connection)
+    app_apply.system_application_apply(APP_NAME)
+
+    get_logger().log_info("Waiting for vault pods and unseal after reapply")
+    kubectl_pods = KubectlGetPodsKeywords(ssh_connection)
+    kubectl_pods.wait_for_pods_to_reach_status("Running", namespace=NAMESPACE, timeout=600)
+    unsealed = vault_keywords.wait_for_unseal(timeout=300)
+    validate_equals(unsealed, True, "Vault should be unsealed after reapply")
+
+    get_logger().log_info("Re-getting root token after reapply")
+    root_token = vault_keywords.get_root_token()
+
+    get_logger().log_info("Re-creating CA cert file after reapply")
+    vault_keywords.recreate_ca_cert_file()
+
+    get_logger().log_info("Verifying original secret persists after reapply")
+    response = vault_keywords.read_secret(SECRET_PATH, root_token)
+    validate_equals("errors" not in response, True, "Secret should persist after reapply")
+    validate_equals(response["data"]["data"], secret_data, "Secret data should match after reapply")
+
+    get_logger().log_info("Vault secret persistence reapply test complete")
+
+
+@mark.p2
+@mark.lab_has_standby_controller
+def test_vault_secret_before_after_reboot(request):
+    """Test vault secret injection survives ungraceful controller reboot.
+
+    Verifies that vault secrets remain accessible after an ungraceful
+    reboot of the active controller (triggers automatic swact to standby).
+
+    Test Steps:
+        - Setup vault and create a secret
+        - Verify secret exists
+        - Verify standby controller is available
+        - Force reboot active controller (triggers swact)
+        - Reconnect to new active controller
+        - Wait for vault pods and unseal
+        - Re-create CA cert file on new active
+        - Verify secret still accessible
+    """
+    get_logger().log_info("Starting vault reboot resilience test")
+
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    security_config = ConfigurationManager.get_security_config()
+
+    def cleanup():
+        cleanup_ssh = LabConnectionKeywords().get_active_controller_ssh()
+        cleanup_vault_environment(cleanup_ssh)
+
+    request.addfinalizer(cleanup)
+
+    setup_vault_environment(ssh_connection)
+
+    vault_keywords = VaultKeywords(ssh_connection, security_config.get_ssh_user_home())
+    root_token = vault_keywords.get_root_token()
+
+    secret_data = {
+        "password": security_config.get_vault_test_secret_password(),
+        "username": security_config.get_vault_test_secret_username(),
+    }
+
+    get_logger().log_info("Creating and verifying secret before reboot")
+    vault_keywords.create_secret(SECRET_PATH, secret_data, root_token)
+    response = vault_keywords.read_secret(SECRET_PATH, root_token)
+    validate_equals("errors" not in response, True, "Secret should exist before reboot")
+
+    get_logger().log_info("Verifying standby controller is available")
+    host_list = SystemHostListKeywords(ssh_connection)
+    standby = host_list.get_standby_controller()
+    validate_equals(standby.get_availability(), "available", "Standby should be available")
+
+    get_logger().log_info("Force rebooting active controller")
+    SystemHostRebootKeywords(ssh_connection).host_force_reboot()
+
+    get_logger().log_info("Reconnecting to new active controller after reboot")
+    new_ssh = LabConnectionKeywords().get_active_controller_ssh()
+
+    get_logger().log_info("Waiting for vault pods and unseal after reboot")
+    new_kubectl_pods = KubectlGetPodsKeywords(new_ssh)
+    new_kubectl_pods.wait_for_pods_to_reach_status("Running", namespace=NAMESPACE, timeout=600)
+    new_vault = VaultKeywords(new_ssh, security_config.get_ssh_user_home())
+    unsealed = new_vault.wait_for_unseal(timeout=300)
+    validate_equals(unsealed, True, "Vault should be unsealed after reboot")
+
+    get_logger().log_info("Re-creating CA cert file on new active controller")
+    new_vault.recreate_ca_cert_file()
+
+    get_logger().log_info("Verifying secret accessible after reboot")
+    response = new_vault.read_secret(SECRET_PATH, root_token)
+    validate_equals("errors" not in response, True, "Secret should be accessible after reboot")
+    validate_equals(response["data"]["data"], secret_data, "Secret data should match after reboot")
+
+    get_logger().log_info("Vault reboot resilience test complete")
