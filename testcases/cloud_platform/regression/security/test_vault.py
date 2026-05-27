@@ -609,3 +609,192 @@ def test_vault_ha_failover(request):
     validate_equals(response["data"]["data"], secret_data, "Secret data should match after failover")
 
     get_logger().log_info("Vault HA failover test complete")
+
+
+@mark.p3
+def test_vault_helm_override(request):
+    """Test vault helm override applies custom labels to vault pod.
+
+    Applies a helm override with custom labels, reapplies vault, deletes
+    the vault server pod, and verifies the recreated pod has the custom labels.
+
+    Test Steps:
+        - Setup vault application
+        - Apply helm override with custom label (pv=test)
+        - Re-apply vault application
+        - Delete sva-vault-0 pod to trigger recreation with new labels
+        - Wait for pod to recover with custom labels
+    """
+    get_logger().log_info("Starting vault helm override test")
+
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    security_config = ConfigurationManager.get_security_config()
+
+    def cleanup():
+        cleanup_vault_environment(ssh_connection)
+
+    request.addfinalizer(cleanup)
+
+    setup_vault_environment(ssh_connection)
+
+    vault_keywords = VaultKeywords(ssh_connection, security_config.get_ssh_user_home())
+
+    get_logger().log_info("Uploading and applying helm override with custom labels")
+    file_keywords = FileKeywords(ssh_connection)
+    local_override = get_stx_resource_path("resources/cloud_platform/security/vault/override_vault.yaml")
+    remote_override = f"{security_config.get_ssh_user_home()}/override_vault.yaml"
+    file_keywords.upload_file(local_override, remote_override, overwrite=True)
+
+    k8s = vault_keywords.k8s
+    ssh_connection.send(k8s.k8s_config.export(f"source /etc/platform/openrc && system helm-override-update vault vault vault --values {remote_override}"))
+
+    get_logger().log_info("Re-applying vault with helm override")
+    app_apply = SystemApplicationApplyKeywords(ssh_connection)
+    app_apply.system_application_apply(APP_NAME)
+
+    get_logger().log_info("Deleting sva-vault-0 pod to trigger recreation with labels")
+    vault_keywords.kubectl_delete.delete_resource("pod", "sva-vault-0", NAMESPACE)
+
+    get_logger().log_info("Waiting for vault pod with custom labels to be ready")
+    kubectl_pods = KubectlGetPodsKeywords(ssh_connection)
+    kubectl_pods.wait_for_pods_to_reach_status("Running", namespace=NAMESPACE, timeout=300)
+    unsealed = vault_keywords.wait_for_unseal(timeout=300)
+    validate_equals(unsealed, True, "Vault should be unsealed after override and pod recreation")
+
+    get_logger().log_info("Verifying custom label applied to vault pod")
+    output = ssh_connection.send(k8s.k8s_config.export("kubectl get pods -n vault -l pv=test -o jsonpath='{.items[*].metadata.name}'"))
+    labeled_pods = "\n".join(output) if isinstance(output, list) else str(output)
+    validate_equals(len(labeled_pods.strip()) > 0, True, "Vault pod should have custom label pv=test")
+
+    get_logger().log_info("Vault helm override test complete")
+
+
+@mark.p3
+def test_vault_tls_certificate_verification(request):
+    """Test vault TLS certificate is issued and ca-issuer is verified.
+
+    Verifies that the vault-server-tls certificate is Ready and that
+    the ca-issuer has successfully verified the signing CA.
+
+    Test Steps:
+        - Setup vault application
+        - Verify vault-server-tls certificate is Ready
+        - Verify ca-issuer status shows Signing CA verified
+    """
+    get_logger().log_info("Starting vault TLS certificate verification test")
+
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    security_config = ConfigurationManager.get_security_config()
+
+    def cleanup():
+        cleanup_vault_environment(ssh_connection)
+
+    request.addfinalizer(cleanup)
+
+    setup_vault_environment(ssh_connection)
+
+    get_logger().log_info("Verifying vault-server-tls certificate is Ready")
+    cert_keywords = KubectlGetCertStatusKeywords(ssh_connection)
+    cert_keywords.wait_for_certs_status("vault-server-tls", True, namespace=NAMESPACE, timeout=120)
+
+    get_logger().log_info("Verifying ca-issuer status")
+    vault_keywords = VaultKeywords(ssh_connection, security_config.get_ssh_user_home())
+    k8s = vault_keywords.k8s
+    output = ssh_connection.send(k8s.k8s_config.export("kubectl describe issuer -n vault ca-issuer"))
+    issuer_output = "\n".join(output) if isinstance(output, list) else str(output)
+    validate_equals("Signing CA verified" in issuer_output, True, "ca-issuer should show Signing CA verified")
+
+    get_logger().log_info("Vault TLS certificate verification test complete")
+
+
+@mark.p3
+def test_vault_manager_pod_recovery(request):
+    """Test vault-manager pod recovers after deletion.
+
+    Verifies that deleting the vault-manager pod causes it to be recreated
+    and reach a healthy state monitoring vault seal status.
+
+    Test Steps:
+        - Setup vault application
+        - Delete vault-manager pod
+        - Wait for vault-manager pod to recover to Running state
+        - Verify vault remains unsealed (manager monitors seal status)
+    """
+    get_logger().log_info("Starting vault manager pod recovery test")
+
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    security_config = ConfigurationManager.get_security_config()
+
+    def cleanup():
+        cleanup_vault_environment(ssh_connection)
+
+    request.addfinalizer(cleanup)
+
+    setup_vault_environment(ssh_connection)
+
+    vault_keywords = VaultKeywords(ssh_connection, security_config.get_ssh_user_home())
+
+    get_logger().log_info("Identifying vault-manager pod")
+    pods_output = vault_keywords.kubectl_pods.get_pods(NAMESPACE)
+    manager_pods = [p for p in pods_output.get_pods_with_status("Running") if "manager" in p.get_pod_name()]
+    validate_equals(len(manager_pods) > 0, True, "Vault manager pod should exist")
+    manager_pod_name = manager_pods[0].get_pod_name()
+    get_logger().log_info(f"Deleting vault-manager pod: {manager_pod_name}")
+
+    vault_keywords.kubectl_delete.delete_resource("pod", manager_pod_name, NAMESPACE)
+
+    get_logger().log_info("Waiting for vault-manager pod to recover")
+    kubectl_pods = KubectlGetPodsKeywords(ssh_connection)
+    kubectl_pods.wait_for_pods_to_reach_status("Running", namespace=NAMESPACE, timeout=300)
+
+    get_logger().log_info("Verifying vault remains unsealed after manager recovery")
+    unsealed = vault_keywords.wait_for_unseal(timeout=120)
+    validate_equals(unsealed, True, "Vault should remain unsealed after manager pod recovery")
+
+    get_logger().log_info("Vault manager pod recovery test complete")
+
+
+@mark.p3
+@mark.lab_has_subcloud
+def test_vault_dc_subcloud_deploy(request):
+    """Test vault deployment on a DC subcloud.
+
+    Deploys vault on a managed subcloud in a distributed cloud environment
+    and verifies that vault pods reach running state.
+
+    Test Steps:
+        - Get a healthy managed subcloud
+        - SSH to the subcloud
+        - Upload and apply vault on the subcloud
+        - Verify vault pods are running on the subcloud
+    """
+    get_logger().log_info("Starting vault DC subcloud deploy test")
+
+    from keywords.cloud_platform.dcmanager.dcmanager_subcloud_list_keywords import DcManagerSubcloudListKeywords
+
+    central_ssh = LabConnectionKeywords().get_active_controller_ssh()
+
+    get_logger().log_info("Getting a healthy managed subcloud")
+    dcm_sc_list = DcManagerSubcloudListKeywords(central_ssh)
+    lowest_subcloud = dcm_sc_list.get_dcmanager_subcloud_list().get_healthy_subcloud_with_lowest_id()
+    subcloud_name = lowest_subcloud.get_name()
+    get_logger().log_info(f"Selected subcloud: {subcloud_name}")
+
+    subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
+
+    def cleanup():
+        get_logger().log_info(f"Cleaning up vault on subcloud {subcloud_name}")
+        cleanup_vault_environment(subcloud_ssh)
+
+    request.addfinalizer(cleanup)
+
+    get_logger().log_info(f"Setting up vault on subcloud {subcloud_name}")
+    setup_vault_environment(subcloud_ssh)
+
+    get_logger().log_info(f"Verifying vault pods running on subcloud {subcloud_name}")
+    kubectl_pods = KubectlGetPodsKeywords(subcloud_ssh)
+    pods_output = kubectl_pods.get_pods(NAMESPACE)
+    running_pods = pods_output.get_pods_with_status("Running")
+    validate_equals(len(running_pods) > 0, True, f"Vault pods should be running on {subcloud_name}")
+
+    get_logger().log_info(f"Vault DC subcloud deploy test complete on {subcloud_name}")
