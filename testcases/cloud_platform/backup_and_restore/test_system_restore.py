@@ -1,3 +1,4 @@
+
 import time
 
 from pytest import mark
@@ -9,6 +10,7 @@ from framework.validation.validation import validate_equals
 from keywords.bmc.ipmitool.chassis.bootdev.ipmitool_chassis_bootdev_keywords import IPMIToolChassisBootdevKeywords
 from keywords.cloud_platform.ansible_playbook.ansible_playbook_keywords import AnsiblePlaybookKeywords
 from keywords.cloud_platform.backup_restore.restore_files_upload_keywords import RestoreFilesUploadKeywords
+from keywords.cloud_platform.backup_restore.system_restore_complete_keywords import SystemRestoreCompleteKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.cloud_platform.sw_patch.software_patch_keywords import SwPatchQueryKeywords
 from keywords.cloud_platform.system.host.system_host_list_keywords import SystemHostListKeywords
@@ -62,6 +64,10 @@ def test_restore():
     unlock_success = SystemHostLockKeywords(ssh_connection).unlock_host(active_controller.get_host_name())
     validate_equals(unlock_success, True, "Validate controller was unlocked successfully")
     time_kpi_restore.log_elapsed_time(time.time(), "time taken for system restore")
+
+    get_logger().log_info("Running system restore-complete")
+    restore_complete_success = SystemRestoreCompleteKeywords(ssh_connection).system_restore_complete()
+    validate_equals(restore_complete_success, True, "System restore-complete executed and alarm cleared")
 
     # Verify software state matches pre-backup state
     get_logger().log_info("Verifying software state post-restore")
@@ -155,6 +161,10 @@ def test_restore_multi_host():
             get_logger().log_info(f"wait for {host_name} to successfully unlocked")
             unlock_success = SystemHostLockKeywords(ssh_connection).unlock_host(host_name)
             validate_equals(unlock_success, True, f"Host {host_name} unlocking")
+
+    get_logger().log_info("Running system restore-complete")
+    restore_complete_success = SystemRestoreCompleteKeywords(ssh_connection).system_restore_complete()
+    validate_equals(restore_complete_success, True, "System restore-complete executed and alarm cleared")
 
     # Verify software state matches pre-backup state
     get_logger().log_info("Verifying software state post-restore")
