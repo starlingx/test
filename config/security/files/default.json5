@@ -217,5 +217,11 @@
         "duration": "1h",
         "renew_before": "55m",
         "renewal_timeout": 900
+    },
+
+    // Vault test configuration
+    "vault_test": {
+        "secret_password": "vault_test_password",
+        "secret_username": "pvtest"
     }
 }

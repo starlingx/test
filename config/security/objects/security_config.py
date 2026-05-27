@@ -69,6 +69,9 @@ class SecurityConfig:
         self.cert_renewal_duration = cert_renewal_config.get("duration", "1h")
         self.cert_renewal_renew_before = cert_renewal_config.get("renew_before", "55m")
         self.cert_renewal_timeout = cert_renewal_config.get("renewal_timeout", 900)
+        vault_config = security_dict.get("vault_test", {})
+        self.vault_test_secret_password = vault_config.get("secret_password", "")
+        self.vault_test_secret_username = vault_config.get("secret_username", "pvtest")
         self.oidc_keycloak_kubelogin_download_url = oidc_keycloak_config.get("kubelogin_download_url", "")
         self.oidc_keycloak_login_port = oidc_keycloak_config.get("oidc_login_port", 8000)
         self.oidc_keycloak_invalid_issuer_url = oidc_keycloak_config.get("invalid_issuer_url", "https://invalid-issuer.example.com/realms/nonexistent")
@@ -848,3 +851,19 @@ class SecurityConfig:
             int: Timeout in seconds to wait for renewal.
         """
         return self.cert_renewal_timeout
+
+    def get_vault_test_secret_password(self) -> str:
+        """Getter for vault test secret password.
+
+        Returns:
+            str: Password used for vault secret injection test.
+        """
+        return self.vault_test_secret_password
+
+    def get_vault_test_secret_username(self) -> str:
+        """Getter for vault test secret username.
+
+        Returns:
+            str: Username used for vault secret injection test.
+        """
+        return self.vault_test_secret_username
