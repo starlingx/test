@@ -1,0 +1,13 @@
+{
+  // VDU (Virtual Deployment Unit) test data server configuration
+  // Used by test_setup_vdu.py to download VDU files to the lab
+  "server": "",
+  "user": "",
+  "password": "",
+  "base_path": "",
+  "destination_path": "/home/sysadmin",
+  "connection_timeout": 30,
+  "download_timeout": 1800,
+  // If true, the test will pass even if install_all.sh exits with non-zero
+  "fail_ok": false
+}
