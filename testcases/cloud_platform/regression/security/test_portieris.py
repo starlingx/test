@@ -623,11 +623,13 @@ def test_portieris_helm_override_cpu_core_apply(request):
 def test_portieris_dc_subcloud_deploy(request):
     """Test portieris deployment and policy enforcement on a DC subcloud.
 
-    Deploys portieris on a managed subcloud in a distributed cloud environment,
-    then verifies that image policy enforcement works on the subcloud (unsigned
-    image rejected, signed image accepted).
+    Deploys portieris on the system controller first (so images are available
+    in the local registry), then deploys on a managed subcloud and verifies
+    that image policy enforcement works on the subcloud (unsigned image
+    rejected, signed image accepted).
 
     Test Steps:
+        - Apply portieris on the system controller so images are available
         - Get a healthy managed subcloud from the system controller
         - SSH to the subcloud
         - Upload and apply portieris on the subcloud
@@ -642,6 +644,11 @@ def test_portieris_dc_subcloud_deploy(request):
     central_ssh = LabConnectionKeywords().get_active_controller_ssh()
     security_config = ConfigurationManager.get_security_config()
 
+    # Apply portieris on the system controller first so images are available
+    # for the subcloud to pull from the central registry
+    get_logger().log_info("Setting up portieris on system controller (central cloud)")
+    setup_portieris_environment(central_ssh, security_config)
+
     # Get a healthy managed subcloud
     get_logger().log_info("Getting a healthy managed subcloud")
     dcm_sc_list = DcManagerSubcloudListKeywords(central_ssh)
@@ -655,6 +662,8 @@ def test_portieris_dc_subcloud_deploy(request):
     def cleanup():
         get_logger().log_info(f"Cleaning up portieris on subcloud {subcloud_name}")
         cleanup_portieris_environment(subcloud_ssh)
+        get_logger().log_info("Cleaning up portieris on system controller")
+        cleanup_portieris_environment(central_ssh)
 
     request.addfinalizer(cleanup)
 

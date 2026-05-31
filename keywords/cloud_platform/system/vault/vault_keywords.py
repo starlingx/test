@@ -69,8 +69,8 @@ class VaultKeywords(BaseKeyword):
         deadline = time.time() + timeout
         while time.time() < deadline:
             pods_output = self.kubectl_pods.get_pods(self.NAMESPACE)
-            vault_pods = [p for p in pods_output.get_pods_with_status("Running") if self._is_vault_server_pod(p.get_pod_name())]
-            if vault_pods and all(p.get_ready_count() == p.get_total_count() for p in vault_pods):
+            vault_pods = [p for p in pods_output.get_pods_with_status("Running") if self._is_vault_server_pod(p.get_name())]
+            if vault_pods and all(p.is_ready() for p in vault_pods):
                 get_logger().log_info("All vault server pods are unsealed and ready")
                 return True
             get_logger().log_info("Vault pods not all ready yet, waiting 15s...")
@@ -100,19 +100,26 @@ class VaultKeywords(BaseKeyword):
         cmd = f"curl -s --cacert {self.ca_cert_path}" f' --header "Authorization: Bearer {token}"' f" -H 'Content-Type: application/json'" f" --request POST" f" -d '{json_data}'" f" {self.VAULT_API}/v1/secret/data/{path}"
         self.ssh_connection.send(self.k8s.k8s_config.export(cmd))
 
-    def read_secret(self, path: str, token: str) -> dict:
+    def read_secret(self, path: str, token: str, retries: int = 12, retry_delay: int = 15) -> dict:
         """Read a secret from vault using the REST API (KV v2).
 
         Args:
             path (str): Secret path (e.g., "basic-secret/helloworld").
             token (str): Vault root token.
+            retries (int): Number of retry attempts if vault is not responding.
+            retry_delay (int): Seconds to wait between retries.
 
         Returns:
             dict: The parsed JSON response from vault.
         """
         cmd = f"curl -s --cacert {self.ca_cert_path}" f' --header "Authorization: Bearer {token}"' f" {self.VAULT_API}/v1/secret/data/{path}"
-        output = self.ssh_connection.send(self.k8s.k8s_config.export(cmd))
-        response_text = "\n".join(output) if isinstance(output, list) else str(output)
+        for attempt in range(retries):
+            output = self.ssh_connection.send(self.k8s.k8s_config.export(cmd))
+            response_text = "\n".join(output) if isinstance(output, list) else str(output)
+            if response_text.strip():
+                return json.loads(response_text)
+            get_logger().log_info(f"Vault returned empty response, retrying in {retry_delay}s (attempt {attempt + 1}/{retries})")
+            time.sleep(retry_delay)
         return json.loads(response_text)
 
     def setup_test_namespace_secrets(self) -> None:
@@ -150,7 +157,7 @@ class VaultKeywords(BaseKeyword):
         """
         pods_output = self.kubectl_pods.get_pods(namespace)
         pods = pods_output.get_pods_with_status("Running")
-        return pods[0].get_pod_name() if pods else ""
+        return pods[0].get_name() if pods else ""
 
     def delete_clusterrolebinding(self, name: str) -> None:
         """Delete a cluster role binding by name.
@@ -165,5 +172,5 @@ class VaultKeywords(BaseKeyword):
 
         Used after swact/reboot when the cert file may not exist on the new active.
         """
-        ca_cert = self.kubectl_secrets.get_secret_with_custom_output("vault-ca", self.NAMESPACE, "jsonpath", "'{.data.tls\\.crt}'", base64=True)
-        self.ssh_connection.send(f"echo '{ca_cert}' > {self.ca_cert_path}")
+        cmd = f"kubectl get secret vault-ca -n {self.NAMESPACE}" f" -o jsonpath='{{.data.tls\\.crt}}'" f" | base64 --decode > {self.ca_cert_path}"
+        self.ssh_connection.send(self.k8s.k8s_config.export(cmd))

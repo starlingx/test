@@ -8,6 +8,7 @@ from config.configuration_manager import ConfigurationManager
 from framework.logging.automation_logger import get_logger
 from framework.resources.resource_finder import get_stx_resource_path
 from framework.validation.validation import validate_equals
+from keywords.cloud_platform.dcmanager.dcmanager_subcloud_list_keywords import DcManagerSubcloudListKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.cloud_platform.system.application.system_application_apply_keywords import SystemApplicationApplyKeywords
 from keywords.cloud_platform.system.application.system_application_delete_keywords import SystemApplicationDeleteInput, SystemApplicationDeleteKeywords
@@ -513,7 +514,7 @@ def test_vault_pod_recovery(request):
 
     get_logger().log_info("Verifying sva-vault-0 pod exists before deletion")
     pods_output = vault_keywords.kubectl_pods.get_pods(NAMESPACE)
-    vault_server_pods = [p for p in pods_output.get_pods_with_status("Running") if p.get_pod_name() == "sva-vault-0"]
+    vault_server_pods = [p for p in pods_output.get_pods_with_status("Running") if p.get_name() == "sva-vault-0"]
     validate_equals(len(vault_server_pods) > 0, True, "sva-vault-0 pod should exist before deletion")
 
     get_logger().log_info("Deleting sva-vault-0 pod")
@@ -736,9 +737,9 @@ def test_vault_manager_pod_recovery(request):
 
     get_logger().log_info("Identifying vault-manager pod")
     pods_output = vault_keywords.kubectl_pods.get_pods(NAMESPACE)
-    manager_pods = [p for p in pods_output.get_pods_with_status("Running") if "manager" in p.get_pod_name()]
+    manager_pods = [p for p in pods_output.get_pods_with_status("Running") if "manager" in p.get_name()]
     validate_equals(len(manager_pods) > 0, True, "Vault manager pod should exist")
-    manager_pod_name = manager_pods[0].get_pod_name()
+    manager_pod_name = manager_pods[0].get_name()
     get_logger().log_info(f"Deleting vault-manager pod: {manager_pod_name}")
 
     vault_keywords.kubectl_delete.delete_resource("pod", manager_pod_name, NAMESPACE)
@@ -759,10 +760,12 @@ def test_vault_manager_pod_recovery(request):
 def test_vault_dc_subcloud_deploy(request):
     """Test vault deployment on a DC subcloud.
 
-    Deploys vault on a managed subcloud in a distributed cloud environment
-    and verifies that vault pods reach running state.
+    Deploys vault on the system controller first (so images are available
+    in the local registry), then verifies vault is applied and pods are
+    running on a managed subcloud.
 
     Test Steps:
+        - Apply vault on the system controller so images are available
         - Get a healthy managed subcloud
         - SSH to the subcloud
         - Upload and apply vault on the subcloud
@@ -770,9 +773,12 @@ def test_vault_dc_subcloud_deploy(request):
     """
     get_logger().log_info("Starting vault DC subcloud deploy test")
 
-    from keywords.cloud_platform.dcmanager.dcmanager_subcloud_list_keywords import DcManagerSubcloudListKeywords
-
     central_ssh = LabConnectionKeywords().get_active_controller_ssh()
+
+    # Apply vault on the system controller first so images are available
+    # for the subcloud to pull from the central registry
+    get_logger().log_info("Setting up vault on system controller (central cloud)")
+    setup_vault_environment(central_ssh)
 
     get_logger().log_info("Getting a healthy managed subcloud")
     dcm_sc_list = DcManagerSubcloudListKeywords(central_ssh)
@@ -785,6 +791,8 @@ def test_vault_dc_subcloud_deploy(request):
     def cleanup():
         get_logger().log_info(f"Cleaning up vault on subcloud {subcloud_name}")
         cleanup_vault_environment(subcloud_ssh)
+        get_logger().log_info("Cleaning up vault on system controller")
+        cleanup_vault_environment(central_ssh)
 
     request.addfinalizer(cleanup)
 
