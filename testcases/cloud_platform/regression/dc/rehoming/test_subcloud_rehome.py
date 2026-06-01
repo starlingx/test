@@ -868,7 +868,7 @@ def test_rehome_simplex_subcloud_for_prestage(request):
 
     # Perform rehome operation
     get_logger().log_info(f"Rehoming subcloud {subcloud_name} to destination system controller")
-    perform_rehome_operation(origin_system_controller_ssh, destination_system_controller_ssh, subcloud_name, subcloud_bootstrap_values, subcloud_install_values)
+    perform_rehome_operation(origin_system_controller_ssh, destination_system_controller_ssh, subcloud_name, subcloud_bootstrap_values, subcloud_install_values, sync_assets=False)
 
     # Post-rehome validation: count pods and check health
     get_logger().log_info("Validating subcloud health and counting pods after rehoming")
