@@ -27,12 +27,19 @@ class SystemHostFSOutput:
 
         for value in output_values:
             if self.is_valid_output(value):
+                # Handle both current ("Size in GiB") and older versions ("SizeinGiB") column names
+                size_key = "Size in GiB" if "Size in GiB" in value else "SizeinGiB"
+                size_value = int(value[size_key]) if value[size_key] else 0
+
+                # "State" column is not present in older releases
+                state_value = value.get("State", "")
+
                 host_fs = SystemHostFSObject(
                     value["UUID"],
                     value["FS Name"],
-                    int(value["Size in GiB"]) if value["Size in GiB"] else 0,
+                    size_value,
                     value["Logical Volume"],
-                    value["State"],
+                    state_value,
                 )
                 if "Capabilities" in value:
                     host_fs.set_capabilities(value["Capabilities"])
@@ -55,6 +62,8 @@ class SystemHostFSOutput:
         """
         This function is to check if the output contains all the expected fields.
 
+        Handles both current column name ("Size in GiB") and legacy format ("SizeinGiB").
+        The "State" column is optional as it is not present in older releases.
         """
         valid = True
         if "UUID" not in value:
@@ -63,14 +72,11 @@ class SystemHostFSOutput:
         if "FS Name" not in value:
             get_logger().log_error(f"FS Name is not in the output value: {value}")
             valid = False
-        if "Size in GiB" not in value:
+        if "Size in GiB" not in value and "SizeinGiB" not in value:
             get_logger().log_error(f"Size is not in the output value: {value}")
             valid = False
         if "Logical Volume" not in value:
             get_logger().log_error(f"Logical Volume is not in the output value: {value}")
-            valid = False
-        if "State" not in value:
-            get_logger().log_error(f"State is not in the output value: {value}")
             valid = False
         return valid
 
