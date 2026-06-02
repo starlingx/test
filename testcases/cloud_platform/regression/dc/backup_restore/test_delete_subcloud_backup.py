@@ -1,10 +1,10 @@
 from typing import List
 
-from pytest import mark
+from pytest import mark, fail
 
 from config.configuration_manager import ConfigurationManager
 from framework.logging.automation_logger import get_logger
-from framework.validation.validation import validate_equals, validate_greater_than_or_equal
+from framework.validation.validation import validate_equals, validate_greater_than_or_equal, validate_not_equals
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_backup_keywords import DcManagerSubcloudBackupKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_group_keywords import DcmanagerSubcloudGroupKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_list_keywords import DcManagerSubcloudListKeywords
@@ -35,13 +35,8 @@ def test_delete_backup_central(request):
     release = CloudPlatformVersionManagerClass().get_sw_version()
 
     # Gets the lowest subcloud (the subcloud with the lowest id).
-    subcloud_name = ConfigurationManager.get_lab_config().get_subcloud_names()[0]
+    subcloud_name = get_healthy_subcloud()
     subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
-
-    # Prechecks Before Back-Up:
-    get_logger().log_info(f"Performing pre-checks on {subcloud_name}")
-    obj_health = HealthKeywords(subcloud_ssh)
-    obj_health.validate_healty_cluster()  # Checks alarms, pods, app health
 
     # Gets the lowest subcloud sysadmin password needed for backup creation.
     lab_config = ConfigurationManager.get_lab_config().get_subcloud(subcloud_name)
@@ -87,13 +82,8 @@ def test_delete_backup_local(request):
     release = CloudPlatformVersionManagerClass().get_sw_version()
 
     # Gets the lowest subcloud (the subcloud with the lowest id).
-    subcloud_name = ConfigurationManager.get_lab_config().get_subcloud_names()[0]
+    subcloud_name = get_healthy_subcloud()
     subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
-
-    # Prechecks Before Back-Up:
-    get_logger().log_info(f"Performing pre-checks on {subcloud_name}")
-    obj_health = HealthKeywords(subcloud_ssh)
-    obj_health.validate_healty_cluster()  # Checks alarms, pods, app health
 
     # Gets the lowest subcloud sysadmin password needed for backup creation and deletion on local_path.
     lab_config = ConfigurationManager.get_lab_config().get_subcloud(subcloud_name)
@@ -132,10 +122,10 @@ def test_delete_backup_local(request):
 
 @mark.p2
 @mark.lab_has_subcloud
-def test_delete_backup_central_inactive_load(request):
+def test_delete_backup_central_n_minus_one(request):
     """
     Verify delete centralized subcloud backup for a subcloud
-    with an inactive load.
+    with an N-1 load.
 
     Test Steps:
         - Create a Subcloud backup and check it on central path
@@ -146,14 +136,10 @@ def test_delete_backup_central_inactive_load(request):
     """
     central_ssh = LabConnectionKeywords().get_active_controller_ssh()
 
-    # Gets the lowest subcloud (the subcloud with the lowest id).
-    dcmanager_subcloud_list_keywords = DcManagerSubcloudListKeywords(central_ssh)
-    lowest_subcloud = dcmanager_subcloud_list_keywords.get_dcmanager_subcloud_list().get_specific_subcloud_with_lowest_id(sync_status="out-of-sync")
-    subcloud_name = lowest_subcloud.get_name()
-    release = DcManagerSubcloudShowKeywords(central_ssh).get_dcmanager_subcloud_show(
-        subcloud_name).get_dcmanager_subcloud_show_object().get_software_version()
-
-    validate_subcloud_health(subcloud_name)
+    required_release = str(CloudPlatformVersionManagerClass().get_last_major_release())
+    subcloud_name = get_healthy_subcloud(release=required_release)
+    subcloud_sw_version = DcManagerSubcloudShowKeywords(central_ssh).get_dcmanager_subcloud_show(subcloud_name).get_dcmanager_subcloud_show_object().get_software_version()
+    validate_not_equals(subcloud_sw_version, required_release, "Validate that subcloud is running with required load.")
 
     def teardown():
         teardown_central(central_path)
@@ -180,19 +166,19 @@ def test_delete_backup_central_inactive_load(request):
     DcManagerSubcloudBackupKeywords(central_ssh).wait_for_backup_status_complete(subcloud_name,
                                                                                  expected_status="complete-central")
 
-    FileKeywords(central_ssh).validate_file_exists_with_sudo(f"{central_path}/{subcloud_name}/{release}")
+    FileKeywords(central_ssh).validate_file_exists_with_sudo(f"{central_path}/{subcloud_name}/{subcloud_sw_version}")
 
     # Delete the backup created
     get_logger().log_info(f"Delete {subcloud_name} backup on Central Cloud")
-    dc_manager_backup.delete_subcloud_backup(central_ssh, release, path=f"{central_path}/{subcloud_name}/{release}", subcloud=subcloud_name)
+    dc_manager_backup.delete_subcloud_backup(central_ssh, subcloud_sw_version, path=f"{central_path}/{subcloud_name}/{subcloud_sw_version}", subcloud=subcloud_name)
     backup_status = DcManagerSubcloudShowKeywords(central_ssh).get_dcmanager_subcloud_show(subcloud_name).get_dcmanager_subcloud_show_object().get_backup_status()
     validate_equals(backup_status, "unknown", "Validate subcloud backup status is set to 'unknown' after backup deletion.")
 
 @mark.p2
 @mark.lab_has_subcloud
-def test_delete_backup_local_inactive_load(request):
+def test_delete_backup_local_n_minus_one(request):
     """
-    Verify delete subcloud backup on local path
+    Verify delete subcloud backup on local path when running N-1 load.
 
     Test Steps:
         - Create a Subcloud backup and check it on local path
@@ -202,18 +188,13 @@ def test_delete_backup_local_inactive_load(request):
 
     """
     central_ssh = LabConnectionKeywords().get_active_controller_ssh()
-    release = CloudPlatformVersionManagerClass().get_sw_version()
 
-    # Gets the lowest subcloud (the subcloud with the lowest id).
-    dcmanager_subcloud_list_keywords = DcManagerSubcloudListKeywords(central_ssh)
-    lowest_subcloud = dcmanager_subcloud_list_keywords.get_dcmanager_subcloud_list().get_specific_subcloud_with_lowest_id(sync_status="out-of-sync")
-    subcloud_name = lowest_subcloud.get_name()
+    required_release = str(CloudPlatformVersionManagerClass().get_last_major_release())
+    subcloud_name = get_healthy_subcloud(release=required_release)
+    subcloud_sw_version = DcManagerSubcloudShowKeywords(central_ssh).get_dcmanager_subcloud_show(subcloud_name).get_dcmanager_subcloud_show_object().get_software_version()
+    validate_not_equals(subcloud_sw_version, required_release, "Validate that subcloud is running with required load.")
+
     subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
-    release = DcManagerSubcloudShowKeywords(central_ssh).get_dcmanager_subcloud_show(
-        subcloud_name).get_dcmanager_subcloud_show_object().get_software_version()
-
-    validate_subcloud_health(subcloud_name)
-
     def teardown():
         get_logger().log_info("Removing test files")
         FileKeywords(central_ssh).delete_file("subcloud_backup.yaml")
@@ -229,7 +210,7 @@ def test_delete_backup_local_inactive_load(request):
 
     # Path where backup file will be stored.
     local_path = "/opt/platform-backup/backups"
-    local_path_release = f"{local_path}/{release}"
+    local_path_release = f"{local_path}/{subcloud_sw_version}"
 
     if FileKeywords(subcloud_ssh).validate_file_exists_with_sudo(local_path_release):
         get_logger().log_info("Removing test files.")
@@ -238,20 +219,20 @@ def test_delete_backup_local_inactive_load(request):
     # First creation backup
     # Create a sbcloud backup
     get_logger().log_info(f"Create first backup on {subcloud_name}")
-    dc_manager_backup.create_subcloud_backup(subcloud_password, subcloud_ssh, path=f"{local_path}/{release}/",
+    dc_manager_backup.create_subcloud_backup(subcloud_password, subcloud_ssh, path=f"{local_path}/{subcloud_sw_version}/",
                                              subcloud=subcloud_name, local_only=True)
 
     get_logger().log_info(f"Checking if backup was created on {subcloud_name}")
     DcManagerSubcloudBackupKeywords(central_ssh).wait_for_backup_status_complete(subcloud_name,
                                                                                  expected_status="complete-local")
 
-    FileKeywords(central_ssh).validate_file_exists_with_sudo(f"{local_path}/{release}")
+    FileKeywords(central_ssh).validate_file_exists_with_sudo(f"{local_path}/{subcloud_sw_version}")
 
     # Delete the backup created on subcloud
     get_logger().log_info(f"Delete {subcloud_name} backup on Central Cloud")
     dc_manager_backup.delete_subcloud_backup(
         subcloud_ssh,
-        release,
+        subcloud_sw_version,
         path=local_path_release,
         subcloud=subcloud_name,
         local_only=True,
@@ -278,18 +259,11 @@ def test_delete_backup_central_controller1(request):
         SystemHostSwactKeywords(central_ssh).host_swact()
         SystemHostSwactKeywords(central_ssh).wait_for_swact(active_controller, standby_controller)
 
-    release = CloudPlatformVersionManagerClass().get_sw_version()
-
-    # Gets the lowest subcloud (the subcloud with the lowest id).
-    dcmanager_subcloud_list_keywords = DcManagerSubcloudListKeywords(central_ssh)
-    lowest_subcloud = dcmanager_subcloud_list_keywords.get_dcmanager_subcloud_list().get_specific_subcloud_with_lowest_id()
-    subcloud_name = lowest_subcloud.get_name()
+    required_release = str(CloudPlatformVersionManagerClass().get_last_major_release())
+    subcloud_name = get_healthy_subcloud(release=required_release)
+    subcloud_sw_version = DcManagerSubcloudShowKeywords(central_ssh).get_dcmanager_subcloud_show(subcloud_name).get_dcmanager_subcloud_show_object().get_software_version()
+    validate_not_equals(subcloud_sw_version, required_release, "Validate that subcloud is running with required load.")
     subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
-
-    # Prechecks Before Back-Up:
-    get_logger().log_info(f"Performing pre-checks on {subcloud_name}")
-    obj_health = HealthKeywords(subcloud_ssh)
-    obj_health.validate_healty_cluster()  # Checks alarms, pods, app health
 
     # Gets the lowest subcloud sysadmin password needed for backup creation.
     lab_config = ConfigurationManager.get_lab_config().get_subcloud(subcloud_name)
@@ -298,7 +272,7 @@ def test_delete_backup_central_controller1(request):
     dc_manager_backup = DcManagerSubcloudBackupKeywords(central_ssh)
 
     # Path to where the backup file will store.
-    central_path = f"/opt/dc-vault/backups/{subcloud_name}/{release}"
+    central_path = f"/opt/dc-vault/backups/{subcloud_name}/{subcloud_sw_version}"
 
     def teardown():
         get_logger().log_info("Removing test files during teardown")
@@ -316,7 +290,7 @@ def test_delete_backup_central_controller1(request):
 
     # Delete the backup created
     get_logger().log_info(f"Delete {subcloud_name} backup on Central Cloud")
-    dc_manager_backup.delete_subcloud_backup(central_ssh, str(release), path=central_path, subcloud=subcloud_name)
+    dc_manager_backup.delete_subcloud_backup(central_ssh, str(subcloud_sw_version), path=central_path, subcloud=subcloud_name)
     backup_status = DcManagerSubcloudShowKeywords(central_ssh).get_dcmanager_subcloud_show(subcloud_name).get_dcmanager_subcloud_show_object().get_backup_status()
     validate_equals(backup_status, "unknown", "Validate subcloud backup status is set to 'unknown' after backup deletion.")
 
@@ -348,11 +322,6 @@ def test_delete_backup_local_controller1(request):
     subcloud_name = lowest_subcloud.get_name()
     subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
 
-    # Prechecks Before Back-Up:
-    get_logger().log_info(f"Performing pre-checks on {subcloud_name}")
-    obj_health = HealthKeywords(subcloud_ssh)
-    obj_health.validate_healty_cluster()  # Checks alarms, pods, app health
-
     # Gets the lowest subcloud sysadmin password needed for backup creation and deletion on local_path.
     lab_config = ConfigurationManager.get_lab_config().get_subcloud(subcloud_name)
     subcloud_password = lab_config.get_admin_credentials().get_password()
@@ -392,9 +361,10 @@ def test_delete_backup_local_controller1(request):
 
 @mark.p2
 @mark.lab_has_subcloud
-def test_delete_backup_central_inactive_load_controller1(request):
+def test_controller_1_delete_backup_central_n_minus_one(request):
     """
-    Verify delete centralized subcloud backup for inactive load.
+    Verify delete centralized subcloud backup for N-1 load when controller-1
+    is the active controller.
 
     Test Steps:
         - Create a Subcloud backup and check it on central path
@@ -410,12 +380,11 @@ def test_delete_backup_central_inactive_load_controller1(request):
         SystemHostSwactKeywords(central_ssh).host_swact()
         SystemHostSwactKeywords(central_ssh).wait_for_swact(active_controller, standby_controller)
 
-    # Gets the lowest subcloud (the subcloud with the lowest id).
-    dcmanager_subcloud_list_keywords = DcManagerSubcloudListKeywords(central_ssh)
-    lowest_subcloud = dcmanager_subcloud_list_keywords.get_dcmanager_subcloud_list().get_specific_subcloud_with_lowest_id(sync_status="out-of-sync")
-    subcloud_name = lowest_subcloud.get_name()
-    release = DcManagerSubcloudShowKeywords(central_ssh).get_dcmanager_subcloud_show(
+    required_release = str(CloudPlatformVersionManagerClass().get_last_major_release())
+    subcloud_name = get_healthy_subcloud(release=required_release)
+    subcloud_sw_version = DcManagerSubcloudShowKeywords(central_ssh).get_dcmanager_subcloud_show(
         subcloud_name).get_dcmanager_subcloud_show_object().get_software_version()
+    validate_not_equals(subcloud_sw_version, required_release, "Validate that subcloud is running with required load.")
 
     validate_subcloud_health(subcloud_name)
 
@@ -444,19 +413,20 @@ def test_delete_backup_central_inactive_load_controller1(request):
     DcManagerSubcloudBackupKeywords(central_ssh).wait_for_backup_status_complete(subcloud_name,
                                                                                  expected_status="complete-central")
 
-    FileKeywords(central_ssh).validate_file_exists_with_sudo(f"{central_path}/{subcloud_name}/{release}")
+    FileKeywords(central_ssh).validate_file_exists_with_sudo(f"{central_path}/{subcloud_name}/{subcloud_sw_version}")
 
     # Delete the backup created
     get_logger().log_info(f"Delete {subcloud_name} backup on Central Cloud")
-    dc_manager_backup.delete_subcloud_backup(central_ssh, release, path=f"{central_path}/{subcloud_name}/{release}", subcloud=subcloud_name)
+    dc_manager_backup.delete_subcloud_backup(central_ssh, subcloud_sw_version, path=f"{central_path}/{subcloud_name}/{subcloud_sw_version}", subcloud=subcloud_name)
     backup_status = DcManagerSubcloudShowKeywords(central_ssh).get_dcmanager_subcloud_show(subcloud_name).get_dcmanager_subcloud_show_object().get_backup_status()
     validate_equals(backup_status, "unknown", "Validate subcloud backup status is set to 'unknown' after backup deletion.")
 
 @mark.p2
 @mark.lab_has_subcloud
-def test_delete_backup_local_inactive_load_controller1(request):
+def test_controller_1_delete_backup_local_n_minus_one(request):
     """
-    Verify delete subcloud backup on local path with inactive load.
+    Verify delete subcloud backup on local path with N-1 load when
+    controller-1 is the active controller.
 
     Test Steps:
         - Create a Subcloud backup and check it on local path
@@ -473,14 +443,13 @@ def test_delete_backup_local_inactive_load_controller1(request):
         SystemHostSwactKeywords(central_ssh).host_swact()
         SystemHostSwactKeywords(central_ssh).wait_for_swact(active_controller, standby_controller)
 
-    # Gets the lowest subcloud (the subcloud with the lowest id).
-    dcmanager_subcloud_list_keywords = DcManagerSubcloudListKeywords(central_ssh)
-    lowest_subcloud = dcmanager_subcloud_list_keywords.get_dcmanager_subcloud_list().get_specific_subcloud_with_lowest_id(sync_status="out-of-sync")
-    subcloud_name = lowest_subcloud.get_name()
-    subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
-    release = DcManagerSubcloudShowKeywords(central_ssh).get_dcmanager_subcloud_show(subcloud_name).get_dcmanager_subcloud_show_object().get_software_version()
+    required_release = str(CloudPlatformVersionManagerClass().get_last_major_release())
+    subcloud_name = get_healthy_subcloud(release=required_release)
+    subcloud_sw_version = DcManagerSubcloudShowKeywords(central_ssh).get_dcmanager_subcloud_show(
+        subcloud_name).get_dcmanager_subcloud_show_object().get_software_version()
+    validate_not_equals(subcloud_sw_version, required_release, "Validate that subcloud is running with required load.")
 
-    validate_subcloud_health(subcloud_name)
+    subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
 
     def teardown():
         get_logger().log_info("Removing test files")
@@ -497,7 +466,7 @@ def test_delete_backup_local_inactive_load_controller1(request):
 
     # Path where backup file will be stored.
     local_path = "/opt/platform-backup/backups"
-    local_path_release = f"{local_path}/{release}"
+    local_path_release = f"{local_path}/{subcloud_sw_version}"
 
     if FileKeywords(subcloud_ssh).validate_file_exists_with_sudo(local_path_release):
         get_logger().log_info("Removing test files.")
@@ -506,18 +475,18 @@ def test_delete_backup_local_inactive_load_controller1(request):
     # First creation backup
     # Create a sbcloud backup
     get_logger().log_info(f"Create first backup on {subcloud_name}")
-    dc_manager_backup.create_subcloud_backup(subcloud_password, subcloud_ssh, path=f"{local_path}/{release}/", subcloud=subcloud_name, local_only=True)
+    dc_manager_backup.create_subcloud_backup(subcloud_password, subcloud_ssh, path=f"{local_path}/{subcloud_sw_version}/", subcloud=subcloud_name, local_only=True)
 
     get_logger().log_info(f"Checking if backup was created on {subcloud_name}")
     DcManagerSubcloudBackupKeywords(central_ssh).wait_for_backup_status_complete(subcloud_name, expected_status="complete-local")
 
-    FileKeywords(central_ssh).validate_file_exists_with_sudo(f"{local_path}/{release}")
+    FileKeywords(central_ssh).validate_file_exists_with_sudo(f"{local_path}/{subcloud_sw_version}")
 
     # Delete the backup created on subcloud
     get_logger().log_info(f"Delete {subcloud_name} backup on Central Cloud")
     dc_manager_backup.delete_subcloud_backup(
         subcloud_ssh,
-        release,
+        subcloud_sw_version,
         path=local_path_release,
         subcloud=subcloud_name,
         local_only=True,
@@ -542,7 +511,7 @@ def test_delete_backup_group_on_central(request):
 
     central_ssh = LabConnectionKeywords().get_active_controller_ssh()
     release = CloudPlatformVersionManagerClass().get_sw_version()
-    subcloud_name = ConfigurationManager.get_lab_config().get_subcloud_names()[0]
+    subcloud_name = get_healthy_subcloud()
 
     subcloud_list = []
     for subcloud_name in ConfigurationManager.get_lab_config().get_subcloud_names():
@@ -621,7 +590,7 @@ def test_delete_backup_group_on_local(request):
     group_name = "Test"
     central_ssh = LabConnectionKeywords().get_active_controller_ssh()
     release = CloudPlatformVersionManagerClass().get_sw_version()
-    subcloud_name = ConfigurationManager.get_lab_config().get_subcloud_names()[0]
+    subcloud_name = get_healthy_subcloud()
 
     subcloud_list = []
     for subcloud_name in ConfigurationManager.get_lab_config().get_subcloud_names():
@@ -756,3 +725,25 @@ def teardown_local(subcloud_name: str, local_path: str):
     get_logger().log_info("Removing test files")
     FileKeywords(central_ssh).delete_file("subcloud_backup.yaml")
     FileKeywords(subcloud_ssh).delete_file(f"{local_path}/{subcloud_name}_platform_backup_*.tgz")
+
+def get_healthy_subcloud(release: str = None) -> str:
+    """Iterates through subclouds from lab config and returns the first healthy one.
+
+    Returns:
+        str: The name of a healthy subcloud.
+
+    Raises:
+        pytest.skip: If no healthy subcloud is found.
+    """
+    central_ssh = LabConnectionKeywords().get_active_controller_ssh()
+    for subcloud_name in ConfigurationManager.get_lab_config().get_subcloud_names():
+        subcloud_sw_version = DcManagerSubcloudShowKeywords(central_ssh).get_dcmanager_subcloud_show(subcloud_name).get_dcmanager_subcloud_show_object().get_software_version()
+        if release:
+            if release != subcloud_sw_version:
+                continue
+        try:
+            validate_subcloud_health(subcloud_name)
+            return subcloud_name
+        except TimeoutError:
+            continue
+    fail("No healthy subcloud available. Skipping test.")
