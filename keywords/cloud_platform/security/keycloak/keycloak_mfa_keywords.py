@@ -1,4 +1,5 @@
 import re
+import socket
 import subprocess
 import threading
 import time
@@ -219,30 +220,35 @@ class KeycloakMfaKeywords(BaseKeyword):
             KubectlResultObject: Result containing output and error state.
         """
         kubectl_cmd = ["kubectl", "--kubeconfig", kubeconfig_path, "get", "pods", "-A"]
+        subprocess.run(["bash", "-c", "fuser -k 8000/tcp 2>/dev/null || true"], capture_output=True)
         proc = subprocess.Popen(kubectl_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
 
         output_lines = []
         login_url = None
         deadline = time.time() + 60
 
-        for line in proc.stdout:
-            output_lines.append(line)
-            if "Please visit the following URL in your browser" in line:
-                parts = line.split("http", 1)
-                if len(parts) > 1:
-                    login_url = "http" + parts[1].strip()
-                break
-            if time.time() > deadline:
-                break
-
-        remaining_lines = []
-
-        def drain_stdout() -> None:
+        def drain_and_find_url() -> None:
+            nonlocal login_url
             for line in proc.stdout:
-                remaining_lines.append(line)
+                output_lines.append(line)
+                if login_url is None and "Please visit the following URL in your browser" in line:
+                    parts = line.split("http", 1)
+                    if len(parts) > 1:
+                        login_url = "http" + parts[1].strip()
 
-        drain_thread = threading.Thread(target=drain_stdout, daemon=True)
+        drain_thread = threading.Thread(target=drain_and_find_url, daemon=True)
         drain_thread.start()
+
+        while login_url is None and time.time() < deadline:
+            time.sleep(0.5)
+            if login_url is None:
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                try:
+                    if sock.connect_ex(("127.0.0.1", 8000)) == 0:
+                        login_url = "http://localhost:8000/"
+                        get_logger().log_info("Detected kubelogin listener on port 8000 (URL not printed to stdout)")
+                finally:
+                    sock.close()
 
         if login_url is None:
             get_logger().log_error("kubelogin browser URL not found in kubectl output within deadline; aborting login")
@@ -261,7 +267,6 @@ class KeycloakMfaKeywords(BaseKeyword):
 
         drain_thread.join(timeout=60)
         proc.wait(timeout=10)
-        output_lines.extend(remaining_lines)
 
         result = KubectlResultObject()
         result.set_output("".join(output_lines))
