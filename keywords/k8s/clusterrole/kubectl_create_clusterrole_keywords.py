@@ -18,11 +18,19 @@ class KubectlCreateClusterRoleKeywords(K8sBaseKeyword):
     def create_clusterrole(self, role_name: str, verbs: list[str], resources: list[str]) -> None:
         """Create a cluster role with specified verbs and resources.
 
+        Deletes any existing ClusterRole with the same name first to ensure
+        idempotent creation. This prevents 'AlreadyExists' errors from stale
+        resources left by previous test runs.
+
         Args:
             role_name (str): Name of the cluster role to create.
             verbs (list[str]): List of allowed verbs (e.g. ['get', 'list']).
             resources (list[str]): List of resources to apply the verbs to.
         """
+        delete_cmd = f"kubectl delete clusterrole {role_name} --ignore-not-found"
+        self.ssh_connection.send(self.k8s_config.export(delete_cmd))
+        self.validate_success_return_code(self.ssh_connection)
+
         verbs_str = ",".join(verbs)
         resources_str = ",".join(resources)
         cmd = f"kubectl create clusterrole {role_name} --verb={verbs_str} --resource={resources_str}"

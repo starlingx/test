@@ -12,6 +12,7 @@ from keywords.cloud_platform.security.oidc.oidc_environment_keywords import Oidc
 from keywords.cloud_platform.security.remote_cli.object.remote_cli_oidc_setup_output import RemoteCliOidcSetupOutput
 from keywords.cloud_platform.security.remote_cli.remote_cli_keywords import RemoteCliKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
+from keywords.files.file_keywords import FileKeywords
 from keywords.k8s.clusterrole.kubectl_create_clusterrole_keywords import KubectlCreateClusterRoleKeywords
 from keywords.k8s.clusterrolebinding.kubectl_create_clusterrolebinding_keywords import KubectlCreateClusterRoleBindingKeywords
 from keywords.k8s.pods.kubectl_delete_pods_keywords import KubectlDeletePodsKeywords
@@ -164,6 +165,55 @@ def _setup_remotecli_oidc_environment(ssh_connection: SSHConnection, security_co
     )
 
 
+def _ensure_oidc_token_cache_populated(ssh_connection: SSHConnection, security_config: SecurityConfig, lab_config: LabConfig, kubeconfig_path: str) -> None:
+    """Ensure the OIDC token cache is populated on the controller by performing a browser login if needed.
+
+    Checks if the OIDC token cache directory exists on the remote host and
+    validates the cached token works. If missing or stale (e.g. wrong user from
+    a previous run), clears the cache and performs a full Keycloak MFA browser
+    login to populate it. This makes tests that depend on a cached token
+    self-sufficient regardless of execution order.
+
+    Args:
+        ssh_connection (SSHConnection): Active controller SSH connection.
+        security_config (SecurityConfig): Security configuration object.
+        lab_config (LabConfig): Lab configuration object.
+        kubeconfig_path (str): Path to the OIDC kubeconfig on the remote host.
+    """
+    cache_dir = _get_oidc_token_cache_dir(security_config)
+    file_keywords = FileKeywords(ssh_connection)
+    mfa_keywords = KeycloakMfaKeywords(ssh_connection)
+
+    if file_keywords.file_exists(cache_dir):
+        get_logger().log_info(f"OIDC token cache exists at '{cache_dir}'; verifying cached token works")
+        result = mfa_keywords.run_kubectl_with_cached_token(kubeconfig_path)
+        if result.is_kubectl_successful():
+            get_logger().log_info("Cached OIDC token is valid")
+            return
+        get_logger().log_info("Cached OIDC token is stale or for wrong user; clearing cache and re-authenticating")
+
+    mfa_keywords.clear_oidc_token_cache()
+
+    get_logger().log_info("Performing browser login to populate OIDC token cache")
+    oam_ip = lab_config.get_floating_ip()
+    if lab_config.is_ipv6():
+        oam_ip = f"[{oam_ip}]"
+
+    keycloak_admin = _get_keycloak_admin(security_config)
+    keycloak_admin.delete_user_otp_credentials(security_config.get_oidc_keycloak_test_username())
+    keycloak_admin.clear_user_brute_force_lockout(security_config.get_oidc_keycloak_test_username())
+
+    login_url = f"http://{oam_ip}:{security_config.get_oidc_keycloak_login_port()}/"
+    result = mfa_keywords.run_kubectl_with_browser_login(
+        kubeconfig_path=kubeconfig_path,
+        login_url=login_url,
+        username=security_config.get_oidc_keycloak_test_username(),
+        password=security_config.get_oidc_keycloak_test_password(),
+        totp_secret=None,
+    )
+    validate_equals(result.is_kubectl_successful(), True, "kubectl should succeed after populating OIDC token cache")
+
+
 @mark.p1
 def test_oidc_keycloak_remotecli_first_login(request: FixtureRequest):
     """Verify first-time OIDC kubectl login works via the remote CLI container with Keycloak MFA.
@@ -215,7 +265,9 @@ def test_oidc_keycloak_remotecli_first_login(request: FixtureRequest):
     )
 
     get_logger().log_test_case_step("Generate OIDC kubeconfig for remote CLI container")
-    local_kubeconfig_path = _setup_remotecli_oidc_environment(ssh_connection, security_config, lab_config).get_remote_cli_oidc_setup_object().get_kubeconfig_path()
+    remotecli_oidc_setup = _setup_remotecli_oidc_environment(ssh_connection, security_config, lab_config).get_remote_cli_oidc_setup_object()
+    local_kubeconfig_path = remotecli_oidc_setup.get_kubeconfig_path()
+    local_ca_cert_path = remotecli_oidc_setup.get_ca_cert_path()
 
     get_logger().log_test_case_step("Reset OTP credentials to force CONFIGURE_TOTP flow")
     keycloak_admin = _get_keycloak_admin(security_config)
@@ -227,6 +279,7 @@ def test_oidc_keycloak_remotecli_first_login(request: FixtureRequest):
         local_kubeconfig_path=local_kubeconfig_path,
         working_dir=security_config.get_remote_cli_working_dir(),
         install_dir=security_config.get_remote_cli_install_dir(),
+        local_ca_cert_path=local_ca_cert_path,
     )
     result = remote_cli.run_kubectl_in_container_with_browser_login(
         install_dir=security_config.get_remote_cli_install_dir(),
@@ -246,16 +299,20 @@ def test_oidc_kubectl_invalid_otp_fails(request: FixtureRequest):
     """Verify login fails on incorrect OTP and kubectl errors or times out.
 
     Clears the token cache and kills any lingering kubelogin processes to
-    ensure port 8000 is free. Authenticates as sthomas (admin2 user, OTP
-    enrolled) with valid credentials but submits an invalid OTP code.
-    Keycloak rejects the OTP, the OIDC callback never completes, and kubectl
-    times out with empty output confirming authentication did not succeed.
+    ensure port 8000 is free. Ensures admin2 user (sthomas) has OTP enrolled
+    by performing a valid login first if needed (CONFIGURE_TOTP flow).
+    Then clears the token cache and attempts authentication with valid
+    credentials but submits an invalid OTP code. Keycloak rejects the OTP,
+    the OIDC callback never completes, and kubectl times out with empty
+    output confirming authentication did not succeed.
 
     Steps:
         - Kill any lingering kubelogin processes to free port 8000
         - Clear OIDC token cache
         - Set up OIDC environment
-        - Clear brute force lockout for sthomas
+        - Delete OTP credentials and clear brute force lockout for admin2 user
+        - Enroll OTP for admin2 user via CONFIGURE_TOTP browser login
+        - Kill kubelogin processes and clear token cache again
         - Run kubectl get pods -A with valid credentials but invalid OTP
         - Validate kubectl does not succeed
     """
@@ -282,8 +339,27 @@ def test_oidc_kubectl_invalid_otp_fails(request: FixtureRequest):
     get_logger().log_test_case_step("Set up OIDC environment")
     kubeconfig_path = _setup_oidc_environment(ssh_connection, security_config, lab_config)
 
-    get_logger().log_test_case_step("Clear brute force lockout for sthomas before login attempt")
+    get_logger().log_test_case_step("Delete OTP credentials and clear brute force lockout for admin2 user to force CONFIGURE_TOTP")
     keycloak_admin = _get_keycloak_admin(security_config)
+    keycloak_admin.delete_user_otp_credentials(security_config.get_oidc_keycloak_admin2_username())
+    keycloak_admin.clear_user_brute_force_lockout(security_config.get_oidc_keycloak_admin2_username())
+
+    get_logger().log_test_case_step("Enroll OTP for admin2 user via CONFIGURE_TOTP browser login")
+    enroll_result = mfa_keywords.run_kubectl_with_browser_login(
+        kubeconfig_path=kubeconfig_path,
+        login_url=login_url,
+        username=security_config.get_oidc_keycloak_admin2_username(),
+        password=security_config.get_oidc_keycloak_admin2_password(),
+        totp_secret=None,
+    )
+    get_logger().log_info(f"OTP enrollment login output:\n{enroll_result.get_output()}")
+    validate_equals(enroll_result.is_kubectl_successful(), True, "OTP enrollment login should succeed via CONFIGURE_TOTP flow")
+
+    get_logger().log_test_case_step("Kill kubelogin processes and clear token cache before invalid OTP attempt")
+    mfa_keywords.kill_kubelogin_processes()
+    mfa_keywords.clear_oidc_token_cache()
+
+    get_logger().log_test_case_step("Clear brute force lockout for admin2 user before invalid OTP attempt")
     keycloak_admin.clear_user_brute_force_lockout(security_config.get_oidc_keycloak_admin2_username())
 
     get_logger().log_test_case_step("Run kubectl get pods -A with valid credentials but invalid OTP")
@@ -742,11 +818,11 @@ def test_oidc_keycloak_mfa_subsequent_login(request: FixtureRequest):
     get_logger().log_test_case_step("Set up OIDC environment")
     kubeconfig_path = _setup_oidc_environment(ssh_connection, security_config, lab_config)
 
-    get_logger().log_test_case_step("Validate cached OIDC token exists")
-    mfa_keywords = KeycloakMfaKeywords(ssh_connection)
-    mfa_keywords.validate_token_cache_exists(_get_oidc_token_cache_dir(security_config))
+    get_logger().log_test_case_step("Ensure OIDC token cache is populated")
+    _ensure_oidc_token_cache_populated(ssh_connection, security_config, lab_config, kubeconfig_path)
 
     get_logger().log_test_case_step("Run kubectl using cached OIDC token")
+    mfa_keywords = KeycloakMfaKeywords(ssh_connection)
     result = mfa_keywords.run_kubectl_with_cached_token(kubeconfig_path)
     get_logger().log_info(f"kubectl output:\n{result.get_output()}")
     validate_equals(result.is_kubectl_successful(), True, "kubectl should succeed using cached OIDC token")
@@ -777,9 +853,9 @@ def test_oidc_kubectl_id_token_expired_silent_refresh(request: FixtureRequest):
     get_logger().log_test_case_step("Set up OIDC environment")
     kubeconfig_path = _setup_oidc_environment(ssh_connection, security_config, lab_config)
 
-    get_logger().log_test_case_step("Validate cached OIDC token exists")
+    get_logger().log_test_case_step("Ensure OIDC token cache is populated")
     mfa_keywords = KeycloakMfaKeywords(ssh_connection)
-    mfa_keywords.validate_token_cache_exists(_get_oidc_token_cache_dir(security_config))
+    _ensure_oidc_token_cache_populated(ssh_connection, security_config, lab_config, kubeconfig_path)
 
     get_logger().log_test_case_step("Replace cached id_token with an expired token")
     mfa_keywords.expire_cached_id_token(_get_oidc_token_cache_dir(security_config))
@@ -818,8 +894,8 @@ def test_oidc_kubectl_refresh_token_expired_requires_browser_reauth(request: Fix
     get_logger().log_test_case_step("Set up OIDC environment")
     kubeconfig_path = _setup_oidc_environment(ssh_connection, security_config, lab_config)
 
-    get_logger().log_test_case_step("Validate cached OIDC token exists")
-    mfa_keywords.validate_token_cache_exists(_get_oidc_token_cache_dir(security_config))
+    get_logger().log_test_case_step("Ensure OIDC token cache is populated")
+    _ensure_oidc_token_cache_populated(ssh_connection, security_config, lab_config, kubeconfig_path)
 
     get_logger().log_test_case_step("Invalidate cached id_token and refresh_token")
     mfa_keywords.expire_cached_id_token(_get_oidc_token_cache_dir(security_config))

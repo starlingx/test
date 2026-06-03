@@ -281,8 +281,9 @@ class KeycloakMfaKeywords(BaseKeyword):
             Exception: If no cache files are found in the cache directory.
         """
         cache_files = self.file_keywords.get_files_in_dir(cache_dir)
-        validate_equals(len(cache_files) > 0, True, f"OIDC cache files should exist in '{cache_dir}'")
-        cache_file = f"{cache_dir}/{cache_files[0]}"
+        token_files = [f for f in cache_files if not f.endswith(".lock")]
+        validate_equals(len(token_files) > 0, True, f"OIDC token cache files should exist in '{cache_dir}'")
+        cache_file = f"{cache_dir}/{token_files[0]}"
         get_logger().log_info(f"Expiring id_token in cache file: {cache_file}")
         # Expired JWT: header.payload.signature where payload has exp=0
         # eyJhbGciOiJSUzI1NiJ9 = {"alg":"RS256"}
@@ -308,8 +309,9 @@ class KeycloakMfaKeywords(BaseKeyword):
             Exception: If no cache files are found in the cache directory.
         """
         cache_files = self.file_keywords.get_files_in_dir(cache_dir)
-        validate_equals(len(cache_files) > 0, True, f"OIDC cache files should exist in '{cache_dir}'")
-        cache_file = f"{cache_dir}/{cache_files[0]}"
+        token_files = [f for f in cache_files if not f.endswith(".lock")]
+        validate_equals(len(token_files) > 0, True, f"OIDC token cache files should exist in '{cache_dir}'")
+        cache_file = f"{cache_dir}/{token_files[0]}"
         get_logger().log_info(f"Invalidating refresh_token in cache file: {cache_file}")
         content = "".join(self.file_keywords.read_file(cache_file))
         updated = re.sub(r'"refresh_token"\s*:\s*"[^"]+"', '"refresh_token":"invalid"', content)

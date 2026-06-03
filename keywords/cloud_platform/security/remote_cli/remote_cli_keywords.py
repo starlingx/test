@@ -273,24 +273,30 @@ class RemoteCliKeywords(BaseKeyword):
         result.set_output("".join(output_lines))
         return result
 
-    def prepare_oidc_kubeconfig_for_container(self, local_kubeconfig_path: str, working_dir: str, install_dir: str = "") -> str:
-        """Copy the OIDC kubeconfig into working_dir for container use.
+    def prepare_oidc_kubeconfig_for_container(self, local_kubeconfig_path: str, working_dir: str, install_dir: str = "", local_ca_cert_path: str = "") -> str:
+        """Copy the OIDC kubeconfig and CA cert into working_dir for container use.
 
-        The remote CLI container mounts working_dir as /wd. The kubeconfig already
-        uses bare filenames (e.g. system-local-ca.crt) which resolve correctly
-        inside the container since kubectl runs with /wd as the working directory.
-        The CA cert must already be present in working_dir (copied there by setup).
+        The remote CLI container mounts working_dir as /wd. The kubeconfig uses
+        bare filenames (e.g. system-local-ca.crt) which resolve correctly inside
+        the container since kubectl runs with /wd as the working directory.
 
         Args:
             local_kubeconfig_path (str): Local path to the OIDC kubeconfig on the test machine.
             working_dir (str): Local working directory mounted as /wd inside the container.
             install_dir (str): Unused, kept for API compatibility.
+            local_ca_cert_path (str): Local path to the system-local-ca certificate file.
 
         Returns:
             str: Container-internal path to the kubeconfig (/wd/<filename>).
         """
         kubeconfig_filename = os.path.basename(local_kubeconfig_path)
         shutil.copy2(local_kubeconfig_path, os.path.join(working_dir, kubeconfig_filename))
+
+        if local_ca_cert_path and os.path.exists(local_ca_cert_path):
+            ca_cert_filename = os.path.basename(local_ca_cert_path)
+            shutil.copy2(local_ca_cert_path, os.path.join(working_dir, ca_cert_filename))
+            get_logger().log_info(f"CA cert copied to container working dir: {os.path.join(working_dir, ca_cert_filename)}")
+
         container_kubeconfig_path = f"/wd/{kubeconfig_filename}"
         get_logger().log_info(f"OIDC kubeconfig prepared for container at {container_kubeconfig_path}")
         return container_kubeconfig_path

@@ -1,4 +1,8 @@
 import os
+import shutil
+import subprocess
+import tempfile
+import zipfile
 
 from config.configuration_manager import ConfigurationManager
 from framework.logging.automation_logger import get_logger
@@ -119,6 +123,47 @@ class OidcEnvironmentKeywords(BaseKeyword):
 
         return kubeconfig_path
 
+    def ensure_kubelogin_installed(self) -> None:
+        """Ensure the kubectl-oidc_login (kubelogin) plugin is installed on the local test machine.
+
+        Checks if the kubelogin plugin is available in PATH. If not found,
+        downloads the release zip from the configured URL, extracts the
+        binary, and installs it to ~/.local/bin/kubectl-oidc_login.
+        Adds ~/.local/bin to PATH if not already present.
+        """
+        if shutil.which("kubectl-oidc_login") is not None:
+            get_logger().log_info("kubelogin plugin already installed")
+            return
+
+        get_logger().log_info("kubelogin plugin not found; installing from configured URL")
+        security_config = ConfigurationManager.get_security_config()
+        download_url = security_config.get_oidc_keycloak_kubelogin_download_url()
+
+        local_bin_dir = os.path.join(os.path.expanduser("~"), ".local", "bin")
+        os.makedirs(local_bin_dir, exist_ok=True)
+
+        if local_bin_dir not in os.environ.get("PATH", ""):
+            os.environ["PATH"] = f"{local_bin_dir}:{os.environ.get('PATH', '')}"
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            zip_path = os.path.join(tmp_dir, "kubelogin.zip")
+            get_logger().log_info(f"Downloading kubelogin from: {download_url}")
+            subprocess.run(["curl", "-fsSL", "-o", zip_path, download_url], check=True)
+
+            with zipfile.ZipFile(zip_path, "r") as zf:
+                zf.extractall(tmp_dir)
+
+            extracted_binary = os.path.join(tmp_dir, "kubelogin")
+            if not os.path.exists(extracted_binary):
+                raise FileNotFoundError(f"kubelogin binary not found in extracted archive at {tmp_dir}")
+
+            install_path = os.path.join(local_bin_dir, "kubectl-oidc_login")
+            shutil.copy2(extracted_binary, install_path)
+            os.chmod(install_path, 0o755)
+
+        validate_equals(shutil.which("kubectl-oidc_login") is not None, True, "kubelogin plugin should be installed after download")
+        get_logger().log_info(f"kubelogin plugin installed successfully at {install_path}")
+
     def setup_remote(self, oam_ip: str, ca_cert_filename: str, kubeconfig_filename: str, oidc_client_id: str, oidc_client_secret: str) -> RemoteCliOidcSetupOutput:
         """Set up the local OIDC kubectl environment on the test machine.
 
@@ -137,6 +182,8 @@ class OidcEnvironmentKeywords(BaseKeyword):
             RemoteCliOidcSetupOutput: Output object containing local paths to the CA cert and kubeconfig.
         """
         log_folder = ConfigurationManager.get_logger_config().get_test_case_resources_log_location()
+
+        self.ensure_kubelogin_installed()
 
         get_logger().log_info("Step 1: Download system-local-ca certificate to local machine")
         ca_cert_content = self.kubectl_get_secrets.get_secret_with_custom_output(
