@@ -13,16 +13,16 @@
   "port_restore_file": "snmp_port_restore.yaml",
   
   // SNMP v3 Authentication
-  "snmp_v3_username": "{{snmp_username}}",
-  "snmp_v3_auth_password": "{{snmp_auth_password}}",
-  "snmp_v3_priv_password": "{{snmp_priv_password}}",
+  "snmp_v3_username": "{{snmp_v3_username}}",
+  "snmp_v3_auth_password": "{{snmp_v3_auth_password}}",
+  "snmp_v3_priv_password": "{{snmp_v3_priv_password}}",
   
   // SNMP v2c Configuration
-  "snmp_v2c_community": "{{snmp_community}}",
+  "snmp_v2c_community": "{{snmp_v2c_community}}",
   
   // Test Alarm Configuration
   "test_alarm_id": "{{test_alarm_id}}",
-  "test_entity_type_id": "{{test_entity_type}}",
+  "test_entity_type_id": "{{test_entity_type_id}}",
   "test_entity_id": "{{test_entity_id}}", 
   "test_severity": "{{test_severity}}",
   "test_reason_text": "{{test_reason_text}}",

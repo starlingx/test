@@ -78,6 +78,14 @@ class SNMPConfig:
         """
         return f"{self.snmp_server_ip}:{self.snmp_server_port}"
 
+    def get_active_alarm_oid(self) -> str:
+        """Getter for active alarm OID.
+
+        Returns:
+            str: The SNMP OID for active alarms.
+        """
+        return self.active_alarm_oid
+
     def get_trap_server_address(self) -> str:
         """Getter for trap server address.
 

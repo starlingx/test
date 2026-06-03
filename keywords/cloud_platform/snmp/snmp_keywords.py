@@ -1,3 +1,4 @@
+import subprocess
 import time
 
 from config.configuration_manager import ConfigurationManager
@@ -75,7 +76,11 @@ class SNMPKeywords(BaseKeyword):
         return self.ssh_connection.get_return_code() == 0
 
     def execute_snmp_command(self, command: str, oid: str, ip: str, port: int = 161, version: str = "v2c") -> SNMPOutput:
-        """Execute SNMP command on the lab.
+        """Execute SNMP command locally on the test runner host.
+
+        SNMP client tools (snmpget, snmpwalk, etc.) are not installed on the
+        StarlingX controllers. Commands are executed locally via subprocess,
+        targeting the controller's OAM IP.
 
         Args:
             command (str): SNMP command type (get, walk, etc.).
@@ -96,8 +101,10 @@ class SNMPKeywords(BaseKeyword):
         else:
             cmd = f"snmp{command} -v2c -c {self.config.snmp_v2c_community} {target} {oid}"
 
-        output = self.ssh_connection.send(cmd)
-        return_code = self.ssh_connection.get_return_code()
+        get_logger().log_debug(f"Executing local SNMP command: {cmd}")
+        result = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
+        output = result.stdout.strip() if result.returncode == 0 else result.stderr.strip()
+        return_code = result.returncode
 
         return SNMPOutput(output, return_code)
 
@@ -118,18 +125,18 @@ class SNMPKeywords(BaseKeyword):
         return self.execute_snmp_command("walk", oid, ip, port, version)
 
     def get_next_alarm_oid(self) -> str:
-        """Get next alarm OID based on active alarms.
+        """Get the OID for the last alarm entry in the active alarm table.
+
+        The SNMP alarm table uses 1-based indexing. When there is 1 alarm,
+        its OID is .1. When there are N alarms, the last entry is .N.
 
         Returns:
-            str: Next alarm OID to query.
+            str: Fully qualified alarm OID with index suffix.
         """
         active_alarms = self.alarm_keywords.alarm_list()
-        index_previous = len(active_alarms) - 1
+        alarm_count = len(active_alarms) if active_alarms else 1
 
-        if len(active_alarms) > 1:
-            return f"{self.config.active_alarm_oid}.{index_previous}"
-        else:
-            return self.config.active_alarm_oid
+        return f"{self.config.active_alarm_oid}.{alarm_count}"
 
     def get_active_alarm_count(self) -> int:
         """Get count of active alarms.
@@ -141,15 +148,63 @@ class SNMPKeywords(BaseKeyword):
         return len(active_alarms)
 
     def upload_snmp_config_files(self) -> None:
-        """Upload SNMP config files to controller."""
+        """Upload SNMP config files to controller.
+
+        Generates the user_conf YAML dynamically using the lab's floating IP
+        as the trap server address.
+        """
         lab_config = ConfigurationManager.get_lab_config()
-        config_file = self.config.config_file_ipv6 if lab_config.is_ipv6() else self.config.config_file_ipv4
+        is_ipv6 = lab_config.is_ipv6()
+        config_file = self.config.config_file_ipv6 if is_ipv6 else self.config.config_file_ipv4
+        trap_server_ip = lab_config.get_floating_ip()
 
-        config_path = get_stx_resource_path(f"resources/cloud_platform/snmp/{config_file}")
+        # Generate user_conf content dynamically with actual trap server IP
+        user_conf_content = self._generate_user_conf(trap_server_ip, is_ipv6)
+        self._write_remote_file(f"/tmp/{config_file}", user_conf_content)
+
+        # Upload port config (static file)
         port_config_path = get_stx_resource_path(f"resources/cloud_platform/snmp/{self.config.port_config_file}")
-
-        self.file_keywords.upload_file(config_path, f"/tmp/{config_file}")
         self.file_keywords.upload_file(port_config_path, f"/tmp/{self.config.port_config_file}")
+
+    def _generate_user_conf(self, trap_server_ip: str, is_ipv6: bool) -> str:
+        """Generate SNMP user configuration YAML content.
+
+        Args:
+            trap_server_ip (str): IP address of the trap server/receiver.
+            is_ipv6 (bool): Whether the lab uses IPv6 addressing.
+
+        Returns:
+            str: YAML content for the SNMP helm override.
+        """
+        username = self.config.snmp_v3_username
+        auth_pass = self.config.snmp_v3_auth_password
+        priv_pass = self.config.snmp_v3_priv_password
+        community = self.config.snmp_v2c_community
+        trap_port = self.config.trap_server_port
+
+        if is_ipv6:
+            trap_target = f"udp6:[{trap_server_ip}]:{trap_port}"
+            community_directive = f"rocommunity6 {community}  default    -V all"
+            trap2sink_target = f"udp6:[{trap_server_ip}]:{trap_port}"
+        else:
+            trap_target = f"udp:{trap_server_ip}:{trap_port}"
+            community_directive = f"rocommunity {community}  default    -V all"
+            trap2sink_target = f"{trap_server_ip}:{trap_port}"
+
+        user_conf = f"configmap:\n" f"  user_conf: |-\n" f"    createUser {username} MD5 {auth_pass} DES\n" f"    rwuser {username} priv\n" f"    {community_directive}\n" f"    trapsess -v 3 -u {username} -a MD5 -A {auth_pass} -l authPriv -x DES -X {priv_pass} {trap_target}\n" f"    trap2sink {trap2sink_target} {community}\n"
+        return user_conf
+
+    def _write_remote_file(self, remote_path: str, content: str) -> None:
+        """Write content to a file on the remote controller.
+
+        Args:
+            remote_path (str): Path on the controller to write the file.
+            content (str): File content to write.
+        """
+        # Use heredoc-style echo to write multi-line content
+        escaped_content = content.replace("'", "'\\''")
+        cmd = f"echo '{escaped_content}' > {remote_path}"
+        self.ssh_connection.send(cmd)
 
     def upload_and_apply_snmp_app(self) -> None:
         """Upload and apply SNMP application using existing keywords."""
@@ -201,17 +256,6 @@ class SNMPKeywords(BaseKeyword):
             return False
         ready_parts = ready_status.split("/")
         return len(ready_parts) == 2 and ready_parts[0] == ready_parts[1]
-
-    def install_and_configure_snmp_complete(self) -> bool:
-        """Complete SNMP installation and configuration.
-
-        Returns:
-            bool: True if installation successful, False otherwise.
-        """
-        self.upload_snmp_config_files()
-        self.upload_and_apply_snmp_app()
-        self.generate_test_alarm()
-        return self.wait_for_pods_ready()
 
     def apply_snmp_helm_overrides(self) -> bool:
         """Apply SNMP helm overrides and reapply application.
@@ -272,9 +316,36 @@ class SNMPKeywords(BaseKeyword):
         if not port_override_success:
             get_logger().log_info("Port helm override failed, continuing with default config")
 
+        # Apply Calico network policy to allow SNMP traffic on OAM interface
+        self._apply_snmp_network_policy()
+
+    def _apply_snmp_network_policy(self) -> None:
+        """Apply Calico GlobalNetworkPolicy to allow SNMP UDP traffic on OAM.
+
+        Without this policy, Calico drops incoming UDP:161 packets destined
+        for the nginx-ingress controller that forwards to the SNMP pod.
+        """
+        lab_config = ConfigurationManager.get_lab_config()
+        policy_file = self.config.policy_file_ipv6 if lab_config.is_ipv6() else self.config.policy_file_ipv4
+        policy_path = get_stx_resource_path(f"resources/cloud_platform/snmp/{policy_file}")
+
+        self.file_keywords.upload_file(policy_path, f"/tmp/{policy_file}")
+        cmd = f"export KUBECONFIG=/etc/kubernetes/admin.conf; kubectl apply --validate=false -f /tmp/{policy_file}"
+        self.ssh_connection.send(cmd)
+        get_logger().log_info(f"Applied SNMP network policy: {policy_file}")
+
+    def _remove_snmp_network_policy(self) -> None:
+        """Remove the Calico GlobalNetworkPolicy for SNMP traffic."""
+        cmd = "export KUBECONFIG=/etc/kubernetes/admin.conf; kubectl delete globalnetworkpolicy snmp --ignore-not-found=true"
+        self.ssh_connection.send(cmd)
+        get_logger().log_info("Removed SNMP network policy")
+
     def remove_and_cleanup_snmp(self) -> None:
         """Remove and cleanup SNMP application."""
-        # Restore port helm overrides first
+        # Remove network policy first
+        self._remove_snmp_network_policy()
+
+        # Restore port helm overrides
         self.restore_port_helm_overrides()
 
         app_name = self.config.get_snmp_app_name()
@@ -334,8 +405,15 @@ class SNMPKeywords(BaseKeyword):
             bool: True if alarm found, False if timeout.
         """
         timeout_time = time.time() + timeout
+        first_attempt = True
         while time.time() < timeout_time:
             snmp_output = self.snmp_get(oid, ip, version=version)
+
+            if first_attempt:
+                snmp_obj = snmp_output.get_snmp_object()
+                get_logger().log_info(f"SNMP get first attempt (rc={snmp_output.get_return_code()}): " f"{snmp_obj.get_content() if snmp_obj else 'empty'}")
+                first_attempt = False
+
             snmp_result = snmp_output.get_snmp_object()
 
             if snmp_result and snmp_result.contains_alarm_id(self.config.get_trap_alarm_id()):
@@ -343,4 +421,5 @@ class SNMPKeywords(BaseKeyword):
                 return True
 
             time.sleep(2)
+        get_logger().log_info(f"Alarm {self.config.get_trap_alarm_id()} not found via SNMP within timeout")
         return False
