@@ -1,10 +1,12 @@
 import time
 
 from framework.exceptions.keyword_exception import KeywordException
+from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
 from keywords.base_keyword import BaseKeyword
 from keywords.cloud_platform.command_wrappers import source_openrc
 from keywords.cloud_platform.system.host.objects.system_host_stor_output import SystemHostStorageOutput
+from keywords.cloud_platform.system.host.system_host_disk_keywords import SystemHostDiskKeywords
 
 
 class SystemHostStorageKeywords(BaseKeyword):
@@ -44,7 +46,7 @@ class SystemHostStorageKeywords(BaseKeyword):
 
         return system_host_storage_output
 
-    def system_host_stor_add(self, hostname: str, disk_uuids: list) -> None:
+    def system_host_stor_add(self, hostname: str, disk_uuids: list) -> str:
         """
         Attempts to add the first available OSD disk to the specified host.
 
@@ -56,23 +58,25 @@ class SystemHostStorageKeywords(BaseKeyword):
             hostname (str): The name of the host where the OSD should be added.
             disk_uuids (list): A list of disk UUIDs to try adding as OSDs.
 
+        Returns:
+            str: The UUID of the newly created OSD.
+
         Raises:
             RuntimeError: If none of the disk UUIDs could be successfully added as OSD.
         """
-        success = False
-
         for disk_uuid in disk_uuids:
-
             try:
-                self.ssh_connection.send(source_openrc(f"system host-stor-add {hostname} osd {disk_uuid}"))
+                output = self.ssh_connection.send(source_openrc(f"system host-stor-add {hostname} osd {disk_uuid}"))
                 self.validate_success_return_code(self.ssh_connection)
-                success = True
-                break
+                stor_output = SystemHostStorageOutput(output, is_vertical_table=True)
+                osd_uuids = stor_output.get_all_osd_uuids()
+                if not osd_uuids:
+                    raise KeywordException(f"host-stor-add succeeded for disk {disk_uuid} on {hostname} but no UUID was returned.")
+                return osd_uuids[0]
             except AssertionError:
                 continue
 
-        if not success:
-            raise RuntimeError("Failed to add any OSD disk. All attempts were unsuccessful.")
+        raise RuntimeError("Failed to add any OSD disk. All attempts were unsuccessful.")
 
     def system_stor_add_specific_disk(self, hostname: str, disk_uuid: str) -> None:
         """
@@ -100,6 +104,40 @@ class SystemHostStorageKeywords(BaseKeyword):
             cmd += " --force"
         self.ssh_connection.send(source_openrc(cmd))
         self.validate_success_return_code(self.ssh_connection)
+
+    def find_and_add_osd(self, hostnames: list[str]) -> tuple[str, str]:
+        """
+        Find a host with an available disk and add an OSD on it.
+
+        For each host, gets all disks, filters out those already used as OSD,
+        and attempts to add an OSD on the remaining candidates.
+
+        Args:
+            hostnames (list[str]): Ordered list of hostnames to try.
+
+        Returns:
+            tuple[str, str]: A tuple of (hostname, osd_uuid).
+
+        Raises:
+            KeywordException: If no OSD could be added on any host.
+        """
+        host_disk_keywords = SystemHostDiskKeywords(self.ssh_connection)
+
+        for hostname in hostnames:
+            get_logger().log_info(f"Trying to add OSD on {hostname}")
+            all_disk_uuids = host_disk_keywords.get_system_host_disk_list(hostname).get_all_uuid() or []
+            existing_osd_disk_uuids = self.get_system_host_stor_list(hostname).get_host_all_osd_idisk_uuid()
+            candidate_disks = [uuid for uuid in all_disk_uuids if uuid not in existing_osd_disk_uuids]
+
+            if candidate_disks:
+                try:
+                    osd_uuid = self.system_host_stor_add(hostname, candidate_disks)
+                    get_logger().log_info(f"Successfully added OSD {osd_uuid} on {hostname}")
+                    return hostname, osd_uuid
+                except RuntimeError:
+                    get_logger().log_info(f"No available disk could be added on {hostname}, trying next host.")
+
+        raise KeywordException("Failed to add OSD on any host. All attempts were unsuccessful.")
 
     def wait_for_all_osd_cleared_on_host(self, host_name: str, timeout: int = 600) -> bool:
         """
