@@ -17,12 +17,13 @@ class KubectlPodLogsKeywords(K8sBaseKeyword):
         """
         super().__init__(ssh_connection, kubeconfig_path)
 
-    def get_pod_logs(self, pod_name: str, namespace: str = "default", tail_lines: int = -1, grep_pattern: str = None, since: str = None) -> list:
+    def get_pod_logs(self, pod_name: str, namespace: str = "default", container: str = None, tail_lines: int = -1, grep_pattern: str = None, since: str = None) -> list:
         """Get logs from a specific pod.
 
         Args:
             pod_name (str): Name of the pod to get logs from.
             namespace (str): Kubernetes namespace. Defaults to "default".
+            container (str): Container name within the pod. Optional.
             tail_lines (int): Number of recent log lines to retrieve. Defaults to -1 (all logs).
             grep_pattern (str): Pattern to filter logs. Optional.
             since (str): Only return logs newer than a relative duration like 5s, 2m, or 3h. Optional.
@@ -31,6 +32,9 @@ class KubectlPodLogsKeywords(K8sBaseKeyword):
             list: Log output lines.
         """
         cmd = f"kubectl logs {pod_name} -n {namespace}"
+
+        if container:
+            cmd += f" -c {container}"
 
         if since:
             cmd += f" --since={since}"
