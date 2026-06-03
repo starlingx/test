@@ -1,5 +1,5 @@
-from keywords.cloud_platform.system.healthquery.objects.system_health_query_object import SystemHealthQueryObject
-from keywords.cloud_platform.system.healthquery.system_health_query_parser import SystemHealthQueryParser
+from keywords.cloud_platform.system.health_query.objects.system_health_query_object import SystemHealthQueryObject
+from keywords.cloud_platform.system.health_query.system_health_query_parser import SystemHealthQueryParser
 
 
 class SystemHealthQueryKubeUpgradeOutput:
