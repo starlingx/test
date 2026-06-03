@@ -1,0 +1,44 @@
+override_config:
+  toml: |
+    [agent]
+      collection_jitter = "0s"
+      debug = false
+      flush_interval = "10s"
+      flush_jitter = "0s"
+      hostname = "$HOSTNAME"
+      interval = "10s"
+      logfile = ""
+      metric_batch_size = 1000
+      metric_buffer_limit = 10000
+      omit_hostname = false
+      precision = ""
+      quiet = false
+      round_interval = true
+
+
+    [[outputs.prometheus_client]]
+      listen = ":9273"
+
+    [[inputs.intel_powerstat]]
+      cpu_metrics = [
+        "cpu_frequency",
+        "cpu_busy_frequency",
+        "cpu_temperature",
+        "cpu_c0_state_residency",
+        "cpu_c1_state_residency",
+        "cpu_c6_state_residency"
+      ]
+    [[inputs.intel_pmu]]
+      event_definitions = [
+        "/etc/telegraf/events_definition.json"
+      ]
+      [[inputs.intel_pmu.core_events]]
+         events = [
+           "INST_RETIRED.ANY"
+         ]
+         events_tag = "c0wait"
+         perf_group = true
+    [[inputs.linux_cpu]]
+      metrics = [
+        "cpufreq"
+      ]

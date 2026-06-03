@@ -269,6 +269,20 @@ def has_dsa_device(ssh_connection: SSHConnection) -> bool:
     dsa_patterns = ("11fb", "0b25")
     return lspci_keywords.has_pci_device(dsa_patterns)
 
+def has_linux_cpu_metrics(ssh_connection: SSHConnection) -> bool:
+    """Verify:
+
+     - that linux_cpu metrics exists:
+     - Raise Error metrics are not present.
+
+    Args:
+        ssh_connection (SSHConnection): The SSH connection to the host.
+
+    Returns:
+        bool: True if it has linux_cpu metrics, otherwise False
+    """
+    output = ssh_connection.send(cmd="cpupower frequency-info")
+    return not any("Not Available" in s for s in output)
 
 def retrieve_subclouds(lab_config: LabConfig, ssh_connection: SSHConnection) -> list[LabConfig]:
     """Get the list of online and managed subclouds.
@@ -550,6 +564,9 @@ def scan_hosts(lab_config: LabConfig, ssh_connection: SSHConnection) -> list[Nod
             lab_config.add_lab_capability("lab_has_dsa")
         nodes.append(node)
 
+        if has_linux_cpu_metrics(ssh_connection):
+            node.append_node_capability("lab_has_linux_cpu_metrics")
+            lab_config.add_lab_capability("lab_has_linux_cpu_metrics")
     return nodes
 
 

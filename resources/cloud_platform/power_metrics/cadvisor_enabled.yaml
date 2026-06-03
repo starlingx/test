@@ -1,0 +1,2 @@
+#system helm-override-update power-metrics cadvisor power-metrics --set perf_events=true
+perf_events: true
