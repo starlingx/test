@@ -25,11 +25,28 @@ class KubectlGetTridentBackendsKeywords:
         """Get all trident backends with dataLIF and SVM info.
 
         Runs kubectl get tridentbackends with jsonpath to extract
-        dataLIF and SVM from each backend configuration.
+        dataLIF and SVM from each backend configuration. Tries the
+        ontap_config nested path first (newer trident), then falls
+        back to direct config path (older trident).
 
         Returns:
             TridentBackendOutput: Parsed trident backend collection.
         """
+        # Newer trident versions nest under .config.ontap_config
+        cmd = (
+            "kubectl get tridentbackends -n trident "
+            "-o jsonpath='{range .items[*]}"
+            "{.config.ontap_config.dataLIF} {.config.ontap_config.svm}{\"\\n\"}{end}'"
+        )
+        output = self._ssh_connection.send(export_k8s_config(cmd))
+        raw = output if isinstance(output, list) else str(output)
+        result = TridentBackendOutput(raw)
+
+        if result.has_backends():
+            get_logger().log_info(f"Trident backends found via ontap_config path: {len(raw)} chars")
+            return result
+
+        # Fallback: older trident versions use direct .config path
         cmd = (
             "kubectl get tridentbackends -n trident "
             "-o jsonpath='{range .items[*]}"
@@ -37,5 +54,5 @@ class KubectlGetTridentBackendsKeywords:
         )
         output = self._ssh_connection.send(export_k8s_config(cmd))
         raw = output if isinstance(output, list) else str(output)
-        get_logger().log_info(f"Trident backends query returned: {len(raw)} chars")
+        get_logger().log_info(f"Trident backends query (fallback path) returned: {len(raw)} chars")
         return TridentBackendOutput(raw)
