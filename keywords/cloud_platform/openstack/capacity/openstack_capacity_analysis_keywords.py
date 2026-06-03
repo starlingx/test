@@ -1,7 +1,6 @@
 """Keywords for OpenStack capacity analysis across compute and storage."""
 
 from framework.logging.automation_logger import get_logger
-from framework.ssh.ssh_connection import SSHConnection
 from keywords.base_keyword import BaseKeyword
 from keywords.cloud_platform.openstack.capacity.capacity_math import calculate_compute_effective
 from keywords.cloud_platform.openstack.capacity.capacity_math import calculate_headroom
@@ -15,6 +14,7 @@ from keywords.cloud_platform.openstack.cinder.cinder_get_pools_keywords import C
 from keywords.cloud_platform.openstack.resource_provider.openstack_resource_provider_inventory_list_keywords import OpenStackResourceProviderInventoryListKeywords
 from keywords.cloud_platform.openstack.resource_provider.object.openstack_resource_provider_inventory_list_object import OpenStackResourceProviderInventoryListObject
 from keywords.cloud_platform.openstack.resource_provider.openstack_resource_provider_list_keywords import OpenStackResourceProviderListKeywords
+from keywords.openstack.connection.ace_openstack_connection import ACEOpenStackConnection
 
 
 class OpenStackCapacityAnalysisKeywords(BaseKeyword):
@@ -25,16 +25,16 @@ class OpenStackCapacityAnalysisKeywords(BaseKeyword):
     for each hypervisor and storage pool.
     """
 
-    def __init__(self, ssh_connection: SSHConnection):
+    def __init__(self, openstack_connection: ACEOpenStackConnection):
         """Initialize OpenStackCapacityAnalysisKeywords.
 
         Args:
-            ssh_connection (SSHConnection): SSH connection to the active controller.
+            openstack_connection (ACEOpenStackConnection): ACE OpenStack connection wrapper.
         """
-        self.ssh_connection = ssh_connection
-        self.resource_provider_list_keywords = OpenStackResourceProviderListKeywords(ssh_connection)
-        self.resource_provider_inventory_keywords = OpenStackResourceProviderInventoryListKeywords(ssh_connection)
-        self.cinder_keywords = CinderGetPoolsKeywords(ssh_connection)
+        self.openstack_connection = openstack_connection
+        self.resource_provider_list_keywords = OpenStackResourceProviderListKeywords(openstack_connection)
+        self.resource_provider_inventory_keywords = OpenStackResourceProviderInventoryListKeywords(openstack_connection)
+        self.cinder_keywords = CinderGetPoolsKeywords(openstack_connection)
 
     def analyze_capacity(
         self,
@@ -65,23 +65,20 @@ class OpenStackCapacityAnalysisKeywords(BaseKeyword):
         Example:
             ::
 
-                analysis_kw = OpenStackCapacityAnalysisKeywords(ssh_connection)
+                from keywords.openstack.connection.openstack_connection_manager import create_ace_connection
+                from keywords.cloud_platform.openstack.capacity.openstack_capacity_analysis_keywords import (
+                    OpenStackCapacityAnalysisKeywords,
+                )
+
+                conn = create_ace_connection(ssh_connection)
+                analysis_kw = OpenStackCapacityAnalysisKeywords(conn)
                 output = analysis_kw.analyze_capacity()
 
-                # Per-hypervisor data
                 for compute in output.get_compute_capacities():
                     print(compute.get_hostname())
-                    print(compute.get_vcpus_headroom())       # count
-                    print(compute.get_memory_mb_headroom())    # MB
-                    print(compute.get_disk_gb_headroom())      # GB
-                    print(compute.get_status())                # 'ok', 'warning', or 'critical'
+                    print(compute.get_status())
 
-                # Aggregate
-                print(output.get_aggregate_vcpus_headroom())   # total free vCPUs
-
-                # Storage
-                for pool in output.get_storage_capacities():
-                    print(pool.get_headroom_gb())               # GB
+                print(output.get_aggregate_vcpus_headroom())
         """
         output = OpenStackCapacityAnalysisOutput()
 

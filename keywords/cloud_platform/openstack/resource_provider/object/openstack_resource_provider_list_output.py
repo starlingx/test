@@ -1,34 +1,34 @@
 """OpenStack resource provider list output parsing."""
 
+from typing import List
+
 from framework.exceptions.keyword_exception import KeywordException
 from keywords.cloud_platform.openstack.resource_provider.object.openstack_resource_provider_list_object import OpenStackResourceProviderListObject
-from keywords.cloud_platform.openstack.openstack_table_parser import OpenStackTableParser
 
 
 class OpenStackResourceProviderListOutput:
-    """Class for openstack resource provider list output."""
+    """Class for openstack resource provider list output via OpenStack SDK."""
 
-    def __init__(self, openstack_resource_provider_list_output):
-        """Initialize OpenStackResourceProviderListOutput.
+    def __init__(self, sdk_providers: list):
+        """Initialize OpenStackResourceProviderListOutput from openstacksdk objects.
 
         Args:
-            openstack_resource_provider_list_output: Raw CLI output.
+            sdk_providers (list): List of resource provider objects from
+                connection.placement.resource_providers().
         """
-        self.openstack_resource_provider_list_objects: [OpenStackResourceProviderListObject] = []
-        openstack_table_parser = OpenStackTableParser(openstack_resource_provider_list_output)
-        output_values = openstack_table_parser.get_output_values_list()
+        self.openstack_resource_provider_list_objects: List[OpenStackResourceProviderListObject] = []
 
-        for value in output_values:
+        for provider in sdk_providers:
             resource_provider_object = OpenStackResourceProviderListObject()
-            resource_provider_object.set_uuid(value["uuid"])
-            resource_provider_object.set_name(value["name"])
-            resource_provider_object.set_generation(int(value["generation"]))
-            resource_provider_object.set_root_provider_uuid(value["root_provider_uuid"])
-            resource_provider_object.set_parent_provider_uuid(value["parent_provider_uuid"])
+            resource_provider_object.set_uuid(provider.get("uuid", provider.get("id", "")))
+            resource_provider_object.set_name(provider.get("name", ""))
+            resource_provider_object.set_generation(provider.get("generation", 0))
+            resource_provider_object.set_root_provider_uuid(provider.get("root_provider_uuid", ""))
+            resource_provider_object.set_parent_provider_uuid(provider.get("parent_provider_uuid", ""))
 
             self.openstack_resource_provider_list_objects.append(resource_provider_object)
 
-    def get_resource_providers(self) -> [OpenStackResourceProviderListObject]:
+    def get_resource_providers(self) -> List[OpenStackResourceProviderListObject]:
         """Get the list of resource provider objects.
 
         Returns:
