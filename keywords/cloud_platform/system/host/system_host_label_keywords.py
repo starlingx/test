@@ -58,6 +58,25 @@ class SystemHostLabelKeywords(BaseKeyword):
 
         return system_host_label_assign_output
 
+    def system_host_label_assign_overwrite(self, host_name: str, labels: str) -> SystemHostLabelAssignOutput:
+        """Assign labels to a host with --overwrite for idempotency.
+
+        Runs 'system host-label-assign --overwrite <host_name> <labels>'.
+        If labels already exist on the host, they are overwritten with the new values.
+
+        Args:
+            host_name (str): The name of the host on which to assign labels.
+            labels (str): The space-separated list of label_key=label_value pairs.
+
+        Returns:
+            SystemHostLabelAssignOutput: Parsed output of the label assign command.
+        """
+        output = self.ssh_connection.send(source_openrc(f'system host-label-assign --overwrite {host_name} {labels}'))
+        self.validate_success_return_code(self.ssh_connection)
+        system_host_label_assign_output = SystemHostLabelAssignOutput(output)
+
+        return system_host_label_assign_output
+
     def system_host_label_remove(self, host_name: str, labels: str) -> List[str]:
         """
         This function will run the 'system host-label-remove <host_name> <labels>' command
