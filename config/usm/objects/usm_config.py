@@ -65,6 +65,9 @@ class USMConfig:
         self.docker_fs_size = usm_dict.get("docker_fs_size", 60)
         self.cleanup_ignore_alarms = usm_dict.get("cleanup_ignore_alarms", ["900.020", "900.022", "900.023"])
 
+        # VIM orchestration alarm restrictions
+        self.alarm_restrictions = usm_dict.get("alarm_restrictions", "")
+
     def validate_config(self) -> None:
         """
         Validate config values for logical consistency.
@@ -734,3 +737,19 @@ class USMConfig:
             value (list[str]): List of alarm IDs to ignore.
         """
         self.cleanup_ignore_alarms = value
+
+    def get_alarm_restrictions(self) -> str:
+        """Get the alarm restriction level for VIM orchestration.
+
+        Returns:
+            str: Alarm restriction level ('strict', 'relaxed', 'permissive', or '' for default).
+        """
+        return self.alarm_restrictions
+
+    def set_alarm_restrictions(self, value: str) -> None:
+        """Set the alarm restriction level for VIM orchestration.
+
+        Args:
+            value (str): Alarm restriction level ('strict', 'relaxed', 'permissive', or '').
+        """
+        self.alarm_restrictions = value
