@@ -22,13 +22,14 @@ class KubectlGetPodJsonpathKeywords(BaseKeyword):
             namespace: Namespace of the pod.
 
         Returns:
-            str: The jsonpath output.
+            str: The jsonpath output with surrounding quotes stripped.
         """
         ns_arg = f"-n {namespace}" if namespace else ""
         cmd = f"kubectl get pod/{pod_name} {ns_arg} -o jsonpath='{jsonpath}'"
         output = self.ssh_connection.send(self.k8s_config.export(cmd))
         self.validate_success_return_code(self.ssh_connection)
-        return "\n".join(output) if isinstance(output, list) else str(output)
+        result = "\n".join(output) if isinstance(output, list) else str(output)
+        return result.strip("'").strip()
 
     def get_container_id(self, pod_name: str, namespace: str = None) -> str:
         """Get the containerd container ID from a pod.
