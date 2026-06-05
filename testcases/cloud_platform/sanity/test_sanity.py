@@ -1,4 +1,3 @@
-import re
 import time
 from typing import Any
 from datetime import datetime, timedelta
@@ -42,8 +41,6 @@ from keywords.cloud_platform.system.host.system_host_swact_keywords import Syste
 from keywords.cloud_platform.system.modify.system_modify_keywords import SystemModifyKeywords
 from keywords.cloud_platform.system.show.system_show_keywords import SystemShowKeywords
 from keywords.cloud_platform.system.storage.system_storage_backend_keywords import SystemStorageBackendKeywords
-from keywords.cloud_platform.upgrade.objects.upgrade_event import UpgradeEvent
-from keywords.cloud_platform.upgrade.record_upgrade_event_keywords import RecordUpgradeEventKeywords
 from keywords.docker.images.docker_load_image_keywords import DockerLoadImageKeywords
 from keywords.files.file_keywords import FileKeywords
 from keywords.k8s.deployments.kubectl_delete_deployments_keywords import KubectlDeleteDeploymentsKeywords
@@ -57,6 +54,7 @@ from keywords.k8s.secret.kubectl_create_secret_keywords import KubectlCreateSecr
 from keywords.k8s.service.kubectl_delete_service_keywords import KubectlDeleteServiceKeywords
 from keywords.k8s.service.kubectl_get_service_keywords import KubectlGetServiceKeywords
 from keywords.kpi.log_pattern_kpi_keywords import LogPatternKpiKeywords
+from keywords.kpi.lpmptool_kpi_keywords import LpmptoolKpiKeywords
 from keywords.kpi.unlock_kpi_blocks import UnlockKpiBlocks
 from keywords.linux.date.date_keywords import DateKeywords
 from keywords.linux.tar.tar_keywords import TarKeywords
@@ -65,72 +63,20 @@ from web_pages.horizon.login.horizon_login_page import HorizonLoginPage
 
 
 def save_unlock_kpi_to_database(results: list, hostname: str) -> None:
-    """Save unlock KPI data to database using existing event infrastructure.
+    """Save unlock KPI data to database using LpmptoolKpiKeywords.
 
-    Parses the List[str] output from LogPatternKpiKeywords.calculate_kpi()
-    and records each phase timing as an UpgradeEvent with is_upgrade=False.
+    Parses lpmptool or LogPatternKpiKeywords output and records to database.
 
     Args:
-        results (list): KPI timing results (List[str]) from LogPatternKpiKeywords.calculate_kpi()
-        hostname (str): Hostname of the unlocked controller
+        results (list): KPI timing results (List[str]) from calculate_kpi or lpmptool.
+        hostname (str): Hostname of the unlocked controller.
     """
     if not results:
         return
 
-    record_keywords = RecordUpgradeEventKeywords()
-    kpi_records = []
-
-    for line in results:
-        if not line or not line.strip():
-            continue
-        # Skip summary/metadata lines
-        if line.startswith('✅') or line.startswith('KPI_'):
-            continue
-
-        # Parse tab-separated result lines:
-        # cumulative\tdelta\tlabel\tfilename\tlog_data
-        parts = line.split('\t')
-        if len(parts) < 5:
-            continue
-
-        label = parts[2].strip()
-        log_data = parts[4].strip()
-
-        # Extract duration from log_data: "Start HH:MM:SS.xxx --> Stop HH:MM:SS.xxx: 45.123s | ..."
-        duration_match = re.search(r':\s*([0-9]+\.[0-9]+)s\s*\|', log_data)
-        if not duration_match:
-            continue
-
-        duration_seconds = float(duration_match.group(1))
-
-        # Skip excluded blocks (e.g., LOCK HOST)
-        if "(excluded from KPI)" in log_data:
-            continue
-
-        event = UpgradeEvent(
-            event_name=f"unlock_{label}",
-            retry=0,
-            operation="complete",
-            entry=hostname,
-            is_upgrade=False,
-            is_patch=False
-        )
-        event.duration = int(duration_seconds)
-        record_keywords.record_upgrade_event(event)
-
-        kpi_records.append({
-            "event_name": f"unlock_{label}",
-            "entity": hostname,
-            "duration_seconds": int(duration_seconds),
-            "is_upgrade": False,
-            "is_patch": False,
-            "operation": "complete"
-        })
-
-    get_logger().log_info("=== KPI Data Pushed to Database ===")
-    for record in kpi_records:
-        get_logger().log_info(f"  {record}")
-    get_logger().log_info(f"Total phases recorded: {len(kpi_records)}")
+    lpmptool = LpmptoolKpiKeywords(None)
+    kpi_results = lpmptool.parse_results(results, hostname)
+    lpmptool.save_to_database(kpi_results)
 
 
 @mark.p0
@@ -270,11 +216,6 @@ def test_lock_unlock_simplex():
     if results:
         kpi_keywords.parse_and_display_results(results)
         get_logger().log_info("KPI calculation completed successfully")
-
-        # Log raw results for debugging
-        get_logger().log_info("=== Raw KPI Results (List[str]) ===")
-        for i, line in enumerate(results):
-            get_logger().log_info(f"  [{i}]: {line.strip()}")
 
         # Save KPI data to database if record_kpi is enabled in USM config
         if ConfigurationManager.get_usm_config().get_record_kpi():

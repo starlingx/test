@@ -8,6 +8,9 @@ import os
 from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
 from keywords.base_keyword import BaseKeyword
+from keywords.cloud_platform.upgrade.objects.upgrade_event import UpgradeEvent
+from keywords.cloud_platform.upgrade.record_upgrade_event_keywords import RecordUpgradeEventKeywords
+from keywords.kpi.lpmptool_kpi_keywords import KpiResult
 from tabulate import tabulate
 
 class LogPatternKpiKeywords(BaseKeyword):
@@ -1361,3 +1364,95 @@ class LogPatternKpiKeywords(BaseKeyword):
                 get_logger().log_info(f"CSV results written to {csv_file}")
         except Exception as e:
             get_logger().log_info(f"Error writing to {csv_file}: {e}")
+
+    def parse_results(self, raw_output: List[str], hostname: str) -> List:
+        """
+        Parse LogPatternKpiKeywords raw output into structured KpiResult objects.
+
+        Handles the tab-separated output format:
+        "cumulative\\tdelta\\tlabel\\tfilename\\tStart ... --> Stop ...: 45.123s | ..."
+
+        Skips headers, warnings, errors, and excluded blocks (LOCK HOST).
+
+        Args:
+            raw_output (List[str]): Raw output lines from calculate_kpi.
+            hostname (str): Hostname of the target host.
+
+        Returns:
+            List[KpiResult]: Parsed KPI results with label and duration.
+        """
+        kpi_results = []
+
+        for line in raw_output:
+            if not line or not line.strip():
+                continue
+            line = line.strip()
+
+            # Skip non-data lines
+            if (line.startswith('✅') or line.startswith('KPI_') or
+                    line.startswith('---') or line.startswith('Delta(') or
+                    '⚠️' in line or '❌' in line or
+                    line.startswith('sysadmin@')):
+                continue
+
+            # Skip excluded blocks
+            if "(excluded from KPI)" in line:
+                continue
+
+            # Parse tab-separated format: cumulative\tdelta\tlabel\tfilename\tlog_data
+            parts = line.split('\t')
+            if len(parts) < 5:
+                continue
+
+            label = parts[2].strip()
+            log_data = parts[4].strip()
+
+            # Extract duration: "Start ... --> Stop ...: 45.123s | ..."
+            duration_match = re.search(r':\s*([0-9]+\.[0-9]+)s\s*\|', log_data)
+            if not duration_match:
+                continue
+
+            duration_seconds = float(duration_match.group(1))
+
+            # Skip LOCK HOST
+            if label == "LOCK HOST":
+                continue
+
+            kpi_results.append(KpiResult(label, duration_seconds, hostname))
+
+        get_logger().log_info(f"Parsed {len(kpi_results)} KPI phases from output")
+        return kpi_results
+
+    def save_to_database(self, kpi_results: List) -> None:
+        """
+        Save parsed KPI results to the database.
+
+        Uses UpgradeEvent/RecordUpgradeEventKeywords for compatibility with
+        existing database schema. Sets is_upgrade=False to distinguish unlock
+        operations from actual upgrades.
+
+        Args:
+            kpi_results (List[KpiResult]): Parsed KPI results to save.
+        """
+        if not kpi_results:
+            get_logger().log_info("No KPI results to save to database")
+            return
+
+        record_keywords = RecordUpgradeEventKeywords()
+
+        for result in kpi_results:
+            event = UpgradeEvent(
+                event_name=f"unlock_{result.get_label()}",
+                retry=0,
+                operation="complete",
+                entry=result.get_hostname(),
+                is_upgrade=False,
+                is_patch=False
+            )
+            event.duration = int(result.get_duration_seconds())
+            record_keywords.record_upgrade_event(event)
+
+        get_logger().log_info("=== KPI Data Pushed to Database ===")
+        for result in kpi_results:
+            get_logger().log_info(f"  {result}")
+        get_logger().log_info(f"Total phases recorded: {len(kpi_results)}")
