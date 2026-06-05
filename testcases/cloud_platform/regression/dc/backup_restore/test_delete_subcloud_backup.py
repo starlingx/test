@@ -545,16 +545,14 @@ def test_delete_backup_group_on_central(request):
     subcloud_name = ConfigurationManager.get_lab_config().get_subcloud_names()[0]
 
     subcloud_list = []
+    dcmanager_subcloud_list = DcManagerSubcloudListKeywords(central_ssh).get_dcmanager_subcloud_list()
     for subcloud_name in ConfigurationManager.get_lab_config().get_subcloud_names():
-        sc_config = ConfigurationManager.get_lab_config().get_subcloud(subcloud_name)
+        # Only adds managed and online subclouds.
+        subcloud = dcmanager_subcloud_list.get_subcloud_by_name(subcloud_name)
+        if subcloud.get_management() == "managed" and subcloud.get_availability() == "online":
+            subcloud_list.append(subcloud_name)
 
-        # Only adds Simplex and in-sync subclouds.
-        if sc_config.get_lab_type() == "Simplex":
-            sync_status = DcManagerSubcloudListKeywords(central_ssh).get_dcmanager_subcloud_list().get_subcloud_by_name(subcloud_name).get_sync()
-            if sync_status == "in-sync":
-                subcloud_list.append(subcloud_name)
-
-    validate_greater_than_or_equal(len(subcloud_list), 1, "Validate subcloud list is composed for more than one subcloud")
+    validate_greater_than_or_equal(len(subcloud_list), 1, "Validate subcloud list is composed of at least one subcloud")
     for subcloud_name in subcloud_list:
         # Prechecks Before Back-Up:
         subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
@@ -624,16 +622,14 @@ def test_delete_backup_group_on_local(request):
     subcloud_name = ConfigurationManager.get_lab_config().get_subcloud_names()[0]
 
     subcloud_list = []
+    dcmanager_subcloud_list = DcManagerSubcloudListKeywords(central_ssh).get_dcmanager_subcloud_list()
     for subcloud_name in ConfigurationManager.get_lab_config().get_subcloud_names():
-        sc_config = ConfigurationManager.get_lab_config().get_subcloud(subcloud_name)
+        # Only adds managed and online subclouds.
+        subcloud = dcmanager_subcloud_list.get_subcloud_by_name(subcloud_name)
+        if subcloud.get_management() == "managed" and subcloud.get_availability() == "online":
+            subcloud_list.append(subcloud_name)
 
-        # Only adds Simplex and in-sync subclouds.
-        if sc_config.get_lab_type() == "Simplex":
-            sync_status = DcManagerSubcloudListKeywords(central_ssh).get_dcmanager_subcloud_list().get_subcloud_by_name(subcloud_name).get_sync()
-            if sync_status == "in-sync":
-                subcloud_list.append(subcloud_name)
-
-    validate_greater_than_or_equal(len(subcloud_list), 1, "Validate subcloud list is composed for more than one subcloud")
+    validate_greater_than_or_equal(len(subcloud_list), 1, "Validate subcloud list is composed of at least one subcloud")
 
     for subcloud_name in subcloud_list:
         # Prechecks Before Back-Up:
