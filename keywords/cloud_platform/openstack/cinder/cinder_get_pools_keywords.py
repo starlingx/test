@@ -1,28 +1,27 @@
-"""Keywords for cinder get-pools CLI command."""
+"""Keywords for cinder get-pools using openstacksdk."""
 
-from framework.ssh.ssh_connection import SSHConnection
 from keywords.base_keyword import BaseKeyword
 from keywords.cloud_platform.openstack.cinder.object.cinder_get_pools_output import CinderGetPoolsOutput
-from keywords.openstack.command_wrappers import source_admin_openrc
+from keywords.openstack.connection.ace_openstack_connection import ACEOpenStackConnection
 
 
 class CinderGetPoolsKeywords(BaseKeyword):
-    """Class for Cinder Get Pools Keywords."""
+    """Class for Cinder Get Pools Keywords (SDK-based)."""
 
-    def __init__(self, ssh_connection: SSHConnection):
+    def __init__(self, openstack_connection: ACEOpenStackConnection):
         """Initialize CinderGetPoolsKeywords.
 
         Args:
-            ssh_connection (SSHConnection): SSH connection to the active controller.
+            openstack_connection (ACEOpenStackConnection): ACE OpenStack connection wrapper.
         """
-        self.ssh_connection = ssh_connection
+        self.openstack_connection = openstack_connection
 
     def get_cinder_pools(self) -> CinderGetPoolsOutput:
-        """Get the parsed output of the 'cinder get-pools --detail' command.
+        """Get the parsed output of cinder backend pools via the Block Storage SDK.
 
         Returns:
             CinderGetPoolsOutput: Parsed cinder pools output.
         """
-        output = self.ssh_connection.send(source_admin_openrc("cinder get-pools --detail"))
-        self.validate_success_return_code(self.ssh_connection)
-        return CinderGetPoolsOutput(output)
+        block_storage = self.openstack_connection.get_block_storage()
+        pools = list(block_storage.backend_pools(details=True))
+        return CinderGetPoolsOutput(pools)

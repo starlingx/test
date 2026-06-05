@@ -5,16 +5,18 @@ OpenStack Capacity Keywords
 Keywords for collecting and analyzing OpenStack capacity data across
 compute, storage, and network resources.
 
-All keywords follow the ACE three-file pattern (Keyword → Output → Object)
-and use ``source_admin_openrc`` for OpenStack CLI authentication.
+All capacity-related keywords use the **OpenStack SDK** (``openstacksdk``)
+via ``ACEOpenStackConnection`` for direct API access with automatic
+logging. This replaces the previous CLI-over-SSH approach for improved
+performance and reliability.
 
 Overview
 ========
 
 The capacity keywords provide two layers:
 
-1. **Data collection keywords** — execute individual OpenStack CLI commands
-   and return parsed Output/Object instances.
+1. **Data collection keywords** — use the OpenStack SDK to query Placement
+   and Block Storage APIs, returning parsed Output/Object instances.
 2. **Capacity analysis keyword** — orchestrates the collection keywords,
    calculates effective capacity, headroom, utilization, and status for
    each hypervisor and storage pool.
@@ -30,19 +32,13 @@ Compute
    :widths: 30 30 40
 
    * - Keyword
-     - CLI Command
+     - SDK API
      - Description
-   * - ``OpenStackHypervisorListKeywords``
-     - ``openstack hypervisor list``
-     - List hypervisors (ID, hostname, type, IP, state)
-   * - ``OpenStackHypervisorStatsKeywords``
-     - ``openstack hypervisor stats show``
-     - Aggregate cluster stats (deprecated but functional)
    * - ``OpenStackResourceProviderListKeywords``
-     - ``openstack resource provider list``
+     - ``placement.resource_providers()``
      - List resource provider UUIDs and names
    * - ``OpenStackResourceProviderInventoryListKeywords``
-     - ``openstack resource provider inventory list <uuid>``
+     - ``GET /resource_providers/{uuid}/inventories`` + ``/usages``
      - Per-hypervisor capacity (total, used, allocation_ratio, reserved)
 
 Storage
@@ -53,43 +49,11 @@ Storage
    :widths: 30 30 40
 
    * - Keyword
-     - CLI Command
+     - SDK API
      - Description
    * - ``CinderGetPoolsKeywords``
-     - ``cinder get-pools --detail``
+     - ``block_storage.backend_pools(details=True)``
      - Storage pool capacity (total, free, allocated, oversubscription)
-   * - ``OpenStackVolumeListKeywords``
-     - ``openstack volume list --all-projects``
-     - List all volumes (ID, name, status, size)
-   * - ``OpenStackVolumeTypeListKeywords``
-     - ``openstack volume type list``
-     - List volume types
-
-Network
--------
-
-.. list-table::
-   :header-rows: 1
-   :widths: 30 30 40
-
-   * - Keyword
-     - CLI Command
-     - Description
-   * - ``OpenStackNetworkListKeywords``
-     - ``openstack network list``
-     - List networks (ID, name, subnets)
-   * - ``OpenStackSubnetListKeywords``
-     - ``openstack subnet list``
-     - List subnets (ID, name, network, CIDR)
-   * - ``OpenStackPortListKeywords``
-     - ``openstack port list``
-     - List ports with continuation line merging
-   * - ``OpenStackFloatingIpListKeywords``
-     - ``openstack floating ip list``
-     - List floating IPs
-   * - ``OpenStackFlavorListKeywords``
-     - ``openstack flavor list --all``
-     - List flavors (vCPUs, RAM, disk)
 
 Capacity Analysis
 =================
@@ -138,11 +102,14 @@ Usage Examples
 
 .. code-block:: python
 
+    from keywords.openstack.connection.openstack_connection_manager import create_ace_connection
     from keywords.cloud_platform.openstack.capacity.openstack_capacity_analysis_keywords import (
         OpenStackCapacityAnalysisKeywords,
     )
 
-    analysis_kw = OpenStackCapacityAnalysisKeywords(ssh_connection)
+    conn = create_ace_connection(ssh_connection)
+
+    analysis_kw = OpenStackCapacityAnalysisKeywords(conn)
     output = analysis_kw.analyze_capacity()
 
     # Per-hypervisor breakdown
@@ -209,8 +176,9 @@ Usage Examples
 
 .. code-block:: python
 
-    from keywords.cloud_platform.openstack.hypervisor.openstack_hypervisor_list_keywords import (
-        OpenStackHypervisorListKeywords,
+    from keywords.openstack.connection.openstack_connection_manager import create_ace_connection
+    from keywords.cloud_platform.openstack.resource_provider.openstack_resource_provider_list_keywords import (
+        OpenStackResourceProviderListKeywords,
     )
     from keywords.cloud_platform.openstack.resource_provider.openstack_resource_provider_inventory_list_keywords import (
         OpenStackResourceProviderInventoryListKeywords,
@@ -219,20 +187,22 @@ Usage Examples
         CinderGetPoolsKeywords,
     )
 
-    # Hypervisor list
-    hv_kw = OpenStackHypervisorListKeywords(ssh_connection)
-    hv_output = hv_kw.get_openstack_hypervisor_list()
-    for hv in hv_output.get_hypervisors():
-        print(hv.get_hypervisor_hostname(), hv.get_state())
+    conn = create_ace_connection(ssh_connection)
+
+    # Resource provider list
+    rp_kw = OpenStackResourceProviderListKeywords(conn)
+    rp_output = rp_kw.get_resource_provider_list()
+    for rp in rp_output.get_resource_providers():
+        print(rp.get_name(), rp.get_uuid())
 
     # Resource provider inventory (per hypervisor)
-    inv_kw = OpenStackResourceProviderInventoryListKeywords(ssh_connection)
-    inv_output = inv_kw.get_resource_provider_inventory_list(hv.get_id())
+    inv_kw = OpenStackResourceProviderInventoryListKeywords(conn)
+    inv_output = inv_kw.get_resource_provider_inventory_list(rp.get_uuid())
     vcpu = inv_output.get_resource_provider_by_resource_class("VCPU")
     print(vcpu.get_total(), vcpu.get_used(), vcpu.get_allocation_ratio())
 
     # Cinder pools
-    cinder_kw = CinderGetPoolsKeywords(ssh_connection)
+    cinder_kw = CinderGetPoolsKeywords(conn)
     pools_output = cinder_kw.get_cinder_pools()
     for pool in pools_output.get_pools():
         print(pool.get_total_capacity_gb(), pool.get_free_capacity_gb())
@@ -240,27 +210,23 @@ Usage Examples
 Authentication
 ==============
 
-All OpenStack keywords use ``source_admin_openrc`` from
-``keywords.openstack.command_wrappers``. This sources
-``/var/opt/openstack/admin-openrc`` and wraps commands with
-``clients-wrapper.sh``, which is required for OpenStack service
-endpoints (Nova, Cinder, Neutron).
+All capacity keywords accept an ``ACEOpenStackConnection`` instance.
+Use the ``create_ace_connection()`` factory which extracts credentials
+from the lab via SSH and creates an authenticated SDK connection with
+automatic logging of all service calls.
 
-Do **not** use ``source_openrc`` (platform commands only) for these
-keywords — it will fail with endpoint-not-found errors.
+.. code-block:: python
 
-Port List — Continuation Lines
-==============================
+    from keywords.openstack.connection.openstack_connection_manager import create_ace_connection
+    from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 
-``openstack port list`` produces continuation lines when a port has
-multiple Fixed IP Addresses. The CLI output looks like::
+    ssh = LabConnectionKeywords().get_active_controller_ssh()
+    conn = create_ace_connection(ssh)
 
-    | abc-123 |      | fa:16:3e:aa:bb:cc | ip_address='10.0.0.1', subnet_id='sub-1' | ACTIVE |
-    |         |      |                   | ip_address='10.0.0.2', subnet_id='sub-2' |        |
+**Required service endpoints:**
 
-The ``OpenStackPortListOutput`` handles this by detecting rows with an
-empty ID field and appending their Fixed IP Addresses to the previous
-port object. The shared ``OpenStackTableParser`` is not modified.
+- **Placement** — for resource provider and inventory queries
+- **Block Storage (Cinder)** — for storage pool capacity
 
 File Structure
 ==============
@@ -270,37 +236,43 @@ File Structure
     keywords/cloud_platform/openstack/
     ├── capacity/
     │   ├── capacity_math.py                              # Pure calculation helpers
-    │   ├── openstack_capacity_analysis_keywords.py       # Orchestration keyword
+    │   ├── openstack_capacity_analysis_keywords.py       # Orchestration keyword (SDK)
     │   ├── README.rst                                    # This file
     │   └── object/
     │       ├── openstack_capacity_analysis_output.py     # Aggregated results
     │       ├── openstack_compute_capacity_object.py      # Per-hypervisor data
     │       └── openstack_storage_capacity_object.py      # Per-pool data
     ├── cinder/
-    │   ├── cinder_get_pools_keywords.py
+    │   ├── cinder_get_pools_keywords.py                  # SDK: block_storage.backend_pools()
     │   └── object/
-    ├── flavor/
-    │   ├── openstack_flavor_list_keywords.py
-    │   └── object/
-    ├── floating_ip/
-    │   ├── openstack_floating_ip_list_keywords.py
-    │   └── object/
-    ├── hypervisor/
-    │   ├── openstack_hypervisor_list_keywords.py
-    │   ├── openstack_hypervisor_stats_keywords.py
-    │   └── object/
-    ├── network/
-    │   ├── openstack_network_list_keywords.py
-    │   ├── openstack_subnet_list_keywords.py
-    │   └── object/
-    ├── port/
-    │   ├── openstack_port_list_keywords.py
-    │   └── object/
-    ├── resource_provider/
-    │   ├── openstack_resource_provider_inventory_list_keywords.py
-    │   ├── openstack_resource_provider_list_keywords.py
-    │   └── object/
-    └── volume/
-        ├── openstack_volume_list_keywords.py
-        ├── openstack_volume_type_list_keywords.py
+    │       ├── cinder_get_pools_object.py
+    │       └── cinder_get_pools_output.py
+    └── resource_provider/
+        ├── openstack_resource_provider_list_keywords.py             # SDK: placement.resource_providers()
+        ├── openstack_resource_provider_inventory_list_keywords.py   # SDK: placement GET inventories/usages
         └── object/
+            ├── openstack_resource_provider_list_object.py
+            ├── openstack_resource_provider_list_output.py
+            ├── openstack_resource_provider_inventory_list_object.py
+            └── openstack_resource_provider_inventory_list_output.py
+
+Migration from CLI
+==================
+
+The keyword files previously used SSH + CLI commands (e.g.
+``openstack resource provider list``, ``cinder get-pools --detail``).
+They now use the OpenStack SDK via ``ACEOpenStackConnection``.
+
+**What changed:**
+
+- Keyword constructors accept ``ACEOpenStackConnection`` instead of ``SSHConnection``
+- No more SSH, CLI parsing, or table parser dependency
+- Output classes accept SDK response objects directly in their constructors
+- Extends ``BaseKeyword`` for keyword-level logging and future failure grouping
+
+**What stayed the same:**
+
+- All Object classes (data holders) are unchanged
+- The ``capacity_math.py`` helper functions are unchanged
+- The ``OpenStackCapacityAnalysisOutput`` aggregation class is unchanged
+- All public method signatures on Output/Object classes are unchanged
