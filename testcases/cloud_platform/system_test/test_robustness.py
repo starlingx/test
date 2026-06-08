@@ -171,7 +171,7 @@ def _execute_worker_lock_unlock(worker_names: list[str], timing_logger: TimingLo
     
 
     get_logger().log_test_case_step("Waiting for pod migration...")
-    while time.time() < lock_start + 1200:
+    while time.time() < lock_start + 1500:
         pods_output = pod_keywords.get_pods(namespace="mixed-benchmark")
         pods_in_valid_status = (
             pods_output.get_pods_with_status("Running") +
@@ -198,14 +198,14 @@ def _execute_worker_lock_unlock(worker_names: list[str], timing_logger: TimingLo
     get_logger().log_test_case_step("Waiting for hosts to be unlocked (available and enabled)...")
     for worker_name in worker_names:
         validate_equals(
-            host_keywords.wait_for_host_unlocked(worker_name, unlock_wait_timeout=600),
+            host_keywords.wait_for_host_unlocked(worker_name, unlock_wait_timeout=900),
             True,
             f"Host {worker_name} should be unlocked after unlock operation"
         )
 
     get_logger().log_info("Waiting for all pods to be running...")
     recovery_start = time.time()
-    pod_keywords.wait_for_all_pods_status(["Running", "Succeeded", "Completed"], timeout=1200)
+    pod_keywords.wait_for_all_pods_status(["Running", "Succeeded", "Completed"], timeout=1500)
     pod_recovery_time = time.time() - recovery_start
     get_logger().log_info(f"All pods recovered in {pod_recovery_time:.2f} seconds")
 

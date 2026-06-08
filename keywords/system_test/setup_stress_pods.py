@@ -1,4 +1,5 @@
 import os
+import time
 from time import time
 from typing import Any, List, Optional, Tuple
 
@@ -71,6 +72,8 @@ class SetupStressPods:
         if namespace in existing_namespaces:
             ns_destroyer = KubectlDeleteNamespaceKeywords(self.ssh_connection)
             ns_destroyer.delete_namespace(namespace)
+            get_logger().log_info(f"Waiting for namespace '{namespace}' to be fully deleted...")
+            KubectlGetNamespacesKeywords(self.ssh_connection).wait_for_namespace_deleted(namespace)
         ns_creator.create_namespaces(namespace)
 
         self._setup_docker_registry(namespace, self.images)
@@ -127,6 +130,8 @@ class SetupStressPods:
         if namespace in existing_namespaces:
             ns_destroyer = KubectlDeleteNamespaceKeywords(self.ssh_connection)
             ns_destroyer.delete_namespace(namespace)
+            get_logger().log_info(f"Waiting for namespace '{namespace}' to be fully deleted...")
+            KubectlGetNamespacesKeywords(self.ssh_connection).wait_for_namespace_deleted(namespace)
         ns_creator.create_namespaces(namespace)
 
         self._setup_docker_registry(namespace, self.images)

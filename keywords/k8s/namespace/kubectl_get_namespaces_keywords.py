@@ -1,3 +1,5 @@
+import time
+
 from framework.ssh.ssh_connection import SSHConnection
 from keywords.k8s.k8s_base_keyword import K8sBaseKeyword
 from keywords.k8s.namespace.object.kubectl_get_namespaces_output import KubectlGetNamespacesOutput
@@ -43,3 +45,23 @@ class KubectlGetNamespacesKeywords(K8sBaseKeyword):
         namespaces_list_output = KubectlGetNamespacesOutput(kubectl_get_namespaces_output)
 
         return namespaces_list_output
+
+    def wait_for_namespace_deleted(self, namespace: str, timeout: int = 300, interval: int = 60) -> bool:
+        """Wait until the namespace no longer exists.
+
+        Args:
+            namespace (str): The namespace to wait for deletion.
+            timeout (int): Maximum seconds to wait. Defaults to 300.
+            interval (int): Polling interval in seconds. Defaults to 60.
+
+        Returns:
+            bool: True if namespace was deleted within timeout, False otherwise.
+        """
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            namespaces = self.get_namespaces().get_namespaces()
+            existing = [ns.get_name() for ns in namespaces]
+            if namespace not in existing:
+                return True
+            time.sleep(interval)
+        return False
