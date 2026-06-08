@@ -1,65 +1,41 @@
-"""Server object representation."""
-
-from typing import Dict, List, Optional
+"""Object representing a Nova server."""
 
 
 class ServerObject:
-    """Represents a single OpenStack Nova server.
+    """Holds the parsed fields from a Nova server."""
 
-    Mirrors the parser-then-typed-object pattern used elsewhere under
-    ``keywords/openstack/resources/`` (FlavorObject, NetworkObject, etc.):
-    keyword methods return wrappers like this instead of raw SDK dicts so
-    tests get a stable, type-safe surface even if the upstream SDK shape
-    changes.
-    """
-
-    def __init__(self) -> None:
-        """Initialize an empty ServerObject."""
-        self._properties: dict = {}
-
-    def set_property(self, key: str, value: object) -> None:
-        """Set a property value.
-
-        Args:
-            key (str): Property name.
-            value (object): Property value.
-        """
-        self._properties[key] = value
-
-    def get_property(self, key: str) -> object:
-        """Get a property value.
-
-        Args:
-            key (str): Property name.
-
-        Returns:
-            object: Property value, or None if not set.
-        """
-        return self._properties.get(key)
-
-    def get_id(self) -> str:
-        """Get the server ID.
-
-        Returns:
-            str: Server UUID, or empty string if unset.
-        """
-        return self._properties.get("id", "")
+    def __init__(self):
+        """Initialize ServerObject with explicit fields."""
+        self.id = None
+        self.name = None
+        self.status = None
+        self.host = None
+        self.availability_zone = None
+        self.flavor_id = None
+        self.image_id = None
+        self.addresses = None
+        self.created_at = None
+        self.updated_at = None
+        self.tenant_id = None
+        self.user_id = None
+        self.key_name = None
+        self.metadata = None
 
     def set_id(self, server_id: str) -> None:
         """Set the server ID.
 
         Args:
-            server_id (str): Server UUID.
+            server_id (str): Server ID.
         """
-        self._properties["id"] = server_id
+        self.id = server_id
 
-    def get_name(self) -> str:
-        """Get the server name.
+    def get_id(self) -> str:
+        """Get the server ID.
 
         Returns:
-            str: Server name, or empty string if unset.
+            str: Server ID.
         """
-        return self._properties.get("name", "")
+        return self.id
 
     def set_name(self, name: str) -> None:
         """Set the server name.
@@ -67,163 +43,227 @@ class ServerObject:
         Args:
             name (str): Server name.
         """
-        self._properties["name"] = name
+        self.name = name
 
-    def get_status(self) -> str:
-        """Get the server status (uppercase, e.g. ACTIVE / SHUTOFF / ERROR).
+    def get_name(self) -> str:
+        """Get the server name.
 
         Returns:
-            str: Server status, or empty string if unset.
+            str: Server name.
         """
-        return (self._properties.get("status") or "").upper()
+        return self.name
 
     def set_status(self, status: str) -> None:
         """Set the server status.
 
         Args:
-            status (str): Server status string.
+            status (str): Server status (e.g. 'ACTIVE', 'BUILD', 'ERROR').
         """
-        self._properties["status"] = status
+        self.status = status
 
-    def get_image_id(self) -> str:
-        """Get the boot image ID, if any.
+    def get_status(self) -> str:
+        """Get the server status.
 
         Returns:
-            str: Image UUID, or empty string if booted from volume.
+            str: Server status.
         """
-        image = self._properties.get("image")
-        if isinstance(image, dict):
-            return image.get("id", "") or ""
-        if isinstance(image, str):
-            return image
-        return ""
+        return self.status
 
-    def set_image(self, image: object) -> None:
-        """Set the image attribute (raw SDK shape: dict or string).
+    def set_host(self, host: str) -> None:
+        """Set the compute host.
 
         Args:
-            image (object): Image dict or ID string from the SDK.
+            host (str): Hostname of the compute node.
         """
-        self._properties["image"] = image
+        self.host = host
 
-    def get_flavor_id(self) -> str:
-        """Get the flavor ID.
+    def get_host(self) -> str:
+        """Get the compute host.
 
         Returns:
-            str: Flavor UUID, or empty string if unset.
+            str: Hostname of the compute node.
         """
-        flavor = self._properties.get("flavor")
-        if isinstance(flavor, dict):
-            return flavor.get("id", flavor.get("original_name", "")) or ""
-        if isinstance(flavor, str):
-            return flavor
-        return ""
+        return self.host
 
-    def get_flavor_name(self) -> str:
-        """Get the flavor name (original_name on modern API).
-
-        Returns:
-            str: Flavor name, or empty string if unset.
-        """
-        flavor = self._properties.get("flavor")
-        if isinstance(flavor, dict):
-            return flavor.get("original_name", flavor.get("name", "")) or ""
-        return ""
-
-    def set_flavor(self, flavor: object) -> None:
-        """Set the flavor attribute.
+    def set_availability_zone(self, availability_zone: str) -> None:
+        """Set the availability zone.
 
         Args:
-            flavor (object): Flavor dict or ID string from the SDK.
+            availability_zone (str): Availability zone name.
         """
-        self._properties["flavor"] = flavor
-
-    def get_metadata(self) -> Dict[str, str]:
-        """Get the server metadata dict.
-
-        Returns:
-            Dict[str, str]: Server metadata key/value pairs.
-        """
-        return dict(self._properties.get("metadata") or {})
-
-    def set_metadata(self, metadata: Dict[str, str]) -> None:
-        """Set the server metadata dict.
-
-        Args:
-            metadata (Dict[str, str]): Metadata key/value pairs.
-        """
-        self._properties["metadata"] = dict(metadata or {})
-
-    def get_addresses(self) -> Dict[str, list]:
-        """Get the addresses dict (keyed by network name).
-
-        Returns:
-            Dict[str, list]: Addresses keyed by network name.
-        """
-        return dict(self._properties.get("addresses") or {})
-
-    def set_addresses(self, addresses: Dict[str, list]) -> None:
-        """Set the addresses dict.
-
-        Args:
-            addresses (Dict[str, list]): Addresses keyed by network name.
-        """
-        self._properties["addresses"] = dict(addresses or {})
-
-    def get_fault(self) -> Optional[Dict]:
-        """Get the fault dict (present when status is ERROR).
-
-        Returns:
-            Optional[Dict]: Fault dict, or None.
-        """
-        fault = self._properties.get("fault")
-        return dict(fault) if isinstance(fault, dict) else None
-
-    def set_fault(self, fault: Optional[Dict]) -> None:
-        """Set the fault dict.
-
-        Args:
-            fault (Optional[Dict]): Fault dict.
-        """
-        self._properties["fault"] = fault
+        self.availability_zone = availability_zone
 
     def get_availability_zone(self) -> str:
         """Get the availability zone.
 
         Returns:
-            str: Availability zone, or empty string if unset.
+            str: Availability zone name.
         """
-        return self._properties.get("availability_zone", "") or ""
+        return self.availability_zone
 
-    def get_host(self) -> str:
-        """Get the compute host (admin-only attribute, may be empty).
+    def set_flavor_id(self, flavor_id: str) -> None:
+        """Set the flavor ID.
+
+        Args:
+            flavor_id (str): Flavor ID.
+        """
+        self.flavor_id = flavor_id
+
+    def get_flavor_id(self) -> str:
+        """Get the flavor ID.
 
         Returns:
-            str: Compute hostname.
+            str: Flavor ID.
         """
-        return self._properties.get("compute_host") or self._properties.get("hypervisor_hostname") or self._properties.get("OS-EXT-SRV-ATTR:host") or ""
+        return self.flavor_id
 
-    def get_security_groups(self) -> List[str]:
-        """Get the list of attached security group names.
+    def set_image_id(self, image_id: str) -> None:
+        """Set the image ID.
+
+        Args:
+            image_id (str): Image ID.
+        """
+        self.image_id = image_id
+
+    def get_image_id(self) -> str:
+        """Get the image ID.
 
         Returns:
-            List[str]: Security group names.
+            str: Image ID.
         """
-        sgs = self._properties.get("security_groups") or []
-        result = []
-        for sg in sgs:
-            if isinstance(sg, dict):
-                name = sg.get("name")
-                if name:
-                    result.append(name)
-            elif isinstance(sg, str):
-                result.append(sg)
-        return result
+        return self.image_id
 
-    def __object_to_string__(self) -> str:
-        """Return human-readable representation.
+    def set_addresses(self, addresses: dict) -> None:
+        """Set the server addresses.
+
+        Args:
+            addresses (dict): Network-to-addresses mapping.
+        """
+        self.addresses = addresses
+
+    def get_addresses(self) -> dict:
+        """Get the server addresses.
 
         Returns:
-            str: Summary string for logs and debugging.
+            dict: Network-to-addresses mapping.
         """
-        return f"ServerObject(name={self.get_name()}, id={self.get_id()}, " f"status={self.get_status()}, flavor={self.get_flavor_name()})"
+        return self.addresses or {}
+
+    def set_created_at(self, created_at: str) -> None:
+        """Set the creation timestamp.
+
+        Args:
+            created_at (str): Creation timestamp.
+        """
+        self.created_at = created_at
+
+    def get_created_at(self) -> str:
+        """Get the creation timestamp.
+
+        Returns:
+            str: Creation timestamp.
+        """
+        return self.created_at
+
+    def set_updated_at(self, updated_at: str) -> None:
+        """Set the update timestamp.
+
+        Args:
+            updated_at (str): Update timestamp.
+        """
+        self.updated_at = updated_at
+
+    def get_updated_at(self) -> str:
+        """Get the update timestamp.
+
+        Returns:
+            str: Update timestamp.
+        """
+        return self.updated_at
+
+    def set_tenant_id(self, tenant_id: str) -> None:
+        """Set the tenant/project ID.
+
+        Args:
+            tenant_id (str): Tenant ID.
+        """
+        self.tenant_id = tenant_id
+
+    def get_tenant_id(self) -> str:
+        """Get the tenant/project ID.
+
+        Returns:
+            str: Tenant ID.
+        """
+        return self.tenant_id
+
+    def set_user_id(self, user_id: str) -> None:
+        """Set the user ID.
+
+        Args:
+            user_id (str): User ID.
+        """
+        self.user_id = user_id
+
+    def get_user_id(self) -> str:
+        """Get the user ID.
+
+        Returns:
+            str: User ID.
+        """
+        return self.user_id
+
+    def set_key_name(self, key_name: str) -> None:
+        """Set the keypair name.
+
+        Args:
+            key_name (str): Keypair name.
+        """
+        self.key_name = key_name
+
+    def get_key_name(self) -> str:
+        """Get the keypair name.
+
+        Returns:
+            str: Keypair name.
+        """
+        return self.key_name
+
+    def set_metadata(self, metadata: dict) -> None:
+        """Set the server metadata.
+
+        Args:
+            metadata (dict): Key-value metadata.
+        """
+        self.metadata = metadata
+
+    def get_metadata(self) -> dict:
+        """Get the server metadata.
+
+        Returns:
+            dict: Key-value metadata.
+        """
+        return self.metadata or {}
+
+    def get_first_ip(self, ip_version: int = 4) -> str:
+        """Get the first IP address matching the specified version.
+
+        Args:
+            ip_version (int): IP version to look for (4 or 6).
+
+        Returns:
+            str: IP address, or empty string if not found.
+        """
+        for addr_list in self.get_addresses().values():
+            for addr in addr_list:
+                if addr.get("version") == ip_version:
+                    return addr["addr"]
+        return ""
+
+    def __str__(self) -> str:
+        """Return string representation.
+
+        Returns:
+            str: Human-readable server summary.
+        """
+        return f"[ID: {self.get_id()}, Name: {self.get_name()}, Status: {self.get_status()}, Host: {self.get_host()}]"
