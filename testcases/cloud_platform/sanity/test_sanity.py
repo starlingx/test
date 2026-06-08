@@ -1,6 +1,7 @@
 import time
-from typing import Any
 from datetime import datetime, timedelta
+from typing import Any
+
 from pytest import mark
 from tabulate import tabulate
 
@@ -54,7 +55,6 @@ from keywords.k8s.secret.kubectl_create_secret_keywords import KubectlCreateSecr
 from keywords.k8s.service.kubectl_delete_service_keywords import KubectlDeleteServiceKeywords
 from keywords.k8s.service.kubectl_get_service_keywords import KubectlGetServiceKeywords
 from keywords.kpi.log_pattern_kpi_keywords import LogPatternKpiKeywords
-from keywords.kpi.lpmptool_kpi_keywords import LpmptoolKpiKeywords
 from keywords.kpi.unlock_kpi_blocks import UnlockKpiBlocks
 from keywords.linux.date.date_keywords import DateKeywords
 from keywords.linux.tar.tar_keywords import TarKeywords
@@ -74,9 +74,9 @@ def save_unlock_kpi_to_database(results: list, hostname: str) -> None:
     if not results:
         return
 
-    lpmptool = LpmptoolKpiKeywords(None)
-    kpi_results = lpmptool.parse_results(results, hostname)
-    lpmptool.save_to_database(kpi_results)
+    # lpmptool = LpmptoolKpiKeywords(None)
+    # kpi_results = lpmptool.parse_results(results, hostname)
+    # lpmptool.save_to_database(kpi_results)
 
 
 @mark.p0
@@ -189,30 +189,22 @@ def test_lock_unlock_simplex():
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     active_controller = SystemHostListKeywords(ssh_connection).get_active_controller()
-    
+
     # Capture start time from remote system BEFORE lock operation
     start_time_str = DateKeywords(ssh_connection).get_current_datetime()
     get_logger().log_info(f"Using start_time for KPI search: {start_time_str}")
 
     lock_success = SystemHostLockKeywords(ssh_connection).lock_host(active_controller.get_host_name())
     assert lock_success, "Controller was not locked successfully."
-    
+
     unlock_success = SystemHostLockKeywords(ssh_connection).unlock_host(active_controller.get_host_name())
     assert unlock_success, "Controller was not unlocked successfully."
 
     kpi_keywords = LogPatternKpiKeywords(ssh_connection)
 
     get_logger().log_info("=== Calculating Unlock KPIs ===")
-    results, csv_results = kpi_keywords.calculate_kpi(
-        hostname=active_controller.get_host_name(),
-        blocks=UnlockKpiBlocks.active_controller_unlock_kpi_blocks(),
-        start_date=start_time_str,
-        loops=1,
-        pair_mode=True,
-        output_file="/tmp/unlock_profile.timing",
-        csv_file="/tmp/unlock_profile.csv"
-    )
-    
+    results, csv_results = kpi_keywords.calculate_kpi(hostname=active_controller.get_host_name(), blocks=UnlockKpiBlocks.active_controller_unlock_kpi_blocks(), start_date=start_time_str, loops=1, pair_mode=True, output_file="/tmp/unlock_profile.timing", csv_file="/tmp/unlock_profile.csv")
+
     if results:
         kpi_keywords.parse_and_display_results(results)
         get_logger().log_info("KPI calculation completed successfully")
@@ -253,16 +245,8 @@ def test_lock_unlock_standby_controller():
     kpi_keywords = LogPatternKpiKeywords(ssh_connection)
 
     get_logger().log_info("=== Calculating Unlock KPIs ===")
-    results, csv_results = kpi_keywords.calculate_kpi(
-        hostname=standby_controller.get_host_name(),
-        blocks=UnlockKpiBlocks.node_unlock_kpi_blocks(),
-        start_date=start_time_str,
-        loops=1,
-        pair_mode=True,
-        output_file="/tmp/unlock_profile.timing",
-        csv_file="/tmp/unlock_profile.csv"
-    )
-    
+    results, csv_results = kpi_keywords.calculate_kpi(hostname=standby_controller.get_host_name(), blocks=UnlockKpiBlocks.node_unlock_kpi_blocks(), start_date=start_time_str, loops=1, pair_mode=True, output_file="/tmp/unlock_profile.timing", csv_file="/tmp/unlock_profile.csv")
+
     if results:
         kpi_keywords.parse_and_display_results(results)
         get_logger().log_info("KPI calculation completed successfully")
@@ -305,16 +289,8 @@ def test_lock_unlock_compute():
     kpi_keywords = LogPatternKpiKeywords(ssh_connection)
 
     get_logger().log_info("=== Calculating Unlock KPIs ===")
-    results, csv_results = kpi_keywords.calculate_kpi(
-        hostname=computes[0].get_host_name(),
-        blocks=UnlockKpiBlocks.node_unlock_kpi_blocks(),
-        start_date=start_time_str,
-        loops=1,
-        pair_mode=True,
-        output_file="/tmp/unlock_profile.timing",
-        csv_file="/tmp/unlock_profile.csv"
-    )
-    
+    results, csv_results = kpi_keywords.calculate_kpi(hostname=computes[0].get_host_name(), blocks=UnlockKpiBlocks.node_unlock_kpi_blocks(), start_date=start_time_str, loops=1, pair_mode=True, output_file="/tmp/unlock_profile.timing", csv_file="/tmp/unlock_profile.csv")
+
     if results:
         kpi_keywords.parse_and_display_results(results)
         get_logger().log_info("KPI calculation completed successfully")

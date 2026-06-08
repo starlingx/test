@@ -1,25 +1,27 @@
-from typing import Dict, List, Optional, Any, Tuple
-from datetime import datetime, timedelta
-import re
 import csv
 import gzip
 import os
+import re
+from datetime import datetime, timedelta
+from typing import Any, Dict, List, Optional, Tuple
+
+# from keywords.kpi.lpmptool_kpi_keywords import KpiResult
+from tabulate import tabulate
 
 from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
 from keywords.base_keyword import BaseKeyword
 from keywords.cloud_platform.upgrade.objects.upgrade_event import UpgradeEvent
 from keywords.cloud_platform.upgrade.record_upgrade_event_keywords import RecordUpgradeEventKeywords
-from keywords.kpi.lpmptool_kpi_keywords import KpiResult
-from tabulate import tabulate
+
 
 class LogPatternKpiKeywords(BaseKeyword):
     """
     Log Pattern Matching Profiler (LPMP) engine for KPI calculation.
-    
+
     This class provides the core engine for pattern matching and timing analysis.
     Block definitions should be provided from separate configuration files.
-    
+
     Features:
     - Sequential mode: Process patterns in order with queuing
     - Pair mode: Measure start/stop pattern timing with validation
@@ -32,7 +34,7 @@ class LogPatternKpiKeywords(BaseKeyword):
 
     def __init__(self, ssh_connection: SSHConnection, max_sequence_duration: float = 7200.0):
         """Initialize with SSH connection.
-        
+
         Args:
             ssh_connection (SSHConnection): SSH connection to remote host
             max_sequence_duration (float): Maximum duration in seconds for a reasonable sequence (default: 7200s / 2 hours)
@@ -40,15 +42,7 @@ class LogPatternKpiKeywords(BaseKeyword):
         self.ssh_connection = ssh_connection
         self.max_sequence_duration = max_sequence_duration
 
-    def calculate_kpi(self, hostname: str, blocks: List[Dict[str, Any]], 
-                            start_date: Optional[str] = None, loops: int = 1,
-                            max_log_length: int = 180, time_tolerance: float = 1.0,
-                            output_file: str = "profile.timing",
-                            csv_file: str = "profile.csv",
-                            logs_dir: str = "/var/log",
-                            verbose: bool = True,
-                            pair_mode: bool = False,
-                            max_time_delta: float = 500.0) -> Tuple[List[str], List[List]]:
+    def calculate_kpi(self, hostname: str, blocks: List[Dict[str, Any]], start_date: Optional[str] = None, loops: int = 1, max_log_length: int = 180, time_tolerance: float = 1.0, output_file: str = "profile.timing", csv_file: str = "profile.csv", logs_dir: str = "/var/log", verbose: bool = True, pair_mode: bool = False, max_time_delta: float = 500.0) -> Tuple[List[str], List[List]]:
         """
         Calculate KPI timing - main entry point.
 
@@ -75,7 +69,7 @@ class LogPatternKpiKeywords(BaseKeyword):
             get_logger().log_info(f"Parsed start_datetime: {start_datetime} (timezone: {start_datetime.tzinfo})")
 
         # Build variables dict
-        variables = {'hostname': hostname}
+        variables = {"hostname": hostname}
 
         # Apply variable substitution
         self._apply_variable_substitution(blocks, variables, verbose)
@@ -109,18 +103,12 @@ class LogPatternKpiKeywords(BaseKeyword):
             # Total time: from first non-excluded block to latest end (KPI timeframe)
             # KPI time: same as total time minus any blackout phases within that timeframe
             if pair_mode:
-                success, kpi_start_time, end_time, blackout_duration = self._process_blocks_pair_mode(
-                    blocks, start_datetime, max_log_length, logs_dir, max_time_delta,
-                    results, csv_results, verbose
-                )
+                success, kpi_start_time, end_time, blackout_duration = self._process_blocks_pair_mode(blocks, start_datetime, max_log_length, logs_dir, max_time_delta, results, csv_results, verbose)
                 total_duration_raw = (end_time - kpi_start_time).total_seconds() if kpi_start_time and end_time else 0.0
                 kpi_duration = total_duration_raw - blackout_duration  # Subtract only blackout phases within KPI timeframe
-                patterns_found = len([r for r in results[len(results)-len(blocks):] if '⚠️' not in r and not r.startswith('✅')])
+                patterns_found = len([r for r in results[len(results) - len(blocks) :] if "⚠️" not in r and not r.startswith("✅")])
             else:
-                success, patterns_found, kpi_start_time, end_time, blackout_duration = self._process_blocks_sequential(
-                    blocks, start_datetime, time_tolerance, max_log_length, logs_dir,
-                    results, csv_results, verbose
-                )
+                success, patterns_found, kpi_start_time, end_time, blackout_duration = self._process_blocks_sequential(blocks, start_datetime, time_tolerance, max_log_length, logs_dir, results, csv_results, verbose)
                 total_duration_raw = (end_time - kpi_start_time).total_seconds() if kpi_start_time and end_time else 0.0
                 kpi_duration = total_duration_raw - blackout_duration
 
@@ -151,14 +139,14 @@ class LogPatternKpiKeywords(BaseKeyword):
 
             # Add summary to results
             results.append("✅ " + summary_line + "\n")
-            
+
             # Add KPI timing metadata for display
             if kpi_start_time:
                 results.append(f"KPI_START_TIME={kpi_start_time.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}\n")
                 # Find first non-excluded block to get start pattern
                 for block in blocks:
-                    if not block.get('exclude_from_kpi', False):
-                        start_pattern = block.get('start', block.get('patterns', [''])[0] if 'patterns' in block else '')
+                    if not block.get("exclude_from_kpi", False):
+                        start_pattern = block.get("start", block.get("patterns", [""])[0] if "patterns" in block else "")
                         if isinstance(start_pattern, list):
                             start_pattern = start_pattern[0]
                         results.append(f"KPI_START_PATTERN={start_pattern}\n")
@@ -167,13 +155,13 @@ class LogPatternKpiKeywords(BaseKeyword):
                 results.append(f"KPI_END_TIME={end_time.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}\n")
                 # Find last non-excluded block to get stop pattern
                 for block in reversed(blocks):
-                    if not block.get('exclude_from_kpi', False):
-                        stop_pattern = block.get('stop', block.get('patterns', [''])[-1] if 'patterns' in block else '')
+                    if not block.get("exclude_from_kpi", False):
+                        stop_pattern = block.get("stop", block.get("patterns", [""])[-1] if "patterns" in block else "")
                         if isinstance(stop_pattern, list):
                             stop_pattern = stop_pattern[0]
                         results.append(f"KPI_END_PATTERN={stop_pattern}\n")
                         break
-            
+
             csv_results.append([f"Pass {loop_count}", total_duration, f"found {patterns_found} patterns", "", ""])
 
             if loops == 1:
@@ -193,7 +181,7 @@ class LogPatternKpiKeywords(BaseKeyword):
     def parse_and_display_results(self, results: List[str]) -> None:
         """
         Parse KPI results and display in formatted table.
-        
+
         Args:
             results (List[str]): Raw results from calculate_kpi
         """
@@ -207,99 +195,97 @@ class LogPatternKpiKeywords(BaseKeyword):
         kpi_end_pattern = ""
         patterns_count = ""
         model_info = ""
-        
+
         for line in results:
             if line.strip():
-                if line.startswith('✅'):
+                if line.startswith("✅"):
                     summary_line = line.strip()
                     parts = summary_line.split()
                     if len(parts) >= 4:
                         for part in parts:
-                            if ':' in part and '.' in part and len(part.split(':')) == 3:
+                            if ":" in part and "." in part and len(part.split(":")) == 3:
                                 total_time = part
                                 break
                     # Extract KPI time from (KPI: HH:MM:SS.xxx) format
-                    if '(KPI:' in summary_line:
-                        kpi_match = re.search(r'\(KPI: ([0-9:]+\.[0-9]+)\)', summary_line)
+                    if "(KPI:" in summary_line:
+                        kpi_match = re.search(r"\(KPI: ([0-9:]+\.[0-9]+)\)", summary_line)
                         if kpi_match:
                             kpi_time = kpi_match.group(1)
-                    if 'found' in summary_line and 'patterns' in summary_line:
-                        idx = summary_line.index('found')
-                        patterns_count = summary_line[idx:].split('patterns')[0].replace('found', '').strip()
-                    if 'for' in summary_line:
-                        model_info = summary_line.split('for', 1)[1].strip()
-                elif line.startswith('KPI_START_TIME='):
-                    kpi_start_time = line.split('=')[1].strip()
-                elif line.startswith('KPI_END_TIME='):
-                    kpi_end_time = line.split('=')[1].strip()
-                elif line.startswith('KPI_START_PATTERN='):
-                    kpi_start_pattern = line.split('=', 1)[1].strip()
-                elif line.startswith('KPI_END_PATTERN='):
-                    kpi_end_pattern = line.split('=', 1)[1].strip()
+                    if "found" in summary_line and "patterns" in summary_line:
+                        idx = summary_line.index("found")
+                        patterns_count = summary_line[idx:].split("patterns")[0].replace("found", "").strip()
+                    if "for" in summary_line:
+                        model_info = summary_line.split("for", 1)[1].strip()
+                elif line.startswith("KPI_START_TIME="):
+                    kpi_start_time = line.split("=")[1].strip()
+                elif line.startswith("KPI_END_TIME="):
+                    kpi_end_time = line.split("=")[1].strip()
+                elif line.startswith("KPI_START_PATTERN="):
+                    kpi_start_pattern = line.split("=", 1)[1].strip()
+                elif line.startswith("KPI_END_PATTERN="):
+                    kpi_end_pattern = line.split("=", 1)[1].strip()
                 else:
-                    parts = line.split('\t')
+                    parts = line.split("\t")
                     if len(parts) >= 5:
                         table_data.append([parts[0].strip(), parts[1].strip(), parts[2].strip(), parts[3].strip(), parts[4].strip()])
-        
+
         if total_time:
-            summary_row = ['TOTAL TIME', total_time, f'✅ Found {patterns_count} patterns', '', model_info if model_info else '']
+            summary_row = ["TOTAL TIME", total_time, f"✅ Found {patterns_count} patterns", "", model_info if model_info else ""]
             table_data.append(summary_row)
-            
+
             # Add KPI time row if blackout duration exists
             if kpi_time:
-                kpi_row = ['KPI TIME', kpi_time, '(excluding blackout)', '', '']
+                kpi_row = ["KPI TIME", kpi_time, "(excluding blackout)", "", ""]
                 table_data.append(kpi_row)
-            
+
             # Add KPI start/end timestamps with patterns
             if kpi_start_time:
-                start_row = ['KPI START', kpi_start_time, 'First non-excluded block start', '', kpi_start_pattern[:80] if kpi_start_pattern else '']
+                start_row = ["KPI START", kpi_start_time, "First non-excluded block start", "", kpi_start_pattern[:80] if kpi_start_pattern else ""]
                 table_data.append(start_row)
             if kpi_end_time:
-                end_row = ['KPI END', kpi_end_time, 'Last non-excluded block stop', '', kpi_end_pattern[:80] if kpi_end_pattern else '']
+                end_row = ["KPI END", kpi_end_time, "Last non-excluded block stop", "", kpi_end_pattern[:80] if kpi_end_pattern else ""]
                 table_data.append(end_row)
-            
+
             # Add hardware info row if available
             if model_info:
-                hardware_row = ['HARDWARE', '', model_info, '', '']
+                hardware_row = ["HARDWARE", "", model_info, "", ""]
                 table_data.append(hardware_row)
-        
+
         if table_data:
-            table_output = tabulate(table_data, 
-                                   headers=['Cumulative(s)', 'Delta Time', 'Block Label', 'Log File', 'Log Line'],
-                                   tablefmt='grid')
+            table_output = tabulate(table_data, headers=["Cumulative(s)", "Delta Time", "Block Label", "Log File", "Log Line"], tablefmt="grid")
             get_logger().log_info("\n" + table_output)
-            
+
             if total_time:
                 get_logger().log_info(f"\n=== TOTAL TIME: {total_time} ===")
-        
+
         get_logger().log_info(f"\nKPI calculation complete. Found {len(table_data)-1} timing points.")
         get_logger().log_info("Results saved to /tmp/profile.timing and /tmp/profile.csv")
 
     def _parse_start_date(self, start_date: Optional[str], verbose: bool) -> Optional[datetime]:
         """Parse start date string or datetime object.
-        
+
         Args:
             start_date (Optional[str]): Start date as string or datetime object
             verbose (bool): Enable verbose logging
-            
+
         Returns:
             Optional[datetime]: Parsed datetime or None
         """
         if not start_date:
             return None
-        
+
         # If already a datetime object, return it
         if isinstance(start_date, datetime):
             if verbose:
                 get_logger().log_info(f"Using datetime object: {start_date}")
             return start_date
-        
+
         # Parse string
         try:
-            if 'T' in start_date:
+            if "T" in start_date:
                 dt = datetime.fromisoformat(start_date)
             else:
-                dt = datetime.fromisoformat(start_date + 'T00:00:00')
+                dt = datetime.fromisoformat(start_date + "T00:00:00")
             if verbose:
                 get_logger().log_info(f"Parsed start-date: {dt}")
             return dt
@@ -310,11 +296,11 @@ class LogPatternKpiKeywords(BaseKeyword):
     def _parse_timestamp(self, line: str, verbose: bool = False) -> Optional[datetime]:
         """Extract timestamp from log line (sysinv or ISO format)."""
         # sysinv format: "sysinv 2024-01-06 12:30:45.123"
-        if line.startswith('sysinv '):
-            match = re.search(r'sysinv (\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3})', line)
+        if line.startswith("sysinv "):
+            match = re.search(r"sysinv (\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3})", line)
             if match:
                 try:
-                    dt = datetime.strptime(match.group(1), '%Y-%m-%d %H:%M:%S.%f')
+                    dt = datetime.strptime(match.group(1), "%Y-%m-%d %H:%M:%S.%f")
                     if verbose:
                         get_logger().log_info(f"Parsed sysinv timestamp: {dt} from {match.group(1)}")
                     return dt
@@ -322,7 +308,7 @@ class LogPatternKpiKeywords(BaseKeyword):
                     pass
 
         # ISO format with milliseconds: "2024-01-06T12:30:45.123"
-        match = re.search(r'(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3})', line)
+        match = re.search(r"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3})", line)
         if match:
             try:
                 dt = datetime.fromisoformat(match.group(1))
@@ -331,9 +317,9 @@ class LogPatternKpiKeywords(BaseKeyword):
                 return dt
             except:
                 pass
-        
+
         # ISO format with microseconds: "2024-01-06T12:30:45.123456"
-        match = re.search(r'(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6})', line)
+        match = re.search(r"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6})", line)
         if match:
             try:
                 dt = datetime.fromisoformat(match.group(1))
@@ -342,18 +328,18 @@ class LogPatternKpiKeywords(BaseKeyword):
                 return dt
             except:
                 pass
-        
+
         if verbose:
             get_logger().log_info(f"Could not parse timestamp from line: {line[:100]}...")
         return None
 
     def _substitute_variables(self, text: str, variables: Dict[str, str]) -> str:
         """Substitute variables in text.
-        
+
         Args:
             text (str): Text with {variable} placeholders
             variables (Dict[str, str]): Variable substitutions
-            
+
         Returns:
             str: Text with variables substituted
         """
@@ -367,53 +353,53 @@ class LogPatternKpiKeywords(BaseKeyword):
         """Apply variable substitution to all patterns."""
         for block in blocks:
             # Handle pair mode blocks (start/stop format)
-            if 'start' in block and 'stop' in block:
+            if "start" in block and "stop" in block:
                 # Handle start pattern (string or list)
-                if isinstance(block['start'], list):
-                    block['start'] = [self._substitute_variables(p, variables) for p in block['start']]
+                if isinstance(block["start"], list):
+                    block["start"] = [self._substitute_variables(p, variables) for p in block["start"]]
                 else:
-                    block['start'] = self._substitute_variables(block['start'], variables)
-                
+                    block["start"] = self._substitute_variables(block["start"], variables)
+
                 # Handle stop pattern (string or list)
-                if isinstance(block['stop'], list):
-                    block['stop'] = [self._substitute_variables(p, variables) for p in block['stop']]
+                if isinstance(block["stop"], list):
+                    block["stop"] = [self._substitute_variables(p, variables) for p in block["stop"]]
                 else:
-                    block['stop'] = self._substitute_variables(block['stop'], variables)
-                
+                    block["stop"] = self._substitute_variables(block["stop"], variables)
+
                 if verbose:
                     get_logger().log_info(f"Block '{block['label']}' start/stop after substitution: {block['start']} / {block['stop']}")
             # Handle sequential mode blocks (patterns format)
-            elif 'patterns' in block:
-                for i, pattern in enumerate(block['patterns']):
+            elif "patterns" in block:
+                for i, pattern in enumerate(block["patterns"]):
                     if isinstance(pattern, list):
-                        block['patterns'][i] = [self._substitute_variables(p, variables) for p in pattern]
+                        block["patterns"][i] = [self._substitute_variables(p, variables) for p in pattern]
                     else:
-                        block['patterns'][i] = self._substitute_variables(pattern, variables)
+                        block["patterns"][i] = self._substitute_variables(pattern, variables)
                 if verbose:
                     get_logger().log_info(f"Block '{block['label']}' patterns after substitution: {block['patterns']}")
 
     def _expand_wildcards_in_blocks(self, blocks: List[Dict], logs_dir: str, start_date: Optional[datetime], verbose: bool) -> None:
         """Expand wildcard patterns in file specifications."""
         for block in blocks:
-            file_spec = block['file']
+            file_spec = block["file"]
 
             if isinstance(file_spec, list):
                 expanded = []
                 for f in file_spec:
-                    if '*' in f:
+                    if "*" in f:
                         expanded.extend(self._expand_and_sort_log_files(logs_dir, f, start_date, verbose))
                     else:
                         expanded.append(f)
-                block['file'] = expanded
-            elif isinstance(file_spec, str) and '*' in file_spec:
-                block['file'] = self._expand_and_sort_log_files(logs_dir, file_spec, start_date, verbose)
+                block["file"] = expanded
+            elif isinstance(file_spec, str) and "*" in file_spec:
+                block["file"] = self._expand_and_sort_log_files(logs_dir, file_spec, start_date, verbose)
 
             if verbose:
                 get_logger().log_info(f"Block '{block['label']}' expanded files: {block['file']}")
 
     def _expand_and_sort_log_files(self, logs_dir: str, file_pattern: str, start_date: Optional[datetime], verbose: bool) -> List[str]:
         """Expand wildcard and sort files by date proximity."""
-        if '*' not in file_pattern:
+        if "*" not in file_pattern:
             return [file_pattern]
 
         # Find matching files
@@ -434,7 +420,7 @@ class LogPatternKpiKeywords(BaseKeyword):
             mtime_result = self.ssh_connection.send(cmd)
             if mtime_result and mtime_result[0].strip().isdigit():
                 mtime = int(mtime_result[0].strip())
-                basename = filepath.split('/')[-1]
+                basename = filepath.split("/")[-1]
                 file_info.append((basename, mtime))
 
         if not file_info:
@@ -463,37 +449,37 @@ class LogPatternKpiKeywords(BaseKeyword):
 
     def _format_log_line_for_output(self, log_line: str, filename: str) -> str:
         """Format log line, removing sysinv prefix."""
-        if filename.startswith('sysinv.log') and log_line.startswith('sysinv '):
+        if filename.startswith("sysinv.log") and log_line.startswith("sysinv "):
             return log_line[7:]
         return log_line
 
     def _extract_model_info(self, blocks: List[Dict], logs_dir: str, verbose: bool) -> str:
         """Extract model information from mtcAgent logs or system info.
-        
+
         Args:
             blocks (List[Dict]): Block definitions (not used, kept for compatibility)
             logs_dir (str): Log directory path
             verbose (bool): Enable verbose logging
-            
+
         Returns:
             str: Model info string or empty string
         """
-        manufacturer_log_files = ['mtcAgent.log', 'mtcAgent.log.1.gz']
+        manufacturer_log_files = ["mtcAgent.log", "mtcAgent.log.1.gz"]
 
         # Try to extract from mtcAgent logs first
         for filename in manufacturer_log_files:
             filepath = f"{logs_dir}/{filename}"
-            
+
             check_cmd = f"test -f {filepath} && echo 'exists' || echo 'missing'"
             check_result = self.ssh_connection.send(check_cmd)
-            if not check_result or 'missing' in check_result[0]:
+            if not check_result or "missing" in check_result[0]:
                 continue
 
-            if filename.endswith('.gz'):
+            if filename.endswith(".gz"):
                 cmd = f"zcat {filepath} 2>/dev/null | grep 'manufacturer is'"
             else:
                 cmd = f"grep 'manufacturer is' {filepath} 2>/dev/null"
-            
+
             result = self.ssh_connection.send(cmd)
 
             if result:
@@ -501,7 +487,7 @@ class LogPatternKpiKeywords(BaseKeyword):
                     if not line.strip():
                         continue
                     if "manufacturer is" in line:
-                        match = re.search(r'model:(.+)', line)
+                        match = re.search(r"model:(.+)", line)
                         if match:
                             model_info = match.group(1).strip()
                             if verbose:
@@ -511,10 +497,10 @@ class LogPatternKpiKeywords(BaseKeyword):
         # Fallback: Try to get hardware info from dmidecode
         if verbose:
             get_logger().log_info("Model info not found in logs, trying dmidecode")
-        
+
         dmi_cmd = "sudo dmidecode -t system 2>/dev/null | grep -E 'Manufacturer|Product Name' | head -2"
         dmi_result = self.ssh_connection.send(dmi_cmd)
-        
+
         if dmi_result and len(dmi_result) >= 2:
             manufacturer = ""
             product = ""
@@ -523,7 +509,7 @@ class LogPatternKpiKeywords(BaseKeyword):
                     manufacturer = line.split(":", 1)[1].strip()
                 elif "Product Name:" in line:
                     product = line.split(":", 1)[1].strip()
-            
+
             if manufacturer and product:
                 model_info = f"{manufacturer} {product}"
                 if verbose:
@@ -532,11 +518,9 @@ class LogPatternKpiKeywords(BaseKeyword):
 
         return ""
 
-    def _find_pattern_in_files_all_matches(self, logs_dir: str, filenames: List[str], pattern: str,
-                                           after_timestamp: Optional[datetime], verbose: bool,
-                                           block_label: str) -> List[Tuple]:
+    def _find_pattern_in_files_all_matches(self, logs_dir: str, filenames: List[str], pattern: str, after_timestamp: Optional[datetime], verbose: bool, block_label: str) -> List[Tuple]:
         """Find ALL matches for a pattern in files (used for sort mode).
-        
+
         Args:
             logs_dir (str): Log directory path
             filenames (List[str]): List of filenames to search
@@ -544,7 +528,7 @@ class LogPatternKpiKeywords(BaseKeyword):
             after_timestamp (Optional[datetime]): Only return matches after this time
             verbose (bool): Enable verbose logging
             block_label (str): Block label for error messages
-            
+
         Returns:
             List[Tuple]: List of (timestamp, log_line, filename) tuples
         """
@@ -557,10 +541,10 @@ class LogPatternKpiKeywords(BaseKeyword):
 
             check_cmd = f"test -f {filepath} && echo 'exists' || echo 'missing'"
             check_result = self.ssh_connection.send(check_cmd)
-            if not check_result or 'missing' in check_result[0]:
+            if not check_result or "missing" in check_result[0]:
                 continue
 
-            is_gzipped = filename.endswith('.gz')
+            is_gzipped = filename.endswith(".gz")
             if is_gzipped:
                 cmd = f"zcat {filepath} 2>/dev/null | grep -F '{pattern}'"
             else:
@@ -582,34 +566,31 @@ class LogPatternKpiKeywords(BaseKeyword):
 
         return matches
 
-    def _find_pattern_lpmp_style(self, logs_dir: str, filenames: List[str], pattern: str,
-                                start_date: Optional[datetime], verbose: bool, block_label: str,
-                                max_time_delta: Optional[float] = None, ignore_max_time_delta: bool = False,
-                                allow_before_start: bool = False) -> Optional[Tuple]:
+    def _find_pattern_lpmp_style(self, logs_dir: str, filenames: List[str], pattern: str, start_date: Optional[datetime], verbose: bool, block_label: str, max_time_delta: Optional[float] = None, ignore_max_time_delta: bool = False, allow_before_start: bool = False) -> Optional[Tuple]:
         """Find pattern using LPMP logic with regex support and timestamp filter."""
         if isinstance(filenames, str):
             filenames = [filenames]
 
         # Detect if pattern is regex (starts with 'r' prefix indicator or contains regex chars)
-        use_regex = pattern.startswith('r\'') or any(c in pattern for c in ['.', '*', '+', '?', '^', '$', '[', ']', '{', '}', '(', ')', '|', '\\'])
-        
+        use_regex = pattern.startswith("r'") or any(c in pattern for c in [".", "*", "+", "?", "^", "$", "[", "]", "{", "}", "(", ")", "|", "\\"])
+
         for filename in filenames:
             filepath = f"{logs_dir}/{filename}"
 
             # Check if file exists
             check_cmd = f"test -f {filepath} && echo 'exists' || echo 'missing'"
             check_result = self.ssh_connection.send(check_cmd)
-            if not check_result or 'missing' in check_result[0]:
+            if not check_result or "missing" in check_result[0]:
                 continue
 
             if verbose:
                 get_logger().log_info(f"Searching for '{pattern}' in {filename} (regex={use_regex})")
 
             # Use grep with or without regex based on pattern type
-            is_gzipped = filename.endswith('.gz')
+            is_gzipped = filename.endswith(".gz")
             if use_regex:
                 # Remove 'r' prefix if present
-                clean_pattern = pattern[2:-1] if pattern.startswith('r\'') else pattern
+                clean_pattern = pattern[2:-1] if pattern.startswith("r'") else pattern
                 if is_gzipped:
                     cmd = f"zcat {filepath} 2>/dev/null | grep -E '{clean_pattern}'"
                 else:
@@ -627,11 +608,11 @@ class LogPatternKpiKeywords(BaseKeyword):
                 # Find the FIRST match after start_date (closest to start_date)
                 best_match = None
                 best_timestamp = None
-                
+
                 for line in result:
                     if not line.strip():
                         continue
-                    
+
                     line = line.strip()
                     timestamp = self._parse_timestamp(line, verbose)
 
@@ -641,14 +622,14 @@ class LogPatternKpiKeywords(BaseKeyword):
                                 if verbose:
                                     get_logger().log_info(f"REJECTING: {pattern} at {timestamp} (before or equal to start_date {start_date})")
                                 continue
-                            
+
                             # Additional constraint: prevent jumping to different sequences
                             time_from_start = (timestamp - start_date).total_seconds()
                             if time_from_start > self.max_sequence_duration:
                                 if verbose:
                                     get_logger().log_info(f"Skipping match beyond sequence window ({time_from_start:.0f}s > {self.max_sequence_duration:.0f}s)")
                                 continue
-                            
+
                             # Keep the earliest match after start_date
                             if best_timestamp is None or timestamp < best_timestamp:
                                 best_match = line
@@ -671,9 +652,7 @@ class LogPatternKpiKeywords(BaseKeyword):
 
         return None
 
-    def _find_pattern_in_files_with_fallback(self, logs_dir: str, filenames: List[str], pattern: str,
-                                            file_positions: Dict[str, int], after_timestamp: Optional[datetime],
-                                            verbose: bool, suppress_error: bool, block_label: str) -> Optional[Tuple]:
+    def _find_pattern_in_files_with_fallback(self, logs_dir: str, filenames: List[str], pattern: str, file_positions: Dict[str, int], after_timestamp: Optional[datetime], verbose: bool, suppress_error: bool, block_label: str) -> Optional[Tuple]:
         """Find pattern in files with improved fallback logic."""
         if isinstance(filenames, str):
             filenames = [filenames]
@@ -684,7 +663,7 @@ class LogPatternKpiKeywords(BaseKeyword):
             # Check if file exists
             check_cmd = f"test -f {filepath} && echo 'exists' || echo 'missing'"
             check_result = self.ssh_connection.send(check_cmd)
-            if not check_result or 'missing' in check_result[0]:
+            if not check_result or "missing" in check_result[0]:
                 if verbose:
                     get_logger().log_info(f"File {filepath} not found, trying next...")
                 continue
@@ -694,8 +673,8 @@ class LogPatternKpiKeywords(BaseKeyword):
                 get_logger().log_info(f"Searching for '{pattern}' in {filename} from position {current_pos}")
 
             # Handle compressed files
-            is_gzipped = filename.endswith('.gz')
-            
+            is_gzipped = filename.endswith(".gz")
+
             # First try: search from current position with timestamp filter
             if after_timestamp:
                 if is_gzipped:
@@ -709,13 +688,13 @@ class LogPatternKpiKeywords(BaseKeyword):
                     cmd = f"tail -n +{current_pos + 1} {filepath} 2>/dev/null | grep -F '{pattern}' | head -1"
 
             result = self.ssh_connection.send(cmd)
-            
+
             # Process results with timestamp filtering
             if result:
                 for line in result:
                     if not line.strip():
                         continue
-                    
+
                     line = line.strip()
                     timestamp = self._parse_timestamp(line, verbose)
 
@@ -731,25 +710,25 @@ class LogPatternKpiKeywords(BaseKeyword):
                         formatted_line = self._format_log_line_for_output(line, filename)
                         new_pos = 0 if is_gzipped else current_pos + 1
                         return (timestamp, new_pos, formatted_line, filename)
-            
-            # Second try: if no match found and we have a timestamp constraint, 
+
+            # Second try: if no match found and we have a timestamp constraint,
             # try searching from beginning of file (pattern might be earlier)
             if after_timestamp and current_pos > 0:
                 if verbose:
                     get_logger().log_info(f"No match from position {current_pos}, trying from beginning of {filename}")
-                
+
                 if is_gzipped:
                     cmd = f"zcat {filepath} 2>/dev/null | grep -F '{pattern}'"
                 else:
                     cmd = f"grep -F '{pattern}' {filepath} 2>/dev/null"
-                
+
                 result = self.ssh_connection.send(cmd)
-                
+
                 if result:
                     for line in result:
                         if not line.strip():
                             continue
-                        
+
                         line = line.strip()
                         timestamp = self._parse_timestamp(line, verbose)
 
@@ -766,15 +745,13 @@ class LogPatternKpiKeywords(BaseKeyword):
 
         # Pattern not found
         if not suppress_error:
-            file_list = ', '.join(filenames)
+            file_list = ", ".join(filenames)
             label_info = f" for block '{block_label}'" if block_label else ""
             get_logger().log_info(f"⚠️ Error: Pattern '{pattern}' not found in any of: {file_list}{label_info}")
 
         return None
 
-    def _find_pattern_in_files(self, logs_dir: str, filenames: List[str], pattern: str,
-                              start_pos: int, after_timestamp: Optional[datetime],
-                              verbose: bool, suppress_error: bool, block_label: str) -> Optional[Tuple]:
+    def _find_pattern_in_files(self, logs_dir: str, filenames: List[str], pattern: str, start_pos: int, after_timestamp: Optional[datetime], verbose: bool, suppress_error: bool, block_label: str) -> Optional[Tuple]:
         """Find pattern in files with position tracking."""
         if isinstance(filenames, str):
             filenames = [filenames]
@@ -785,7 +762,7 @@ class LogPatternKpiKeywords(BaseKeyword):
             # Check if file exists
             check_cmd = f"test -f {filepath} && echo 'exists' || echo 'missing'"
             check_result = self.ssh_connection.send(check_cmd)
-            if not check_result or 'missing' in check_result[0]:
+            if not check_result or "missing" in check_result[0]:
                 if verbose:
                     get_logger().log_info(f"File {filepath} not found, trying next...")
                 continue
@@ -794,7 +771,7 @@ class LogPatternKpiKeywords(BaseKeyword):
                 get_logger().log_info(f"Searching for '{pattern}' in {filename} from position {start_pos}")
 
             # Handle compressed files
-            is_gzipped = filename.endswith('.gz')
+            is_gzipped = filename.endswith(".gz")
             if is_gzipped:
                 if after_timestamp:
                     cmd = f"zcat {filepath} 2>/dev/null | tail -n +{start_pos + 1} | grep -F '{pattern}'"
@@ -812,7 +789,7 @@ class LogPatternKpiKeywords(BaseKeyword):
                 for line in result:
                     if not line.strip():
                         continue
-                    
+
                     line = line.strip()
                     timestamp = self._parse_timestamp(line, verbose)
 
@@ -831,15 +808,13 @@ class LogPatternKpiKeywords(BaseKeyword):
 
         # Pattern not found
         if not suppress_error:
-            file_list = ', '.join(filenames)
+            file_list = ", ".join(filenames)
             label_info = f" for block '{block_label}'" if block_label else ""
             get_logger().log_info(f"⚠️ Error: Pattern '{pattern}' not found in any of: {file_list}{label_info}")
 
         return None
 
-    def _process_blocks_with_queue(self, blocks: List[Dict], start_date: Optional[datetime],
-                                  time_tolerance: float, max_log_length: int, logs_dir: str,
-                                  results: List[str], csv_results: List[List], verbose: bool) -> Tuple:
+    def _process_blocks_with_queue(self, blocks: List[Dict], start_date: Optional[datetime], time_tolerance: float, max_log_length: int, logs_dir: str, results: List[str], csv_results: List[List], verbose: bool) -> Tuple:
         """Process blocks with queuing for missing patterns (LPMP queue logic)."""
         pending_queue = []
         file_positions = {}
@@ -854,14 +829,11 @@ class LogPatternKpiKeywords(BaseKeyword):
             temp_pos = current_pos
             temp_timestamp = after_timestamp
 
-            for pattern in block['patterns']:
+            for pattern in block["patterns"]:
                 pattern_found = False
                 if isinstance(pattern, list):
                     for alt_pattern in pattern:
-                        result = self._find_pattern_in_files(
-                            logs_dir, block['file'], alt_pattern, temp_pos, temp_timestamp,
-                            verbose, suppress_error=True, block_label=block['label']
-                        )
+                        result = self._find_pattern_in_files(logs_dir, block["file"], alt_pattern, temp_pos, temp_timestamp, verbose, suppress_error=True, block_label=block["label"])
                         if result is not None:
                             timestamp, new_pos, log_line, actual_filename = result
                             pattern_found = True
@@ -870,10 +842,7 @@ class LogPatternKpiKeywords(BaseKeyword):
                             temp_timestamp = timestamp
                             break
                 else:
-                    result = self._find_pattern_in_files(
-                        logs_dir, block['file'], pattern, temp_pos, temp_timestamp,
-                        verbose, suppress_error=True, block_label=block['label']
-                    )
+                    result = self._find_pattern_in_files(logs_dir, block["file"], pattern, temp_pos, temp_timestamp, verbose, suppress_error=True, block_label=block["label"])
                     if result is not None:
                         timestamp, new_pos, log_line, actual_filename = result
                         pattern_found = True
@@ -906,7 +875,7 @@ class LogPatternKpiKeywords(BaseKeyword):
 
             result_line = f"{cumulative:8.3f}\t{delta_formatted:>12}\t{label_padded}\t{filename_padded}\t{truncated_log}"
             results.append(result_line)
-            csv_results.append([cumulative, delta_formatted, block['label'], actual_filename, truncated_log])
+            csv_results.append([cumulative, delta_formatted, block["label"], actual_filename, truncated_log])
             get_logger().log_info(result_line)
 
             return start_time, timestamp
@@ -921,29 +890,27 @@ class LogPatternKpiKeywords(BaseKeyword):
 
             result_line = f"{cumulative:8.3f}\t{delta_formatted:>12}\t{label_padded}\t{filename_padded}\t{truncated_log}"
             results.append(result_line)
-            csv_results.append([cumulative, delta_formatted, block['label'], 'N/A', truncated_log])
+            csv_results.append([cumulative, delta_formatted, block["label"], "N/A", truncated_log])
             get_logger().log_info(result_line)
 
         # Process each block
         for block_index, block in enumerate(blocks):
-            if not block['file'] or (not block.get('patterns') and not (block.get('start') and block.get('stop'))):
+            if not block["file"] or (not block.get("patterns") and not (block.get("start") and block.get("stop"))):
                 continue
 
             # Try queued blocks first
             resolved_queue = []
             for queued_block in pending_queue:
-                file_key = str(queued_block['file']) if isinstance(queued_block['file'], list) else queued_block['file']
+                file_key = str(queued_block["file"]) if isinstance(queued_block["file"], list) else queued_block["file"]
                 current_pos = file_positions.get(file_key, 0)
                 after_timestamp = prev_timestamp - timedelta(seconds=time_tolerance) if prev_timestamp else None
 
                 success, result = try_block(queued_block, current_pos, after_timestamp)
                 if success:
                     timestamp, new_pos, log_line, actual_filename = result
-                    start_time, prev_timestamp = output_result(
-                        queued_block, timestamp, log_line, actual_filename,
-                        start_time, prev_timestamp)
+                    start_time, prev_timestamp = output_result(queued_block, timestamp, log_line, actual_filename, start_time, prev_timestamp)
 
-                    matched_file_key = actual_filename if isinstance(queued_block['file'], list) else file_key
+                    matched_file_key = actual_filename if isinstance(queued_block["file"], list) else file_key
                     file_positions[matched_file_key] = new_pos
                     resolved_queue.append(queued_block)
 
@@ -951,39 +918,35 @@ class LogPatternKpiKeywords(BaseKeyword):
                 pending_queue.remove(resolved)
 
             # Try current block
-            file_key = str(block['file']) if isinstance(block['file'], list) else block['file']
+            file_key = str(block["file"]) if isinstance(block["file"], list) else block["file"]
             current_pos = file_positions.get(file_key, 0)
             after_timestamp = prev_timestamp - timedelta(seconds=time_tolerance) if prev_timestamp else None
 
             success, result = try_block(block, current_pos, after_timestamp)
             if success:
                 timestamp, new_pos, log_line, actual_filename = result
-                start_time, prev_timestamp = output_result(
-                    block, timestamp, log_line, actual_filename,
-                    start_time, prev_timestamp)
+                start_time, prev_timestamp = output_result(block, timestamp, log_line, actual_filename, start_time, prev_timestamp)
 
-                matched_file_key = actual_filename if isinstance(block['file'], list) else file_key
+                matched_file_key = actual_filename if isinstance(block["file"], list) else file_key
                 file_positions[matched_file_key] = new_pos
             else:
-                if block.get('optional', False):
+                if block.get("optional", False):
                     output_optional_skip(block, start_time, prev_timestamp)
                 else:
                     pending_queue.append(block)
 
         # Handle remaining queued blocks
         for queued_block in pending_queue:
-            if queued_block.get('optional', False):
+            if queued_block.get("optional", False):
                 output_optional_skip(queued_block, start_time, prev_timestamp)
             else:
-                files_str = ', '.join(queued_block['file']) if isinstance(queued_block['file'], list) else queued_block['file']
-                patterns_str = ', '.join([str(p) for p in queued_block['patterns']])
+                files_str = ", ".join(queued_block["file"]) if isinstance(queued_block["file"], list) else queued_block["file"]
+                patterns_str = ", ".join([str(p) for p in queued_block["patterns"]])
                 get_logger().log_info(f"⚠️ Error: Required pattern(s) '{patterns_str}' not found in file(s) '{files_str}' for block '{queued_block['label']}'")
 
         return patterns_found > 0, patterns_found, start_time, prev_timestamp, blackout_duration
 
-    def _process_blocks_sequential(self, blocks: List[Dict], start_date: Optional[datetime],
-                                  time_tolerance: float, max_log_length: int, logs_dir: str,
-                                  results: List[str], csv_results: List[List], verbose: bool) -> Tuple:
+    def _process_blocks_sequential(self, blocks: List[Dict], start_date: Optional[datetime], time_tolerance: float, max_log_length: int, logs_dir: str, results: List[str], csv_results: List[List], verbose: bool) -> Tuple:
         """Process blocks sequentially with chronological post-sorting (LPMP logic)."""
         file_positions = {}
         start_time = None
@@ -993,10 +956,10 @@ class LogPatternKpiKeywords(BaseKeyword):
         blackout_duration = 0.0
 
         for block_index, block in enumerate(blocks):
-            if not block['file'] or not block.get('patterns'):
+            if not block["file"] or not block.get("patterns"):
                 continue
 
-            file_key = str(block['file']) if isinstance(block['file'], list) else block['file']
+            file_key = str(block["file"]) if isinstance(block["file"], list) else block["file"]
             current_pos = file_positions.get(file_key, 0)
             after_timestamp = prev_timestamp - timedelta(seconds=time_tolerance) if prev_timestamp else None
 
@@ -1004,38 +967,32 @@ class LogPatternKpiKeywords(BaseKeyword):
             last_result = None
 
             # Handle both patterns and start/stop format
-            if 'start' in block and 'stop' in block:
-                patterns_to_process = [block['start'], block['stop']]
+            if "start" in block and "stop" in block:
+                patterns_to_process = [block["start"], block["stop"]]
             else:
-                patterns_to_process = block['patterns']
+                patterns_to_process = block["patterns"]
 
             for pattern in patterns_to_process:
                 pattern_found = False
                 if isinstance(pattern, list):
                     for alt_pattern in pattern:
-                        result = self._find_pattern_in_files(
-                            logs_dir, block['file'], alt_pattern, current_pos, after_timestamp,
-                            verbose, suppress_error=True, block_label=block['label']
-                        )
+                        result = self._find_pattern_in_files(logs_dir, block["file"], alt_pattern, current_pos, after_timestamp, verbose, suppress_error=True, block_label=block["label"])
                         if result is not None:
                             timestamp, new_pos, log_line, actual_filename = result
                             pattern_found = True
                             last_result = result
-                            matched_file_key = actual_filename if isinstance(block['file'], list) else file_key
+                            matched_file_key = actual_filename if isinstance(block["file"], list) else file_key
                             file_positions[matched_file_key] = new_pos
                             current_pos = new_pos
                             after_timestamp = timestamp
                             break
                 else:
-                    result = self._find_pattern_in_files(
-                        logs_dir, block['file'], pattern, current_pos, after_timestamp,
-                        verbose, suppress_error=True, block_label=block['label']
-                    )
+                    result = self._find_pattern_in_files(logs_dir, block["file"], pattern, current_pos, after_timestamp, verbose, suppress_error=True, block_label=block["label"])
                     if result is not None:
                         timestamp, new_pos, log_line, actual_filename = result
                         pattern_found = True
                         last_result = result
-                        matched_file_key = actual_filename if isinstance(block['file'], list) else file_key
+                        matched_file_key = actual_filename if isinstance(block["file"], list) else file_key
                         file_positions[matched_file_key] = new_pos
                         current_pos = new_pos
                         after_timestamp = timestamp
@@ -1048,57 +1005,46 @@ class LogPatternKpiKeywords(BaseKeyword):
                 timestamp, new_pos, log_line, actual_filename = last_result
                 patterns_found += 1
 
-                temp_results.append({
-                    'timestamp': timestamp,
-                    'block': block,
-                    'log_line': log_line,
-                    'actual_filename': actual_filename
-                })
+                temp_results.append({"timestamp": timestamp, "block": block, "log_line": log_line, "actual_filename": actual_filename})
 
                 prev_timestamp = timestamp
             else:
-                files_str = ', '.join(block['file']) if isinstance(block['file'], list) else block['file']
-                if block.get('optional', False):
-                    if 'start' in block and 'stop' in block:
+                files_str = ", ".join(block["file"]) if isinstance(block["file"], list) else block["file"]
+                if block.get("optional", False):
+                    if "start" in block and "stop" in block:
                         patterns_str = f"start: '{block['start']}', stop: '{block['stop']}'"
                     else:
-                        patterns_str = ', '.join([str(p) for p in block['patterns']])
-                    temp_results.append({
-                        'timestamp': None,
-                        'block': block,
-                        'log_line': f"⚠️ Pattern '{patterns_str}' not found in file(s) '{files_str}': (optional block skipped)",
-                        'actual_filename': 'N/A'
-                    })
+                        patterns_str = ", ".join([str(p) for p in block["patterns"]])
+                    temp_results.append({"timestamp": None, "block": block, "log_line": f"⚠️ Pattern '{patterns_str}' not found in file(s) '{files_str}': (optional block skipped)", "actual_filename": "N/A"})
                 else:
-                    if 'start' in block and 'stop' in block:
+                    if "start" in block and "stop" in block:
                         patterns_str = f"start: '{block['start']}', stop: '{block['stop']}'"
                     else:
-                        patterns_str = ', '.join([str(p) for p in block['patterns']])
+                        patterns_str = ", ".join([str(p) for p in block["patterns"]])
                     get_logger().log_info(f"⚠️ Error: Required pattern(s) '{patterns_str}' not found in file(s) '{files_str}' for block '{block['label']}'")
 
                     if temp_results:
-                        temp_results.sort(key=lambda x: x['timestamp'] if x['timestamp'] else datetime.max)
+                        temp_results.sort(key=lambda x: x["timestamp"] if x["timestamp"] else datetime.max)
                         self._output_sorted_results(temp_results, start_time, max_log_length, results, csv_results)
 
                     return False, patterns_found, start_time, prev_timestamp, blackout_duration
 
         # Sort and output results
-        temp_results.sort(key=lambda x: x['timestamp'] if x['timestamp'] else datetime.max)
+        temp_results.sort(key=lambda x: x["timestamp"] if x["timestamp"] else datetime.max)
         start_time, end_time = self._output_sorted_results(temp_results, start_time, max_log_length, results, csv_results)
 
         return patterns_found > 0, patterns_found, start_time, end_time, blackout_duration
 
-    def _output_sorted_results(self, temp_results: List[Dict], start_time: Optional[datetime],
-                              max_log_length: int, results: List[str], csv_results: List[List]) -> Tuple:
+    def _output_sorted_results(self, temp_results: List[Dict], start_time: Optional[datetime], max_log_length: int, results: List[str], csv_results: List[List]) -> Tuple:
         """Output sorted results with proper timing calculations."""
         prev_timestamp = None
         end_time = None
 
         for result_data in temp_results:
-            timestamp = result_data['timestamp']
-            block = result_data['block']
-            log_line = result_data['log_line']
-            actual_filename = result_data['actual_filename']
+            timestamp = result_data["timestamp"]
+            block = result_data["block"]
+            log_line = result_data["log_line"]
+            actual_filename = result_data["actual_filename"]
 
             if timestamp is None:
                 cumulative = (prev_timestamp - start_time).total_seconds() if start_time and prev_timestamp else 0.0
@@ -1122,17 +1068,15 @@ class LogPatternKpiKeywords(BaseKeyword):
 
             result_line = f"{cumulative:8.3f}\t{delta_formatted:>12}\t{label_padded}\t{filename_padded}\t{truncated_log}"
             results.append(result_line)
-            csv_results.append([cumulative, delta_formatted, block['label'], actual_filename, truncated_log])
+            csv_results.append([cumulative, delta_formatted, block["label"], actual_filename, truncated_log])
             get_logger().log_info(result_line)
 
         return start_time, end_time
 
-    def _process_blocks_pair_mode(self, blocks: List[Dict], start_date: Optional[datetime],
-                                 max_log_length: int, logs_dir: str, max_time_delta: float,
-                                 results: List[str], csv_results: List[List], verbose: bool) -> Tuple:
+    def _process_blocks_pair_mode(self, blocks: List[Dict], start_date: Optional[datetime], max_log_length: int, logs_dir: str, max_time_delta: float, results: List[str], csv_results: List[List], verbose: bool) -> Tuple:
         """
         Process blocks in pair mode for start/stop pattern timing.
-        
+
         Args:
             blocks (List[Dict]): Block definitions with start/stop patterns
             start_date (Optional[datetime]): Start date filter - used as KPI reference time
@@ -1142,7 +1086,7 @@ class LogPatternKpiKeywords(BaseKeyword):
             results (List[str]): Results accumulator
             csv_results (List[List]): CSV results accumulator
             verbose (bool): Enable verbose logging
-            
+
         Returns:
             Tuple: (success, kpi_start_time, end_time, blackout_duration)
         """
@@ -1150,23 +1094,23 @@ class LogPatternKpiKeywords(BaseKeyword):
         kpi_start_time = None
         latest_end_time = None
         blackout_duration = 0.0
-        
+
         # If start_date provided, ensure we only find patterns after that time
         if start_date and verbose:
             get_logger().log_info(f"Using start_date as search filter: {start_date}")
             get_logger().log_info(f"Each block searches independently from start_date")
-        
+
         for block in blocks:
-            if not block['file']:
+            if not block["file"]:
                 continue
 
             # Get start/stop patterns
-            if 'start' in block and 'stop' in block:
-                start_pattern = block['start']
-                stop_pattern = block['stop']
-            elif 'patterns' in block and len(block['patterns']) >= 2:
-                start_pattern = block['patterns'][0]
-                stop_pattern = block['patterns'][1]
+            if "start" in block and "stop" in block:
+                start_pattern = block["start"]
+                stop_pattern = block["stop"]
+            elif "patterns" in block and len(block["patterns"]) >= 2:
+                start_pattern = block["patterns"][0]
+                stop_pattern = block["patterns"][1]
             else:
                 continue
 
@@ -1176,19 +1120,15 @@ class LogPatternKpiKeywords(BaseKeyword):
             if isinstance(start_pattern, list):
                 # OR pattern - try each alternative
                 for alt_pattern in start_pattern:
-                    start_result = self._find_pattern_lpmp_style(
-                        logs_dir, block['file'], alt_pattern, start_date, verbose, block['label']
-                    )
+                    start_result = self._find_pattern_lpmp_style(logs_dir, block["file"], alt_pattern, start_date, verbose, block["label"])
                     if start_result:
                         break
             else:
                 # Single pattern
-                start_result = self._find_pattern_lpmp_style(
-                    logs_dir, block['file'], start_pattern, start_date, verbose, block['label']
-                )
-            
+                start_result = self._find_pattern_lpmp_style(logs_dir, block["file"], start_pattern, start_date, verbose, block["label"])
+
             if not start_result:
-                if not block.get('optional', False):
+                if not block.get("optional", False):
                     self._output_pair_error(block, "Start NOT FOUND !", 0.0, results, csv_results)
                 continue
 
@@ -1202,46 +1142,28 @@ class LogPatternKpiKeywords(BaseKeyword):
                 # OR pattern - try each alternative
                 for alt_pattern in stop_pattern:
                     # First try: search after start_timestamp
-                    stop_result = self._find_pattern_lpmp_style(
-                        logs_dir, block['file'], alt_pattern, start_timestamp, verbose, block['label'],
-                        max_time_delta=block.get('max_time_delta', max_time_delta)
-                    )
+                    stop_result = self._find_pattern_lpmp_style(logs_dir, block["file"], alt_pattern, start_timestamp, verbose, block["label"], max_time_delta=block.get("max_time_delta", max_time_delta))
                     # If not found after start, try searching from original start_date for overlapping phases
                     if not stop_result and start_date:
-                        stop_result = self._find_pattern_lpmp_style(
-                            logs_dir, block['file'], alt_pattern, start_date, verbose, block['label'],
-                            max_time_delta=block.get('max_time_delta', max_time_delta)
-                        )
+                        stop_result = self._find_pattern_lpmp_style(logs_dir, block["file"], alt_pattern, start_date, verbose, block["label"], max_time_delta=block.get("max_time_delta", max_time_delta))
                     # If still not found, search within max sequence duration
                     if not stop_result and start_date:
-                        stop_result = self._find_pattern_lpmp_style(
-                            logs_dir, block['file'], alt_pattern, start_date, verbose, block['label'],
-                            max_time_delta=self.max_sequence_duration
-                        )
+                        stop_result = self._find_pattern_lpmp_style(logs_dir, block["file"], alt_pattern, start_date, verbose, block["label"], max_time_delta=self.max_sequence_duration)
                     if stop_result:
                         break
             else:
                 # Single pattern
                 # First try: search after start_timestamp
-                stop_result = self._find_pattern_lpmp_style(
-                    logs_dir, block['file'], stop_pattern, start_timestamp, verbose, block['label'],
-                    max_time_delta=block.get('max_time_delta', max_time_delta)
-                )
+                stop_result = self._find_pattern_lpmp_style(logs_dir, block["file"], stop_pattern, start_timestamp, verbose, block["label"], max_time_delta=block.get("max_time_delta", max_time_delta))
                 # If not found after start, try searching from original start_date for overlapping phases
                 if not stop_result and start_date:
-                    stop_result = self._find_pattern_lpmp_style(
-                        logs_dir, block['file'], stop_pattern, start_date, verbose, block['label'],
-                        max_time_delta=block.get('max_time_delta', max_time_delta)
-                    )
+                    stop_result = self._find_pattern_lpmp_style(logs_dir, block["file"], stop_pattern, start_date, verbose, block["label"], max_time_delta=block.get("max_time_delta", max_time_delta))
                 # If still not found, search within max sequence duration
                 if not stop_result and start_date:
-                    stop_result = self._find_pattern_lpmp_style(
-                        logs_dir, block['file'], stop_pattern, start_date, verbose, block['label'],
-                        max_time_delta=self.max_sequence_duration
-                    )
-                
+                    stop_result = self._find_pattern_lpmp_style(logs_dir, block["file"], stop_pattern, start_date, verbose, block["label"], max_time_delta=self.max_sequence_duration)
+
             if not stop_result:
-                if not block.get('optional', False):
+                if not block.get("optional", False):
                     error_msg = f"Stop NOT FOUND after {start_timestamp.strftime('%H:%M:%S')}"
                     self._output_pair_error(block, error_msg, 0.0, results, csv_results, start_filename)
                 continue
@@ -1250,11 +1172,11 @@ class LogPatternKpiKeywords(BaseKeyword):
             patterns_found += 1
 
             # If no start_date provided, use first non-excluded block's start as KPI reference
-            if kpi_start_time is None and not block.get('exclude_from_kpi', False):
+            if kpi_start_time is None and not block.get("exclude_from_kpi", False):
                 kpi_start_time = start_timestamp
 
             # Track latest end time (only for non-excluded blocks)
-            if not block.get('exclude_from_kpi', False):
+            if not block.get("exclude_from_kpi", False):
                 if latest_end_time is None or stop_timestamp > latest_end_time:
                     latest_end_time = stop_timestamp
 
@@ -1263,7 +1185,7 @@ class LogPatternKpiKeywords(BaseKeyword):
             cumulative = (stop_timestamp - kpi_start_time).total_seconds() if kpi_start_time else 0.0
 
             # Track blackout duration for excluded blocks within KPI timeframe
-            if block.get('exclude_from_kpi', False) and kpi_start_time:
+            if block.get("exclude_from_kpi", False) and kpi_start_time:
                 # Only count if block starts after KPI start time
                 if start_timestamp >= kpi_start_time:
                     blackout_duration += abs(pair_duration)
@@ -1271,22 +1193,22 @@ class LogPatternKpiKeywords(BaseKeyword):
             # Format output
             start_time_str = start_timestamp.strftime("%H:%M:%S.%f")[:-3]
             stop_time_str = stop_timestamp.strftime("%H:%M:%S.%f")[:-3]
-            
+
             # Get pattern text for display
-            start_pattern_text = block.get('start', '')
-            stop_pattern_text = block.get('stop', '')
+            start_pattern_text = block.get("start", "")
+            stop_pattern_text = block.get("stop", "")
             if isinstance(start_pattern_text, list):
                 start_pattern_text = start_pattern_text[0]
             if isinstance(stop_pattern_text, list):
                 stop_pattern_text = stop_pattern_text[0]
-            
+
             # Truncate patterns for display
-            start_pattern_short = (start_pattern_text[:40] + '...') if len(start_pattern_text) > 40 else start_pattern_text
-            stop_pattern_short = (stop_pattern_text[:40] + '...') if len(stop_pattern_text) > 40 else stop_pattern_text
-            
+            start_pattern_short = (start_pattern_text[:40] + "...") if len(start_pattern_text) > 40 else start_pattern_text
+            stop_pattern_short = (stop_pattern_text[:40] + "...") if len(stop_pattern_text) > 40 else stop_pattern_text
+
             log_data = f"Start {start_time_str} --> Stop {stop_time_str}: {abs(pair_duration):.3f}s | Patterns: [{start_pattern_short}] -> [{stop_pattern_short}]"
-            
-            if block.get('exclude_from_kpi', False):
+
+            if block.get("exclude_from_kpi", False):
                 log_data += " (excluded from KPI)"
 
             delta_formatted = self._format_duration(abs(pair_duration))
@@ -1294,10 +1216,9 @@ class LogPatternKpiKeywords(BaseKeyword):
 
         return patterns_found > 0, kpi_start_time, latest_end_time, blackout_duration
 
-    def _output_result(self, block: Dict, cumulative: float, delta_formatted: str, 
-                      filename: str, log_data: str, results: List[str], csv_results: List[List]) -> None:
+    def _output_result(self, block: Dict, cumulative: float, delta_formatted: str, filename: str, log_data: str, results: List[str], csv_results: List[List]) -> None:
         """Output a successful result.
-        
+
         Args:
             block (Dict): Block definition
             cumulative (float): Cumulative time in seconds
@@ -1311,13 +1232,12 @@ class LogPatternKpiKeywords(BaseKeyword):
         label_padded = f"{block['label']:<20}"
         result_line = f"{cumulative:8.3f}\t{delta_formatted:>12}\t{label_padded}\t{filename_padded}\t{log_data}"
         results.append(result_line)
-        csv_results.append([cumulative, delta_formatted, block['label'], filename, log_data])
+        csv_results.append([cumulative, delta_formatted, block["label"], filename, log_data])
         get_logger().log_info(result_line)
 
-    def _output_pair_error(self, block: Dict, error_msg: str, cumulative: float, 
-                          results: List[str], csv_results: List[List], filename: str = "N/A") -> None:
+    def _output_pair_error(self, block: Dict, error_msg: str, cumulative: float, results: List[str], csv_results: List[List], filename: str = "N/A") -> None:
         """Output a pair mode error.
-        
+
         Args:
             block (Dict): Block definition
             error_msg (str): Error message
@@ -1331,7 +1251,7 @@ class LogPatternKpiKeywords(BaseKeyword):
         label_padded = f"{block['label']:<20}"
         result_line = f"{cumulative:8.3f}\t{delta_formatted:>12}\t{label_padded}\t{filename_padded}\t{error_msg}"
         results.append(result_line)
-        csv_results.append([cumulative, delta_formatted, block['label'], filename, error_msg])
+        csv_results.append([cumulative, delta_formatted, block["label"], filename, error_msg])
         get_logger().log_info(result_line)
 
     def _write_output_file(self, output_file: str, header: str, banner: str, results: List[str], verbose: bool) -> None:
@@ -1351,12 +1271,12 @@ class LogPatternKpiKeywords(BaseKeyword):
             return
 
         try:
-            csv_lines = ['Cumulative(s),Delta(HH:MM:SS),Block Label,Log File,Log Line']
+            csv_lines = ["Cumulative(s),Delta(HH:MM:SS),Block Label,Log File,Log Line"]
             for row in csv_results:
-                csv_line = ','.join([str(row[0]), row[1], f'"{row[2]}"', row[3], f'"{row[4]}"'])
+                csv_line = ",".join([str(row[0]), row[1], f'"{row[2]}"', row[3], f'"{row[4]}"'])
                 csv_lines.append(csv_line)
 
-            content = '\n'.join(csv_lines)
+            content = "\n".join(csv_lines)
             cmd = f"cat > {csv_file} << 'EOF'\n{content}\nEOF"
             self.ssh_connection.send(cmd)
 
@@ -1389,10 +1309,7 @@ class LogPatternKpiKeywords(BaseKeyword):
             line = line.strip()
 
             # Skip non-data lines
-            if (line.startswith('✅') or line.startswith('KPI_') or
-                    line.startswith('---') or line.startswith('Delta(') or
-                    '⚠️' in line or '❌' in line or
-                    line.startswith('sysadmin@')):
+            if line.startswith("✅") or line.startswith("KPI_") or line.startswith("---") or line.startswith("Delta(") or "⚠️" in line or "❌" in line or line.startswith("sysadmin@"):
                 continue
 
             # Skip excluded blocks
@@ -1400,7 +1317,7 @@ class LogPatternKpiKeywords(BaseKeyword):
                 continue
 
             # Parse tab-separated format: cumulative\tdelta\tlabel\tfilename\tlog_data
-            parts = line.split('\t')
+            parts = line.split("\t")
             if len(parts) < 5:
                 continue
 
@@ -1408,7 +1325,7 @@ class LogPatternKpiKeywords(BaseKeyword):
             log_data = parts[4].strip()
 
             # Extract duration: "Start ... --> Stop ...: 45.123s | ..."
-            duration_match = re.search(r':\s*([0-9]+\.[0-9]+)s\s*\|', log_data)
+            duration_match = re.search(r":\s*([0-9]+\.[0-9]+)s\s*\|", log_data)
             if not duration_match:
                 continue
 
@@ -1441,14 +1358,7 @@ class LogPatternKpiKeywords(BaseKeyword):
         record_keywords = RecordUpgradeEventKeywords()
 
         for result in kpi_results:
-            event = UpgradeEvent(
-                event_name=f"unlock_{result.get_label()}",
-                retry=0,
-                operation="complete",
-                entry=result.get_hostname(),
-                is_upgrade=False,
-                is_patch=False
-            )
+            event = UpgradeEvent(event_name=f"unlock_{result.get_label()}", retry=0, operation="complete", entry=result.get_hostname(), is_upgrade=False, is_patch=False)
             event.duration = int(result.get_duration_seconds())
             record_keywords.record_upgrade_event(event)
 
