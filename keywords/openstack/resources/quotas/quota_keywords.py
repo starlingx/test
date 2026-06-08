@@ -4,7 +4,6 @@ from typing import Dict
 
 from framework.logging.automation_logger import get_logger
 from keywords.base_keyword import BaseKeyword
-
 from keywords.openstack.connection.ace_openstack_connection import ACEOpenStackConnection
 
 
@@ -82,7 +81,7 @@ class QuotaKeywords(BaseKeyword):
         network = self.openstack_connection.get_network()
         current = network.get_quota(project_id)
 
-        fields = ["networks", "ports", "routers", "floating_ips", "security_groups", "security_group_rules", "rbac_policies", "subnet_pools"]
+        fields = ["networks", "subnets", "ports", "routers", "floating_ips", "security_groups", "security_group_rules", "rbac_policies", "subnet_pools"]
         updates = self._get_fields_needing_update(current, fields)
 
         if not updates:
