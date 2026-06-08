@@ -344,7 +344,7 @@ class SystemHostLockKeywords(BaseKeyword):
             raise KeywordException("Unlock host did not unlock in the required time.")
         return True
 
-    def lock_unlock_hosts(self) -> None:
+    def lock_unlock_hosts(self, exclude_alarm_ids: list = None) -> None:
         """Perform a full lock/unlock cycle based on system mode.
 
         Waits for all applications to finish transitioning before attempting
@@ -356,10 +356,17 @@ class SystemHostLockKeywords(BaseKeyword):
         For duplex systems: locks/unlocks the standby controller, swacts,
         then locks/unlocks the other controller and swacts back.
 
+        Args:
+            exclude_alarm_ids (list): Alarm IDs to exclude from unlock health
+                checks. Defaults to ["250.001"] if not provided.
+
         Raises:
             KeywordException: If a lock/unlock or swact operation fails.
             TimeoutError: If applications do not stabilize before the timeout.
         """
+        if exclude_alarm_ids is None:
+            exclude_alarm_ids = ["250.001"]
+
         stable_statuses = ["applied", "uploaded", "apply-failed", "remove-failed", "completed"]
         SystemApplicationListKeywords(self.ssh_connection).validate_all_apps_status(
             stable_statuses, timeout=600, polling_sleep_time=30
@@ -374,7 +381,7 @@ class SystemHostLockKeywords(BaseKeyword):
             host_show = show_keywords.get_system_host_show_output(active_controller)
             if host_show.get_system_host_show_object().get_administrative() == "unlocked":
                 self.lock_host(active_controller)
-            self.unlock_host(active_controller, unlock_accepted_timeout=3000, exclude_alarm_ids=["250.001"])
+            self.unlock_host(active_controller, unlock_accepted_timeout=3000, exclude_alarm_ids=exclude_alarm_ids)
             return
 
         standby_controller = SystemHostListKeywords(self.ssh_connection).get_standby_controller().get_host_name()
@@ -382,7 +389,7 @@ class SystemHostLockKeywords(BaseKeyword):
         host_show = show_keywords.get_system_host_show_output(standby_controller)
         if host_show.get_system_host_show_object().get_administrative() == "unlocked":
             self.lock_host(standby_controller)
-        self.unlock_host(standby_controller, unlock_accepted_timeout=3000, exclude_alarm_ids=["250.001"])
+        self.unlock_host(standby_controller, unlock_accepted_timeout=3000, exclude_alarm_ids=exclude_alarm_ids)
 
         SystemHostSwactKeywords(self.ssh_connection).host_swact()
 
@@ -393,6 +400,6 @@ class SystemHostLockKeywords(BaseKeyword):
         host_show = new_show_kw.get_system_host_show_output(active_controller)
         if host_show.get_system_host_show_object().get_administrative() == "unlocked":
             new_lock_kw.lock_host(active_controller)
-        new_lock_kw.unlock_host(active_controller, exclude_alarm_ids=["250.001"])
+        new_lock_kw.unlock_host(active_controller, exclude_alarm_ids=exclude_alarm_ids)
 
         SystemHostSwactKeywords(new_ssh).host_swact(swact_accepted_timeout=600)
