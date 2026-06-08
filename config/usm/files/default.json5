@@ -64,5 +64,9 @@
   "docker_distribution_fs_size": 60,
 
   // Alarms to ignore during cleanup
-  "cleanup_ignore_alarms": ["900.020", "900.022", "900.023", "900.024", "280.002"]
+  "cleanup_ignore_alarms": ["900.020", "900.022", "900.023", "900.024", "280.002"],
+
+  // Alarm restriction level for VIM orchestration strategy creation
+  // Valid options: "strict", "relaxed", "permissive", or "" (empty = use VIM default)
+  "alarm_restrictions": ""
 }
