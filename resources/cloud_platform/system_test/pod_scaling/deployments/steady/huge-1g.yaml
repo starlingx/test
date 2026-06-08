@@ -1,0 +1,41 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: huge-1g-steady
+  labels:
+    app: huge-1g-steady
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: huge-1g-steady
+  template:
+    metadata:
+      labels:
+        app: huge-1g-steady
+    spec:
+      containers:
+      - name: huge-1g-steady
+        image: registry.local:9001/centos/tools:latest
+        imagePullPolicy: IfNotPresent
+        command: [ "/bin/bash", "-c", "--" ]
+        args: [ "while true; do sleep 300000; done;" ]
+        volumeMounts:
+          - name: hugepage
+            mountPath: /hugepages
+        resources:
+          requests:
+            cpu: 1
+            memory: "1Gi"
+            hugepages-1Gi: 1Gi
+          limits:
+            cpu: 1
+            memory: "1Gi"
+            hugepages-1Gi: 1Gi
+      restartPolicy: Always
+      imagePullSecrets:
+      - name: regcred
+      volumes:
+        - name: hugepage
+          emptyDir:
+            medium: HugePages
