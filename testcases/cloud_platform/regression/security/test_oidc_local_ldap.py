@@ -718,3 +718,122 @@ def test_email_identity_isolation_across_ldap_and_wad(request):
     wad_ssh.send(f"oidc-auth -p {wad_user['password']}")
     _verify_kubectl_and_stx_access(wad_ssh, expect_success=False)
     wad_ssh.close()
+
+
+# =============================================================================
+# D5: Bootstrap Validation Tests
+# =============================================================================
+
+
+@mark.p0
+@mark.lab_has_standby_controller
+def test_bootstrap_default_oidc_username_claim():
+    """TC16: Verify default bootstrap uses oidc-username-claim=preferred_username.
+
+    Test Steps:
+        - Query oidc-username-claim service parameter
+        - Verify value is 'preferred_username'
+        - Verify dex helm overrides have corrected emailAttr/nameAttr
+    """
+    config = _load_dex_config()
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    dex_keywords = DexConnectorKeywords(ssh_connection)
+
+    get_logger().log_info("Verifying default oidc-username-claim=preferred_username")
+    current_claim = dex_keywords.get_oidc_username_claim()
+    validate_equals(current_claim, config["oidc_username_claim"]["default"], "Default oidc-username-claim should be 'preferred_username'")
+
+    get_logger().log_info("Verifying corrected emailAttr in helm overrides")
+    dex_keywords.helm_override_keywords.verify_helm_user_override(config["local_ldap"]["email_attr"], config["oidc_app_name"], "dex", config["namespace"])
+    dex_keywords.helm_override_keywords.verify_helm_user_override(config["local_ldap"]["name_attr"], config["oidc_app_name"], "dex", config["namespace"])
+
+
+# =============================================================================
+# D8: Distributed Cloud Tests
+# =============================================================================
+
+
+@mark.p0
+@mark.lab_is_distributed_cloud
+def test_dc_ldap_oidc_on_system_controller(request):
+    """TC31: Verify corrected OIDC mappings on System Controller.
+
+    Test Steps:
+        - Configure corrected LDAP mappings on SC
+        - Apply oidc-auth-apps
+        - Auth and verify K8s + STX access on SC
+    """
+    config = _load_dex_config()
+    test_user = _get_test_user_config()
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    security_config = ConfigurationManager.get_security_config()
+    lab_config = ConfigurationManager.get_lab_config()
+    ldap_keywords = LdapKeywords(ssh_connection, security_config.get_domain_name())
+    dex_keywords = DexConnectorKeywords(ssh_connection)
+    crb_keywords = KubectlCreateClusterRoleBindingKeywords(ssh_connection)
+
+    oam_ip = lab_config.get_floating_ip()
+
+    def cleanup():
+        ssh = LabConnectionKeywords().get_active_controller_ssh()
+        sec_config = ConfigurationManager.get_security_config()
+        KubectlCreateClusterRoleBindingKeywords(ssh).delete_clusterrolebinding(test_user["crb_name"])
+        LdapKeywords(ssh, sec_config.get_domain_name()).delete_user(test_user["username"])
+        FileKeywords(ssh).remove_directory(config["working_dir"])
+
+    request.addfinalizer(cleanup)
+
+    ldap_keywords.create_user(test_user["username"], test_user["password"], user_role=test_user["role"])
+    ldap_keywords.add_mail_attribute(test_user["username"], test_user["email"])
+    _apply_ldap_attr_override(ssh_connection, config, config["local_ldap"]["email_attr"], config["local_ldap"]["name_attr"])
+    dex_keywords.set_oidc_username_claim(config["oidc_username_claim"]["default"])
+    crb_keywords.create_clusterrolebinding_for_user(test_user["crb_name"], "cluster-admin", test_user["username"])
+
+    get_logger().log_info("Verifying OIDC access on System Controller")
+    ldap_ssh = _create_ldap_ssh(test_user["username"], test_user["password"], oam_ip)
+    _verify_kubectl_and_stx_access(ldap_ssh, expect_success=True)
+    ldap_ssh.close()
+
+
+@mark.p0
+@mark.lab_is_distributed_cloud
+@mark.lab_has_subcloud
+def test_dc_ldap_oidc_on_subcloud(request):
+    """TC32: Verify corrected OIDC mappings on Subcloud.
+
+    Test Steps:
+        - Get subcloud SSH
+        - Configure corrected LDAP mappings on subcloud
+        - Verify K8s + STX access on subcloud
+    """
+    config = _load_dex_config()
+    test_user = _get_test_user_config()
+    lab_config = ConfigurationManager.get_lab_config()
+    subcloud_name = lab_config.get_subcloud_names()[0]
+    subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
+    security_config = ConfigurationManager.get_security_config()
+    ldap_keywords = LdapKeywords(subcloud_ssh, security_config.get_domain_name())
+    dex_keywords = DexConnectorKeywords(subcloud_ssh)
+    crb_keywords = KubectlCreateClusterRoleBindingKeywords(subcloud_ssh)
+
+    subcloud_oam_ip = lab_config.get_subcloud_floating_ip(subcloud_name)
+
+    def cleanup():
+        sc_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
+        sec_config = ConfigurationManager.get_security_config()
+        KubectlCreateClusterRoleBindingKeywords(sc_ssh).delete_clusterrolebinding(test_user["crb_name"])
+        LdapKeywords(sc_ssh, sec_config.get_domain_name()).delete_user(test_user["username"])
+        FileKeywords(sc_ssh).remove_directory(config["working_dir"])
+
+    request.addfinalizer(cleanup)
+
+    ldap_keywords.create_user(test_user["username"], test_user["password"], user_role=test_user["role"])
+    ldap_keywords.add_mail_attribute(test_user["username"], test_user["email"])
+    _apply_ldap_attr_override(subcloud_ssh, config, config["local_ldap"]["email_attr"], config["local_ldap"]["name_attr"])
+    dex_keywords.set_oidc_username_claim(config["oidc_username_claim"]["default"])
+    crb_keywords.create_clusterrolebinding_for_user(test_user["crb_name"], "cluster-admin", test_user["username"])
+
+    get_logger().log_info(f"Verifying OIDC access on subcloud: {subcloud_name}")
+    ldap_ssh = _create_ldap_ssh(test_user["username"], test_user["password"], subcloud_oam_ip)
+    _verify_kubectl_and_stx_access(ldap_ssh, expect_success=True)
+    ldap_ssh.close()

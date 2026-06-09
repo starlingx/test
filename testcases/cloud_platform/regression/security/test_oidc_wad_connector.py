@@ -401,3 +401,51 @@ def test_username_collision_across_ldap_and_wad(request):
     wad_ssh = _create_wad_ssh(wad_user["username"], wad_user["password"], oam_ip)
     _verify_kubectl_and_stx_access(wad_ssh, expect_success=True)
     wad_ssh.close()
+
+
+# =============================================================================
+# D8: Distributed Cloud — WAD on System Controller
+# =============================================================================
+
+
+@mark.p1
+@mark.lab_is_distributed_cloud
+def test_dc_wad_oidc_on_system_controller(request):
+    """TC31-WAD: Verify corrected WAD OIDC mappings on System Controller.
+
+    Test Steps:
+        - Configure corrected WAD mappings on SC
+        - Create CRB for WAD user
+        - Auth and verify K8s + STX access on SC
+    """
+    config = _load_dex_config()
+    wad_user = _get_wad_test_user_config()
+    wad_config = _get_wad_connector_config()
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    lab_config = ConfigurationManager.get_lab_config()
+    oam_ip = lab_config.get_floating_ip()
+    dex_keywords = DexConnectorKeywords(ssh_connection)
+    wad_keywords = WadConnectorKeywords(ssh_connection)
+    crb_keywords = KubectlCreateClusterRoleBindingKeywords(ssh_connection)
+
+    def cleanup():
+        ssh = LabConnectionKeywords().get_active_controller_ssh()
+        KubectlCreateClusterRoleBindingKeywords(ssh).delete_clusterrolebinding(wad_user["crb_name"])
+        DexConnectorKeywords(ssh).set_oidc_username_claim(config["oidc_username_claim"]["default"])
+        FileKeywords(ssh).remove_directory(config["working_dir"])
+
+    request.addfinalizer(cleanup)
+
+    wad_keywords.apply_wad_override(
+        config=config,
+        email_attr=wad_config["email_attr"],
+        username_attr=wad_config["username_attr"],
+        name_attr=wad_config["name_attr"],
+    )
+    dex_keywords.set_oidc_username_claim(config["oidc_username_claim"]["default"])
+    crb_keywords.create_clusterrolebinding_for_user(wad_user["crb_name"], "cluster-admin", wad_user["username"])
+
+    get_logger().log_info("Verifying WAD OIDC access on System Controller")
+    wad_ssh = _create_wad_ssh(wad_user["username"], wad_user["password"], oam_ip)
+    _verify_kubectl_and_stx_access(wad_ssh, expect_success=True)
+    wad_ssh.close()
