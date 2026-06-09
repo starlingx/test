@@ -12,6 +12,13 @@
         "oidc_username_claim": {
             "default": "preferred_username",
             "alternative": "email"
+        },
+        "test_user": {
+            "username": "dex-attr-testuser",
+            "password": "Test@12345",
+            "email": "dex-attr-testuser@local.domain",
+            "role": "admin",
+            "crb_name": "dex-attr-test-crb"
         }
     }
 }
