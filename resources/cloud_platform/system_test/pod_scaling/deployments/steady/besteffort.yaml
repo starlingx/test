@@ -1,0 +1,43 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: besteffort-steady
+  labels:
+    app: besteffort-steady
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: besteffort-steady
+  template:
+    metadata:
+      labels:
+        app: besteffort-steady
+    spec:
+      containers:
+      - name: besteffort-steady
+        image: registry.local:9001/alexeiled/stress-ng
+        imagePullPolicy: IfNotPresent
+        command: ["/stress-ng"]
+        args:
+          - "--vm"
+          - "1"
+          - "--vm-bytes"
+          - "450M"
+          - "--vm-keep"
+          - "--cpu"
+          - "1"
+          - "--cpu-load"
+          - "30"
+          - "--timeout"
+          - "0"
+        resources:
+          requests:
+            cpu: "50m"
+            memory: "512Mi"
+          limits:
+            cpu: "500m"
+            memory: "512Mi"
+      restartPolicy: Always
+      imagePullSecrets:
+      - name: regcred

@@ -1,0 +1,53 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: burstable-steady
+  labels:
+    app: burstable-steady
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: burstable-steady
+  template:
+    metadata:
+      labels:
+        app: burstable-steady
+    spec:
+      containers:
+      - name: burstable-steady
+        image: registry.local:9001/alexeiled/stress-ng
+        imagePullPolicy: IfNotPresent
+        command: ["/stress-ng"]
+        args:
+          - "--vm"
+          - "2"
+          - "--vm-bytes"
+          - "1500M"
+          - "--vm-keep"
+          - "--cpu"
+          - "1"
+          - "--cpu-load"
+          - "50"
+          - "--metrics-brief"
+          - "--timeout"
+          - "0"
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "2Gi"
+          limits:
+            cpu: "1"
+            memory: "6Gi"
+        env:
+          - name: NODE_NAME
+            valueFrom:
+              fieldRef:
+                fieldPath: spec.nodeName
+          - name: POD_NAME
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.name
+      restartPolicy: Always
+      imagePullSecrets:
+      - name: regcred
