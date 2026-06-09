@@ -128,3 +128,14 @@ class HorizonLoginPage(BasePage):
         """
         error_locator = self.locators.get_locator_error_message()
         return self.driver.is_exists(error_locator)
+
+    def is_text_present(self, text: str) -> bool:
+        """Check if the given text is present on the current page.
+
+        Args:
+            text (str): Text to search for in the page.
+
+        Returns:
+            bool: True if text is found on the page.
+        """
+        return self.driver.is_text_on_page(text)
