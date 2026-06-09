@@ -13,6 +13,7 @@ from framework.logging.automation_logger import get_logger
 from framework.validation.validation import validate_equals
 from keywords.cloud_platform.security.tls_keywords import TlsKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
+from keywords.cloud_platform.system.service.system_service_parameter_keywords import SystemServiceParameterKeywords
 
 DISALLOWED_CIPHERS = ["AES256-SHA", "DES-CBC3-SHA", "RC4-SHA"]
 INVALID_CIPHERS = ["NULL-SHA", "NULL-SHA256", "ECDHE-RSA-NULL-SHA", "EXP-RC4-MD5", "BOGUS-CIPHER-NAME"]
@@ -513,6 +514,8 @@ def test_tls12_and_tls13_cipher_removal_enforcement(request):
     skip_cipher_removal = set()
     if os_version == "bullseye":
         skip_cipher_removal.add("OpenLDAP")
+    # DEX NodePort (30556) — ciphers hardcoded in serve.go, not configurable
+    skip_cipher_removal.add("OIDC DEX")
 
     tls_kw.verify_cipher_removal_on_endpoints(
         ENDPOINTS,
@@ -634,3 +637,73 @@ def test_invalid_cipher_negotiation_rejected(request):
             # Invalid ciphers should either fail the handshake or be rejected by openssl client itself
             rejected = TlsKeywords.is_tls_handshake_rejected(output)
             validate_equals(rejected, True, f"Invalid cipher '{cipher}' rejected on {ep['name']} ({host}:{ep['port']})")
+
+
+@mark.p1
+def test_add_invalid_cipher_to_cipher_suite_rejected():
+    """Verify that adding an invalid cipher name to tls-cipher-suite is rejected by the system.
+
+    Test Steps:
+        - Attempt to modify platform tls-cipher-suite with an invalid cipher name
+        - Verify the command fails / is rejected
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    service_keywords = SystemServiceParameterKeywords(ssh_connection)
+
+    get_logger().log_test_case_step("Attempting to set tls-cipher-suite with invalid cipher (should be rejected)")
+    service_keywords.modify_service_parameter_with_error("platform", "config", "tls-cipher-suite", "INVALID-CIPHER-NAME,TLS_AES_256_GCM_SHA384")
+
+
+@mark.p2
+def test_delete_cipher_config_reverts_to_defaults(request):
+    """Verify that deleting tls-cipher-suite parameter reverts to default 9 ciphers.
+
+    Test Steps:
+        1. Delete platform config tls-cipher-suite parameter
+        2. Apply platform service parameters
+        3. Wait for config alarm to clear
+        4. Verify default ciphers still accepted on HAProxy
+        5. Verify weak cipher still rejected
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    service_keywords = SystemServiceParameterKeywords(ssh_connection)
+    tls_kw = TlsKeywords(ssh_connection)
+
+    # Get UUID of cipher parameter
+    get_logger().log_test_case_step("Getting UUID of platform tls-cipher-suite parameter")
+    params = service_keywords.list_service_parameters("platform", "config")
+    cipher_uuid = None
+    original_value = None
+    for param in params.get_parameters():
+        if param.get_name() == "tls-cipher-suite":
+            cipher_uuid = param.get_uuid()
+            original_value = param.get_value()
+            break
+    validate_equals(cipher_uuid is not None, True, "UUID found for platform tls-cipher-suite")
+
+    def teardown():
+        get_logger().log_teardown_step("Restoring tls-cipher-suite parameter")
+        service_keywords.add_service_parameter("platform", "config", "tls-cipher-suite", original_value)
+        tls_kw.wait_for_config_out_of_date_alarm_clear()
+
+    request.addfinalizer(teardown)
+
+    # Step 1: Delete cipher parameter
+    get_logger().log_test_case_step("Deleting platform config tls-cipher-suite parameter")
+    service_keywords.delete_service_parameter(cipher_uuid)
+
+    # Step 2: Wait for config to apply
+    tls_kw.wait_for_config_out_of_date_alarm_clear()
+
+    # Step 3: Verify default ciphers accepted
+    ep_ips = tls_kw.get_endpoint_ips()
+    oam_ip = ep_ips.get_oam_ip()
+    is_ipv6 = ep_ips.is_ipv6_lab()
+
+    get_logger().log_test_case_step("Verifying default ciphers still accepted after delete")
+    tls_kw.verify_cipher_accepted(oam_ip, 5000, "ECDHE-RSA-AES256-GCM-SHA384", "Keystone", is_ipv6)
+    tls_kw.verify_cipher_accepted(oam_ip, 5000, "ECDHE-RSA-AES128-GCM-SHA256", "Keystone", is_ipv6)
+
+    # Step 4: Verify weak cipher still rejected
+    get_logger().log_test_case_step("Verifying weak cipher still rejected after delete")
+    tls_kw.verify_cipher_rejected(oam_ip, 5000, "AES256-SHA", "Keystone", is_ipv6)
