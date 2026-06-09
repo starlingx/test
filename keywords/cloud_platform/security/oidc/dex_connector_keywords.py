@@ -1,8 +1,11 @@
 """Keywords for DEX connector attribute mapping and oidc-username-claim operations."""
 
+import json
+
 from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
 from keywords.base_keyword import BaseKeyword
+from keywords.cloud_platform.security.oidc.object.oidc_token_claims_object import OidcTokenClaimsObject
 from keywords.cloud_platform.system.application.system_application_apply_keywords import SystemApplicationApplyKeywords
 from keywords.cloud_platform.system.helm.system_helm_override_keywords import SystemHelmOverrideKeywords
 from keywords.cloud_platform.system.service.system_service_parameter_keywords import SystemServiceParameterKeywords
@@ -55,3 +58,19 @@ class DexConnectorKeywords(BaseKeyword):
             if param.get_name() == "oidc-username-claim":
                 return param.get_value()
         return ""
+
+    def decode_cached_token(self) -> OidcTokenClaimsObject:
+        """Decode the cached OIDC ID token and return structured claims object.
+
+        Reads the cached ID token from ~/.kube/oidc-login/id-token,
+        decodes the JWT payload (base64), and returns an OidcTokenClaimsObject
+        with typed getters for standard OIDC claims.
+
+        Returns:
+            OidcTokenClaimsObject: Parsed token claims with getter methods.
+        """
+        get_logger().log_info("Decoding cached OIDC ID token")
+        self.ssh_connection.send("cat ~/.kube/oidc-login/id-token | cut -d'.' -f2 | base64 -d 2>/dev/null")
+        output = self.ssh_connection.get_output()
+        claims_dict = json.loads(output)
+        return OidcTokenClaimsObject(claims_dict)
