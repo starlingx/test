@@ -6,8 +6,6 @@ oidc-username-claim via service-parameter CLI, and verifies
 access using preferred_username and email claims.
 """
 
-import json
-
 import json5
 from pytest import mark
 
@@ -19,6 +17,7 @@ from framework.ssh.ssh_connection_manager import SSHConnectionManager
 from framework.validation.validation import validate_equals
 from keywords.cloud_platform.command_wrappers import source_openrc
 from keywords.cloud_platform.security.oidc.dex_connector_keywords import DexConnectorKeywords
+from keywords.cloud_platform.security.oidc.object.oidc_token_claims_object import OidcTokenClaimsObject
 from keywords.cloud_platform.security.oidc.remote_oidc_connector_keywords import RemoteOidcConnectorKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.files.file_keywords import FileKeywords
@@ -95,18 +94,17 @@ def _verify_kubectl_and_stx_access(kc_ssh: SSHConnection, expect_success: bool =
         validate_equals(stx_rc != 0, True, "system host-list should be denied for Keycloak user")
 
 
-def _decode_id_token(ssh_connection: SSHConnection) -> dict:
-    """Decode the current OIDC ID token and return claims as dict.
+def _decode_id_token(kc_ssh: SSHConnection) -> OidcTokenClaimsObject:
+    """Decode cached token using DexConnectorKeywords.
 
     Args:
-        ssh_connection (SSHConnection): SSH session with cached token.
+        kc_ssh (SSHConnection): Authenticated SSH session with cached token.
 
     Returns:
-        dict: Decoded token claims.
+        OidcTokenClaimsObject: Parsed token claims.
     """
-    ssh_connection.send("cat ~/.kube/oidc-login/id-token | " "cut -d'.' -f2 | base64 -d 2>/dev/null")
-    output = ssh_connection.get_output()
-    return json.loads(output)
+    dex = DexConnectorKeywords(kc_ssh)
+    return dex.decode_cached_token()
 
 
 # =============================================================================
@@ -146,9 +144,9 @@ def test_remote_oidc_claim_mapping(request):
     claims = _decode_id_token(kc_ssh)
     kc_ssh.close()
 
-    validate_equals(claims.get("email"), kc_user["email"], "Token email claim should match Keycloak user email")
-    validate_equals(claims.get("preferred_username"), kc_user["username"], "Token preferred_username should match Keycloak username")
-    validate_equals("name" in claims, True, "Token should contain name claim from Keycloak")
+    validate_equals(claims.get_email(), kc_user["email"], "Token email claim should match Keycloak user email")
+    validate_equals(claims.get_preferred_username(), kc_user["username"], "Token preferred_username should match Keycloak username")
+    validate_equals(claims.has_name(), True, "Token should contain name claim from Keycloak")
 
 
 # =============================================================================
@@ -231,4 +229,56 @@ def test_remote_oidc_access_with_email_claim(request):
     get_logger().log_info("SSH as Keycloak user, oidc-auth, verify kubectl with email CRB")
     kc_ssh = _create_keycloak_ssh(kc_user["username"], kc_user["password"], oam_ip)
     _verify_kubectl_and_stx_access(kc_ssh, expect_success=True)
+    kc_ssh.close()
+
+
+# =============================================================================
+# Remote OIDC Negative Tests (TC 37)
+# =============================================================================
+
+
+@mark.p1
+@mark.lab_has_standby_controller
+def test_keycloak_unverified_email_rejected(request):
+    """TC37: Verify access denied when Keycloak email_verified=false and claim=email.
+
+    When oidc-username-claim=email, identity relies on the email claim.
+    If Keycloak user has email_verified=false, the email claim should be
+    empty or rejected, resulting in access denial even with a matching CRB.
+
+    Test Steps:
+        - Configure Remote OIDC (Keycloak) connector
+        - Set oidc-username-claim=email
+        - Create CRB by Keycloak user email
+        - Auth with Keycloak user (email_verified=false)
+        - Attempt kubectl — should be denied
+    """
+    config = _load_dex_config()
+    oidc_config = _get_remote_oidc_config()
+    kc_user = _get_keycloak_test_user_config()
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    lab_config = ConfigurationManager.get_lab_config()
+    oam_ip = lab_config.get_floating_ip()
+    dex_keywords = DexConnectorKeywords(ssh_connection)
+    oidc_keywords = RemoteOidcConnectorKeywords(ssh_connection)
+    crb_keywords = KubectlCreateClusterRoleBindingKeywords(ssh_connection)
+
+    def cleanup():
+        ssh = LabConnectionKeywords().get_active_controller_ssh()
+        KubectlCreateClusterRoleBindingKeywords(ssh).delete_clusterrolebinding(kc_user["crb_name"])
+        DexConnectorKeywords(ssh).set_oidc_username_claim(config["oidc_username_claim"]["default"])
+        FileKeywords(ssh).remove_directory(config["working_dir"])
+
+    request.addfinalizer(cleanup)
+
+    get_logger().log_info("Applying Remote OIDC connector override")
+    oidc_keywords.apply_remote_oidc_override(config=config, claim_mapping=oidc_config["claim_mapping"])
+
+    get_logger().log_info("Setting oidc-username-claim=email and creating CRB by email")
+    dex_keywords.set_oidc_username_claim(config["oidc_username_claim"]["alternative"])
+    crb_keywords.create_clusterrolebinding_for_user(kc_user["crb_name"], "cluster-admin", kc_user["email"])
+
+    get_logger().log_info("Auth with Keycloak user (email_verified=false) — should be denied")
+    kc_ssh = _create_keycloak_ssh(kc_user["username"], kc_user["password"], oam_ip)
+    _verify_kubectl_and_stx_access(kc_ssh, expect_success=False)
     kc_ssh.close()
