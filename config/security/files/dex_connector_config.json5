@@ -1,0 +1,17 @@
+{
+    "dex_connector": {
+        "oidc_app_name": "oidc-auth-apps",
+        "namespace": "kube-system",
+        "working_dir": "/home/sysadmin/dex-attr-test/",
+        "apply_timeout": 300,
+        "local_ldap": {
+            "email_attr": "mail",
+            "username_attr": "uid",
+            "name_attr": "gecos"
+        },
+        "oidc_username_claim": {
+            "default": "preferred_username",
+            "alternative": "email"
+        }
+    }
+}
