@@ -717,8 +717,8 @@ def create_subcloud_group(subcloud_list: List[str]) -> None:
     # Checking Subcloud's assigned to the group correctly
     get_logger().log_info("Checking Subcloud is added to the new group")
     group_list = subcloud_group_keywords.get_dcmanager_subcloud_group_list_subclouds(group_name).get_dcmanager_subcloud_group_list_subclouds()
-    subclouds = [subcloud.get_name() for subcloud in group_list]
-    validate_equals(subclouds, subcloud_list, "Checking Subcloud's assigned to the group correctly")
+    subclouds = sorted([subcloud.get_name() for subcloud in group_list])
+    validate_equals(subclouds, sorted(subcloud_list), "Checking Subcloud's assigned to the group correctly")
 
 def validate_subcloud_health(subcloud_name):
     subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
