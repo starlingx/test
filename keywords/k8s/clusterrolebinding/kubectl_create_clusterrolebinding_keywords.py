@@ -43,6 +43,20 @@ class KubectlCreateClusterRoleBindingKeywords(K8sBaseKeyword):
         self.validate_success_return_code(self.ssh_connection)
         get_logger().log_info(f"ClusterRoleBinding '{binding_name}' created: {clusterrole} -> serviceaccount {namespace}:{serviceaccount}")
 
+    def create_clusterrolebinding_for_user(self, binding_name: str, clusterrole: str, user: str) -> None:
+        """Create a cluster role binding for a user, replacing it if it already exists.
+
+        Args:
+            binding_name (str): Name of the cluster role binding.
+            clusterrole (str): Name of the cluster role to bind.
+            user (str): User identifier to bind the role to.
+        """
+        self.ssh_connection.send(self.k8s_config.export(f"kubectl delete clusterrolebinding {binding_name} --ignore-not-found"))
+        cmd = f"kubectl create clusterrolebinding {binding_name} --clusterrole={clusterrole} --user={user}"
+        self.ssh_connection.send(self.k8s_config.export(cmd))
+        self.validate_success_return_code(self.ssh_connection)
+        get_logger().log_info(f"ClusterRoleBinding '{binding_name}' created: {clusterrole} -> user {user}")
+
     def delete_clusterrolebinding(self, binding_name: str) -> None:
         """Delete a cluster role binding.
 

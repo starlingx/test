@@ -18,6 +18,8 @@ class LdapKeywords(BaseKeyword):
 
     PLAYBOOK_PATH = "/usr/share/ansible/stx-ansible/playbooks/manage_local_ldap_account.yml"
     INVENTORY_PATH = "secure-inventory"
+    USER_BASE_DN = "ou=People,dc=cgcs,dc=local"
+    BIND_DN = "CN=ldapadmin,DC=cgcs,DC=local"
 
     def __init__(self, ssh_connection: SSHConnection, ansible_password: str) -> None:
         """Constructor.
@@ -127,3 +129,33 @@ class LdapKeywords(BaseKeyword):
         """
         get_logger().log_info(f"Deleting LDAP group: {group_name}")
         self.ssh_connection.send(f"echo '{self.ansible_password}' | sudo -S ldapdeletegroup {group_name}")
+
+    def add_mail_attribute(self, username: str, email: str) -> None:
+        """Add mail attribute to an existing LDAP user via ldapmodify.
+
+        Args:
+            username (str): LDAP username.
+            email (str): Email address to set.
+        """
+        get_logger().log_info(f"Adding mail attribute '{email}' to LDAP user '{username}'")
+        ldif = f"dn: uid={username},{self.USER_BASE_DN}\nchangetype: modify\nreplace: mail\nmail: {email}"
+        cmd = f"echo '{self.ansible_password}' | sudo -S ldapmodify -x -D '{self.BIND_DN}' -w $(echo '{self.ansible_password}') << 'EOF'\n{ldif}\nEOF"
+        self.ssh_connection.send(cmd)
+        self.validate_success_return_code(self.ssh_connection)
+
+    def verify_mail_attribute(self, username: str) -> str:
+        """Query LDAP and return the mail attribute for a user.
+
+        Args:
+            username (str): LDAP username.
+
+        Returns:
+            str: Mail attribute value, or empty string if not set.
+        """
+        get_logger().log_info(f"Querying mail attribute for LDAP user '{username}'")
+        cmd = f"ldapsearch -x -b '{self.USER_BASE_DN}' '(uid={username})' mail"
+        output = self.ssh_connection.send(cmd)
+        for line in output.split("\n") if isinstance(output, str) else output:
+            if line.startswith("mail:"):
+                return line.split(":", 1)[1].strip()
+        return ""
