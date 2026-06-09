@@ -15,6 +15,8 @@ from keywords.cloud_platform.system.service.system_service_parameter_keywords im
 
 CONFIG_OUT_OF_DATE_ALARM_ID = "250.001"
 KNOWN_OS_CODENAMES = ("bullseye", "bookworm", "trixie")
+NGINX_INGRESS_CONFIGMAP = "ic-nginx-ingress-ingress-nginx-controller"
+NGINX_INGRESS_NAMESPACE = "kube-system"
 TLS_VERSIONS = {
     "-tls1_1": "TLS 1.1",
     "-tls1_2": "TLS 1.2",
@@ -62,7 +64,7 @@ class TlsKeywords(BaseKeyword):
         Returns:
             str: OS version codename or 'unknown'.
         """
-        output = self.ssh_connection.send("cat /etc/os-release | grep VERSION_CODENAME")
+        output = self.ssh_connection.send("cat /etc/os-release | grep VERSION_CODENAME")  # no validation needed
         self.validate_success_return_code(self.ssh_connection)
         output_str = output if isinstance(output, str) else str(output)
         for codename in KNOWN_OS_CODENAMES:
@@ -130,7 +132,7 @@ class TlsKeywords(BaseKeyword):
         """
         connect_str = self.build_connect_str(host, port, is_ipv6)
         cmd = f"echo | openssl s_client -connect {connect_str} {tls_version} 2>&1"
-        output = self.ssh_connection.send(cmd)
+        output = self.ssh_connection.send(cmd)  # no validation needed
         # Note: validate_success_return_code intentionally skipped — openssl returns
         # non-zero on rejected handshakes, which is expected behavior under test.
         get_logger().log_info(f"openssl s_client {tls_version} to {connect_str} output: {output}")
@@ -150,7 +152,7 @@ class TlsKeywords(BaseKeyword):
         """
         connect_str = self.build_connect_str(host, port, is_ipv6)
         cmd = f"echo | openssl s_client -connect {connect_str} -tls1_2 -cipher '{cipher}' 2>&1"
-        output = self.ssh_connection.send(cmd)
+        output = self.ssh_connection.send(cmd)  # no validation needed
         get_logger().log_info(f"openssl s_client -tls1_2 -cipher '{cipher}' to {connect_str} output: {output}")
         return self._normalize_output(output)
 
@@ -174,7 +176,7 @@ class TlsKeywords(BaseKeyword):
         """
         connect_str = self.build_connect_str(host, port, is_ipv6)
         cmd = f"echo | openssl s_client -connect {connect_str} -tls1_3 -ciphersuites '{ciphersuite}' 2>&1"
-        output = self.ssh_connection.send(cmd)
+        output = self.ssh_connection.send(cmd)  # no validation needed
         get_logger().log_info(f"openssl s_client -tls1_3 -ciphersuites '{ciphersuite}' to {connect_str} output: {output}")
         return self._normalize_output(output)
 
@@ -191,7 +193,7 @@ class TlsKeywords(BaseKeyword):
         """
         connect_str = self.build_connect_str(host, port, is_ipv6)
         cmd = f"echo | openssl s_client -connect {connect_str} 2>&1"
-        output = self.ssh_connection.send(cmd)
+        output = self.ssh_connection.send(cmd)  # no validation needed
         get_logger().log_info(f"openssl s_client (default) to {connect_str} output: {output}")
         return self._normalize_output(output)
 
@@ -211,7 +213,7 @@ class TlsKeywords(BaseKeyword):
         """
         connect_str = self.build_connect_str(host, port, is_ipv6)
         cmd = f"echo | openssl s_client -connect {connect_str} -tls1_3 -cipher '{cipher}' 2>&1"
-        output = self.ssh_connection.send(cmd)
+        output = self.ssh_connection.send(cmd)  # no validation needed
         get_logger().log_info(f"openssl s_client -tls1_3 -cipher '{cipher}' to {connect_str} output: {output}")
         return self._normalize_output(output)
 
@@ -231,7 +233,7 @@ class TlsKeywords(BaseKeyword):
         """
         connect_str = self.build_connect_str(host, port, is_ipv6)
         cmd = f"echo | openssl s_client -connect {connect_str} -tls1_2 -ciphersuites '{ciphersuite}' 2>&1"
-        output = self.ssh_connection.send(cmd)
+        output = self.ssh_connection.send(cmd)  # no validation needed
         get_logger().log_info(f"openssl s_client -tls1_2 -ciphersuites '{ciphersuite}' to {connect_str} output: {output}")
         return self._normalize_output(output)
 
@@ -384,6 +386,34 @@ class TlsKeywords(BaseKeyword):
             f"Allowed cipher negotiated on {endpoint_name} ({host}:{port})",
         )
 
+    def wait_for_tls_version_propagation(self, host: str, port: int, tls_flag: str, expect_rejected: bool, is_ipv6: bool = False, timeout: int = 180, interval: int = 15) -> None:
+        """Poll until TLS version enforcement has propagated to the endpoint.
+
+        Args:
+            host (str): Target host.
+            port (int): Target port.
+            tls_flag (str): OpenSSL TLS version flag (e.g. '-tls1_2').
+            expect_rejected (bool): True if we expect the version to be rejected.
+            is_ipv6 (bool): Whether the host is IPv6.
+            timeout (int): Maximum seconds to wait.
+            interval (int): Seconds between polls.
+        """
+        deadline = time.time() + timeout
+        while True:
+            output = self.run_openssl_connection(host, port, tls_flag, is_ipv6)
+            rejected = self.is_tls_handshake_rejected(output)
+            if rejected == expect_rejected:
+                status = "rejected" if rejected else "accepted"
+                get_logger().log_info(f"TLS {tls_flag} on {host}:{port} is {status} as expected")
+                return
+            if time.time() >= deadline:
+                status = "rejected" if expect_rejected else "accepted"
+                get_logger().log_warning(f"Timeout waiting for TLS {tls_flag} to be {status} on {host}:{port}")
+                return
+            status = "rejected" if expect_rejected else "accepted"
+            get_logger().log_info(f"TLS {tls_flag} not yet {status} on {host}:{port}, retrying in {interval}s")
+            time.sleep(interval)
+
     def wait_for_cipher_propagation(
         self,
         host: str,
@@ -433,7 +463,7 @@ class TlsKeywords(BaseKeyword):
         """
         ipv6_flag = "-6" if is_ipv6 else ""
         cmd = f"nmap {ipv6_flag} --script ssl-enum-ciphers -p {port} {host} 2>&1"
-        output = self.ssh_connection.send(cmd)
+        output = self.ssh_connection.send(cmd)  # no validation needed
         get_logger().log_info(f"nmap ssl-enum-ciphers on {host}:{port} output: {output}")
         return self._normalize_output(output)
 
@@ -444,7 +474,6 @@ class TlsKeywords(BaseKeyword):
             cipher_list (str): IANA cipher list string to apply.
         """
         self.service_param_keywords.modify_service_parameter("platform", "config", "tls-cipher-suite", cipher_list)
-        self.service_param_keywords.apply_service_parameters("platform")
         self.service_param_keywords.modify_service_parameter("kubernetes", "kube_apiserver", "tls-cipher-suites", cipher_list)
         self.service_param_keywords.apply_service_parameters("kubernetes")
         self.wait_for_config_out_of_date_alarm_clear()
@@ -498,12 +527,65 @@ class TlsKeywords(BaseKeyword):
         while time.time() < deadline:
             if not self.alarm_keywords.is_alarm_present(CONFIG_OUT_OF_DATE_ALARM_ID):
                 get_logger().log_info(f"Alarm {CONFIG_OUT_OF_DATE_ALARM_ID} cleared — config applied to all services")
+                self.wait_for_app_reapply_alarm_clear()
                 return True
             get_logger().log_info(f"Alarm {CONFIG_OUT_OF_DATE_ALARM_ID} still active, retrying in {interval}s")
             time.sleep(interval)
 
         get_logger().log_warning(f"Alarm {CONFIG_OUT_OF_DATE_ALARM_ID} did not clear within {timeout}s")
         return False
+
+    def wait_for_app_reapply_alarm_clear(self, timeout: int = 300, interval: int = 15) -> bool:
+        """Wait for alarm 750.006 (app reapply needed) and 750.004 (apply in progress) to clear.
+
+        After TLS/cipher changes, nginx-ingress and oidc-auth-apps are auto-reapplied.
+        This waits for the reapply to complete so pods are ready with new config.
+
+        Args:
+            timeout (int): Maximum seconds to wait.
+            interval (int): Seconds between polls.
+
+        Returns:
+            bool: True if alarms cleared, False on timeout.
+        """
+        APP_REAPPLY_ALARM_ID = "750.006"
+        APP_APPLY_IN_PROGRESS_ALARM_ID = "750.004"
+        if not self.alarm_keywords.is_alarm_present(APP_REAPPLY_ALARM_ID) and not self.alarm_keywords.is_alarm_present(APP_APPLY_IN_PROGRESS_ALARM_ID):
+            return True
+        get_logger().log_info(f"Alarm 750.006/750.004 present — waiting for auto-reapply to complete (up to {timeout}s)")
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            has_reapply = self.alarm_keywords.is_alarm_present(APP_REAPPLY_ALARM_ID)
+            has_in_progress = self.alarm_keywords.is_alarm_present(APP_APPLY_IN_PROGRESS_ALARM_ID)
+            if not has_reapply and not has_in_progress:
+                get_logger().log_info("Alarms 750.006 and 750.004 cleared — apps reapplied successfully")
+                ep_ips = self.get_endpoint_ips()
+                self.wait_for_port_ready(ep_ips.get_oam_ip(), 443, ep_ips.is_ipv6_lab())
+                return True
+            time.sleep(interval)
+        get_logger().log_warning(f"App reapply alarms did not clear within {timeout}s")
+        return False
+
+    def get_haproxy_bind_ciphers(self) -> str:
+        """Get ssl-default-bind-ciphers from haproxy.cfg.
+
+        Returns:
+            str: The haproxy ssl-default-bind-ciphers line content.
+        """
+        output = self.ssh_connection.send("sudo grep ssl-default-bind-ciphers /etc/haproxy/haproxy.cfg")  # no validation needed
+        return str(output)
+
+    def get_nginx_configmap_value(self, key: str) -> str:
+        """Get a value from nginx-ingress-controller ConfigMap.
+
+        Args:
+            key (str): The key to grep for (e.g. ssl-protocols, ssl-ciphers).
+
+        Returns:
+            str: The matching ConfigMap content.
+        """
+        output = self.ssh_connection.send(f"kubectl get cm -n {NGINX_INGRESS_NAMESPACE} {NGINX_INGRESS_CONFIGMAP} -o yaml | grep {key}")  # no validation needed
+        return str(output)
 
     def wait_for_port_ready(self, host: str, port: int, is_ipv6: bool = False, retries: int = 5, delay: int = 2) -> bool:
         """Wait until a TCP port is accepting connections.
@@ -520,7 +602,7 @@ class TlsKeywords(BaseKeyword):
         """
         for attempt in range(retries):
             cmd = f"bash -c 'echo > /dev/tcp/{host}/{port}' 2>&1"
-            output = self.ssh_connection.send(cmd)
+            output = self.ssh_connection.send(cmd)  # no validation needed
             output_str = output if isinstance(output, str) else str(output)
             if "connection refused" not in output_str.lower() and "no route" not in output_str.lower():
                 return True
