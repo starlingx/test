@@ -7,6 +7,8 @@ from framework.logging.automation_logger import get_logger
 from framework.validation.validation import validate_equals_with_retry
 from keywords.base_keyword import BaseKeyword
 from keywords.openstack.connection.ace_openstack_connection import ACEOpenStackConnection
+from keywords.openstack.resources.volumes.object.backup_object import BackupObject
+from keywords.openstack.resources.volumes.object.backup_output import BackupOutput
 
 
 class VolumeKeywords(BaseKeyword):
@@ -247,6 +249,49 @@ class VolumeKeywords(BaseKeyword):
 
     # ── Backup operations (generic SDK) ──────────────────────────────
 
+    def create_backup(
+        self,
+        volume_name_or_id: str,
+        backup_name: str,
+        incremental: bool = False,
+        force: bool = False,
+        container: Optional[str] = None,
+    ) -> BackupOutput:
+        """Create a volume backup via the standard Cinder SDK API.
+
+        This is the generic backup creation for single-driver deployments.
+        Works with any configured backup driver (Ceph, NFS, iSCSI, Swift,
+        etc.) — no location metadata is needed because the server uses its
+        one configured backup driver automatically.
+
+        For multi-driver deployments (e.g., MultiBackupDriver) that require
+        location metadata to route backups to the correct driver, override
+        this method in a subclass.
+
+        Args:
+            volume_name_or_id (str): Source volume name or ID.
+            backup_name (str): Backup name.
+            incremental (bool): Whether to create an incremental backup.
+            force (bool): Force backup of in-use volumes.
+            container (Optional[str]): Backup container name.
+                If None, uses the server default.
+
+        Returns:
+            BackupOutput: Parsed backup output with typed field accessors.
+        """
+        get_logger().log_info(f"Creating backup '{backup_name}' from volume '{volume_name_or_id}'")
+        storage = self.openstack_connection.get_block_storage()
+        volume = storage.find_volume(volume_name_or_id, ignore_missing=False)
+        backup = storage.create_backup(
+            volume_id=volume.id,
+            name=backup_name,
+            is_incremental=incremental,
+            force=force,
+            container=container,
+        )
+        get_logger().log_info(f"Backup created: id={backup.id}")
+        return BackupOutput(backup.to_dict())
+
     def delete_backup(self, backup_name_or_id: str) -> None:
         """Delete a volume backup.
 
@@ -285,7 +330,7 @@ class VolumeKeywords(BaseKeyword):
         expected_status: str,
         timeout: int = 300,
         poll_interval: int = 10,
-    ) -> Dict:
+    ) -> BackupOutput:
         """Poll until backup reaches expected status.
 
         Uses validate_equals_with_retry with fail-fast on error state.
@@ -297,7 +342,7 @@ class VolumeKeywords(BaseKeyword):
             poll_interval (int): Seconds between polls.
 
         Returns:
-            Dict: Backup details once status is reached.
+            BackupOutput: Parsed backup output once status is reached.
 
         Raises:
             TimeoutError: If status is not reached within timeout.
@@ -322,7 +367,7 @@ class VolumeKeywords(BaseKeyword):
         backup = storage.find_backup(backup_name_or_id, ignore_missing=False)
         backup = storage.get_backup(backup.id)
         get_logger().log_info(f"Backup '{backup_name_or_id}' reached status '{expected_status}'")
-        return backup.to_dict()
+        return BackupOutput(backup.to_dict())
 
     # ── Cleanup helpers (safe for teardown — never raise) ────────────
 
