@@ -1,0 +1,44 @@
+# Template for DEX helm overrides with configurable WAD attribute mappings.
+# Variables:
+#   oam_ip:          OAM floating IP of the lab
+#   wad_server:      WAD/AD server hostname or IP
+#   bind_dn:         WAD bind DN
+#   bind_pw:         WAD bind password
+#   email_attr:      userSearch emailAttr value
+#   username_attr:   userSearch usernameAttr (sAMAccountName)
+#   name_attr:       userSearch nameAttr value
+config:
+  connectors:
+    - type: ldap
+      name: RemoteWAD
+      id: remotewad-1
+      config:
+        host: '"{{ wad_server }}":636'
+        insecureNoSSL: false
+        insecureSkipVerify: true
+        bindDN: "{{ bind_dn }}"
+        bindPW: "{{ bind_pw }}"
+        usernamePrompt: Username
+        userSearch:
+          baseDN: dc=wad,dc=local
+          filter: "(objectClass=user)"
+          username: sAMAccountName
+          idAttr: DN
+          emailAttr: "{{ email_attr }}"
+          usernameAttr: "{{ username_attr }}"
+          nameAttr: "{{ name_attr }}"
+        groupSearch:
+          baseDN: dc=wad,dc=local
+          filter: "(objectClass=group)"
+          userMatchers:
+            - userAttr: DN
+              groupAttr: member
+          nameAttr: cn
+volumeMounts:
+  - mountPath: /etc/dex/tls
+    name: https-tls
+volumes:
+  - name: https-tls
+    secret:
+      defaultMode: 420
+      secretName: oidc-auth-apps-certificate

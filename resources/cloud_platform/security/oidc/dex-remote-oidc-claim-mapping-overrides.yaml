@@ -1,0 +1,39 @@
+# Template for DEX helm overrides with Remote OIDC (Keycloak) connector claim mapping.
+# Variables:
+#   oam_ip:                       OAM floating IP of the lab
+#   client_id:                    Keycloak client ID for DEX
+#   client_secret:                Keycloak client secret for DEX
+#   external_idp_issuer_url:      Keycloak realm issuer URL
+#   oidc_client_secret:           DEX OIDC client secret
+#   email_claim:                  claimMapping email key
+#   name_claim:                   claimMapping name key
+#   preferred_username_claim:     claimMapping preferred_username key
+config:
+  connectors:
+    - type: oidc
+      name: RemoteOIDC
+      id: remoteoidc-1
+      config:
+        issuer: "{{ external_idp_issuer_url }}"
+        clientID: "{{ client_id }}"
+        clientSecret: "{{ client_secret }}"
+        redirectURI: "https://{{ oam_ip }}:30556/dex/callback"
+        insecureSkipEmailVerified: true
+        insecureEnableGroups: true
+        scopes:
+          - openid
+          - profile
+          - email
+          - groups
+        claimMapping:
+          email: "{{ email_claim }}"
+          name: "{{ name_claim }}"
+          preferred_username: "{{ preferred_username_claim }}"
+volumeMounts:
+  - mountPath: /etc/dex/tls
+    name: https-tls
+volumes:
+  - name: https-tls
+    secret:
+      defaultMode: 420
+      secretName: oidc-auth-apps-certificate
