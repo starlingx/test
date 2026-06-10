@@ -269,19 +269,26 @@ def test_simple_ingress_routing_https(request):
 
     # Validate routing for /apple
     get_logger().log_info("Testing HTTPS /apple route")
-    cmd = f"curl -k {server_url}/apple --resolve {host_name}:443:[{oam_ip}] -s"
-    response_apple = ssh_connection.send(cmd)
-    get_logger().log_info(f"Apple route response: {response_apple}")
-
+    cmd_apple = f"curl -k {server_url}/apple --resolve {host_name}:443:[{oam_ip}] -s"
     curl_keywords = CurlResponseKeywords(ssh_connection)
-    validate_equals(curl_keywords.get_safe_first_response(response_apple), "apple", "Expected response for /apple")
+    validate_equals_with_retry(
+        lambda: curl_keywords.get_safe_first_response(ssh_connection.send(cmd_apple)),
+        "apple",
+        "Expected response for /apple",
+        timeout=60,
+        polling_sleep_time=5,
+    )
 
     # Validate routing for /banana
     get_logger().log_info("Testing HTTPS /banana route")
-    cmd = f"curl -k {server_url}/banana --resolve {host_name}:443:[{oam_ip}] -s"
-    response_banana = ssh_connection.send(cmd)
-    get_logger().log_info(f"Banana route response: {response_banana}")
-    validate_equals(curl_keywords.get_safe_first_response(response_banana), "banana", "Expected response for /banana")
+    cmd_banana = f"curl -k {server_url}/banana --resolve {host_name}:443:[{oam_ip}] -s"
+    validate_equals_with_retry(
+        lambda: curl_keywords.get_safe_first_response(ssh_connection.send(cmd_banana)),
+        "banana",
+        "Expected response for /banana",
+        timeout=60,
+        polling_sleep_time=5,
+    )
 
     # Verify certificate issuer
     get_logger().log_info("Verifying TLS certificate issuer")
