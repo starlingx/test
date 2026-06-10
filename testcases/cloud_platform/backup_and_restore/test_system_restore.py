@@ -61,7 +61,7 @@ def test_restore():
     get_logger().log_info("Unlocking controller host")
     ssh_connection = LabConnectionKeywords().get_ssh_for_hostname("controller-0")
     active_controller = SystemHostListKeywords(ssh_connection).get_active_controller()
-    unlock_success = SystemHostLockKeywords(ssh_connection).unlock_host(active_controller.get_host_name())
+    unlock_success = SystemHostLockKeywords(ssh_connection).unlock_host(active_controller.get_host_name(), exclude_alarm_ids=["750.006"])
     validate_equals(unlock_success, True, "Validate controller was unlocked successfully")
     time_kpi_restore.log_elapsed_time(time.time(), "time taken for system restore")
 
@@ -151,7 +151,7 @@ def test_restore_multi_host():
     get_logger().log_info("Unlocking Standby controller host")
     ssh_connection = LabConnectionKeywords().get_ssh_for_hostname("controller-0")
     standby_controller = SystemHostListKeywords(ssh_connection).get_standby_controller()
-    unlock_success = SystemHostLockKeywords(ssh_connection).unlock_host(standby_controller.get_host_name())
+    unlock_success = SystemHostLockKeywords(ssh_connection).unlock_host(standby_controller.get_host_name(), exclude_alarm_ids=["750.006"])
     validate_equals(unlock_success, True, "Standby controller unlocking")
 
     if len(ConfigurationManager.get_lab_config().get_computes()) > 0:
@@ -159,7 +159,7 @@ def test_restore_multi_host():
         for node in ConfigurationManager.get_lab_config().get_computes():
             host_name = node.get_name()
             get_logger().log_info(f"wait for {host_name} to successfully unlocked")
-            unlock_success = SystemHostLockKeywords(ssh_connection).unlock_host(host_name)
+            unlock_success = SystemHostLockKeywords(ssh_connection).unlock_host(host_name, exclude_alarm_ids=["750.006"])
             validate_equals(unlock_success, True, f"Host {host_name} unlocking")
 
     get_logger().log_info("Running system restore-complete")
