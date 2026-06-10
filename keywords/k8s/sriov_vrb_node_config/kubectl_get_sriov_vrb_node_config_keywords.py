@@ -2,6 +2,7 @@ from framework.ssh.ssh_connection import SSHConnection
 from framework.validation.validation import validate_equals_with_retry
 from keywords.k8s.k8s_base_keyword import K8sBaseKeyword
 from keywords.k8s.sriov_vrb_node_config.object.kubectl_get_sriov_vrb_node_config_output import KubectlGetSriovVrbNodeConfigOutput
+from keywords.k8s.sriov_vrb_node_config.object.kubectl_get_sriov_vrb_node_config_yaml_output import KubectlGetSriovVrbNodeConfigYamlOutput
 
 
 class KubectlGetSriovVrbNodeConfigKeywords(K8sBaseKeyword):
@@ -28,6 +29,20 @@ class KubectlGetSriovVrbNodeConfigKeywords(K8sBaseKeyword):
         output = self.ssh_connection.send(self.k8s_config.export(f"kubectl get sriovvrbnodeconfigs.sriovvrb.intel.com -n {namespace}"))
         self.validate_success_return_code(self.ssh_connection)
         return KubectlGetSriovVrbNodeConfigOutput(output)
+
+    def get_sriov_vrb_node_config_yaml(self, node_name: str, namespace: str = "sriov-fec-system") -> KubectlGetSriovVrbNodeConfigYamlOutput:
+        """Get the YAML output of a SriovVrbNodeConfig by node name.
+
+        Args:
+            node_name (str): The name of the node to retrieve (e.g., 'controller-0').
+            namespace (str): Kubernetes namespace. Defaults to 'sriov-fec-system'.
+
+        Returns:
+            KubectlGetSriovVrbNodeConfigYamlOutput: The parsed SriovVrbNodeConfig YAML output.
+        """
+        output = self.ssh_connection.send(self.k8s_config.export(f"kubectl get sriovvrbnodeconfigs.sriovvrb.intel.com -n {namespace} {node_name} -o yaml"))
+        self.validate_success_return_code(self.ssh_connection)
+        return KubectlGetSriovVrbNodeConfigYamlOutput(output)
 
     def wait_for_configured_status(self, node_name: str, expected_status: str = "Succeeded", namespace: str = "sriov-fec-system", timeout: int = 180, poll_interval: int = 10) -> None:
         """Wait for a SriovVrbNodeConfig to reach the expected CONFIGURED status.

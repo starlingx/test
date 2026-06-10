@@ -5,6 +5,8 @@ metadata:
   annotations:
 spec:
   restartPolicy: Always
+  nodeSelector:
+    kubernetes.io/hostname: {{hostName}}
   containers:
   - name: {{podName}}
     image: fshiga01/dpdk-test:24.07
