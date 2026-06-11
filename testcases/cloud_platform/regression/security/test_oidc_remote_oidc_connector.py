@@ -282,3 +282,46 @@ def test_keycloak_unverified_email_rejected(request):
     kc_ssh = _create_keycloak_ssh(kc_user["username"], kc_user["password"], oam_ip)
     _verify_kubectl_and_stx_access(kc_ssh, expect_success=False)
     kc_ssh.close()
+
+
+# =============================================================================
+# D8: Distributed Cloud — Remote OIDC Centralized Auth
+# =============================================================================
+
+
+@mark.p1
+@mark.lab_is_distributed_cloud
+def test_dc_remote_oidc_centralized_auth(request):
+    """TC33: Verify centralized OIDC auth on DC System Controller via Keycloak.
+
+    Test Steps:
+        - Configure Remote OIDC connector on SC
+        - Create CRB for Keycloak user
+        - Auth via Keycloak and verify K8s + STX access on SC
+    """
+    config = _load_dex_config()
+    kc_user = _get_keycloak_test_user_config()
+    oidc_config = _get_remote_oidc_config()
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    lab_config = ConfigurationManager.get_lab_config()
+    oam_ip = lab_config.get_floating_ip()
+    dex_keywords = DexConnectorKeywords(ssh_connection)
+    oidc_keywords = RemoteOidcConnectorKeywords(ssh_connection)
+    crb_keywords = KubectlCreateClusterRoleBindingKeywords(ssh_connection)
+
+    def cleanup():
+        ssh = LabConnectionKeywords().get_active_controller_ssh()
+        KubectlCreateClusterRoleBindingKeywords(ssh).delete_clusterrolebinding(kc_user["crb_name"])
+        DexConnectorKeywords(ssh).set_oidc_username_claim(config["oidc_username_claim"]["default"])
+        FileKeywords(ssh).remove_directory(config["working_dir"])
+
+    request.addfinalizer(cleanup)
+
+    oidc_keywords.apply_remote_oidc_override(config=config, claim_mapping=oidc_config["claim_mapping"])
+    dex_keywords.set_oidc_username_claim(config["oidc_username_claim"]["default"])
+    crb_keywords.create_clusterrolebinding_for_user(kc_user["crb_name"], "cluster-admin", kc_user["username"])
+
+    get_logger().log_info("Verifying Remote OIDC access on DC System Controller")
+    kc_ssh = _create_keycloak_ssh(kc_user["username"], kc_user["password"], oam_ip)
+    _verify_kubectl_and_stx_access(kc_ssh, expect_success=True)
+    kc_ssh.close()
