@@ -2,6 +2,7 @@ import os
 import shutil
 import subprocess
 import tempfile
+import time
 import zipfile
 
 from config.configuration_manager import ConfigurationManager
@@ -89,6 +90,10 @@ class OidcEnvironmentKeywords(BaseKeyword):
         dex_overrides_yaml = self.yaml_keywords.generate_yaml_file_from_template(template_file, replacement_dict, "dex-keycloak-overrides.yaml", working_dir)
         self.helm_override_keywords.update_helm_override(dex_overrides_yaml, oidc_app_name, "dex", namespace, reuse_values=True)
 
+        get_logger().log_info("Step 2b: Update oidc-client override to use oidc-auth-apps-certificate")
+        oidc_client_template = get_stx_resource_path("resources/cloud_platform/security/oidc/oidc-client-overrides.yaml")
+        self.helm_override_keywords.update_helm_override(oidc_client_template, oidc_app_name, "oidc-client", namespace, reuse_values=False)
+
         get_logger().log_info("Step 3: Apply the oidc-auth-apps configuration")
         system_app_apply_output = self.system_app_apply.system_application_apply(oidc_app_name)
         validate_equals(system_app_apply_output.get_system_application_object().get_status(), "applied", f"{oidc_app_name} should be in applied state")
@@ -163,6 +168,43 @@ class OidcEnvironmentKeywords(BaseKeyword):
 
         validate_equals(shutil.which("kubectl-oidc_login") is not None, True, "kubelogin plugin should be installed after download")
         get_logger().log_info(f"kubelogin plugin installed successfully at {install_path}")
+
+    def teardown(self, oidc_app_name: str, namespace: str) -> None:
+        """Remove OIDC app and delete overrides to leave lab in safe state.
+
+        No pods running = no FailedMount on lock/unlock. The next OIDC test's
+        setup will apply fresh overrides and reapply the app.
+
+        Args:
+            oidc_app_name (str): Name of the OIDC application (e.g., 'oidc-auth-apps').
+            namespace (str): Kubernetes namespace (e.g., 'kube-system').
+        """
+        get_logger().log_info("Teardown: Removing oidc-auth-apps")
+        self.ssh_connection.send(f"source /etc/platform/openrc && system application-remove {oidc_app_name}")
+        self._wait_for_app_status(oidc_app_name, "uploaded", timeout=300)
+
+        get_logger().log_info("Teardown: Deleting all user helm overrides")
+        for chart in ["dex", "oidc-client", "secret-observer"]:
+            self.helm_override_keywords.delete_system_helm_override(oidc_app_name, chart, namespace)
+
+        get_logger().log_info("OIDC teardown complete — app uploaded, no pods, no stale overrides")
+
+    def _wait_for_app_status(self, app_name: str, expected_status: str, timeout: int = 300) -> None:
+        """Wait for application to reach expected status.
+
+        Args:
+            app_name (str): Application name.
+            expected_status (str): Expected status string (e.g., 'uploaded', 'applied').
+            timeout (int): Maximum wait time in seconds.
+        """
+        end_time = time.time() + timeout
+        while time.time() < end_time:
+            output = self.ssh_connection.send(f"source /etc/platform/openrc && system application-show {app_name} | grep status")
+            raw = "\n".join(output) if isinstance(output, list) else str(output)
+            if expected_status in raw:
+                return
+            time.sleep(10)
+        get_logger().log_info(f"Warning: {app_name} did not reach '{expected_status}' within {timeout}s")
 
     def setup_remote(self, oam_ip: str, ca_cert_filename: str, kubeconfig_filename: str, oidc_client_id: str, oidc_client_secret: str) -> RemoteCliOidcSetupOutput:
         """Set up the local OIDC kubectl environment on the test machine.

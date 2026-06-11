@@ -85,13 +85,20 @@ def _setup_oidc_environment(ssh_connection: SSHConnection, security_config: Secu
 
 
 def _cleanup_oidc_environment(ssh_connection: SSHConnection, security_config: SecurityConfig) -> None:
-    """Clean up the OIDC Keycloak environment on the remote host.
+    """Clean up the OIDC Keycloak environment and restore lab to safe state.
+
+    Order: remove app first (stops pods), then delete secrets (no FailedMount risk).
 
     Args:
         ssh_connection (SSHConnection): Active controller SSH connection.
         security_config (SecurityConfig): Security configuration object.
     """
-    OidcEnvironmentKeywords(ssh_connection).cleanup(
+    oidc_env = OidcEnvironmentKeywords(ssh_connection)
+    oidc_env.teardown(
+        oidc_app_name="oidc-auth-apps",
+        namespace=security_config.get_oidc_keycloak_namespace(),
+    )
+    oidc_env.cleanup(
         secret_name=security_config.get_oidc_keycloak_upstream_idp_ca_secret_name(),
         namespace=security_config.get_oidc_keycloak_namespace(),
         crb_binding_name=security_config.get_oidc_keycloak_crb_binding_name(),

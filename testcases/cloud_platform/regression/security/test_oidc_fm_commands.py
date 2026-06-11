@@ -22,63 +22,174 @@ from keywords.cloud_platform.security.oidc.oidc_environment_keywords import Oidc
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.cloud_platform.system.application.system_application_list_keywords import SystemApplicationListKeywords
 from keywords.cloud_platform.system.service.system_service_parameter_keywords import SystemServiceParameterKeywords
+from keywords.linux.keyring.keyring_keywords import KeyringKeywords
 from keywords.linux.ldap.ldap_keywords import LdapKeywords
+
+DEX_LOCAL_LDAP_OVERRIDE = """config:
+  connectors:
+  - config:
+      bindDN: CN=ldapadmin,DC=cgcs,DC=local
+      bindPW: '{ldap_admin_pw}'
+      groupSearch:
+        baseDN: ou=Group,dc=cgcs,dc=local
+        filter: (objectClass=posixGroup)
+        nameAttr: cn
+        userMatchers:
+        - groupAttr: memberUid
+          userAttr: uid
+      host: '{mgmt_ip}:636'
+      insecureNoSSL: false
+      insecureSkipVerify: false
+      rootCA: /etc/ssl/certs/adcert/ca.crt
+      userSearch:
+        baseDN: ou=People,dc=cgcs,dc=local
+        emailAttr: uid
+        filter: (objectClass=posixAccount)
+        idAttr: DN
+        nameAttr: uid
+        username: uid
+      usernamePrompt: Username
+    id: ldap-1
+    name: ldap-1
+    type: ldap
+  expiry:
+    idTokens: 24h
+volumeMounts:
+- mountPath: /etc/ssl/certs/adcert
+  name: certdir
+- mountPath: /etc/dex/tls
+  name: https-tls
+volumes:
+- name: certdir
+  secret:
+    secretName: oidc-auth-apps-certificate
+- name: https-tls
+  secret:
+    defaultMode: 420
+    secretName: oidc-auth-apps-certificate
+"""
+
+OIDC_CLIENT_OVERRIDE = """config:
+  issuer_root_ca_secret: oidc-auth-apps-certificate
+  issuer_root_ca: /home/ca.crt
+tlsName: oidc-auth-apps-certificate
+"""
 
 
 def setup_oidc_environment(ssh_connection: SSHConnection, security_config: SecurityConfig, lab_config: LabConfig) -> None:
-    """Set up the full OIDC environment on the remote host.
+    """Set up OIDC with local LDAP connector for FM tests.
 
-    If oidc-auth-apps is already applied and OIDC pods are running,
-    skip the setup — the environment is already configured.
+    ALWAYS applies both dex and oidc-client overrides to ensure correct state,
+    even if oidc-auth-apps appears applied. This handles the case where a previous
+    test (e.g., CGCS WAD test) overwrote the overrides.
 
     Args:
         ssh_connection (SSHConnection): Active controller SSH connection.
         security_config (SecurityConfig): Security configuration object.
         lab_config (LabConfig): Lab configuration object.
     """
+    # Get LDAP admin bind password from system keyring
+    ldap_admin_pw = KeyringKeywords(ssh_connection).get_keyring(service="ldap", identifier="ldapadmin")
+    get_logger().log_info("Retrieved LDAP admin password from keyring")
+
+    # Get management floating IP (LDAP listens here, reachable from pods)
+    mgmt_cmd = "system addrpool-show $(system addrpool-list | grep management | awk '{print $2}') " "2>/dev/null | grep floating_address | awk '{print $4}'"
+    mgmt_output = ssh_connection.send(source_openrc(mgmt_cmd))
+    mgmt_raw = "\n".join(mgmt_output) if isinstance(mgmt_output, list) else mgmt_output
+    mgmt_ip = mgmt_raw.strip().split("\n")[-1].strip()
+    if not mgmt_ip or mgmt_ip == "None" or mgmt_ip == "":
+        get_logger().log_error("Could not determine management floating IP")
+        return
+    if ":" in mgmt_ip:
+        mgmt_ip = f"[{mgmt_ip}]"
+    get_logger().log_info(f"Using management IP for LDAP: {mgmt_ip}")
+
+    # Write dex override YAML
+    override_content = DEX_LOCAL_LDAP_OVERRIDE.format(ldap_admin_pw=ldap_admin_pw, mgmt_ip=mgmt_ip)
+    ssh_connection.send(f"cat > /tmp/dex-fm-oidc-override.yaml << 'EOFOVERRIDE'\n{override_content}EOFOVERRIDE")
+
+    # Write oidc-client override YAML
+    ssh_connection.send(f"cat > /tmp/oidc-client-override.yaml << 'EOFOVERRIDE'\n{OIDC_CLIENT_OVERRIDE}EOFOVERRIDE")
+
+    # Check current app state
     app_list_kw = SystemApplicationListKeywords(ssh_connection)
     app_list = app_list_kw.get_system_application_list()
-    if app_list.application_exists("oidc-auth-apps"):
-        app = app_list.get_application("oidc-auth-apps")
-        if app.get_status() == "applied":
-            get_logger().log_info("oidc-auth-apps already applied, skipping OIDC environment setup")
-            return
+    if not app_list.application_exists("oidc-auth-apps"):
+        get_logger().log_error("oidc-auth-apps not found on system")
+        return
 
-    oam_ip = lab_config.get_floating_ip()
-    if lab_config.is_ipv6():
-        oam_ip = f"[{oam_ip}]"
-    OidcEnvironmentKeywords(ssh_connection).setup(
-        oam_ip=oam_ip,
-        namespace=security_config.get_oidc_keycloak_namespace(),
-        secret_name=security_config.get_oidc_keycloak_upstream_idp_ca_secret_name(),
-        oidc_app_name="oidc-auth-apps",
-        working_dir=security_config.get_oidc_keycloak_working_dir(),
-        ca_cert_pem=security_config.get_oidc_keycloak_ca_cert(),
-        client_id=security_config.get_oidc_keycloak_client_id(),
-        client_secret=security_config.get_oidc_keycloak_client_secret(),
-        external_idp_issuer_url=security_config.get_oidc_keycloak_external_idp_issuer_url(),
-        ca_cert_filename=security_config.get_oidc_keycloak_system_local_ca_cert_filename(),
-        kubeconfig_filename=security_config.get_oidc_keycloak_kubeconfig_filename(),
-        oidc_client_id=security_config.get_oidc_keycloak_static_client_id(),
-        oidc_client_secret=security_config.get_oidc_keycloak_static_client_secret(),
-        crb_binding_name=security_config.get_oidc_keycloak_crb_binding_name(),
-        crb_cluster_role=security_config.get_oidc_keycloak_crb_cluster_role(),
-        crb_group=security_config.get_oidc_keycloak_crb_group(),
-    )
+    app = app_list.get_application("oidc-auth-apps")
+    status = app.get_status()
+
+    # Always apply both overrides (dex + oidc-client)
+    get_logger().log_info("Applying local LDAP dex + oidc-client helm overrides")
+    ssh_connection.send(source_openrc("system helm-override-update --values /tmp/dex-fm-oidc-override.yaml oidc-auth-apps dex kube-system"))
+    ssh_connection.send(source_openrc("system helm-override-update --values /tmp/oidc-client-override.yaml oidc-auth-apps oidc-client kube-system"))
+
+    # Apply the app
+    if status in ("applied", "uploaded", "apply-failed"):
+        get_logger().log_info(f"oidc-auth-apps in '{status}' state, applying")
+        ssh_connection.send(source_openrc("system application-apply oidc-auth-apps"))
+    else:
+        get_logger().log_info(f"oidc-auth-apps in '{status}' state, waiting for stable state")
+        stable_deadline = time.time() + 120
+        while time.time() < stable_deadline:
+            time.sleep(10)
+            app_list = app_list_kw.get_system_application_list()
+            app = app_list.get_application("oidc-auth-apps")
+            status = app.get_status()
+            if status in ("applied", "uploaded", "apply-failed"):
+                break
+        ssh_connection.send(source_openrc("system application-apply oidc-auth-apps"))
+
+    # Wait for app to reach applied state (up to 5 min)
+    get_logger().log_info("Waiting for oidc-auth-apps to reach applied state")
+    deadline = time.time() + 300
+    while time.time() < deadline:
+        time.sleep(15)
+        app_list = app_list_kw.get_system_application_list()
+        if app_list.application_exists("oidc-auth-apps"):
+            app = app_list.get_application("oidc-auth-apps")
+            if app.get_status() == "applied":
+                get_logger().log_info("oidc-auth-apps applied successfully")
+                break
+    else:
+        get_logger().log_error("oidc-auth-apps did not reach applied state within 300s")
+        return
+
+    # Wait for BOTH oidc pods to be ready (up to 3 min)
+    get_logger().log_info("Waiting for OIDC pods to be ready")
+    deadline = time.time() + 180
+    while time.time() < deadline:
+        admin_pw = lab_config.get_admin_credentials().get_password()
+        pod_cmd = f"echo '{admin_pw}' | sudo -S kubectl --kubeconfig /etc/kubernetes/admin.conf " "get pods -n kube-system --no-headers 2>/dev/null | grep -E 'oidc-dex|stx-oidc-client'"
+        output = ssh_connection.send(pod_cmd)
+        raw = "\n".join(output) if isinstance(output, list) else output
+        ready_pods = [line for line in raw.splitlines() if "1/1" in line and "Running" in line]
+        if len(ready_pods) >= 2:
+            get_logger().log_info("All OIDC pods are ready")
+            break
+        time.sleep(15)
+    else:
+        get_logger().log_error("OIDC pods not ready within 180s after app applied")
+        return
+
+    # oidc-username-claim stays as 'name' (platform default).
+    # The dex override uses nameAttr: uid, so the 'name' claim = LDAP uid = username.
 
 
 def cleanup_oidc_environment(ssh_connection: SSHConnection, security_config: SecurityConfig) -> None:
-    """Clean up the OIDC environment on the remote host.
+    """Clean up FM OIDC environment — preserve oidc-username-claim to avoid kube-apiserver restart.
 
-    Only cleans up if the environment was set up by the test (not pre-existing).
-    Since we skip setup when oidc-auth-apps is already applied, cleanup is a no-op
-    in that case to avoid breaking the lab's existing OIDC configuration.
+    Does NOT restore oidc-username-claim because service-parameter-apply kubernetes
+    triggers a kube-apiserver restart (~2 min downtime) which breaks subsequent tests.
+    Each test sets the claim it needs in its own setup.
 
     Args:
         ssh_connection (SSHConnection): Active controller SSH connection.
         security_config (SecurityConfig): Security configuration object.
     """
-    get_logger().log_info("OIDC cleanup: skipping to preserve lab OIDC configuration")
+    get_logger().log_info("FM OIDC cleanup: preserving oidc-username-claim (no kube-apiserver restart)")
 
 
 def wait_for_rolebindings_file(ssh_connection: SSHConnection, timeout_sec: int = 60) -> None:
