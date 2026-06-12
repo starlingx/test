@@ -82,7 +82,26 @@ class LdapKeywords(BaseKeyword):
         output = self.ssh_connection.send_expect_prompts(cmd, prompts, command_timeout=120)
         raw = "\n".join(output) if isinstance(output, list) else (output or "")
         if mode == "create" and "failed=0" not in raw:
-            raise KeywordException(f"Ansible playbook failed to {mode} user {username}. Output: {raw[-200:]}")
+            # Workaround for Trixie 26.09: SSSD doesn't support forced password
+            # change over SSH. If playbook failed at password change step,
+            # manually reset the password and clear expiry via ldapsetpasswd.
+            if "Failed to change initial password" in raw:
+                get_logger().log_info(f"Playbook password change failed (Trixie SSSD issue). Applying workaround for {username}.")
+                self._force_set_password(username, password)
+            else:
+                raise KeywordException(f"Ansible playbook failed to {mode} user {username}. Output: {raw[-200:]}")
+
+    def _force_set_password(self, username: str, password: str) -> None:
+        """Force set LDAP user password and clear expiry on Trixie (SSSD workaround).
+
+        Uses ldapsetpasswd to set the password directly without SSH login,
+        then clears shadowLastChange so the password is not expired.
+        """
+        self.ssh_connection.send(f"echo '{self.ansible_password}' | sudo -S ldapsetpasswd {username} {password}")
+        # Clear password expiry by setting shadowLastChange to today
+        days_since_epoch = "$(( $(date +%s) / 86400 ))"
+        ldif_cmd = f"echo '{self.ansible_password}' | sudo -S ldapmodify -x -D 'cn=ldapadmin,dc=cgcs,dc=local' " f"-w '{self.ansible_password}' <<EOF\n" f"dn: uid={username},ou=People,dc=cgcs,dc=local\n" f"changetype: modify\n" f"replace: shadowLastChange\n" f"shadowLastChange: {days_since_epoch}\n" f"EOF"
+        self.ssh_connection.send(ldif_cmd)
 
     def delete_user(self, username: str) -> None:
         """Delete an LDAP user via the manage_local_ldap_account playbook.
