@@ -3,6 +3,7 @@ import time
 from framework.exceptions.keyword_exception import KeywordException
 from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
+from keywords.bmc.ipmitool.chassis.bootdev.ipmitool_chassis_bootdev_keywords import IPMIToolChassisBootdevKeywords
 from keywords.bmc.ipmitool.chassis.power.ipmitool_chassis_power_keywords import IPMIToolChassisPowerKeywords
 from keywords.bmc.ipmitool.chassis.status.ipmitool_chassis_status_keywords import IPMIToolChassisStatusKeywords
 from keywords.cloud_platform.fault_management.alarms.alarm_list_keywords import AlarmListKeywords
@@ -163,3 +164,14 @@ class PowerKeywordsImplementation:
             host_name (str): The name of the host.
         """
         IPMIToolChassisPowerKeywords(self.ssh_connection, host_name).power_cycle()
+
+    def set_boot_device_pxe(self, host_name: str) -> bool:
+        """Set the next boot device of the host to PXE (network boot).
+
+        Args:
+            host_name (str): The name of the host.
+
+        Returns:
+            bool: True if the boot device was successfully set to PXE.
+        """
+        return IPMIToolChassisBootdevKeywords(self.ssh_connection, host_name).set_chassis_bootdev_pxe()
