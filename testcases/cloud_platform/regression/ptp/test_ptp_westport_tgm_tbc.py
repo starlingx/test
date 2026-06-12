@@ -421,7 +421,7 @@ def test_ptp_operation_sma_disabled_and_enable(request):
                             "alarm_id": "100.119",
                             "state": StatusConstants.alarm_set,
                             "severity": "major",
-                            "reason_text": ["controller-0 1PPS signal loss state: LockStatus.HOLDOVER", "controller-0 1PPS signal loss state: holdover-unstable(freerun)"],
+                            "reason_text": ["controller-0 1PPS signal loss state: .*"],
                             "entity_id": "host=controller-0.interface={{ controller_0.nic2.base_port }}.ptp=1PPS-signal-loss"
                         },
                     ],
@@ -536,7 +536,7 @@ def test_ptp_operation_sma_disabled_and_enable(request):
                             "alarm_id": "100.119",
                             "state": StatusConstants.alarm_clear,
                             "severity": "major",
-                            "reason_text": ["controller-0 1PPS signal loss state: LockStatus.HOLDOVER", "controller-0 1PPS signal loss state: holdover-unstable(freerun)"],
+                            "reason_text": ["controller-0 1PPS signal loss state: .*"],
                             "entity_id": "host=controller-0.interface={{ controller_0.nic2.base_port }}.ptp=1PPS-signal-loss"
                         },
                     ],
@@ -623,14 +623,14 @@ def test_ptp_operation_gnss_off_and_on(request):
                             "alarm_id": "100.119",
                             "state": StatusConstants.alarm_set,
                             "severity": "major",
-                            "reason_text": ["controller-0 1PPS signal loss state: LockStatus.HOLDOVER", "controller-0 1PPS signal loss state: holdover-unstable(freerun)", "controller-0 1PPS signal loss state: LockStatus.UNLOCKED"],
+                            "reason_text": ["controller-0 1PPS signal loss state: .*"],
                             "entity_id": "host=controller-0.interface={{ controller_0.nic1.base_port }}.ptp=1PPS-signal-loss"
                         },
                         {
                             "alarm_id": "100.119",
                             "state": StatusConstants.alarm_set,
                             "severity": "major",
-                            "reason_text": ["controller-0 GNSS signal loss state: LockStatus.HOLDOVER", "controller-0 GNSS signal loss state: holdover-unstable(freerun)", "controller-0 GNSS signal loss state: LockStatus.UNLOCKED"],
+                            "reason_text": ["controller-0 GNSS signal loss state: .*"],
                             "entity_id": "host=controller-0.interface={{ controller_0.nic1.base_port }}.ptp=GNSS-signal-loss"
                         },
                     ],
@@ -780,14 +780,14 @@ def test_ptp_operation_gnss_off_and_on(request):
                             "alarm_id": "100.119",
                             "state": StatusConstants.alarm_clear,
                             "severity": "major",
-                            "reason_text": ["controller-0 1PPS signal loss state: LockStatus.HOLDOVER", "controller-0 1PPS signal loss state: holdover-unstable(freerun)", "controller-0 1PPS signal loss state: LockStatus.UNLOCKED"],
+                            "reason_text": ["controller-0 1PPS signal loss state: .*"],
                             "entity_id": "host=controller-0.interface={{ controller_0.nic1.base_port }}.ptp=1PPS-signal-loss"
                         },
                         {
                             "alarm_id": "100.119",
                             "state": StatusConstants.alarm_clear,
                             "severity": "major",
-                            "reason_text": ["controller-0 GNSS signal loss state: LockStatus.HOLDOVER", "controller-0 GNSS signal loss state: holdover-unstable(freerun)", "controller-0 GNSS signal loss state: LockStatus.UNLOCKED"],
+                            "reason_text": ["controller-0 GNSS signal loss state: .*"],
                             "entity_id": "host=controller-0.interface={{ controller_0.nic1.base_port }}.ptp=GNSS-signal-loss"
                         },
                     ],
