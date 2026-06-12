@@ -2,6 +2,20 @@
 	// Kubernetes version to upgrade to
 	"k8_target_version": "None",
 
+	// sw-manager kube-upgrade-strategy create arguments
+	// Possible values: serial, ignore
+	"sw_mgr_controller_apply_type": "None",
+	// Possible values: serial, ignore
+	"sw_mgr_storage_apply_type": "None",
+	// Possible values: serial, parallel, ignore
+	"sw_mgr_worker_apply_type": "None",
+	// Possible values: stop-start, migrate
+	"sw_mgr_instance_action": "None",
+	// Possible values: strict, relaxed
+	"sw_mgr_alarm_restrictions": "None",
+	// Possible values: 2, 3, 4, 5, 6, 7, 8, 9, 10
+	"sw_mgr_max_parallel_worker_hosts": "None",
+
 	// Distributed Cloud
 	"subcloud_group": "Default",
 	"subcloud_name": "None"

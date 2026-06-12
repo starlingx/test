@@ -76,7 +76,15 @@ def test_kubernetes_upgrade(request: FixtureRequest) -> None:
 
     # Step 3: Create the orchestration strategy for the target version
     get_logger().log_test_case_step(f"Create Kubernetes upgrade strategy for version {target_version}")
-    create_kube_upgrade_output = kube_upgrade_keywords.create_sw_manager_kube_upgrade_strategy(target_kube_version=target_version)
+    create_kube_upgrade_output = kube_upgrade_keywords.create_sw_manager_kube_upgrade_strategy(
+        target_kube_version=target_version,
+        controller_apply_type=kubernetes_upgrade_config.get_controller_apply_type(),
+        storage_apply_type=kubernetes_upgrade_config.get_storage_apply_type(),
+        worker_apply_type=kubernetes_upgrade_config.get_worker_apply_type(),
+        instance_action=kubernetes_upgrade_config.get_instance_action(),
+        alarm_restrictions=kubernetes_upgrade_config.get_alarm_restrictions(),
+        max_parallel_worker_hosts=kubernetes_upgrade_config.get_max_parallel_worker_hosts(),
+    )
     validate_equals(create_kube_upgrade_output.get_state(), "ready-to-apply", "Strategy is ready to apply")
     get_logger().log_info("Kubernetes upgrade strategy created successfully and is ready to apply")
 

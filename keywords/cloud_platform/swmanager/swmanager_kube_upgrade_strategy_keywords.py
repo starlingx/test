@@ -25,17 +25,44 @@ class SwManagerKubeUpgradeStrategyKeywords(BaseKeyword):
     def create_sw_manager_kube_upgrade_strategy(
         self,
         target_kube_version: str,
+        controller_apply_type: str = None,
+        storage_apply_type: str = None,
+        worker_apply_type: str = None,
+        instance_action: str = None,
+        alarm_restrictions: str = None,
+        max_parallel_worker_hosts: str = None,
     ) -> SwManagerKubeUpgradeStrategyObject:
         """Create a Kubernetes upgrade strategy using sw-manager.
 
         Args:
             target_kube_version (str): Target Kubernetes version for upgrade.
+            controller_apply_type (str): Controller apply type (serial or ignore).
+            storage_apply_type (str): Storage apply type (serial or ignore).
+            worker_apply_type (str): Worker apply type (serial, parallel, or ignore).
+            instance_action (str): Instance action (stop-start or migrate).
+            alarm_restrictions (str): Alarm restrictions (strict or relaxed).
+            max_parallel_worker_hosts (str): Maximum worker hosts to update in parallel (2-10, or "None" if not set).
 
         Returns:
             SwManagerKubeUpgradeStrategyObject: The created strategy object.
         """
-        get_logger().log_info(f"Creating Kubernetes upgrade strategy for version {target_kube_version}")
-        command = source_openrc(f"sw-manager kube-upgrade-strategy create --to-version {target_kube_version}")
+        get_logger().log_info(f"Creating Kubernetes upgrade strategy - target_kube_version: {target_kube_version}, controller_apply_type: {controller_apply_type}, storage_apply_type: {storage_apply_type}, worker_apply_type: {worker_apply_type}, instance_action: {instance_action}, alarm_restrictions: {alarm_restrictions}, max_parallel_worker_hosts: {max_parallel_worker_hosts}")
+
+        cmd = f"sw-manager kube-upgrade-strategy create --to-version {target_kube_version}"
+        if controller_apply_type and controller_apply_type != "None":
+            cmd += f" --controller-apply-type {controller_apply_type}"
+        if storage_apply_type and storage_apply_type != "None":
+            cmd += f" --storage-apply-type {storage_apply_type}"
+        if worker_apply_type and worker_apply_type != "None":
+            cmd += f" --worker-apply-type {worker_apply_type}"
+        if instance_action and instance_action != "None":
+            cmd += f" --instance-action {instance_action}"
+        if alarm_restrictions and alarm_restrictions != "None":
+            cmd += f" --alarm-restrictions {alarm_restrictions}"
+        if max_parallel_worker_hosts and str(max_parallel_worker_hosts) != "None":
+            cmd += f" --max-parallel-worker-hosts {max_parallel_worker_hosts}"
+
+        command = source_openrc(cmd)
         self.ssh_connection.send(command)
         self.validate_success_return_code(self.ssh_connection)
 

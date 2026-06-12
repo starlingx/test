@@ -27,6 +27,14 @@ class KubernetesUpgradeConfig:
         self.subcloud_group = kubernetes_upgrade_dict.get("subcloud_group", "None")
         self.subcloud_name = kubernetes_upgrade_dict.get("subcloud_name", "None")
 
+        # Strategy creation arguments
+        self.sw_mgr_controller_apply_type = kubernetes_upgrade_dict.get("sw_mgr_controller_apply_type", "None")
+        self.sw_mgr_storage_apply_type = kubernetes_upgrade_dict.get("sw_mgr_storage_apply_type", "None")
+        self.sw_mgr_worker_apply_type = kubernetes_upgrade_dict.get("sw_mgr_worker_apply_type", "None")
+        self.sw_mgr_instance_action = kubernetes_upgrade_dict.get("sw_mgr_instance_action", "None")
+        self.sw_mgr_alarm_restrictions = kubernetes_upgrade_dict.get("sw_mgr_alarm_restrictions", "None")
+        self.sw_mgr_max_parallel_worker_hosts = kubernetes_upgrade_dict.get("sw_mgr_max_parallel_worker_hosts", "None")
+
     def get_k8_target_version(self) -> str:
         """
         Getter for the Kubernetes version to upgrade to.
@@ -53,6 +61,60 @@ class KubernetesUpgradeConfig:
             str: The subcloud name.
         """
         return self.subcloud_name
+
+    def get_controller_apply_type(self) -> str:
+        """
+        Getter for the controller apply type.
+
+        Returns:
+            str: The controller apply type (serial, ignore, or None if not set).
+        """
+        return self.sw_mgr_controller_apply_type
+
+    def get_storage_apply_type(self) -> str:
+        """
+        Getter for the storage apply type.
+
+        Returns:
+            str: The storage apply type (serial, ignore, or None if not set).
+        """
+        return self.sw_mgr_storage_apply_type
+
+    def get_worker_apply_type(self) -> str:
+        """
+        Getter for the worker apply type.
+
+        Returns:
+            str: The worker apply type (serial, parallel, ignore, or None if not set).
+        """
+        return self.sw_mgr_worker_apply_type
+
+    def get_instance_action(self) -> str:
+        """
+        Getter for the instance action during upgrade.
+
+        Returns:
+            str: The instance action (stop-start, migrate, or None if not set).
+        """
+        return self.sw_mgr_instance_action
+
+    def get_alarm_restrictions(self) -> str:
+        """
+        Getter for the alarm restrictions policy.
+
+        Returns:
+            str: The alarm restrictions (strict, relaxed, or None if not set).
+        """
+        return self.sw_mgr_alarm_restrictions
+
+    def get_max_parallel_worker_hosts(self) -> str:
+        """
+        Getter for the maximum number of parallel worker hosts.
+
+        Returns:
+            str: The maximum parallel worker hosts (2-10, or None if not set).
+        """
+        return self.sw_mgr_max_parallel_worker_hosts
 
     def resolve_target_version(self, available_versions: list) -> str:
         """
