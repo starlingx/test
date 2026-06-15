@@ -54,11 +54,12 @@ class NetworkKeywords(BaseKeyword):
             NetworkObject: Parsed network object.
         """
         get_logger().log_info(f"Creating network '{network_name}'")
-        network = self.openstack_connection.get_network().create_network(
-            name=network_name,
-            port_security_enabled=port_security_enabled,
-            dns_domain=dns_domain,
-        )
+        attrs = {"name": network_name}
+        if port_security_enabled is not None:
+            attrs["port_security_enabled"] = port_security_enabled
+        if dns_domain is not None:
+            attrs["dns_domain"] = dns_domain
+        network = self.openstack_connection.get_network().create_network(**attrs)
         return NetworkListOutput([network.to_dict()]).get_networks()[0]
 
     def show_network(self, network_name_or_id: str) -> NetworkObject:
