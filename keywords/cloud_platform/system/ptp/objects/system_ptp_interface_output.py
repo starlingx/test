@@ -36,7 +36,7 @@ class SystemPTPInterfaceOutput:
         if "ptp_instance_name" in output_values:
             self.system_ptp_interface_object.set_ptp_instance_name(output_values["ptp_instance_name"])
 
-        if "parameters" in output_values:
+        if "parameters" in output_values and output_values["parameters"]:
             self.system_ptp_interface_object.set_parameters(eval(output_values["parameters"]))
 
     def get_ptp_interface(self) -> SystemPTPInterfaceObject:

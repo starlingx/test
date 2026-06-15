@@ -29,7 +29,7 @@ class SystemHostIfPTPAssignOutput:
             if "ptp_instance_name" in value:
                 system_host_if_ptp_assign_object.set_ptp_instance_name(value["ptp_instance_name"])
 
-            if "parameters" in value:
+            if "parameters" in value and value["parameters"]:
                 system_host_if_ptp_assign_object.set_parameters(eval(value["parameters"]))
             self.system_host_if_ptp_assign_output.append(system_host_if_ptp_assign_object)
 

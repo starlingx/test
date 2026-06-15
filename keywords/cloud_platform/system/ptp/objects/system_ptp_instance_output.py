@@ -36,7 +36,7 @@ class SystemPTPInstanceOutput:
         if "hostnames" in output_values:
             self.system_ptp_instance_object.set_hostnames(TypeConverter.parse_string_to_list(output_values["hostnames"]))
 
-        if "parameters" in output_values:
+        if "parameters" in output_values and output_values["parameters"]:
             self.system_ptp_instance_object.set_parameters(eval(output_values["parameters"]))
 
     def get_ptp_instance(self) -> SystemPTPInstanceObject:
