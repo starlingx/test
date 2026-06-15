@@ -120,11 +120,15 @@ class OpenvSwitchKeywords(BaseKeyword):
         return self._to_str(self.ssh_connection.send(cmd)).strip()
 
     def exec_on_remote_pod(self, remote_ip: str, password: str, pod_name: str, cmd: str) -> str:
-        """Execute a command in a pod on a remote host via SSH hop.
+        """Execute a command in a pod on a separate remote host.
+
+        Used for inter-system OVS testing where the peer is an independent
+        AIO-SX system (separate cluster, not reachable via local kubectl).
+        Connects via SSH hop through the local controller.
 
         Args:
-            remote_ip: IP of the remote host.
-            password: SSH password.
+            remote_ip: IP of the remote host (separate AIO-SX cluster).
+            password: SSH password for the remote host.
             pod_name: Pod name on the remote host.
             cmd: Command to execute inside the pod.
 
@@ -135,14 +139,15 @@ class OpenvSwitchKeywords(BaseKeyword):
             f"sshpass -p '{password}' ssh -o StrictHostKeyChecking=no sysadmin@{remote_ip} "
             f"\"export KUBECONFIG=/etc/kubernetes/admin.conf && kubectl exec {pod_name} -- {cmd}\""
         )
-        return self._to_str(self.ssh_connection.send(full_cmd))
+        raw = self._to_str(self.ssh_connection.send(full_cmd))
+        return self._strip_ssh_banner(raw)
 
     def get_remote_pod_by_prefix(self, remote_ip: str, password: str, pod_prefix: str) -> str:
-        """Dynamically discover a pod name by prefix on a remote host.
+        """Discover a pod name by prefix on a separate remote host.
 
         Args:
-            remote_ip: IP of the remote host.
-            password: SSH password.
+            remote_ip: IP of the remote host (separate AIO-SX cluster).
+            password: SSH password for the remote host.
             pod_prefix: Pod name prefix to search for.
 
         Returns:
@@ -150,7 +155,41 @@ class OpenvSwitchKeywords(BaseKeyword):
         """
         full_cmd = (
             f"sshpass -p '{password}' ssh -o StrictHostKeyChecking=no sysadmin@{remote_ip} "
-            f"\"export KUBECONFIG=/etc/kubernetes/admin.conf && kubectl get pods --no-headers | grep {pod_prefix} | awk '{{print \\$1}}'\""
+            f"\"export KUBECONFIG=/etc/kubernetes/admin.conf && "
+            f"kubectl get pods --no-headers -o custom-columns=NAME:.metadata.name | grep {pod_prefix}\""
         )
         raw = self._to_str(self.ssh_connection.send(full_cmd))
-        return raw.strip().split("\n")[0].strip()
+        cleaned = self._strip_ssh_banner(raw)
+        return cleaned.strip().split("\n")[0].strip()
+
+    @staticmethod
+    def _strip_ssh_banner(output: str) -> str:
+        """Remove SSH login banner lines from command output.
+
+        StarlingX systems display a mandatory security banner on SSH login
+        (configured via /etc/issue.net). This method strips those lines
+        when executing commands on remote hosts via SSH hop.
+
+        Args:
+            output: Raw command output that may contain banner text.
+
+        Returns:
+            str: Output with banner lines removed.
+        """
+        banner_markers = [
+            "Release ", "W A R N I N G", "THIS IS A PRIVATE",
+            "This computer system", "network devices",
+            "(specifically including", "are provided only",
+            "All computer systems", "ensure that their use",
+            "for management of", "facilitate protection",
+            "procedures, survivability", "attacks by authorized",
+            "security of the system", "recorded, copied",
+            "personal information", "of this system",
+            "Unauthorized use", "Evidence of any",
+            "for administrative", "constitutes consent",
+            "Monitoring includes", "Uses of this system",
+            "--------",
+        ]
+        lines = output.split("\n")
+        filtered = [l for l in lines if not any(m in l for m in banner_markers)]
+        return "\n".join(filtered)
