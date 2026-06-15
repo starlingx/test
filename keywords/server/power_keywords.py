@@ -124,3 +124,14 @@ class PowerKeywords(BaseKeyword):
             host_name (str): The name of the host.
         """
         self.implementation.power_cycle(host_name)
+
+    def set_boot_device_pxe(self, host_name: str) -> bool:
+        """Set the next boot device of the host to PXE (network boot).
+
+        Args:
+            host_name (str): The name of the host.
+
+        Returns:
+            bool: True if the boot device was successfully set to PXE.
+        """
+        return self.implementation.set_boot_device_pxe(host_name)
