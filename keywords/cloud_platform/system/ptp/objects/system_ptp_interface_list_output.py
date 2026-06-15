@@ -30,7 +30,7 @@ class SystemPTPInterfaceListOutput:
             if "ptp_instance_name" in value:
                 system_ptp_interface_list_object.set_ptp_instance_name(value["ptp_instance_name"])
 
-            if "parameters" in value:
+            if "parameters" in value and value["parameters"]:
                 system_ptp_interface_list_object.set_parameters(eval(value["parameters"]))
             self.system_ptp_interface_list_output.append(system_ptp_interface_list_object)
 
