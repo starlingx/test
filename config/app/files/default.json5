@@ -23,5 +23,6 @@
   //  platform_integ_apps_app_name: "",
   //  sriov_fec_operator_app_name: "",
   //  rook_ceph_app_name: "",
+  //  ptp_notification_app_name: "",
 
 }

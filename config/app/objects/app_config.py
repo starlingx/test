@@ -73,6 +73,10 @@ class AppConfig:
         if "rook_ceph_app_tarball" in app_dict:
             self.rook_ceph_app_tarball = app_dict["rook_ceph_app_tarball"]
 
+        self.ptp_notification_app_name = "ptp-notification"
+        if "ptp_notification_app_name" in app_dict:
+            self.ptp_notification_app_name = app_dict["ptp_notification_app_name"]
+
 
     def get_base_application_path(self) -> str:
         """
@@ -243,3 +247,13 @@ class AppConfig:
 
         """
         return self.rook_ceph_app_tarball
+
+    def get_ptp_notification_app_name(self) -> str:
+        """
+        Getter for ptp notification app name
+
+        Returns:
+            str: the ptp notification app name
+
+        """
+        return self.ptp_notification_app_name
