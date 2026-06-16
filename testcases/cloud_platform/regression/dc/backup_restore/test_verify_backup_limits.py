@@ -1,10 +1,9 @@
-from pytest import mark
+from pytest import mark, fail
 
 from config.configuration_manager import ConfigurationManager
 from framework.logging.automation_logger import get_logger
 from framework.validation.validation import validate_equals, validate_not_equals
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_backup_keywords import DcManagerSubcloudBackupKeywords
-from keywords.cloud_platform.dcmanager.dcmanager_subcloud_list_keywords import DcManagerSubcloudListKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_show_keywords import DcManagerSubcloudShowKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.cloud_platform.version_info.cloud_platform_version_manager import CloudPlatformVersionManagerClass
@@ -30,9 +29,7 @@ def test_verify_one_release_per_subcloud_on_central(request):
     release = CloudPlatformVersionManagerClass().get_sw_version()
 
     # Gets the lowest subcloud (the subcloud with the lowest id).
-    subcloud_name = ConfigurationManager.get_lab_config().get_subcloud_names()[0]
-
-    validate_subcloud_health(subcloud_name)
+    subcloud_name = get_healthy_subcloud()
 
     # Gets the lowest subcloud sysadmin password needed for backup creation.
     lab_config = ConfigurationManager.get_lab_config().get_subcloud(subcloud_name)
@@ -101,10 +98,7 @@ def test_verify_two_releases_per_subcloud_on_central(request):
     central_ssh = LabConnectionKeywords().get_active_controller_ssh()
     release = CloudPlatformVersionManagerClass().get_sw_version()
 
-    # Gets the lowest subcloud (the subcloud with the lowest id).
-    subcloud_name = ConfigurationManager.get_lab_config().get_subcloud_names()[0]
-
-    validate_subcloud_health(subcloud_name)
+    subcloud_name = get_healthy_subcloud()
 
     # Gets the lowest subcloud sysadmin password needed for backup creation.
     lab_config = ConfigurationManager.get_lab_config().get_subcloud(subcloud_name)
@@ -191,10 +185,8 @@ def test_verify_one_release_per_subcloud_on_local(request):
     release = CloudPlatformVersionManagerClass().get_sw_version()
 
     # Gets the lowest subcloud (the subcloud with the lowest id).
-    subcloud_name = ConfigurationManager.get_lab_config().get_subcloud_names()[0]
+    subcloud_name = get_healthy_subcloud()
     subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
-
-    validate_subcloud_health(subcloud_name)
 
     # Gets the lowest subcloud sysadmin password needed for backup creation.
     lab_config = ConfigurationManager.get_lab_config().get_subcloud(subcloud_name)
@@ -259,13 +251,8 @@ def test_verify_two_releases_per_subcloud_on_local(request):
     release = CloudPlatformVersionManagerClass().get_sw_version()
 
     # Gets the lowest subcloud (the subcloud with the lowest id).
-    subcloud_name = ConfigurationManager.get_lab_config().get_subcloud_names()[0]
+    subcloud_name = get_healthy_subcloud()
     subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
-
-    # Prechecks Before Back-Up:
-    get_logger().log_info(f"Performing pre-checks on {subcloud_name}")
-    obj_health = HealthKeywords(subcloud_ssh)
-    obj_health.validate_healty_cluster()  # Checks alarms, pods, app health
 
     # Gets the lowest subcloud sysadmin password needed for backup creation.
     lab_config = ConfigurationManager.get_lab_config().get_subcloud(subcloud_name)
@@ -363,3 +350,25 @@ def validate_subcloud_health(subcloud_name):
     get_logger().log_info(f"Performing pre-checks on {subcloud_name}")
     obj_health = HealthKeywords(subcloud_ssh)
     obj_health.validate_healty_cluster()  # Checks alarms, pods, app health
+
+def get_healthy_subcloud(release: str = None) -> str:
+    """Iterates through subclouds from lab config and returns the first healthy one.
+
+    Returns:
+        str: The name of a healthy subcloud.
+
+    Raises:
+        pytest.skip: If no healthy subcloud is found.
+    """
+    central_ssh = LabConnectionKeywords().get_active_controller_ssh()
+    for subcloud_name in ConfigurationManager.get_lab_config().get_subcloud_names():
+        subcloud_sw_version = DcManagerSubcloudShowKeywords(central_ssh).get_dcmanager_subcloud_show(subcloud_name).get_dcmanager_subcloud_show_object().get_software_version()
+        if release:
+            if release != subcloud_sw_version:
+                continue
+        try:
+            validate_subcloud_health(subcloud_name)
+            return subcloud_name
+        except TimeoutError:
+            continue
+    fail("No healthy subcloud available. Skipping test.")

@@ -254,3 +254,91 @@ class DcManagerSubcloudListKeywords(BaseKeyword):
         if not subclouds:
             raise Exception(f"No healthy subclouds found with type {lab_type} and release {version}.")
         return subclouds[0]
+
+    def get_specific_subcloud_list(
+            self,
+            management="managed",
+            availability="online",
+            deploy_status="complete",
+            sync_status="in-sync",
+            backup_status="",
+            prestaged="",
+            subcloud_type=None,
+            required_release=None
+    ) -> List[DcManagerSubcloudListObject]:
+        """Gets all subclouds matching the given criteria and release.
+
+        Args:
+            management (str): Management state filter.
+            availability (str): Availability state filter.
+            deploy_status (str): Deploy status filter.
+            sync_status (str): Sync status filter.
+            backup_status (str): Backup status filter.
+            prestaged (str): Prestage status filter.
+            subcloud_type (str): Lab type filter (e.g., 'simplex', 'duplex').
+            required_release (str): Software version the subcloud must be running.
+
+        Returns:
+            List[DcManagerSubcloudListObject]: The matching subclouds.
+        """
+        candidates = self.get_dcmanager_subcloud_list().get_specific_subcloud_list(
+            management=management,
+            availability=availability,
+            deploy_status=deploy_status,
+            sync_status=sync_status,
+            backup_status=backup_status,
+            prestaged=prestaged,
+            subcloud_type=subcloud_type,
+        )
+
+        if required_release is not None:
+            matching = []
+            for sc in candidates:
+                sw_version = DcManagerSubcloudShowKeywords(self.ssh_connection).get_dcmanager_subcloud_show(sc.get_name()).get_dcmanager_subcloud_show_object().get_software_version()
+                if sw_version == required_release:
+                    matching.append(sc)
+            candidates = matching
+
+        if not candidates:
+            raise ValueError(f"No subcloud found running release {required_release}.")
+
+        return candidates
+
+    def get_specific_subcloud_with_lowest_id(
+            self,
+            management="managed",
+            availability="online",
+            deploy_status="complete",
+            sync_status="in-sync",
+            backup_status="",
+            prestaged="",
+            subcloud_type=None,
+            required_release=None
+    ) -> DcManagerSubcloudListObject:
+        """Gets the specific subcloud with the lowest ID matching the given criteria and release.
+
+        Args:
+            management (str): Management state filter.
+            availability (str): Availability state filter.
+            deploy_status (str): Deploy status filter.
+            sync_status (str): Sync status filter.
+            backup_status (str): Backup status filter.
+            prestaged (str): Prestage status filter.
+            subcloud_type (str): Lab type filter (e.g., 'simplex', 'duplex').
+            required_release (str): Software version the subcloud must be running.
+
+        Returns:
+            DcManagerSubcloudListObject: The matching subcloud with the lowest ID.
+        """
+        candidates = self.get_specific_subcloud_list(
+            management=management,
+            availability=availability,
+            deploy_status=deploy_status,
+            sync_status=sync_status,
+            backup_status=backup_status,
+            prestaged=prestaged,
+            subcloud_type=subcloud_type,
+            required_release=required_release,
+        )
+
+        return min(candidates, key=lambda sc: int(sc.get_id()))

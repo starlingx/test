@@ -360,15 +360,26 @@ class DcManagerSubcloudListOutput:
             prestaged="",
             subcloud_type=None
     ) -> DcManagerSubcloudListObject:
+        subclouds = self.get_specific_subcloud_list(management=management, availability=availability, deploy_status=deploy_status, sync_status=sync_status, backup_status=backup_status, prestaged=prestaged, subcloud_type=subcloud_type)
+        return min(subclouds, key=lambda subcloud: int(subcloud.get_id()))
+
+    def get_specific_subcloud_list(
+            self,
+            management="managed",
+            availability="online",
+            deploy_status="complete",
+            sync_status="in-sync",
+            backup_status="",
+            prestaged="",
+            subcloud_type=None
+    ) -> DcManagerSubcloudListObject:
 
         invalid_backup_status = ["validating", "backing-up", "deleting-backup", "pre-backup"]
         invalid_prestage_status = ["prestaging"]
 
         dcmanager_subcloud_list_obj_filter = DcManagerSubcloudListObjectFilter.get_specific_subcloud_filter(management=management, availability=availability, deploy_status=deploy_status, sync_status=sync_status, backup_status=backup_status, prestaged=prestaged)
         filtered_subclouds = self.get_dcmanager_subcloud_list_objects_filtered(dcmanager_subcloud_list_obj_filter)
-
         filtered_subclouds = [sc for sc in filtered_subclouds if sc.get_backup_status() not in invalid_backup_status and sc.get_prestage_status() not in invalid_prestage_status]
-
         if subcloud_type is not None:
             filtered_by_type = []
             for sc in filtered_subclouds:
@@ -384,9 +395,10 @@ class DcManagerSubcloudListOutput:
             error_message = f"No subcloud found with the specified criteria (management={management}, availability={availability}, deploy_status={deploy_status}, sync_status={sync_status}"
             if subcloud_type:
                 error_message += f", subcloud_type={subcloud_type}"
+            if backup_status:
+                error_message += f", backup_status={backup_status}"
             error_message += ")."
             get_logger().log_exception(error_message)
             raise ValueError(error_message)
 
-        lowest_subcloud = min(filtered_subclouds, key=lambda subcloud: int(subcloud.get_id()))
-        return lowest_subcloud
+        return filtered_subclouds
