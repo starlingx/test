@@ -5,7 +5,7 @@ import re
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
-# from keywords.kpi.lpmptool_kpi_keywords import KpiResult
+from keywords.kpi.kpi_result import KpiResult
 from tabulate import tabulate
 
 from framework.logging.automation_logger import get_logger
