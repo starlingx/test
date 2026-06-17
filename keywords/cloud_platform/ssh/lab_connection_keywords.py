@@ -224,6 +224,46 @@ class LabConnectionKeywords(BaseKeyword):
 
         return connection
 
+    def get_subcloud_factory_ssh(self, subcloud_name: str) -> SSHConnection:
+        """Gets an SSH connection to the subcloud using its factory IP and factory credentials.
+
+        Uses factory_credentials from the subcloud config. Falls back to admin_credentials if not set.
+        Uses factory_ip from the subcloud config. Falls back to floating_ip if not set.
+
+        Args:
+            subcloud_name (str): The name of the 'subcloud' node.
+
+        Returns:
+            SSHConnection: the SSH connection to the subcloud at its factory IP.
+        """
+        lab_config = ConfigurationManager.get_lab_config()
+        subcloud_config: LabConfig = lab_config.get_subcloud(subcloud_name)
+
+        if not subcloud_config:
+            raise ValueError(f"There is no 'subcloud' node named {subcloud_name} defined in your config file.")
+
+        factory_creds = subcloud_config.get_factory_credentials()
+        if factory_creds:
+            username = factory_creds.get_user_name()
+            password = factory_creds.get_password()
+        else:
+            username = subcloud_config.get_admin_credentials().get_user_name()
+            password = subcloud_config.get_admin_credentials().get_password()
+
+        jump_host_config = None
+        if lab_config.is_use_jump_server():
+            jump_host_config = lab_config.get_jump_host_configuration()
+
+        connection = SSHConnectionManager.create_ssh_connection(
+            subcloud_config.get_factory_ip(),
+            username,
+            password,
+            ssh_port=lab_config.get_ssh_port(),
+            jump_host=jump_host_config,
+        )
+
+        return connection
+
     def get_secondary_active_controller_ssh(self) -> SSHConnection:
         """Gets an SSH connection to the secondary active controller node.
 

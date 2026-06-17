@@ -86,8 +86,9 @@ class DcManagerSubcloudAddKeywords(BaseKeyword):
 
         subcloud_ip = subcloud_obj.get_floating_ip()
         subcloud_psswr = subcloud_obj.get_admin_credentials().get_password()
+        bmc_psswr = subcloud_obj.get_bm_password() or subcloud_psswr
 
-        cmd = source_openrc(f"dcmanager subcloud add --enroll --bootstrap-address {subcloud_ip} --bootstrap-values {bootstrap_values} --install-values {install_values} --deploy-config {deploy_config_file} --sysadmin-password {subcloud_psswr} --bmc-password {subcloud_psswr}")
+        cmd = source_openrc(f"dcmanager subcloud add --enroll --bootstrap-address {subcloud_ip} --bootstrap-values {bootstrap_values} --install-values {install_values} --deploy-config {deploy_config_file} --sysadmin-password {subcloud_psswr} --bmc-password {bmc_psswr}")
 
         self.ssh_connection.send(cmd)
         self.validate_success_return_code(self.ssh_connection)

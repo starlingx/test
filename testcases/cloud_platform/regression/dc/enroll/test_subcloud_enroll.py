@@ -4,6 +4,7 @@ from pytest import mark, fail
 from config.configuration_manager import ConfigurationManager
 from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
+from framework.validation.validation import validate_equals_with_retry
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_add_keywords import DcManagerSubcloudAddKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_backup_keywords import DcManagerSubcloudBackupKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_delete_keywords import DcManagerSubcloudDeleteKeywords
@@ -105,37 +106,55 @@ def test_enroll_one_sx_subcloud():
     Execute a subcloud enroll
 
     Test Steps:
-        - Validate the selected subcloud is factory-installed.
-          subclouds are found.
+        - Get factory IP from subcloud config.
+        - SSH to subcloud using factory IP and validate factory-install is complete.
+        - Run health pre-checks on the subcloud.
         - Run enroll command.
+        - Validate enroll completion and availability.
+        - Run health post-checks using the post-enrollment IP.
 
     """
 
     deployment_assets_config = ConfigurationManager.get_deployment_assets_config()
     system_controller_ssh = LabConnectionKeywords().get_active_controller_ssh()
 
-    subcloud_name = ConfigurationManager.get_lab_config().get_subcloud_names()[0]
-    subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
+    lab_config = ConfigurationManager.get_lab_config()
+    subcloud_name = lab_config.get_subcloud_names()[0]
+    subcloud_config = lab_config.get_subcloud(subcloud_name)
+
+    # SSH to subcloud using factory IP (pre-enrollment)
+    get_logger().log_test_case_step(f"Connecting to {subcloud_name} at factory IP: {subcloud_config.get_factory_ip()}")
+    subcloud_ssh = LabConnectionKeywords().get_subcloud_factory_ssh(subcloud_name)
+
     get_logger().log_test_case_step(f"Verify that {subcloud_name} has completed factory-install process.")
     if not FileKeywords(subcloud_ssh).file_exists("/var/lib/factory-install/complete"):
         fail("This subcloud was not factory installed, unable to proceed with enroll.")
 
-    # Prechecks For Enrollment:
+    # Prechecks For Enrollment:e
     get_logger().log_info(f"Performing pre-checks on {subcloud_name}")
     obj_health = HealthKeywords(subcloud_ssh)
     obj_health.validate_healty_cluster()  # Checks alarms, pods, app health
 
-    bootstrap_values = deployment_assets_config.get_subcloud_deployment_assets(subcloud_name).get_bootstrap_file()
     install_values = deployment_assets_config.get_subcloud_deployment_assets(subcloud_name).get_install_file()
+    bootstrap_values = deployment_assets_config.get_subcloud_deployment_assets(subcloud_name).get_bootstrap_file()
     deployment_config_file = deployment_assets_config.get_subcloud_deployment_assets(subcloud_name).get_deployment_config_file()
 
     run_enroll_operations(system_controller_ssh, subcloud_name, bootstrap_values, install_values, deployment_config_file)
     DcManagerSubcloudListKeywords(system_controller_ssh).validate_subcloud_status(subcloud_name=subcloud_name, status="complete")
-    DcManagerSubcloudListKeywords(system_controller_ssh).validate_subcloud_availability_status(subcloud_name)
 
-    # Checks After Enrollment:
+    # Wait for subcloud to come online (extra time needed for post-enrollment reboot)
+    dcm_list_kw = DcManagerSubcloudListKeywords(system_controller_ssh)
+
+    def get_availability():
+        sc_list_out = dcm_list_kw.get_dcmanager_subcloud_list().get_subcloud_by_name(subcloud_name)
+        return sc_list_out.get_availability()
+
+    validate_equals_with_retry(get_availability, "online", "Validate subcloud is online after enrollment.", timeout=900, polling_sleep_time=30)
+
+    # Checks After Enrollment (use post-enrollment IP):
     get_logger().log_info(f"Performing checks post-enrollment on {subcloud_name}")
-    obj_health = HealthKeywords(subcloud_ssh)
+    subcloud_ssh_post = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
+    obj_health = HealthKeywords(subcloud_ssh_post)
     obj_health.validate_healty_cluster()  # Checks alarms, pods, app health
 
 @mark.p2
@@ -274,3 +293,5 @@ def test_enroll_sx_subcloud_after_factory_restore(request):
     obj_health.validate_healty_cluster()  # Checks alarms, pods, app health
 
     DcManagerSubcloudManagerKeywords(system_controller_ssh).get_dcmanager_subcloud_manage(subcloud_name, 10)
+
+
