@@ -249,7 +249,7 @@ class USMKeywords(BaseKeyword):
             output = self.ssh_connection.send(cmd, command_timeout=timeout, reconnect_timeout=timeout, get_pty=True)
         self.validate_success_return_code(self.ssh_connection)
         output = [line.strip() for line in output if line.strip()]
-        output = output[0] if output else ""
+        output = output[-1] if output else ""
         return output
 
     def wait_for_deploy_state(self, expected_deploy_state: str, timeout: int = 6000) -> bool:
@@ -337,7 +337,7 @@ class USMKeywords(BaseKeyword):
             output = self.ssh_connection.send(cmd, command_timeout=timeout, reconnect_timeout=timeout, get_pty=True)
         self.validate_success_return_code(self.ssh_connection)
         output = [line.strip() for line in output if line.strip()]
-        output = output[0] if output else ""
+        output = output[-1] if output else ""
         return output
 
     def software_deploy_activate(self, sudo: bool = False) -> str:
@@ -359,7 +359,7 @@ class USMKeywords(BaseKeyword):
             output = self.ssh_connection.send(cmd, command_timeout=timeout, reconnect_timeout=timeout, get_pty=True)
         self.validate_success_return_code(self.ssh_connection)
         output = [line.strip() for line in output if line.strip()]
-        output = output[0] if output else ""
+        output = output[-1] if output else ""
         return output
 
     def active_controller_host_upgrade(self) -> SystemHostObject:
@@ -464,5 +464,5 @@ class USMKeywords(BaseKeyword):
             output = self.ssh_connection.send(cmd, command_timeout=timeout, reconnect_timeout=timeout, get_pty=True)
         self.validate_success_return_code(self.ssh_connection)
         output = [line.strip() for line in output if line.strip()]
-        output = output[0] if output else ""
+        output = output[-1] if output else ""
         return output
