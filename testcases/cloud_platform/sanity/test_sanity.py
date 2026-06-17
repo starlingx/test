@@ -63,20 +63,20 @@ from web_pages.horizon.login.horizon_login_page import HorizonLoginPage
 
 
 def save_unlock_kpi_to_database(results: list, hostname: str) -> None:
-    """Save unlock KPI data to database using LpmptoolKpiKeywords.
+    """Save unlock KPI data to database using LogPatternKpiKeywords.
 
-    Parses lpmptool or LogPatternKpiKeywords output and records to database.
+    Parses LogPatternKpiKeywords output and records to database.
 
     Args:
-        results (list): KPI timing results (List[str]) from calculate_kpi or lpmptool.
+        results (list): KPI timing results (List[str]) from calculate_kpi.
         hostname (str): Hostname of the unlocked controller.
     """
     if not results:
         return
 
-    # lpmptool = LpmptoolKpiKeywords(None)
-    # kpi_results = lpmptool.parse_results(results, hostname)
-    # lpmptool.save_to_database(kpi_results)
+    kpi_keywords = LogPatternKpiKeywords(ssh_connection=None)
+    kpi_results = kpi_keywords.parse_results(results, hostname)
+    kpi_keywords.save_to_database(kpi_results)
 
 
 @mark.p0
