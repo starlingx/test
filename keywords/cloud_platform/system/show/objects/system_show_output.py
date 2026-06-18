@@ -30,7 +30,7 @@ class SystemShowOutput:
             self.system_host_show_object.set_description(output_values['description'])
 
         if 'distributed_cloud_role' in output_values:
-            self.system_host_show_object.set_description(output_values['distributed_cloud_role'])
+            self.system_host_show_object.set_distributed_cloud_role(output_values['distributed_cloud_role'])
 
         if 'https_enabled' in output_values:
             self.system_host_show_object.set_https_enabled(output_values['https_enabled'])
