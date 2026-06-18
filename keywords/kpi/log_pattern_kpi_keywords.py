@@ -1340,16 +1340,18 @@ class LogPatternKpiKeywords(BaseKeyword):
         get_logger().log_info(f"Parsed {len(kpi_results)} KPI phases from output")
         return kpi_results
 
-    def save_to_database(self, kpi_results: List) -> None:
+    def save_to_database(self, kpi_results: List, software_version: str = "", event_prefix: str = "unlock") -> None:
         """
         Save parsed KPI results to the database.
 
         Uses UpgradeEvent/RecordUpgradeEventKeywords for compatibility with
-        existing database schema. Sets is_upgrade=False to distinguish unlock
+        existing database schema. Sets is_upgrade=False to distinguish KPI
         operations from actual upgrades.
 
         Args:
             kpi_results (List[KpiResult]): Parsed KPI results to save.
+            software_version (str): Software version of the load (e.g. "24.09.1").
+            event_prefix (str): Prefix for event names (e.g. "unlock", "backup", "restore").
         """
         if not kpi_results:
             get_logger().log_info("No KPI results to save to database")
@@ -1358,11 +1360,16 @@ class LogPatternKpiKeywords(BaseKeyword):
         record_keywords = RecordUpgradeEventKeywords()
 
         for result in kpi_results:
-            event = UpgradeEvent(event_name=f"unlock_{result.get_label()}", retry=0, operation="complete", entry=result.get_hostname(), is_upgrade=False, is_patch=False)
-            event.duration = int(result.get_duration_seconds())
+            event = UpgradeEvent(event_name=f"{event_prefix}_{result.get_label()}", retry=0, operation="complete", entry=result.get_hostname(), is_upgrade=False, is_patch=False)
+            event.set_duration(int(result.get_duration_seconds()))
+            if software_version:
+                event.set_from_version(software_version)
+                event.set_to_version(software_version)
             record_keywords.record_upgrade_event(event)
 
         get_logger().log_info("=== KPI Data Pushed to Database ===")
+        if software_version:
+            get_logger().log_info(f"  Software Version: {software_version}")
         for result in kpi_results:
             get_logger().log_info(f"  {result}")
         get_logger().log_info(f"Total phases recorded: {len(kpi_results)}")
