@@ -162,8 +162,8 @@ class IsolcpuKeywords(BaseKeyword):
         Validate that CPUs are allocated in HT sibling pairs where possible.
 
         On a hyperthreaded host with static cpu-manager-policy, CPUs should be
-        allocated in sibling pairs to maximise cache locality.
-        Expected: floor(N/2)*2 paired CPUs and N%2 singletons for an N-CPU pod.
+        allocated in sibling pairs to maximise cache locality when HT siblings
+        are available in the isolated CPU pool.
 
         Args:
             worker_ssh_connection (SSHConnection): SSH connection to the worker node.
@@ -171,18 +171,21 @@ class IsolcpuKeywords(BaseKeyword):
             host_cpu_output (SystemHostCPUOutput): parsed CPU list for the host.
 
         Example:
-            For a 3-CPU pod on a hyperthreaded host:
+            For a 3-CPU pod where HT siblings are available in isolated pool:
             - Expected paired: 2 (one sibling pair)
             - Expected singletons: 1 (one unpaired CPU)
 
-            For a 4-CPU pod on a hyperthreaded host:
-            - Expected paired: 4 (two sibling pairs)
-            - Expected singletons: 0 (all CPUs paired)
+            For a 3-CPU pod where NO HT siblings are available (e.g., only thread 0):
+            - Expected paired: 0 (no pairs possible)
+            - Expected singletons: 3 (all unpaired)
 
         Raises:
-            Exception: if paired or singleton counts do not match expectations.
+            Exception: if the host is not hyperthreaded.
         """
         logger = get_logger()
+
+        if not host_cpu_output.is_host_hyperthreaded():
+            raise Exception("HT sibling pair validation requires a hyperthreaded host")
 
         logger.log_info(f"Reading cpuset path from pod {podname} to derive container name")
         contname = CatCpuSetKeywords(self.ssh_connection).get_cpuset_from_pod(podname)
@@ -193,16 +196,45 @@ class IsolcpuKeywords(BaseKeyword):
 
         cpuset = set(state.get_container_cpuset(contname))
 
-        # Determine threads per core: 2 for hyperthreaded hosts, 1 otherwise
-        threads_per_core = 2 if host_cpu_output.is_host_hyperthreaded() else 1
-
         # Count actual paired and singleton CPUs from the assigned cpuset
         paired = host_cpu_output.get_number_of_paired_cores(cpuset)
         singletons = host_cpu_output.get_number_of_singleton_cores(cpuset)
 
-        # Calculate expected counts: N CPUs should yield floor(N/2)*2 paired and N%2 singletons
-        expected_singletons = len(cpuset) % threads_per_core
-        expected_paired = threads_per_core * int(len(cpuset) / threads_per_core)
+        # Get all isolated CPUs to check if HT pairing is possible
+        isolcpus = host_cpu_output.get_log_cores_for_assigned_function('Application-isolated')
+
+        # Count how many HT sibling pairs exist in the isolated CPU pool
+        available_pairs = 0
+        checked_cores = set()
+        for cpu_id in isolcpus:
+            cpu = host_cpu_output.get_system_host_cpu_from_log_core(cpu_id)
+            core_key = (cpu.get_processor(), cpu.get_phy_core())
+
+            if core_key not in checked_cores:
+                # Find all siblings for this physical core in the isolated pool
+                siblings_in_pool = {
+                    c.get_log_core()
+                    for c in host_cpu_output.get_system_host_cpu_objects(processor_id=cpu.get_processor())
+                    if c.get_phy_core() == cpu.get_phy_core() and c.get_log_core() in isolcpus
+                }
+                # If both HT siblings are in isolated pool, it's a pairable core
+                if len(siblings_in_pool) >= 2:
+                    available_pairs += 1
+                checked_cores.add(core_key)
+
+        # Calculate expected counts based on whether HT siblings are available
+        if available_pairs == 0:
+            # No HT siblings in isolated pool - all CPUs will be singletons
+            expected_paired = 0
+            expected_singletons = len(cpuset)
+            logger.log_info(f"Pod {podname}: No HT sibling pairs available in isolated CPU pool, "
+                          f"expecting all {expected_singletons} CPUs to be singletons")
+        else:
+            # HT siblings available - expect optimal pairing: floor(N/2)*2 paired and N%2 singletons
+            expected_singletons = len(cpuset) % 2
+            expected_paired = 2 * int(len(cpuset) / 2)
+            logger.log_info(f"Pod {podname}: HT siblings available, expecting {expected_paired} paired "
+                          f"and {expected_singletons} singleton CPUs")
 
         validate_equals(
             paired, expected_paired,
