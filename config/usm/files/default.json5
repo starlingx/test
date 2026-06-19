@@ -68,5 +68,15 @@
 
   // Alarm restriction level for VIM orchestration strategy creation
   // Valid options: "strict", "relaxed", "permissive", or "" (empty = use VIM default)
-  "alarm_restrictions": ""
+  "alarm_restrictions": "",
+
+  // Test patches configuration for per-test patch resolution
+  // Each test case resolves its patch path using: <base_dir>/<prefix>-<suffix>.patch
+  "test_patches": {
+    "base_dir": "",
+    "prefix": "",
+    "single_release_id": "",
+    "dependent_prefix": "",
+    "dependent_patches": []
+  }
 }

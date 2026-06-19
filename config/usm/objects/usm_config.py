@@ -69,6 +69,9 @@ class USMConfig:
         # VIM orchestration alarm restrictions
         self.alarm_restrictions = usm_dict.get("alarm_restrictions", "")
 
+        # Test patches configuration for per-test patch resolution
+        self.test_patches = usm_dict.get("test_patches", None)
+
     def validate_config(self) -> None:
         """
         Validate config values for logical consistency.
@@ -770,3 +773,91 @@ class USMConfig:
             value (str): Alarm restriction level ('strict', 'relaxed', 'permissive', or '').
         """
         self.alarm_restrictions = value
+
+    def get_test_patches(self) -> dict | None:
+        """Get the test_patches configuration section.
+
+        Returns:
+            dict | None: The test_patches config dict, or None if not configured.
+        """
+        return self.test_patches
+
+    def get_excluded_suffixes(self) -> list[str]:
+        """Get the list of patch suffixes excluded for this branch.
+
+        Returns:
+            list[str]: Suffixes that should be skipped, or empty list if none.
+        """
+        if not self.test_patches:
+            return []
+        return self.test_patches.get("excluded_suffixes", [])
+
+    def get_test_patch_single_release_id(self) -> str:
+        """Get the single (base) release ID from test_patches config.
+
+        Returns:
+            str: The single_release_id value.
+
+        Raises:
+            ValueError: If test_patches is not configured or missing single_release_id.
+        """
+        if not self.test_patches:
+            raise ValueError("test_patches section not configured")
+        release_id = self.test_patches.get("single_release_id", "")
+        if not release_id:
+            raise ValueError("single_release_id not set in test_patches config")
+        return release_id
+
+    def resolve_test_patch_path(self, suffix: str) -> str:
+        """Resolve the full patch file path for a given suffix.
+
+        Constructs the path as: {base_dir}/{prefix}-{suffix}.patch
+
+        Args:
+            suffix (str): Patch type suffix (e.g., "logmgmt-rr", "logmgmt-insvc").
+
+        Returns:
+            str: Full absolute path to the patch file.
+
+        Raises:
+            ValueError: If test_patches is not configured.
+        """
+        if not self.test_patches:
+            raise ValueError("test_patches section not configured")
+        base_dir = self.test_patches.get("base_dir", "")
+        prefix = self.test_patches.get("prefix", "")
+        return f"{base_dir}/{prefix}-{suffix}.patch"
+
+    def resolve_dependent_patch_paths(self) -> list[str]:
+        """Resolve full paths for all dependent patches.
+
+        Returns:
+            list[str]: List of absolute paths to dependent patch files.
+
+        Raises:
+            ValueError: If test_patches or dependent_patches is not configured.
+        """
+        if not self.test_patches:
+            raise ValueError("test_patches section not configured")
+        base_dir = self.test_patches.get("base_dir", "")
+        dependent_prefix = self.test_patches.get("dependent_prefix", "")
+        dependents = self.test_patches.get("dependent_patches", [])
+        if not dependents:
+            raise ValueError("dependent_patches not configured in test_patches")
+        return [f"{base_dir}/{dependent_prefix}.{dep['suffix']}.patch" for dep in dependents]
+
+    def resolve_dependent_release_ids(self) -> list[str]:
+        """Resolve release IDs for all dependent patches.
+
+        Returns:
+            list[str]: List of release IDs in dependency order.
+
+        Raises:
+            ValueError: If test_patches or dependent_patches is not configured.
+        """
+        if not self.test_patches:
+            raise ValueError("test_patches section not configured")
+        dependents = self.test_patches.get("dependent_patches", [])
+        if not dependents:
+            raise ValueError("dependent_patches not configured in test_patches")
+        return [dep["release_id"] for dep in dependents]
