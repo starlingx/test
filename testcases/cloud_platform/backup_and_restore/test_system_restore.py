@@ -7,7 +7,6 @@ from config.configuration_manager import ConfigurationManager
 from framework.kpi.time_kpi import TimeKPI
 from framework.logging.automation_logger import get_logger
 from framework.validation.validation import validate_equals
-from keywords.bmc.ipmitool.chassis.bootdev.ipmitool_chassis_bootdev_keywords import IPMIToolChassisBootdevKeywords
 from keywords.cloud_platform.ansible_playbook.ansible_playbook_keywords import AnsiblePlaybookKeywords
 from keywords.cloud_platform.backup_restore.restore_files_upload_keywords import RestoreFilesUploadKeywords
 from keywords.cloud_platform.backup_restore.system_restore_complete_keywords import SystemRestoreCompleteKeywords
@@ -133,12 +132,12 @@ def test_restore_multi_host():
 
     for node in nodes_with_bmc:
         host_name = node.get_name()
-        get_logger().log_info(f"Chassis is off for {host_name}, setting boot device to PXE")
+        get_logger().log_info(f"Setting boot device to PXE for {host_name}")
 
-        bootdev_result = IPMIToolChassisBootdevKeywords(ssh_connection, host_name).set_chassis_bootdev_pxe()
-        validate_equals(bootdev_result, True, f"Chassis boot device set to PXE for {host_name}")
+        bootdev_result = PowerKeywords(ssh_connection).set_boot_device_pxe(host_name)
+        validate_equals(bootdev_result, True, f"Boot device set to PXE for {host_name}")
 
-        get_logger().log_info(f"Powering on chassis for {host_name}")
+        get_logger().log_info(f"Powering on {host_name}")
         power_on_result = PowerKeywords(ssh_connection).power_on(host_name)
         validate_equals(power_on_result, True, f"Chassis powered on for {host_name}")
 
