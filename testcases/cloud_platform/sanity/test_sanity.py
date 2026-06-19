@@ -25,6 +25,7 @@ from keywords.cloud_platform.fault_management.alarms.alarm_list_keywords import 
 from keywords.cloud_platform.fault_management.fm_client_cli.fm_client_cli_keywords import FaultManagementClientCLIKeywords
 from keywords.cloud_platform.fault_management.fm_client_cli.object.fm_client_cli_object import FaultManagementClientCLIObject
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
+from keywords.cloud_platform.version_info.cloud_platform_version_manager import CloudPlatformVersionManager
 from keywords.cloud_platform.system.application.object.system_application_delete_input import SystemApplicationDeleteInput
 from keywords.cloud_platform.system.application.object.system_application_remove_input import SystemApplicationRemoveInput
 from keywords.cloud_platform.system.application.object.system_application_status_enum import SystemApplicationStatusEnum
@@ -65,7 +66,8 @@ from web_pages.horizon.login.horizon_login_page import HorizonLoginPage
 def save_unlock_kpi_to_database(results: list, hostname: str) -> None:
     """Save unlock KPI data to database using LogPatternKpiKeywords.
 
-    Parses LogPatternKpiKeywords output and records to database.
+    Parses LogPatternKpiKeywords output and records to database with
+    the current software version of the system.
 
     Args:
         results (list): KPI timing results (List[str]) from calculate_kpi.
@@ -74,9 +76,13 @@ def save_unlock_kpi_to_database(results: list, hostname: str) -> None:
     if not results:
         return
 
+    # Get the current software version from CloudPlatformVersionManager
+    software_version = CloudPlatformVersionManager.get_sw_version().get_name()
+    get_logger().log_info(f"Software version for unlock KPI: {software_version}")
+
     kpi_keywords = LogPatternKpiKeywords(ssh_connection=None)
     kpi_results = kpi_keywords.parse_results(results, hostname)
-    kpi_keywords.save_to_database(kpi_results)
+    kpi_keywords.save_to_database(kpi_results, software_version=software_version)
 
 
 @mark.p0
