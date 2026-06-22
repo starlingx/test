@@ -1,6 +1,7 @@
 """Keywords to run FM CLI commands as an OIDC-authenticated user."""
 
 from config.configuration_manager import ConfigurationManager
+from framework.exceptions.keyword_exception import KeywordException
 from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
 from framework.ssh.ssh_connection_manager import SSHConnectionManager
@@ -37,6 +38,7 @@ class FmOidcKeywords(BaseKeyword):
         lab_oam_ip: str,
         oidc_backend: str = None,
         oidc_username: str = None,
+        oidc_client_ip: str = None,
     ) -> SSHConnection:
         """Create and authenticate an OIDC session for the given user.
 
@@ -49,6 +51,7 @@ class FmOidcKeywords(BaseKeyword):
             lab_oam_ip (str): Lab OAM IP address for SSH connection.
             oidc_backend (str): Optional OIDC backend name for WAD users.
             oidc_username (str): Optional OIDC username for WAD users.
+            oidc_client_ip (str): Optional OIDC client IP (SC OAM IP for DC subclouds).
 
         Returns:
             SSHConnection: Authenticated SSH session ready for FM commands.
@@ -62,6 +65,13 @@ class FmOidcKeywords(BaseKeyword):
         get_logger().log_info(f"Creating OIDC session for {username}")
         self.ldap_ssh = self.create_ldap_ssh(username, password, lab_oam_ip)
         self.authenticated_user = username
+
+        # Validate connection succeeded before any send() call.
+        # send() retries infinitely on broken connections — must check here.
+        if not self.ldap_ssh.is_connected:
+            self.ldap_ssh = None
+            self.authenticated_user = None
+            raise KeywordException(f"SSH connection as {username}@{lab_oam_ip} failed — authentication error")
 
         self.ldap_ssh.send("kubeconfig-setup")
         self.ldap_ssh.send("source ~/.profile")
@@ -77,7 +87,10 @@ class FmOidcKeywords(BaseKeyword):
         if oidc_backend and oidc_username:
             output = self.ldap_ssh.send(f"oidc-auth -b {oidc_backend} -u {oidc_username} -p {password}")
         else:
-            output = self.ldap_ssh.send(f"oidc-auth -p {password}")
+            oidc_auth_cmd = f"oidc-auth -p {password}"
+            if oidc_client_ip:
+                oidc_auth_cmd = f"oidc-auth -c {oidc_client_ip} -p {password}"
+            output = self.ldap_ssh.send(oidc_auth_cmd)
         raw = "\n".join(output) if isinstance(output, list) else output
         if "Login succeeded" not in raw:
             get_logger().log_error(f"oidc-auth failed: {raw[:200]}")
@@ -207,7 +220,7 @@ class FmOidcKeywords(BaseKeyword):
             jump_host_config = lab_config.get_jump_host_configuration()
 
         get_logger().log_info(f"Creating SSH connection as LDAP user {username}@{lab_oam_ip}")
-        return SSHConnectionManager.create_ssh_connection(
+        ssh = SSHConnectionManager.create_ssh_connection(
             lab_oam_ip,
             username,
             password,
@@ -215,3 +228,6 @@ class FmOidcKeywords(BaseKeyword):
             ssh_port=lab_config.get_ssh_port(),
             jump_host=jump_host_config,
         )
+        if not ssh:
+            raise KeywordException(f"Failed to create SSH connection as LDAP user {username}@{lab_oam_ip}")
+        return ssh
