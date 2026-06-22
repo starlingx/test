@@ -189,7 +189,7 @@ class FileKeywords(BaseKeyword):
         """
         if is_sudo:
             output = self.ssh_connection.send_as_sudo(f"ls {file_dir}")
-            return [line.strip() for line in output if line.strip() and not line.strip().endswith('$')]
+            return [line.strip() for line in output if line.strip() and not line.strip().endswith("$")]
 
         sftp_client = self.ssh_connection.get_sftp_client()
         return sftp_client.listdir(file_dir)
@@ -553,9 +553,7 @@ class FileKeywords(BaseKeyword):
             return int(remaining_space)
 
         if file_size:
-            validate_equals_with_retry(get_remaining_space, expected_remaining_space,
-                                       f"Remaining size is {get_remaining_space()} MB. Expected {expected_remaining_space} MB",
-                                       timeout=5, polling_sleep_time=1)
+            validate_equals_with_retry(get_remaining_space, expected_remaining_space, f"Remaining size is {get_remaining_space()} MB. Expected {expected_remaining_space} MB", timeout=5, polling_sleep_time=1)
         else:
             remaining = get_remaining_space()
             validate_less_than_or_equal(remaining, 1, f"Remaining size is {remaining} MB. Expected <= 256 MB")
@@ -597,3 +595,29 @@ class FileKeywords(BaseKeyword):
         """Sync all created files befor triggering Kernel crash"""
         self.ssh_connection.send("sync")
         self.validate_success_return_code(self.ssh_connection)
+
+    def upload_files_to_directory(self, resources: list[tuple[str, str]], remote_dir: str) -> list[str]:
+        """Upload multiple files to a remote directory.
+
+        Creates the remote directory if it does not exist, then uploads each
+        file to the specified location.
+
+        Args:
+            resources (list[tuple[str, str]]): List of (local_path, remote_filename) tuples.
+            remote_dir (str): Remote directory where files will be uploaded.
+
+        Returns:
+            list[str]: List of remote file paths that were uploaded.
+
+        Raises:
+            KeywordException: If the remote directory cannot be created.
+        """
+        if not self.create_directory(remote_dir):
+            raise KeywordException(f"Failed to create remote directory: {remote_dir}")
+        remote_paths = []
+        for local_path, remote_filename in resources:
+            remote_path = f"{remote_dir}/{remote_filename}"
+            get_logger().log_info(f"Uploading '{local_path}' to '{remote_path}'")
+            self.upload_file(local_path, remote_path)
+            remote_paths.append(remote_path)
+        return remote_paths
