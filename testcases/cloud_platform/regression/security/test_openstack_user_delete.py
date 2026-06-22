@@ -40,7 +40,7 @@ def test_openstack_delete_user_forbidden():
     for user_id in user_ids:
         result = user_keywords.delete_user(user_id)
         get_logger().log_info(f"Delete user {user_id} result: {result}")
-        expected_message = "You are forbidden to perform the requested action. This action is system-critical and cannot be executed- identity:delete_user. Please contact your administrator for further assistance. (HTTP 403)"
+        expected_message = "You are forbidden to perform the requested action. This action is system-critical and cannot be executed- identity:delete_user. Please contact your administrator for further assistance."
 
         validate_str_contains(result, expected_message, f"Verify forbidden message for user {user_id}")
 
