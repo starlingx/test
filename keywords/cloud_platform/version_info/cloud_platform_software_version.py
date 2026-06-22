@@ -11,5 +11,6 @@ class CloudPlatformSoftwareVersion:
     STARLINGX_9_0 = ProductVersion("24.09", 2)
     STARLINGX_10_0 = ProductVersion("25.09", 3)
     STARLINGX_11_0 = ProductVersion("26.03", 4)
+    STARLINGX_12_0 = ProductVersion("26.10", 5)
 
     # Every new version must contain STARLINGX in the variable name.

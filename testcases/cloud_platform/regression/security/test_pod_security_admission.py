@@ -7,6 +7,8 @@ from framework.resources.resource_finder import get_stx_resource_path
 from framework.ssh.ssh_connection import SSHConnection
 from framework.validation.validation import validate_equals
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
+from keywords.cloud_platform.version_info.cloud_platform_software_version import CloudPlatformSoftwareVersion
+from keywords.cloud_platform.version_info.cloud_platform_version_manager import CloudPlatformVersionManager
 from keywords.docker.images.docker_load_image_keywords import DockerLoadImageKeywords
 from keywords.files.file_keywords import FileKeywords
 from keywords.k8s.files.kubectl_file_delete_keywords import KubectlFileDeleteKeywords
@@ -31,7 +33,11 @@ def test_policy_labels_on_platform_namespaces():
     active_ssh = LabConnectionKeywords().get_active_controller_ssh()
 
     get_logger().log_info("Get the privileged namespace list based on release")
+    current_version = CloudPlatformVersionManager.get_sw_version()
+    get_logger().log_info(f"SW version: {current_version}")
     expected_ns = ["cert-manager", "deployment", "flux-helm", "kube-system"]
+    if current_version.is_after_or_equal_to(CloudPlatformSoftwareVersion.STARLINGX_12_0):
+        expected_ns = ["calico-system", "cert-manager", "deployment", "flux-helm", "kube-system", "tigera-operator"]
     get_logger().log_info("Get the platform namespaces with labels")
     actual_ns = KubectlGetNamespacesKeywords(active_ssh).get_namespaces_by_label(label=label).get_namespaces()
     actual_ns_names = [ns.get_name() for ns in actual_ns]
