@@ -5,7 +5,7 @@ from pytest import FixtureRequest, mark
 from config.configuration_manager import ConfigurationManager
 from framework.logging.automation_logger import get_logger
 from framework.resources.resource_finder import get_stx_resource_path
-from framework.validation.validation import validate_equals, validate_equals_with_retry, validate_list_contains, validate_str_contains, validate_str_contains_with_retry
+from framework.validation.validation import validate_equals, validate_equals_with_retry, validate_greater_than, validate_list_contains, validate_str_contains, validate_str_contains_with_retry
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_list_keywords import DcManagerSubcloudListKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_show_keywords import DcManagerSubcloudShowKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
@@ -389,7 +389,15 @@ def test_cert_mon_sync_in_dc_environment(request: FixtureRequest):
 
     get_logger().log_test_case_step("Getting subcloud name and region_name from dcmanager")
     subcloud_list = DcManagerSubcloudListKeywords(central_ssh).get_dcmanager_subcloud_list()
-    subcloud = subcloud_list.get_dcmanager_subcloud_list_objects()[0]
+    managed_online_subclouds = [
+        sc for sc in subcloud_list.get_dcmanager_subcloud_list_objects()
+        if sc.get_management() == "managed" and sc.get_availability() == "online"
+    ]
+    validate_greater_than(
+        len(managed_online_subclouds), 0,
+        "No managed/online subclouds available for DC cert sync test"
+    )
+    subcloud = managed_online_subclouds[0]
     subcloud_name = subcloud.get_name()
 
     subcloud_show = DcManagerSubcloudShowKeywords(central_ssh).get_dcmanager_subcloud_show(subcloud_name)
