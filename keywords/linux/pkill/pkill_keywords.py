@@ -34,3 +34,13 @@ class PkillKeywords(BaseKeyword):
         """
         cmd = f"pkill {process_name} || true"
         self.ssh_connection.send(cmd)
+
+    def pkill_signal(self, signal: str, process_name: str) -> None:
+        """Kill processes by exact process name.
+
+        Args:
+            signal (str): Signal to send to process.
+            process_name (str): Exact process name to kill.
+        """
+        cmd = f"pkill -{signal} {process_name} || true"
+        self.ssh_connection.send_as_sudo(cmd)

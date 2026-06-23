@@ -109,6 +109,13 @@ class SwManagerKubeUpgradeStrategyKeywords(BaseKeyword):
         # Wait for strategy to abort
         return self.wait_for_aborted()
 
+    def abort_kube_upgrade_strategy_without_waiting(self) -> None:
+        """Abort the Kubernetes upgrade strategy without waiting for completion."""
+        get_logger().log_info("Aborting Kubernetes upgrade strategy")
+        command = source_openrc("sw-manager kube-upgrade-strategy abort")
+        self.ssh_connection.send(command)
+        self.validate_success_return_code(self.ssh_connection)
+
     def show_kube_upgrade_strategy(self) -> SwManagerKubeUpgradeStrategyShowOutput:
         """Show the Kubernetes upgrade strategy details.
 
@@ -311,6 +318,34 @@ class SwManagerKubeUpgradeStrategyKeywords(BaseKeyword):
             return strategy_obj.is_aborted()
 
         validate_equals_with_retry(function_to_execute=check_aborted, expected_value=True, validation_description="Waiting for kube-upgrade-strategy to be aborted", timeout=timeout, polling_sleep_time=10)
+
+        return self.show_kube_upgrade_strategy().get_swmanager_kube_upgrade_strategy_show()
+
+    def wait_for_current_phase_completion(self, timeout: int = 3600) -> SwManagerKubeUpgradeStrategyObject:
+        """Wait for the current-phase-completion to reach 100%.
+
+        Args:
+            timeout (int): Maximum time to wait in seconds.
+
+        Returns:
+            SwManagerKubeUpgradeStrategyObject: Strategy object when phase completion is 100%.
+
+        Raises:
+            Exception: If strategy enters a failed state.
+        """
+
+        def check_completion() -> bool:
+            try:
+                strategy_output = self.show_kube_upgrade_strategy()
+                strategy_obj = strategy_output.get_swmanager_kube_upgrade_strategy_show()
+                completion = strategy_obj.get_current_phase_completion_percentage()
+                get_logger().log_info(f"Current phase completion: {strategy_obj.get_current_phase_completion()}")
+                return completion == 100
+            except ConnectionRefusedError:
+                get_logger().log_info("sw-manager service temporarily unavailable, retrying")
+                return False
+
+        validate_equals_with_retry(function_to_execute=check_completion, expected_value=True, validation_description="Waiting for current-phase-completion to reach 100%", timeout=timeout, polling_sleep_time=30)
 
         return self.show_kube_upgrade_strategy().get_swmanager_kube_upgrade_strategy_show()
 
