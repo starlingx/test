@@ -144,7 +144,7 @@ def test_restore_multi_host():
     for node in nodes_with_bmc:
         host_name = node.get_name()
         get_logger().log_info(f"wait for {host_name} to successfully re-installed")
-        host_reinstall_success = SystemHostReinstallKeywords.wait_for_host_reinstall(host_name, 3600)
+        host_reinstall_success = SystemHostReinstallKeywords(ssh_connection).wait_for_host_reinstall(host_name, 3600)
         validate_equals(host_reinstall_success, True, f"Host {host_name} re-installed successfully")
 
     get_logger().log_info("Unlocking Standby controller host")
