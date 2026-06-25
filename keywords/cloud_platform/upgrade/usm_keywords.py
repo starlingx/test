@@ -121,6 +121,8 @@ class USMKeywords(BaseKeyword):
         if os_region_name:
             upload_option = f"--os-region-name {os_region_name}"
         base_cmd = f"software {upload_option} upload {iso_path} {sig_path}"
+        if iso_path.startswith("/scratch"):
+            base_cmd += " --local"
         cmd = source_openrc(base_cmd)
         timeout = self.usm_config.get_upload_release_timeout_sec()
         if sudo:
