@@ -466,3 +466,85 @@ class USMKeywords(BaseKeyword):
         output = [line.strip() for line in output if line.strip()]
         output = output[-1] if output else ""
         return output
+
+    def system_deploy_init(self, release: str, kube_version: str = "", sudo: bool = False) -> str:
+        """Execute 'software system-deploy init <release> --kube-version <version>'.
+
+        Initializes a combined Platform & K8S upgrade by creating a system-deploy entity,
+        taking an LVM snapshot, and raising the upgrade-in-progress alarm.
+
+        Args:
+            release (str): Target release ID (e.g., "wrcp-26.09.0").
+            kube_version (str): Target Kubernetes version (e.g., "v1.35.1").
+            sudo (bool): Flag to run as sudo.
+
+        Returns:
+            str: Command output.
+
+        Raises:
+            KeywordException: If the command returns a non-zero exit code.
+        """
+        base_cmd = f"software system-deploy init {release}"
+        if kube_version:
+            base_cmd += f" --kube-version {kube_version}"
+        cmd = source_openrc(base_cmd)
+        get_logger().log_info(f"Executing system-deploy init: release={release}, kube_version={kube_version}")
+        if sudo:
+            output = self.ssh_connection.send_as_sudo(cmd)
+        else:
+            output = self.ssh_connection.send(cmd, get_pty=True)
+        self.validate_success_return_code(self.ssh_connection)
+        output = [line.strip() for line in output if line.strip()]
+        return "\n".join(output)
+
+    def system_deploy_show(self, sudo: bool = False) -> str:
+        """Execute 'software system-deploy show'.
+
+        Shows the current system-deploy entity state including target release,
+        target K8S version, and deploy state.
+
+        Args:
+            sudo (bool): Flag to run as sudo.
+
+        Returns:
+            str: Command output.
+
+        Raises:
+            KeywordException: If the command returns a non-zero exit code.
+        """
+        base_cmd = "software system-deploy show"
+        cmd = source_openrc(base_cmd)
+        get_logger().log_info("Executing system-deploy show")
+        if sudo:
+            output = self.ssh_connection.send_as_sudo(cmd)
+        else:
+            output = self.ssh_connection.send(cmd, get_pty=True)
+        self.validate_success_return_code(self.ssh_connection)
+        output = [line.strip() for line in output if line.strip()]
+        return "\n".join(output)
+
+    def system_deploy_delete(self, sudo: bool = False) -> str:
+        """Execute 'software system-deploy delete'.
+
+        Deletes the system-deploy entity, removes the LVM snapshot,
+        and clears the upgrade-in-progress alarm.
+
+        Args:
+            sudo (bool): Flag to run as sudo.
+
+        Returns:
+            str: Command output.
+
+        Raises:
+            KeywordException: If the command returns a non-zero exit code.
+        """
+        base_cmd = "software system-deploy delete"
+        cmd = source_openrc(base_cmd)
+        get_logger().log_info("Executing system-deploy delete")
+        if sudo:
+            output = self.ssh_connection.send_as_sudo(cmd)
+        else:
+            output = self.ssh_connection.send(cmd, get_pty=True)
+        self.validate_success_return_code(self.ssh_connection)
+        output = [line.strip() for line in output if line.strip()]
+        return "\n".join(output)
