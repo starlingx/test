@@ -70,6 +70,11 @@
   // Valid options: "strict", "relaxed", "permissive", or "" (empty = use VIM default)
   "alarm_restrictions": "",
 
+  // Combined Platform & Kubernetes upgrade
+  // When true, VIM strategy create will pass --kube-upgrade=<target_k8s_version>
+  // The target K8s version is read from kubernetes_upgrade_config.json5
+  "combined_upgrade": true,
+
   // Test patches configuration for per-test patch resolution
   // Each test case resolves its patch path using: <base_dir>/<prefix>-<suffix>.patch
   "test_patches": {

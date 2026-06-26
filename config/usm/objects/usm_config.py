@@ -69,6 +69,9 @@ class USMConfig:
         # VIM orchestration alarm restrictions
         self.alarm_restrictions = usm_dict.get("alarm_restrictions", "")
 
+        # Combined Platform & Kubernetes upgrade flag
+        self.combined_upgrade = usm_dict.get("combined_upgrade", True)
+
         # Test patches configuration for per-test patch resolution
         self.test_patches = usm_dict.get("test_patches", None)
 
@@ -773,6 +776,25 @@ class USMConfig:
             value (str): Alarm restriction level ('strict', 'relaxed', 'permissive', or '').
         """
         self.alarm_restrictions = value
+
+    def get_combined_upgrade(self) -> bool:
+        """Get the combined Platform & Kubernetes upgrade flag.
+
+        When enabled, VIM strategy create will include --kube-upgrade=<target_k8s_version>
+        to perform a combined Platform and Kubernetes upgrade in a single orchestration pass.
+
+        Returns:
+            bool: True if combined P&K upgrade is enabled.
+        """
+        return self.combined_upgrade
+
+    def set_combined_upgrade(self, value: bool) -> None:
+        """Set the combined Platform & Kubernetes upgrade flag.
+
+        Args:
+            value (bool): True to enable combined P&K upgrade.
+        """
+        self.combined_upgrade = value
 
     def get_test_patches(self) -> dict | None:
         """Get the test_patches configuration section.
