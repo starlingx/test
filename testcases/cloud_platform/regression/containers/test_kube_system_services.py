@@ -7,6 +7,7 @@ from keywords.k8s.pods.validation.kubectl_get_pods_validation_keywords import Ku
 from keywords.k8s.service.kubectl_get_service_keywords import KubectlGetServiceKeywords
 
 KUBESYSTEM_NAMESPACE = "kube-system"
+CALICOSYSTEM_NAMESPACE = "calico-system"
 
 
 @mark.p0
@@ -18,7 +19,8 @@ def test_kube_system_services_active():
         - SSH to active controller
         - Check all kube-system pods are running
         - Check kube-system services displayed: 'kube-dns'
-        - Check kube-system deployments displayed: 'calico-kube-controllers', 'coredns'
+        - Check kube-system deployments displayed: 'coredns'
+        - Check calico-system deployments displayed: 'calico-kube-controllers'
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
 
@@ -29,10 +31,12 @@ def test_kube_system_services_active():
     kubectl_get_service_keywords = KubectlGetServiceKeywords(ssh_connection)
     kubectl_get_service_keywords.get_service(service_name="kube-dns", namespace=KUBESYSTEM_NAMESPACE)
 
-    get_logger().log_test_case_step("Check kube-system deployments: calico-kube-controllers, coredns")
+    get_logger().log_test_case_step("Check kube-system deployment: coredns")
     kubectl_get_deployments_keywords = KubectlGetDeploymentsKeywords(ssh_connection)
-    kubectl_get_deployments_keywords.get_deployment(deployment_name="calico-kube-controllers", namespace=KUBESYSTEM_NAMESPACE)
     kubectl_get_deployments_keywords.get_deployment(deployment_name="coredns", namespace=KUBESYSTEM_NAMESPACE)
+
+    get_logger().log_test_case_step("Check calico-system deployment: calico-kube-controllers")
+    kubectl_get_deployments_keywords.get_deployment(deployment_name="calico-kube-controllers", namespace=CALICOSYSTEM_NAMESPACE)
 
 
 @mark.p1
@@ -45,7 +49,8 @@ def test_kube_system_services_standby():
         - SSH to standby controller
         - Check all kube-system pods are running
         - Check kube-system services displayed: 'kube-dns'
-        - Check kube-system deployments displayed: 'calico-kube-controllers', 'coredns'
+        - Check kube-system deployments displayed: 'coredns'
+        - Check calico-system deployments displayed: 'calico-kube-controllers'
     """
     ssh_connection = LabConnectionKeywords().get_standby_controller_ssh()
 
@@ -56,7 +61,9 @@ def test_kube_system_services_standby():
     kubectl_get_service_keywords = KubectlGetServiceKeywords(ssh_connection)
     kubectl_get_service_keywords.get_service(service_name="kube-dns", namespace=KUBESYSTEM_NAMESPACE)
 
-    get_logger().log_test_case_step("Check kube-system deployments: calico-kube-controllers, coredns")
+    get_logger().log_test_case_step("Check kube-system deployment: coredns")
     kubectl_get_deployments_keywords = KubectlGetDeploymentsKeywords(ssh_connection)
-    kubectl_get_deployments_keywords.get_deployment(deployment_name="calico-kube-controllers", namespace=KUBESYSTEM_NAMESPACE)
     kubectl_get_deployments_keywords.get_deployment(deployment_name="coredns", namespace=KUBESYSTEM_NAMESPACE)
+
+    get_logger().log_test_case_step("Check calico-system deployment: calico-kube-controllers")
+    kubectl_get_deployments_keywords.get_deployment(deployment_name="calico-kube-controllers", namespace=CALICOSYSTEM_NAMESPACE)
