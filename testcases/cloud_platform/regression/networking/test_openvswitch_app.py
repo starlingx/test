@@ -1,7 +1,8 @@
-"""Test suite for the openvswitch platform application lifecycle.
+"""Test suite for the openvswitch platform application.
 
-This test suite covers upload, apply, remove, delete, helm overrides,
-and chart attribute modifications for the openvswitch application.
+Covers lifecycle (upload, apply, remove, delete), helm overrides,
+chart attributes, OVS config overrides, HA pod recovery,
+CRD registration, and OVSBridge CRD operations.
 """
 
 from pytest import FixtureRequest, mark
@@ -21,6 +22,16 @@ from keywords.cloud_platform.system.application.system_application_show_keywords
 from keywords.cloud_platform.system.application.system_application_upload_keywords import SystemApplicationUploadKeywords
 from keywords.cloud_platform.system.helm.system_helm_chart_attribute_modify_keywords import SystemHelmChartAttributeModifyKeywords
 from keywords.cloud_platform.system.helm.system_helm_override_keywords import SystemHelmOverrideKeywords
+from keywords.cloud_platform.system.host.system_host_list_keywords import SystemHostListKeywords
+from keywords.files.file_keywords import FileKeywords
+from keywords.k8s.crd.kubectl_get_crd_keywords import KubectlGetCrdKeywords
+from keywords.k8s.delete_resource.kubectl_delete_resource_keywords import KubectlDeleteResourceKeywords
+from keywords.k8s.files.kubectl_file_apply_keywords import KubectlFileApplyKeywords
+from keywords.k8s.lease.kubectl_get_lease_keywords import KubectlGetLeaseKeywords
+from keywords.k8s.node.kubectl_label_node_keywords import KubectlLabelNodeKeywords
+from keywords.k8s.pods.kubectl_delete_pods_keywords import KubectlDeletePodsKeywords
+from keywords.k8s.pods.kubectl_exec_in_pods_keywords import KubectlExecInPodsKeywords
+from keywords.k8s.pods.kubectl_get_pods_keywords import KubectlGetPodsKeywords
 
 APP_NAME = "openvswitch"
 APP_NAMESPACE = "openvswitch"
@@ -28,25 +39,23 @@ OVS_AGENT_CHART = "ovs-agent"
 OVS_MANAGER_CHART = "ovs-manager"
 BASE_APPLICATION_PATH = "/usr/local/share/applications/helm/"
 
-# TODO: Remove once tarball static overrides are updated with correct image names
-IMAGE_TAG = "stx.13.0-v1.0.0-bullseye"
-OVS_AGENT_OVERRIDES = [
-    "ovsAgent.image.repository=docker.io/starlingx/stx-ovs-agent-operator",
-    f"ovsAgent.image.tag={IMAGE_TAG}",
-    "ovsContainer.image.repository=docker.io/starlingx/stx-ovs-container",
-    f"ovsContainer.image.tag={IMAGE_TAG}",
-]
-OVS_MANAGER_OVERRIDES = [
-    "ovsManager.image.repository=docker.io/starlingx/stx-ovs-manager-operator",
-    f"ovsManager.image.tag={IMAGE_TAG}",
+OVS_EXPECTED_CRDS = [
+    "ovsbridges.openvswitch.starlingx.io",
+    "ovsports.openvswitch.starlingx.io",
+    "ovsnodeconfigs.openvswitch.starlingx.io",
 ]
 
-
-def _apply_image_overrides(ssh_connection: SSHConnection) -> None:
-    """Apply helm image overrides until tarball static overrides are fixed."""
-    helm_kw = SystemHelmOverrideKeywords(ssh_connection)
-    helm_kw.helm_override_update_with_list_of_values(APP_NAME, OVS_AGENT_CHART, APP_NAMESPACE, reuse_values=False, set_override=OVS_AGENT_OVERRIDES)
-    helm_kw.helm_override_update_with_list_of_values(APP_NAME, OVS_MANAGER_CHART, APP_NAMESPACE, reuse_values=False, set_override=OVS_MANAGER_OVERRIDES)
+OVS_BRIDGE_NAME = "test-br0"
+OVS_BRIDGE_YAML_DIR = "/home/sysadmin/test_openvswitch_app/test_files"
+OVS_BRIDGE_YAML_PATH = f"{OVS_BRIDGE_YAML_DIR}/test-br0.yaml"
+OVS_BRIDGE_YAML = """apiVersion: openvswitch.starlingx.io/v1
+kind: OVSBridge
+metadata:
+  name: test-br0
+  namespace: openvswitch
+spec:
+  bridgeName: test-br0
+"""
 
 
 def setup(request: FixtureRequest, active_ssh_connection: SSHConnection) -> str:
@@ -60,74 +69,39 @@ def setup(request: FixtureRequest, active_ssh_connection: SSHConnection) -> str:
     Returns:
         str: The openvswitch application name.
     """
-    app_list_keywords = SystemApplicationListKeywords(active_ssh_connection)
+    app_list_kw = SystemApplicationListKeywords(active_ssh_connection)
 
-    if not app_list_keywords.is_app_present(APP_NAME):
+    if not app_list_kw.is_app_present(APP_NAME):
         get_logger().log_setup_step("Upload openvswitch app.")
         system_application_upload_input = SystemApplicationUploadInput()
         system_application_upload_input.set_app_name(APP_NAME)
         system_application_upload_input.set_tar_file_path(f"{BASE_APPLICATION_PATH}{APP_NAME}*.tgz")
         SystemApplicationUploadKeywords(active_ssh_connection).system_application_upload(system_application_upload_input)
 
-    # TODO: Remove once tarball static overrides are fixed
-    get_logger().log_setup_step("Apply image overrides (workaround for incorrect tarball images).")
-    _apply_image_overrides(active_ssh_connection)
-
     app_show = SystemApplicationShowKeywords(active_ssh_connection).get_system_application_show(APP_NAME)
     current_status = app_show.get_system_application_object().get_status()
 
-    if current_status == "applied":
-        get_logger().log_setup_step("App already applied. Skipping apply.")
-    else:
+    if current_status not in ("applied", "uploaded"):
+        get_logger().log_setup_step(f"App in bad state: {current_status}. Cleaning up.")
+        SystemApplicationRemoveKeywords(active_ssh_connection).cleanup_app_if_present(app_name=APP_NAME, force_removal=True, force_deletion=True, timeout_in_seconds=300)
+        get_logger().log_setup_step("Re-upload openvswitch app.")
+        system_application_upload_input = SystemApplicationUploadInput()
+        system_application_upload_input.set_app_name(APP_NAME)
+        system_application_upload_input.set_tar_file_path(f"{BASE_APPLICATION_PATH}{APP_NAME}*.tgz")
+        SystemApplicationUploadKeywords(active_ssh_connection).system_application_upload(system_application_upload_input)
+        current_status = "uploaded"
+
+    if current_status != "applied":
         get_logger().log_setup_step("Apply openvswitch app.")
         SystemApplicationApplyKeywords(active_ssh_connection).system_application_apply(app_name=APP_NAME, timeout=600)
 
-    def cleanup():
-        get_logger().log_teardown_step("Cleanup openvswitch app.")
-        if app_list_keywords.is_app_present(APP_NAME):
-            app_show = SystemApplicationShowKeywords(active_ssh_connection).get_system_application_show(APP_NAME)
-            app_status = app_show.get_system_application_object().get_status()
+    get_logger().log_setup_step("Ensure nodes are labeled for OVS agent scheduling.")
+    label_keywords = KubectlLabelNodeKeywords(active_ssh_connection)
+    host_list = SystemHostListKeywords(active_ssh_connection).get_system_host_list().get_hosts()
+    for host in host_list:
+        label_keywords.label_node(host.get_host_name(), "ovs-node", "enabled")
 
-            if app_status == "applied":
-                get_logger().log_teardown_step("App is applied - no cleanup needed.")
-            elif app_status == "uploaded":
-                get_logger().log_teardown_step("Re-apply openvswitch app.")
-                SystemApplicationApplyKeywords(active_ssh_connection).system_application_apply(app_name=APP_NAME)
-        else:
-            get_logger().log_teardown_step("Re-upload and apply openvswitch app.")
-            system_application_upload_input = SystemApplicationUploadInput()
-            system_application_upload_input.set_app_name(APP_NAME)
-            system_application_upload_input.set_tar_file_path(f"{BASE_APPLICATION_PATH}{APP_NAME}*.tgz")
-            SystemApplicationUploadKeywords(active_ssh_connection).system_application_upload(system_application_upload_input)
-            SystemApplicationApplyKeywords(active_ssh_connection).system_application_apply(app_name=APP_NAME)
-
-    request.addfinalizer(cleanup)
     return APP_NAME
-
-
-@mark.p2
-def test_verify_helm_releases_openvswitch(request: FixtureRequest):
-    """
-    Verify helm releases visible via kubectl HelmRelease.
-
-    Test Steps:
-        - Verify ovs-agent HelmRelease exists and is Ready
-        - Verify ovs-manager HelmRelease exists and is Ready
-
-    Args:
-        request (FixtureRequest): pytest request fixture for test setup and teardown
-    """
-    active_ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
-    openvswitch_name = setup(request, active_ssh_connection)
-    helm_override_keywords = SystemHelmOverrideKeywords(active_ssh_connection)
-
-    get_logger().log_test_case_step("Verify ovs-agent HelmRelease exists")
-    ovs_agent_show = helm_override_keywords.get_system_helm_override_show(openvswitch_name, OVS_AGENT_CHART, APP_NAMESPACE)
-    validate_not_equals(ovs_agent_show, None, "ovs-agent helm override exists")
-
-    get_logger().log_test_case_step("Verify ovs-manager HelmRelease exists")
-    ovs_manager_show = helm_override_keywords.get_system_helm_override_show(openvswitch_name, OVS_MANAGER_CHART, APP_NAMESPACE)
-    validate_not_equals(ovs_manager_show, None, "ovs-manager helm override exists")
 
 
 @mark.p2
@@ -182,9 +156,7 @@ def test_delete_openvswitch_app(request: FixtureRequest):
         system_application_upload_input.set_app_name(openvswitch_name)
         system_application_upload_input.set_tar_file_path(f"{BASE_APPLICATION_PATH}{openvswitch_name}*.tgz")
         SystemApplicationUploadKeywords(active_ssh_connection).system_application_upload(system_application_upload_input)
-        # TODO: Remove once tarball static overrides are fixed
-        get_logger().log_teardown_step("Apply image overrides and apply openvswitch")
-        _apply_image_overrides(active_ssh_connection)
+        get_logger().log_teardown_step("Apply openvswitch")
         SystemApplicationApplyKeywords(active_ssh_connection).system_application_apply(app_name=openvswitch_name, timeout=600)
 
     request.addfinalizer(teardown)
@@ -199,6 +171,80 @@ def test_delete_openvswitch_app(request: FixtureRequest):
     system_application_delete_input.set_app_name(openvswitch_name)
     app_delete_response = SystemApplicationDeleteKeywords(active_ssh_connection).get_system_application_delete(system_application_delete_input)
     validate_str_contains(app_delete_response.rstrip(), "deleted", "Application deletion.")
+
+
+@mark.p2
+def test_verify_helm_releases_openvswitch(request: FixtureRequest):
+    """
+    Verify helm releases visible via kubectl HelmRelease.
+
+    Test Steps:
+        - Verify ovs-agent HelmRelease exists and is Ready
+        - Verify ovs-manager HelmRelease exists and is Ready
+
+    Args:
+        request (FixtureRequest): pytest request fixture for test setup and teardown
+    """
+    active_ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    openvswitch_name = setup(request, active_ssh_connection)
+    helm_override_keywords = SystemHelmOverrideKeywords(active_ssh_connection)
+
+    get_logger().log_test_case_step("Verify ovs-agent HelmRelease exists")
+    ovs_agent_show = helm_override_keywords.get_system_helm_override_show(openvswitch_name, OVS_AGENT_CHART, APP_NAMESPACE)
+    validate_not_equals(ovs_agent_show, None, "ovs-agent helm override exists")
+
+    get_logger().log_test_case_step("Verify ovs-manager HelmRelease exists")
+    ovs_manager_show = helm_override_keywords.get_system_helm_override_show(openvswitch_name, OVS_MANAGER_CHART, APP_NAMESPACE)
+    validate_not_equals(ovs_manager_show, None, "ovs-manager helm override exists")
+
+
+@mark.p2
+def test_ovs_agent_containers_running(request: FixtureRequest):
+    """
+    Verify OVS agent pod has 3 containers running.
+
+    Test Steps:
+        - Get ovs-agent pod in openvswitch namespace
+        - Verify pod has 3/3 containers in Running state
+
+    Args:
+        request (FixtureRequest): pytest request fixture for test setup and teardown
+    """
+    active_ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    setup(request, active_ssh_connection)
+
+    get_logger().log_test_case_step("Get ovs-agent pod")
+    pods_output = KubectlGetPodsKeywords(active_ssh_connection).get_pods(namespace=APP_NAMESPACE, label="app=ovs-agent-operator")
+    agent_pods = pods_output.get_pods()
+    validate_not_equals(len(agent_pods), 0, "OVS agent pod exists")
+
+    get_logger().log_test_case_step("Verify pod has 3/3 containers Running")
+    agent_pod = agent_pods[0]
+    validate_equals(agent_pod.get_status(), "Running", "OVS agent pod is Running")
+    validate_str_contains(agent_pod.get_ready(), "3/3", "OVS agent pod has 3 containers ready")
+
+
+@mark.p2
+def test_ovs_crds_registered(request: FixtureRequest):
+    """
+    Verify OVS CRDs are registered after application apply.
+
+    Test Steps:
+        - Get list of CRDs
+        - Verify ovsbridges CRD exists
+        - Verify ovsports CRD exists
+        - Verify ovsnodeconfigs CRD exists
+
+    Args:
+        request (FixtureRequest): pytest request fixture for test setup and teardown
+    """
+    active_ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    setup(request, active_ssh_connection)
+
+    crd_names = KubectlGetCrdKeywords(active_ssh_connection).get_crds().get_crd_names()
+    for crd in OVS_EXPECTED_CRDS:
+        get_logger().log_test_case_step(f"Verify {crd} CRD exists")
+        validate_equals(crd in crd_names, True, f"CRD {crd} should be registered")
 
 
 @mark.p2
@@ -357,3 +403,181 @@ def test_modify_helm_chart_attribute_openvswitch(request: FixtureRequest):
     enabled_attributes = enabled_override_show.get_helm_override_show().get_attributes()
     validate_str_contains(str(enabled_attributes), "enabled: true", "Attributes should contain enabled: true")
     get_logger().log_info(f"Enabled attributes: {enabled_attributes}")
+
+
+@mark.p2
+def test_ovsconfig_system_id_override(request: FixtureRequest):
+    """
+    Verify ovsConfig.systemId helm override is applied to OVSDB.
+
+    Test Steps:
+        - Set ovsConfig.systemId override to a custom value
+        - Apply openvswitch application
+        - Verify system-id in OVSDB external_ids matches the override
+
+    Teardown:
+        - Remove the ovsConfig override and re-apply with defaults
+
+    Args:
+        request (FixtureRequest): pytest request fixture for test setup and teardown
+    """
+    active_ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    openvswitch_name = setup(request, active_ssh_connection)
+    helm_kw = SystemHelmOverrideKeywords(active_ssh_connection)
+
+    custom_system_id = "test-system-123"
+
+    def teardown():
+        get_logger().log_teardown_step("Remove ovsConfig override and re-apply")
+        helm_kw.delete_system_helm_override(openvswitch_name, OVS_AGENT_CHART, APP_NAMESPACE)
+        SystemApplicationApplyKeywords(active_ssh_connection).system_application_apply(app_name=openvswitch_name, timeout=600)
+
+    request.addfinalizer(teardown)
+
+    get_logger().log_test_case_step("Set ovsConfig.systemId override")
+    helm_kw.update_helm_override_via_set(f"ovsConfig.systemId={custom_system_id}", openvswitch_name, OVS_AGENT_CHART, APP_NAMESPACE)
+
+    get_logger().log_test_case_step("Apply openvswitch application")
+    SystemApplicationApplyKeywords(active_ssh_connection).system_application_apply(app_name=openvswitch_name, timeout=600)
+
+    get_logger().log_test_case_step("Verify system-id in OVSDB external_ids")
+    agent_pod = KubectlGetPodsKeywords(active_ssh_connection).get_pods(namespace=APP_NAMESPACE, label="app=ovs-agent-operator").get_pods()[0].get_name()
+    output = KubectlExecInPodsKeywords(active_ssh_connection).run_pod_exec_cmd(agent_pod, "ovs-vsctl get open_vswitch . external_ids", options=f"-n {APP_NAMESPACE} -c ovs-vswitchd")
+    output_str = "".join(output) if isinstance(output, list) else output
+    validate_str_contains(output_str, custom_system_id, "system-id should match override value")
+
+
+@mark.p2
+def test_ovsconfig_stats_update_interval_override(request: FixtureRequest):
+    """
+    Verify ovsConfig.statsUpdateInterval helm override is applied to OVSDB.
+
+    Test Steps:
+        - Set ovsConfig.statsUpdateInterval override to 10000
+        - Apply openvswitch application
+        - Verify stats-update-interval in OVSDB other_config matches the override
+
+    Teardown:
+        - Remove the ovsConfig override and re-apply with defaults
+
+    Args:
+        request (FixtureRequest): pytest request fixture for test setup and teardown
+    """
+    active_ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    openvswitch_name = setup(request, active_ssh_connection)
+    helm_kw = SystemHelmOverrideKeywords(active_ssh_connection)
+
+    custom_interval = "10000"
+
+    def teardown():
+        get_logger().log_teardown_step("Remove ovsConfig override and re-apply")
+        helm_kw.delete_system_helm_override(openvswitch_name, OVS_AGENT_CHART, APP_NAMESPACE)
+        SystemApplicationApplyKeywords(active_ssh_connection).system_application_apply(app_name=openvswitch_name, timeout=600)
+
+    request.addfinalizer(teardown)
+
+    get_logger().log_test_case_step("Set ovsConfig.statsUpdateInterval override")
+    helm_kw.update_helm_override_via_set(f"ovsConfig.statsUpdateInterval={custom_interval}", openvswitch_name, OVS_AGENT_CHART, APP_NAMESPACE)
+
+    get_logger().log_test_case_step("Apply openvswitch application")
+    SystemApplicationApplyKeywords(active_ssh_connection).system_application_apply(app_name=openvswitch_name, timeout=600)
+
+    get_logger().log_test_case_step("Verify stats-update-interval in OVSDB other_config")
+    agent_pod = KubectlGetPodsKeywords(active_ssh_connection).get_pods(namespace=APP_NAMESPACE, label="app=ovs-agent-operator").get_pods()[0].get_name()
+    output = KubectlExecInPodsKeywords(active_ssh_connection).run_pod_exec_cmd(agent_pod, "ovs-vsctl get open_vswitch . other_config", options=f"-n {APP_NAMESPACE} -c ovs-vswitchd")
+    output_str = "".join(output) if isinstance(output, list) else output
+    validate_str_contains(output_str, custom_interval, "stats-update-interval should match override value")
+
+
+@mark.p2
+def test_ovs_manager_ha_pod_recovery(request: FixtureRequest):
+    """
+    Verify OVS Manager recovers after pod deletion (HA).
+
+    Test Steps:
+        - Get current manager pod name
+        - Delete the manager pod
+        - Verify a new manager pod starts and reaches Running state
+        - Verify manager lease still exists
+
+    Args:
+        request (FixtureRequest): pytest request fixture for test setup and teardown
+    """
+    active_ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    setup(request, active_ssh_connection)
+
+    get_logger().log_test_case_step("Get current manager pod name")
+    pods_kw = KubectlGetPodsKeywords(active_ssh_connection)
+    manager_pods = pods_kw.get_pods(namespace=APP_NAMESPACE, label="app=ovs-manager-operator").get_pods()
+    validate_not_equals(len(manager_pods), 0, "OVS manager pod exists")
+    original_pod_name = manager_pods[0].get_name()
+    get_logger().log_info(f"Original manager pod: {original_pod_name}")
+
+    get_logger().log_test_case_step("Delete the manager pod")
+    KubectlDeletePodsKeywords(active_ssh_connection).delete_pod(original_pod_name, APP_NAMESPACE)
+
+    get_logger().log_test_case_step("Verify new manager pod starts and reaches Running state")
+    pods_kw.wait_for_pods_to_reach_status(expected_status="Running", namespace=APP_NAMESPACE, timeout=120)
+    new_manager_pods = pods_kw.get_pods(namespace=APP_NAMESPACE, label="app=ovs-manager-operator").get_pods()
+    validate_not_equals(len(new_manager_pods), 0, "New manager pod exists")
+    new_pod_name = new_manager_pods[0].get_name()
+    validate_not_equals(new_pod_name, original_pod_name, "New pod is different from deleted pod")
+    get_logger().log_info(f"New manager pod: {new_pod_name}")
+
+    get_logger().log_test_case_step("Verify manager lease still exists")
+    lease_output = KubectlGetLeaseKeywords(active_ssh_connection).get_leases(APP_NAMESPACE)
+    lease_holders = lease_output.get_lease_holders()
+    validate_equals(any("ovs-manager" in h for h in lease_holders), True, "OVS manager lease should exist")
+
+
+@mark.p2
+def test_ovs_bridge_crd_operations(request: FixtureRequest):
+    """
+    Verify OVSBridge CRD create and delete operations.
+
+    Test Steps:
+        - Create OVSBridge CR via YAML
+        - Verify bridge exists in OVS
+        - Delete OVSBridge CR
+        - Verify bridge is removed from OVS
+
+    Teardown:
+        - Delete OVSBridge CR and YAML file if still present
+
+    Args:
+        request (FixtureRequest): pytest request fixture for test setup and teardown
+    """
+    active_ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    setup(request, active_ssh_connection)
+
+    file_keywords = FileKeywords(active_ssh_connection)
+    delete_resource_keywords = KubectlDeleteResourceKeywords(active_ssh_connection)
+    exec_keywords = KubectlExecInPodsKeywords(active_ssh_connection)
+
+    def teardown():
+        get_logger().log_teardown_step("Delete OVSBridge CR and YAML file")
+        delete_resource_keywords.delete_resource("ovsbridge", OVS_BRIDGE_NAME, namespace=APP_NAMESPACE)
+        file_keywords.delete_file(OVS_BRIDGE_YAML_PATH)
+
+    request.addfinalizer(teardown)
+
+    get_logger().log_test_case_step("Create bridge YAML file")
+    file_keywords.create_directory(OVS_BRIDGE_YAML_DIR)
+    file_keywords.create_file_with_heredoc(OVS_BRIDGE_YAML_PATH, OVS_BRIDGE_YAML)
+
+    get_logger().log_test_case_step("Create OVSBridge CR")
+    KubectlFileApplyKeywords(active_ssh_connection).apply_resource_from_yaml(OVS_BRIDGE_YAML_PATH)
+
+    get_logger().log_test_case_step("Verify bridge exists in OVS")
+    agent_pod = KubectlGetPodsKeywords(active_ssh_connection).get_pods(namespace=APP_NAMESPACE, label="app=ovs-agent-operator").get_pods()[0].get_name()
+    output = exec_keywords.run_pod_exec_cmd(agent_pod, "ovs-vsctl list-br", options=f"-n {APP_NAMESPACE} -c ovs-vswitchd")
+    output_str = "".join(output) if isinstance(output, list) else output
+    validate_str_contains(output_str, OVS_BRIDGE_NAME, "Bridge should exist in OVS")
+
+    get_logger().log_test_case_step("Delete OVSBridge CR")
+    delete_resource_keywords.delete_resource("ovsbridge", OVS_BRIDGE_NAME, namespace=APP_NAMESPACE)
+
+    get_logger().log_test_case_step("Verify bridge is removed from OVS")
+    output = exec_keywords.run_pod_exec_cmd(agent_pod, "ovs-vsctl list-br", options=f"-n {APP_NAMESPACE} -c ovs-vswitchd")
+    output_str = "".join(output) if isinstance(output, list) else output
+    validate_not_equals(OVS_BRIDGE_NAME in output_str, True, "Bridge should be removed from OVS")
