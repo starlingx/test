@@ -91,6 +91,11 @@ class LabConfig:
             secondary_lab_file = get_stx_resource_path(secondary_system_controller)
             self.secondary_system_controller = LabConfig(secondary_lab_file)
 
+        self.factory_ip: Optional[str] = lab_dict.get("factory_ip")
+        self.factory_credentials: Optional[Credentials] = None
+        if "factory_credentials" in lab_dict and lab_dict["factory_credentials"]:
+            self.factory_credentials = Credentials(lab_dict["factory_credentials"])
+
         self.lab_config_file = config
 
     def get_floating_ip(self) -> str:
@@ -399,6 +404,38 @@ class LabConfig:
             lab_config_file (str): Path to the lab configuration file
         """
         self.lab_config_file = lab_config_file
+
+    def get_factory_ip(self) -> Optional[str]:
+        """Getter for the factory floating IP.
+
+        Returns:
+            Optional[str]: The factory floating IP, or None if not set.
+        """
+        return self.factory_ip
+
+    def set_factory_ip(self, factory_ip: Optional[str]) -> None:
+        """Setter for the factory floating IP.
+
+        Args:
+            factory_ip (Optional[str]): The factory floating IP.
+        """
+        self.factory_ip = factory_ip
+
+    def get_factory_credentials(self) -> Optional[Credentials]:
+        """Getter for the factory credentials.
+
+        Returns:
+            Optional[Credentials]: The factory credentials, or None if not set.
+        """
+        return self.factory_credentials
+
+    def set_factory_credentials(self, factory_credentials: Optional[Credentials]) -> None:
+        """Setter for the factory credentials.
+
+        Args:
+            factory_credentials (Optional[Credentials]): The factory credentials.
+        """
+        self.factory_credentials = factory_credentials
 
     def get_bm_password(self) -> str:
         """

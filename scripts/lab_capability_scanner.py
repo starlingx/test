@@ -1,13 +1,17 @@
 import copy
 import os
+import shlex
 import shutil
 from optparse import OptionParser
 from typing import Optional
 
 import json5
+import yaml
 
 from config.configuration_file_locations_manager import ConfigurationFileLocationsManager
 from config.configuration_manager import ConfigurationManager
+from config.deployment_assets.objects.deployment_assets import DeploymentAssets
+from config.lab.objects.credentials import Credentials
 from config.lab.objects.lab_config import LabConfig
 from config.lab.objects.node import Node
 from framework.database.objects.lab_capability import LabCapability
@@ -284,6 +288,251 @@ def has_linux_cpu_metrics(ssh_connection: SSHConnection) -> bool:
     output = ssh_connection.send(cmd="cpupower frequency-info")
     return not any("Not Available" in s for s in output)
 
+
+def directory_exists_on_system_controller(ssh_connection: SSHConnection, directory_path: str) -> bool:
+    """Check whether the given path is a directory on the system controller.
+
+    Uses the provided SSH connection (already established with the active
+    controller's floating IP by the caller) to run a read-only ``test -d``
+    against the supplied path and inspects the remote return code.
+
+    Args:
+        ssh_connection (SSHConnection): An active SSH connection to the
+            system controller. Must not be None.
+        directory_path (str): Absolute path to check on the system
+            controller. Must be a non-empty string.
+
+    Returns:
+        bool: True if the path exists and is a directory on the system
+        controller, False if it does not exist, is not a directory, or the
+        remote command returned an unexpected status code.
+
+    Raises:
+        ValueError: If ``ssh_connection`` is None.
+        ValueError: If ``directory_path`` is None or an empty string.
+    """
+    if ssh_connection is None:
+        raise ValueError("ssh_connection must not be None")
+    if directory_path is None or directory_path == "":
+        raise ValueError("directory_path must be a non-empty string")
+
+    cmd = "test -d " + shlex.quote(directory_path)
+    ssh_connection.send(cmd=cmd)
+    return_code = ssh_connection.get_return_code()
+
+    if return_code == 0:
+        get_logger().log_info(f"Directory '{directory_path}' exists on system controller: True")
+        return True
+    if return_code == 1:
+        get_logger().log_info(f"Directory '{directory_path}' exists on system controller: False")
+        return False
+
+    get_logger().log_warning(
+        f"Unexpected return code '{return_code}' while checking directory '{directory_path}' on system controller; treating as not existing"
+    )
+    return False
+
+
+def get_subcloud_basepath_from_deployment_assets(deployment_assets: DeploymentAssets) -> Optional[str]:
+    """Derive the subcloud basepath from a ``DeploymentAssets`` object.
+
+    Looks at the deployment-asset files configured for a subcloud (bootstrap,
+    deployment-config, install) and returns the directory portion that they
+    share. With the standard layout from
+    ``config/deployment_assets/files/default.json5`` this directory is
+    ``/home/sysadmin/subcloud-<N>``.
+
+    Args:
+        deployment_assets (DeploymentAssets): Deployment assets for a subcloud.
+
+    Returns:
+        Optional[str]: The basepath (directory) where the subcloud assets live,
+        or ``None`` if no asset path is configured.
+    """
+    candidate_files = [
+        deployment_assets.get_bootstrap_file() if deployment_assets.bootstrap_file else None,
+        deployment_assets.get_install_file() if deployment_assets.install_file else None,
+        deployment_assets.deployment_config_file,
+    ]
+    for path in candidate_files:
+        if path:
+            return os.path.dirname(path.strip())
+    return None
+
+
+def has_subcloud_factory_install_directory(ssh_connection: SSHConnection, deployment_assets: DeploymentAssets) -> bool:
+    """Check whether the ``factory_install`` directory exists for a subcloud.
+
+    The basepath is derived from the subcloud's deployment-asset files
+    (e.g. ``/home/sysadmin/subcloud-1``); the directory looked up is
+    ``<basepath>/factory_install`` on the system controller.
+
+    Args:
+        ssh_connection (SSHConnection): An active SSH connection to the system
+            controller. Must not be ``None``.
+        deployment_assets (DeploymentAssets): Deployment assets for the target
+            subcloud. Must not be ``None`` and must expose at least one asset
+            file from which the basepath can be derived.
+
+    Returns:
+        bool: ``True`` if ``<basepath>/factory_install`` exists as a directory
+        on the system controller, ``False`` otherwise (including when the
+        basepath cannot be derived).
+
+    Raises:
+        ValueError: If ``deployment_assets`` is ``None``.
+    """
+    if deployment_assets is None:
+        raise ValueError("deployment_assets must not be None")
+
+    basepath = get_subcloud_basepath_from_deployment_assets(deployment_assets)
+    if not basepath:
+        get_logger().log_warning("Could not derive subcloud basepath from deployment assets; cannot check 'factory_install' directory.")
+        return False
+
+    factory_install_path = os.path.join(basepath, "factory_install")
+    get_logger().log_info(f"Checking factory_install directory at '{factory_install_path}'.")
+    return directory_exists_on_system_controller(ssh_connection, factory_install_path)
+
+
+def read_remote_install_values(ssh_connection: SSHConnection, install_values_path: str) -> Optional[dict]:
+    """Read and parse a remote ``install_values.yaml`` file via SSH.
+
+    Uses ``cat`` to fetch the file contents through the provided SSH connection
+    and parses the result with ``yaml.safe_load``. The connection is expected
+    to be already established with the system controller.
+
+    Args:
+        ssh_connection (SSHConnection): Active SSH connection to the system
+            controller. Must not be ``None``.
+        install_values_path (str): Absolute path to the ``install_values.yaml``
+            file on the system controller. Must be a non-empty string.
+
+    Returns:
+        Optional[dict]: The parsed YAML content as a dict, or ``None`` if the
+        file could not be read or parsed.
+    """
+    if ssh_connection is None:
+        raise ValueError("ssh_connection must not be None")
+    if not install_values_path:
+        raise ValueError("install_values_path must be a non-empty string")
+
+    cmd = f"cat {shlex.quote(install_values_path)}"
+    output = ssh_connection.send(cmd=cmd)
+    return_code = ssh_connection.get_return_code()
+    if return_code != 0:
+        get_logger().log_warning(f"Could not read remote install_values file '{install_values_path}' (rc={return_code}).")
+        return None
+
+    if isinstance(output, list):
+        content = "".join(output)
+    else:
+        content = str(output)
+
+    try:
+        parsed = yaml.safe_load(content)
+    except yaml.YAMLError as exc:
+        get_logger().log_warning(f"Failed to parse install_values file '{install_values_path}': {exc}")
+        return None
+
+    if not isinstance(parsed, dict):
+        get_logger().log_warning(f"install_values file '{install_values_path}' did not parse to a mapping.")
+        return None
+
+    return parsed
+
+
+def populate_subcloud_factory_credentials(
+    ssh_connection: SSHConnection,
+    subcloud: LabConfig,
+    deployment_assets: DeploymentAssets,
+) -> bool:
+    """Populate ``factory_ip`` and ``factory_credentials`` on a subcloud config.
+
+    When the subcloud's ``factory_install`` directory exists on the system
+    controller, reads ``<basepath>/factory_install/<subcloud-name>-install-values.yaml``
+    via SSH and copies values into the subcloud's ``LabConfig`` so they end up
+    serialized in ``subcloudX.json5``:
+
+    - ``bootstrap_address`` (in the install values file) is mapped to
+      ``factory_ip`` (factory install does not expose a ``floating_ip`` key).
+    - ``bmc_username`` and, when present, ``bmc_password`` are mapped to
+      ``factory_credentials``. If ``bmc_password`` is missing from the file,
+      an empty password is stored alongside the ``bmc_username``.
+
+    If the ``factory_install`` directory or its install-values file is no
+    longer available, any previously-stored ``factory_ip`` /
+    ``factory_credentials`` are cleared so the resulting ``subcloudX.json5``
+    reflects the current state of the system controller.
+
+    Args:
+        ssh_connection (SSHConnection): Active SSH connection to the system
+            controller.
+        subcloud (LabConfig): Subcloud configuration to update in place.
+        deployment_assets (DeploymentAssets): Deployment assets for this
+            subcloud, used to derive the basepath.
+
+    Returns:
+        bool: ``True`` if factory data was found and applied to the subcloud
+        config, ``False`` otherwise.
+    """
+    if not has_subcloud_factory_install_directory(ssh_connection, deployment_assets):
+        _clear_subcloud_factory_data(subcloud, reason="factory_install directory not found on system controller")
+        return False
+
+    basepath = get_subcloud_basepath_from_deployment_assets(deployment_assets)
+    install_values_filename = f"{subcloud.get_lab_name()}-install-values.yaml"
+    install_values_path = os.path.join(basepath, "factory_install", install_values_filename)
+    install_values = read_remote_install_values(ssh_connection, install_values_path)
+    if not install_values:
+        _clear_subcloud_factory_data(subcloud, reason=f"install values file '{install_values_path}' could not be read")
+        return False
+
+    factory_ip = install_values.get("bootstrap_address")
+    bmc_username = install_values.get("bmc_username")
+    bmc_password = install_values.get("bmc_password")
+
+    if not factory_ip or not bmc_username:
+        get_logger().log_warning(
+            f"install_values file '{install_values_path}' is missing 'bootstrap_address' or 'bmc_username'; "
+            "factory data will not be added to the subcloud config."
+        )
+        _clear_subcloud_factory_data(subcloud, reason=f"install values file '{install_values_path}' is missing required keys")
+        return False
+
+    subcloud.set_factory_ip(str(factory_ip))
+    password_value = "" if bmc_password is None else str(bmc_password)
+    subcloud.set_factory_credentials(Credentials({"user_name": str(bmc_username), "password": password_value}))
+    if not password_value:
+        get_logger().log_warning(
+            f"install_values file '{install_values_path}' has no 'bmc_password'; "
+            f"factory_credentials.password for subcloud '{subcloud.get_lab_name()}' will be empty."
+        )
+    get_logger().log_info(f"Added factory data for subcloud '{subcloud.get_lab_name()}' from '{install_values_path}'.")
+    return True
+
+
+def _clear_subcloud_factory_data(subcloud: LabConfig, reason: str) -> None:
+    """Clear ``factory_ip`` and ``factory_credentials`` from a subcloud config.
+
+    Used when the factory install assets are no longer present on the system
+    controller, so that the persisted ``subcloudX.json5`` does not keep stale
+    factory information from a previous scan.
+
+    Args:
+        subcloud (LabConfig): Subcloud configuration to update in place.
+        reason (str): Human-readable reason describing why the data is being
+            cleared (used only for logging).
+    """
+    if subcloud.get_factory_ip() is None and subcloud.get_factory_credentials() is None:
+        return
+    get_logger().log_info(
+        f"Clearing stale factory data from subcloud '{subcloud.get_lab_name()}' config ({reason})."
+    )
+    subcloud.set_factory_ip(None)
+    subcloud.set_factory_credentials(None)
+
+
 def retrieve_subclouds(lab_config: LabConfig, ssh_connection: SSHConnection) -> list[LabConfig]:
     """Get the list of online and managed subclouds.
 
@@ -322,6 +571,12 @@ def retrieve_subclouds(lab_config: LabConfig, ssh_connection: SSHConnection) -> 
         subcloud.set_floating_ip(subcloud_ip)
         subcloud.set_system_controller_ip(lab_config.get_floating_ip())
         subcloud.set_system_controller_name(lab_config.get_lab_name())
+
+        deployment_assets_config = ConfigurationManager.get_deployment_assets_config()
+        subcloud_deployment_assets = deployment_assets_config.get_subcloud_deployment_assets(subcloud_name)
+
+        if subcloud_deployment_assets is not None:
+            populate_subcloud_factory_credentials(ssh_connection, subcloud, subcloud_deployment_assets)
 
         subclouds.append(subcloud)
 
@@ -886,6 +1141,15 @@ def _build_config_dict(lab_config: LabConfig) -> dict:
 
     if lab_config.get_system_controller_name():
         config["system_controller_name"] = lab_config.get_system_controller_name()
+
+    if lab_config.get_factory_ip():
+        config["factory_ip"] = lab_config.get_factory_ip()
+
+    if lab_config.get_factory_credentials():
+        config["factory_credentials"] = {
+            "user_name": lab_config.get_factory_credentials().get_user_name(),
+            "password": lab_config.get_factory_credentials().get_password(),
+        }
 
     config["lab_capabilities"] = lab_config.get_lab_capabilities()
 
