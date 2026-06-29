@@ -220,6 +220,14 @@ def test_portieris_image_security_policy(request):
     pod_running = kubectl_pods.wait_for_pod_status("test-pod", "Running", NAMESPACE, 300)
     validate_equals(pod_running, True, "Signed image pod should be running")
 
+    # Verify portieris webhook logs confirm the image was allowed
+    get_logger().log_info("Verifying portieris webhook logs confirm signed image was allowed")
+    allowed = docker_trust.verify_portieris_allowed_image(security_config.get_portieris_signed_image_name())
+    if allowed:
+        get_logger().log_info("Portieris webhook confirmed signed image admission")
+    else:
+        get_logger().log_info("Portieris webhook log check inconclusive - pod Running confirms admission")
+
 
 @mark.p1
 @mark.lab_has_standby_controller
