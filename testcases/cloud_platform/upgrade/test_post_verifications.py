@@ -1,6 +1,8 @@
 from config.configuration_manager import ConfigurationManager
 
+from framework.logging.automation_logger import get_logger
 from framework.validation.validation import validate_equals, validate_str_contains
+from keywords.cloud_platform.security.luks_keyring.luks_keyring_keywords import LuksKeyringKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 
 from keywords.cloud_platform.system.application.system_application_list_keywords import SystemApplicationListKeywords
@@ -98,3 +100,27 @@ def test_post_upgrade_verification_kubernetes_power_manager():
     expected_pattern = "Application update from version"
     validate_str_contains(progress_message, expected_pattern,
                          f"{power_manager_name} application should be upgraded to the version {app_version}")
+
+
+def test_post_rollback_luks_keyring_services_healthy():
+    """Verify platform services authenticate after rollback to prior release.
+
+    After rolling back from an upgrade, the system reverts to pre-LUKS
+    keyring state. This test validates platform services still authenticate
+    regardless of which keyring path is in use.
+
+    Test Steps:
+        - Connect to active controller
+        - Verify system host-list succeeds
+        - Verify system application-list succeeds
+        - Verify fm alarm-list succeeds
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    luks_keywords = LuksKeyringKeywords(ssh_connection)
+
+    get_logger().log_test_case_step("Post-rollback: verifying platform services authenticate")
+    results = luks_keywords.services_authenticate()
+
+    validate_equals(results["system_host_list"], True, "system host-list should succeed post-rollback")
+    validate_equals(results["system_application_list"], True, "system application-list should succeed post-rollback")
+    validate_equals(results["fm_alarm_list"], True, "fm alarm-list should succeed post-rollback")
