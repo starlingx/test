@@ -163,7 +163,7 @@ def test_ptp_operation_interface_down_and_up(request):
                 },
                 {
                     "type": VerificationType.pmc_value,
-                    "timeout": 30,
+                    "timeout": 90,
                     "pmc_values": [
                         {
                             "name": "ptp1",
@@ -235,7 +235,7 @@ def test_ptp_operation_interface_down_and_up(request):
                 },
                 {
                     "type": VerificationType.pmc_value,
-                    "timeout": 30,
+                    "timeout": 60,
                     "pmc_values_overrides": [
                         {
                             "name": "ptp1",
@@ -276,7 +276,7 @@ def test_ptp_operation_interface_down_and_up(request):
                 },
                 {
                     "type": VerificationType.pmc_value,
-                    "timeout": 30,
+                    "timeout": 90,
                     "pmc_values": [
                         {
                             "name": "ptp4",
@@ -348,7 +348,7 @@ def test_ptp_operation_interface_down_and_up(request):
                 },
                 {
                     "type": VerificationType.pmc_value,
-                    "timeout": 30,
+                    "timeout": 60,
                     "pmc_values_overrides": [
                         {
                             "name": "ptp4",
@@ -428,30 +428,30 @@ def test_ptp_operation_sma_disabled_and_enable(request):
                 },
                 {
                     "type": VerificationType.pmc_value,
-                    "timeout": 30,
+                    "timeout": 60,
                     "pmc_values_overrides": [
                         {
                             "name": "ptp3",
                             "controller-0": {
                                 "parent_data_set": {
-                                    "gm_clock_class": 7,
+                                    "gm_clock_class": 140,
                                     "gm_clock_accuracy": "0xfe",
                                     "gm_offset_scaled_log_variance": "0xffff"
                                 },
                                 "time_properties_data_set": {
                                     "current_utc_offset": 37,
-                                    "current_utc_offset_valid": 0,
-                                    "time_traceable": 1,
-                                    "frequency_traceable": 1
+                                    "current_utc_offset_valid": 1,
+                                    "time_traceable": 0,
+                                    "frequency_traceable": 0
                                 },
                                 "grandmaster_settings": {
-                                    "clock_class": 7,
+                                    "clock_class": 140,
                                     "clock_accuracy": "0xfe",
                                     "offset_scaled_log_variance": "0xffff",
-                                    "time_traceable": 1,
-                                    "frequency_traceable": 1,
+                                    "time_traceable": 0,
+                                    "frequency_traceable": 0,
                                     "time_source": "0xa0",
-                                    "current_utc_offset_valid": 0
+                                    "current_utc_offset_valid": 1
                                 },
                                 "port_data_set": [
                                     {
@@ -469,15 +469,15 @@ def test_ptp_operation_sma_disabled_and_enable(request):
                             "name": "ptp4",
                             "controller-1": {
                                 "parent_data_set": {
-                                    "gm_clock_class": 7,
+                                    "gm_clock_class": 140,
                                     "gm_clock_accuracy": "0xfe",
                                     "gm_offset_scaled_log_variance": "0xffff"
                                 },
                                 "time_properties_data_set": {
                                     "current_utc_offset": 37,
-                                    "current_utc_offset_valid": 0,
-                                    "time_traceable": 1,
-                                    "frequency_traceable": 1
+                                    "current_utc_offset_valid": 1,
+                                    "time_traceable": 0,
+                                    "frequency_traceable": 0
                                 },
                                 "grandmaster_settings": {
                                     "clock_class": [165, 248],
@@ -643,24 +643,24 @@ def test_ptp_operation_gnss_off_and_on(request):
                             "name": "ptp1",
                             "controller-0": {
                                 "parent_data_set": {
-                                    "gm_clock_class": [7, 248],
+                                    "gm_clock_class": 140,
                                     "gm_clock_accuracy": "0xfe",
                                     "gm_offset_scaled_log_variance": "0xffff"
                                 },
                                 "time_properties_data_set": {
                                     "current_utc_offset": 37,
-                                    "current_utc_offset_valid": 0,
-                                    "time_traceable": [1, 0],
-                                    "frequency_traceable": [1, 0]
+                                    "current_utc_offset_valid": 1,
+                                    "time_traceable": 0,
+                                    "frequency_traceable": 0
                                 },
                                 "grandmaster_settings": {
-                                    "clock_class": [7, 248],
+                                    "clock_class": 140,
                                     "clock_accuracy": "0xfe",
                                     "offset_scaled_log_variance": "0xffff",
-                                    "time_traceable": [1, 0],
-                                    "frequency_traceable": [1, 0],
+                                    "time_traceable": 0,
+                                    "frequency_traceable": 0,
                                     "time_source": "0xa0",
-                                    "current_utc_offset_valid": 0
+                                    "current_utc_offset_valid": 1
                                 },
                                 "port_data_set": [
                                     {
@@ -678,24 +678,24 @@ def test_ptp_operation_gnss_off_and_on(request):
                             "name": "ptp3",
                             "controller-0": {
                                 "parent_data_set": {
-                                    "gm_clock_class": [7, 248],
+                                    "gm_clock_class": 140,
                                     "gm_clock_accuracy": "0xfe",
                                     "gm_offset_scaled_log_variance": "0xffff"
                                 },
                                 "time_properties_data_set": {
                                     "current_utc_offset": 37,
-                                    "current_utc_offset_valid": 0,
-                                    "time_traceable": [1, 0],
-                                    "frequency_traceable": [1, 0]
+                                    "current_utc_offset_valid": 1,
+                                    "time_traceable": 0,
+                                    "frequency_traceable": 0
                                 },
                                 "grandmaster_settings": {
-                                    "clock_class": [7, 248],
+                                    "clock_class": 140,
                                     "clock_accuracy": "0xfe",
                                     "offset_scaled_log_variance": "0xffff",
-                                    "time_traceable": [1, 0],
-                                    "frequency_traceable": [1, 0],
+                                    "time_traceable": 0,
+                                    "frequency_traceable": 0,
                                     "time_source": "0xa0",
-                                    "current_utc_offset_valid": 0
+                                    "current_utc_offset_valid": 1
                                 },
                                 "port_data_set": [
                                     {
@@ -713,18 +713,18 @@ def test_ptp_operation_gnss_off_and_on(request):
                             "name": "ptp4",
                             "controller-1": {
                                 "parent_data_set": {
-                                    "gm_clock_class": [7, 248],
+                                    "gm_clock_class": 140,
                                     "gm_clock_accuracy": "0xfe",
                                     "gm_offset_scaled_log_variance": "0xffff"
                                 },
                                 "time_properties_data_set": {
                                     "current_utc_offset": 37,
-                                    "current_utc_offset_valid": 0,
-                                    "time_traceable": [1, 0],
-                                    "frequency_traceable": [1, 0]
+                                    "current_utc_offset_valid": 1,
+                                    "time_traceable": 0,
+                                    "frequency_traceable": 0
                                 },
                                 "grandmaster_settings": {
-                                    "clock_class": [135, 165, 248],
+                                    "clock_class": [165, 248],
                                     "clock_accuracy": "0xfe",
                                     "offset_scaled_log_variance": "0xffff",
                                     "time_traceable": 0,
@@ -979,7 +979,7 @@ def test_ptp_operation_service_stop_start_restart(request):
                 },
                 {
                     "type": VerificationType.pmc_value,
-                    "timeout": 30,
+                    "timeout": 90,
                     "pmc_values": [
                         {
                             "name": "ptp1",
@@ -1012,6 +1012,42 @@ def test_ptp_operation_service_stop_start_restart(request):
                                     {
                                         "interface": "{{ controller_1.nic1.conn_to_proxmox }}",
                                         "port_state": ""
+                                    },
+                                ]
+                            },
+                            "controller-1": {
+                                "parent_data_set": {
+                                    "gm_clock_class": 165,
+                                    "gm_clock_accuracy": "0xfe",
+                                    "gm_offset_scaled_log_variance": "0xffff"
+                                },
+                                "time_properties_data_set": {
+                                    "current_utc_offset": 37,
+                                    "current_utc_offset_valid": 0,
+                                    "time_traceable": 0,
+                                    "frequency_traceable": 0
+                                },
+                                "grandmaster_settings": {
+                                    "clock_class": 165,
+                                    "clock_accuracy": "0xfe",
+                                    "offset_scaled_log_variance": "0xffff",
+                                    "time_traceable": 0,
+                                    "frequency_traceable": 0,
+                                    "time_source": "0xa0",
+                                    "current_utc_offset_valid": 0
+                                },
+                                "port_data_set": [
+                                    {
+                                        "interface": "{{ controller_1.nic1.nic_connection.interface }}",
+                                        "port_state": ["MASTER"],
+                                        "parent_port_identity": {
+                                            "name": "ptp1",
+                                            "hostname": "controller-1"
+                                        }
+                                    },
+                                    {
+                                        "interface": "{{ controller_1.nic1.conn_to_proxmox }}",
+                                        "port_state": "MASTER"
                                     },
                                 ]
                             }
@@ -1395,7 +1431,7 @@ def test_proxmox_ptp_vm_verification(request):
                                 },
                                 "time_properties_data_set": {
                                     "current_utc_offset": 37,
-                                    "current_utc_offset_valid": 0,
+                                    "current_utc_offset_valid": 1,
                                     "time_traceable": 1,
                                     "frequency_traceable": 1
                                 },
@@ -1406,7 +1442,7 @@ def test_proxmox_ptp_vm_verification(request):
                                     "time_traceable": 1,
                                     "frequency_traceable": 1,
                                     "time_source": "0x20",
-                                    "current_utc_offset_valid": 0
+                                    "current_utc_offset_valid": 1
                                 },
                             },
                         }

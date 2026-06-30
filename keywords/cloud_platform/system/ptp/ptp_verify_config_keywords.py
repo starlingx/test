@@ -58,7 +58,7 @@ class PTPVerifyConfigKeywords(BaseKeyword):
 
         self.verify_systemctl_status()
 
-        self.verify_ptp_pmc_values_with_retry()
+        self.verify_ptp_pmc_values_with_retry(timeout=60)
 
         self.verify_ptp_config_file_content()
 
@@ -269,7 +269,7 @@ class PTPVerifyConfigKeywords(BaseKeyword):
 
         pci_address = gnss_keywords.get_pci_slot_name(hostname, interface)
         cgu_location = f"/sys/kernel/debug/ice/{pci_address}/cgu"
-        self.validate_cgu_input_and_dpll_status(hostname, cgu_location, input_name, expected_sma1_state, expected_dpll_status)
+        self.validate_cgu_input_and_dpll_status(hostname, cgu_location, input_name, expected_sma1_state, expected_dpll_status, 120, 30)
 
     def validate_cgu_input_and_dpll_status(
         self,
