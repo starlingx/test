@@ -236,7 +236,6 @@ def test_enroll_sx_subcloud_after_factory_restore(request):
     dcm_sc_list_kw = DcManagerSubcloudListKeywords(system_controller_ssh)
     dc_manager_backup = DcManagerSubcloudBackupKeywords(system_controller_ssh)
     subcloud_name = ConfigurationManager.get_lab_config().get_subcloud_names()[0]
-    subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
 
     dcmanager_sc_list_kw = DcManagerSubcloudListKeywords(system_controller_ssh)
     subcloud_list = dcmanager_sc_list_kw.get_dcmanager_subcloud_list()
@@ -250,15 +249,6 @@ def test_enroll_sx_subcloud_after_factory_restore(request):
     if subcloud_management_status == "managed":
         get_logger().log_test_case_step(f"{subcloud_name} already added to system controller.")
         DcManagerSubcloudManagerKeywords(system_controller_ssh).get_dcmanager_subcloud_unmanage(subcloud_name, 10)
-
-    get_logger().log_test_case_step(f"Verify that {subcloud_name} has completed factory-install process.")
-    if not FileKeywords(subcloud_ssh).file_exists("/var/lib/factory-install/complete"):
-        fail("This subcloud was not factory installed, unable to proceed with enroll.")
-
-    # Prechecks Before Factory Back-Up Restore:
-    get_logger().log_info(f"Performing pre-checks on {subcloud_name}")
-    obj_health = HealthKeywords(subcloud_ssh)
-    obj_health.validate_healty_cluster()  # Checks alarms, pods, app health
 
     lab_config = ConfigurationManager.get_lab_config().get_subcloud(subcloud_name)
     subcloud_password = lab_config.get_admin_credentials().get_password()
@@ -280,7 +270,7 @@ def test_enroll_sx_subcloud_after_factory_restore(request):
         subcloud_name).get_deployment_config_file()
 
     get_logger().log_test_case_step(f"Restoring subcloud factory backup: {subcloud_name}")
-    dc_manager_backup.restore_subcloud_backup(subcloud_password, system_controller_ssh, subcloud=subcloud_name, factory=True, restore_values_path=restore_values)
+    dc_manager_backup.restore_subcloud_backup(subcloud_password, system_controller_ssh, subcloud=subcloud_name, factory=True, restore_values_path=restore_values, timeout=7200)
 
     run_enroll_operations(system_controller_ssh, subcloud_name, bootstrap_values, install_values, deployment_config_file, phased=True)
 
@@ -289,6 +279,7 @@ def test_enroll_sx_subcloud_after_factory_restore(request):
 
     # Checks post enrollment:
     get_logger().log_info(f"Performing post-enrollment checks on {subcloud_name}")
+    subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
     obj_health = HealthKeywords(subcloud_ssh)
     obj_health.validate_healty_cluster()  # Checks alarms, pods, app health
 

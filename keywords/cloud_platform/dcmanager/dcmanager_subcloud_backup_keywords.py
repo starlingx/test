@@ -413,6 +413,7 @@ class DcManagerSubcloudBackupKeywords(BaseKeyword):
         factory: bool = False,
         release: Optional[str] = None,
         subcloud_list: Optional[list] = None,
+        timeout: int = 3600,
     ) -> None:
         """
         Sends the command to restore a subcloud backup.
@@ -429,6 +430,7 @@ class DcManagerSubcloudBackupKeywords(BaseKeyword):
             registry (bool): Option to add the registry backup in the same task. Defaults to False.
             release (Optional[str]): Release version required to check backup. Defaults to None.
             subcloud_list (Optional[list]): List of subcloud names when restoring a group backup. Defaults to None.
+            timeout (int): Maximum time (in seconds) to wait for the restore to complete. Defaults to 3600.
         """
         # Command construction
         cmd = f"dcmanager subcloud-backup restore --sysadmin-password {sysadmin_password}"
@@ -461,11 +463,11 @@ class DcManagerSubcloudBackupKeywords(BaseKeyword):
 
         if group:
             for subcloud_name in subcloud_list:
-
-                self.wait_for_backup_restore(con_ssh, subcloud_name)
+            
+                self.wait_for_backup_restore(con_ssh, subcloud_name, timeout=timeout)
 
         else:
-            self.wait_for_backup_restore(con_ssh, subcloud)
+            self.wait_for_backup_restore(con_ssh, subcloud, timeout=timeout)
 
     def wait_for_backup_restore(
         self,
