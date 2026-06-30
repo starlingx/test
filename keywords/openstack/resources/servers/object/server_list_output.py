@@ -1,19 +1,18 @@
-"""Server list output parsing and access."""
+"""Output parser for Nova server SDK responses."""
 
-from typing import Dict, List, Optional
+from typing import List
 
 from keywords.openstack.resources.servers.object.server_object import ServerObject
 
 
 class ServerListOutput:
-    """Parses and provides access to a collection of ServerObjects."""
+    """Parses OpenStack SDK server dicts into ServerObject instances."""
 
-    def __init__(self, raw_servers: List[Dict]) -> None:
-        """Initialize ServerListOutput from raw server dicts.
+    def __init__(self, raw_servers: List[dict]):
+        """Initialize and parse server dicts.
 
         Args:
-            raw_servers (List[Dict]): Raw server dicts from the openstacksdk
-                Compute resource.
+            raw_servers (List[dict]): List of server dicts from SDK to_dict().
         """
         self._servers: List[ServerObject] = []
         for raw in raw_servers:
@@ -21,28 +20,33 @@ class ServerListOutput:
             server.set_id(raw.get("id", ""))
             server.set_name(raw.get("name", ""))
             server.set_status(raw.get("status", ""))
-            server.set_image(raw.get("image"))
-            server.set_flavor(raw.get("flavor"))
-            server.set_metadata(raw.get("metadata") or {})
-            server.set_addresses(raw.get("addresses") or {})
-            server.set_fault(raw.get("fault"))
-            # Pass-through extras the convenience getters need
-            for key in (
-                "availability_zone",
-                "compute_host",
-                "hypervisor_hostname",
-                "OS-EXT-SRV-ATTR:host",
-                "security_groups",
-            ):
-                if key in raw:
-                    server.set_property(key, raw.get(key))
+            server.set_host(
+                raw.get("OS-EXT-SRV-ATTR:host")
+                or raw.get("host")
+                or raw.get("compute_host", "")
+            )
+            server.set_availability_zone(
+                raw.get("OS-EXT-AZ:availability_zone")
+                or raw.get("availability_zone", "")
+            )
+            flavor = raw.get("flavor", {})
+            server.set_flavor_id(flavor.get("id", "") if isinstance(flavor, dict) else "")
+            image = raw.get("image", {})
+            server.set_image_id(image.get("id", "") if isinstance(image, dict) else "")
+            server.set_addresses(raw.get("addresses", {}))
+            server.set_created_at(raw.get("created_at") or raw.get("created", ""))
+            server.set_updated_at(raw.get("updated_at") or raw.get("updated", ""))
+            server.set_tenant_id(raw.get("tenant_id") or raw.get("project_id", ""))
+            server.set_user_id(raw.get("user_id", ""))
+            server.set_key_name(raw.get("key_name", ""))
+            server.set_metadata(raw.get("metadata", {}))
             self._servers.append(server)
 
     def get_servers(self) -> List[ServerObject]:
-        """Get all parsed server objects.
+        """Get the list of parsed servers.
 
         Returns:
-            List[ServerObject]: All servers in this output.
+            List[ServerObject]: List of server objects.
         """
         return self._servers
 
@@ -56,45 +60,26 @@ class ServerListOutput:
             ServerObject: Matching server.
 
         Raises:
-            ValueError: If no server with the given name is found.
+            KeyError: If no server with that name is found.
         """
         for server in self._servers:
             if server.get_name() == name:
                 return server
-        raise ValueError(f"Server '{name}' not found")
+        raise KeyError(f"Server '{name}' not found")
 
-    def get_server_by_id(self, server_id: str) -> Optional[ServerObject]:
+    def get_server_by_id(self, server_id: str) -> ServerObject:
         """Get a server by ID.
 
         Args:
-            server_id (str): Server UUID.
+            server_id (str): Server ID.
 
         Returns:
-            Optional[ServerObject]: Matching server, or None.
+            ServerObject: Matching server.
+
+        Raises:
+            KeyError: If no server with that ID is found.
         """
         for server in self._servers:
             if server.get_id() == server_id:
                 return server
-        return None
-
-    def is_server_present(self, name: str) -> bool:
-        """Check whether a server with the given name exists in this output.
-
-        Args:
-            name (str): Server name.
-
-        Returns:
-            bool: True if a matching server is present.
-        """
-        for server in self._servers:
-            if server.get_name() == name:
-                return True
-        return False
-
-    def __object_to_string__(self) -> str:
-        """Return human-readable representation.
-
-        Returns:
-            str: Summary string for logs and debugging.
-        """
-        return f"ServerListOutput(count={len(self._servers)})"
+        raise KeyError(f"Server with ID '{server_id}' not found")

@@ -1,3 +1,4 @@
+from framework.exceptions.keyword_exception import KeywordException
 from keywords.cloud_platform.fault_management.alarms.objects.alarm_list_object import AlarmListObject
 from keywords.cloud_platform.fault_management.fault_management_table_parser import FaultManagementTableParser
 
@@ -64,3 +65,24 @@ class AlarmListOutput:
         new_alarms = list(alarm_ids_after_set - alarm_ids_before_set)
 
         return len(new_alarms) != 0
+    
+    def get_alarm_uuid(self, alarm_id: str, entity_id: str) -> str:
+        """Get the UUID of an alarm matching the given alarm_id and entity_id.
+
+        Args:
+            alarm_id (str): The alarm ID to match (e.g. '200.001').
+            entity_id (str): The entity instance ID to match (e.g. 'host=compute-0').
+
+        Returns:
+            str: The UUID of the matching alarm.
+
+        Raises:
+            KeywordException: If no matching alarm is found.
+        """
+        for alarm in self.get_alarms():
+            if alarm.get_alarm_id() == alarm_id and alarm.get_entity_id() == entity_id:
+                return alarm.get_uuid()
+
+        raise KeywordException(
+            f"No alarm found with alarm_id={alarm_id} and entity_id={entity_id}"
+        )

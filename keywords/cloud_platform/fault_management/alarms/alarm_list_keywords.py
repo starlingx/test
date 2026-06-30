@@ -41,18 +41,14 @@ class AlarmListKeywords(BaseKeyword):
 
         return alarms_output
 
-    def alarm_list(self) -> AlarmListObject:
+    def alarm_list(self) -> list[AlarmListObject]:
         """
-        Keyword to get all alarms.
+        Get all alarms as a list.
 
         Returns:
-            AlarmListObject: List of alarm objects retrieved from the system.
+            list[AlarmListObject]: List of alarm objects.
         """
-        output = self._ssh_connection.send(source_openrc("fm alarm-list --nowrap"))
-        self.validate_success_return_code(self._ssh_connection)
-        alarms = AlarmListOutput(output)
-
-        return alarms.get_alarms()
+        return self.get_alarm_list().get_alarms()
 
     def wait_for_all_alarms_cleared(self) -> None:
         """
@@ -157,7 +153,7 @@ class AlarmListKeywords(BaseKeyword):
 
         raise TimeoutError(f"The alarms identified by the following IDs: {alarm_ids} could not be cleared within a period of {self.get_timeout_in_seconds()} seconds.")
 
-    def wait_for_alarms_to_appear(self, alarms: list[AlarmListObject]) -> None:
+    def wait_for_alarms_to_appear(self, alarms: list[AlarmListObject]) -> list[AlarmListObject]:
         """
         Wait for an alarm to appear
 
@@ -167,7 +163,8 @@ class AlarmListKeywords(BaseKeyword):
         Args:
             alarms (list[AlarmListObject]): The list of alarms to wait for.
 
-        Returns: None
+        Returns:
+            list[AlarmListObject]: The matched observed alarms (with UUIDs populated).
 
         Raises:
             TimeoutError: if alarms are not found within the timeout period.
@@ -177,24 +174,34 @@ class AlarmListKeywords(BaseKeyword):
 
         alarm_descriptions = ", ".join(str(alarm) for alarm in alarms)
         while time.time() < end_time:
-            observed_alarms = self.alarm_list()
+            alarm_output = self.get_alarm_list(uuid=True)
+            observed_alarms = alarm_output.get_alarms()
+
+            matched_alarms = []
             all_matched = True
             for expected_alarm_obj in alarms:
-                match_found = any(self.alarms_match(observed_alarm_obj, expected_alarm_obj) for observed_alarm_obj in observed_alarms)
-                if not match_found:
+                match = None
+                for observed_alarm_obj in observed_alarms:
+                    if self.alarms_match(observed_alarm_obj, expected_alarm_obj):
+                        match = observed_alarm_obj
+                        break
+                if match:
+                    matched_alarms.append(match)
+                else:
                     get_logger().log_info(f"Expected alarm not found yet: {expected_alarm_obj}")
                     all_matched = False
                     break
 
             if all_matched:
                 get_logger().log_info(f"All expected alarms are now present: {alarm_descriptions}")
-                return
+                return matched_alarms
 
             get_logger().log_info(f"Waiting for expected alarms. Retrying in {check_interval:.3f} seconds. Remaining time: {end_time - time.time():.3f} seconds.")
             time.sleep(check_interval)
 
         # Final check before raising
-        observed_alarms = self.alarm_list()
+        alarm_output = self.get_alarm_list(uuid=True)
+        observed_alarms = alarm_output.get_alarms()
         observed_alarm_str = [str(observed_alarm_obj) for observed_alarm_obj in observed_alarms]
         raise TimeoutError(f"Timeout. Alarms not found:\nExpected: {alarm_descriptions}\nObserved alarms:\n" + "\n".join(observed_alarm_str))
 
@@ -224,11 +231,13 @@ class AlarmListKeywords(BaseKeyword):
 
         # Perform the comparisons, making each condition clear.
         id_matches = observed_id == expected_id
-        if isinstance(expected_reason_text_pattern, list):
+        if expected_reason_text_pattern is None:
+            reason_text_matches = True
+        elif isinstance(expected_reason_text_pattern, list):
             reason_text_matches = any(re.fullmatch(pattern, observed_reason_text) for pattern in expected_reason_text_pattern)
         else:
             reason_text_matches = re.fullmatch(expected_reason_text_pattern, observed_reason_text)
-        entity_id_matches = observed_entity_id == expected_entity_id
+        entity_id_matches = expected_entity_id is None or observed_entity_id == expected_entity_id
         severity_matches = expected_severity is None or observed_severity == expected_severity
 
         # Return True only if all conditions are met.
@@ -262,17 +271,14 @@ class AlarmListKeywords(BaseKeyword):
         """
         return self._check_interval_in_seconds
 
-    def set_check_interval_in_seconds(self, check_interval_in_seconds: int) -> int:
+    def set_check_interval_in_seconds(self, check_interval_in_seconds: int) -> None:
         """
         Sets the integer representation of the interval in seconds at which this instance will check the alarms again, default value: 3.
 
         Args:
             check_interval_in_seconds (int): An integer representing the interval in seconds to check the alarms again.
-
-        Returns:
-            int: An integer representing the interval in seconds at which this instance will check the alarms again.
         """
-        return self._check_interval_in_seconds
+        self._check_interval_in_seconds = check_interval_in_seconds
 
     def is_alarm_present(self, alarm_id: str) -> bool:
         """

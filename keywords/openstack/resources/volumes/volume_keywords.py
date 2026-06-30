@@ -1,15 +1,15 @@
 """Volume and snapshot CRUD keywords via OpenStack SDK."""
 
 import time
-from typing import Dict, List, Optional
+from typing import List, Optional
 
 from framework.logging.automation_logger import get_logger
 from framework.validation.validation import validate_equals_with_retry
 from keywords.base_keyword import BaseKeyword
 from keywords.openstack.connection.ace_openstack_connection import ACEOpenStackConnection
-from keywords.openstack.resources.volumes.object.backup_object import BackupObject
-from keywords.openstack.resources.volumes.object.backup_output import BackupOutput
-
+from keywords.openstack.resources.volumes.object.backup_list_output import BackupListOutput
+from keywords.openstack.resources.volumes.object.snapshot_list_output import SnapshotListOutput
+from keywords.openstack.resources.volumes.object.volume_list_output import VolumeListOutput
 
 class VolumeKeywords(BaseKeyword):
     """CRUD operations for Cinder volumes and snapshots via OpenStack SDK."""
@@ -24,42 +24,50 @@ class VolumeKeywords(BaseKeyword):
 
     # ── Volume CRUD ─────────────────────────────────────────────────
 
-    def create_volume(self, volume_name: str, size: int = 1) -> Dict:
+    def create_volume(self, volume_name: str, size: int = 1, image: Optional[str] = None) -> VolumeListOutput:
         """Create a volume.
 
         Args:
             volume_name (str): Volume name.
             size (int): Volume size in GB.
+            image (Optional[str]): Image name or ID to create a bootable volume from.
 
         Returns:
-            Dict: Volume details.
+            VolumeListOutput: Output containing the created volume.
         """
-        get_logger().log_info(f"Creating volume '{volume_name}' (size={size}GB)")
-        volume = self.openstack_connection.get_block_storage().create_volume(name=volume_name, size=size)
-        return volume.to_dict()
+        image_ref = None
+        if image:
+            image_ref = self.openstack_connection.get_image().find_image(image).id
+        volume = self.openstack_connection.get_block_storage().create_volume(
+            name=volume_name,
+            size=size,
+            imageRef=image_ref,
+        )
+        return VolumeListOutput([volume.to_dict()])
 
-    def show_volume(self, volume_name_or_id: str) -> Dict:
+    def show_volume(self, volume_name_or_id: str) -> VolumeListOutput:
         """Show volume details.
 
         Args:
             volume_name_or_id (str): Volume name or ID.
 
         Returns:
-            Dict: Volume details.
+            VolumeListOutput: Output containing the volume details.
         """
         storage = self.openstack_connection.get_block_storage()
         volume = storage.find_volume(volume_name_or_id, ignore_missing=False)
-        return storage.get_volume(volume.id).to_dict()
+        return VolumeListOutput([storage.get_volume(volume.id).to_dict()])
 
-    def list_volumes(self) -> List[Dict]:
+    def list_volumes(self) -> VolumeListOutput:
         """List all volumes.
 
         Returns:
-            List[Dict]: List of volume dicts.
+            VolumeListOutput: Parsed volume collection.
         """
-        return [v.to_dict() for v in self.openstack_connection.get_block_storage().volumes()]
+        raw = [v.to_dict() for v in self.openstack_connection.get_block_storage().volumes()]
+        return VolumeListOutput(raw)
 
-    def update_volume(self, volume_name_or_id: str, new_name: Optional[str] = None) -> Dict:
+    def update_volume(self, volume_name_or_id: str, new_name: Optional[str] = None) -> VolumeListOutput:
         """Update a volume's name.
 
         Args:
@@ -67,7 +75,7 @@ class VolumeKeywords(BaseKeyword):
             new_name (Optional[str]): New volume name.
 
         Returns:
-            Dict: Updated volume details.
+            VolumeListOutput: Output containing the updated volume.
         """
         storage = self.openstack_connection.get_block_storage()
         volume = storage.find_volume(volume_name_or_id, ignore_missing=False)
@@ -75,7 +83,7 @@ class VolumeKeywords(BaseKeyword):
         if new_name:
             attrs["name"] = new_name
         updated = storage.update_volume(volume.id, **attrs)
-        return updated.to_dict()
+        return VolumeListOutput([updated.to_dict()])
 
     def delete_volume(self, volume_name_or_id: str) -> None:
         """Delete a volume and wait for removal.
@@ -89,7 +97,7 @@ class VolumeKeywords(BaseKeyword):
         storage.delete_volume(volume.id)
         storage.wait_for_delete(volume)
 
-    def wait_for_volume_status(self, volume_name_or_id: str, expected_status: str, timeout: int = 120, poll_interval: int = 5) -> Dict:
+    def wait_for_volume_status(self, volume_name_or_id: str, expected_status: str, timeout: int = 120, poll_interval: int = 5) -> VolumeListOutput:
         """Poll until volume reaches expected status.
 
         Args:
@@ -99,7 +107,7 @@ class VolumeKeywords(BaseKeyword):
             poll_interval (int): Seconds between polls.
 
         Returns:
-            Dict: Volume details once status is reached.
+            VolumeListOutput: Output containing the volume once status is reached.
 
         Raises:
             TimeoutError: If status is not reached within timeout.
@@ -109,14 +117,14 @@ class VolumeKeywords(BaseKeyword):
         end_time = time.time() + timeout
         while time.time() < end_time:
             volume = storage.find_volume(volume_name_or_id, ignore_missing=False)
-            volume = storage.get_volume(volume.id)
-            current_status = volume.status.lower()
+            volume_detail = storage.get_volume(volume.id)
+            current_status = volume_detail.status.lower()
             if current_status == expected_status.lower():
                 get_logger().log_info(f"Volume '{volume_name_or_id}' reached status '{expected_status}'")
-                return volume.to_dict()
+                return VolumeListOutput([volume_detail.to_dict()])
             if current_status == "error":
                 raise RuntimeError(f"Volume '{volume_name_or_id}' entered error state")
-            get_logger().log_info(f"Volume '{volume_name_or_id}' status is '{volume.status}', waiting for '{expected_status}'...")
+            get_logger().log_info(f"Volume '{volume_name_or_id}' status is '{volume_detail.status}', waiting for '{expected_status}'...")
             time.sleep(poll_interval)
         raise TimeoutError(f"Volume '{volume_name_or_id}' did not reach '{expected_status}' within {timeout}s")
 
@@ -156,7 +164,7 @@ class VolumeKeywords(BaseKeyword):
 
     # ── Snapshot CRUD ───────────────────────────────────────────────
 
-    def create_snapshot(self, volume_name_or_id: str, snapshot_name: str) -> Dict:
+    def create_snapshot(self, volume_name_or_id: str, snapshot_name: str) -> SnapshotListOutput:
         """Create a volume snapshot.
 
         Args:
@@ -164,34 +172,35 @@ class VolumeKeywords(BaseKeyword):
             snapshot_name (str): Snapshot name.
 
         Returns:
-            Dict: Snapshot details.
+            SnapshotListOutput: Output containing the created snapshot.
         """
         get_logger().log_info(f"Creating snapshot '{snapshot_name}' from volume '{volume_name_or_id}'")
         storage = self.openstack_connection.get_block_storage()
         volume = storage.find_volume(volume_name_or_id, ignore_missing=False)
         snapshot = storage.create_snapshot(volume_id=volume.id, name=snapshot_name)
-        return snapshot.to_dict()
+        return SnapshotListOutput([snapshot.to_dict()])
 
-    def show_snapshot(self, snapshot_name_or_id: str) -> Dict:
+    def show_snapshot(self, snapshot_name_or_id: str) -> SnapshotListOutput:
         """Show snapshot details.
 
         Args:
             snapshot_name_or_id (str): Snapshot name or ID.
 
         Returns:
-            Dict: Snapshot details.
+            SnapshotListOutput: Output containing the snapshot details.
         """
         storage = self.openstack_connection.get_block_storage()
         snapshot = storage.find_snapshot(snapshot_name_or_id, ignore_missing=False)
-        return storage.get_snapshot(snapshot.id).to_dict()
+        return SnapshotListOutput([storage.get_snapshot(snapshot.id).to_dict()])
 
-    def list_snapshots(self) -> List[Dict]:
+    def list_snapshots(self) -> SnapshotListOutput:
         """List all volume snapshots.
 
         Returns:
-            List[Dict]: List of snapshot dicts.
+            SnapshotListOutput: Parsed snapshot collection.
         """
-        return [s.to_dict() for s in self.openstack_connection.get_block_storage().snapshots()]
+        raw = [s.to_dict() for s in self.openstack_connection.get_block_storage().snapshots()]
+        return SnapshotListOutput(raw)
 
     def delete_snapshot(self, snapshot_name_or_id: str) -> None:
         """Delete a volume snapshot and wait for removal.
@@ -205,7 +214,7 @@ class VolumeKeywords(BaseKeyword):
         storage.delete_snapshot(snapshot.id)
         storage.wait_for_delete(snapshot)
 
-    def wait_for_snapshot_status(self, snapshot_name_or_id: str, expected_status: str, timeout: int = 120, poll_interval: int = 5) -> Dict:
+    def wait_for_snapshot_status(self, snapshot_name_or_id: str, expected_status: str, timeout: int = 120, poll_interval: int = 5) -> SnapshotListOutput:
         """Poll until snapshot reaches expected status.
 
         Args:
@@ -215,7 +224,7 @@ class VolumeKeywords(BaseKeyword):
             poll_interval (int): Seconds between polls.
 
         Returns:
-            Dict: Snapshot details once status is reached.
+            SnapshotListOutput: Output containing the snapshot once status is reached.
 
         Raises:
             TimeoutError: If status is not reached within timeout.
@@ -229,7 +238,7 @@ class VolumeKeywords(BaseKeyword):
             current_status = snapshot.status.lower()
             if current_status == expected_status.lower():
                 get_logger().log_info(f"Snapshot '{snapshot_name_or_id}' reached status '{expected_status}'")
-                return snapshot.to_dict()
+                return SnapshotListOutput([snapshot.to_dict()])
             if current_status == "error":
                 raise RuntimeError(f"Snapshot '{snapshot_name_or_id}' entered error state")
             get_logger().log_info(f"Snapshot '{snapshot_name_or_id}' status is '{snapshot.status}', waiting for '{expected_status}'...")
@@ -249,49 +258,6 @@ class VolumeKeywords(BaseKeyword):
 
     # ── Backup operations (generic SDK) ──────────────────────────────
 
-    def create_backup(
-        self,
-        volume_name_or_id: str,
-        backup_name: str,
-        incremental: bool = False,
-        force: bool = False,
-        container: Optional[str] = None,
-    ) -> BackupOutput:
-        """Create a volume backup via the standard Cinder SDK API.
-
-        This is the generic backup creation for single-driver deployments.
-        Works with any configured backup driver (Ceph, NFS, iSCSI, Swift,
-        etc.) — no location metadata is needed because the server uses its
-        one configured backup driver automatically.
-
-        For multi-driver deployments (e.g., MultiBackupDriver) that require
-        location metadata to route backups to the correct driver, override
-        this method in a subclass.
-
-        Args:
-            volume_name_or_id (str): Source volume name or ID.
-            backup_name (str): Backup name.
-            incremental (bool): Whether to create an incremental backup.
-            force (bool): Force backup of in-use volumes.
-            container (Optional[str]): Backup container name.
-                If None, uses the server default.
-
-        Returns:
-            BackupOutput: Parsed backup output with typed field accessors.
-        """
-        get_logger().log_info(f"Creating backup '{backup_name}' from volume '{volume_name_or_id}'")
-        storage = self.openstack_connection.get_block_storage()
-        volume = storage.find_volume(volume_name_or_id, ignore_missing=False)
-        backup = storage.create_backup(
-            volume_id=volume.id,
-            name=backup_name,
-            is_incremental=incremental,
-            force=force,
-            container=container,
-        )
-        get_logger().log_info(f"Backup created: id={backup.id}")
-        return BackupOutput(backup.to_dict())
-
     def delete_backup(self, backup_name_or_id: str) -> None:
         """Delete a volume backup.
 
@@ -303,7 +269,7 @@ class VolumeKeywords(BaseKeyword):
         backup = storage.find_backup(backup_name_or_id, ignore_missing=False)
         storage.delete_backup(backup.id)
 
-    def restore_backup(self, backup_name_or_id: str, volume_name_or_id: Optional[str] = None) -> Dict:
+    def restore_backup(self, backup_name_or_id: str, volume_name_or_id: Optional[str] = None) -> BackupListOutput:
         """Restore a volume backup.
 
         Args:
@@ -312,17 +278,16 @@ class VolumeKeywords(BaseKeyword):
                 If None, creates a new volume.
 
         Returns:
-            Dict: Restore result with volume_id.
+            BackupListOutput: Restore result with volume_id.
         """
         get_logger().log_info(f"Restoring backup '{backup_name_or_id}'")
         storage = self.openstack_connection.get_block_storage()
         backup = storage.find_backup(backup_name_or_id, ignore_missing=False)
-        kwargs = {}
+        volume_id = None
         if volume_name_or_id:
-            volume = storage.find_volume(volume_name_or_id, ignore_missing=False)
-            kwargs["volume_id"] = volume.id
-        result = storage.restore_backup(backup.id, **kwargs)
-        return result
+            volume_id = storage.find_volume(volume_name_or_id, ignore_missing=False).id
+        storage.restore_backup(backup.id, volume_id=volume_id)
+        return BackupListOutput([backup.to_dict()])
 
     def wait_for_backup_status(
         self,
@@ -330,7 +295,7 @@ class VolumeKeywords(BaseKeyword):
         expected_status: str,
         timeout: int = 300,
         poll_interval: int = 10,
-    ) -> BackupOutput:
+    ) -> BackupListOutput:
         """Poll until backup reaches expected status.
 
         Uses validate_equals_with_retry with fail-fast on error state.
@@ -342,7 +307,7 @@ class VolumeKeywords(BaseKeyword):
             poll_interval (int): Seconds between polls.
 
         Returns:
-            BackupOutput: Parsed backup output once status is reached.
+            BackupListOutput: Output containing the backup once status is reached.
 
         Raises:
             TimeoutError: If status is not reached within timeout.
@@ -367,7 +332,7 @@ class VolumeKeywords(BaseKeyword):
         backup = storage.find_backup(backup_name_or_id, ignore_missing=False)
         backup = storage.get_backup(backup.id)
         get_logger().log_info(f"Backup '{backup_name_or_id}' reached status '{expected_status}'")
-        return BackupOutput(backup.to_dict())
+        return BackupListOutput([backup.to_dict()])
 
     # ── Cleanup helpers (safe for teardown — never raise) ────────────
 
