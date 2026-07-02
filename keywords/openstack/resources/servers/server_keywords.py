@@ -11,6 +11,7 @@ from keywords.openstack.connection.ace_openstack_connection import ACEOpenStackC
 from keywords.openstack.resources.flavors.flavor_keywords import FlavorKeywords
 from keywords.openstack.resources.images.image_keywords import ImageKeywords
 from keywords.openstack.resources.networks.network_keywords import NetworkKeywords
+from keywords.openstack.resources.servers.object.server_interface_list_output import ServerInterfaceListOutput
 from keywords.openstack.resources.servers.object.server_list_output import ServerListOutput
 
 
@@ -279,4 +280,65 @@ class ServerKeywords(BaseKeyword):
             f"Live-migrating server '{server_name_or_id}' to host '{destination_host or 'auto'}'"
         )
         compute.live_migrate_server(server.id, host=destination_host)
+
+    def attach_interface(
+        self,
+        server_name_or_id: str,
+        network_name_or_id: Optional[str] = None,
+        port_id: Optional[str] = None,
+    ) -> ServerInterfaceListOutput:
+        """Attach a network interface to a server.
+
+        Exactly one of network_name_or_id or port_id must be provided.
+
+        Args:
+            server_name_or_id (str): Server name or ID.
+            network_name_or_id (Optional[str]): Network to attach via auto-created port.
+            port_id (Optional[str]): Pre-existing port ID to attach.
+
+        Returns:
+            ServerInterfaceListOutput: Parsed interface attachment output.
+
+        Raises:
+            ValueError: If neither or both of network and port are provided.
+        """
+        if (network_name_or_id is None) == (port_id is None):
+            raise ValueError("Provide exactly one of network_name_or_id or port_id")
+        compute = self.openstack_connection.get_compute()
+        network_service = self.openstack_connection.get_network()
+        server = compute.find_server(server_name_or_id, ignore_missing=False)
+        if network_name_or_id is not None:
+            network = network_service.find_network(network_name_or_id, ignore_missing=False)
+            get_logger().log_info(f"Attaching network '{network_name_or_id}' to server '{server_name_or_id}'")
+            attachment = compute.create_server_interface(server.id, net_id=network.id)
+        else:
+            get_logger().log_info(f"Attaching port '{port_id}' to server '{server_name_or_id}'")
+            attachment = compute.create_server_interface(server.id, port_id=port_id)
+        return ServerInterfaceListOutput([attachment.to_dict()])
+
+    def detach_interface(self, server_name_or_id: str, port_id: str) -> None:
+        """Detach a network interface from a server.
+
+        Args:
+            server_name_or_id (str): Server name or ID.
+            port_id (str): Port ID to detach.
+        """
+        get_logger().log_info(f"Detaching port '{port_id}' from server '{server_name_or_id}'")
+        compute = self.openstack_connection.get_compute()
+        server = compute.find_server(server_name_or_id, ignore_missing=False)
+        compute.delete_server_interface(port_id, server=server.id)
+
+    def list_interfaces(self, server_name_or_id: str) -> ServerInterfaceListOutput:
+        """List interfaces attached to a server.
+
+        Args:
+            server_name_or_id (str): Server name or ID.
+
+        Returns:
+            ServerInterfaceListOutput: Parsed interface collection.
+        """
+        compute = self.openstack_connection.get_compute()
+        server = compute.find_server(server_name_or_id, ignore_missing=False)
+        raw = [i.to_dict() for i in compute.server_interfaces(server.id)]
+        return ServerInterfaceListOutput(raw)
 
