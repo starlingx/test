@@ -55,7 +55,7 @@ def teardown_local(subcloud_name: str, subcloud_sw_version: str):
     get_logger().log_teardown_step("Removing used backup from local.")
     FileKeywords(subcloud_ssh).delete_folder_with_sudo(f"{local_backup_dir}{subcloud_sw_version}/{subcloud_name}_platform_backup_*.tgz")
 
-def restore_backup(central_ssh: SSHConnection, request, subcloud_name, local: bool = False, override_values: str = None, registry: bool = False, prestage_subcloud: bool = False):
+def restore_backup(central_ssh: SSHConnection, request, subcloud_name, local: bool = False, override_values: str = None, registry: bool = False, prestage_subcloud: bool = False, with_install: bool = True):
     """Restore a subcloud backup from either central or local storage.
 
     Args:
@@ -66,6 +66,7 @@ def restore_backup(central_ssh: SSHConnection, request, subcloud_name, local: bo
         override_values (str): Path to a restore values yaml file. Defaults to None.
         registry (bool): If True, restore registry images as well. Defaults to False.
         prestage_subcloud (bool): If True, prestage the subcloud before restoring. Defaults to False.
+        with_install (bool): If True, attempt restore operation with install. Defaults to True.
     """
     # Gets the subcloud sysadmin password needed for backup creation and deletion on local_path.
     lab_config = ConfigurationManager.get_lab_config().get_subcloud(subcloud_name)
@@ -95,7 +96,7 @@ def restore_backup(central_ssh: SSHConnection, request, subcloud_name, local: bo
 
         DcManagerSubcloudManagerKeywords(central_ssh).get_dcmanager_subcloud_unmanage(subcloud_name, 10)
         # Restore subcloud remote backup
-        dc_manager_backup.restore_subcloud_backup(subcloud_password, central_ssh, subcloud=subcloud_name, local_only=True, with_install=True, release=subcloud_sw_version, restore_values_path=override_values, registry=registry)
+        dc_manager_backup.restore_subcloud_backup(subcloud_password, central_ssh, subcloud=subcloud_name, local_only=True, with_install=with_install, release=subcloud_sw_version, restore_values_path=override_values, registry=registry)
     else:
         if len(FileKeywords(central_ssh).get_files_in_dir(f"{central_backup_dir}{subcloud_name}/{subcloud_sw_version}/",
                                                           True)) < 1:
@@ -108,7 +109,7 @@ def restore_backup(central_ssh: SSHConnection, request, subcloud_name, local: bo
 
         DcManagerSubcloudManagerKeywords(central_ssh).get_dcmanager_subcloud_unmanage(subcloud_name, 10)
         # Restore subcloud remote backup
-        dc_manager_backup.restore_subcloud_backup(subcloud_password, central_ssh, subcloud=subcloud_name, with_install=True, release=subcloud_sw_version, restore_values_path=override_values, registry=registry)
+        dc_manager_backup.restore_subcloud_backup(subcloud_password, central_ssh, subcloud=subcloud_name, with_install=with_install, release=subcloud_sw_version, restore_values_path=override_values, registry=registry)
 
 def restore_backup_group(central_ssh: SSHConnection, request, local: bool = False):
     """Restore a backup for a subcloud group from either central or local storage.
@@ -939,3 +940,33 @@ def test_restore_group_local_backup(request):
 
     central_ssh = LabConnectionKeywords().get_active_controller_ssh()
     restore_backup_group(central_ssh, request, local=True)
+
+@mark.p2
+@mark.lab_has_subcloud
+@mark.subcloud_lab_is_simplex
+def test_restore_central_backup_no_install(request):
+    """
+    Verify subcloud backup restore from a backup stored in
+    central cloud without install.
+    Subcloud must be running an active load.
+
+    Test Steps:
+        - Restore the subcloud backup
+    Teardown:
+        - Remove backup file used for restore
+
+    """
+    central_ssh = LabConnectionKeywords().get_active_controller_ssh()
+    active_controller = SystemHostListKeywords(central_ssh).get_active_controller()
+    standby_controller = SystemHostListKeywords(central_ssh).get_standby_controller()
+
+    # Test should run from controller-0
+    if active_controller.get_host_name() == "controller-1":
+        SystemHostSwactKeywords(central_ssh).host_swact()
+        SystemHostSwactKeywords(central_ssh).wait_for_swact(active_controller, standby_controller)
+
+    # Gets the lowest subcloud (the subcloud with the lowest id).
+    subcloud_name = DcManagerSubcloudListKeywords(
+        central_ssh).get_dcmanager_subcloud_list().get_specific_subcloud_with_lowest_id(
+        backup_status="complete-central").get_name()
+    restore_backup(central_ssh, request, subcloud_name, with_install=False)
