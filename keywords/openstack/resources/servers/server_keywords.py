@@ -262,3 +262,21 @@ class ServerKeywords(BaseKeyword):
                 f"Server {server_obj.get_name()} evacuated from {rebooted_host}",
             )
             get_logger().log_info(f"{server_obj.get_name()}: evacuated {rebooted_host} -> {server_obj.get_host()}")
+
+    def live_migrate_server(self, server_name_or_id: str, destination_host: str = None) -> None:
+        """Live-migrate a server to another host without downtime.
+
+        Args:
+            server_name_or_id (str): Server name or ID to migrate.
+            destination_host (str): Target compute host. If None, Nova scheduler picks.
+
+        Raises:
+            RuntimeError: If server enters ERROR state after migration.
+        """
+        compute = self.openstack_connection.get_compute()
+        server = compute.find_server(server_name_or_id, ignore_missing=False)
+        get_logger().log_info(
+            f"Live-migrating server '{server_name_or_id}' to host '{destination_host or 'auto'}'"
+        )
+        compute.live_migrate_server(server.id, host=destination_host)
+
