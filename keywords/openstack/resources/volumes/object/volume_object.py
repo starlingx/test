@@ -16,6 +16,7 @@ class VolumeObject:
         self.created_at = None
         self.updated_at = None
         self.attachments = None
+        self.host = None
 
     def set_id(self, volume_id: str) -> None:
         """Set the volume ID.
@@ -192,3 +193,19 @@ class VolumeObject:
             str: Human-readable volume summary.
         """
         return f"[ID: {self.get_id()}, Name: {self.get_name()}, Status: {self.get_status()}, Size: {self.get_size()}GB]"
+    
+    def set_host(self, host: str) -> None:
+        """Set the volume host (backend).
+
+        Args:
+            host (str): Volume host string (e.g. 'cinder@ceph-rook-store#ceph-rook-store').
+        """
+        self.host = host
+
+    def get_host(self) -> str:
+        """Get the volume host (backend).
+
+        Returns:
+            str: Volume host string.
+        """
+        return self.host
