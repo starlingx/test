@@ -201,6 +201,63 @@ class VirtctlKeywords(BaseKeyword):
             get_logger().log_error(f"Could not parse free -m output: {free_output}")
             validate_equals(0, expected_memory_mb, f"VM {vm_name} free -m output could not be parsed")
 
+    def verify_virtiofs_serviceaccount_mount(
+        self,
+        vm_name: str,
+        mount_point: str = "/mnt/serviceaccount",
+        username: str = "fedora",
+        password: str = "fedora",
+        namespace: str = "default",
+    ) -> None:
+        """Verify a serviceAccount is shared into the guest via a virtiofs mount.
+
+        Logs into the guest console, confirms the virtiofs filesystem is mounted
+        at the given mount point, and confirms the serviceAccount files
+        (token, namespace, ca.crt) are present. Mirrors the manual verification
+        of the ServiceAccount-as-filesystem test case.
+
+        Example expected guest output::
+
+            $ df -h | grep serviceaccount-fs
+            serviceaccount-fs   94G   12K   94G   1% /mnt/serviceaccount
+            $ ls /mnt/serviceaccount
+            ca.crt  namespace  token
+
+        Args:
+            vm_name (str): Name of the VM/VMI to connect to.
+            mount_point (str): Guest mount point of the virtiofs filesystem. Defaults to '/mnt/serviceaccount'.
+            username (str): Guest login username. Defaults to 'fedora'.
+            password (str): Guest login password. Defaults to 'fedora'.
+            namespace (str): Namespace of the VM/VMI. Defaults to 'default'.
+
+        Raises:
+            KeywordException: If the console login fails.
+            AssertionError: If the mount or the serviceAccount files are missing.
+        """
+        get_logger().log_info(f"Verifying virtiofs serviceAccount mount on VM {vm_name} at {mount_point}")
+
+        namespace_flag = f" -n {namespace}" if namespace != "default" else ""
+        prompts = [
+            PromptResponse(f"{vm_name}", ""),
+            PromptResponse("login:", username),
+            PromptResponse("assword:", password),
+            PromptResponse(r"\$", f"df -h | grep serviceaccount-fs; ls {mount_point}"),
+            PromptResponse(r"\$", "exit"),
+            PromptResponse("login:", None),
+        ]
+
+        self._ssh_connection.send_expect_prompts(f"virtctl console {vm_name}{namespace_flag}", prompts)
+        self.validate_success_return_code(self._ssh_connection)
+
+        guest_output = prompts[3].get_complete_output()
+        get_logger().log_info(f"Guest mount verification output:\n{guest_output}")
+
+        validate_equals(mount_point in guest_output, True, f"virtiofs filesystem should be mounted at {mount_point}")
+        for sa_file in ("token", "namespace", "ca.crt"):
+            validate_equals(sa_file in guest_output, True, f"serviceAccount file '{sa_file}' should be present in {mount_point}")
+
+        get_logger().log_info(f"VM {vm_name} has serviceAccount correctly shared via virtiofs at {mount_point}")
+
     def image_upload(
         self,
         image_path: str,

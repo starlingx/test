@@ -2104,3 +2104,71 @@ def test_launch_vm_with_configured_memory_16gi(request: FixtureRequest):
 
     get_logger().log_test_case_step(f"Verify memory allocation on VM {vm_name}")
     VirtctlKeywords(ssh_connection).check_vm_memory(vm_name, expected_memory_mb=16384)
+
+
+@mark.p2
+def test_launch_vmi_with_serviceaccount_virtiofs(request: FixtureRequest) -> None:
+    """Test launching a Fedora VMI with serviceAccount shared via virtiofs filesystem.
+
+    Validates that a VMI can mount the default serviceAccount token dynamically
+    via virtiofs. Unlike disk-based sharing, virtiofs propagates serviceAccount
+    changes to the VMI without requiring a reboot.
+
+    Note: Live migration is not supported for VMIs using virtiofs.
+
+    Args:
+        request (FixtureRequest): Pytest fixture request for teardown registration.
+
+    Test Steps:
+        - Cleanup and then setup kubevirt environment
+        - Create registry secret for image pulls
+        - Enable the ExperimentalVirtiofsSupport feature gate via the KubeVirt CR
+        - Deploy VMI with a virtiofs serviceaccount filesystem volume
+        - Verify VMI reaches Running state
+        - Verify VMI is ready with IP assignment
+        - Cleanup: Delete VMI and remove kubevirt application
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    vmi_name = "vmi-fedora"
+    vmi_manifest = "vmi-fedora-serviceaccount-fs.yaml"
+    remote_yaml_path = f"{KUBEVIRT_VM_DIR}/{vmi_manifest}"
+    vmi_namespace = "default"
+
+    get_logger().log_setup_step("Cleanup and then setup kubevirt environment")
+    cleanup_kubevirt_environment(ssh_connection)
+
+    def cleanup() -> None:
+        """Clean up VMI and kubevirt environment."""
+        get_logger().log_teardown_step(f"Delete VMI {vmi_name}")
+        KubectlDeleteVmKeywords(ssh_connection).delete_vmi(vmi_name, ignore_not_found=True)
+        get_logger().log_teardown_step("Removing kubevirt application if not already removed")
+        cleanup_kubevirt_environment(ssh_connection)
+
+    request.addfinalizer(cleanup)
+
+    get_logger().log_setup_step("Setting up kubevirt environment")
+    setup_kubevirt_environment(ssh_connection)
+
+    get_logger().log_setup_step("Creating registry secret for image pulls")
+    setup_registry_secret(ssh_connection, request, vmi_namespace)
+
+    get_logger().log_test_case_step("Enabling ExperimentalVirtiofsSupport feature gate via KubeVirt CR")
+    override_helm_with_feature_gates(ssh_connection)
+
+    get_logger().log_test_case_step("Uploading VMI YAML to remote host")
+    file_keywords = FileKeywords(ssh_connection)
+    file_keywords.create_directory(KUBEVIRT_VM_DIR)
+    file_keywords.upload_file(get_stx_resource_path(f"resources/cloud_platform/containers/kubevirt/{vmi_manifest}"), remote_yaml_path)
+
+    get_logger().log_test_case_step(f"Deploying VMI {vmi_name} with virtiofs serviceaccount filesystem")
+    KubectlFileApplyKeywords(ssh_connection).apply_resource_from_yaml(remote_yaml_path)
+
+    get_logger().log_test_case_step(f"Verifying VMI {vmi_name} reaches Running state")
+    kubectl_vmi = KubectlGetVmiKeywords(ssh_connection)
+    kubectl_vmi.wait_for_vmi_status(vmi_name, "Running", timeout=180)
+
+    get_logger().log_test_case_step(f"Verifying VMI {vmi_name} is ready with IP assignment")
+    kubectl_vmi.wait_for_vmi_ready(vmi_name, timeout=60)
+
+    get_logger().log_test_case_step(f"Verifying serviceAccount is shared into VMI {vmi_name} via virtiofs")
+    VirtctlKeywords(ssh_connection).verify_virtiofs_serviceaccount_mount(vmi_name)
