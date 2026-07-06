@@ -70,7 +70,7 @@ class USMConfig:
         self.alarm_restrictions = usm_dict.get("alarm_restrictions", "")
 
         # Combined Platform & Kubernetes upgrade flag
-        self.combined_upgrade = usm_dict.get("combined_upgrade", True)
+        self.combined_upgrade = usm_dict.get("combined_upgrade", False)
 
         # Test patches configuration for per-test patch resolution
         self.test_patches = usm_dict.get("test_patches", None)
