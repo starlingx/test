@@ -205,6 +205,53 @@ class SSHTunnelRestClient:
         response = requests.post(modified_url, headers=headers_dict, data=data, verify=False)
         return RestResponse(response)
 
+    def delete(self, url: str, headers: dict | list | None = None) -> RestResponse:
+        """Run a DELETE request through the paramiko port forwarder.
+
+        Args:
+            url (str): The URL to DELETE.
+            headers (dict | list | None): Optional request headers.
+
+        Returns:
+            RestResponse: The response.
+        """
+        headers_dict = self._normalize_headers(headers)
+        modified_url = self._rewrite_url(url)
+        response = requests.delete(modified_url, headers=headers_dict, verify=False)
+        return RestResponse(response)
+
+    def patch(self, url: str, data: dict | str | None = None, headers: dict | list | None = None) -> RestResponse:
+        """Run a PATCH request through the paramiko port forwarder.
+
+        Args:
+            url (str): The URL to PATCH.
+            data (dict | str | None): The request body.
+            headers (dict | list | None): Optional request headers.
+
+        Returns:
+            RestResponse: The response.
+        """
+        headers_dict = self._normalize_headers(headers)
+        modified_url = self._rewrite_url(url)
+        response = requests.patch(modified_url, headers=headers_dict, json=data, verify=False)
+        return RestResponse(response)
+
+    def put(self, url: str, data: dict | str | None = None, headers: dict | list | None = None) -> RestResponse:
+        """Run a PUT request through the paramiko port forwarder.
+
+        Args:
+            url (str): The URL to PUT.
+            data (dict | str | None): The request body.
+            headers (dict | list | None): Optional request headers.
+
+        Returns:
+            RestResponse: The response.
+        """
+        headers_dict = self._normalize_headers(headers)
+        modified_url = self._rewrite_url(url)
+        response = requests.put(modified_url, headers=headers_dict, json=data, verify=False)
+        return RestResponse(response)
+
     def close(self) -> None:
         """Stop all port forwarders and close the jump host connection."""
         with SSHTunnelRestClient._lock:
