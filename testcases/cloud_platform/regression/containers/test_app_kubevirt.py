@@ -601,11 +601,14 @@ def test_launch_vm_after_lock_unlock_compute(request: FixtureRequest):
 @mark.lab_is_simplex
 def test_launch_vm_after_lock_unlock(request: FixtureRequest):
     """
-    Test launching VM and verify it recovers after lock/unlock of the node.
+    Test launching a VM and verify it keeps running across a lock/unlock of the node.
 
-    This test targets simplex systems where there is only one node.
-    Locking the node causes the VM to become unschedulable, and unlocking
-    allows it to recover.
+    This test targets simplex (AIO-SX) systems where there is only one node.
+    On AIO-SX, locking the host does NOT stop a running KubeVirt VM: the
+    virt-launcher pod tolerates the 'services=disabled:NoExecute' taint applied
+    on lock, so the VM stays in the Running state and remains accessible. This
+    test asserts that behavior rather than expecting the VM to become
+    unschedulable.
 
     Test Steps:
         - Setup kubevirt environment
@@ -614,11 +617,12 @@ def test_launch_vm_after_lock_unlock(request: FixtureRequest):
         - Verify VM and VMI are running on the node
         - Login to VM via virtctl console
         - Lock the node
-        - Verify VM becomes ErrorUnschedulable after lock
+        - Verify VM and VMI stay Running after lock
+        - Verify VM console is still accessible while the node is locked
         - Unlock the node
         - Verify kubevirt application is in applied state after unlock
         - Verify kubevirt pods are running after unlock
-        - Verify VM and VMI recover to Running state after unlock
+        - Verify VM and VMI are still Running after unlock
         - Verify VM console is accessible after unlock
     """
     vm_name = "vm-cirros"
@@ -687,8 +691,15 @@ def test_launch_vm_after_lock_unlock(request: FixtureRequest):
     get_logger().log_test_case_step(f"Locking node {target_node}")
     system_host_lock.lock_host(target_node)
 
-    get_logger().log_test_case_step(f"Verifying VM {vm_name} is ErrorUnschedulable after lock")
-    kubectl_vm.wait_for_vm_status(vm_name, "ErrorUnschedulable", timeout=240)
+    # On AIO-SX the virt-launcher pod tolerates the 'services=disabled:NoExecute'
+    # taint applied on lock, so the VM is NOT evicted and stays Running (and
+    # accessible) while the node is locked.
+    get_logger().log_test_case_step(f"Verifying VM and VMI {vm_name} stay Running after lock")
+    kubectl_vm.wait_for_vm_status(vm_name, "Running", timeout=120)
+    kubectl_vmi.wait_for_vmi_status(vm_name, "Running", timeout=120)
+
+    get_logger().log_test_case_step(f"Verifying VM {vm_name} console is accessible while node is locked")
+    VirtctlKeywords(ssh_connection).verify_vm_console_accessible(vm_name)
 
     get_logger().log_test_case_step(f"Unlocking node {target_node}")
     system_host_lock.unlock_host(target_node)
@@ -701,7 +712,7 @@ def test_launch_vm_after_lock_unlock(request: FixtureRequest):
     kubectl_pods.wait_for_pods_to_reach_status(expected_status="Running", pod_names=CDI_EXPECTED_PODS, namespace=CDI_NAMESPACE, timeout=120)
     kubectl_pods.wait_for_pods_to_reach_status(expected_status="Running", pod_names=KUBEVIRT_EXPECTED_PODS, namespace=KUBEVIRT_NAMESPACE, timeout=120)
 
-    get_logger().log_test_case_step(f"Verifying VM and VMI {vm_name} recover to Running state after unlock")
+    get_logger().log_test_case_step(f"Verifying VM and VMI {vm_name} are still Running after unlock")
     kubectl_vm.wait_for_vm_status(vm_name, "Running", timeout=300)
     kubectl_vmi.wait_for_vmi_status(vm_name, "Running", timeout=120)
 
