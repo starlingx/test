@@ -55,12 +55,15 @@ CDI_EXPECTED_PODS = ["cdi-apiserver", "cdi-deployment", "cdi-operator", "cdi-upl
 
 # For virtctl setup
 PATH_VARIABLE = "/home/sysadmin/bin"
-VIRTCTL_PATH = "/var/opt/kubevirt/virtctl"
+VIRTCTL_PATH = "/home/sysadmin/bin/virtctl"
 
 
 def setup_virtctl_on_controller(ssh_connection: SSHConnection) -> bool:
     """
     Setup virtctl on a single controller.
+
+    Newer kubevirt-app installs virtctl directly at /home/sysadmin/bin/virtctl.
+    This function verifies it exists there.
 
     Args:
         ssh_connection (SSHConnection): SSH connection to controller.
@@ -71,13 +74,15 @@ def setup_virtctl_on_controller(ssh_connection: SSHConnection) -> bool:
     file_keywords = FileKeywords(ssh_connection)
     file_keywords.create_directory(PATH_VARIABLE)
 
-    get_logger().log_info("Finding virtctl executable path")
+    get_logger().log_info(f"Verifying virtctl exists at {VIRTCTL_PATH}")
     ls_keywords = LsKeywords(ssh_connection)
     actual_virtctl_path = ls_keywords.get_first_matching_file(VIRTCTL_PATH)
 
-    get_logger().log_info(f"Creating symbolic link to virtctl at {PATH_VARIABLE}/virtctl")
-    ln_keywords = LnKeywords(ssh_connection)
-    ln_keywords.create_symbolic_link_to_a_file(actual_virtctl_path, f"{PATH_VARIABLE}/virtctl")
+    if not actual_virtctl_path:
+        get_logger().log_info(f"virtctl not found at {VIRTCTL_PATH}")
+        return False
+
+    get_logger().log_info(f"virtctl found at {actual_virtctl_path}")
     ssh_connection.close()
 
 
