@@ -82,6 +82,9 @@ def verify_backup_local(central_ssh: SSHConnection, subcloud_name: str, custom_p
         get_user = lab_config.get_admin_credentials().get_user_name()
         home_path = f"/home/{get_user}/"
 
+        # Redirect the local backup to the home directory via a backup-values override
+        backup_yaml = f"{subcloud_name}_backup_values.yaml"
+        FileKeywords(central_ssh).create_file_with_echo(backup_yaml, f"backup_dir: {home_path}")
         dc_manager_backup.create_subcloud_backup(subcloud_password, subcloud_ssh, path=f"{home_path}{subcloud_name}_platform_backup_*.tgz", subcloud=subcloud_name, local_only=True, backup_yaml=backup_yaml)
     else:
         backup_path = f"/opt/platform-backup/backups/{subcloud_sw_version}/"
