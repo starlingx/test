@@ -411,6 +411,7 @@ class DcManagerSubcloudBackupKeywords(BaseKeyword):
         group: Optional[str] = None,
         registry: bool = False,
         factory: bool = False,
+        auto_restore: bool = False,
         release: Optional[str] = None,
         subcloud_list: Optional[list] = None,
         timeout: int = 3600,
@@ -457,6 +458,8 @@ class DcManagerSubcloudBackupKeywords(BaseKeyword):
             cmd += " --registry-images"
         if release:
             cmd += f" --release {release}"
+        if auto_restore:
+            cmd += " --auto"
 
         self.ssh_connection.send(source_openrc(cmd))
         self.validate_success_return_code(self.ssh_connection)
