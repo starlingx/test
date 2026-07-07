@@ -1,6 +1,7 @@
 from typing import Iterable, List, Optional, Tuple
 
 from config.configuration_manager import ConfigurationManager
+from config.lab.objects.lab_type_enum import LabTypeEnum
 from framework.exceptions.keyword_exception import KeywordException
 from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
@@ -51,8 +52,9 @@ class SubcloudPickerKeywords(BaseKeyword):
         *,
         management_status: Optional[DcManagerSubcloudListManagementEnum] = None,
         availability: Optional[DcManagerSubcloudListAvailabilityEnum] = None,
-        in_sync: bool = True,
+        in_sync: Optional[bool] = None,
         load: Optional[str] = None,
+        lab_type: Optional[LabTypeEnum] = None,
         present_in_config: bool = True,
     ) -> SubcloudPickResult:
         """Return the lowest-id subcloud satisfying every supplied filter.
@@ -64,16 +66,18 @@ class SubcloudPickerKeywords(BaseKeyword):
             availability (Optional[DcManagerSubcloudListAvailabilityEnum]):
                 Required availability state from ``dcmanager subcloud list``
                 (e.g. ONLINE).
-            in_sync (bool): When True (default), only subclouds whose ``sync``
-                column in ``dcmanager subcloud list`` equals ``"in-sync"`` are
-                accepted. When False, only subclouds whose ``sync`` column
-                equals ``"out-of-sync"`` are accepted. Other states (e.g.
-                ``"syncing"``) are rejected in both cases.
+            in_sync (Optional[bool]): When True, only subclouds whose ``sync``
+                column equals ``"in-sync"`` are accepted. When False, only
+                subclouds whose ``sync`` column equals ``"out-of-sync"`` are
+                accepted. When None (default), the sync state is not checked.
             load (Optional[str]): Software version filter. Accepts the
                 literal ``"N-1"`` (resolved against the central cloud version
                 manager) or an explicit version string (e.g. ``"24.09"``).
                 When provided, ``dcmanager subcloud show <name>`` is called
                 per surviving candidate.
+            lab_type (Optional[LabTypeEnum]): Lab type filter (e.g. SIMPLEX,
+                DUPLEX). When provided, only subclouds whose lab type in the
+                config matches are accepted. Requires ``present_in_config=True``.
             present_in_config (bool): When True (default), the subcloud must
                 also appear in ``LabConfig.get_subcloud_names()``.
 
@@ -89,6 +93,7 @@ class SubcloudPickerKeywords(BaseKeyword):
             availability=availability,
             in_sync=in_sync,
             load=load,
+            lab_type=lab_type,
             present_in_config=present_in_config,
         )
         return results[0]
@@ -98,8 +103,9 @@ class SubcloudPickerKeywords(BaseKeyword):
         *,
         management_status: Optional[DcManagerSubcloudListManagementEnum] = None,
         availability: Optional[DcManagerSubcloudListAvailabilityEnum] = None,
-        in_sync: bool = True,
+        in_sync: Optional[bool] = None,
         load: Optional[str] = None,
+        lab_type: Optional[LabTypeEnum] = None,
         present_in_config: bool = True,
     ) -> List[SubcloudPickResult]:
         """Return all subclouds satisfying every supplied filter, ordered by id.
@@ -109,6 +115,7 @@ class SubcloudPickerKeywords(BaseKeyword):
             availability: see ``pick_one``.
             in_sync: see ``pick_one``.
             load: see ``pick_one``.
+            lab_type: see ``pick_one``.
             present_in_config: see ``pick_one``.
 
         Returns:
@@ -124,6 +131,7 @@ class SubcloudPickerKeywords(BaseKeyword):
                 availability=availability,
                 in_sync=in_sync,
                 load=load,
+                lab_type=lab_type,
                 present_in_config=present_in_config,
             )
         )
@@ -133,8 +141,9 @@ class SubcloudPickerKeywords(BaseKeyword):
         *,
         management_status: Optional[DcManagerSubcloudListManagementEnum],
         availability: Optional[DcManagerSubcloudListAvailabilityEnum],
-        in_sync: bool,
+        in_sync: Optional[bool],
         load: Optional[str],
+        lab_type: Optional[LabTypeEnum],
         present_in_config: bool,
     ) -> List[SubcloudPickResult]:
         """Run the full filter pipeline. See ``pick_one``/``pick_all``."""
@@ -143,16 +152,23 @@ class SubcloudPickerKeywords(BaseKeyword):
             availability=availability,
             in_sync=in_sync,
             load=load,
+            lab_type=lab_type,
             present_in_config=present_in_config,
         )
         load_resolved = self._resolve_load(load)
-        expected_sync = self._IN_SYNC_VALUE if in_sync else self._OUT_OF_SYNC_VALUE
+        if in_sync is True:
+            expected_sync = self._IN_SYNC_VALUE
+        elif in_sync is False:
+            expected_sync = self._OUT_OF_SYNC_VALUE
+        else:
+            expected_sync = None
 
         filter_set = {
             "management_status": management_status.value if management_status is not None else None,
             "availability": availability.value if availability is not None else None,
             "in_sync": in_sync,
             "load": self._format_load_for_log(load, load_resolved),
+            "lab_type": lab_type.value if lab_type is not None else None,
             "present_in_config": present_in_config,
         }
         get_logger().log_info(f"SubcloudPickerKeywords: applied filters: {filter_set}")
@@ -171,6 +187,7 @@ class SubcloudPickerKeywords(BaseKeyword):
             management_status=management_status,
             availability=availability,
             expected_sync=expected_sync,
+            lab_type=lab_type,
             present_in_config=present_in_config,
             configured_names=configured_names,
         )
@@ -193,8 +210,9 @@ class SubcloudPickerKeywords(BaseKeyword):
         *,
         management_status: Optional[DcManagerSubcloudListManagementEnum],
         availability: Optional[DcManagerSubcloudListAvailabilityEnum],
-        in_sync: bool,
+        in_sync: Optional[bool],
         load: Optional[str],
+        lab_type: Optional[LabTypeEnum],
         present_in_config: bool,
     ) -> None:
         """Reject invalid parameter types before any SSH activity occurs."""
@@ -208,11 +226,20 @@ class SubcloudPickerKeywords(BaseKeyword):
                 "SubcloudPickerKeywords: invalid parameter 'availability': "
                 f"expected None or DcManagerSubcloudListAvailabilityEnum, received {type(availability).__name__} ({availability!r})."
             )
-        # bool is a subclass of int; check type strictly to avoid accepting ints as booleans.
-        if type(in_sync) is not bool:
+        if in_sync is not None and type(in_sync) is not bool:
             raise KeywordException(
                 "SubcloudPickerKeywords: invalid parameter 'in_sync': "
-                f"expected bool, received {type(in_sync).__name__} ({in_sync!r})."
+                f"expected None or bool, received {type(in_sync).__name__} ({in_sync!r})."
+            )
+        if lab_type is not None and not isinstance(lab_type, LabTypeEnum):
+            raise KeywordException(
+                "SubcloudPickerKeywords: invalid parameter 'lab_type': "
+                f"expected None or LabTypeEnum, received {type(lab_type).__name__} ({lab_type!r})."
+            )
+        if lab_type is not None and not present_in_config:
+            raise KeywordException(
+                "SubcloudPickerKeywords: invalid parameter combination: 'lab_type' requires 'present_in_config=True' "
+                "since lab type is resolved from the lab config."
             )
         if type(present_in_config) is not bool:
             raise KeywordException(
@@ -234,7 +261,8 @@ class SubcloudPickerKeywords(BaseKeyword):
 
         Args:
             load (Optional[str]): Raw filter value. ``None`` or an explicit
-                version is returned unchanged. The literal ``"N-1"`` is
+                version is returned unchanged. The literal ``"N"`` is resolved
+                to the current system version. The literal ``"N-1"`` is
                 resolved against the version manager.
 
         Returns:
@@ -244,6 +272,8 @@ class SubcloudPickerKeywords(BaseKeyword):
         """
         if load is None:
             return None
+        if load == "N":
+            return self._version_mgr.get_sw_version().get_name()
         if load != "N-1":
             return load
 
@@ -273,7 +303,8 @@ class SubcloudPickerKeywords(BaseKeyword):
         subclouds: Iterable[DcManagerSubcloudListObject],
         management_status: Optional[DcManagerSubcloudListManagementEnum],
         availability: Optional[DcManagerSubcloudListAvailabilityEnum],
-        expected_sync: str,
+        expected_sync: Optional[str],
+        lab_type: Optional[LabTypeEnum],
         present_in_config: bool,
         configured_names: Optional[List[str]],
     ) -> Tuple[List[Tuple[DcManagerSubcloudListObject, Optional[DcManagerSubcloudShowObject]]], List[Tuple[str, str]]]:
@@ -286,6 +317,9 @@ class SubcloudPickerKeywords(BaseKeyword):
         survivors: List[Tuple[DcManagerSubcloudListObject, Optional[DcManagerSubcloudShowObject]]] = []
         rejections: List[Tuple[str, str]] = []
         configured_set = set(configured_names) if configured_names is not None else None
+
+        # Build lab type lookup from config if lab_type filter is active
+        lab_config = ConfigurationManager.get_lab_config() if lab_type is not None else None
 
         for sc in subclouds:
             name = sc.get_name()
@@ -308,7 +342,7 @@ class SubcloudPickerKeywords(BaseKeyword):
                     )
                 )
                 continue
-            if sc.get_sync() != expected_sync:
+            if expected_sync is not None and sc.get_sync() != expected_sync:
                 rejections.append(
                     (
                         name,
@@ -316,6 +350,16 @@ class SubcloudPickerKeywords(BaseKeyword):
                     )
                 )
                 continue
+            if lab_type is not None:
+                sc_config = lab_config.get_subcloud(name)
+                if sc_config.get_lab_type() != lab_type.value:
+                    rejections.append(
+                        (
+                            name,
+                            f"lab_type={sc_config.get_lab_type()} (expected {lab_type.value})",
+                        )
+                    )
+                    continue
             survivors.append((sc, None))
         return survivors, rejections
 
@@ -384,3 +428,68 @@ class SubcloudPickerKeywords(BaseKeyword):
         else:
             lines.append("Evaluated candidates: none survived the 'subcloud list' pre-filter.")
         return "\n".join(lines)
+
+
+def pick_subcloud_with_fallback(
+    *,
+    availability: Optional[DcManagerSubcloudListAvailabilityEnum] = None,
+    management_status: Optional[DcManagerSubcloudListManagementEnum] = None,
+    in_sync: Optional[bool] = None,
+    load: Optional[str] = None,
+    lab_type: Optional[LabTypeEnum] = None,
+    present_in_config: bool = True,
+) -> Tuple[SSHConnection, "SubcloudPickResult"]:
+    """Pick a subcloud with automatic fallback to secondary system controller.
+
+    Tries the primary system controller first. If no subcloud matches and a
+    secondary system controller is configured, retries on the secondary.
+    This supports post-rehoming scenarios where subclouds may have moved
+    to the peer cloud.
+
+    When no secondary system controller is configured, behaves identically
+    to calling SubcloudPickerKeywords.pick_one() directly.
+
+    Args:
+        availability (Optional[DcManagerSubcloudListAvailabilityEnum]): Availability filter.
+        management_status (Optional[DcManagerSubcloudListManagementEnum]): Management filter.
+        in_sync (Optional[bool]): Sync filter. None = skip, True = in-sync, False = out-of-sync.
+        load (Optional[str]): Software version filter. "N", "N-1", or explicit version.
+        lab_type (Optional[LabTypeEnum]): Lab type filter (SIMPLEX, DUPLEX).
+        present_in_config (bool): Whether subcloud must be in lab config.
+
+    Returns:
+        Tuple[SSHConnection, SubcloudPickResult]: The SSH connection to the system
+            controller that owns the subcloud, and the pick result.
+
+    Raises:
+        KeywordException: If no subcloud matches on either system controller.
+    """
+    from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
+
+    system_controller_ssh = LabConnectionKeywords().get_active_controller_ssh()
+
+    try:
+        result = SubcloudPickerKeywords(system_controller_ssh).pick_one(
+            availability=availability,
+            management_status=management_status,
+            in_sync=in_sync,
+            load=load,
+            lab_type=lab_type,
+            present_in_config=present_in_config,
+        )
+        return system_controller_ssh, result
+    except KeywordException:
+        secondary_config = ConfigurationManager.get_lab_config().get_secondary_system_controller()
+        if secondary_config is None:
+            raise
+        get_logger().log_info("No matching subcloud on primary SC, falling back to secondary system controller")
+        system_controller_ssh = LabConnectionKeywords().get_secondary_active_controller_ssh()
+        result = SubcloudPickerKeywords(system_controller_ssh).pick_one(
+            availability=availability,
+            management_status=management_status,
+            in_sync=in_sync,
+            load=load,
+            lab_type=lab_type,
+            present_in_config=present_in_config,
+        )
+        return system_controller_ssh, result
