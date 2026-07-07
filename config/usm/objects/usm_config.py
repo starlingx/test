@@ -75,6 +75,12 @@ class USMConfig:
         # Test patches configuration for per-test patch resolution
         self.test_patches = usm_dict.get("test_patches", None)
 
+        # Compare tool options
+        self.baseline_backup_path = usm_dict.get("baseline_backup_path", "")
+        self.target_backup_path = usm_dict.get("target_backup_path", "")
+        self.backup_compare_args = usm_dict.get("backup_compare_args", "")
+        self.backup_compare_exclude_file = usm_dict.get("backup_compare_exclude_file", "")
+
     def validate_config(self) -> None:
         """
         Validate config values for logical consistency.
@@ -883,3 +889,67 @@ class USMConfig:
         if not dependents:
             raise ValueError("dependent_patches not configured in test_patches")
         return [dep["release_id"] for dep in dependents]
+
+    def get_baseline_backup_path(self) -> str:
+        """Get the path to the baseline backup tar/tgz for comparison.
+
+        Returns:
+            str: Absolute path to the baseline backup file.
+        """
+        return self.baseline_backup_path
+
+    def set_baseline_backup_path(self, value: str) -> None:
+        """Set the path to the baseline backup tar/tgz for comparison.
+
+        Args:
+            value (str): Absolute path to the baseline backup file.
+        """
+        self.baseline_backup_path = value
+
+    def get_target_backup_path(self) -> str:
+        """Get the path to the target backup tar/tgz for comparison.
+
+        Returns:
+            str: Absolute path to the target backup file, or empty for running system mode.
+        """
+        return self.target_backup_path
+
+    def set_target_backup_path(self, value: str) -> None:
+        """Set the path to the target backup tar/tgz for comparison.
+
+        Args:
+            value (str): Absolute path to the target backup file.
+        """
+        self.target_backup_path = value
+
+    def get_backup_compare_args(self) -> str:
+        """Get additional CLI arguments for backup-compare.py.
+
+        Returns:
+            str: Extra CLI flags (e.g. "--verbose --raw --cache").
+        """
+        return self.backup_compare_args
+
+    def set_backup_compare_args(self, value: str) -> None:
+        """Set additional CLI arguments for backup-compare.py.
+
+        Args:
+            value (str): Extra CLI flags (e.g. "--verbose --raw --cache").
+        """
+        self.backup_compare_args = value
+
+    def get_backup_compare_exclude_file(self) -> str:
+        """Get the path to the YAML exclude file for backup-compare.py.
+
+        Returns:
+            str: Path to YAML file with paths to exclude, or empty if not set.
+        """
+        return self.backup_compare_exclude_file
+
+    def set_backup_compare_exclude_file(self, value: str) -> None:
+        """Set the path to the YAML exclude file for backup-compare.py.
+
+        Args:
+            value (str): Path to YAML file with paths to exclude.
+        """
+        self.backup_compare_exclude_file = value

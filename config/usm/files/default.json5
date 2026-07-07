@@ -83,5 +83,14 @@
     "single_release_id": "",
     "dependent_prefix": "",
     "dependent_patches": []
-  }
+  },
+  // Backup comparison settings
+  // baseline_backup_path: path to the baseline backup tar/tgz (required for comparison)
+  // target_backup_path: path to the target backup tar/tgz (if empty, uses --running_system mode)
+  // backup_compare_args: additional CLI args for backup-compare.py (e.g., "--running_system --cache")
+  // backup_compare_exclude_file: path to the yml file with files to be excluded from the comparison
+  "baseline_backup_path": "",
+  "target_backup_path": "",
+  "backup_compare_args": "",
+  "backup_compare_exclude_file": ""
 }
