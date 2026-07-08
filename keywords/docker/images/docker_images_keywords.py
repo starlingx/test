@@ -25,7 +25,7 @@ class DockerImagesKeywords(BaseKeyword):
         Returns:
             list[DockerImagesOutput]: List of DockerImagesOutput objects representing the images
         """
-        output = self.ssh_connection.send_as_sudo("docker images")
+        output = self.ssh_connection.send_as_sudo(r'docker images --format "table {{.Repository}}\t{{.Tag}}\t{{.ID}}\t{{.CreatedSince}}\t{{.Size}}"')
         docker_images = DockerImagesOutput(output).get_images()
         return docker_images
 

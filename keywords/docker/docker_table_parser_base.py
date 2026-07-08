@@ -48,9 +48,11 @@ class DockerTableParserBase:
 
         for line in self.docker_output:
             if not found_headers:
-                # Handle Headers.
-                found_headers = True
-                headers = self.get_headers(line)
+                # Handle Headers - skip lines until we find one containing expected header keywords.
+                if any(header in line for header in self.possible_headers):
+                    found_headers = True
+                    headers = self.get_headers(line)
+                continue
 
             else:
 
