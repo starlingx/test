@@ -1,4 +1,5 @@
-from typing import List, Optional, Tuple
+import time
+from typing import Dict, List, Optional, Tuple
 
 from config.configuration_manager import ConfigurationManager
 from config.lab.objects.lab_type_enum import LabTypeEnum
@@ -240,6 +241,170 @@ def rehome_operation_cleanup(
     DcManagerSubcloudDeleteKeywords(remove_subcloud_ssh).dcmanager_subcloud_delete(subcloud_name)
 
 
+def perform_batch_rehome_operation(
+    origin_ssh_connection: SSHConnection,
+    destination_ssh_connection: SSHConnection,
+    subclouds: List[Dict[str, str]],
+    sync_assets: bool = True,
+    release: Optional[str] = None,
+) -> None:
+    """Rehome multiple subclouds in parallel from origin to destination system controller.
+
+    Triggers all migrate operations first, then polls all subclouds to completion.
+    This is significantly faster than sequential rehoming when multiple subclouds
+    need to be moved.
+
+    Args:
+        origin_ssh_connection (SSHConnection): SSH connection to the origin system controller.
+        destination_ssh_connection (SSHConnection): SSH connection to the destination system controller.
+        subclouds (List[Dict[str, str]]): List of subcloud descriptors. Each dict must contain:
+            - "name": Subcloud name.
+            - "bootstrap_values": Path to the subcloud bootstrap values file.
+            - "install_values": Path to the subcloud install values file.
+        sync_assets (bool): Whether to copy subcloud configuration files between hosts.
+        release (Optional[str]): Software release version to pass to the migrate command.
+            Required for N-1 subclouds. When None, no --release flag is passed.
+
+    Raises:
+        ValueError: If subclouds list is empty.
+        Exception: If any subcloud enters a failed state during rehoming.
+    """
+    if not subclouds:
+        raise ValueError("subclouds list must not be empty.")
+
+    subcloud_names = [sc["name"] for sc in subclouds]
+    get_logger().log_info(f"Starting batch rehome for subclouds: {subcloud_names}")
+
+    # Phase 1: Verify software release on destination.
+    verify_software_release(destination_ssh_connection)
+
+    # Phase 2: Sync deployment assets for all subclouds.
+    if sync_assets:
+        for sc in subclouds:
+            get_logger().log_info(f"Synchronizing deployment assets for subcloud {sc['name']}")
+            sync_deployment_assets_between_system_controllers(
+                origin_ssh_connection,
+                destination_ssh_connection,
+                sc["name"],
+                sc["bootstrap_values"],
+                sc["install_values"],
+            )
+
+    dcm_sc_kw_origin = DcManagerSubcloudManagerKeywords(origin_ssh_connection)
+    dcm_sc_list_kw_origin = DcManagerSubcloudListKeywords(origin_ssh_connection)
+    dcm_sc_list_kw_destination = DcManagerSubcloudListKeywords(destination_ssh_connection)
+
+    # Phase 3: Unmanage all subclouds on origin (skip if already unmanaged).
+    for sc in subclouds:
+        sc_list_output = dcm_sc_list_kw_origin.get_dcmanager_subcloud_list()
+        if sc_list_output.is_subcloud_in_output(sc["name"]):
+            sc_obj = sc_list_output.get_subcloud_by_name(sc["name"])
+            if sc_obj.get_management() != "unmanaged":
+                get_logger().log_info(f"Unmanaging subcloud {sc['name']} on origin")
+                dcm_sc_kw_origin.get_dcmanager_subcloud_unmanage(sc["name"], 30)
+            else:
+                get_logger().log_info(f"Subcloud {sc['name']} is already unmanaged, skipping unmanage step")
+
+    # Phase 4: Trigger migrate for all subclouds (async — does not wait for completion).
+    for sc in subclouds:
+        get_logger().log_info(f"Triggering migrate for subcloud {sc['name']}")
+        DcManagerSubcloudAddKeywords(destination_ssh_connection).dcmanager_subcloud_add_migrate(
+            sc["name"],
+            bootstrap_values=sc["bootstrap_values"],
+            install_values=sc["install_values"],
+            release_id=release,
+        )
+
+    # Phase 5: Poll all subclouds until they reach 'complete' status.
+    get_logger().log_info(f"All migrate commands issued. Waiting for subclouds to complete rehoming: {subcloud_names}")
+    _wait_for_batch_rehome_completion(dcm_sc_list_kw_destination, subcloud_names)
+
+    # Phase 6: Post-rehome cleanup — manage on destination, delete from origin.
+    for sc_name in subcloud_names:
+        get_logger().log_info(f"Post-rehome cleanup for subcloud {sc_name}")
+        rehome_operation_cleanup(origin_ssh_connection, destination_ssh_connection, sc_name)
+
+    get_logger().log_info(f"Batch rehome completed successfully for subclouds: {subcloud_names}")
+
+
+def _wait_for_batch_rehome_completion(
+    dcm_sc_list_kw: DcManagerSubcloudListKeywords,
+    subcloud_names: List[str],
+    timeout: int = 4800,
+    polling_sleep_time: int = 60,
+) -> None:
+    """Poll subclouds until all reach a terminal state (complete or failed).
+
+    Waits for every subcloud to finish before reporting results. If any subcloud
+    fails, the function still waits for the remaining ones to reach a terminal
+    state, then raises with a summary of successes and failures.
+
+    Args:
+        dcm_sc_list_kw (DcManagerSubcloudListKeywords): Keywords instance for the destination system controller.
+        subcloud_names (List[str]): Names of subclouds to monitor.
+        timeout (int): Maximum seconds to wait for all subclouds to finish.
+        polling_sleep_time (int): Seconds between polling attempts.
+
+    Raises:
+        Exception: If any subcloud ends in a failed state (after all others finish).
+        TimeoutError: If not all subclouds reach a terminal state within timeout.
+    """
+    failed_statuses = [
+        "bootstrap-failed",
+        "install-failed",
+        "create-failed",
+        "config-failed",
+        "pre-enroll-failed",
+        "enroll-failed",
+        "pre-init-enroll-failed",
+        "init-enroll-failed",
+        "rehome-failed",
+    ]
+    pending = set(subcloud_names)
+    completed = []
+    failed = []
+    end_time = time.time() + timeout
+
+    while pending and time.time() < end_time:
+        sc_list_output = dcm_sc_list_kw.get_dcmanager_subcloud_list()
+        finished_this_round = []
+
+        for sc_name in pending:
+            if not sc_list_output.is_subcloud_in_output(sc_name):
+                continue
+            sc_obj = sc_list_output.get_subcloud_by_name(sc_name)
+            status = sc_obj.get_deploy_status()
+
+            if status == "complete":
+                get_logger().log_info(f"Subcloud {sc_name} rehome completed successfully")
+                completed.append(sc_name)
+                finished_this_round.append(sc_name)
+            elif status in failed_statuses:
+                get_logger().log_info(f"Subcloud {sc_name} rehome failed with status: {status}")
+                failed.append((sc_name, status))
+                finished_this_round.append(sc_name)
+
+        for sc_name in finished_this_round:
+            pending.remove(sc_name)
+
+        if pending:
+            get_logger().log_info(f"Still waiting for subclouds: {sorted(pending)}")
+            time.sleep(polling_sleep_time)
+
+    if pending:
+        msg = f"Subclouds did not reach terminal state within {timeout}s: {sorted(pending)}"
+        get_logger().log_error(msg)
+        raise TimeoutError(msg)
+
+    # Report results
+    get_logger().log_info(f"Batch rehome results: {len(completed)} completed, {len(failed)} failed")
+    if completed:
+        get_logger().log_info(f"Completed: {completed}")
+    if failed:
+        failed_summary = ", ".join([f"{name} ({status})" for name, status in failed])
+        raise Exception(f"Batch rehome failed for: {failed_summary}")
+
+
 def perform_rehome_operation(
     origin_ssh_connection: SSHConnection,
     destination_ssh_connection: SSHConnection,
@@ -248,7 +413,7 @@ def perform_rehome_operation(
     subcloud_install_values: str,
     expect_failure: bool = False,
     sync_assets: bool = True,
-    release_id: Optional[str] = None,
+    release: Optional[str] = None,
 ) -> None:
     """
     Rehome a subcloud from the origin system controller to the destination system controller.
@@ -261,10 +426,8 @@ def perform_rehome_operation(
         subcloud_install_values (str): Path to the subcloud install values file.
         expect_failure (bool): Is the rehome expected to fail.
         sync_assets (bool): Whether to copy subcloud configuration files from one host to the other.
-        release_id (Optional[str]): Software release version to pass to the migrate command.
+        release (Optional[str]): Software release version to pass to the migrate command.
             Required for N-1 subclouds. When None, no --release flag is passed.
-        expect_failure (bool): Is the rehome expected to fail.
-        sync_assets (bool): Whether to copy subcloud configuration files from one host to the other.
     """
     # Ensure software image load is available on destination system controller.
     verify_software_release(destination_ssh_connection)
@@ -293,7 +456,7 @@ def perform_rehome_operation(
         subcloud_name,
         bootstrap_values=subcloud_bootstrap_values,
         install_values=subcloud_install_values,
-        release_id=release_id,
+        release_id=release,
     )
     if expect_failure:
         dcm_sc_list_kw_destination.validate_subcloud_status(subcloud_name, status="rehome-failed")
