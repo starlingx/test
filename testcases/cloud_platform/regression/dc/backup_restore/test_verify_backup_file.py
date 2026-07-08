@@ -18,6 +18,23 @@ from keywords.cloud_platform.system.host.system_host_swact_keywords import Syste
 
 BACKUP_PATH = "/opt/dc-vault/backups/"
 
+def remove_home_backup_archives(subcloud_ssh: SSHConnection, home_user: str) -> None:
+    """Remove leftover platform-backup archives from the subcloud home directory.
+
+    Custom-path local backups are written under /home and are verification artifacts
+    only (restore reads from /opt, not /home). Left in place they push /home past the
+    backup size precheck and cause later subcloud backups to fail, so remove any such
+    archive before creating a new backup.
+
+    Args:
+        subcloud_ssh (SSHConnection): SSH connection to the subcloud.
+        home_user (str): Home directory owner whose backup archives should be cleared.
+    """
+    home_dir = f"/home/{home_user}/"
+    for file_name in FileKeywords(subcloud_ssh).get_files_in_dir(home_dir, is_sudo=True):
+        if "platform_backup" in file_name and file_name.endswith(".tgz"):
+            FileKeywords(subcloud_ssh).delete_file(f"{home_dir}{file_name}")
+
 def verify_backup_central(central_ssh: SSHConnection, subcloud_name: str, backup_values: bool = False):
     """Function to central Backup of a subcloud
 
@@ -35,6 +52,9 @@ def verify_backup_central(central_ssh: SSHConnection, subcloud_name: str, backup
     subcloud_sw_version = DcManagerSubcloudShowKeywords(central_ssh).get_dcmanager_subcloud_show(subcloud_name).get_dcmanager_subcloud_show_object().get_software_version()
 
     dc_manager_backup = DcManagerSubcloudBackupKeywords(central_ssh)
+    subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
+    remove_home_backup_archives(subcloud_ssh, lab_config.get_admin_credentials().get_user_name())
+
     # Path to where the backup file will store.
     central_path = f"{BACKUP_PATH}{subcloud_name}/{subcloud_sw_version}"
     files_in_backup_dir = FileKeywords(central_ssh).get_files_in_dir(central_path, is_sudo=True)
@@ -68,6 +88,7 @@ def verify_backup_local(central_ssh: SSHConnection, subcloud_name: str, custom_p
     lab_config = ConfigurationManager.get_lab_config().get_subcloud(subcloud_name)
     subcloud_password = lab_config.get_admin_credentials().get_password()
     subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
+    remove_home_backup_archives(subcloud_ssh, lab_config.get_admin_credentials().get_user_name())
     subcloud_sw_version = DcManagerSubcloudShowKeywords(central_ssh).get_dcmanager_subcloud_show(subcloud_name).get_dcmanager_subcloud_show_object().get_software_version()
 
     dc_manager_backup = DcManagerSubcloudBackupKeywords(central_ssh)
