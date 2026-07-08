@@ -20,7 +20,7 @@ class DcmanagerSubcloudPrestage(BaseKeyword):
         """
         self.ssh_connection = ssh_connection
 
-    def dcmanager_subcloud_prestage(self, subcloud_name: str, syspass: str, release: str = None, for_sw_deploy: bool = False, wait_completion: bool = True) -> bool:
+    def dcmanager_subcloud_prestage(self, subcloud_name: str, syspass: str, release: str = None, for_sw_deploy: bool = False, force: bool = False, wait_completion: bool = True) -> bool:
         """
         Runs dcmanager subcloud prestage command.
 
@@ -29,6 +29,7 @@ class DcmanagerSubcloudPrestage(BaseKeyword):
             syspass (str): The sysadmin password to be passed to the command.
             release (str): Release to use for prestage.
             for_sw_deploy (bool): whether to enable --for-sw-deploy flag.
+            force (bool): whether to enable --force flag (bypasses alarm checks).
             wait_completion (bool): whether to wait for prestage to complete
         Returns:
             bool: If prestage succeeded.
@@ -36,6 +37,7 @@ class DcmanagerSubcloudPrestage(BaseKeyword):
         """
         cmd_options = f"--release {release}" if release else ""
         cmd_options += " --for-sw-deploy" if for_sw_deploy else ""
+        cmd_options += " --force" if force else ""
         command = source_openrc(f"dcmanager subcloud prestage {cmd_options} {subcloud_name}" f" --sysadmin-password {syspass}")
 
         self.ssh_connection.send(command)

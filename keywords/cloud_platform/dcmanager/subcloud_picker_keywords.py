@@ -479,7 +479,7 @@ def pick_subcloud_with_fallback(
         )
         return system_controller_ssh, result
     except KeywordException:
-        secondary_config = ConfigurationManager.get_lab_config().get_secondary_system_controller()
+        secondary_config = ConfigurationManager.get_lab_config().get_secondary_system_controller_config()
         if secondary_config is None:
             raise
         get_logger().log_info("No matching subcloud on primary SC, falling back to secondary system controller")
