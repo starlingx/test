@@ -26,3 +26,16 @@ class KubectlDeleteVmKeywords(K8sBaseKeyword):
         cmd = f"kubectl delete vm {vm_name} -n {namespace}{ignore_flag}"
         self.ssh_connection.send(self.k8s_config.export(cmd))
         self.validate_success_return_code(self.ssh_connection)
+
+    def delete_vmi(self, vmi_name: str, namespace: str = "default", ignore_not_found: bool = False) -> None:
+        """Delete a VirtualMachineInstance resource.
+
+        Args:
+            vmi_name (str): Name of the VMI to delete.
+            namespace (str): Namespace of the VMI. Defaults to 'default'.
+            ignore_not_found (bool): If True, adds --ignore-not-found=true flag. Defaults to False.
+        """
+        ignore_flag = " --ignore-not-found=true" if ignore_not_found else ""
+        cmd = f"kubectl delete vmi {vmi_name} -n {namespace}{ignore_flag}"
+        self.ssh_connection.send(self.k8s_config.export(cmd))
+        self.validate_success_return_code(self.ssh_connection)
