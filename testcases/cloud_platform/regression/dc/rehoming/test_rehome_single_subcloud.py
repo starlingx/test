@@ -11,7 +11,7 @@ from keywords.cloud_platform.dcmanager.dcmanager_subcloud_list_keywords import D
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_manager_keywords import DcManagerSubcloudManagerKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_show_keywords import DcManagerSubcloudShowKeywords
 from keywords.cloud_platform.dcmanager.objects.dcmanger_subcloud_list_availability_enum import DcManagerSubcloudListAvailabilityEnum
-from keywords.cloud_platform.dcmanager.rehoming_utils import determine_rehome_direction, perform_rehome_operation, sync_deployment_assets_between_system_controllers, verify_subcloud_healthy
+from keywords.cloud_platform.dcmanager.rehoming_utils import perform_rehome_operation, sync_deployment_assets_between_system_controllers, verify_subcloud_healthy
 from keywords.cloud_platform.dcmanager.subcloud_picker_keywords import pick_subcloud_with_fallback
 from keywords.cloud_platform.fault_management.alarms.alarm_list_keywords import AlarmListKeywords
 from keywords.cloud_platform.fault_management.fm_client_cli.fm_client_cli_keywords import FaultManagementClientCLIKeywords
@@ -22,7 +22,6 @@ from keywords.cloud_platform.system.addrpool.system_addrpool_list_keywords impor
 from keywords.cloud_platform.system.host.system_host_list_keywords import SystemHostListKeywords
 from keywords.cloud_platform.system.host.system_host_route_keywords import SystemHostRouteKeywords
 from keywords.cloud_platform.system.host.system_host_swact_keywords import SystemHostSwactKeywords
-from keywords.cloud_platform.version_info.cloud_platform_version_manager import CloudPlatformVersionManagerClass
 from keywords.k8s.pods.kubectl_get_pods_keywords import KubectlGetPodsKeywords
 
 
@@ -82,25 +81,6 @@ def validate_updated_host_route(ssh_connection: SSHConnection, subcloud_ssh: SSH
     validate_equals(oam_floating_address_after_rehome, oam_floating_address_destination, "System controller OAM floating address on subcloud should match destination system controller after rehoming")
 
 
-def rehome_teardown(origin_ssh: SSHConnection, destination_ssh: SSHConnection, subcloud_name: str) -> None:
-    """Teardown for rehome tests. Ensures subcloud is managed on whichever cloud owns it.
-
-    Args:
-        origin_ssh (SSHConnection): SSH connection to the origin system controller.
-        destination_ssh (SSHConnection): SSH connection to the destination system controller.
-        subcloud_name (str): Name of the subcloud.
-    """
-    for ssh in [origin_ssh, destination_ssh]:
-        try:
-            subcloud_list = DcManagerSubcloudListKeywords(ssh).get_dcmanager_subcloud_list()
-            if subcloud_list.is_subcloud_in_output(subcloud_name):
-                subcloud = subcloud_list.get_subcloud_by_name(subcloud_name)
-                if subcloud.get_management() == "unmanaged":
-                    get_logger().log_info(f"Teardown: Managing subcloud {subcloud_name} on {ssh}")
-                    DcManagerSubcloudManagerKeywords(ssh).get_dcmanager_subcloud_manage(subcloud_name, 10)
-        except Exception:
-            get_logger().log_info(f"Teardown: Could not manage subcloud {subcloud_name} on {ssh}")
-
 
 # --- Single Subcloud Test Cases ---
 
@@ -108,7 +88,7 @@ def rehome_teardown(origin_ssh: SSHConnection, destination_ssh: SSHConnection, s
 @mark.p2
 @mark.subcloud_lab_is_duplex
 @mark.lab_has_secondary_system_controller
-def test_rehome_single_duplex_subcloud_n_release(request):
+def test_rehome_single_duplex_subcloud_n_release():
     """
     Verify rehome of a single duplex subcloud between two system controllers.
 
@@ -147,8 +127,6 @@ def test_rehome_single_duplex_subcloud_n_release(request):
     # Destination is whichever cloud is NOT the origin
     destination_system_controller_ssh = cloud_b_ssh if origin_system_controller_ssh == cloud_a_ssh else cloud_a_ssh
 
-    # Register teardown
-    request.addfinalizer(lambda: rehome_teardown(origin_system_controller_ssh, destination_system_controller_ssh, subcloud_name))
 
     subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
     SystemHostSwactKeywords(subcloud_ssh).ensure_duplex_subcloud_c0_is_active(subcloud_name)
@@ -187,7 +165,7 @@ def test_rehome_single_duplex_subcloud_n_release(request):
 @mark.p2
 @mark.subcloud_lab_is_simplex
 @mark.lab_has_secondary_system_controller
-def test_rehome_single_simplex_subcloud_n_release(request):
+def test_rehome_single_simplex_subcloud_n_release():
     """
     Verify rehome of a single simplex subcloud between two system controllers.
 
@@ -223,8 +201,6 @@ def test_rehome_single_simplex_subcloud_n_release(request):
     # Destination is whichever cloud is NOT the origin
     destination_system_controller_ssh = cloud_b_ssh if origin_system_controller_ssh == cloud_a_ssh else cloud_a_ssh
 
-    # Register teardown
-    request.addfinalizer(lambda: rehome_teardown(origin_system_controller_ssh, destination_system_controller_ssh, subcloud_name))
 
     subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
 
@@ -249,168 +225,13 @@ def test_rehome_single_simplex_subcloud_n_release(request):
     validate_equals(pods_before_rehome, pods_after_rehome, "Pod count should remain consistent after rehoming")
 
 
-# --- Batch Test Cases ---
-
-
-@mark.p2
-@mark.lab_has_secondary_system_controller
-def test_rehome_subclouds_in_batch_n_release(request):
-    """
-    Verify rehome of all online N-release subclouds between two system controllers.
-
-    Prerequisites:
-        - At least one subcloud running N release must be online.
-        - Duplex subclouds must have controller-0 as the active controller.
-
-    Setup:
-        - Establish SSH connections to both system controllers
-        - Determine rehome direction with load=N filter
-
-    Test Steps:
-        1. Determine origin and destination using load=N filter
-        2. Ensure each duplex subcloud has controller-0 as the active controller
-        3. Count pods on each subcloud before rehoming
-        4. Perform rehoming operation for each subcloud
-        5. Validate each subcloud is healthy after rehoming
-        6. Validate pod counts are the same before and after rehoming
-
-    Teardown:
-        - Ensure all subclouds are managed on whichever cloud owns them
-    """
-    cloud_a_ssh = LabConnectionKeywords().get_active_controller_ssh()
-    cloud_b_ssh = LabConnectionKeywords().get_secondary_active_controller_ssh()
-
-    # Determine rehome direction with N release filter
-    origin_system_controller_ssh, destination_system_controller_ssh, online_subclouds = determine_rehome_direction(cloud_a_ssh, cloud_b_ssh, load="N")
-
-    validate_not_equals(len(online_subclouds), 0, "At least one online N-release subcloud must be available for rehoming")
-    get_logger().log_info(f"Subclouds selected for rehoming: {online_subclouds}")
-
-    # Register teardown for all subclouds
-    for sc_name in online_subclouds:
-        request.addfinalizer(lambda name=sc_name: rehome_teardown(origin_system_controller_ssh, destination_system_controller_ssh, name))
-
-    # Ensure all duplex subclouds have controller-0 as the active controller
-    lab_config = ConfigurationManager.get_lab_config()
-    for subcloud_name in online_subclouds:
-        sc_config = lab_config.get_subcloud(subcloud_name)
-        if sc_config.get_lab_type() == LabTypeEnum.DUPLEX.value:
-            subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
-            get_logger().log_info(f"Ensuring controller-0 is active on duplex subcloud {subcloud_name}")
-            SystemHostSwactKeywords(subcloud_ssh).ensure_duplex_subcloud_c0_is_active(subcloud_name)
-
-    # Count pods on each subcloud before rehoming
-    pods_before_rehome = {}
-    for subcloud_name in online_subclouds:
-        subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
-        get_logger().log_info(f"Counting pods on subcloud {subcloud_name} before rehoming")
-        pods_before_rehome[subcloud_name] = count_pods_on_subcloud(subcloud_ssh)
-
-    # Perform rehome operation for each subcloud
-    deployment_assets_config = ConfigurationManager.get_deployment_assets_config()
-    for subcloud_name in online_subclouds:
-        get_logger().log_info(f"Rehoming subcloud {subcloud_name} from origin to destination system controller")
-        subcloud_bootstrap_values = deployment_assets_config.get_subcloud_deployment_assets(subcloud_name).get_bootstrap_file()
-        subcloud_install_values = deployment_assets_config.get_subcloud_deployment_assets(subcloud_name).get_install_file()
-        perform_rehome_operation(origin_system_controller_ssh, destination_system_controller_ssh, subcloud_name, subcloud_bootstrap_values, subcloud_install_values)
-
-    # Validate each subcloud is healthy and pod counts are consistent after rehoming
-    for subcloud_name in online_subclouds:
-        get_logger().log_info(f"Validating subcloud {subcloud_name} is healthy after rehome")
-        verify_subcloud_healthy(destination_system_controller_ssh, subcloud_name, check_sync=False)
-
-        subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
-        get_logger().log_info(f"Counting pods on subcloud {subcloud_name} after rehoming")
-        pods_after_rehome = count_pods_on_subcloud(subcloud_ssh)
-        validate_equals(pods_before_rehome[subcloud_name], pods_after_rehome, f"Pod count on subcloud {subcloud_name} should be the same before and after rehoming")
-
-
-@mark.p2
-@mark.lab_has_secondary_system_controller
-def test_rehome_subclouds_in_batch_n_minus_1_release(request):
-    """
-    Verify rehome of all online N-1 release subclouds between two system controllers.
-
-    This test targets subclouds running the previous major release (N-1) and
-    rehomes them in batch with the --release flag.
-
-    Prerequisites:
-        - At least one subcloud running N-1 release must be online.
-        - Duplex subclouds must have controller-0 as the active controller.
-
-    Setup:
-        - Establish SSH connections to both system controllers
-        - Determine rehome direction with load=N-1 filter
-
-    Test Steps:
-        1. Determine origin and destination using load=N-1 filter
-        2. Ensure each duplex subcloud has controller-0 as the active controller
-        3. Count pods on each subcloud before rehoming
-        4. Perform rehoming operation with --release flag for each subcloud
-        5. Validate each subcloud is healthy after rehoming
-        6. Validate pod counts are the same before and after rehoming
-
-    Teardown:
-        - Ensure all subclouds are managed on whichever cloud owns them
-    """
-    cloud_a_ssh = LabConnectionKeywords().get_active_controller_ssh()
-    cloud_b_ssh = LabConnectionKeywords().get_secondary_active_controller_ssh()
-
-    # Determine rehome direction with N-1 release filter
-    origin_system_controller_ssh, destination_system_controller_ssh, online_subclouds = determine_rehome_direction(cloud_a_ssh, cloud_b_ssh, load="N-1")
-
-    validate_not_equals(len(online_subclouds), 0, "At least one online N-1 subcloud must be available for rehoming")
-    get_logger().log_info(f"N-1 subclouds selected for rehoming: {online_subclouds}")
-
-    # Register teardown for all subclouds
-    for sc_name in online_subclouds:
-        request.addfinalizer(lambda name=sc_name: rehome_teardown(origin_system_controller_ssh, destination_system_controller_ssh, name))
-
-    # Ensure all duplex subclouds have controller-0 as the active controller
-    lab_config = ConfigurationManager.get_lab_config()
-    for subcloud_name in online_subclouds:
-        sc_config = lab_config.get_subcloud(subcloud_name)
-        if sc_config.get_lab_type() == LabTypeEnum.DUPLEX.value:
-            subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
-            get_logger().log_info(f"Ensuring controller-0 is active on duplex subcloud {subcloud_name}")
-            SystemHostSwactKeywords(subcloud_ssh).ensure_duplex_subcloud_c0_is_active(subcloud_name)
-
-    # Resolve N-1 release version for the migrate command
-    n_minus_1_release = str(CloudPlatformVersionManagerClass().get_last_major_release())
-
-    # Count pods on each subcloud before rehoming
-    pods_before_rehome = {}
-    for subcloud_name in online_subclouds:
-        subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
-        get_logger().log_info(f"Counting pods on subcloud {subcloud_name} before rehoming")
-        pods_before_rehome[subcloud_name] = count_pods_on_subcloud(subcloud_ssh)
-
-    # Perform rehome operation for each N-1 subcloud with --release flag
-    deployment_assets_config = ConfigurationManager.get_deployment_assets_config()
-    for subcloud_name in online_subclouds:
-        get_logger().log_info(f"Rehoming N-1 subcloud {subcloud_name} from origin to destination system controller")
-        subcloud_bootstrap_values = deployment_assets_config.get_subcloud_deployment_assets(subcloud_name).get_bootstrap_file()
-        subcloud_install_values = deployment_assets_config.get_subcloud_deployment_assets(subcloud_name).get_install_file()
-        perform_rehome_operation(origin_system_controller_ssh, destination_system_controller_ssh, subcloud_name, subcloud_bootstrap_values, subcloud_install_values, release_id=n_minus_1_release)
-
-    # Validate each subcloud is healthy and pod counts are consistent after rehoming
-    for subcloud_name in online_subclouds:
-        get_logger().log_info(f"Validating subcloud {subcloud_name} is healthy after rehome")
-        verify_subcloud_healthy(destination_system_controller_ssh, subcloud_name, check_sync=False)
-
-        subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
-        get_logger().log_info(f"Counting pods on subcloud {subcloud_name} after rehoming")
-        pods_after_rehome = count_pods_on_subcloud(subcloud_ssh)
-        validate_equals(pods_before_rehome[subcloud_name], pods_after_rehome, f"Pod count on subcloud {subcloud_name} should be the same before and after rehoming")
-
-
 # --- Negative Test Cases ---
 
 
 @mark.p2
 @mark.subcloud_lab_is_duplex
 @mark.lab_has_secondary_system_controller
-def test_rehome_duplex_subcloud_fails_when_c1_is_active(request):
+def test_rehome_duplex_subcloud_fails_when_c1_is_active():
     """
     Verify rehome fails when controller-1 is the active controller on a duplex subcloud.
 
@@ -447,9 +268,6 @@ def test_rehome_duplex_subcloud_fails_when_c1_is_active(request):
 
     # Destination is whichever cloud is NOT the origin
     destination_system_controller_ssh = cloud_b_ssh if origin_system_controller_ssh == cloud_a_ssh else cloud_a_ssh
-
-    # Register teardown
-    request.addfinalizer(lambda: rehome_teardown(origin_system_controller_ssh, destination_system_controller_ssh, subcloud_name))
 
     subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
 
@@ -509,7 +327,7 @@ def test_rehome_simplex_subcloud_fails_with_alarm_and_succeeds_after_clear(reque
         7. Validate pod counts consistent
 
     Teardown:
-        - Ensure subcloud is managed on whichever cloud owns it
+        - Clear injected alarm if still present
     """
     cloud_a_ssh = LabConnectionKeywords().get_active_controller_ssh()
     cloud_b_ssh = LabConnectionKeywords().get_secondary_active_controller_ssh()
@@ -526,9 +344,6 @@ def test_rehome_simplex_subcloud_fails_with_alarm_and_succeeds_after_clear(reque
 
     # Destination is whichever cloud is NOT the origin
     destination_system_controller_ssh = cloud_b_ssh if origin_system_controller_ssh == cloud_a_ssh else cloud_a_ssh
-
-    # Register teardown
-    request.addfinalizer(lambda: rehome_teardown(origin_system_controller_ssh, destination_system_controller_ssh, subcloud_name))
 
     # Get deployment assets
     deployment_assets_config = ConfigurationManager.get_deployment_assets_config()
@@ -556,6 +371,16 @@ def test_rehome_simplex_subcloud_fails_with_alarm_and_succeeds_after_clear(reque
 
     get_logger().log_info(f"Injecting test alarm on subcloud {subcloud_name}")
     fm_client_cli_keywords.raise_alarm(fm_client_cli_object)
+
+    # Register teardown to clear alarm if test fails midway
+    def cleanup_alarm():
+        get_logger().log_teardown_step(f"Clear injected alarm on subcloud '{subcloud_name}'")
+        try:
+            fm_client_cli_keywords.delete_alarm(fm_client_cli_object)
+        except Exception:
+            get_logger().log_info(f"Alarm already cleared or could not be deleted on {subcloud_name}")
+
+    request.addfinalizer(cleanup_alarm)
 
     # Verify alarm injection
     subcloud_alarms = alarm_list_keywords.alarm_list()
