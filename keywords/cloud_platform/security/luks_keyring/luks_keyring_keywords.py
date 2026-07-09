@@ -31,7 +31,7 @@ class LuksKeyringKeywords(BaseKeyword):
             ssh_connection (SSHConnection): SSH connection to active controller.
         """
         self.ssh_connection = ssh_connection
-        self._version_manager = CloudPlatformVersionManager()
+        self._version_manager = CloudPlatformVersionManager
 
     def get_luks_keyring_path(self) -> str:
         """Get the full LUKS keyring path for current SW version.
@@ -94,10 +94,8 @@ class LuksKeyringKeywords(BaseKeyword):
             list[str]: List of credential file paths found.
         """
         old_path = self.get_old_keyring_path()
-        output = self.ssh_connection.send_as_sudo(
-            f"find {old_path} -name 'crypted_pass.cfg' -o -name '.keyring_secret' 2>/dev/null"
-        )
-        return [line.strip() for line in output if line.strip()]
+        output = self.ssh_connection.send_as_sudo(f"find {old_path} -name 'crypted_pass.cfg' -o -name '.keyring_secret' 2>/dev/null")
+        return [line.strip() for line in output if line.strip() and line.strip().startswith("/")]
 
     def grep_hardcoded_password(self, search_paths: list[str]) -> list[str]:
         """Search for hardcoded keyring password string in given paths.
@@ -109,10 +107,8 @@ class LuksKeyringKeywords(BaseKeyword):
             list[str]: List of files containing the hardcoded password.
         """
         paths_str = " ".join(search_paths)
-        output = self.ssh_connection.send_as_sudo(
-            f"grep -rl 'Please set a password' {paths_str} 2>/dev/null"
-        )
-        return [line.strip() for line in output if line.strip()]
+        output = self.ssh_connection.send_as_sudo(f"grep -rl 'Please set a password' {paths_str} 2>/dev/null")
+        return [line.strip() for line in output if line.strip() and line.strip().startswith("/")]
 
     def is_luks_mounted(self) -> bool:
         """Check if the LUKS filesystem is mounted.
@@ -120,7 +116,7 @@ class LuksKeyringKeywords(BaseKeyword):
         Returns:
             bool: True if LUKS filesystem is mounted.
         """
-        output = self.ssh_connection.send(f"mount | grep {self.LUKS_MOUNT_POINT}")
+        self.ssh_connection.send(f"mount | grep {self.LUKS_MOUNT_POINT}")
         return self.ssh_connection.get_return_code() == 0
 
     def get_luks_device_type(self) -> str:
@@ -129,9 +125,7 @@ class LuksKeyringKeywords(BaseKeyword):
         Returns:
             str: LUKS type string.
         """
-        output = self.ssh_connection.send_as_sudo(
-            f"cryptsetup status {self.LUKS_DEVICE_NAME} | grep type"
-        )
+        output = self.ssh_connection.send_as_sudo(f"cryptsetup status {self.LUKS_DEVICE_NAME} | grep type")
         self.validate_success_return_code(self.ssh_connection)
         return output[0].strip().split(":")[1].strip()
 
@@ -141,9 +135,7 @@ class LuksKeyringKeywords(BaseKeyword):
         Returns:
             str: The keyring data root path.
         """
-        output = self.ssh_connection.send(
-            "python3 -c 'import keyring.util.platform_; print(keyring.util.platform_.data_root())'"
-        )
+        output = self.ssh_connection.send("python3 -c 'import keyring.util.platform_; print(keyring.util.platform_.data_root())'")
         self.validate_success_return_code(self.ssh_connection)
         return output[0].strip()
 
@@ -173,7 +165,5 @@ class LuksKeyringKeywords(BaseKeyword):
         Returns:
             int: Number of keyring error lines.
         """
-        output = self.ssh_connection.send_as_sudo(
-            f"grep -ic 'keyring.*error\\|keyring.*fail' {log_path} 2>/dev/null || echo 0"
-        )
+        output = self.ssh_connection.send_as_sudo(f"grep -ic 'keyring.*error\\|keyring.*fail' {log_path} 2>/dev/null || echo 0")
         return int(output[0].strip())
