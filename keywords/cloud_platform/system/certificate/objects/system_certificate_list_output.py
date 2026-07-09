@@ -33,7 +33,13 @@ class SystemCertificateListOutput:
                 key, value = line.split(":", 1)
                 key = key.strip()
                 value = value.strip()
-                if key == "Issuer":
+                if key == "Residual Time":
+                    current_cert.set_residual_time(value)
+                elif key == "Issue Date":
+                    current_cert.set_issue_date(value)
+                elif key == "Expiry Date":
+                    current_cert.set_expiry_date(value)
+                elif key == "Issuer":
                     current_cert.set_issuer(value)
                 elif key == "Subject":
                     current_cert.set_subject(value)
@@ -41,6 +47,12 @@ class SystemCertificateListOutput:
                     current_cert.set_renewal(value)
                 elif key == "File Path":
                     current_cert.set_file_path(value)
+                elif key == "Namespace":
+                    current_cert.set_namespace(value)
+                elif key == "Secret":
+                    current_cert.set_secret(value)
+                elif key == "Secret Type":
+                    current_cert.set_secret_type(value)
 
         if current_cert:
             self.certificates.append(current_cert)
@@ -52,6 +64,14 @@ class SystemCertificateListOutput:
             List[SystemCertificateObject]: List of certificate objects.
         """
         return self.certificates
+
+    def get_certificate_names(self) -> List[str]:
+        """Get all certificate names.
+
+        Returns:
+            List[str]: List of certificate names.
+        """
+        return [cert.get_name() for cert in self.certificates]
 
     def get_certificate_by_name(self, name: str) -> SystemCertificateObject:
         """Get certificate by name.
@@ -69,6 +89,17 @@ class SystemCertificateListOutput:
             if cert.get_name() == name:
                 return cert
         raise KeywordException(f"Certificate '{name}' not found")
+
+    def has_certificate(self, name: str) -> bool:
+        """Check if certificate exists in the list.
+
+        Args:
+            name (str): Certificate name.
+
+        Returns:
+            bool: True if certificate exists.
+        """
+        return any(cert.get_name() == name for cert in self.certificates)
 
     def get_platform_ca_certificate(self) -> SystemCertificateObject:
         """Get platform CA certificate (self-signed root).
