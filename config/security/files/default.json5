@@ -218,6 +218,12 @@
         "vault_test": {
             "secret_password": "vault_test_password",
             "secret_username": "pvtest"
+        },
+
+        // Kube rootca update test configuration
+        "kube_rootca_update": {
+            "cert_validity_years": 5,
+            "cert_subject": "C=CA ST=ON L=Ottawa O=WindRiver OU=StarlingX CN=kubernetes"
         }
     }
 }

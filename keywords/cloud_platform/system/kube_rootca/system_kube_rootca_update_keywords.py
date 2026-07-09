@@ -37,7 +37,7 @@ class SystemKubeRootcaUpdateKeywords(BaseKeyword):
         self.validate_success_return_code(self.ssh_connection)
         return SystemKubeRootcaUpdateVerticalOutput(output)
 
-    def kube_rootca_update_generate_cert(self, expiry_date: str, subject: str) -> SystemKubeRootcaUpdateVerticalOutput:
+    def kube_rootca_update_generate_cert(self, expiry_date: str, subject: str) -> str:
         """Generate new rootca certificate.
 
         Args:
@@ -45,12 +45,13 @@ class SystemKubeRootcaUpdateKeywords(BaseKeyword):
             subject (str): Certificate subject string.
 
         Returns:
-            SystemKubeRootcaUpdateVerticalOutput: Certificate generation output.
+            str: Generated certificate identifier string.
         """
         cmd = f'system kube-rootca-update-generate-cert --expiry-date="{expiry_date}" --subject="{subject}"'
         output = self.ssh_connection.send(source_openrc(cmd))
         self.validate_success_return_code(self.ssh_connection)
-        return SystemKubeRootcaUpdateVerticalOutput(output)
+        raw = "\n".join(output) if isinstance(output, list) else output
+        return raw.strip()
 
     def kube_rootca_update_show(self) -> SystemKubeRootcaUpdateShowOutput:
         """Show kube rootca update status.
