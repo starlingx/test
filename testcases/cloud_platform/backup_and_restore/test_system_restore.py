@@ -125,12 +125,23 @@ def test_restore_multi_host():
     validate_equals(unlock_success, True, "Validate controller-0 was unlocked successfully")
     time_kpi_restore.log_elapsed_time(time.time(), "time taken for controller-0 restore")
 
-    nodes_with_bmc = []
+    # Separate nodes into those that need PXE reinstall and storage nodes
+    # that are left intact (not wiped) during this restore variant.
+    nodes_to_pxe = []
+    storage_nodes_intact = []
     for node in ConfigurationManager.get_lab_config().get_nodes():
-        if node.get_bm_ip() != "None" and node.get_name() != "controller-0":
-            nodes_with_bmc.append(node)
+        if node.get_type().lower() == "storage":
+            storage_nodes_intact.append(node)
+        elif node.get_bm_ip() != "None" and node.get_name() != "controller-0":
+            nodes_to_pxe.append(node)
 
-    for node in nodes_with_bmc:
+    if storage_nodes_intact:
+        get_logger().log_info(
+            f"Storage nodes are not wiped in this restore variant — "
+            f"skipping PXE boot for: {[n.get_name() for n in storage_nodes_intact]}"
+        )
+
+    for node in nodes_to_pxe:
         host_name = node.get_name()
         get_logger().log_info(f"Setting boot device to PXE for {host_name}")
 
@@ -141,7 +152,7 @@ def test_restore_multi_host():
         power_on_result = PowerKeywords(ssh_connection).power_on(host_name)
         validate_equals(power_on_result, True, f"Chassis powered on for {host_name}")
 
-    for node in nodes_with_bmc:
+    for node in nodes_to_pxe:
         host_name = node.get_name()
         get_logger().log_info(f"wait for {host_name} to successfully re-installed")
         host_reinstall_success = SystemHostReinstallKeywords(ssh_connection).wait_for_host_reinstall(host_name, 3600)
@@ -160,6 +171,20 @@ def test_restore_multi_host():
             get_logger().log_info(f"wait for {host_name} to successfully unlocked")
             unlock_success = SystemHostLockKeywords(ssh_connection).unlock_host(host_name, exclude_alarm_ids=["750.006"])
             validate_equals(unlock_success, True, f"Host {host_name} unlocking")
+    else:
+        get_logger().log_info("No compute nodes found in lab config, skipping compute unlock.")
+        get_logger().log_info(f"All nodes in lab config: {[n.get_name() + '(' + n.get_type() + ')' for n in ConfigurationManager.get_lab_config().get_nodes()]}")
+
+    if len(storage_nodes_intact) > 0:
+        get_logger().log_info("Unlocking all the storage nodes (not wiped — already online)")
+        for node in storage_nodes_intact:
+            host_name = node.get_name()
+            get_logger().log_info(f"wait for {host_name} to successfully unlocked")
+            unlock_success = SystemHostLockKeywords(ssh_connection).unlock_host(host_name, exclude_alarm_ids=["750.006"])
+            validate_equals(unlock_success, True, f"Host {host_name} unlocking")
+    else:
+        get_logger().log_info("No storage nodes found in lab config, skipping storage unlock.")
+        get_logger().log_info(f"All nodes in lab config: {[n.get_name() + '(' + n.get_type() + ')' for n in ConfigurationManager.get_lab_config().get_nodes()]}")
 
     get_logger().log_info("Running system restore-complete")
     restore_complete_success = SystemRestoreCompleteKeywords(ssh_connection).system_restore_complete()
