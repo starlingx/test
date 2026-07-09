@@ -184,7 +184,7 @@ def test_simple_ingress_routing_http(request):
     # Wait for the application pods to be running
     get_logger().log_info("Waiting for application pods to be ready")
     pods_keywords = KubectlGetPodsKeywords(ssh_connection)
-    pod_status = pods_keywords.wait_for_all_pods_status(["Completed", "Running"])
+    pod_status = pods_keywords.wait_for_pods_to_reach_status(["Completed", "Running"], namespace=namespace)
     validate_equals(pod_status, True, "Verify pods are running")
 
     # Validate routing for /apple with retry
@@ -264,7 +264,7 @@ def test_simple_ingress_routing_https(request):
     # Wait for the application pods to be running
     get_logger().log_info("Waiting for application pods to be ready")
     pods_keywords = KubectlGetPodsKeywords(ssh_connection)
-    pod_status = pods_keywords.wait_for_all_pods_status(["Completed", "Running"])
+    pod_status = pods_keywords.wait_for_pods_to_reach_status(["Completed", "Running"], namespace=namespace)
     validate_equals(pod_status, True, "Verify pods are running")
 
     # Validate routing for /apple
