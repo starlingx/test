@@ -1,7 +1,9 @@
 import time
+from datetime import datetime, timedelta
 
 from pytest import mark
 
+from config.configuration_manager import ConfigurationManager
 from framework.logging.automation_logger import get_logger
 from framework.validation.validation import validate_equals, validate_greater_than_or_equal, validate_str_contains
 from framework.web.webdriver_core import WebDriverCore
@@ -34,6 +36,7 @@ def test_k8s_root_ca_update(request):
     """
 
     def cleanup_kube_rootca_update():
+        """Clean up kube rootca update on test completion."""
         get_logger().log_test_case_step("Kube rootca update test completed")
 
     request.addfinalizer(cleanup_kube_rootca_update)
@@ -41,13 +44,18 @@ def test_k8s_root_ca_update(request):
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     kube_rootca = SystemKubeRootcaUpdateKeywords(ssh_connection)
     system_hosts = SystemHostListKeywords(ssh_connection)
+    security_config = ConfigurationManager.get_security_config()
+
+    expiry_date = (datetime.now() + timedelta(days=365 * security_config.get_kube_rootca_cert_validity_years())).strftime("%Y-%m-%d")
+    cert_subject = security_config.get_kube_rootca_cert_subject()
 
     get_logger().log_test_case_step("Starting kube rootca update")
     update_output = kube_rootca.kube_rootca_update_start(force=True)
     validate_equals(update_output.get_kube_rootca_update().is_update_started(), True, "Update should start")
 
-    get_logger().log_test_case_step("Generating new certificate")
-    kube_rootca.kube_rootca_update_generate_cert("2031-08-25", "C=CA ST=ON L=Ottawa O=company OU=sale CN=kubernetes")
+    get_logger().log_test_case_step(f"Generating new certificate (expiry: {expiry_date})")
+    cert_output = kube_rootca.kube_rootca_update_generate_cert(expiry_date, cert_subject)
+    get_logger().log_info(f"Generate cert response: {cert_output}")
     validate_equals(kube_rootca.wait_for_update_state("update-new-rootca-cert-generated", 60), True, "Certificate should generate")
 
     hosts_output = system_hosts.get_system_host_list()
@@ -196,9 +204,13 @@ def test_apply_kube_rootca_update_strategy(request):
 
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     strategy_keywords = SwManagerKubeRootcaUpdateStrategyKeywords(ssh_connection)
+    security_config = ConfigurationManager.get_security_config()
 
-    get_logger().log_test_case_step("Creating kube-rootca-update strategy")
-    strategy = strategy_keywords.create_kube_rootca_update_strategy(expiry_date="2031-08-25", subject="C=CA ST=ON L=Ottawa O=company OU=sale CN=kubernetes")
+    expiry_date = (datetime.now() + timedelta(days=365 * security_config.get_kube_rootca_cert_validity_years())).strftime("%Y-%m-%d")
+    cert_subject = security_config.get_kube_rootca_cert_subject()
+
+    get_logger().log_test_case_step(f"Creating kube-rootca-update strategy (expiry: {expiry_date})")
+    strategy = strategy_keywords.create_kube_rootca_update_strategy(expiry_date=expiry_date, subject=cert_subject)
     validate_equals(strategy.is_ready_to_apply(), True, "Strategy should reach ready-to-apply state")
 
     get_logger().log_test_case_step("Applying kube-rootca-update strategy")

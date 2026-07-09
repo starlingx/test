@@ -72,6 +72,9 @@ class SecurityConfig:
         vault_config = oidc_keycloak_config.get("vault_test", {})
         self.vault_test_secret_password = vault_config.get("secret_password", "")
         self.vault_test_secret_username = vault_config.get("secret_username", "pvtest")
+        kube_rootca_config = oidc_keycloak_config.get("kube_rootca_update", {})
+        self.kube_rootca_cert_validity_years = kube_rootca_config.get("cert_validity_years", 5)
+        self.kube_rootca_cert_subject = kube_rootca_config.get("cert_subject", "C=CA ST=ON L=Ottawa O=WindRiver OU=StarlingX CN=kubernetes")
         self.oidc_keycloak_kubelogin_download_url = oidc_keycloak_config.get("kubelogin_download_url", "")
         self.oidc_keycloak_login_port = oidc_keycloak_config.get("oidc_login_port", 8000)
         self.oidc_keycloak_invalid_issuer_url = oidc_keycloak_config.get("invalid_issuer_url", "https://invalid-issuer.example.com/realms/nonexistent")
@@ -867,3 +870,19 @@ class SecurityConfig:
             str: Username used for vault secret injection test.
         """
         return self.vault_test_secret_username
+
+    def get_kube_rootca_cert_validity_years(self) -> int:
+        """Get kube rootca certificate validity in years.
+
+        Returns:
+            int: Number of years for certificate validity.
+        """
+        return self.kube_rootca_cert_validity_years
+
+    def get_kube_rootca_cert_subject(self) -> str:
+        """Get kube rootca certificate subject string.
+
+        Returns:
+            str: Certificate subject (e.g., 'C=CA ST=ON L=Ottawa O=WindRiver OU=StarlingX CN=kubernetes').
+        """
+        return self.kube_rootca_cert_subject
