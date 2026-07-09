@@ -16,13 +16,14 @@ class AnsiblePlaybookKeywords(BaseKeyword):
         """
         self.ssh_connection = ssh_connection
 
-    def ansible_playbook_backup(self, backup_dir: str, backup_registry: bool = False) -> bool:
+    def ansible_playbook_backup(self, backup_dir: str, backup_registry: bool = False, platform_backup_filename_prefix: str = None) -> bool:
         """
         Executes the `ansible-playbook` backup command and returns the parsed output.
 
         Args:
             backup_dir (str): backup playbook path
             backup_registry (bool): backup registry
+            platform_backup_filename_prefix (str): prefix for the backup filename
 
         Returns:
             bool: Parsed output to verify successful backup
@@ -32,9 +33,14 @@ class AnsiblePlaybookKeywords(BaseKeyword):
         if backup_registry:
             backup_registry_argument = '-e "backup_registry_filesystem=true"'
 
+        prefix_argument = ""
+        if platform_backup_filename_prefix:
+            prefix_argument = f'-e "platform_backup_filename_prefix={platform_backup_filename_prefix}"'
+
         admin_password = ConfigurationManager.get_lab_config().get_admin_credentials().get_password()
 
-        command = f'ansible-playbook {backup_playbook_path} -e "ansible_become_pass={admin_password}" -e "admin_password={admin_password}" -e "backup_dir={backup_dir}" {backup_registry_argument}'
+        command = f'ansible-playbook {backup_playbook_path} -e "ansible_become_pass={admin_password}" -e "admin_password={admin_password}" -e "backup_dir={backup_dir}" {backup_registry_argument} {prefix_argument}'
+
         cmd_out = self.ssh_connection.send(command, command_timeout=1200, reconnect_timeout=1200)
         self.validate_success_return_code(self.ssh_connection)
         get_logger().log_info("get ansible playbook backup output")
