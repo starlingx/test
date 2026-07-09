@@ -1418,6 +1418,92 @@ def test_launch_vm_with_two_cpu(request: FixtureRequest):
 
 
 @mark.p3
+def test_launch_vm_with_dedicated_cpu(request: FixtureRequest):
+    """
+    Test launching a VM with 6 dedicated CPUs using KubeVirt.
+
+    Covers the additional 6-core scenario from CGTS-55134: when 'cores' is set
+    under the CPU spec together with dedicatedCpuPlacement, the system assigns
+    that many dedicated CPUs from the shared (application) pool on the WRCP host.
+
+    Enables the CPUManager feature gate via KubeVirt CR, ensures at least
+    one node has cpumanager=true, then deploys a VM with dedicatedCpuPlacement
+    and cores: 6. Verifies the VM reaches Running state, checks CPU count via
+    lscpu inside the VM, and verifies dedicated CPU pinning on the host.
+
+    Args:
+        request (FixtureRequest): Pytest fixture request for teardown registration.
+
+    Test Steps:
+        - Cleanup and setup kubevirt environment
+        - Create registry secret for image pulls
+        - Apply KubeVirt CR with CPUManager feature gate
+        - Verify cpumanager=true label on at least one node
+        - Deploy VM with 6 dedicated CPUs
+        - Verify VM reaches Running state
+        - Verify VMI is ready with IP assignment
+        - Verify CPU count via lscpu inside the VM
+        - Verify dedicated CPU pinning on the host
+    """
+    vm_name = "vm-cirros-6cpus"
+    vm_yaml_resource = "resources/cloud_platform/containers/kubevirt/cirros-vm-containerdisk-6-cores.yaml"
+    remote_yaml_path = f"{KUBEVIRT_VM_DIR}/cirros-vm-containerdisk-6-cores.yaml"
+    vm_namespace = "default"
+
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+
+    get_logger().log_setup_step("Cleanup kubevirt environment")
+    cleanup_kubevirt_environment(ssh_connection)
+
+    def cleanup():
+        get_logger().log_teardown_step(f"Deleting VM {vm_name}")
+        KubectlDeleteVmKeywords(ssh_connection).delete_vm(vm_name, ignore_not_found=True)
+
+        get_logger().log_teardown_step("Cleaning up remote VM directory")
+        FileKeywords(ssh_connection).delete_directory(KUBEVIRT_VM_DIR)
+
+        get_logger().log_teardown_step("Cleaning up kubevirt environment")
+        cleanup_kubevirt_environment(ssh_connection)
+
+    request.addfinalizer(cleanup)
+
+    get_logger().log_setup_step("Setting up kubevirt environment")
+    setup_kubevirt_environment(ssh_connection)
+
+    get_logger().log_setup_step("Creating registry secret for image pulls")
+    setup_registry_secret(ssh_connection, request, vm_namespace)
+
+    get_logger().log_test_case_step("Applying KubeVirt CR with feature gates")
+    override_helm_with_feature_gates(ssh_connection)
+
+    get_logger().log_test_case_step("Verifying cpumanager=true label on at least one node")
+    ensure_cpumanager_enabled(ssh_connection)
+
+    get_logger().log_test_case_step("Uploading VM YAML to remote host")
+    file_keywords = FileKeywords(ssh_connection)
+    file_keywords.create_directory(KUBEVIRT_VM_DIR)
+    file_keywords.upload_file(get_stx_resource_path(vm_yaml_resource), remote_yaml_path)
+
+    get_logger().log_test_case_step(f"Deploying VM {vm_name} with 6 dedicated CPUs")
+    KubectlFileApplyKeywords(ssh_connection).apply_resource_from_yaml(remote_yaml_path)
+
+    get_logger().log_test_case_step(f"Verifying VM {vm_name} reaches Running state")
+    kubectl_vm = KubectlGetVmKeywords(ssh_connection)
+    kubectl_vmi = KubectlGetVmiKeywords(ssh_connection)
+    kubectl_vm.wait_for_vm_status(vm_name, "Running", timeout=120)
+    kubectl_vmi.wait_for_vmi_status(vm_name, "Running", timeout=120)
+
+    get_logger().log_test_case_step(f"Verifying VMI {vm_name} is ready with IP assignment")
+    kubectl_vmi.wait_for_vmi_ready(vm_name, timeout=60)
+
+    get_logger().log_test_case_step(f"Verifying VM {vm_name} has 6 CPUs via console")
+    VirtctlKeywords(ssh_connection).check_vm_cpu_count(vm_name, expected_cpus=6)
+
+    get_logger().log_test_case_step(f"Verifying VM {vm_name} is using dedicated CPU placement")
+    verify_vm_dedicated_cpus(ssh_connection, vm_name, expected_cpu_count=6)
+
+
+@mark.p3
 def test_launch_debian11_vm_with_cdi_upload(request: FixtureRequest):
     """
     Test launching Debian VM with CDI image upload.
