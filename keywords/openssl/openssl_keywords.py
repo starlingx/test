@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from framework.ssh.ssh_connection import SSHConnection
 from keywords.base_keyword import BaseKeyword
 
@@ -97,7 +99,7 @@ class OpenSSLKeywords(BaseKeyword):
             cert_path (str): Absolute path to the PEM certificate file on the remote host.
 
         Returns:
-            dict: Dictionary with keys 'not_before', 'not_after', and 'serial'.
+            dict: Dictionary with keys 'not_before' (datetime), 'not_after' (datetime), and 'serial' (str).
         """
         output = self.ssh_connection.send_as_sudo(f"openssl x509 -in {cert_path} -noout -dates -serial")
         self.validate_success_return_code(self.ssh_connection)
@@ -105,9 +107,21 @@ class OpenSSLKeywords(BaseKeyword):
         result = {}
         for line in raw.splitlines():
             if line.startswith("notBefore="):
-                result["not_before"] = line.split("=", 1)[1].strip()
+                result["not_before"] = self._parse_openssl_date(line.split("=", 1)[1].strip())
             elif line.startswith("notAfter="):
-                result["not_after"] = line.split("=", 1)[1].strip()
+                result["not_after"] = self._parse_openssl_date(line.split("=", 1)[1].strip())
             elif line.startswith("serial="):
                 result["serial"] = line.split("=", 1)[1].strip()
         return result
+
+    @staticmethod
+    def _parse_openssl_date(date_str: str) -> datetime:
+        """Parse OpenSSL date string to a timezone-aware datetime.
+
+        Args:
+            date_str (str): OpenSSL date format (e.g., 'Sep 29 04:34:00 2026 GMT').
+
+        Returns:
+            datetime: Parsed datetime object with UTC timezone.
+        """
+        return datetime.strptime(date_str, "%b %d %H:%M:%S %Y %Z").replace(tzinfo=timezone.utc)
