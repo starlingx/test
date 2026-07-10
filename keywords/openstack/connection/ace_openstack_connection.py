@@ -75,6 +75,14 @@ class ACEOpenStackConnection:
         """
         return self._get_service_proxy("block_storage")
 
+    def get_orchestration(self) -> ServiceProxy:
+        """Get the orchestration (Heat) service proxy.
+
+        Returns:
+            ServiceProxy: Logging proxy for orchestration operations.
+        """
+        return self._get_service_proxy("orchestration")
+
     def get_auth_details(self) -> dict:
         """Delegate auth details to the real connection.
 

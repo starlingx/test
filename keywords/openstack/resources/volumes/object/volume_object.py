@@ -1,5 +1,9 @@
 """Object representing a Cinder volume."""
 
+from typing import List
+
+from keywords.openstack.resources.volumes.object.volume_attachment_object import VolumeAttachmentObject
+
 
 class VolumeObject:
     """Holds the parsed fields from a Cinder volume."""
@@ -171,12 +175,28 @@ class VolumeObject:
         self.attachments = attachments
 
     def get_attachments(self) -> list:
-        """Get the volume attachments.
+        """Get the volume attachments as raw dicts.
 
         Returns:
             list: List of attachment dicts.
         """
         return self.attachments or []
+
+    def get_attachment_objects(self) -> List[VolumeAttachmentObject]:
+        """Get the volume attachments as typed objects.
+
+        Returns:
+            List[VolumeAttachmentObject]: List of attachment objects.
+        """
+        result = []
+        for raw in self.get_attachments():
+            obj = VolumeAttachmentObject()
+            obj.set_server_id(raw.get("server_id"))
+            obj.set_attachment_id(raw.get("attachment_id") or raw.get("id"))
+            obj.set_device(raw.get("device"))
+            obj.set_volume_id(raw.get("volume_id"))
+            result.append(obj)
+        return result
 
     def is_attached(self) -> bool:
         """Check if the volume is attached to any server.
@@ -185,6 +205,20 @@ class VolumeObject:
             bool: True if volume has attachments.
         """
         return len(self.get_attachments()) > 0
+
+    def is_attached_to_server(self, server_id: str) -> bool:
+        """Check if the volume is attached to a specific server.
+
+        Args:
+            server_id (str): Server ID to check.
+
+        Returns:
+            bool: True if volume is attached to the given server.
+        """
+        for attachment in self.get_attachment_objects():
+            if attachment.get_server_id() == server_id:
+                return True
+        return False
 
     def __str__(self) -> str:
         """Return string representation.

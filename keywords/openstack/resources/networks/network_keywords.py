@@ -414,6 +414,41 @@ class NetworkKeywords(BaseKeyword):
         """
         return self.list_networks().discover_external_network()
 
+    # ── Existence checks ────────────────────────────────────────────
+
+    def is_network_gone(self, network_name_or_id: str) -> bool:
+        """Check if a network no longer exists.
+
+        Args:
+            network_name_or_id (str): Network name or ID.
+
+        Returns:
+            bool: True if network is not found.
+        """
+        return self.openstack_connection.get_network().find_network(network_name_or_id, ignore_missing=True) is None
+
+    def is_subnet_gone(self, subnet_name_or_id: str) -> bool:
+        """Check if a subnet no longer exists.
+
+        Args:
+            subnet_name_or_id (str): Subnet name or ID.
+
+        Returns:
+            bool: True if subnet is not found.
+        """
+        return self.openstack_connection.get_network().find_subnet(subnet_name_or_id, ignore_missing=True) is None
+
+    def is_router_gone(self, router_name_or_id: str) -> bool:
+        """Check if a router no longer exists.
+
+        Args:
+            router_name_or_id (str): Router name or ID.
+
+        Returns:
+            bool: True if router is not found.
+        """
+        return self.openstack_connection.get_network().find_router(router_name_or_id, ignore_missing=True) is None
+
     # ── Cleanup helpers ─────────────────────────────────────────────
 
     def cleanup_network(self, network_name_or_id: str) -> None:
