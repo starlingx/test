@@ -69,15 +69,23 @@ class WebDriverCore:
         Returns: None
 
         """
-        self.driver.get(url)
-
         is_navigation_success = False
         if len(conditions) == 0:
             is_navigation_success = True
 
-        timeout = time.time() + 30
+        timeout = time.time() + 60
         reload_attempt_timeout = 2
+
         while not is_navigation_success and time.time() < timeout:
+            try:
+                self.driver.get(url)
+            except Exception as e:
+                if "ERR_CONNECTION_REFUSED" in str(e):
+                    get_logger().log_debug(f"Connection refused for {url}, retrying in {reload_attempt_timeout}s")
+                    time.sleep(reload_attempt_timeout)
+                    reload_attempt_timeout = min(reload_attempt_timeout + 2, 10)
+                    continue
+                raise
 
             for condition in conditions:
                 if condition.is_condition_satisfied(self.driver):
@@ -87,14 +95,13 @@ class WebDriverCore:
             if not is_navigation_success:
                 get_logger().log_debug(f"Failed to load page with URL: {url}")
                 get_logger().log_debug(f"Reload page and sleep for {reload_attempt_timeout} seconds ")
-                self.driver.get(url)
                 time.sleep(reload_attempt_timeout)
-                reload_attempt_timeout += 2
+                reload_attempt_timeout = min(reload_attempt_timeout + 2, 10)
 
         if is_navigation_success:
             get_logger().log_debug(f"Navigation to {url} successful.")
         else:
-            raise Exception(f"Page {url} failed to load after 30 seconds.")
+            raise Exception(f"Page {url} failed to load after 60 seconds.")
 
     def click(self, locator: WebLocator, conditions: List[WebCondition] = []) -> None:
         """

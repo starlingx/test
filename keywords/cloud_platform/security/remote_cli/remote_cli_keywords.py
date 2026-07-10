@@ -228,6 +228,8 @@ class RemoteCliKeywords(BaseKeyword):
         )
         env["PLATFORM_DOCKER_IMAGE"] = platform_image_result.stdout.strip()
 
+        get_logger().log_info("Ensuring port 8000 is free for kubelogin")
+
         proc = subprocess.Popen(
             ["bash", install_dir + "/client_wrapper.sh"] + kubectl_cmd.split(),
             stdout=subprocess.PIPE,

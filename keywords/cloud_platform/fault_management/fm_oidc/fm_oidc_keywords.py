@@ -6,6 +6,7 @@ from framework.ssh.ssh_connection import SSHConnection
 from framework.ssh.ssh_connection_manager import SSHConnectionManager
 from keywords.base_keyword import BaseKeyword
 from keywords.cloud_platform.fault_management.fm_oidc.object.fm_oidc_command_result_output import FmOidcCommandResultOutput
+from keywords.cloud_platform.system.oam.system_oam_show_keywords import SystemOamShowKeywords
 
 
 class FmOidcKeywords(BaseKeyword):
@@ -65,6 +66,14 @@ class FmOidcKeywords(BaseKeyword):
         self.ldap_ssh.send("kubeconfig-setup")
         self.ldap_ssh.send("source ~/.profile")
 
+        # Patch kubeconfig if platform OAM is IPv4 but kubeconfig-setup used IPv6
+        # On dual-stack labs, NodePorts (30555/30556) only serve on IPv4 OAM
+        oam_show_kw = SystemOamShowKeywords(self.ssh_connection)
+        oam_ipv4_addr = oam_show_kw.oam_show().get_oam_ip()
+        if oam_ipv4_addr and ":" not in oam_ipv4_addr:
+            get_logger().log_info(f"Patching kubeconfig to use IPv4 OAM {oam_ipv4_addr} for NodePort access")
+            self.ldap_ssh.send(f"sed -i " f"'s|\\[.*\\]:30556|{oam_ipv4_addr}:30556|g; " f"s|\\[.*\\]:30555|{oam_ipv4_addr}:30555|g; " f"s|\\[.*\\]:8000|{oam_ipv4_addr}:8000|g' " f"$HOME/.kube/config")
+
         if oidc_backend and oidc_username:
             output = self.ldap_ssh.send(f"oidc-auth -b {oidc_backend} -u {oidc_username} -p {password}")
         else:
@@ -90,7 +99,7 @@ class FmOidcKeywords(BaseKeyword):
             str: Full command string ready for execution.
         """
         fm_with_arg = fm_command.replace("fm ", "fm --stx-auth-type=oidc ", 1)
-        return f"export KUBECONFIG=$HOME/.kube/config && " f"source /etc/platform/openrc --no_credentials && " f"export OS_USERNAME=$(whoami) && " f"{fm_with_arg}"
+        return f"export PATH=$PATH:/usr/sbin && " f"export KUBECONFIG=$HOME/.kube/config && " f"source /etc/platform/openrc --no_credentials && " f"export OS_USERNAME=$(whoami) && " f"{fm_with_arg}"
 
     def run_fm_command_as_oidc_user(
         self,

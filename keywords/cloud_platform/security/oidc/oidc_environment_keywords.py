@@ -88,11 +88,18 @@ class OidcEnvironmentKeywords(BaseKeyword):
             "oidc_client_secret": oidc_client_secret,
         }
         dex_overrides_yaml = self.yaml_keywords.generate_yaml_file_from_template(template_file, replacement_dict, "dex-keycloak-overrides.yaml", working_dir)
-        self.helm_override_keywords.update_helm_override(dex_overrides_yaml, oidc_app_name, "dex", namespace, reuse_values=True)
+        self.helm_override_keywords.update_helm_override(dex_overrides_yaml, oidc_app_name, "dex", namespace, reuse_values=False)
 
         get_logger().log_info("Step 2b: Update oidc-client override to use oidc-auth-apps-certificate")
         oidc_client_template = get_stx_resource_path("resources/cloud_platform/security/oidc/oidc-client-overrides.yaml")
-        self.helm_override_keywords.update_helm_override(oidc_client_template, oidc_app_name, "oidc-client", namespace, reuse_values=False)
+        remote_oidc_client_override = f"{working_dir}/oidc-client-overrides.yaml"
+        self.file_keywords.upload_file(oidc_client_template, remote_oidc_client_override)
+        self.helm_override_keywords.update_helm_override(remote_oidc_client_override, oidc_app_name, "oidc-client", namespace, reuse_values=False)
+
+        get_logger().log_info("Step 2c: Ensure secret-observer has user override (platform requires all 3 charts)")
+        secret_observer_override = f"{working_dir}/secret-observer-overrides.yaml"
+        self.ssh_connection.send(f"echo '{{}}' > {secret_observer_override}")
+        self.helm_override_keywords.update_helm_override(secret_observer_override, oidc_app_name, "secret-observer", namespace, reuse_values=True)
 
         get_logger().log_info("Step 3: Apply the oidc-auth-apps configuration")
         system_app_apply_output = self.system_app_apply.system_application_apply(oidc_app_name)
@@ -172,22 +179,21 @@ class OidcEnvironmentKeywords(BaseKeyword):
     def teardown(self, oidc_app_name: str, namespace: str) -> None:
         """Remove OIDC app and delete overrides to leave lab in safe state.
 
-        No pods running = no FailedMount on lock/unlock. The next OIDC test's
-        setup will apply fresh overrides and reapply the app.
+        Cleans up test-specific resources (secrets, ClusterRoleBindings) but
+        leaves helm overrides and app in applied state. The next test's setup
+        uses reuse_values=False which fully replaces overrides with fresh values.
 
         Args:
             oidc_app_name (str): Name of the OIDC application (e.g., 'oidc-auth-apps').
             namespace (str): Kubernetes namespace (e.g., 'kube-system').
         """
-        get_logger().log_info("Teardown: Removing oidc-auth-apps")
-        self.ssh_connection.send(f"source /etc/platform/openrc && system application-remove {oidc_app_name}")
-        self._wait_for_app_status(oidc_app_name, "uploaded", timeout=300)
+        get_logger().log_teardown_step("Removing upstream IdP CA secret")
+        self.ssh_connection.send(f"export KUBECONFIG=/etc/kubernetes/admin.conf;kubectl delete -n {namespace} secret oidc-upstream-idp-ca --ignore-not-found")
 
-        get_logger().log_info("Teardown: Deleting all user helm overrides")
-        for chart in ["dex", "oidc-client", "secret-observer"]:
-            self.helm_override_keywords.delete_system_helm_override(oidc_app_name, chart, namespace)
+        get_logger().log_teardown_step("Removing ClusterRoleBinding")
+        self.ssh_connection.send("export KUBECONFIG=/etc/kubernetes/admin.conf;kubectl delete clusterrolebinding wrcp-admin-binding --ignore-not-found")
 
-        get_logger().log_info("OIDC teardown complete — app uploaded, no pods, no stale overrides")
+        get_logger().log_info("OIDC teardown complete — app remains applied with valid overrides")
 
     def _wait_for_app_status(self, app_name: str, expected_status: str, timeout: int = 300) -> None:
         """Wait for application to reach expected status.

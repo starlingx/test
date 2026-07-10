@@ -43,10 +43,11 @@ DEX_LOCAL_LDAP_OVERRIDE = """config:
       rootCA: /etc/ssl/certs/adcert/ca.crt
       userSearch:
         baseDN: ou=People,dc=cgcs,dc=local
-        emailAttr: uid
+        emailAttr: mail
         filter: (objectClass=posixAccount)
         idAttr: DN
-        nameAttr: uid
+        nameAttr: cn
+        preferredUsernameAttr: uid
         username: uid
       usernamePrompt: Username
     id: ldap-1
