@@ -1,5 +1,6 @@
 import codecs
 import re
+import shlex
 import time
 from typing import List, Optional
 
@@ -188,6 +189,38 @@ class SSHConnection:
             str: Output of the executed command.
         """
         return self._execute_command("SEND_SUDO", cmd, command_timeout=command_timeout, reconnect_timeout=reconnect_timeout)
+
+    def send_as_sudo_non_interactive(self, cmd: str, command_timeout: int = None, reconnect_timeout: int = None) -> str:
+        """
+        Send a command with sudo privileges using a non-interactive channel.
+
+        Unlike ``send_as_sudo``, which drives an interactive PTY and matches
+        the ``@`` character as a command-complete marker (problematic when ``@``
+        appears in the shell prompt, e.g. ``sysadmin@controller-0``), this method
+        feeds the sudo password via stdin and executes through the non-interactive
+        ``exec_command`` path.  This avoids premature prompt matching and echoed
+        command corruption from fixed-width PTY line wrapping.
+
+        The password is shell-quoted with ``shlex.quote()`` to prevent injection
+        when it contains special characters.  Sudo's own password prompt is sent
+        to stderr, which is discarded so it does not appear in the returned output.
+
+        Args:
+            cmd (str): The command to execute with sudo (without the ``sudo`` prefix).
+                Same convention as ``send_as_sudo`` — the ``sudo`` wrapper is
+                added automatically.
+            command_timeout (int): Optional timeout in seconds for command execution.
+            reconnect_timeout (int): Time in seconds to retry the connection if lost.
+
+        Returns:
+            str: The command output as a list of lines (consistent with ``send``
+            and ``send_as_sudo``).
+        """
+        password = shlex.quote(self.password)
+        wrapped_cmd = f"echo {password} | sudo -S {cmd} 2>/dev/null"
+        output = self.send(wrapped_cmd, command_timeout=command_timeout, reconnect_timeout=reconnect_timeout)
+
+        return output
 
     def send_expect_prompts(self, cmd: str, prompts: List[PromptResponse], command_timeout: int = None, reconnect_timeout: int = None) -> str:
         """
