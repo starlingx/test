@@ -180,7 +180,7 @@ def restore_backup_group(central_ssh: SSHConnection, request, local: bool = Fals
     for subcloud_name in subcloud_list:
         DcManagerSubcloudListKeywords(central_ssh).validate_subcloud_availability_status(subcloud_name)
 
-def ensure_running_on_controller(controller: str):
+def ensure_running_on_controller(central_ssh, controller: str):
     active_controller = SystemHostListKeywords(central_ssh).get_active_controller()
     standby_controller = SystemHostListKeywords(central_ssh).get_standby_controller()
     if active_controller.get_host_name() != controller:
@@ -1000,7 +1000,7 @@ def test_auto_restore_central_backup(request):
 
     """
     central_ssh = LabConnectionKeywords().get_active_controller_ssh()
-    ensure_running_on_controller(controller="controller-0")
+    ensure_running_on_controller(central_ssh=central_ssh, controller="controller-0")
 
     # Gets the lowest subcloud (the subcloud with the lowest id).
     subcloud_name = DcManagerSubcloudListKeywords(
@@ -1023,7 +1023,7 @@ def test_auto_restore_remote_backup(request):
 
     """
     central_ssh = LabConnectionKeywords().get_active_controller_ssh()
-    ensure_running_on_controller(controller="controller-0")
+    ensure_running_on_controller(central_ssh=central_ssh, controller="controller-0")
 
     # Gets the lowest subcloud (the subcloud with the lowest id).
     subcloud_name = DcManagerSubcloudListKeywords(
@@ -1047,7 +1047,7 @@ def test_factory_restore_backup(request):
 
     """
     central_ssh = LabConnectionKeywords().get_active_controller_ssh()
-    ensure_running_on_controller(controller="controller-0")
+    ensure_running_on_controller(central_ssh=central_ssh, controller="controller-0")
 
     # Gets the lowest subcloud (the subcloud with the lowest id).
     subcloud_name = DcManagerSubcloudListKeywords(
