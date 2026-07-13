@@ -5,11 +5,10 @@ service parameters) are preserved unchanged across upgrade, rollback,
 and backup-restore operations, and that E2E OIDC access continues to work.
 """
 
-import json5
 from pytest import mark
 
+from config.configuration_manager import ConfigurationManager
 from framework.logging.automation_logger import get_logger
-from framework.resources.resource_finder import get_stx_resource_path
 from framework.ssh.ssh_connection import SSHConnection
 from framework.validation.validation import validate_equals
 from keywords.cloud_platform.command_wrappers import source_openrc
@@ -25,9 +24,7 @@ def _load_dex_config() -> dict:
     Returns:
         dict: Configuration dictionary.
     """
-    path = get_stx_resource_path("config/security/files/dex_connector_config.json5")
-    with open(path) as f:
-        return json5.load(f)["dex_connector"]
+    return ConfigurationManager.get_security_config().get_dex_connector_config()
 
 
 def _verify_oidc_app_healthy(ssh_connection: SSHConnection) -> None:

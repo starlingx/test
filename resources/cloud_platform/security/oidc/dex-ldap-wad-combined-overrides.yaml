@@ -1,0 +1,84 @@
+# Template for DEX helm overrides with both Local LDAP and WAD connectors.
+# Used by test_email_identity_isolation_across_ldap_and_wad to verify
+# email-based identity isolation between multiple backends.
+# Variables:
+#   mgmt_ip:            Management IP for LDAP host
+#   bind_pw:            LDAP bind password
+#   email_attr:         LDAP userSearch emailAttr
+#   name_attr:          LDAP userSearch nameAttr
+#   wad_server:         WAD/AD server hostname
+#   wad_bind_dn:        WAD bind DN
+#   wad_bind_pw:        WAD bind password
+#   wad_user_search_base: WAD user search baseDN
+#   wad_group_search_base: WAD group search baseDN
+#   wad_email_attr:     WAD userSearch emailAttr
+#   wad_username_attr:  WAD userSearch usernameAttr
+#   wad_name_attr:      WAD userSearch nameAttr
+config:
+  connectors:
+  - config:
+      bindDN: CN=ldapadmin,DC=cgcs,DC=local
+      bindPW: '{{ bind_pw }}'
+      groupSearch:
+        baseDN: ou=Group,dc=cgcs,dc=local
+        filter: (objectClass=posixGroup)
+        nameAttr: cn
+        userMatchers:
+        - groupAttr: memberUid
+          userAttr: uid
+      host: '{{ mgmt_ip }}:636'
+      insecureNoSSL: false
+      insecureSkipVerify: false
+      rootCA: /etc/ssl/certs/adcert/ca.crt
+      userSearch:
+        baseDN: ou=People,dc=cgcs,dc=local
+        emailAttr: {{ email_attr }}
+        filter: (objectClass=posixAccount)
+        idAttr: DN
+        nameAttr: {{ name_attr }}
+        preferredUsernameAttr: uid
+        username: uid
+      usernamePrompt: Username
+    id: ldap-1
+    name: ldap-1
+    type: ldap
+  - config:
+      bindDN: '{{ wad_bind_dn }}'
+      bindPW: '{{ wad_bind_pw }}'
+      groupSearch:
+        baseDN: {{ wad_group_search_base }}
+        filter: (objectClass=group)
+        userMatchers:
+        - groupAttr: member
+          userAttr: DN
+        nameAttr: cn
+      host: '{{ wad_server }}:636'
+      insecureNoSSL: false
+      insecureSkipVerify: true
+      userSearch:
+        baseDN: {{ wad_user_search_base }}
+        emailAttr: {{ wad_email_attr }}
+        filter: (objectClass=user)
+        idAttr: sAMAccountName
+        nameAttr: {{ wad_name_attr }}
+        preferredUsernameAttr: {{ wad_username_attr }}
+        username: sAMAccountName
+      usernamePrompt: Username
+    id: remotewad-1
+    name: RemoteWAD
+    type: ldap
+  expiry:
+    idTokens: 24h
+volumeMounts:
+- mountPath: /etc/ssl/certs/adcert
+  name: certdir
+- mountPath: /etc/dex/tls
+  name: https-tls
+volumes:
+- name: certdir
+  secret:
+    secretName: oidc-auth-apps-certificate
+- name: https-tls
+  secret:
+    defaultMode: 420
+    secretName: oidc-auth-apps-certificate

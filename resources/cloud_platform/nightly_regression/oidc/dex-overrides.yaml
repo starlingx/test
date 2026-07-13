@@ -16,7 +16,7 @@ config:
       id: localldap-1
       config:
         host: '"{{ mgmt_ip }}":636'
-        rootCA: /etc/ssl/certs/adcert/local-ldap-ca-cert.crt
+        rootCA: /etc/ssl/certs/adcert/tls.crt
         insecureNoSSL: false
         insecureSkipVerify: false
         bindDN: CN=ldapadmin,DC=cgcs,DC=local

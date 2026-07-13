@@ -6,12 +6,10 @@ oidc-username-claim via service-parameter CLI, and verifies
 access using preferred_username and email claims.
 """
 
-import json5
 from pytest import mark
 
 from config.configuration_manager import ConfigurationManager
 from framework.logging.automation_logger import get_logger
-from framework.resources.resource_finder import get_stx_resource_path
 from framework.ssh.ssh_connection import SSHConnection
 from framework.ssh.ssh_connection_manager import SSHConnectionManager
 from framework.validation.validation import validate_equals
@@ -30,9 +28,7 @@ def _load_dex_config() -> dict:
     Returns:
         dict: Configuration dictionary.
     """
-    path = get_stx_resource_path("config/security/files/dex_connector_config.json5")
-    with open(path) as f:
-        return json5.load(f)["dex_connector"]
+    return ConfigurationManager.get_security_config().get_dex_connector_config()
 
 
 def _get_keycloak_test_user_config() -> dict:

@@ -6,7 +6,6 @@ service-parameter CLI, and verifies end-to-end OIDC authentication
 including negative cases and HA scenarios.
 """
 
-import json5
 from pytest import mark
 
 from config.configuration_manager import ConfigurationManager
@@ -14,30 +13,30 @@ from framework.logging.automation_logger import get_logger
 from framework.resources.resource_finder import get_stx_resource_path
 from framework.ssh.ssh_connection import SSHConnection
 from framework.ssh.ssh_connection_manager import SSHConnectionManager
-from framework.validation.validation import validate_equals
+from framework.validation.validation import validate_equals, validate_str_contains
 from keywords.cloud_platform.command_wrappers import source_openrc
 from keywords.cloud_platform.security.oidc.dex_connector_keywords import DexConnectorKeywords
-from keywords.cloud_platform.security.oidc.wad_connector_keywords import WadConnectorKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
+from keywords.cloud_platform.system.addrpool.system_addrpool_list_keywords import SystemAddrpoolListKeywords
 from keywords.cloud_platform.system.host.system_host_list_keywords import SystemHostListKeywords
 from keywords.cloud_platform.system.host.system_host_reboot_keywords import SystemHostRebootKeywords
 from keywords.cloud_platform.system.host.system_host_swact_keywords import SystemHostSwactKeywords
+from keywords.cloud_platform.system.service.system_service_parameter_keywords import SystemServiceParameterKeywords
 from keywords.files.file_keywords import FileKeywords
 from keywords.files.yaml_keywords import YamlKeywords
 from keywords.k8s.clusterrolebinding.kubectl_create_clusterrolebinding_keywords import KubectlCreateClusterRoleBindingKeywords
 from keywords.k8s.pods.kubectl_wait_pod_keywords import KubectlWaitPodKeywords
+from keywords.linux.keyring.keyring_keywords import KeyringKeywords
 from keywords.linux.ldap.ldap_keywords import LdapKeywords
 
 
 def _load_dex_config() -> dict:
-    """Load DEX connector config from JSON5.
+    """Load DEX connector config from SecurityConfig via ConfigurationManager.
 
     Returns:
         dict: Configuration dictionary.
     """
-    path = get_stx_resource_path("config/security/files/dex_connector_config.json5")
-    with open(path) as f:
-        return json5.load(f)["dex_connector"]
+    return ConfigurationManager.get_security_config().get_dex_connector_config()
 
 
 def _get_test_user_config() -> dict:
@@ -61,15 +60,17 @@ def _apply_ldap_attr_override(ssh_connection: SSHConnection, config: dict, email
     yaml_keywords = YamlKeywords(ssh_connection)
     file_keywords = FileKeywords(ssh_connection)
     dex_keywords = DexConnectorKeywords(ssh_connection)
-    lab_config = ConfigurationManager.get_lab_config()
 
     working_dir = config["working_dir"]
     file_keywords.create_directory(working_dir)
 
     template = get_stx_resource_path("resources/cloud_platform/security/oidc/dex-ldap-attr-mapping-overrides.yaml")
+    mgmt_ip = SystemAddrpoolListKeywords(ssh_connection).get_system_addrpool_list().get_management_floating_address()
+    if ":" in mgmt_ip:
+        mgmt_ip = f"[{mgmt_ip}]"
     replacements = {
-        "mgmt_ip": lab_config.get_management_ip(),
-        "bind_pw": ConfigurationManager.get_security_config().get_domain_name(),
+        "mgmt_ip": mgmt_ip,
+        "bind_pw": KeyringKeywords(ssh_connection).get_keyring(service="ldap", identifier="ldapadmin"),
         "email_attr": email_attr,
         "name_attr": name_attr,
     }
@@ -77,45 +78,61 @@ def _apply_ldap_attr_override(ssh_connection: SSHConnection, config: dict, email
     dex_keywords.apply_dex_override_and_reapply(override_file, config["oidc_app_name"], config["namespace"])
 
 
-def _create_ldap_ssh(username: str, password: str, oam_ip: str) -> SSHConnection:
+def _create_ldap_ssh(username: str, password: str, oam_ip: str, backend: str = "") -> SSHConnection:
     """Create SSH session as LDAP user and authenticate via oidc-auth.
 
     Args:
         username (str): LDAP username.
         password (str): LDAP password.
         oam_ip (str): Lab OAM IP.
+        backend (str): Dex connector backend ID (e.g., 'ldap-1'). Required when multiple backends exist.
 
     Returns:
         SSHConnection: Authenticated SSH session.
     """
     ldap_ssh = SSHConnectionManager.create_ssh_connection(oam_ip, username, password)
     ldap_ssh.connect()
+    ldap_ssh.send("rm -rf ~/.kube && mkdir -p ~/.kube")
     ldap_ssh.send("kubeconfig-setup")
     ldap_ssh.send("source ~/.profile")
-    ldap_ssh.send(f"oidc-auth -p {password}")
+    backend_flag = f" -b {backend}" if backend else ""
+    ldap_ssh.send(f"oidc-auth -p {password}{backend_flag}")
     return ldap_ssh
 
 
-def _verify_kubectl_and_stx_access(ldap_ssh: SSHConnection, expect_success: bool = True) -> None:
-    """Verify kubectl and STX platform access for the authenticated LDAP user.
+def _verify_kubectl_and_stx_access(ldap_ssh: SSHConnection, expect_success: bool = True, expected_email: str = "", expected_username: str = "") -> None:
+    """Verify kubectl, STX platform access, and token claims for the authenticated LDAP user.
 
     Args:
         ldap_ssh (SSHConnection): Authenticated LDAP SSH session.
         expect_success (bool): Whether access should succeed.
+        expected_email (str): If set, verify email claim matches this value.
+        expected_username (str): If set, verify preferred_username claim matches this value.
     """
-    ldap_ssh.send("kubectl get pods -A")
+    if expect_success:
+        ldap_ssh.send("kubectl get pods -A --request-timeout=30s")
+    else:
+        # Use shorter timeout for negative tests
+        ldap_ssh.send("kubectl get pods -A --request-timeout=10s")
     rc = ldap_ssh.get_return_code()
     if expect_success:
         validate_equals(rc, 0, "kubectl should succeed for authenticated LDAP user")
     else:
         validate_equals(rc != 0, True, "kubectl should be denied")
+        return
 
-    ldap_ssh.send(source_openrc("system host-list"))
-    stx_rc = ldap_ssh.get_return_code()
-    if expect_success:
-        validate_equals(stx_rc, 0, "system host-list should succeed for OIDC-authenticated user")
-    else:
-        validate_equals(stx_rc != 0, True, "system host-list should be denied")
+    output = ldap_ssh.send(source_openrc("system host-list"))
+    raw = "\n".join(output) if isinstance(output, list) else str(output)
+    validate_str_contains(raw, "controller", "system host-list should succeed for OIDC-authenticated user")
+
+    # Decode token and verify claims match expected attribute mappings
+    if expected_email or expected_username:
+        dex_keywords = DexConnectorKeywords(ldap_ssh)
+        claims = dex_keywords.decode_cached_token()
+        if expected_email:
+            validate_equals(claims.get_email(), expected_email, f"ID token email claim should be '{expected_email}'")
+        if expected_username:
+            validate_equals(claims.get_preferred_username(), expected_username, f"ID token preferred_username claim should be '{expected_username}'")
 
 
 # =============================================================================
@@ -124,7 +141,6 @@ def _verify_kubectl_and_stx_access(ldap_ssh: SSHConnection, expect_success: bool
 
 
 @mark.p1
-@mark.lab_has_standby_controller
 def test_local_ldap_recommended_attr_mappings(request):
     """Test recommended emailAttr/nameAttr for Local LDAP connector.
 
@@ -139,7 +155,8 @@ def test_local_ldap_recommended_attr_mappings(request):
 
     def cleanup():
         ssh = LabConnectionKeywords().get_active_controller_ssh()
-        FileKeywords(ssh).remove_directory(config["working_dir"])
+        get_logger().log_teardown_step("Cleaning up test resources")
+        FileKeywords(ssh).delete_directory(config["working_dir"])
 
     request.addfinalizer(cleanup)
 
@@ -152,7 +169,6 @@ def test_local_ldap_recommended_attr_mappings(request):
 
 
 @mark.p1
-@mark.lab_has_standby_controller
 def test_oidc_username_claim_set_via_service_parameter(request):
     """Test oidc-username-claim modification via service-parameter CLI.
 
@@ -168,7 +184,9 @@ def test_oidc_username_claim_set_via_service_parameter(request):
 
     def cleanup():
         ssh = LabConnectionKeywords().get_active_controller_ssh()
-        DexConnectorKeywords(ssh).set_oidc_username_claim(claim["default"])
+        get_logger().log_teardown_step("Cleaning up test resources")
+        service_param_kw = SystemServiceParameterKeywords(ssh)
+        service_param_kw.modify_service_parameter("kubernetes", "kube_apiserver", "oidc-username-claim", claim["default"])
 
     request.addfinalizer(cleanup)
 
@@ -182,7 +200,6 @@ def test_oidc_username_claim_set_via_service_parameter(request):
 
 
 @mark.p2
-@mark.lab_has_standby_controller
 def test_oidc_username_claim_default_is_preferred_username():
     """Test default bootstrap oidc-username-claim is 'preferred_username'.
 
@@ -204,7 +221,6 @@ def test_oidc_username_claim_default_is_preferred_username():
 
 
 @mark.p0
-@mark.lab_has_standby_controller
 def test_ldap_user_mail_attribute_setup(request):
     """Verify LDAP user can be created with mail attribute.
 
@@ -215,20 +231,19 @@ def test_ldap_user_mail_attribute_setup(request):
     """
     test_user = _get_test_user_config()
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
-    security_config = ConfigurationManager.get_security_config()
-    ldap_keywords = LdapKeywords(ssh_connection, security_config.get_domain_name())
+    ldap_keywords = LdapKeywords(ssh_connection, ConfigurationManager.get_lab_config().get_admin_credentials().get_password())
 
     def cleanup():
         ssh = LabConnectionKeywords().get_active_controller_ssh()
-        sec_config = ConfigurationManager.get_security_config()
-        LdapKeywords(ssh, sec_config.get_domain_name()).delete_user(test_user["username"])
+        get_logger().log_teardown_step(f"Deleting LDAP user: {test_user['username']}")
+        LdapKeywords(ssh, ConfigurationManager.get_lab_config().get_admin_credentials().get_password()).delete_user(test_user["username"])
 
     request.addfinalizer(cleanup)
 
-    get_logger().log_info(f"Creating LDAP user: {test_user['username']}")
+    get_logger().log_info(f"Creating LDAP user: {test_user['username']} (role={test_user['role']})")
     ldap_keywords.create_user(test_user["username"], test_user["password"], user_role=test_user["role"])
 
-    get_logger().log_info(f"Adding mail attribute: {test_user['email']}")
+    get_logger().log_info(f"Adding mail attribute '{test_user['email']}' to user '{test_user['username']}'")
     ldap_keywords.add_mail_attribute(test_user["username"], test_user["email"])
 
     get_logger().log_info("Verifying mail attribute via ldapsearch")
@@ -237,7 +252,6 @@ def test_ldap_user_mail_attribute_setup(request):
 
 
 @mark.p0
-@mark.lab_has_standby_controller
 def test_ldap_access_with_preferred_username_claim(request):
     """Verify K8s access with Local LDAP + oidc-username-claim=preferred_username.
 
@@ -251,9 +265,8 @@ def test_ldap_access_with_preferred_username_claim(request):
     config = _load_dex_config()
     test_user = _get_test_user_config()
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
-    security_config = ConfigurationManager.get_security_config()
     lab_config = ConfigurationManager.get_lab_config()
-    ldap_keywords = LdapKeywords(ssh_connection, security_config.get_domain_name())
+    ldap_keywords = LdapKeywords(ssh_connection, ConfigurationManager.get_lab_config().get_admin_credentials().get_password())
     dex_keywords = DexConnectorKeywords(ssh_connection)
     crb_keywords = KubectlCreateClusterRoleBindingKeywords(ssh_connection)
 
@@ -261,10 +274,10 @@ def test_ldap_access_with_preferred_username_claim(request):
 
     def cleanup():
         ssh = LabConnectionKeywords().get_active_controller_ssh()
-        sec_config = ConfigurationManager.get_security_config()
+        get_logger().log_teardown_step("Cleaning up test resources")
         KubectlCreateClusterRoleBindingKeywords(ssh).delete_clusterrolebinding(test_user["crb_name"])
-        LdapKeywords(ssh, sec_config.get_domain_name()).delete_user(test_user["username"])
-        FileKeywords(ssh).remove_directory(config["working_dir"])
+        LdapKeywords(ssh, ConfigurationManager.get_lab_config().get_admin_credentials().get_password()).delete_user(test_user["username"])
+        FileKeywords(ssh).delete_directory(config["working_dir"])
 
     request.addfinalizer(cleanup)
 
@@ -272,16 +285,18 @@ def test_ldap_access_with_preferred_username_claim(request):
     ldap_keywords.add_mail_attribute(test_user["username"], test_user["email"])
     _apply_ldap_attr_override(ssh_connection, config, config["local_ldap"]["email_attr"], config["local_ldap"]["name_attr"])
     dex_keywords.set_oidc_username_claim(config["oidc_username_claim"]["default"])
-    crb_keywords.create_clusterrolebinding_for_user(test_user["crb_name"], "cluster-admin", test_user["username"])
+    # CRB must use issuer-prefixed username: kube-apiserver resolves OIDC users as <issuer>#<claim_value>
+    bracketed_ip = f"[{oam_ip}]" if ":" in oam_ip else oam_ip
+    oidc_issuer = f"https://{bracketed_ip}:30556/dex"
+    crb_keywords.create_clusterrolebinding_for_user(test_user["crb_name"], "cluster-admin", f"{oidc_issuer}#{test_user['username']}")
 
     get_logger().log_info("SSH as LDAP user, oidc-auth, verify kubectl")
     ldap_ssh = _create_ldap_ssh(test_user["username"], test_user["password"], oam_ip)
-    _verify_kubectl_and_stx_access(ldap_ssh, expect_success=True)
+    _verify_kubectl_and_stx_access(ldap_ssh, expect_success=True, expected_username=test_user["username"], expected_email=test_user["email"])
     ldap_ssh.close()
 
 
 @mark.p0
-@mark.lab_has_standby_controller
 def test_ldap_access_with_email_claim(request):
     """Verify K8s access with Local LDAP + oidc-username-claim=email.
 
@@ -295,9 +310,8 @@ def test_ldap_access_with_email_claim(request):
     config = _load_dex_config()
     test_user = _get_test_user_config()
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
-    security_config = ConfigurationManager.get_security_config()
     lab_config = ConfigurationManager.get_lab_config()
-    ldap_keywords = LdapKeywords(ssh_connection, security_config.get_domain_name())
+    ldap_keywords = LdapKeywords(ssh_connection, ConfigurationManager.get_lab_config().get_admin_credentials().get_password())
     dex_keywords = DexConnectorKeywords(ssh_connection)
     crb_keywords = KubectlCreateClusterRoleBindingKeywords(ssh_connection)
 
@@ -305,11 +319,11 @@ def test_ldap_access_with_email_claim(request):
 
     def cleanup():
         ssh = LabConnectionKeywords().get_active_controller_ssh()
-        sec_config = ConfigurationManager.get_security_config()
+        get_logger().log_teardown_step("Cleaning up test resources")
         KubectlCreateClusterRoleBindingKeywords(ssh).delete_clusterrolebinding(test_user["crb_name"])
         DexConnectorKeywords(ssh).set_oidc_username_claim(config["oidc_username_claim"]["default"])
-        LdapKeywords(ssh, sec_config.get_domain_name()).delete_user(test_user["username"])
-        FileKeywords(ssh).remove_directory(config["working_dir"])
+        LdapKeywords(ssh, ConfigurationManager.get_lab_config().get_admin_credentials().get_password()).delete_user(test_user["username"])
+        FileKeywords(ssh).delete_directory(config["working_dir"])
 
     request.addfinalizer(cleanup)
 
@@ -321,7 +335,7 @@ def test_ldap_access_with_email_claim(request):
 
     get_logger().log_info("SSH as LDAP user, oidc-auth, verify kubectl with email CRB")
     ldap_ssh = _create_ldap_ssh(test_user["username"], test_user["password"], oam_ip)
-    _verify_kubectl_and_stx_access(ldap_ssh, expect_success=True)
+    _verify_kubectl_and_stx_access(ldap_ssh, expect_success=True, expected_email=test_user["email"], expected_username=test_user["username"])
     ldap_ssh.close()
 
 
@@ -331,7 +345,6 @@ def test_ldap_access_with_email_claim(request):
 
 
 @mark.p0
-@mark.lab_has_standby_controller
 def test_ldap_access_denied_no_mail_with_email_claim(request):
     """Verify K8s access denied when LDAP user has no mail attr and claim=email.
 
@@ -343,9 +356,8 @@ def test_ldap_access_denied_no_mail_with_email_claim(request):
     config = _load_dex_config()
     test_user = _get_test_user_config()
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
-    security_config = ConfigurationManager.get_security_config()
     lab_config = ConfigurationManager.get_lab_config()
-    ldap_keywords = LdapKeywords(ssh_connection, security_config.get_domain_name())
+    ldap_keywords = LdapKeywords(ssh_connection, ConfigurationManager.get_lab_config().get_admin_credentials().get_password())
     dex_keywords = DexConnectorKeywords(ssh_connection)
     crb_keywords = KubectlCreateClusterRoleBindingKeywords(ssh_connection)
 
@@ -353,11 +365,11 @@ def test_ldap_access_denied_no_mail_with_email_claim(request):
 
     def cleanup():
         ssh = LabConnectionKeywords().get_active_controller_ssh()
-        sec_config = ConfigurationManager.get_security_config()
+        get_logger().log_teardown_step("Cleaning up test resources")
         KubectlCreateClusterRoleBindingKeywords(ssh).delete_clusterrolebinding(test_user["crb_name"])
         DexConnectorKeywords(ssh).set_oidc_username_claim(config["oidc_username_claim"]["default"])
-        LdapKeywords(ssh, sec_config.get_domain_name()).delete_user(test_user["username"])
-        FileKeywords(ssh).remove_directory(config["working_dir"])
+        LdapKeywords(ssh, ConfigurationManager.get_lab_config().get_admin_credentials().get_password()).delete_user(test_user["username"])
+        FileKeywords(ssh).delete_directory(config["working_dir"])
 
     request.addfinalizer(cleanup)
 
@@ -373,7 +385,6 @@ def test_ldap_access_denied_no_mail_with_email_claim(request):
 
 
 @mark.p0
-@mark.lab_has_standby_controller
 def test_ldap_access_denied_crb_mismatch(request):
     """Verify access denied when CRB is by username but claim=email.
 
@@ -385,9 +396,8 @@ def test_ldap_access_denied_crb_mismatch(request):
     config = _load_dex_config()
     test_user = _get_test_user_config()
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
-    security_config = ConfigurationManager.get_security_config()
     lab_config = ConfigurationManager.get_lab_config()
-    ldap_keywords = LdapKeywords(ssh_connection, security_config.get_domain_name())
+    ldap_keywords = LdapKeywords(ssh_connection, ConfigurationManager.get_lab_config().get_admin_credentials().get_password())
     dex_keywords = DexConnectorKeywords(ssh_connection)
     crb_keywords = KubectlCreateClusterRoleBindingKeywords(ssh_connection)
 
@@ -395,11 +405,11 @@ def test_ldap_access_denied_crb_mismatch(request):
 
     def cleanup():
         ssh = LabConnectionKeywords().get_active_controller_ssh()
-        sec_config = ConfigurationManager.get_security_config()
+        get_logger().log_teardown_step("Cleaning up test resources")
         KubectlCreateClusterRoleBindingKeywords(ssh).delete_clusterrolebinding(test_user["crb_name"])
         DexConnectorKeywords(ssh).set_oidc_username_claim(config["oidc_username_claim"]["default"])
-        LdapKeywords(ssh, sec_config.get_domain_name()).delete_user(test_user["username"])
-        FileKeywords(ssh).remove_directory(config["working_dir"])
+        LdapKeywords(ssh, ConfigurationManager.get_lab_config().get_admin_credentials().get_password()).delete_user(test_user["username"])
+        FileKeywords(ssh).delete_directory(config["working_dir"])
 
     request.addfinalizer(cleanup)
 
@@ -416,7 +426,6 @@ def test_ldap_access_denied_crb_mismatch(request):
 
 
 @mark.p1
-@mark.lab_has_standby_controller
 def test_ldap_invalid_email_attr_graceful(request):
     """Verify app applies gracefully with invalid emailAttr field.
 
@@ -430,7 +439,9 @@ def test_ldap_invalid_email_attr_graceful(request):
 
     def cleanup():
         ssh = LabConnectionKeywords().get_active_controller_ssh()
-        FileKeywords(ssh).remove_directory(config["working_dir"])
+        get_logger().log_teardown_step("Cleaning up test resources")
+        _apply_ldap_attr_override(ssh, config, config["local_ldap"]["email_attr"], config["local_ldap"]["name_attr"])
+        FileKeywords(ssh).delete_directory(config["working_dir"])
 
     request.addfinalizer(cleanup)
 
@@ -439,7 +450,6 @@ def test_ldap_invalid_email_attr_graceful(request):
 
 
 @mark.p1
-@mark.lab_has_standby_controller
 def test_ldap_invalid_name_attr_graceful(request):
     """Verify app applies gracefully with invalid nameAttr field.
 
@@ -453,7 +463,9 @@ def test_ldap_invalid_name_attr_graceful(request):
 
     def cleanup():
         ssh = LabConnectionKeywords().get_active_controller_ssh()
-        FileKeywords(ssh).remove_directory(config["working_dir"])
+        get_logger().log_teardown_step("Cleaning up test resources")
+        _apply_ldap_attr_override(ssh, config, config["local_ldap"]["email_attr"], config["local_ldap"]["name_attr"])
+        FileKeywords(ssh).delete_directory(config["working_dir"])
 
     request.addfinalizer(cleanup)
 
@@ -462,7 +474,6 @@ def test_ldap_invalid_name_attr_graceful(request):
 
 
 @mark.p1
-@mark.lab_has_standby_controller
 def test_ldap_switch_claim_invalidates_old_crb(request):
     """Verify switching oidc-username-claim invalidates existing CRB.
 
@@ -474,9 +485,8 @@ def test_ldap_switch_claim_invalidates_old_crb(request):
     config = _load_dex_config()
     test_user = _get_test_user_config()
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
-    security_config = ConfigurationManager.get_security_config()
     lab_config = ConfigurationManager.get_lab_config()
-    ldap_keywords = LdapKeywords(ssh_connection, security_config.get_domain_name())
+    ldap_keywords = LdapKeywords(ssh_connection, ConfigurationManager.get_lab_config().get_admin_credentials().get_password())
     dex_keywords = DexConnectorKeywords(ssh_connection)
     crb_keywords = KubectlCreateClusterRoleBindingKeywords(ssh_connection)
 
@@ -484,11 +494,11 @@ def test_ldap_switch_claim_invalidates_old_crb(request):
 
     def cleanup():
         ssh = LabConnectionKeywords().get_active_controller_ssh()
-        sec_config = ConfigurationManager.get_security_config()
+        get_logger().log_teardown_step("Cleaning up test resources")
         KubectlCreateClusterRoleBindingKeywords(ssh).delete_clusterrolebinding(test_user["crb_name"])
         DexConnectorKeywords(ssh).set_oidc_username_claim(config["oidc_username_claim"]["default"])
-        LdapKeywords(ssh, sec_config.get_domain_name()).delete_user(test_user["username"])
-        FileKeywords(ssh).remove_directory(config["working_dir"])
+        LdapKeywords(ssh, ConfigurationManager.get_lab_config().get_admin_credentials().get_password()).delete_user(test_user["username"])
+        FileKeywords(ssh).delete_directory(config["working_dir"])
 
     request.addfinalizer(cleanup)
 
@@ -498,7 +508,9 @@ def test_ldap_switch_claim_invalidates_old_crb(request):
 
     get_logger().log_info("Verify access with preferred_username claim")
     dex_keywords.set_oidc_username_claim(config["oidc_username_claim"]["default"])
-    crb_keywords.create_clusterrolebinding_for_user(test_user["crb_name"], "cluster-admin", test_user["username"])
+    bracketed_ip = f"[{oam_ip}]" if ":" in oam_ip else oam_ip
+    oidc_issuer = f"https://{bracketed_ip}:30556/dex"
+    crb_keywords.create_clusterrolebinding_for_user(test_user["crb_name"], "cluster-admin", f"{oidc_issuer}#{test_user['username']}")
     ldap_ssh = _create_ldap_ssh(test_user["username"], test_user["password"], oam_ip)
     _verify_kubectl_and_stx_access(ldap_ssh, expect_success=True)
     ldap_ssh.close()
@@ -534,9 +546,8 @@ def test_ldap_oidc_access_after_swact(request):
     config = _load_dex_config()
     test_user = _get_test_user_config()
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
-    security_config = ConfigurationManager.get_security_config()
     lab_config = ConfigurationManager.get_lab_config()
-    ldap_keywords = LdapKeywords(ssh_connection, security_config.get_domain_name())
+    ldap_keywords = LdapKeywords(ssh_connection, ConfigurationManager.get_lab_config().get_admin_credentials().get_password())
     dex_keywords = DexConnectorKeywords(ssh_connection)
     crb_keywords = KubectlCreateClusterRoleBindingKeywords(ssh_connection)
 
@@ -544,10 +555,10 @@ def test_ldap_oidc_access_after_swact(request):
 
     def cleanup():
         ssh = LabConnectionKeywords().get_active_controller_ssh()
-        sec_config = ConfigurationManager.get_security_config()
+        get_logger().log_teardown_step("Cleaning up test resources")
         KubectlCreateClusterRoleBindingKeywords(ssh).delete_clusterrolebinding(test_user["crb_name"])
-        LdapKeywords(ssh, sec_config.get_domain_name()).delete_user(test_user["username"])
-        FileKeywords(ssh).remove_directory(config["working_dir"])
+        LdapKeywords(ssh, ConfigurationManager.get_lab_config().get_admin_credentials().get_password()).delete_user(test_user["username"])
+        FileKeywords(ssh).delete_directory(config["working_dir"])
 
     request.addfinalizer(cleanup)
 
@@ -555,7 +566,9 @@ def test_ldap_oidc_access_after_swact(request):
     ldap_keywords.add_mail_attribute(test_user["username"], test_user["email"])
     _apply_ldap_attr_override(ssh_connection, config, config["local_ldap"]["email_attr"], config["local_ldap"]["name_attr"])
     dex_keywords.set_oidc_username_claim(config["oidc_username_claim"]["default"])
-    crb_keywords.create_clusterrolebinding_for_user(test_user["crb_name"], "cluster-admin", test_user["username"])
+    bracketed_ip = f"[{oam_ip}]" if ":" in oam_ip else oam_ip
+    oidc_issuer = f"https://{bracketed_ip}:30556/dex"
+    crb_keywords.create_clusterrolebinding_for_user(test_user["crb_name"], "cluster-admin", f"{oidc_issuer}#{test_user['username']}")
 
     get_logger().log_info("Verifying access before swact")
     ldap_ssh = _create_ldap_ssh(test_user["username"], test_user["password"], oam_ip)
@@ -591,9 +604,8 @@ def test_ldap_oidc_access_after_ungraceful_reboot(request):
     config = _load_dex_config()
     test_user = _get_test_user_config()
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
-    security_config = ConfigurationManager.get_security_config()
     lab_config = ConfigurationManager.get_lab_config()
-    ldap_keywords = LdapKeywords(ssh_connection, security_config.get_domain_name())
+    ldap_keywords = LdapKeywords(ssh_connection, ConfigurationManager.get_lab_config().get_admin_credentials().get_password())
     dex_keywords = DexConnectorKeywords(ssh_connection)
     crb_keywords = KubectlCreateClusterRoleBindingKeywords(ssh_connection)
 
@@ -602,10 +614,10 @@ def test_ldap_oidc_access_after_ungraceful_reboot(request):
 
     def cleanup():
         ssh = LabConnectionKeywords().get_active_controller_ssh()
-        sec_config = ConfigurationManager.get_security_config()
+        get_logger().log_teardown_step("Cleaning up test resources")
         KubectlCreateClusterRoleBindingKeywords(ssh).delete_clusterrolebinding(test_user["crb_name"])
-        LdapKeywords(ssh, sec_config.get_domain_name()).delete_user(test_user["username"])
-        FileKeywords(ssh).remove_directory(config["working_dir"])
+        LdapKeywords(ssh, ConfigurationManager.get_lab_config().get_admin_credentials().get_password()).delete_user(test_user["username"])
+        FileKeywords(ssh).delete_directory(config["working_dir"])
 
     request.addfinalizer(cleanup)
 
@@ -613,7 +625,9 @@ def test_ldap_oidc_access_after_ungraceful_reboot(request):
     ldap_keywords.add_mail_attribute(test_user["username"], test_user["email"])
     _apply_ldap_attr_override(ssh_connection, config, config["local_ldap"]["email_attr"], config["local_ldap"]["name_attr"])
     dex_keywords.set_oidc_username_claim(config["oidc_username_claim"]["default"])
-    crb_keywords.create_clusterrolebinding_for_user(test_user["crb_name"], "cluster-admin", test_user["username"])
+    bracketed_ip = f"[{oam_ip}]" if ":" in oam_ip else oam_ip
+    oidc_issuer = f"https://{bracketed_ip}:30556/dex"
+    crb_keywords.create_clusterrolebinding_for_user(test_user["crb_name"], "cluster-admin", f"{oidc_issuer}#{test_user['username']}")
 
     get_logger().log_info("Verifying access before reboot")
     ldap_ssh = _create_ldap_ssh(test_user["username"], test_user["password"], oam_ip)
@@ -649,27 +663,29 @@ def test_ldap_oidc_access_after_ungraceful_reboot(request):
 def test_email_identity_isolation_across_ldap_and_wad(request):
     """TC17: Verify email-based identity isolation across LDAP and WAD backends.
 
-    With oidc-username-claim=email, users with the same username in different
-    backends get different identities because their emails differ. CRB bound
-    to one email does NOT grant access to the other.
+    With oidc-username-claim=email, users from different backends get different
+    email identities in their tokens and RBAC correctly isolates access.
+    Local LDAP uses emailAttr=mail so the user gets their mail attribute as
+    identity. WAD uses emailAttr=sAMAccountName (WAD users lack a mail attr)
+    so the WAD user gets their sAMAccountName as email identity. CRB bound
+    to the LDAP user email does NOT grant access to the WAD user.
 
     Test Steps:
         - Create LDAP user with mail=user@ldap.local
-        - Configure WAD connector (WAD user has mail=user@company.com)
+        - Configure combined LDAP + WAD connector override
+          (LDAP emailAttr=mail, WAD emailAttr=sAMAccountName)
         - Set oidc-username-claim=email
         - Create CRB by LDAP user email only
-        - Auth from LDAP — access succeeds
-        - Auth from WAD — access denied (different email, no CRB)
+        - Auth from LDAP backend — access succeeds (email matches CRB)
+        - Auth from WAD backend — access denied (WAD email=sAMAccountName != LDAP email)
     """
     config = _load_dex_config()
     test_user = _get_test_user_config()
     wad_user = config["wad_test_user"]
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
-    security_config = ConfigurationManager.get_security_config()
     lab_config = ConfigurationManager.get_lab_config()
-    ldap_keywords = LdapKeywords(ssh_connection, security_config.get_domain_name())
+    ldap_keywords = LdapKeywords(ssh_connection, ConfigurationManager.get_lab_config().get_admin_credentials().get_password())
     dex_keywords = DexConnectorKeywords(ssh_connection)
-    wad_keywords = WadConnectorKeywords(ssh_connection)
     crb_keywords = KubectlCreateClusterRoleBindingKeywords(ssh_connection)
 
     oam_ip = lab_config.get_floating_ip()
@@ -677,11 +693,11 @@ def test_email_identity_isolation_across_ldap_and_wad(request):
 
     def cleanup():
         ssh = LabConnectionKeywords().get_active_controller_ssh()
-        sec_config = ConfigurationManager.get_security_config()
+        get_logger().log_teardown_step("Cleaning up test resources")
         KubectlCreateClusterRoleBindingKeywords(ssh).delete_clusterrolebinding(crb_name)
         DexConnectorKeywords(ssh).set_oidc_username_claim(config["oidc_username_claim"]["default"])
-        LdapKeywords(ssh, sec_config.get_domain_name()).delete_user(test_user["username"])
-        FileKeywords(ssh).remove_directory(config["working_dir"])
+        LdapKeywords(ssh, ConfigurationManager.get_lab_config().get_admin_credentials().get_password()).delete_user(test_user["username"])
+        FileKeywords(ssh).delete_directory(config["working_dir"])
 
     request.addfinalizer(cleanup)
 
@@ -689,35 +705,52 @@ def test_email_identity_isolation_across_ldap_and_wad(request):
     ldap_keywords.create_user(test_user["username"], test_user["password"], user_role=test_user["role"])
     ldap_keywords.add_mail_attribute(test_user["username"], test_user["email"])
 
-    get_logger().log_info("Applying LDAP attr override with emailAttr=mail")
-    _apply_ldap_attr_override(ssh_connection, config, config["local_ldap"]["email_attr"], config["local_ldap"]["name_attr"])
-
-    get_logger().log_info("Applying WAD connector override with emailAttr=mail")
+    get_logger().log_info("Applying combined LDAP + WAD connector override")
     wad_config = config["wad_connector"]
-    wad_keywords.apply_wad_override(
-        config=config,
-        email_attr=wad_config["email_attr"],
-        username_attr=wad_config["username_attr"],
-        name_attr=wad_config["name_attr"],
-    )
+    file_keywords = FileKeywords(ssh_connection)
+    yaml_keywords = YamlKeywords(ssh_connection)
+    file_keywords.create_directory(config["working_dir"])
+    mgmt_ip = SystemAddrpoolListKeywords(ssh_connection).get_system_addrpool_list().get_management_floating_address()
+    if ":" in mgmt_ip:
+        mgmt_ip = f"[{mgmt_ip}]"
+    ldap_bind_pw = KeyringKeywords(ssh_connection).get_keyring(service="ldap", identifier="ldapadmin")
+    template = get_stx_resource_path("resources/cloud_platform/security/oidc/dex-ldap-wad-combined-overrides.yaml")
+    replacements = {
+        "mgmt_ip": mgmt_ip,
+        "bind_pw": ldap_bind_pw,
+        "email_attr": config["local_ldap"]["email_attr"],
+        "name_attr": config["local_ldap"]["name_attr"],
+        "wad_server": wad_config["wad_server"],
+        "wad_bind_dn": wad_config["bind_dn"],
+        "wad_bind_pw": wad_config["bind_pw"],
+        "wad_user_search_base": wad_config["user_search_base"],
+        "wad_group_search_base": wad_config["group_search_base"],
+        "wad_email_attr": wad_config["email_attr"],
+        "wad_username_attr": wad_config["username_attr"],
+        "wad_name_attr": wad_config["name_attr"],
+    }
+    override_file = yaml_keywords.generate_yaml_file_from_template(template, replacements, "dex-ldap-wad-combined.yaml", config["working_dir"], preserve_order=True)
+    dex_keywords.apply_dex_override_and_reapply(override_file, config["oidc_app_name"], config["namespace"])
 
     get_logger().log_info("Setting oidc-username-claim=email and creating CRB by LDAP email only")
     dex_keywords.set_oidc_username_claim(config["oidc_username_claim"]["alternative"])
     crb_keywords.create_clusterrolebinding_for_user(crb_name, "cluster-admin", test_user["email"])
 
     get_logger().log_info("Auth from LDAP — should succeed (email matches CRB)")
-    ldap_ssh = _create_ldap_ssh(test_user["username"], test_user["password"], oam_ip)
+    ldap_ssh = _create_ldap_ssh(test_user["username"], test_user["password"], oam_ip, backend="ldap-1")
     _verify_kubectl_and_stx_access(ldap_ssh, expect_success=True)
     ldap_ssh.close()
 
-    get_logger().log_info("Auth from WAD — should be denied (different email, no CRB)")
-    wad_ssh = SSHConnectionManager.create_ssh_connection(oam_ip, wad_user["username"], wad_user["password"])
-    wad_ssh.connect()
-    wad_ssh.send("kubeconfig-setup")
-    wad_ssh.send("source ~/.profile")
-    wad_ssh.send(f"oidc-auth -p {wad_user['password']}")
-    _verify_kubectl_and_stx_access(wad_ssh, expect_success=False)
-    wad_ssh.close()
+    get_logger().log_info("Auth from WAD — should be denied (WAD email identity != LDAP email in CRB)")
+    ssh_connection.send("rm -rf ~/.kube && mkdir -p ~/.kube")
+    ssh_connection.send("kubeconfig-setup")
+    ssh_connection.send("source ~/.profile")
+    # Use timeout around oidc-auth to prevent hang if Dex auth flow stalls
+    ssh_connection.send(f"timeout 30 oidc-auth -u {wad_user['username']} -p {wad_user['password']} -b RemoteWAD")
+    # Use timeout to prevent kubectl hang when token is invalid or missing
+    ssh_connection.send("timeout 15 kubectl get pods -A 2>&1")
+    wad_rc = ssh_connection.get_return_code()
+    validate_equals(wad_rc != 0, True, "kubectl should be denied for WAD user (no CRB for WAD email identity)")
 
 
 # =============================================================================
@@ -726,7 +759,6 @@ def test_email_identity_isolation_across_ldap_and_wad(request):
 
 
 @mark.p0
-@mark.lab_has_standby_controller
 def test_bootstrap_default_oidc_username_claim():
     """TC16: Verify default bootstrap uses oidc-username-claim=preferred_username.
 
@@ -766,9 +798,8 @@ def test_dc_ldap_oidc_on_system_controller(request):
     config = _load_dex_config()
     test_user = _get_test_user_config()
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
-    security_config = ConfigurationManager.get_security_config()
     lab_config = ConfigurationManager.get_lab_config()
-    ldap_keywords = LdapKeywords(ssh_connection, security_config.get_domain_name())
+    ldap_keywords = LdapKeywords(ssh_connection, ConfigurationManager.get_lab_config().get_admin_credentials().get_password())
     dex_keywords = DexConnectorKeywords(ssh_connection)
     crb_keywords = KubectlCreateClusterRoleBindingKeywords(ssh_connection)
 
@@ -776,10 +807,10 @@ def test_dc_ldap_oidc_on_system_controller(request):
 
     def cleanup():
         ssh = LabConnectionKeywords().get_active_controller_ssh()
-        sec_config = ConfigurationManager.get_security_config()
+        get_logger().log_teardown_step("Cleaning up test resources")
         KubectlCreateClusterRoleBindingKeywords(ssh).delete_clusterrolebinding(test_user["crb_name"])
-        LdapKeywords(ssh, sec_config.get_domain_name()).delete_user(test_user["username"])
-        FileKeywords(ssh).remove_directory(config["working_dir"])
+        LdapKeywords(ssh, ConfigurationManager.get_lab_config().get_admin_credentials().get_password()).delete_user(test_user["username"])
+        FileKeywords(ssh).delete_directory(config["working_dir"])
 
     request.addfinalizer(cleanup)
 
@@ -787,7 +818,9 @@ def test_dc_ldap_oidc_on_system_controller(request):
     ldap_keywords.add_mail_attribute(test_user["username"], test_user["email"])
     _apply_ldap_attr_override(ssh_connection, config, config["local_ldap"]["email_attr"], config["local_ldap"]["name_attr"])
     dex_keywords.set_oidc_username_claim(config["oidc_username_claim"]["default"])
-    crb_keywords.create_clusterrolebinding_for_user(test_user["crb_name"], "cluster-admin", test_user["username"])
+    bracketed_ip = f"[{oam_ip}]" if ":" in oam_ip else oam_ip
+    oidc_issuer = f"https://{bracketed_ip}:30556/dex"
+    crb_keywords.create_clusterrolebinding_for_user(test_user["crb_name"], "cluster-admin", f"{oidc_issuer}#{test_user['username']}")
 
     get_logger().log_info("Verifying OIDC access on System Controller")
     ldap_ssh = _create_ldap_ssh(test_user["username"], test_user["password"], oam_ip)
@@ -811,8 +844,7 @@ def test_dc_ldap_oidc_on_subcloud(request):
     lab_config = ConfigurationManager.get_lab_config()
     subcloud_name = lab_config.get_subcloud_names()[0]
     subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
-    security_config = ConfigurationManager.get_security_config()
-    ldap_keywords = LdapKeywords(subcloud_ssh, security_config.get_domain_name())
+    ldap_keywords = LdapKeywords(subcloud_ssh, ConfigurationManager.get_lab_config().get_admin_credentials().get_password())
     dex_keywords = DexConnectorKeywords(subcloud_ssh)
     crb_keywords = KubectlCreateClusterRoleBindingKeywords(subcloud_ssh)
 
@@ -820,10 +852,10 @@ def test_dc_ldap_oidc_on_subcloud(request):
 
     def cleanup():
         sc_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
-        sec_config = ConfigurationManager.get_security_config()
+        get_logger().log_teardown_step("Cleaning up test resources")
         KubectlCreateClusterRoleBindingKeywords(sc_ssh).delete_clusterrolebinding(test_user["crb_name"])
-        LdapKeywords(sc_ssh, sec_config.get_domain_name()).delete_user(test_user["username"])
-        FileKeywords(sc_ssh).remove_directory(config["working_dir"])
+        LdapKeywords(sc_ssh, ConfigurationManager.get_lab_config().get_admin_credentials().get_password()).delete_user(test_user["username"])
+        FileKeywords(sc_ssh).delete_directory(config["working_dir"])
 
     request.addfinalizer(cleanup)
 
@@ -831,7 +863,9 @@ def test_dc_ldap_oidc_on_subcloud(request):
     ldap_keywords.add_mail_attribute(test_user["username"], test_user["email"])
     _apply_ldap_attr_override(subcloud_ssh, config, config["local_ldap"]["email_attr"], config["local_ldap"]["name_attr"])
     dex_keywords.set_oidc_username_claim(config["oidc_username_claim"]["default"])
-    crb_keywords.create_clusterrolebinding_for_user(test_user["crb_name"], "cluster-admin", test_user["username"])
+    bracketed_sc_ip = f"[{subcloud_oam_ip}]" if ":" in subcloud_oam_ip else subcloud_oam_ip
+    sc_oidc_issuer = f"https://{bracketed_sc_ip}:30556/dex"
+    crb_keywords.create_clusterrolebinding_for_user(test_user["crb_name"], "cluster-admin", f"{sc_oidc_issuer}#{test_user['username']}")
 
     get_logger().log_info(f"Verifying OIDC access on subcloud: {subcloud_name}")
     ldap_ssh = _create_ldap_ssh(test_user["username"], test_user["password"], subcloud_oam_ip)

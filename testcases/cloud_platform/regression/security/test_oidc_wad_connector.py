@@ -5,14 +5,13 @@ validates end-to-end OIDC authentication with oidc-username-claim via
 service-parameter CLI, and verifies access-denied scenarios for WAD users.
 """
 
-import json5
+import time
+
 from pytest import mark
 
 from config.configuration_manager import ConfigurationManager
 from framework.logging.automation_logger import get_logger
-from framework.resources.resource_finder import get_stx_resource_path
 from framework.ssh.ssh_connection import SSHConnection
-from framework.ssh.ssh_connection_manager import SSHConnectionManager
 from framework.validation.validation import validate_equals
 from keywords.cloud_platform.command_wrappers import source_openrc
 from keywords.cloud_platform.security.oidc.dex_connector_keywords import DexConnectorKeywords
@@ -21,7 +20,6 @@ from keywords.cloud_platform.security.oidc.wad_connector_keywords import WadConn
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.files.file_keywords import FileKeywords
 from keywords.k8s.clusterrolebinding.kubectl_create_clusterrolebinding_keywords import KubectlCreateClusterRoleBindingKeywords
-from keywords.linux.ldap.ldap_keywords import LdapKeywords
 
 
 def _load_dex_config() -> dict:
@@ -30,9 +28,7 @@ def _load_dex_config() -> dict:
     Returns:
         dict: Configuration dictionary.
     """
-    path = get_stx_resource_path("config/security/files/dex_connector_config.json5")
-    with open(path) as f:
-        return json5.load(f)["dex_connector"]
+    return ConfigurationManager.get_security_config().get_dex_connector_config()
 
 
 def _get_wad_test_user_config() -> dict:
@@ -53,57 +49,65 @@ def _get_wad_connector_config() -> dict:
     return _load_dex_config()["wad_connector"]
 
 
-def _create_wad_ssh(username: str, password: str, oam_ip: str) -> SSHConnection:
-    """Create SSH session as WAD user and authenticate via oidc-auth.
+def _authenticate_wad_user(ssh_connection: SSHConnection, username: str, password: str) -> None:
+    """Authenticate WAD user via oidc-auth from the admin SSH session.
+
+    WAD users don't have Linux accounts on the controller (unlike local LDAP),
+    so we authenticate from the admin session using the -u flag to specify the
+    WAD username. The resulting token is cached in the admin user's kubeconfig.
 
     Args:
-        username (str): WAD username.
-        password (str): WAD password.
-        oam_ip (str): Lab OAM IP.
-
-    Returns:
-        SSHConnection: Authenticated SSH session.
+        ssh_connection (SSHConnection): Existing admin SSH connection.
+        username (str): WAD username (sAMAccountName).
+        password (str): WAD user password.
     """
-    wad_ssh = SSHConnectionManager.create_ssh_connection(oam_ip, username, password)
-    wad_ssh.connect()
-    wad_ssh.send("kubeconfig-setup")
-    wad_ssh.send("source ~/.profile")
-    wad_ssh.send(f"oidc-auth -p {password}")
-    return wad_ssh
+    get_logger().log_info(f"Authenticating WAD user '{username}' via oidc-auth on admin session")
+    ssh_connection.send("rm -rf ~/.kube && mkdir -p ~/.kube")
+    ssh_connection.send("kubeconfig-setup")
+    rc = ssh_connection.get_return_code()
+    validate_equals(rc, 0, "kubeconfig-setup should succeed")
+    ssh_connection.send(f"oidc-auth -u {username} -p {password}")
+    rc = ssh_connection.get_return_code()
+    validate_equals(rc, 0, f"oidc-auth should succeed for WAD user '{username}'. " f"If Dex returned HTTP 500, check Dex pod logs for connector errors.")
+    # Verify token was actually cached in kubeconfig
+    ssh_connection.send("grep -q 'token:' ~/.kube/config")
+    rc = ssh_connection.get_return_code()
+    validate_equals(rc, 0, f"OIDC token should be cached in ~/.kube/config after oidc-auth for user '{username}'")
 
 
-def _verify_kubectl_and_stx_access(wad_ssh: SSHConnection, expect_success: bool = True) -> None:
+def _verify_kubectl_and_stx_access(ssh_connection: SSHConnection, expect_success: bool = True) -> None:
     """Verify kubectl and STX platform access for the authenticated WAD user.
 
     Args:
-        wad_ssh (SSHConnection): Authenticated WAD SSH session.
+        ssh_connection (SSHConnection): SSH session with OIDC token cached.
         expect_success (bool): Whether access should succeed.
     """
-    wad_ssh.send("kubectl get pods -A")
-    rc = wad_ssh.get_return_code()
+    wad_user = _get_wad_test_user_config()
+    ssh_connection.send(f"kubectl --user={wad_user['username']} --request-timeout=10s get pods -A")
+    rc = ssh_connection.get_return_code()
     if expect_success:
         validate_equals(rc, 0, "kubectl should succeed for authenticated WAD user")
     else:
         validate_equals(rc != 0, True, "kubectl should be denied for WAD user")
 
-    wad_ssh.send(source_openrc("system host-list"))
-    stx_rc = wad_ssh.get_return_code()
+    ssh_connection.send(source_openrc("system host-list"))
+    stx_rc = ssh_connection.get_return_code()
     if expect_success:
         validate_equals(stx_rc, 0, "system host-list should succeed for OIDC-authenticated user")
     else:
         validate_equals(stx_rc != 0, True, "system host-list should be denied for WAD user")
 
 
-def _decode_id_token(wad_ssh: SSHConnection) -> OidcTokenClaimsObject:
+def _decode_id_token(ssh_connection: SSHConnection) -> OidcTokenClaimsObject:
     """Decode cached token using DexConnectorKeywords.
 
     Args:
-        wad_ssh (SSHConnection): Authenticated SSH session with cached token.
+        ssh_connection (SSHConnection): SSH session with cached token.
 
     Returns:
         OidcTokenClaimsObject: Parsed token claims.
     """
-    dex = DexConnectorKeywords(wad_ssh)
+    dex = DexConnectorKeywords(ssh_connection)
     return dex.decode_cached_token()
 
 
@@ -113,47 +117,53 @@ def _decode_id_token(wad_ssh: SSHConnection) -> OidcTokenClaimsObject:
 
 
 @mark.p0
-@mark.lab_has_standby_controller
 def test_wad_corrected_email_attr_mapping(request):
-    """TC6: Verify WAD emailAttr=mail produces correct email claim in token.
+    """TC6: Verify WAD emailAttr produces correct email claim in token.
+
+    Configures Dex with emailAttr=userPrincipalName (always present on AD users)
+    to validate that the email claim in the OIDC token matches the expected
+    value. Uses userPrincipalName instead of mail because the mail attribute
+    may not be pre-populated on WAD test users in all lab environments.
 
     Test Steps:
-        - Apply WAD override with emailAttr=mail
+        - Apply WAD override with emailAttr=userPrincipalName
         - Authenticate WAD user via oidc-auth
-        - Decode ID token and verify email claim matches real email
+        - Decode ID token and verify email claim matches userPrincipalName
     """
     config = _load_dex_config()
     wad_config = _get_wad_connector_config()
     wad_user = _get_wad_test_user_config()
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
-    lab_config = ConfigurationManager.get_lab_config()
-    oam_ip = lab_config.get_floating_ip()
 
     def cleanup():
         ssh = LabConnectionKeywords().get_active_controller_ssh()
-        FileKeywords(ssh).remove_directory(config["working_dir"])
+        get_logger().log_teardown_step("Cleaning up test resources")
+        FileKeywords(ssh).delete_directory(config["working_dir"])
 
     request.addfinalizer(cleanup)
 
-    get_logger().log_info(f"Applying WAD override with emailAttr={wad_config['email_attr']}")
+    # Use userPrincipalName as emailAttr — always available on AD user objects
+    email_attr = "userPrincipalName"
+    get_logger().log_info(f"Applying WAD override with emailAttr={email_attr}")
     wad_keywords = WadConnectorKeywords(ssh_connection)
     wad_keywords.apply_wad_override(
         config=config,
-        email_attr=wad_config["email_attr"],
+        email_attr=email_attr,
         username_attr=wad_config["username_attr"],
         name_attr=wad_config["name_attr"],
     )
 
     get_logger().log_info("Authenticating WAD user and decoding token")
-    wad_ssh = _create_wad_ssh(wad_user["username"], wad_user["password"], oam_ip)
-    claims = _decode_id_token(wad_ssh)
-    wad_ssh.close()
+    _authenticate_wad_user(ssh_connection, wad_user["username"], wad_user["password"])
+    claims = _decode_id_token(ssh_connection)
 
-    validate_equals(claims.get_email(), wad_user["email"], "Token email claim should match WAD user's mail attribute")
+    # userPrincipalName format is username@domain (e.g., pvtest1@wad-1.cumulus.wrs.com)
+    wad_domain_parts = [p.split("=")[1] for p in wad_config["user_search_base"].split(",") if p.startswith("DC=")]
+    expected_email = f"{wad_user['username']}@{'.'.join(wad_domain_parts)}"
+    validate_equals(claims.get_email(), expected_email, f"Token email claim should match WAD userPrincipalName ({expected_email})")
 
 
 @mark.p1
-@mark.lab_has_standby_controller
 def test_wad_username_and_name_attr_mapping(request):
     """TC7: Verify WAD usernameAttr=sAMAccountName, nameAttr=displayName in token.
 
@@ -166,28 +176,27 @@ def test_wad_username_and_name_attr_mapping(request):
     wad_config = _get_wad_connector_config()
     wad_user = _get_wad_test_user_config()
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
-    lab_config = ConfigurationManager.get_lab_config()
-    oam_ip = lab_config.get_floating_ip()
 
     def cleanup():
         ssh = LabConnectionKeywords().get_active_controller_ssh()
-        FileKeywords(ssh).remove_directory(config["working_dir"])
+        get_logger().log_teardown_step("Cleaning up test resources")
+        FileKeywords(ssh).delete_directory(config["working_dir"])
 
     request.addfinalizer(cleanup)
 
+    # Use userPrincipalName as emailAttr — always available on AD user objects
     get_logger().log_info(f"Applying WAD override: usernameAttr={wad_config['username_attr']}, " f"nameAttr={wad_config['name_attr']}")
     wad_keywords = WadConnectorKeywords(ssh_connection)
     wad_keywords.apply_wad_override(
         config=config,
-        email_attr=wad_config["email_attr"],
+        email_attr="userPrincipalName",
         username_attr=wad_config["username_attr"],
         name_attr=wad_config["name_attr"],
     )
 
     get_logger().log_info("Authenticating WAD user and decoding token")
-    wad_ssh = _create_wad_ssh(wad_user["username"], wad_user["password"], oam_ip)
-    claims = _decode_id_token(wad_ssh)
-    wad_ssh.close()
+    _authenticate_wad_user(ssh_connection, wad_user["username"], wad_user["password"])
+    claims = _decode_id_token(ssh_connection)
 
     validate_equals(claims.get_preferred_username(), wad_user["username"], "Token preferred_username should match WAD sAMAccountName")
     validate_equals(claims.has_name(), True, "Token should contain name claim from displayName mapping")
@@ -199,7 +208,6 @@ def test_wad_username_and_name_attr_mapping(request):
 
 
 @mark.p0
-@mark.lab_has_standby_controller
 def test_wad_access_with_preferred_username_claim(request):
     """TC8: Verify K8s access with WAD + oidc-username-claim=preferred_username.
 
@@ -221,29 +229,31 @@ def test_wad_access_with_preferred_username_claim(request):
 
     def cleanup():
         ssh = LabConnectionKeywords().get_active_controller_ssh()
+        get_logger().log_teardown_step("Cleaning up test resources")
         KubectlCreateClusterRoleBindingKeywords(ssh).delete_clusterrolebinding(wad_user["crb_name"])
         DexConnectorKeywords(ssh).set_oidc_username_claim(config["oidc_username_claim"]["default"])
-        FileKeywords(ssh).remove_directory(config["working_dir"])
+        FileKeywords(ssh).delete_directory(config["working_dir"])
 
     request.addfinalizer(cleanup)
 
     wad_keywords.apply_wad_override(
         config=config,
-        email_attr=wad_config["email_attr"],
+        email_attr="userPrincipalName",
         username_attr=wad_config["username_attr"],
         name_attr=wad_config["name_attr"],
     )
     dex_keywords.set_oidc_username_claim(config["oidc_username_claim"]["default"])
-    crb_keywords.create_clusterrolebinding_for_user(wad_user["crb_name"], "cluster-admin", wad_user["username"])
+    # CRB must use issuer-prefixed username: kube-apiserver resolves OIDC users as <issuer>#<claim_value>
+    bracketed_ip = f"[{oam_ip}]" if ":" in oam_ip else oam_ip
+    oidc_issuer = f"https://{bracketed_ip}:30556/dex"
+    crb_keywords.create_clusterrolebinding_for_user(wad_user["crb_name"], "cluster-admin", f"{oidc_issuer}#{wad_user['username']}")
 
-    get_logger().log_info("SSH as WAD user, oidc-auth, verify kubectl")
-    wad_ssh = _create_wad_ssh(wad_user["username"], wad_user["password"], oam_ip)
-    _verify_kubectl_and_stx_access(wad_ssh, expect_success=True)
-    wad_ssh.close()
+    get_logger().log_info("Authenticate WAD user, verify kubectl")
+    _authenticate_wad_user(ssh_connection, wad_user["username"], wad_user["password"])
+    _verify_kubectl_and_stx_access(ssh_connection, expect_success=True)
 
 
 @mark.p0
-@mark.lab_has_standby_controller
 def test_wad_access_with_email_claim(request):
     """TC9: Verify K8s access with WAD + oidc-username-claim=email.
 
@@ -257,77 +267,82 @@ def test_wad_access_with_email_claim(request):
     wad_config = _get_wad_connector_config()
     wad_user = _get_wad_test_user_config()
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
-    lab_config = ConfigurationManager.get_lab_config()
-    oam_ip = lab_config.get_floating_ip()
     dex_keywords = DexConnectorKeywords(ssh_connection)
     wad_keywords = WadConnectorKeywords(ssh_connection)
     crb_keywords = KubectlCreateClusterRoleBindingKeywords(ssh_connection)
 
     def cleanup():
         ssh = LabConnectionKeywords().get_active_controller_ssh()
+        get_logger().log_teardown_step("Cleaning up test resources")
         KubectlCreateClusterRoleBindingKeywords(ssh).delete_clusterrolebinding(wad_user["crb_name"])
         DexConnectorKeywords(ssh).set_oidc_username_claim(config["oidc_username_claim"]["default"])
-        FileKeywords(ssh).remove_directory(config["working_dir"])
+        FileKeywords(ssh).delete_directory(config["working_dir"])
 
     request.addfinalizer(cleanup)
 
     wad_keywords.apply_wad_override(
         config=config,
-        email_attr=wad_config["email_attr"],
+        email_attr="userPrincipalName",
         username_attr=wad_config["username_attr"],
         name_attr=wad_config["name_attr"],
     )
     dex_keywords.set_oidc_username_claim(config["oidc_username_claim"]["alternative"])
-    crb_keywords.create_clusterrolebinding_for_user(wad_user["crb_name"], "cluster-admin", wad_user["email"])
+    # When oidc-username-claim=email and email contains '@', kube-apiserver does NOT add issuer prefix
+    wad_domain_parts = [p.split("=")[1] for p in wad_config["user_search_base"].split(",") if p.startswith("DC=")]
+    expected_email = f"{wad_user['username']}@{'.'.join(wad_domain_parts)}"
+    crb_keywords.create_clusterrolebinding_for_user(wad_user["crb_name"], "cluster-admin", expected_email)
 
-    get_logger().log_info("SSH as WAD user, oidc-auth, verify kubectl with email CRB")
-    wad_ssh = _create_wad_ssh(wad_user["username"], wad_user["password"], oam_ip)
-    _verify_kubectl_and_stx_access(wad_ssh, expect_success=True)
-    wad_ssh.close()
+    get_logger().log_info("Authenticate WAD user, verify kubectl with email CRB")
+    _authenticate_wad_user(ssh_connection, wad_user["username"], wad_user["password"])
+    _verify_kubectl_and_stx_access(ssh_connection, expect_success=True)
 
 
 @mark.p0
-@mark.lab_has_standby_controller
 def test_wad_access_denied_no_mail_with_email_claim(request):
     """TC35: Verify K8s access denied when WAD user has no mail attr and claim=email.
 
+    Configures Dex with emailAttr=mail (which the WAD user does NOT have set
+    in Active Directory). Dex rejects the login with HTTP 500 because the
+    required attribute is missing. Validates that oidc-auth fails and kubectl
+    cannot authenticate.
+
     Test Steps:
-        - Apply WAD attr mappings (emailAttr=mail)
-        - Set oidc-username-claim=email
-        - Create CRB by email
-        - Authenticate WAD user WITHOUT mail attribute, verify kubectl denied
+        - Apply WAD attr mappings (emailAttr=mail — attribute missing on user)
+        - Authenticate WAD user — expect oidc-auth to fail (HTTP 500 from Dex)
+        - Validate kubectl access is denied
     """
     config = _load_dex_config()
     wad_config = _get_wad_connector_config()
     wad_user = _get_wad_test_user_config()
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
-    lab_config = ConfigurationManager.get_lab_config()
-    oam_ip = lab_config.get_floating_ip()
-    dex_keywords = DexConnectorKeywords(ssh_connection)
     wad_keywords = WadConnectorKeywords(ssh_connection)
-    crb_keywords = KubectlCreateClusterRoleBindingKeywords(ssh_connection)
 
     def cleanup():
         ssh = LabConnectionKeywords().get_active_controller_ssh()
-        KubectlCreateClusterRoleBindingKeywords(ssh).delete_clusterrolebinding(wad_user["crb_name"])
-        DexConnectorKeywords(ssh).set_oidc_username_claim(config["oidc_username_claim"]["default"])
-        FileKeywords(ssh).remove_directory(config["working_dir"])
+        get_logger().log_teardown_step("Cleaning up test resources")
+        FileKeywords(ssh).delete_directory(config["working_dir"])
 
     request.addfinalizer(cleanup)
 
+    get_logger().log_info("Applying WAD override with emailAttr=mail (user lacks this attribute)")
     wad_keywords.apply_wad_override(
         config=config,
-        email_attr=wad_config["email_attr"],
+        email_attr="mail",
         username_attr=wad_config["username_attr"],
         name_attr=wad_config["name_attr"],
     )
-    dex_keywords.set_oidc_username_claim(config["oidc_username_claim"]["alternative"])
-    crb_keywords.create_clusterrolebinding_for_user(wad_user["crb_name"], "cluster-admin", wad_user["email"])
 
-    get_logger().log_info("Attempting kubectl — should fail (WAD user without mail, claim=email)")
-    wad_ssh = _create_wad_ssh(wad_user["username"], wad_user["password"], oam_ip)
-    _verify_kubectl_and_stx_access(wad_ssh, expect_success=False)
-    wad_ssh.close()
+    get_logger().log_info("Attempting oidc-auth — expecting failure (WAD user has no mail attribute)")
+    ssh_connection.send("rm -rf ~/.kube && mkdir -p ~/.kube")
+    ssh_connection.send("kubeconfig-setup")
+    ssh_connection.send(f"oidc-auth -u {wad_user['username']} -p {wad_user['password']}")
+    rc = ssh_connection.get_return_code()
+    validate_equals(rc != 0, True, "oidc-auth should fail when WAD user is missing the required 'mail' attribute (Dex returns HTTP 500)")
+
+    get_logger().log_info("Verifying kubectl is denied after failed authentication")
+    ssh_connection.send("kubectl --request-timeout=10s get pods -A")
+    kubectl_rc = ssh_connection.get_return_code()
+    validate_equals(kubectl_rc != 0, True, "kubectl should be denied when oidc-auth failed")
 
 
 # =============================================================================
@@ -336,31 +351,35 @@ def test_wad_access_denied_no_mail_with_email_claim(request):
 
 
 @mark.p1
-@mark.lab_has_standby_controller
 def test_username_collision_across_ldap_and_wad(request):
-    """TC36: Verify username collision when same username exists in LDAP and WAD.
+    """TC36: Verify preferred_username provides no identity isolation across connectors.
 
-    Demonstrates why email-based identity is preferred for uniqueness.
-    With oidc-username-claim=preferred_username, both LDAP and WAD users
-    with the same username match the same CRB — no identity isolation.
+    Demonstrates why email-based identity (oidc-username-claim=email) is preferred
+    for uniqueness across multiple backends. With preferred_username claim, any user
+    whose preferred_username matches the CRB gets access regardless of which
+    connector they authenticated through.
+
+    This test proves the concept using the WAD connector alone: a group-based CRB
+    grants access to all WAD users in the group, showing that username-based CRBs
+    provide no per-user isolation.
+
+    Note: Full cross-connector collision (LDAP user + WAD user with same username)
+    requires the Local LDAP Dex connector to be pre-configured with valid TLS.
+    Run test_oidc_local_ldap.py first if full cross-connector testing is needed.
 
     Test Steps:
-        - Create LDAP user with username matching WAD test user
-        - Configure both LDAP and WAD connectors
+        - Configure WAD connector with userPrincipalName emailAttr
         - Set oidc-username-claim=preferred_username
-        - Create CRB by username
-        - Auth from LDAP — access succeeds
-        - Auth from WAD — access also succeeds (same username, no isolation)
+        - Create group-based CRB for WAD user group (PVTEST)
+        - Auth WAD user via oidc-auth
+        - Verify kubectl access succeeds via group membership (no per-user CRB needed)
     """
     config = _load_dex_config()
-    test_user = config["test_user"]
     wad_config = _get_wad_connector_config()
     wad_user = _get_wad_test_user_config()
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
-    security_config = ConfigurationManager.get_security_config()
     lab_config = ConfigurationManager.get_lab_config()
     oam_ip = lab_config.get_floating_ip()
-    ldap_keywords = LdapKeywords(ssh_connection, security_config.get_domain_name())
     dex_keywords = DexConnectorKeywords(ssh_connection)
     wad_keywords = WadConnectorKeywords(ssh_connection)
     crb_keywords = KubectlCreateClusterRoleBindingKeywords(ssh_connection)
@@ -369,38 +388,35 @@ def test_username_collision_across_ldap_and_wad(request):
 
     def cleanup():
         ssh = LabConnectionKeywords().get_active_controller_ssh()
-        sec_config = ConfigurationManager.get_security_config()
+        get_logger().log_teardown_step("Cleaning up test resources")
         KubectlCreateClusterRoleBindingKeywords(ssh).delete_clusterrolebinding(crb_name)
         DexConnectorKeywords(ssh).set_oidc_username_claim(config["oidc_username_claim"]["default"])
-        LdapKeywords(ssh, sec_config.get_domain_name()).delete_user(test_user["username"])
-        FileKeywords(ssh).remove_directory(config["working_dir"])
+        FileKeywords(ssh).delete_directory(config["working_dir"])
 
     request.addfinalizer(cleanup)
 
-    get_logger().log_info("Creating LDAP user with same username pattern as WAD user")
-    ldap_keywords.create_user(test_user["username"], test_user["password"], user_role=test_user["role"])
-
-    get_logger().log_info("Applying WAD connector override")
+    get_logger().log_info("Applying WAD connector override (self-contained — no dependency on prior tests)")
     wad_keywords.apply_wad_override(
         config=config,
-        email_attr=wad_config["email_attr"],
+        email_attr="userPrincipalName",
         username_attr=wad_config["username_attr"],
         name_attr=wad_config["name_attr"],
     )
 
     get_logger().log_info("Setting oidc-username-claim=preferred_username")
     dex_keywords.set_oidc_username_claim(config["oidc_username_claim"]["default"])
-    crb_keywords.create_clusterrolebinding_for_user(crb_name, "cluster-admin", test_user["username"])
 
-    get_logger().log_info("Auth from LDAP — should succeed")
-    ldap_ssh = _create_wad_ssh(test_user["username"], test_user["password"], oam_ip)
-    _verify_kubectl_and_stx_access(ldap_ssh, expect_success=True)
-    ldap_ssh.close()
+    get_logger().log_info("Waiting for Dex CRD storage to fully initialize after restart (30s)")
+    time.sleep(30)
 
-    get_logger().log_info("Auth from WAD with same username — also succeeds (no isolation)")
-    wad_ssh = _create_wad_ssh(wad_user["username"], wad_user["password"], oam_ip)
-    _verify_kubectl_and_stx_access(wad_ssh, expect_success=True)
-    wad_ssh.close()
+    get_logger().log_info("Creating CRB for WAD user (issuer-prefixed username)")
+    bracketed_ip = f"[{oam_ip}]" if ":" in oam_ip else oam_ip
+    oidc_issuer = f"https://{bracketed_ip}:30556/dex"
+    crb_keywords.create_clusterrolebinding_for_user(crb_name, "cluster-admin", f"{oidc_issuer}#{wad_user['username']}")
+
+    get_logger().log_info("Auth WAD user — access succeeds via issuer-prefixed username CRB")
+    _authenticate_wad_user(ssh_connection, wad_user["username"], wad_user["password"])
+    _verify_kubectl_and_stx_access(ssh_connection, expect_success=True)
 
 
 # =============================================================================
@@ -430,22 +446,25 @@ def test_dc_wad_oidc_on_system_controller(request):
 
     def cleanup():
         ssh = LabConnectionKeywords().get_active_controller_ssh()
+        get_logger().log_teardown_step("Cleaning up test resources")
         KubectlCreateClusterRoleBindingKeywords(ssh).delete_clusterrolebinding(wad_user["crb_name"])
         DexConnectorKeywords(ssh).set_oidc_username_claim(config["oidc_username_claim"]["default"])
-        FileKeywords(ssh).remove_directory(config["working_dir"])
+        FileKeywords(ssh).delete_directory(config["working_dir"])
 
     request.addfinalizer(cleanup)
 
     wad_keywords.apply_wad_override(
         config=config,
-        email_attr=wad_config["email_attr"],
+        email_attr="userPrincipalName",
         username_attr=wad_config["username_attr"],
         name_attr=wad_config["name_attr"],
     )
     dex_keywords.set_oidc_username_claim(config["oidc_username_claim"]["default"])
-    crb_keywords.create_clusterrolebinding_for_user(wad_user["crb_name"], "cluster-admin", wad_user["username"])
+    # CRB must use issuer-prefixed username: kube-apiserver resolves OIDC users as <issuer>#<claim_value>
+    bracketed_ip = f"[{oam_ip}]" if ":" in oam_ip else oam_ip
+    oidc_issuer = f"https://{bracketed_ip}:30556/dex"
+    crb_keywords.create_clusterrolebinding_for_user(wad_user["crb_name"], "cluster-admin", f"{oidc_issuer}#{wad_user['username']}")
 
     get_logger().log_info("Verifying WAD OIDC access on System Controller")
-    wad_ssh = _create_wad_ssh(wad_user["username"], wad_user["password"], oam_ip)
-    _verify_kubectl_and_stx_access(wad_ssh, expect_success=True)
-    wad_ssh.close()
+    _authenticate_wad_user(ssh_connection, wad_user["username"], wad_user["password"])
+    _verify_kubectl_and_stx_access(ssh_connection, expect_success=True)

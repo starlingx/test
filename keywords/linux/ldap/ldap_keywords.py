@@ -6,6 +6,7 @@ from framework.ssh.prompt_response import PromptResponse
 from framework.ssh.ssh_connection import SSHConnection
 from keywords.base_keyword import BaseKeyword
 from keywords.cloud_platform.command_wrappers import source_openrc
+from keywords.linux.keyring.keyring_keywords import KeyringKeywords
 
 
 class LdapKeywords(BaseKeyword):
@@ -46,6 +47,8 @@ class LdapKeywords(BaseKeyword):
         """Create an LDAP user via the manage_local_ldap_account playbook.
 
         Cleans up any existing LDAP and Keystone user first to ensure idempotent creation.
+        Verifies the user exists in LDAP after playbook execution, and falls back to
+        ldapadduser if the playbook didn't actually create the LDAP entry.
 
         Args:
             username (str): Username to create.
@@ -56,8 +59,83 @@ class LdapKeywords(BaseKeyword):
         self.ensure_secure_inventory()
         self.run_playbook("delete", username)
         self.ssh_connection.send(source_openrc(f"openstack user delete {username}"))
-        self.ssh_connection.send(f"echo '{self.ansible_password}' | sudo -S rm -rf /home/{username}")
+        self.ssh_connection.send_as_sudo(f"rm -rf /home/{username}")
         self.run_playbook("create", username, password, user_role)
+        # Remove home dir created by playbook (may have wrong UID from SSSD cache).
+        # The user's next SSH login will recreate it with correct ownership.
+        self.ssh_connection.send_as_sudo(f"rm -rf /home/{username}")
+
+        # Verify user exists in LDAP — playbook may report success without creating the entry
+        if not self._user_exists_in_ldap(username):
+            get_logger().log_info(f"User '{username}' not found in LDAP after playbook. Creating via ldapadd fallback.")
+            self._create_user_via_ldapadd(username, password)
+            if not self._user_exists_in_ldap(username):
+                raise KeywordException(f"Failed to create LDAP user '{username}' — not found in directory after all attempts")
+        else:
+            # User exists — ensure password is set for LDAP simple bind (Dex compatibility)
+            self._force_set_password(username, password)
+
+    def _user_exists_in_ldap(self, username: str) -> bool:
+        """Check if an LDAP user entry exists in the directory.
+
+        Args:
+            username (str): LDAP username to check.
+
+        Returns:
+            bool: True if user exists in LDAP directory.
+        """
+        ldap_admin_pw = KeyringKeywords(self.ssh_connection).get_keyring(service="ldap", identifier="ldapadmin")
+        user_dn = f"uid={username},{self.USER_BASE_DN}"
+        cmd = f"ldapsearch -x -D '{self.BIND_DN}' -w '{ldap_admin_pw}' -b '{user_dn}' -s base '(objectClass=*)' dn 2>/dev/null | grep -q 'dn:'"
+        self.ssh_connection.send(cmd)
+        rc = self.ssh_connection.get_return_code()
+        exists = rc == 0
+        get_logger().log_info(f"LDAP user '{username}' exists in directory: {exists}")
+        return exists
+
+    def _create_user_via_ldapadd(self, username: str, password: str) -> None:
+        """Create an LDAP user directly via ldapadd with a complete LDIF entry.
+
+        Fallback when the ansible playbook fails to create the user. Creates a
+        posixAccount with all required attributes for Dex LDAP connector
+        (objectClass=posixAccount filter). Sets password via ldappasswd
+        (password modify extended operation) which properly processes it
+        through OpenLDAP's ppolicy overlay.
+
+        Args:
+            username (str): LDAP username.
+            password (str): User password.
+        """
+        get_logger().log_info(f"Creating LDAP user '{username}' via ldapadd with full LDIF")
+        ldap_admin_pw = KeyringKeywords(self.ssh_connection).get_keyring(service="ldap", identifier="ldapadmin")
+        user_dn = f"uid={username},{self.USER_BASE_DN}"
+
+        # Get next available uidNumber
+        cmd = f"ldapsearch -x -D '{self.BIND_DN}' -w '{ldap_admin_pw}' -b '{self.USER_BASE_DN}' '(objectClass=posixAccount)' uidNumber 2>/dev/null | grep uidNumber | awk '{{print $2}}' | sort -n | tail -1"
+        output = self.ssh_connection.send(cmd)
+        raw = "\n".join(output) if isinstance(output, list) else str(output)
+        try:
+            next_uid = int(raw.strip().split("\n")[-1]) + 1
+        except (ValueError, IndexError):
+            next_uid = 10000
+
+        # Create user entry WITHOUT userPassword (will set via ldappasswd after)
+        ldif = f"dn: {user_dn}\n" f"objectClass: inetOrgPerson\n" f"objectClass: posixAccount\n" f"objectClass: shadowAccount\n" f"uid: {username}\n" f"cn: {username}\n" f"sn: {username}\n" f"uidNumber: {next_uid}\n" f"gidNumber: 100\n" f"homeDirectory: /home/{username}\n" f"loginShell: /bin/bash"
+
+        cmd = f"ldapadd -x -D '{self.BIND_DN}' -w '{ldap_admin_pw}' << 'LDIFEOF'\n{ldif}\nLDIFEOF"
+        self.ssh_connection.send_as_sudo(cmd)
+        rc = self.ssh_connection.get_return_code()
+        if rc != 0:
+            get_logger().log_info(f"ldapadd returned rc={rc} — entry may already exist, continuing to set password")
+
+        # Set password via ldappasswd (password modify extended op) — this respects ppolicy
+        cmd = f"ldappasswd -x -D '{self.BIND_DN}' -w '{ldap_admin_pw}' -s '{password}' '{user_dn}'"
+        self.ssh_connection.send_as_sudo(cmd)
+        rc = self.ssh_connection.get_return_code()
+        if rc == 0:
+            get_logger().log_info(f"LDAP user '{username}' created and password set via ldappasswd (uid={next_uid})")
+        else:
+            get_logger().log_info(f"ldappasswd returned rc={rc} — password may not be set correctly")
 
     def run_playbook(self, mode: str, username: str, password: str = None, user_role: str = None) -> None:
         """Run the manage_local_ldap_account playbook.
@@ -77,31 +155,51 @@ class LdapKeywords(BaseKeyword):
         cmd = f"ansible-playbook --verbose --inventory {self.INVENTORY_PATH} --ask-vault-pass --extra-vars='{extra}' {self.PLAYBOOK_PATH}"
         prompts = [PromptResponse("Vault password:", self.ansible_password)]
         if mode == "create":
-            prompts.append(PromptResponse("password for the user", password))
+            prompts.append(PromptResponse("What is the password for the user account?", password if password else self.ansible_password))
         prompts.append(PromptResponse("~$", None))
-        output = self.ssh_connection.send_expect_prompts(cmd, prompts, command_timeout=120)
+        output = self.ssh_connection.send_expect_prompts(cmd, prompts, command_timeout=180)
         raw = "\n".join(output) if isinstance(output, list) else (output or "")
-        if mode == "create" and "failed=0" not in raw:
-            # Workaround for Trixie 26.09: SSSD doesn't support forced password
-            # change over SSH. If playbook failed at password change step,
-            # manually reset the password and clear expiry via ldapsetpasswd.
-            if "Failed to change initial password" in raw:
-                get_logger().log_info(f"Playbook password change failed (Trixie SSSD issue). Applying workaround for {username}.")
-                self._force_set_password(username, password)
-            else:
+        if mode == "create":
+            if "failed=0" not in raw:
                 raise KeywordException(f"Ansible playbook failed to {mode} user {username}. Output: {raw[-200:]}")
+            # Always force-set password after create — newer builds no longer
+            # prompt for password interactively during playbook execution.
+            self._force_set_password(username, password)
+        elif mode == "delete" and "failed=0" not in raw:
+            get_logger().log_info(f"LDAP delete playbook had non-zero failed count for {username} (may not exist). Continuing.")
 
     def _force_set_password(self, username: str, password: str) -> None:
-        """Force set LDAP user password and clear expiry on Trixie (SSSD workaround).
+        """Force set LDAP user password via ldappasswd for Dex LDAP bind compatibility.
 
-        Uses ldapsetpasswd to set the password directly without SSH login,
-        then clears shadowLastChange so the password is not expired.
+        Uses the LDAP Password Modify Extended Operation (ldappasswd) which
+        properly processes the password through OpenLDAP's ppolicy overlay.
+
+        On builds with ppolicy `pwdMustChange`, admin-set passwords require
+        the user to change on first bind. We work around this by setting a
+        temporary password first (to satisfy the "not reusing" constraint),
+        then setting the final password, which clears the mustChange state.
+
+        Args:
+            username (str): LDAP username.
+            password (str): Password to set.
         """
-        self.ssh_connection.send(f"echo '{self.ansible_password}' | sudo -S ldapsetpasswd {username} {password}")
-        # Clear password expiry by setting shadowLastChange to today
-        days_since_epoch = "$(( $(date +%s) / 86400 ))"
-        ldif_cmd = f"echo '{self.ansible_password}' | sudo -S ldapmodify -x -D 'cn=ldapadmin,dc=cgcs,dc=local' " f"-w '{self.ansible_password}' <<EOF\n" f"dn: uid={username},ou=People,dc=cgcs,dc=local\n" f"changetype: modify\n" f"replace: shadowLastChange\n" f"shadowLastChange: {days_since_epoch}\n" f"EOF"
-        self.ssh_connection.send(ldif_cmd)
+        get_logger().log_info(f"Setting password for '{username}' via ldappasswd (extended operation)")
+        ldap_admin_pw = KeyringKeywords(self.ssh_connection).get_keyring(service="ldap", identifier="ldapadmin")
+        user_dn = f"uid={username},{self.USER_BASE_DN}"
+
+        # Set temporary password first (to avoid "not being changed from existing" constraint)
+        temp_pw = "T3mp0r@ryPw!999"
+        cmd = f"ldappasswd -x -D '{self.BIND_DN}' -w '{ldap_admin_pw}' -s '{temp_pw}' '{user_dn}'"
+        self.ssh_connection.send_as_sudo(cmd)
+
+        # Now set the real password (satisfies password history constraint)
+        cmd = f"ldappasswd -x -D '{self.BIND_DN}' -w '{ldap_admin_pw}' -s '{password}' '{user_dn}'"
+        self.ssh_connection.send_as_sudo(cmd)
+        rc = self.ssh_connection.get_return_code()
+        if rc == 0:
+            get_logger().log_info(f"Password set successfully for '{username}'")
+        else:
+            get_logger().log_info(f"ldappasswd returned rc={rc} for '{username}'")
 
     def delete_user(self, username: str) -> None:
         """Delete an LDAP user via the manage_local_ldap_account playbook.
@@ -126,7 +224,7 @@ class LdapKeywords(BaseKeyword):
             group_name (str): Group name to create.
         """
         get_logger().log_info(f"Creating LDAP group: {group_name}")
-        self.ssh_connection.send(f"echo '{self.ansible_password}' | sudo -S ldapaddgroup {group_name}")
+        self.ssh_connection.send_as_sudo(f"ldapaddgroup {group_name}")
         self.validate_success_return_code(self.ssh_connection)
 
     def add_user_to_group(self, username: str, group_name: str) -> None:
@@ -137,7 +235,7 @@ class LdapKeywords(BaseKeyword):
             group_name (str): Group to add the user to.
         """
         get_logger().log_info(f"Adding LDAP user {username} to group {group_name}")
-        self.ssh_connection.send(f"echo '{self.ansible_password}' | sudo -S ldapaddusertogroup {username} {group_name}")
+        self.ssh_connection.send_as_sudo(f"ldapaddusertogroup {username} {group_name}")
         self.validate_success_return_code(self.ssh_connection)
 
     def delete_group(self, group_name: str) -> None:
@@ -147,7 +245,7 @@ class LdapKeywords(BaseKeyword):
             group_name (str): Group name to delete.
         """
         get_logger().log_info(f"Deleting LDAP group: {group_name}")
-        self.ssh_connection.send(f"echo '{self.ansible_password}' | sudo -S ldapdeletegroup {group_name}")
+        self.ssh_connection.send_as_sudo(f"ldapdeletegroup {group_name}")
 
     def add_mail_attribute(self, username: str, email: str) -> None:
         """Add mail attribute to an existing LDAP user via ldapmodify.
@@ -157,9 +255,10 @@ class LdapKeywords(BaseKeyword):
             email (str): Email address to set.
         """
         get_logger().log_info(f"Adding mail attribute '{email}' to LDAP user '{username}'")
+        ldap_admin_pw = KeyringKeywords(self.ssh_connection).get_keyring(service="ldap", identifier="ldapadmin")
         ldif = f"dn: uid={username},{self.USER_BASE_DN}\nchangetype: modify\nreplace: mail\nmail: {email}"
-        cmd = f"echo '{self.ansible_password}' | sudo -S ldapmodify -x -D '{self.BIND_DN}' -w $(echo '{self.ansible_password}') << 'EOF'\n{ldif}\nEOF"
-        self.ssh_connection.send(cmd)
+        cmd = f"ldapmodify -x -D '{self.BIND_DN}' -w '{ldap_admin_pw}' << 'EOF'\n{ldif}\nEOF"
+        self.ssh_connection.send_as_sudo(cmd)
         self.validate_success_return_code(self.ssh_connection)
 
     def verify_mail_attribute(self, username: str) -> str:

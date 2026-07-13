@@ -73,7 +73,7 @@ class RemoteOidcConnectorKeywords(DexConnectorKeywords):
             str: The OIDC ID token string.
         """
         get_logger().log_info(f"Authenticating Keycloak user '{username}' in realm '{realm}'")
-        self.ssh_connection.send(f"oidc-auth -client-id {client_id} -client-secret {client_secret} " f"-p {password} -u {username}")
+        self.ssh_connection.send(f"oidc-auth -c {client_id} -p {password} -u {username}")
         self.validate_success_return_code(self.ssh_connection)
         self.ssh_connection.send("cat ~/.kube/oidc-login/id-token")
         self.validate_success_return_code(self.ssh_connection)

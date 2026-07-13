@@ -1,46 +1,49 @@
 # Template for DEX helm overrides with configurable LDAP attribute mappings.
 # Variables:
-#   mgmt_ip:       Management IP of the lab
+#   mgmt_ip:       Management IP of the lab (IPv4 or [IPv6])
 #   bind_pw:       LDAP bind password
 #   email_attr:    userSearch emailAttr value
 #   name_attr:     userSearch nameAttr value
 config:
   connectors:
-    - type: ldap
-      name: LocalLDAP
-      id: localldap-1
-      config:
-        host: '"{{ mgmt_ip }}":636'
-        rootCA: /etc/ssl/certs/adcert/local-ldap-ca-cert.crt
-        insecureNoSSL: false
-        insecureSkipVerify: false
-        bindDN: CN=ldapadmin,DC=cgcs,DC=local
-        bindPW: "{{ bind_pw }}"
-        usernamePrompt: Username
-        userSearch:
-          baseDN: ou=People,dc=cgcs,dc=local
-          filter: "(objectClass=posixAccount)"
-          username: uid
-          idAttr: DN
-          emailAttr: "{{ email_attr }}"
-          nameAttr: "{{ name_attr }}"
-        groupSearch:
-          baseDN: ou=Group,dc=cgcs,dc=local
-          filter: "(objectClass=posixGroup)"
-          userMatchers:
-            - userAttr: uid
-              groupAttr: memberUid
-          nameAttr: cn
+  - config:
+      bindDN: CN=ldapadmin,DC=cgcs,DC=local
+      bindPW: '{{ bind_pw }}'
+      groupSearch:
+        baseDN: ou=Group,dc=cgcs,dc=local
+        filter: (objectClass=posixGroup)
+        nameAttr: cn
+        userMatchers:
+        - groupAttr: memberUid
+          userAttr: uid
+      host: '{{ mgmt_ip }}:636'
+      insecureNoSSL: false
+      insecureSkipVerify: false
+      rootCA: /etc/ssl/certs/adcert/ca.crt
+      userSearch:
+        baseDN: ou=People,dc=cgcs,dc=local
+        emailAttr: {{ email_attr }}
+        filter: (objectClass=posixAccount)
+        idAttr: DN
+        nameAttr: {{ name_attr }}
+        preferredUsernameAttr: uid
+        username: uid
+      usernamePrompt: Username
+    id: ldap-1
+    name: ldap-1
+    type: ldap
+  expiry:
+    idTokens: 24h
 volumeMounts:
-  - mountPath: /etc/ssl/certs/adcert
-    name: certdir
-  - mountPath: /etc/dex/tls
-    name: https-tls
+- mountPath: /etc/ssl/certs/adcert
+  name: certdir
+- mountPath: /etc/dex/tls
+  name: https-tls
 volumes:
-  - name: certdir
-    secret:
-      secretName: local-ldap-ca-cert
-  - name: https-tls
-    secret:
-      defaultMode: 420
-      secretName: oidc-auth-apps-certificate
+- name: certdir
+  secret:
+    secretName: oidc-auth-apps-certificate
+- name: https-tls
+  secret:
+    defaultMode: 420
+    secretName: oidc-auth-apps-certificate

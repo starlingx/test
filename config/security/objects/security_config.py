@@ -119,6 +119,57 @@ class SecurityConfig:
         self.oidc_keycloak_static_client_secret = static_client_config.get("secret", "")
         self.oidc_keycloak_static_client_redirect_uris = static_client_config.get("redirect_uris", [])
 
+        # DEX connector attribute mapping configuration
+        self.dex_connector = security_dict.get("dex_connector", {})
+
+    def get_dex_connector_config(self) -> dict:
+        """Get the full DEX connector configuration dictionary.
+
+        Returns:
+            dict: DEX connector config with local_ldap, wad_connector, test_user, etc.
+        """
+        return self.dex_connector
+
+    def get_wad_server(self) -> str:
+        """Get the WAD (Windows Active Directory) server address.
+
+        Returns:
+            str: WAD server hostname or IP.
+        """
+        return self.dex_connector.get("wad_connector", {}).get("wad_server", "")
+
+    def get_wad_bind_dn(self) -> str:
+        """Get the WAD bind DN for LDAP authentication.
+
+        Returns:
+            str: WAD bind distinguished name.
+        """
+        return self.dex_connector.get("wad_connector", {}).get("bind_dn", "")
+
+    def get_wad_bind_password(self) -> str:
+        """Get the WAD bind password for LDAP authentication.
+
+        Returns:
+            str: WAD bind password.
+        """
+        return self.dex_connector.get("wad_connector", {}).get("bind_pw", "")
+
+    def get_wad_user_search_base(self) -> str:
+        """Get the WAD user search base DN.
+
+        Returns:
+            str: WAD user search base DN.
+        """
+        return self.dex_connector.get("wad_connector", {}).get("user_search_base", "")
+
+    def get_wad_group_search_base(self) -> str:
+        """Get the WAD group search base DN.
+
+        Returns:
+            str: WAD group search base DN.
+        """
+        return self.dex_connector.get("wad_connector", {}).get("group_search_base", "")
+
     def get_domain_name(self) -> str:
         """Getter for the domain name.
 
