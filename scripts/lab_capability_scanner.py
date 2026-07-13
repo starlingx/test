@@ -794,6 +794,10 @@ def scan_hosts(lab_config: LabConfig, ssh_connection: SSHConnection) -> list[Nod
             node.append_node_capability("lab_has_storage_6_osd")
             lab_config.add_lab_capability("lab_has_storage_6_osd")
 
+        if host.get_clock_synchronization() == "ptp":
+            node.append_node_capability("lab_has_ptp")
+            lab_config.add_lab_capability("lab_has_ptp")
+
         if host_show_output.has_host_bmc_ipmi(name):
             node.append_node_capability("lab_has_bmc_ipmi")
             lab_config.add_lab_capability("lab_has_bmc_ipmi")

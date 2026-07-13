@@ -15,6 +15,7 @@ from keywords.cloud_platform.system.application.system_application_remove_keywor
 from keywords.cloud_platform.system.application.system_application_upload_keywords import SystemApplicationUploadKeywords
 from keywords.cloud_platform.system.helm.system_helm_override_keywords import SystemHelmOverrideKeywords
 from keywords.cloud_platform.system.host.system_host_label_keywords import SystemHostLabelKeywords
+from keywords.cloud_platform.system.host.system_host_show_keywords import SystemHostShowKeywords
 from keywords.files.file_keywords import FileKeywords
 from keywords.k8s.pods.kubectl_get_pods_keywords import KubectlGetPodsKeywords
 
@@ -33,18 +34,43 @@ def _get_ssh_and_config():
     return ssh_connection, app_config
 
 
-def _get_labeled_node_count():
-    """Return the number of nodes that will get ptp-notification label."""
+def _get_ptp_hosts(ssh_connection):
+    """Return list of host names with clock_synchronization=ptp."""
     nodes = ConfigurationManager.get_lab_config().get_nodes()
-    return len(nodes)
+    host_show_keywords = SystemHostShowKeywords(ssh_connection)
+    ptp_hosts = []
+    for node in nodes:
+        node_name = node.get_name()
+        host_show_output = host_show_keywords.get_system_host_show_output(node_name)
+        host_show_object = host_show_output.get_system_host_show_object()
+        clock_sync = host_show_object.get_clock_synchronization()
+        if clock_sync == "ptp":
+            ptp_hosts.append(node_name)
+            get_logger().log_info(
+                f"Host {node_name} has clock_synchronization=ptp")
+        else:
+            get_logger().log_info(
+                f"Host {node_name} has clock_synchronization={clock_sync}, "
+                f"skipping PTP label assignment for this host")
+    return ptp_hosts
 
 
-def assign_ptp_notification_labels(ssh_connection):
-    """Assign ptp-notification and ptp-registration labels to nodes."""
+def _get_labeled_node_count(ptp_hosts):
+    """Return the number of PTP hosts that will get ptp-notification label."""
+    return len(ptp_hosts)
+
+
+def assign_ptp_notification_labels(ssh_connection, ptp_hosts):
+    """Assign ptp-notification and ptp-registration labels to PTP hosts only."""
     nodes = ConfigurationManager.get_lab_config().get_nodes()
     label_keywords = SystemHostLabelKeywords(ssh_connection)
     for node in nodes:
         node_name = node.get_name()
+        if node_name not in ptp_hosts:
+            get_logger().log_info(
+                f"Skipping label assignment for {node_name} "
+                f"(no PTP clock synchronization)")
+            continue
         if not label_keywords.get_system_host_label_list(node_name).get_label_value("ptp-notification"):
             label_keywords.system_host_label_assign(node_name, LABEL_NOTIFICATION)
         if node.get_type() == "controller":
@@ -108,24 +134,24 @@ def delete_ptp_notification_application(ssh_connection):
     SystemApplicationDeleteKeywords(ssh_connection).get_system_application_delete(delete_input)
 
 
-def verify_ptp_notification_application_applied(ssh_connection):
+def verify_ptp_notification_application_applied(ssh_connection, ptp_hosts):
     """Verify app status is 'applied' and pods are Running.
 
     Validates:
         - Application status is 'applied'
         - One registration pod on any host
-        - One ptp-ptp-notification pod per labeled host (all Running)
+        - One ptp-ptp-notification pod per PTP labeled host (all Running)
     """
     SystemApplicationListKeywords(ssh_connection).validate_app_status(
         APP_NAME, SystemApplicationStatusEnum.APPLIED.value
     )
-    labeled_node_count = _get_labeled_node_count()
+    labeled_node_count = _get_labeled_node_count(ptp_hosts)
     pod_keywords = KubectlGetPodsKeywords(ssh_connection)
     pods_output = pod_keywords.get_pods(namespace=NAMESPACE)
     # Validate ptp-notification pod count (one per labeled host)
     ptp_pods = pods_output.get_pods_start_with(starts_with=POD_PREFIX)
     validate_equals(len(ptp_pods), labeled_node_count,
-                    f"Expected {labeled_node_count} ptp-notification pods (one per labeled host)")
+                    f"Expected {labeled_node_count} ptp-notification pods (one per PTP host)")
     # Validate registration pod count (exactly one)
     reg_pods = pods_output.get_pods_start_with(starts_with="registration")
     validate_equals(len(reg_pods), 1, "Expected 1 registration pod")
@@ -147,15 +173,15 @@ def verify_ptp_notification_application_removed(ssh_connection):
     pod_keywords.wait_for_pods_to_be_deleted(namespace=NAMESPACE, timeout=120)
 
 
-def verify_ptp_notification_application_after_upgrade(ssh_connection):
+def verify_ptp_notification_application_after_upgrade(ssh_connection, ptp_hosts):
     """Verify app is still applied and pods Running after upgrade."""
-    verify_ptp_notification_application_applied(ssh_connection)
+    verify_ptp_notification_application_applied(ssh_connection, ptp_hosts)
 
 
-def upload_and_apply_ptp_notification_application(ssh_connection, app_config):
+def upload_and_apply_ptp_notification_application(ssh_connection, app_config, ptp_hosts):
     """Full install: assign labels, upload, override, apply, verify."""
-    get_logger().log_info("Assigning ptp-notification labels to nodes")
-    assign_ptp_notification_labels(ssh_connection)
+    get_logger().log_info("Assigning ptp-notification labels to PTP hosts")
+    assign_ptp_notification_labels(ssh_connection, ptp_hosts)
     get_logger().log_info("Uploading ptp-notification application")
     upload_ptp_notification_application(ssh_connection, app_config)
     get_logger().log_info("Applying helm override to disable v1 ptptracking")
@@ -163,7 +189,7 @@ def upload_and_apply_ptp_notification_application(ssh_connection, app_config):
     get_logger().log_info("Applying ptp-notification application")
     apply_ptp_notification_application(ssh_connection)
     get_logger().log_info("Verifying ptp-notification application is applied")
-    verify_ptp_notification_application_applied(ssh_connection)
+    verify_ptp_notification_application_applied(ssh_connection, ptp_hosts)
 
 
 def remove_and_delete_ptp_notification_application(ssh_connection):
@@ -179,13 +205,15 @@ def remove_and_delete_ptp_notification_application(ssh_connection):
 
 
 @mark.p2
+@mark.lab_has_ptp
 def test_install_ptp_notification_app():
     """
     Install ptp-notification application.
 
     Test Steps:
+        - Get list of PTP-configured hosts
         - Remove existing ptp-notification if present
-        - Assign required labels to nodes
+        - Assign required labels to PTP hosts only
         - Upload ptp-notification application
         - Apply helm override (disable v1 ptptracking)
         - Apply ptp-notification application
@@ -193,6 +221,9 @@ def test_install_ptp_notification_app():
         - Verify pods are running
     """
     ssh_connection, app_config = _get_ssh_and_config()
+
+    get_logger().log_test_case_step("Get PTP-configured hosts")
+    ptp_hosts = _get_ptp_hosts(ssh_connection)
 
     get_logger().log_test_case_step("Check if ptp-notification is already present")
     app_list = SystemApplicationListKeywords(ssh_connection)
@@ -206,15 +237,17 @@ def test_install_ptp_notification_app():
             delete_ptp_notification_application(ssh_connection)
 
     get_logger().log_test_case_step("Upload and apply ptp-notification application")
-    upload_and_apply_ptp_notification_application(ssh_connection, app_config)
+    upload_and_apply_ptp_notification_application(ssh_connection, app_config, ptp_hosts)
 
 
 @mark.p2
+@mark.lab_has_ptp
 def test_uninstall_ptp_notification_app():
     """
     Uninstall ptp-notification application.
 
     Test Steps:
+        - Get list of PTP-configured hosts
         - Ensure ptp-notification is applied (install if not)
         - Remove ptp-notification application
         - Verify pods are terminated
@@ -223,17 +256,20 @@ def test_uninstall_ptp_notification_app():
     """
     ssh_connection, app_config = _get_ssh_and_config()
 
+    get_logger().log_test_case_step("Get PTP-configured hosts")
+    ptp_hosts = _get_ptp_hosts(ssh_connection)
+
     get_logger().log_test_case_step("Ensure ptp-notification is applied before uninstall")
     app_list = SystemApplicationListKeywords(ssh_connection)
     if not app_list.is_app_present(APP_NAME):
         get_logger().log_info("ptp-notification not present. Installing first.")
-        upload_and_apply_ptp_notification_application(ssh_connection, app_config)
+        upload_and_apply_ptp_notification_application(ssh_connection, app_config, ptp_hosts)
     else:
         app_status = app_list.get_system_application_list().get_application(APP_NAME).get_status()
         if app_status != SystemApplicationStatusEnum.APPLIED.value:
             get_logger().log_info("ptp-notification not applied. Cleaning up and installing.")
             delete_ptp_notification_application(ssh_connection)
-            upload_and_apply_ptp_notification_application(ssh_connection, app_config)
+            upload_and_apply_ptp_notification_application(ssh_connection, app_config, ptp_hosts)
 
     get_logger().log_test_case_step("Remove and delete ptp-notification application")
     remove_and_delete_ptp_notification_application(ssh_connection)
