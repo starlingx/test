@@ -9,7 +9,7 @@ from pytest import FixtureRequest, mark
 
 from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
-from framework.validation.validation import validate_equals, validate_not_equals, validate_str_contains
+from framework.validation.validation import validate_equals, validate_equals_with_retry, validate_not_equals, validate_str_contains
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.cloud_platform.system.application.object.system_application_delete_input import SystemApplicationDeleteInput
 from keywords.cloud_platform.system.application.object.system_application_remove_input import SystemApplicationRemoveInput
@@ -23,6 +23,8 @@ from keywords.cloud_platform.system.application.system_application_upload_keywor
 from keywords.cloud_platform.system.helm.system_helm_chart_attribute_modify_keywords import SystemHelmChartAttributeModifyKeywords
 from keywords.cloud_platform.system.helm.system_helm_override_keywords import SystemHelmOverrideKeywords
 from keywords.cloud_platform.system.host.system_host_list_keywords import SystemHostListKeywords
+from keywords.cloud_platform.system.host.system_host_lock_keywords import SystemHostLockKeywords
+from keywords.cloud_platform.system.host.system_host_swact_keywords import SystemHostSwactKeywords
 from keywords.files.file_keywords import FileKeywords
 from keywords.k8s.crd.kubectl_get_crd_keywords import KubectlGetCrdKeywords
 from keywords.k8s.delete_resource.kubectl_delete_resource_keywords import KubectlDeleteResourceKeywords
@@ -581,3 +583,186 @@ def test_ovs_bridge_crd_operations(request: FixtureRequest):
     output = exec_keywords.run_pod_exec_cmd(agent_pod, "ovs-vsctl list-br", options=f"-n {APP_NAMESPACE} -c ovs-vswitchd")
     output_str = "".join(output) if isinstance(output, list) else output
     validate_not_equals(OVS_BRIDGE_NAME in output_str, True, "Bridge should be removed from OVS")
+
+
+@mark.p2
+@mark.lab_has_standby_controller
+def test_lock_unlock_standby_controller_openvswitch(request: FixtureRequest):
+    """Verify openvswitch app survives lock/unlock of standby controller.
+
+    Test Steps:
+        - Lock standby controller
+        - Verify app still applied and agent running on active
+        - Unlock standby controller
+        - Wait for host to be available
+        - Verify agent pod comes back on the unlocked node
+
+    Teardown:
+        - Unlock standby if still locked
+
+    Args:
+        request (FixtureRequest): pytest request fixture for test setup and teardown
+    """
+    active_ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    setup(request, active_ssh_connection)
+
+    host_list_keywords = SystemHostListKeywords(active_ssh_connection)
+    lock_keywords = SystemHostLockKeywords(active_ssh_connection)
+
+    standby = host_list_keywords.get_standby_controller()
+    standby_name = standby.get_host_name()
+
+    def teardown():
+        get_logger().log_teardown_step(f"Ensure {standby_name} is unlocked")
+        if lock_keywords.is_host_locked(standby_name):
+            lock_keywords.unlock_host(standby_name)
+            lock_keywords.wait_for_host_unlocked(standby_name)
+
+    request.addfinalizer(teardown)
+
+    get_logger().log_test_case_step(f"Lock standby controller {standby_name}")
+    lock_success = lock_keywords.lock_host(standby_name)
+    validate_equals(lock_success, True, "Standby controller should lock successfully")
+    lock_keywords.wait_for_host_locked(standby_name)
+
+    get_logger().log_test_case_step("Verify app still applied on active")
+    SystemApplicationListKeywords(active_ssh_connection).validate_app_status(APP_NAME, "applied", timeout=30)
+
+    get_logger().log_test_case_step("Verify agent pod still running on active")
+    active_name = host_list_keywords.get_active_controller().get_host_name()
+    pods_output = KubectlGetPodsKeywords(active_ssh_connection).get_pods(namespace=APP_NAMESPACE, label="app=ovs-agent-operator")
+    agent_pods_on_active = pods_output.get_pods_on_node(active_name)
+    validate_not_equals(len(agent_pods_on_active), 0, f"Agent pod should exist on active node {active_name}")
+    validate_equals(agent_pods_on_active[0].get_status(), "Running", f"Agent pod on {active_name} should be Running")
+
+    get_logger().log_test_case_step(f"Unlock standby controller {standby_name}")
+    unlock_success = lock_keywords.unlock_host(standby_name)
+    validate_equals(unlock_success, True, "Standby controller should unlock successfully")
+    lock_keywords.wait_for_host_unlocked(standby_name)
+
+    get_logger().log_test_case_step(f"Verify agent pod running on {standby_name} after unlock")
+
+    def get_agent_status_on_standby():
+        pods = KubectlGetPodsKeywords(active_ssh_connection).get_pods(namespace=APP_NAMESPACE, label="app=ovs-agent-operator")
+        node_pods = pods.get_pods_on_node(standby_name)
+        if not node_pods:
+            return "NoPod"
+        return node_pods[0].get_status()
+
+    validate_equals_with_retry(get_agent_status_on_standby, "Running", f"Agent pod on {standby_name} should be Running after unlock", timeout=120, polling_sleep_time=5)
+
+
+@mark.p2
+@mark.lab_has_standby_controller
+def test_swact_openvswitch(request: FixtureRequest):
+    """Verify openvswitch app survives controller swact.
+
+    Test Steps:
+        - Verify app is applied before swact
+        - Perform controller swact
+        - Reconnect to new active controller
+        - Verify app still applied
+        - Verify manager and agent pods running on new active
+
+    Args:
+        request (FixtureRequest): pytest request fixture for test setup and teardown
+    """
+    active_ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    setup(request, active_ssh_connection)
+
+    get_logger().log_test_case_step("Verify app applied before swact")
+    SystemApplicationListKeywords(active_ssh_connection).validate_app_status(APP_NAME, "applied", timeout=30)
+
+    get_logger().log_test_case_step("Perform controller swact")
+    swact_success = SystemHostSwactKeywords(active_ssh_connection).host_swact()
+    validate_equals(swact_success, True, "Controller swact should succeed")
+
+    get_logger().log_test_case_step("Reconnect to new active controller")
+    new_ssh = LabConnectionKeywords().get_active_controller_ssh()
+
+    get_logger().log_test_case_step("Verify app still applied after swact")
+    SystemApplicationListKeywords(new_ssh).validate_app_status(APP_NAME, "applied", timeout=60)
+
+    get_logger().log_test_case_step("Verify manager pod running on new active")
+    new_active_name = SystemHostListKeywords(new_ssh).get_active_controller().get_host_name()
+
+    def get_manager_status_on_new_active():
+        pods = KubectlGetPodsKeywords(new_ssh).get_pods(namespace=APP_NAMESPACE, label="app=ovs-manager-operator")
+        node_pods = pods.get_pods_on_node(new_active_name)
+        if not node_pods:
+            return "NoPod"
+        return node_pods[0].get_status()
+
+    validate_equals_with_retry(get_manager_status_on_new_active, "Running", f"Manager pod on {new_active_name} should be Running after swact", timeout=120, polling_sleep_time=5)
+
+    get_logger().log_test_case_step("Verify agent pod running on new active")
+
+    def get_agent_status_on_new_active():
+        pods = KubectlGetPodsKeywords(new_ssh).get_pods(namespace=APP_NAMESPACE, label="app=ovs-agent-operator")
+        node_pods = pods.get_pods_on_node(new_active_name)
+        if not node_pods:
+            return "NoPod"
+        return node_pods[0].get_status()
+
+    validate_equals_with_retry(get_agent_status_on_new_active, "Running", f"Agent pod on {new_active_name} should be Running after swact", timeout=120, polling_sleep_time=5)
+
+
+@mark.p2
+@mark.lab_has_worker
+def test_worker_lock_unlock_openvswitch(request: FixtureRequest):
+    """Verify openvswitch agent pod restarts after worker node lock/unlock.
+
+    Test Steps:
+        - Identify a worker node with an agent pod
+        - Lock the worker
+        - Unlock the worker
+        - Verify agent pod comes back Running on the worker
+
+    Teardown:
+        - Unlock worker if still locked
+
+    Args:
+        request (FixtureRequest): pytest request fixture for test setup and teardown
+    """
+    active_ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    setup(request, active_ssh_connection)
+
+    host_list_keywords = SystemHostListKeywords(active_ssh_connection)
+    lock_keywords = SystemHostLockKeywords(active_ssh_connection)
+
+    hosts = host_list_keywords.get_system_host_list().get_hosts()
+    worker_name = None
+    for host in hosts:
+        if host.get_personality() == "worker" and host.get_administrative() == "unlocked":
+            worker_name = host.get_host_name()
+            break
+    validate_not_equals(worker_name, None, "Should find an unlocked worker node")
+
+    def teardown():
+        get_logger().log_teardown_step(f"Ensure {worker_name} is unlocked")
+        if lock_keywords.is_host_locked(worker_name):
+            lock_keywords.unlock_host(worker_name)
+            lock_keywords.wait_for_host_unlocked(worker_name)
+
+    request.addfinalizer(teardown)
+
+    get_logger().log_test_case_step(f"Lock worker {worker_name}")
+    lock_success = lock_keywords.lock_host(worker_name)
+    validate_equals(lock_success, True, "Worker should lock successfully")
+    lock_keywords.wait_for_host_locked(worker_name)
+
+    get_logger().log_test_case_step(f"Unlock worker {worker_name}")
+    unlock_success = lock_keywords.unlock_host(worker_name)
+    validate_equals(unlock_success, True, "Worker should unlock successfully")
+    lock_keywords.wait_for_host_unlocked(worker_name)
+
+    get_logger().log_test_case_step(f"Verify agent pod running on {worker_name} after unlock")
+
+    def get_agent_status_on_worker():
+        pods = KubectlGetPodsKeywords(active_ssh_connection).get_pods(namespace=APP_NAMESPACE, label="app=ovs-agent-operator")
+        node_pods = pods.get_pods_on_node(worker_name)
+        if not node_pods:
+            return "NoPod"
+        return node_pods[0].get_status()
+
+    validate_equals_with_retry(get_agent_status_on_worker, "Running", f"Agent pod on {worker_name} should be Running after unlock", timeout=120, polling_sleep_time=5)
