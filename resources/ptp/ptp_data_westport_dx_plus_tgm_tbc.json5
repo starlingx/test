@@ -113,7 +113,7 @@
           {
             name: "phc4",
             instance_hostnames : ['controller-1'],
-            instance_parameters: "domainNumber=24 uds_address=/var/run/ptp4l-ptp4",
+            instance_parameters: "cmdline_opts='-s {{controller_1.nic2.nic_connection.interface}} -w -m' domainNumber=24 uds_address=/var/run/ptp4l-ptp4",
             monitoring_parameters: "holdover_seconds=30",
             ptp_interface_names: [
               "phc4if1",
@@ -255,7 +255,7 @@
    {
      name: "ts1if1",
      controller_0_interfaces: ["{{ controller_0.nic2.base_port }}", "{{ controller_0.nic1.conn_to_proxmox }}"],
-     controller_1_interfaces: ["{{ controller_1.nic1.conn_to_proxmox }}"],
+     controller_1_interfaces: [],
      compute_0_interfaces: ["{{ compute_0.nic1.nic_connection.interface }}", "{{ compute_0.nic2.nic_connection.interface }}"],
      ptp_interface_parameter : "ts2phc.channel=1 ts2phc.pin_index=1",
     },
