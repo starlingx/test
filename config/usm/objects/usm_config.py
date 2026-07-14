@@ -72,6 +72,9 @@ class USMConfig:
         # Combined Platform & Kubernetes upgrade flag
         self.combined_upgrade = usm_dict.get("combined_upgrade", False)
 
+        # Metapackage deployment configuration: "None", "All", or list of metapackages
+        self.metapackages = usm_dict.get("metapackages", "None")
+
         # Test patches configuration for per-test patch resolution
         self.test_patches = usm_dict.get("test_patches", None)
 
@@ -801,6 +804,24 @@ class USMConfig:
             value (bool): True to enable combined P&K upgrade.
         """
         self.combined_upgrade = value
+
+    def get_metapackages(self) -> str | list[str]:
+        """Get the metapackage deployment configuration.
+
+        Returns:
+            str | list[str]: "None" to skip, "All" to deploy all available,
+                or a list of metapackage release names to deploy selectively.
+        """
+        return self.metapackages
+
+    def set_metapackages(self, value: str | list[str]) -> None:
+        """Set the metapackage deployment configuration.
+
+        Args:
+            value (str | list[str]): "None" to skip, "All" to deploy all available,
+                or a list of metapackage release names to deploy selectively.
+        """
+        self.metapackages = value
 
     def get_test_patches(self) -> dict | None:
         """Get the test_patches configuration section.
