@@ -1,4 +1,4 @@
-from pytest import fail, mark
+from pytest import mark
 
 from config.configuration_manager import ConfigurationManager
 from framework.logging.automation_logger import get_logger
@@ -12,6 +12,8 @@ from keywords.cloud_platform.dcmanager.dcmanager_sw_deploy_strategy_keywords imp
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.cloud_platform.swmanager.swmanager_sw_deploy_strategy_keywords import SwManagerSwDeployStrategyKeywords
 from keywords.cloud_platform.swmanager.objects.swmanager_sw_deploy_strategy_create_config import SwManagerSwDeployStrategyCreateConfig
+from keywords.cloud_platform.system.host.system_host_lock_keywords import SystemHostLockKeywords
+from keywords.cloud_platform.upgrade.software_deploy_show_keywords import SoftwareDeployShowKeywords
 from keywords.cloud_platform.upgrade.software_list_keywords import SoftwareListKeywords
 from keywords.cloud_platform.upgrade.usm_keywords import USMKeywords
 
@@ -20,31 +22,29 @@ from keywords.cloud_platform.upgrade.usm_keywords import USMKeywords
 @mark.lab_has_subcloud
 def test_patch_apply(request):
     """
-    Verify patch application on subcloud
+    Verify patch application on enrolled subcloud.
 
     Test Steps:
-        - Prestage the subcloud with 25.09.1
-        - Create the sw deploy strategy for 25.09.1
-        - Apply strategy steps to subcloud
+        - Get the highest deployed release from the system controller
+        - Prestage the subcloud for sw-deploy
+        - Create the dcmanager sw-deploy strategy for the highest deployed release
+        - Apply strategy to deploy the patch on the subcloud
+        - Verify the strategy completed successfully
 
     """
     central_ssh = LabConnectionKeywords().get_active_controller_ssh()
 
-    # Gets the lowest subcloud (the subcloud with the lowest id).
-    dcmanager_subcloud_list_keywords = DcManagerSubcloudListKeywords(central_ssh)
-    lowest_subcloud = dcmanager_subcloud_list_keywords.get_dcmanager_subcloud_list().get_lower_id_async_subcloud()
+    # Get the subcloud name from the lab config
+    subcloud_name = ConfigurationManager.get_lab_config().get_subcloud_names()[0]
 
-    subcloud_name = lowest_subcloud.get_name()
-
-    # Gets the lowest subcloud sysadmin password needed for backup creation.
+    # Gets the subcloud sysadmin password needed for prestage.
     lab_config = ConfigurationManager.get_lab_config().get_subcloud(subcloud_name)
     subcloud_password = lab_config.get_admin_credentials().get_password()
 
     sw_release = SoftwareListKeywords(central_ssh).get_software_list().get_release_name_by_state("deployed")
     latest_deployed_release = max(sw_release)
 
-    if len(sw_release) <= 1:
-        fail("Only one release in system controller, lab must have at least two releases deployed.")
+    validate_equals(len(sw_release) > 1, True, "System controller must have at least two releases deployed.")
 
     # Attempt sw-deploy-strategy delete to prevent sw-deploy-strategy create failure.
     DcmanagerSwDeployStrategy(central_ssh).dcmanager_sw_deploy_strategy_delete()
@@ -53,18 +53,95 @@ def test_patch_apply(request):
     get_logger().log_info(f"Prestage {subcloud_name} with {sw_release}.")
     DcmanagerSubcloudPrestage(central_ssh).dcmanager_subcloud_prestage(subcloud_name=subcloud_name, syspass=subcloud_password, for_sw_deploy=True)
 
-    # Create software deploy strategy
-    get_logger().log_info(f"Create sw-deploy strategy for {subcloud_name}.")
-    DcmanagerSwDeployStrategy(central_ssh).dcmanager_sw_deploy_strategy_create(subcloud_name=subcloud_name, release=latest_deployed_release)
+    # Create software deploy strategy (--with-delete so strategy delete also cleans up subcloud)
+    get_logger().log_info(f"Create sw-deploy strategy for {subcloud_name} with release {latest_deployed_release}.")
+    DcmanagerSwDeployStrategy(central_ssh).dcmanager_sw_deploy_strategy_create(subcloud_name=subcloud_name, release=latest_deployed_release, with_delete=True)
 
     # Apply the previously created strategy
     get_logger().log_info(f"Apply strategy for {subcloud_name}.")
-    DcmanagerSwDeployStrategy(central_ssh).dcmanager_sw_deploy_strategy_apply(subcloud_name=subcloud_name)
+    DcmanagerSwDeployStrategy(central_ssh).dcmanager_sw_deploy_strategy_apply(target=subcloud_name)
 
     strategy_status = DcmanagerStrategyStepKeywords(central_ssh).get_dcmanager_strategy_step_show(subcloud_name).get_dcmanager_strategy_step_show().get_state()
 
     # Verify that the strategy was applied correctly
     validate_equals(strategy_status, "complete", f"Software deploy completed successfully for subcloud {subcloud_name}.")
+
+    # Delete the strategy on the system controller (also runs deploy delete on subcloud via --with-delete)
+    DcmanagerSwDeployStrategy(central_ssh).dcmanager_sw_deploy_strategy_delete()
+
+
+@mark.p2
+@mark.lab_has_subcloud
+def test_patch_remove(request):
+    """
+    Verify patch removal on enrolled simplex subcloud.
+
+    To remove a patch, you deploy-start the PREVIOUS release on the subcloud,
+    which transitions the highest deployed release into 'removing' state.
+
+    Test Steps:
+        - Get deployed releases, identify highest and previous
+        - software deploy start <previous_release>
+        - Lock/deploy-host/unlock controller-0 (if RR=True)
+        - Activate, complete, deploy delete
+        - Verify the patch was removed
+
+    """
+    # Get the subcloud name and SSH
+    subcloud_name = ConfigurationManager.get_lab_config().get_subcloud_names()[0]
+    subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
+
+    # Get all deployed releases on the subcloud
+    sw_releases = SoftwareListKeywords(subcloud_ssh).get_software_list().get_release_name_by_state("deployed")
+    validate_equals(len(sw_releases) > 1, True, "Need at least two deployed releases to test removal.")
+
+    # Sort to find highest (to remove) and previous (to deploy-start with)
+    sorted_releases = sorted(sw_releases)
+    latest_release = sorted_releases[-1]
+    previous_release = sorted_releases[-2]
+    get_logger().log_info(f"Will remove {latest_release} by deploying {previous_release} on {subcloud_name}")
+
+    # Deploy start the previous release
+    usm_keywords = USMKeywords(subcloud_ssh)
+    usm_keywords.deploy_start(previous_release)
+
+    # Wait for deploy-start-done
+    usm_keywords.wait_for_deploy_state("deploy-start-done")
+
+    # Get the actual release being removed from deploy show
+    deploy_show_kw = SoftwareDeployShowKeywords(subcloud_ssh)
+    deploy_show_obj = deploy_show_kw.get_software_deploy_show().get_software_deploy_show()
+    release_being_removed = f"WRCP-{deploy_show_obj.get_from_release()}"
+    rr = deploy_show_obj.get_rr().lower() == "true"
+    get_logger().log_info(f"Removing release: {release_being_removed}, RR: {rr}")
+
+    # Lock → deploy host → unlock (lock only if RR=True)
+    lock_kw = SystemHostLockKeywords(subcloud_ssh)
+    if rr:
+        get_logger().log_info("Locking controller-0 (RR=True)")
+        lock_kw.lock_host("controller-0")
+
+    usm_keywords.software_deploy_host("controller-0")
+
+    if rr:
+        get_logger().log_info("Unlocking controller-0")
+        lock_kw.unlock_host("controller-0")
+        lock_kw.wait_for_host_unlocked("controller-0")
+
+    # Wait for deploy-host-done, activate, complete, delete
+    usm_keywords.wait_for_deploy_state("deploy-host-done")
+
+    usm_keywords.software_deploy_activate()
+    usm_keywords.wait_for_deploy_state("deploy-activate-done")
+
+    usm_keywords.software_deploy_complete()
+    usm_keywords.software_deploy_delete()
+
+    # Verify the patch was removed
+    sw_list_after = SoftwareListKeywords(subcloud_ssh).get_software_list().get_release_name_by_state("deployed")
+    get_logger().log_info(f"Releases after removal: {sw_list_after}")
+    validate_equals(release_being_removed not in sw_list_after, True, f"Patch {release_being_removed} was removed from subcloud.")
+    get_logger().log_info(f"Patch {release_being_removed} successfully removed from {subcloud_name}")
 
 
 def swman_sw_deploy_strategy_create_apply(release: str):
@@ -79,9 +156,9 @@ def swman_sw_deploy_strategy_create_apply(release: str):
     get_logger().log_test_case_step("Through the VIM orchestration deploy the patch in the system controller")
     config = SwManagerSwDeployStrategyCreateConfig(release=release, delete=True)
     create_success = swman_deploy_kw.get_sw_deploy_strategy_create(config)
-    assert create_success, "Failed to create sw-deploy strategy"
+    validate_equals(create_success, True, "sw-deploy strategy created successfully.")
     swman_obj = swman_deploy_kw.wait_for_state(["ready-to-apply", "build-failed"])
-    assert swman_obj, "Strategy did not reach ready-to-apply state"
+    validate_equals(swman_obj, True, "Strategy reached ready-to-apply state.")
     get_logger().log_info(f"Created sw-deploy strategy: {swman_obj.get_strategy_uuid()} for release {swman_obj.get_release_id()}")
     get_logger().log_info(f"release = {release}  get_release_id = {swman_obj.get_release_id()}")
     get_logger().log_test_case_step("Apply the strategy")
