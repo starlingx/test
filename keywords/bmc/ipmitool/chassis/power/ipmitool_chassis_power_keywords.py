@@ -1,8 +1,14 @@
 import ipaddress
+import time
 
 from config.configuration_manager import ConfigurationManager
+from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
 from keywords.base_keyword import BaseKeyword
+
+# Retry configuration for transient IPMI session failures
+_IPMI_POWER_CMD_MAX_RETRIES = 3
+_IPMI_POWER_CMD_RETRY_DELAY_SECONDS = 10
 
 
 class IPMIToolChassisPowerKeywords(BaseKeyword):
@@ -27,6 +33,40 @@ class IPMIToolChassisPowerKeywords(BaseKeyword):
             except ValueError:
                 raise ValueError(f"Invalid BMC IP address format: {self.bm_ip}")
 
+    def _send_power_command(self, bm_ip: str, bm_username: str, bm_password: str, action: str):
+        """Sends an IPMI chassis power command with retry on session failure.
+
+        BMC IPMI sessions can intermittently fail with
+        "Unable to establish IPMI v2 / RMCP+ session". This method
+        retries the command before giving up.
+
+        Args:
+            bm_ip (str): IP address of the BMC
+            bm_username (str): Username for BMC
+            bm_password (str): Password for BMC
+            action (str): Power action (off, on, cycle)
+        """
+        command = f"ipmitool -I lanplus -H {bm_ip} -U {bm_username} -P {bm_password} chassis power {action}"
+
+        for attempt in range(_IPMI_POWER_CMD_MAX_RETRIES):
+            self.ssh_connection.send(command)
+
+            if self.ssh_connection.get_return_code() == 0:
+                return
+
+            if attempt < _IPMI_POWER_CMD_MAX_RETRIES - 1:
+                get_logger().log_info(
+                    f"IPMI chassis power {action} failed (attempt {attempt + 1}/{_IPMI_POWER_CMD_MAX_RETRIES}). "
+                    f"Retrying in {_IPMI_POWER_CMD_RETRY_DELAY_SECONDS}s..."
+                )
+                time.sleep(_IPMI_POWER_CMD_RETRY_DELAY_SECONDS)
+            else:
+                get_logger().log_info(
+                    f"IPMI chassis power {action} failed after {_IPMI_POWER_CMD_MAX_RETRIES} attempts."
+                )
+
+        self.validate_success_return_code(self.ssh_connection)
+
     def _power_off(self, bm_ip: str, bm_username: str, bm_password: str):
         """Powers off the host using IPMI tool
 
@@ -35,11 +75,11 @@ class IPMIToolChassisPowerKeywords(BaseKeyword):
             bm_username (str): Username for BMC
             bm_password (str): Password for BMC
         """
-        self.ssh_connection.send(f"ipmitool -I lanplus -H {bm_ip} -U {bm_username} -P {bm_password} chassis power off")
+        self._send_power_command(bm_ip, bm_username, bm_password, "off")
 
     def power_on(self):
         """Powers on the host"""
-        self.ssh_connection.send(f"ipmitool -I lanplus -H {self.bm_ip} -U {self.bm_username} -P {self.bm_password} chassis power on")
+        self._send_power_command(self.bm_ip, self.bm_username, self.bm_password, "on")
 
     def power_off(self):
         """Powers off the host"""
@@ -61,4 +101,4 @@ class IPMIToolChassisPowerKeywords(BaseKeyword):
 
     def power_cycle(self):
         """Powers off/on the host"""
-        self.ssh_connection.send(f"ipmitool -I lanplus -H {self.bm_ip} -U {self.bm_username} -P {self.bm_password} chassis power cycle")
+        self._send_power_command(self.bm_ip, self.bm_username, self.bm_password, "cycle")
