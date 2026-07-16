@@ -53,7 +53,8 @@ class SoftwareDeployPrecheckKeywords(BaseKeyword):
             raise KeywordException("Missing release ID for software deploy precheck")
 
         get_logger().log_info(f"Prechecking deploy software release: {release_id}")
-        base_cmd = f"software deploy precheck {release_id}"
+        snapshot_flag = " --options snapshot=true" if self.usm_config.get_snapshot() else ""
+        base_cmd = f"software deploy precheck {snapshot_flag} {release_id}"
         cmd = source_openrc(base_cmd)
         timeout = self.usm_config.get_precheck_timeout_sec()
 

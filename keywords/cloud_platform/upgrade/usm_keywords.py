@@ -243,7 +243,8 @@ class USMKeywords(BaseKeyword):
             str: software deploy start output
         """
         timeout = self.usm_config.get_deploy_start_timeout_sec()
-        base_cmd = f"software deploy start {release}"
+        snapshot_flag = " --options snapshot=true" if self.usm_config.get_snapshot() else ""
+        base_cmd = f"software deploy start {snapshot_flag} {release}"
         cmd = source_openrc(base_cmd)
         if sudo:
             output = self.ssh_connection.send_as_sudo(cmd, command_timeout=timeout, reconnect_timeout=timeout)
