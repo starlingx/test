@@ -118,7 +118,7 @@ def _decode_id_token(ssh_connection: SSHConnection) -> OidcTokenClaimsObject:
 
 @mark.p0
 def test_wad_corrected_email_attr_mapping(request):
-    """TC6: Verify WAD emailAttr produces correct email claim in token.
+    """Verify WAD emailAttr produces correct email claim in token.
 
     Configures Dex with emailAttr=userPrincipalName (always present on AD users)
     to validate that the email claim in the OIDC token matches the expected
@@ -165,7 +165,7 @@ def test_wad_corrected_email_attr_mapping(request):
 
 @mark.p1
 def test_wad_username_and_name_attr_mapping(request):
-    """TC7: Verify WAD usernameAttr=sAMAccountName, nameAttr=displayName in token.
+    """Verify WAD usernameAttr=sAMAccountName, nameAttr=displayName in token.
 
     Test Steps:
         - Apply WAD override with usernameAttr=sAMAccountName, nameAttr=displayName
@@ -209,7 +209,7 @@ def test_wad_username_and_name_attr_mapping(request):
 
 @mark.p0
 def test_wad_access_with_preferred_username_claim(request):
-    """TC8: Verify K8s access with WAD + oidc-username-claim=preferred_username.
+    """Verify K8s access with WAD + oidc-username-claim=preferred_username.
 
     Test Steps:
         - Apply WAD attr mappings (usernameAttr=sAMAccountName)
@@ -255,7 +255,7 @@ def test_wad_access_with_preferred_username_claim(request):
 
 @mark.p0
 def test_wad_access_with_email_claim(request):
-    """TC9: Verify K8s access with WAD + oidc-username-claim=email.
+    """Verify K8s access with WAD + oidc-username-claim=email.
 
     Test Steps:
         - Apply WAD attr mappings (emailAttr=mail)
@@ -299,7 +299,7 @@ def test_wad_access_with_email_claim(request):
 
 @mark.p0
 def test_wad_access_denied_no_mail_with_email_claim(request):
-    """TC35: Verify K8s access denied when WAD user has no mail attr and claim=email.
+    """Verify K8s access denied when WAD user has no mail attr and claim=email.
 
     Configures Dex with emailAttr=mail (which the WAD user does NOT have set
     in Active Directory). Dex rejects the login with HTTP 500 because the
@@ -352,7 +352,7 @@ def test_wad_access_denied_no_mail_with_email_claim(request):
 
 @mark.p1
 def test_username_collision_across_ldap_and_wad(request):
-    """TC36: Verify preferred_username provides no identity isolation across connectors.
+    """Verify preferred_username provides no identity isolation across connectors.
 
     Demonstrates why email-based identity (oidc-username-claim=email) is preferred
     for uniqueness across multiple backends. With preferred_username claim, any user
@@ -427,7 +427,7 @@ def test_username_collision_across_ldap_and_wad(request):
 @mark.p1
 @mark.lab_has_subcloud
 def test_dc_wad_oidc_on_system_controller(request):
-    """TC31-WAD: Verify corrected WAD OIDC mappings on System Controller.
+    """Verify corrected WAD OIDC mappings on System Controller.
 
     Test Steps:
         - Configure corrected WAD mappings on SC

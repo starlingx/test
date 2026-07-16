@@ -88,7 +88,7 @@ class DexConnectorKeywords(BaseKeyword):
             get_logger().log_info(f"Service parameter apply failed ({apply_raw.strip()[:80]}), retrying in 10s")
             time.sleep(10)
 
-        # Step 1: Wait for manifest to be updated (platform pushes new manifest)
+        # Wait for manifest to be updated (platform pushes new manifest)
         get_logger().log_info("Waiting for kube-apiserver manifest to update with new claim value")
         end_time = time.time() + 90
         while time.time() < end_time:
@@ -99,12 +99,12 @@ class DexConnectorKeywords(BaseKeyword):
                 break
             time.sleep(5)
 
-        # Step 2: Wait for apiserver pods to restart with new manifest and become Ready
+        # Wait for apiserver pods to restart with new manifest and become Ready
         get_logger().log_info("Waiting for kube-apiserver pods to restart with new config")
         time.sleep(10)  # Give kubelet time to detect manifest change and initiate restart
         self._wait_for_all_apiservers_ready()
 
-        # Step 3: Verify the API is stable (both controllers serving via VIP).
+        # Verify the API is stable (both controllers serving via VIP).
         # After service-parameter-apply, controllers restart sequentially. The VIP
         # may briefly work (one controller) then go down (second controller restart).
         # Require 3 consecutive successes 5s apart to confirm stability.

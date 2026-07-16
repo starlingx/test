@@ -69,10 +69,10 @@ class OidcEnvironmentKeywords(BaseKeyword):
         Returns:
             str: Full path to the generated kubeconfig file on the remote host.
         """
-        get_logger().log_info("Step 0: Ensure kubelogin plugin installed on controller")
+        get_logger().log_info("Ensure kubelogin plugin installed on controller")
         self.ensure_kubelogin_installed_on_controller()
 
-        get_logger().log_info("Step 1: Import the upstream IdP CA certificate")
+        get_logger().log_info("Import the upstream IdP CA certificate")
         self.file_keywords.create_directory(working_dir)
         template_file = get_stx_resource_path("resources/cloud_platform/security/oidc/upstream-idp-ca-secret.yaml")
         replacement_dict = {"keycloak_ca_cert": ca_cert_pem.replace("\n", "\\n")}
@@ -81,7 +81,7 @@ class OidcEnvironmentKeywords(BaseKeyword):
         secret_present = secret_name in self.kubectl_get_secrets.get_secret_names(namespace=namespace)
         validate_equals(secret_present, True, f"Secret '{secret_name}' should be present in '{namespace}' after creation")
 
-        get_logger().log_info("Step 2: Create Helm overrides configuration for dex Keycloak connector")
+        get_logger().log_info("Create Helm overrides configuration for dex Keycloak connector")
         template_file = get_stx_resource_path("resources/cloud_platform/security/oidc/dex-keycloak-overrides.yaml")
         replacement_dict = {
             "oam_ip": oam_ip,
@@ -93,26 +93,26 @@ class OidcEnvironmentKeywords(BaseKeyword):
         dex_overrides_yaml = self.yaml_keywords.generate_yaml_file_from_template(template_file, replacement_dict, "dex-keycloak-overrides.yaml", working_dir)
         self.helm_override_keywords.update_helm_override(dex_overrides_yaml, oidc_app_name, "dex", namespace, reuse_values=False)
 
-        get_logger().log_info("Step 2b: Update oidc-client override to use oidc-auth-apps-certificate")
+        get_logger().log_info("Update oidc-client override to use oidc-auth-apps-certificate")
         oidc_client_template = get_stx_resource_path("resources/cloud_platform/security/oidc/oidc-client-overrides.yaml")
         remote_oidc_client_override = f"{working_dir}/oidc-client-overrides.yaml"
         self.file_keywords.upload_file(oidc_client_template, remote_oidc_client_override)
         self.helm_override_keywords.update_helm_override(remote_oidc_client_override, oidc_app_name, "oidc-client", namespace, reuse_values=False)
 
-        get_logger().log_info("Step 2c: Ensure secret-observer has user override (platform requires all 3 charts)")
+        get_logger().log_info("Ensure secret-observer has user override (platform requires all 3 charts)")
         secret_observer_override = f"{working_dir}/secret-observer-overrides.yaml"
         self.ssh_connection.send(f"echo '{{}}' > {secret_observer_override}")
         self.helm_override_keywords.update_helm_override(secret_observer_override, oidc_app_name, "secret-observer", namespace, reuse_values=True)
 
-        get_logger().log_info("Step 3: Apply the oidc-auth-apps configuration")
+        get_logger().log_info("Apply the oidc-auth-apps configuration")
         system_app_apply_output = self.system_app_apply.system_application_apply(oidc_app_name)
         validate_equals(system_app_apply_output.get_system_application_object().get_status(), "applied", f"{oidc_app_name} should be in applied state")
 
-        get_logger().log_info("Step 4: Create ClusterRoleBinding for wrcp-admin group")
+        get_logger().log_info("Create ClusterRoleBinding for wrcp-admin group")
         if crb_binding_name and crb_cluster_role and crb_group:
             self.kubectl_crb.create_clusterrolebinding_for_group(binding_name=crb_binding_name, clusterrole=crb_cluster_role, group=crb_group)
 
-        get_logger().log_info("Step 5: Extract and save the system-local-ca certificate")
+        get_logger().log_info("Extract and save the system-local-ca certificate")
         ca_cert_path = f"{working_dir}{ca_cert_filename}"
         ca_cert_content = self.kubectl_get_secrets.get_secret_with_custom_output(
             secret_name="system-local-ca",
@@ -124,7 +124,7 @@ class OidcEnvironmentKeywords(BaseKeyword):
         self.file_keywords.create_file_with_heredoc(ca_cert_path, ca_cert_content)
         validate_equals(self.file_keywords.file_exists(ca_cert_path), True, f"system-local-ca certificate should be saved at '{ca_cert_path}'")
 
-        get_logger().log_info("Step 6: Create local OIDC login kubeconfig")
+        get_logger().log_info("Create local OIDC login kubeconfig")
         kubeconfig_path = f"{working_dir}{kubeconfig_filename}"
         template_file = get_stx_resource_path("resources/cloud_platform/security/oidc/local-oidc-login-kubeconfig.yml")
         replacement_dict = {
@@ -260,7 +260,7 @@ class OidcEnvironmentKeywords(BaseKeyword):
 
         self.ensure_kubelogin_installed()
 
-        get_logger().log_info("Step 1: Download system-local-ca certificate to local machine")
+        get_logger().log_info("Download system-local-ca certificate to local machine")
         ca_cert_content = self.kubectl_get_secrets.get_secret_with_custom_output(
             secret_name="system-local-ca",
             namespace="cert-manager",
@@ -273,7 +273,7 @@ class OidcEnvironmentKeywords(BaseKeyword):
             f.write(ca_cert_content if isinstance(ca_cert_content, str) else "\n".join(ca_cert_content))
         validate_equals(os.path.exists(local_ca_cert_path), True, f"Local CA cert should exist at '{local_ca_cert_path}'")
 
-        get_logger().log_info("Step 2: Generate remote OIDC kubeconfig locally")
+        get_logger().log_info("Generate remote OIDC kubeconfig locally")
         template_file = get_stx_resource_path("resources/cloud_platform/security/oidc/remote-oidc-login-kubeconfig.yml")
         replacement_dict = {
             "ca_cert_filename": local_ca_cert_path,
@@ -307,7 +307,7 @@ class OidcEnvironmentKeywords(BaseKeyword):
         """
         log_folder = ConfigurationManager.get_logger_config().get_test_case_resources_log_location()
 
-        get_logger().log_info("Step 1: Download system-local-ca certificate to local machine")
+        get_logger().log_info("Download system-local-ca certificate to local machine")
         ca_cert_content = self.kubectl_get_secrets.get_secret_with_custom_output(
             secret_name="system-local-ca",
             namespace="cert-manager",
@@ -320,7 +320,7 @@ class OidcEnvironmentKeywords(BaseKeyword):
             f.write(ca_cert_content if isinstance(ca_cert_content, str) else "\n".join(ca_cert_content))
         validate_equals(os.path.exists(local_ca_cert_path), True, f"Local CA cert should exist at '{local_ca_cert_path}'")
 
-        get_logger().log_info("Step 2: Generate remote CLI OIDC kubeconfig locally")
+        get_logger().log_info("Generate remote CLI OIDC kubeconfig locally")
         template_file = get_stx_resource_path("resources/cloud_platform/security/oidc/remotecli-oidc-login-kubeconfig.yml")
         replacement_dict = {
             "ca_cert_filename": ca_cert_filename,

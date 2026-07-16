@@ -244,7 +244,7 @@ def _decode_id_token(kc_ssh: SSHConnection) -> OidcTokenClaimsObject:
 @mark.p0
 @mark.lab_has_standby_controller
 def test_remote_oidc_claim_mapping(request):
-    """TC10: Verify Remote OIDC claimMapping produces correct claims in token.
+    """Verify Remote OIDC claimMapping produces correct claims in token.
 
     Test Steps:
         - Apply Remote OIDC connector override with claimMapping
@@ -286,7 +286,7 @@ def test_remote_oidc_claim_mapping(request):
 @mark.p0
 @mark.lab_has_standby_controller
 def test_remote_oidc_access_with_preferred_username_claim(request):
-    """TC11: Verify K8s access with Remote OIDC + oidc-username-claim=preferred_username.
+    """Verify K8s access with Remote OIDC + oidc-username-claim=preferred_username.
 
     Test Steps:
         - Apply Remote OIDC connector override
@@ -325,7 +325,7 @@ def test_remote_oidc_access_with_preferred_username_claim(request):
 @mark.p0
 @mark.lab_has_standby_controller
 def test_remote_oidc_access_with_email_claim(request):
-    """TC12: Verify K8s access with Remote OIDC + oidc-username-claim=email.
+    """Verify K8s access with Remote OIDC + oidc-username-claim=email.
 
     Test Steps:
         - Apply Remote OIDC connector override
@@ -369,7 +369,7 @@ def test_remote_oidc_access_with_email_claim(request):
 @mark.p1
 @mark.lab_has_standby_controller
 def test_keycloak_unverified_email_rejected(request):
-    """TC37: Verify access denied when Keycloak email_verified=false and claim=email.
+    """Verify access denied when Keycloak email_verified=false and claim=email.
 
     When oidc-username-claim=email, identity relies on the email claim.
     If Keycloak user has email_verified=false, the email claim should be
@@ -433,7 +433,7 @@ def test_keycloak_unverified_email_rejected(request):
 @mark.p1
 @mark.lab_has_subcloud
 def test_dc_remote_oidc_centralized_auth(request):
-    """TC33: Verify centralized OIDC auth on DC System Controller via Keycloak.
+    """Verify centralized OIDC auth on DC System Controller via Keycloak.
 
     Test Steps:
         - Configure Remote OIDC connector on SC

@@ -629,7 +629,7 @@ def test_ldap_oidc_access_after_swact(request):
 @mark.p1
 @mark.lab_has_standby_controller
 def test_ldap_oidc_access_after_ungraceful_reboot(request):
-    """TC28: Verify OIDC access after ungraceful active controller reboot.
+    """Verify OIDC access after ungraceful active controller reboot.
 
     Test Steps:
         - Configure LDAP mappings, verify access
@@ -698,7 +698,7 @@ def test_ldap_oidc_access_after_ungraceful_reboot(request):
 @mark.p1
 @mark.lab_has_standby_controller
 def test_email_identity_isolation_across_ldap_and_wad(request):
-    """TC17: Verify email-based identity isolation across LDAP and WAD backends.
+    """Verify email-based identity isolation across LDAP and WAD backends.
 
     With oidc-username-claim=email, users from different backends get different
     email identities in their tokens and RBAC correctly isolates access.
@@ -797,7 +797,7 @@ def test_email_identity_isolation_across_ldap_and_wad(request):
 
 @mark.p0
 def test_bootstrap_default_oidc_username_claim():
-    """TC16: Verify default bootstrap uses oidc-username-claim=preferred_username.
+    """Verify default bootstrap uses oidc-username-claim=preferred_username.
 
     Test Steps:
         - Query oidc-username-claim service parameter
@@ -825,7 +825,7 @@ def test_bootstrap_default_oidc_username_claim():
 @mark.p0
 @mark.lab_has_subcloud
 def test_dc_ldap_oidc_on_system_controller(request):
-    """TC31: Verify corrected OIDC mappings on System Controller.
+    """Verify corrected OIDC mappings on System Controller.
 
     Test Steps:
         - Configure corrected LDAP mappings on SC
