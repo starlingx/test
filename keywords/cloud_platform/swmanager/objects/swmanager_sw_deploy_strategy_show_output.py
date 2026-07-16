@@ -28,7 +28,7 @@ class SwManagerSwDeployStrategyShowOutput:
             self.swmanager_sw_deploy_strategy = SwManagerSwDeployStrategyObject()
             sw_deploy_strat = output_values["Strategy Software Deploy Strategy"]
             self.swmanager_sw_deploy_strategy.set_strategy_uuid(sw_deploy_strat.get("strategy-uuid"))
-            self.swmanager_sw_deploy_strategy.set_release_id(sw_deploy_strat.get("release-id"))
+            self.swmanager_sw_deploy_strategy.set_release_id(sw_deploy_strat.get("release-id") or sw_deploy_strat.get("release(s)"))
             self.swmanager_sw_deploy_strategy.set_controller_apply_type(sw_deploy_strat.get("controller-apply-type"))
             self.swmanager_sw_deploy_strategy.set_storage_apply_type(sw_deploy_strat.get("storage-apply-type"))
             self.swmanager_sw_deploy_strategy.set_worker_apply_type(sw_deploy_strat.get("worker-apply-type"))
@@ -72,13 +72,18 @@ class SwManagerSwDeployStrategyShowOutput:
         if isinstance(value, dict) and len(value) == 0:
             get_logger().log_debug("Empty output received, likely due to connection issues")
             return False
-            
-        required_fields = ["strategy-uuid", "release-id", "controller-apply-type", "storage-apply-type", "worker-apply-type", "default-instance-action", "alarm-restrictions", "current-phase", "current-phase-completion", "state"]
+
+        required_fields = ["strategy-uuid", "controller-apply-type", "storage-apply-type", "worker-apply-type", "default-instance-action", "alarm-restrictions", "current-phase", "current-phase-completion", "state"]
         if "Strategy Software Deploy Strategy" not in value:
             get_logger().log_error("Strategy Software Deploy Strategy is not in the output value")
             return False
+        sw_deploy_strat = value["Strategy Software Deploy Strategy"]
         for field in required_fields:
-            if field not in value["Strategy Software Deploy Strategy"]:
+            if field not in sw_deploy_strat:
                 get_logger().log_error(f"{field} is not in the output value")
                 return False
+        # "release-id" was renamed to "release(s)" in newer StarlingX versions
+        if "release-id" not in sw_deploy_strat and "release(s)" not in sw_deploy_strat:
+            get_logger().log_error("Neither 'release-id' nor 'release(s)' is in the output value")
+            return False
         return True
