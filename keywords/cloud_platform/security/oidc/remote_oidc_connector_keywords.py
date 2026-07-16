@@ -7,6 +7,7 @@ from framework.ssh.ssh_connection import SSHConnection
 from keywords.cloud_platform.security.oidc.dex_connector_keywords import DexConnectorKeywords
 from keywords.files.file_keywords import FileKeywords
 from keywords.files.yaml_keywords import YamlKeywords
+from keywords.k8s.files.kubectl_file_apply_keywords import KubectlFileApplyKeywords
 
 
 class RemoteOidcConnectorKeywords(DexConnectorKeywords):
@@ -39,13 +40,24 @@ class RemoteOidcConnectorKeywords(DexConnectorKeywords):
 
         self.file_keywords.create_directory(config["working_dir"])
 
+        # Import upstream IdP CA certificate (required for Dex to verify Keycloak TLS)
+        oidc_config = config["remote_oidc"]
+        ca_cert_pem = security_config.get_oidc_keycloak_ca_cert()
+        template = get_stx_resource_path("resources/cloud_platform/security/oidc/upstream-idp-ca-secret.yaml")
+        replacement_dict = {"keycloak_ca_cert": ca_cert_pem.replace("\n", "\\n")}
+        secret_yaml = self.yaml_keywords.generate_yaml_file_from_template(template, replacement_dict, "upstream-idp-ca-secret.yaml", config["working_dir"])
+        KubectlFileApplyKeywords(self.ssh_connection).apply_resource_from_yaml(secret_yaml)
+
         template = get_stx_resource_path("resources/cloud_platform/security/oidc/dex-remote-oidc-claim-mapping-overrides.yaml")
+        oam_ip = lab_config.get_floating_ip()
+        if ":" in oam_ip:
+            oam_ip = f"[{oam_ip}]"
         replacements = {
-            "oam_ip": lab_config.get_floating_ip(),
-            "client_id": security_config.get_keycloak_client_id(),
-            "client_secret": security_config.get_keycloak_client_secret(),
-            "external_idp_issuer_url": security_config.get_keycloak_issuer_url(),
-            "oidc_client_secret": security_config.get_oidc_client_secret(),
+            "oam_ip": oam_ip,
+            "client_id": oidc_config["client_id"],
+            "client_secret": oidc_config["client_secret"],
+            "external_idp_issuer_url": oidc_config["issuer_url"],
+            "oidc_client_secret": security_config.get_oidc_keycloak_static_client_secret(),
             "email_claim": claim_mapping.get("email", "email"),
             "name_claim": claim_mapping.get("name", "name"),
             "preferred_username_claim": claim_mapping.get("preferred_username", "preferred_username"),

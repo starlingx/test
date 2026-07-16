@@ -9,6 +9,7 @@ from framework.exceptions.keyword_exception import KeywordException
 from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
 from keywords.base_keyword import BaseKeyword
+from keywords.cloud_platform.command_wrappers import source_openrc
 from keywords.cloud_platform.security.oidc.object.oidc_token_claims_object import OidcTokenClaimsObject
 from keywords.cloud_platform.system.application.system_application_apply_keywords import SystemApplicationApplyKeywords
 from keywords.cloud_platform.system.helm.system_helm_override_keywords import SystemHelmOverrideKeywords
@@ -62,23 +63,89 @@ class DexConnectorKeywords(BaseKeyword):
         if current != claim_value:
             get_logger().log_info(f"Setting oidc-username-claim='{claim_value}'")
             self.service_param_keywords.modify_service_parameter("kubernetes", "kube_apiserver", "oidc-username-claim", claim_value)
+        else:
+            # Service parameter already matches. Check if manifest also matches
+            # AND apiserver is actually serving — if so, safe to skip.
+            output = self.ssh_connection.send_as_sudo("grep oidc-username-claim /etc/kubernetes/manifests/kube-apiserver.yaml")
+            raw = "\n".join(output) if isinstance(output, list) else str(output)
+            if f"--oidc-username-claim={claim_value}" in raw:
+                api_output = self.ssh_connection.send(export_k8s_config("kubectl get nodes --request-timeout=5s 2>&1"))
+                api_raw = "\n".join(api_output) if isinstance(api_output, list) else str(api_output)
+                if "Ready" in api_raw and "refused" not in api_raw.lower():
+                    get_logger().log_info(f"kube-apiserver already running with oidc-username-claim={claim_value}, skipping apply")
+                    return
 
-        # Check if kube-apiserver is already running with the correct value
-        output = self.ssh_connection.send_as_sudo("grep oidc-username-claim /etc/kubernetes/manifests/kube-apiserver.yaml")
-        raw = "\n".join(output) if isinstance(output, list) else str(output)
-        if f"--oidc-username-claim={claim_value}" in raw:
-            get_logger().log_info(f"kube-apiserver already running with oidc-username-claim={claim_value}, skipping apply")
-            return
+        get_logger().log_info(f"Applying service parameters to set oidc-username-claim={claim_value}")
+        # Retry apply in case the platform isn't ready (e.g., apiserver still restarting
+        # from a previous apply, "Failed to generate bootstrap token" error)
+        apply_end_time = time.time() + 60
+        while time.time() < apply_end_time:
+            apply_output = self.ssh_connection.send(source_openrc("system service-parameter-apply kubernetes"))
+            apply_raw = "\n".join(apply_output) if isinstance(apply_output, list) else str(apply_output)
+            if "Applying" in apply_raw:
+                get_logger().log_info("Service parameter apply accepted")
+                break
+            get_logger().log_info(f"Service parameter apply failed ({apply_raw.strip()[:80]}), retrying in 10s")
+            time.sleep(10)
 
-        get_logger().log_info("kube-apiserver manifest does not match, applying service parameters")
-        self.service_param_keywords.apply_service_parameters("kubernetes")
-        # Wait for kube-apiserver to restart with new config using retry logic
-        get_logger().log_info("Waiting for kube-apiserver to restart with new oidc-username-claim")
+        # Step 1: Wait for manifest to be updated (platform pushes new manifest)
+        get_logger().log_info("Waiting for kube-apiserver manifest to update with new claim value")
+        end_time = time.time() + 90
+        while time.time() < end_time:
+            verify_output = self.ssh_connection.send_as_sudo("grep oidc-username-claim /etc/kubernetes/manifests/kube-apiserver.yaml")
+            verify_raw = "\n".join(verify_output) if isinstance(verify_output, list) else str(verify_output)
+            if f"--oidc-username-claim={claim_value}" in verify_raw:
+                get_logger().log_info(f"Confirmed kube-apiserver manifest has oidc-username-claim={claim_value}")
+                break
+            time.sleep(5)
+
+        # Step 2: Wait for apiserver pods to restart with new manifest and become Ready
+        get_logger().log_info("Waiting for kube-apiserver pods to restart with new config")
+        time.sleep(10)  # Give kubelet time to detect manifest change and initiate restart
         self._wait_for_all_apiservers_ready()
-        # Restart Dex pods to reconnect to the refreshed apiserver CRD backend
-        get_logger().log_info("Restarting Dex pods to reconnect CRD storage after apiserver restart")
-        self.ssh_connection.send(export_k8s_config("kubectl delete pods -n kube-system -l app.kubernetes.io/name=dex"))
-        self.wait_for_dex_ready()
+
+        # Step 3: Verify the API is stable (both controllers serving via VIP).
+        # After service-parameter-apply, controllers restart sequentially. The VIP
+        # may briefly work (one controller) then go down (second controller restart).
+        # Require 3 consecutive successes 5s apart to confirm stability.
+        get_logger().log_info("Verifying kube-apiserver is stable (3 consecutive checks)")
+        api_end_time = time.time() + 120
+        consecutive_ok = 0
+        while time.time() < api_end_time:
+            api_output = self.ssh_connection.send(export_k8s_config("kubectl get nodes --request-timeout=5s 2>&1"))
+            api_raw = "\n".join(api_output) if isinstance(api_output, list) else str(api_output)
+            if "connection refused" not in api_raw.lower() and "refused" not in api_raw.lower() and "was refused" not in api_raw.lower():
+                consecutive_ok += 1
+                if consecutive_ok >= 3:
+                    get_logger().log_info("kube-apiserver is stable (3 consecutive successful checks)")
+                    break
+            else:
+                consecutive_ok = 0
+                get_logger().log_info("kube-apiserver not ready yet, retrying in 5s")
+            time.sleep(5)
+        # Note: Do NOT restart Dex pods here. The oidc-username-claim is a
+        # kube-apiserver parameter only. Restarting Dex generates new signing
+        # keys, which invalidates all cached tokens and causes Unauthorized
+        # errors until the apiserver refreshes its JWKS cache.
+
+        # Wait for apiserver OIDC subsystem to initialize (fetch JWKS from Dex).
+        # After restart, the apiserver needs to connect to the Dex issuer and
+        # download signing keys before it can validate OIDC tokens.
+        get_logger().log_info("Waiting for apiserver OIDC subsystem to fetch JWKS from Dex")
+        oam_ip = ConfigurationManager.get_lab_config().get_floating_ip()
+        if ":" in oam_ip:
+            oam_ip = f"[{oam_ip}]"
+        dex_jwks_url = f"https://{oam_ip}:30556/dex/keys"
+        oidc_ready_time = time.time() + 60
+        while time.time() < oidc_ready_time:
+            jwks_output = self.ssh_connection.send(f"curl -sk {dex_jwks_url} 2>&1")
+            jwks_raw = "\n".join(jwks_output) if isinstance(jwks_output, list) else str(jwks_output)
+            if '"keys"' in jwks_raw:
+                get_logger().log_info("Dex JWKS endpoint serving keys — apiserver OIDC should be ready")
+                # Give apiserver a moment to fetch and cache the keys
+                time.sleep(5)
+                break
+            time.sleep(5)
 
     def _wait_for_all_apiservers_ready(self, timeout: int = 300, require_fresh: bool = False) -> None:
         """Wait for all kube-apiserver pods to be 1/1 Ready.
@@ -114,8 +181,9 @@ class DexConnectorKeywords(BaseKeyword):
         """Wait for Dex pod to be Running and ready to serve OIDC requests.
 
         After application-apply, the Dex pod may take time to initialize
-        the LDAP connector. This method waits until the Dex OIDC discovery
-        endpoint responds successfully via the OAM NodePort.
+        connectors (especially remote OIDC connectors like Keycloak).
+        This method waits until the Dex OIDC discovery AND auth endpoints
+        respond successfully via the OAM NodePort.
 
         Args:
             namespace (str): Kubernetes namespace for Dex pods.
@@ -129,7 +197,7 @@ class DexConnectorKeywords(BaseKeyword):
             namespace=namespace,
             timeout=timeout,
         )
-        # Wait for Dex to respond to OIDC discovery (LDAP connector initialized)
+        # Wait for Dex to respond to OIDC discovery and auth (connector initialized)
         oam_ip = ConfigurationManager.get_lab_config().get_floating_ip()
         if ":" in oam_ip:
             oam_ip = f"[{oam_ip}]"
@@ -141,17 +209,17 @@ class DexConnectorKeywords(BaseKeyword):
             output = self.ssh_connection.send(f"curl -sk {dex_url} 2>&1")
             raw = "\n".join(output) if isinstance(output, list) else str(output)
             if "issuer" in raw:
-                # Also verify Dex can list connectors (CRD storage working)
+                # Also verify Dex auth endpoint works (connector initialized)
                 auth_output = self.ssh_connection.send(f"curl -sk -o /dev/null -w '%{{http_code}}' '{dex_auth_url}' 2>&1")
                 auth_raw = "\n".join(auth_output) if isinstance(auth_output, list) else str(auth_output)
                 if "200" in auth_raw or "301" in auth_raw or "302" in auth_raw:
-                    get_logger().log_info("Dex OIDC discovery endpoint is responding")
+                    get_logger().log_info("Dex OIDC discovery and auth endpoints responding")
                     return
-                # CRD storage likely broken — restart Dex pods
-                get_logger().log_info("Dex discovery OK but auth endpoint failed — restarting Dex pods")
-                self.ssh_connection.send(export_k8s_config("kubectl delete pods -n kube-system -l app.kubernetes.io/name=dex"))
-                time.sleep(30)
-                self.kubectl_pods.wait_for_pod_status(pod_name="oidc-dex", expected_status="Running", namespace=namespace, timeout=60)
+                # Auth endpoint not ready — remote OIDC connectors (Keycloak) need
+                # time to initialize. Do NOT restart pods — that generates new signing
+                # keys which invalidates all tokens and breaks apiserver OIDC validation.
+                get_logger().log_info("Dex discovery OK but auth endpoint not ready yet, waiting 10s")
+                time.sleep(10)
                 continue
             time.sleep(5)
         if raise_on_timeout:

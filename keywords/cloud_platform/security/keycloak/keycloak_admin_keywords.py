@@ -194,3 +194,21 @@ class KeycloakAdminKeywords(BaseKeyword):
         response = requests.put(url, headers=headers, verify=False)
         response.raise_for_status()
         get_logger().log_info(f"Added user '{username}' to group '{group_name}'")
+
+    def set_email_verified(self, username: str, verified: bool) -> None:
+        """Set the emailVerified attribute on a Keycloak user.
+
+        Args:
+            username (str): Keycloak username.
+            verified (bool): True to mark email as verified, False to unverify.
+
+        Raises:
+            requests.exceptions.HTTPError: If the API request fails.
+        """
+        self.get_admin_token()
+        user_id = self.get_user_id(username)
+        url = f"{self.base_url}/admin/realms/{self.realm}/users/{user_id}"
+        headers = {"Authorization": f"Bearer {self.token}", "Content-Type": "application/json"}
+        response = requests.put(url, headers=headers, json={"emailVerified": verified}, verify=False)
+        response.raise_for_status()
+        get_logger().log_info(f"Set emailVerified={verified} for user '{username}'")

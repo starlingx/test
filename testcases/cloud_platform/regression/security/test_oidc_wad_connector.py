@@ -425,7 +425,7 @@ def test_username_collision_across_ldap_and_wad(request):
 
 
 @mark.p1
-@mark.lab_is_distributed_cloud
+@mark.lab_has_subcloud
 def test_dc_wad_oidc_on_system_controller(request):
     """TC31-WAD: Verify corrected WAD OIDC mappings on System Controller.
 

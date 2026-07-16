@@ -20,20 +20,40 @@ config:
         redirectURI: "https://{{ oam_ip }}:30556/dex/callback"
         insecureSkipEmailVerified: true
         insecureEnableGroups: true
+        getUserInfo: true
+        userIDKey: preferred_username
+        userNameKey: preferred_username
+        rootCA: /etc/ssl/certs/idpca/upstream-ca.crt
         scopes:
-          - openid
           - profile
           - email
-          - groups
         claimMapping:
           email: "{{ email_claim }}"
           name: "{{ name_claim }}"
           preferred_username: "{{ preferred_username_claim }}"
+  expiry:
+    idTokens: 24h
+  staticClients:
+  - id: stx-oidc-client-app
+    name: STX OIDC Client app
+    redirectURIs:
+    - http://localhost:8000
+    - "http://{{ oam_ip }}:8000"
+    - "https://{{ oam_ip }}:30555/callback"
+    secret: "{{ oidc_client_secret }}"
 volumeMounts:
   - mountPath: /etc/dex/tls
     name: https-tls
+  - mountPath: /etc/ssl/certs/idpca
+    name: oidc-idp-ca
 volumes:
   - name: https-tls
     secret:
       defaultMode: 420
       secretName: oidc-auth-apps-certificate
+  - name: oidc-idp-ca
+    secret:
+      secretName: oidc-upstream-idp-ca
+envVars:
+  - name: SSL_CERT_FILE
+    value: /etc/ssl/certs/idpca/upstream-ca.crt

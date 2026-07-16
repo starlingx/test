@@ -1,4 +1,5 @@
 from config.configuration_manager import ConfigurationManager
+from framework.logging.automation_logger import get_logger
 from framework.resources.resource_finder import get_stx_resource_path
 from framework.validation.validation import validate_equals, validate_not_equals
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
@@ -20,12 +21,15 @@ from keywords.k8s.secret.kubectl_get_secret_keywords import KubectlGetSecretsKey
 from keywords.linux.keyring.keyring_keywords import KeyringKeywords
 
 
-def test_install_oidc():
+def test_install_oidc() -> None:
     """
     Install (Upload and Apply) Application OIDC
 
     Raises:
         Exception: If application OIDC failed to upload or apply
+
+    Returns:
+        None:
     """
 
     # Setups app configs, obj instances and lab connection
@@ -44,11 +48,14 @@ def test_install_oidc():
     lab_ipv6 = ConfigurationManager.get_lab_config().is_ipv6()
     oam_ip = f"[{oam_ip}]" if lab_ipv6 else oam_ip
 
-    # Verifies if the app is already uploaded
+    # Verifies if the app is already uploaded or applied
     system_applications = SystemApplicationListKeywords(ssh_connection).get_system_application_list()
     if system_applications.is_in_application_list(oidc_name):
         oidc_app_status = system_applications.get_application(oidc_name).get_status()
-        validate_equals(oidc_app_status, "uploaded", f"{oidc_name} is already uploaded")
+        if oidc_app_status == "applied":
+            get_logger().log_info(f"{oidc_name} is already applied (default on 26.03+ builds). Install test not needed.")
+            return
+        validate_equals(oidc_app_status, "uploaded", f"{oidc_name} should be in uploaded state")
     else:
         # Setups the upload input object
         system_application_upload_input = SystemApplicationUploadInput()

@@ -48,6 +48,36 @@ def _get_test_user_config() -> dict:
     return _load_dex_config()["test_user"]
 
 
+def _configure_subcloud_oidc_params(
+    subcloud_ssh: SSHConnection,
+    oidc_issuer_url: str,
+    username_claim: str,
+) -> None:
+    """Configure OIDC service parameters on subcloud for centralized DC auth.
+
+    Args:
+        subcloud_ssh (SSHConnection): SSH connection to the subcloud.
+        oidc_issuer_url (str): SC's dex issuer URL.
+        username_claim (str): OIDC username claim value.
+    """
+    service_params = SystemServiceParameterKeywords(subcloud_ssh)
+    oidc_params = {
+        "oidc-issuer-url": oidc_issuer_url,
+        "oidc-client-id": "stx-oidc-client-app",
+        "oidc-username-claim": username_claim,
+        "oidc-groups-claim": "groups",
+    }
+    for param_name, param_value in oidc_params.items():
+        try:
+            service_params.add_service_parameter("kubernetes", "kube_apiserver", param_name, param_value)
+        except AssertionError:
+            service_params.modify_service_parameter("kubernetes", "kube_apiserver", param_name, param_value)
+    service_params.apply_service_parameters("kubernetes")
+
+    get_logger().log_info("Waiting for subcloud kube-apiserver to restart with OIDC parameters")
+    DexConnectorKeywords(subcloud_ssh)._wait_for_all_apiservers_ready(timeout=120)
+
+
 def _apply_ldap_attr_override(ssh_connection: SSHConnection, config: dict, email_attr: str, name_attr: str) -> None:
     """Generate and apply LDAP override with specified attribute mappings.
 
@@ -78,14 +108,15 @@ def _apply_ldap_attr_override(ssh_connection: SSHConnection, config: dict, email
     dex_keywords.apply_dex_override_and_reapply(override_file, config["oidc_app_name"], config["namespace"])
 
 
-def _create_ldap_ssh(username: str, password: str, oam_ip: str, backend: str = "") -> SSHConnection:
+def _create_ldap_ssh(username: str, password: str, oam_ip: str, backend: str = "", client_ip: str = "") -> SSHConnection:
     """Create SSH session as LDAP user and authenticate via oidc-auth.
 
     Args:
         username (str): LDAP username.
         password (str): LDAP password.
-        oam_ip (str): Lab OAM IP.
+        oam_ip (str): Lab OAM IP to SSH into.
         backend (str): Dex connector backend ID (e.g., 'ldap-1'). Required when multiple backends exist.
+        client_ip (str): OIDC client IP override (e.g., SC OAM for centralized DC). Uses local OAM if empty.
 
     Returns:
         SSHConnection: Authenticated SSH session.
@@ -96,7 +127,8 @@ def _create_ldap_ssh(username: str, password: str, oam_ip: str, backend: str = "
     ldap_ssh.send("kubeconfig-setup")
     ldap_ssh.send("source ~/.profile")
     backend_flag = f" -b {backend}" if backend else ""
-    ldap_ssh.send(f"oidc-auth -p {password}{backend_flag}")
+    client_flag = f" -c {client_ip}" if client_ip else ""
+    ldap_ssh.send(f"oidc-auth -p {password}{backend_flag}{client_flag}")
     return ldap_ssh
 
 
@@ -579,6 +611,10 @@ def test_ldap_oidc_access_after_swact(request):
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     SystemHostSwactKeywords(ssh_connection).host_swact()
 
+    get_logger().log_info("Waiting for Dex to recover after swact")
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    DexConnectorKeywords(ssh_connection).wait_for_dex_ready()
+
     get_logger().log_info("Re-verifying access after swact")
     ldap_ssh = _create_ldap_ssh(test_user["username"], test_user["password"], oam_ip)
     _verify_kubectl_and_stx_access(ldap_ssh, expect_success=True)
@@ -651,6 +687,7 @@ def test_ldap_oidc_access_after_ungraceful_reboot(request):
     get_logger().log_info("Verifying OIDC pods are ready after reboot")
     kubectl_wait = KubectlWaitPodKeywords(ssh_connection)
     kubectl_wait.wait_for_pods_ready("app=dex", config["namespace"])
+    DexConnectorKeywords(ssh_connection).wait_for_dex_ready()
 
     get_logger().log_info("Re-verifying OIDC access after ungraceful reboot")
     ldap_ssh = _create_ldap_ssh(test_user["username"], test_user["password"], oam_ip)
@@ -786,7 +823,7 @@ def test_bootstrap_default_oidc_username_claim():
 
 
 @mark.p0
-@mark.lab_is_distributed_cloud
+@mark.lab_has_subcloud
 def test_dc_ldap_oidc_on_system_controller(request):
     """TC31: Verify corrected OIDC mappings on System Controller.
 
@@ -829,45 +866,55 @@ def test_dc_ldap_oidc_on_system_controller(request):
 
 
 @mark.p0
-@mark.lab_is_distributed_cloud
 @mark.lab_has_subcloud
 def test_dc_ldap_oidc_on_subcloud(request):
-    """TC32: Verify corrected OIDC mappings on Subcloud.
+    """Verify centralized OIDC auth on subcloud via System Controller's dex.
 
     Test Steps:
-        - Get subcloud SSH
-        - Configure corrected LDAP mappings on subcloud
-        - Verify K8s + STX access on subcloud
+        - Create LDAP user on SC and apply dex LDAP override
+        - Configure subcloud oidc-issuer-url pointing to SC's dex
+        - Create CRB and verify OIDC access on subcloud
     """
     config = _load_dex_config()
     test_user = _get_test_user_config()
     lab_config = ConfigurationManager.get_lab_config()
     subcloud_name = lab_config.get_subcloud_names()[0]
+
+    sc_ssh = LabConnectionKeywords().get_active_controller_ssh()
+    ldap_keywords = LdapKeywords(sc_ssh, lab_config.get_admin_credentials().get_password())
     subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
-    ldap_keywords = LdapKeywords(subcloud_ssh, ConfigurationManager.get_lab_config().get_admin_credentials().get_password())
-    dex_keywords = DexConnectorKeywords(subcloud_ssh)
     crb_keywords = KubectlCreateClusterRoleBindingKeywords(subcloud_ssh)
 
-    subcloud_oam_ip = lab_config.get_subcloud_floating_ip(subcloud_name)
+    subcloud_oam_ip = lab_config.get_subcloud(subcloud_name).get_floating_ip()
+    sc_oam_ip = lab_config.get_floating_ip()
+    bracketed_sc_oam = f"[{sc_oam_ip}]" if ":" in sc_oam_ip else sc_oam_ip
+    sc_oidc_issuer = f"https://{bracketed_sc_oam}:30556/dex"
 
     def cleanup():
-        sc_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
         get_logger().log_teardown_step("Cleaning up test resources")
-        KubectlCreateClusterRoleBindingKeywords(sc_ssh).delete_clusterrolebinding(test_user["crb_name"])
-        LdapKeywords(sc_ssh, ConfigurationManager.get_lab_config().get_admin_credentials().get_password()).delete_user(test_user["username"])
-        FileKeywords(sc_ssh).delete_directory(config["working_dir"])
+        cleanup_sc_ssh = LabConnectionKeywords().get_active_controller_ssh()
+        cleanup_sub_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
+        KubectlCreateClusterRoleBindingKeywords(cleanup_sub_ssh).delete_clusterrolebinding(test_user["crb_name"])
+        LdapKeywords(cleanup_sc_ssh, lab_config.get_admin_credentials().get_password()).delete_user(test_user["username"])
+        FileKeywords(cleanup_sc_ssh).delete_directory(config["working_dir"])
 
     request.addfinalizer(cleanup)
 
+    get_logger().log_test_case_step("Creating LDAP user on System Controller")
     ldap_keywords.create_user(test_user["username"], test_user["password"], user_role=test_user["role"])
     ldap_keywords.add_mail_attribute(test_user["username"], test_user["email"])
-    _apply_ldap_attr_override(subcloud_ssh, config, config["local_ldap"]["email_attr"], config["local_ldap"]["name_attr"])
-    dex_keywords.set_oidc_username_claim(config["oidc_username_claim"]["default"])
-    bracketed_sc_ip = f"[{subcloud_oam_ip}]" if ":" in subcloud_oam_ip else subcloud_oam_ip
-    sc_oidc_issuer = f"https://{bracketed_sc_ip}:30556/dex"
+
+    get_logger().log_test_case_step("Applying dex LDAP override on System Controller")
+    _apply_ldap_attr_override(sc_ssh, config, config["local_ldap"]["email_attr"], config["local_ldap"]["name_attr"])
+    DexConnectorKeywords(sc_ssh).set_oidc_username_claim(config["oidc_username_claim"]["default"])
+
+    get_logger().log_test_case_step("Configuring subcloud OIDC issuer to point to SC's dex")
+    _configure_subcloud_oidc_params(subcloud_ssh, sc_oidc_issuer, config["oidc_username_claim"]["default"])
+
+    get_logger().log_test_case_step("Creating CRB on subcloud")
     crb_keywords.create_clusterrolebinding_for_user(test_user["crb_name"], "cluster-admin", f"{sc_oidc_issuer}#{test_user['username']}")
 
-    get_logger().log_info(f"Verifying OIDC access on subcloud: {subcloud_name}")
-    ldap_ssh = _create_ldap_ssh(test_user["username"], test_user["password"], subcloud_oam_ip)
+    get_logger().log_test_case_step("Verifying OIDC access on subcloud")
+    ldap_ssh = _create_ldap_ssh(test_user["username"], test_user["password"], subcloud_oam_ip, client_ip=sc_oam_ip)
     _verify_kubectl_and_stx_access(ldap_ssh, expect_success=True)
     ldap_ssh.close()

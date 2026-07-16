@@ -69,6 +69,9 @@ class OidcEnvironmentKeywords(BaseKeyword):
         Returns:
             str: Full path to the generated kubeconfig file on the remote host.
         """
+        get_logger().log_info("Step 0: Ensure kubelogin plugin installed on controller")
+        self.ensure_kubelogin_installed_on_controller()
+
         get_logger().log_info("Step 1: Import the upstream IdP CA certificate")
         self.file_keywords.create_directory(working_dir)
         template_file = get_stx_resource_path("resources/cloud_platform/security/oidc/upstream-idp-ca-secret.yaml")
@@ -134,6 +137,30 @@ class OidcEnvironmentKeywords(BaseKeyword):
         validate_equals(self.file_keywords.file_exists(kubeconfig_path), True, f"Kubeconfig should be saved at '{kubeconfig_path}'")
 
         return kubeconfig_path
+
+    def ensure_kubelogin_installed_on_controller(self) -> None:
+        """Ensure the kubectl-oidc_login (kubelogin) plugin is installed on the remote controller.
+
+        Checks if the kubelogin plugin is available in the controller's PATH
+        via a login shell. If not found, downloads the release zip, extracts
+        the binary, and installs it to ~/.local/bin/kubectl-oidc_login on the
+        controller. The login shell (bash -lc) includes ~/.local/bin in PATH
+        on StarlingX systems.
+        """
+        output = self.ssh_connection.send("bash -lc 'which kubectl-oidc_login' 2>/dev/null || echo NOT_FOUND")
+        raw = "\n".join(output) if isinstance(output, list) else str(output)
+        if "NOT_FOUND" not in raw:
+            get_logger().log_info("kubelogin plugin already installed on controller")
+            return
+
+        get_logger().log_info("kubelogin plugin not found on controller; installing")
+        security_config = ConfigurationManager.get_security_config()
+        download_url = security_config.get_oidc_keycloak_kubelogin_download_url()
+
+        install_cmd = "mkdir -p ~/.local/bin && " f"curl -fsSL '{download_url}' -o /tmp/kubelogin.zip && " "cd /tmp && unzip -o kubelogin.zip kubelogin && " "mv kubelogin ~/.local/bin/kubectl-oidc_login && " "chmod +x ~/.local/bin/kubectl-oidc_login && " "rm -f /tmp/kubelogin.zip"
+        self.ssh_connection.send(install_cmd)
+        self.validate_success_return_code(self.ssh_connection)
+        get_logger().log_info("kubelogin plugin installed on controller at ~/.local/bin/kubectl-oidc_login")
 
     def ensure_kubelogin_installed(self) -> None:
         """Ensure the kubectl-oidc_login (kubelogin) plugin is installed on the local test machine.

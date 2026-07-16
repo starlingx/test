@@ -34,7 +34,9 @@ def _verify_oidc_app_healthy(ssh_connection: SSHConnection) -> None:
         ssh_connection (SSHConnection): Active controller SSH.
     """
     app_keywords = SystemApplicationListKeywords(ssh_connection)
-    validate_equals(app_keywords.is_app_applied("oidc-auth-apps"), True, "oidc-auth-apps should be applied")
+    app_list = app_keywords.get_system_application_list()
+    app = app_list.get_application("oidc-auth-apps")
+    validate_equals(app.get_status(), "applied", "oidc-auth-apps should be applied")
     kubectl_wait = KubectlWaitPodKeywords(ssh_connection)
     kubectl_wait.wait_for_pods_ready("app=dex", "kube-system")
 

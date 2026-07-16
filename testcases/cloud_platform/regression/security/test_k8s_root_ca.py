@@ -221,7 +221,7 @@ def test_apply_kube_rootca_update_strategy(request):
 
 
 @mark.p0
-@mark.lab_is_distributed_cloud
+@mark.lab_has_subcloud
 def test_dc_kube_rootca_update_strategy_sync_status(request):
     """Test kube-rootca sync status with different certificate expiry dates.
 
