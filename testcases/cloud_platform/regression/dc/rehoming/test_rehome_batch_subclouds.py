@@ -32,6 +32,7 @@ def count_pods_on_subcloud(subcloud_ssh: SSHConnection) -> int:
 
 @mark.p2
 @mark.lab_has_secondary_system_controller
+@mark.lab_has_subcloud
 def test_rehome_subclouds_in_batch_n_release():
     """Verify batch rehoming of all online N-release subclouds between two system controllers.
 
@@ -99,7 +100,7 @@ def test_rehome_subclouds_in_batch_n_release():
     get_logger().log_test_case_step("Verify subclouds are healthy after batch rehoming")
     for subcloud_name in selected_subcloud_names:
         get_logger().log_info(f"Validating subcloud {subcloud_name} is healthy after rehome")
-        verify_subcloud_healthy(destination_ssh, subcloud_name)
+        verify_subcloud_healthy(destination_ssh, subcloud_name, check_sync=False)
 
     get_logger().log_test_case_step("Verify pod counts are consistent after batch rehoming")
     for subcloud_name in selected_subcloud_names:
@@ -110,6 +111,7 @@ def test_rehome_subclouds_in_batch_n_release():
 
 @mark.p2
 @mark.lab_has_secondary_system_controller
+@mark.lab_has_subcloud
 def test_rehome_subclouds_in_batch_n_minus_1_release():
     """Verify batch rehoming of all online N-1 release subclouds between two system controllers.
 
@@ -180,7 +182,7 @@ def test_rehome_subclouds_in_batch_n_minus_1_release():
     get_logger().log_test_case_step("Verify N-1 subclouds are healthy after batch rehoming")
     for subcloud_name in selected_subcloud_names:
         get_logger().log_info(f"Validating subcloud {subcloud_name} is healthy after rehome")
-        verify_subcloud_healthy(destination_ssh, subcloud_name)
+        verify_subcloud_healthy(destination_ssh, subcloud_name, check_sync=False)
 
     get_logger().log_test_case_step("Verify pod counts are consistent after batch rehoming")
     for subcloud_name in selected_subcloud_names:

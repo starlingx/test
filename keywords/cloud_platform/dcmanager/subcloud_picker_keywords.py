@@ -429,6 +429,56 @@ class SubcloudPickerKeywords(BaseKeyword):
             lines.append("Evaluated candidates: none survived the 'subcloud list' pre-filter.")
         return "\n".join(lines)
 
+    @staticmethod
+    def pick_undeployed_with_fallback() -> Optional[str]:
+        """Find a config subcloud that is not deployed on any system controller.
+
+        Iterates through subclouds declared in the lab config and checks if each one
+        exists on the primary system controller. If a secondary system controller is
+        configured, also checks there. Returns the first subcloud name that is absent
+        from both.
+
+        This supports phased deployment tests that need a "clean" subcloud name to
+        deploy from scratch.
+
+        Returns:
+            Optional[str]: Name of a config subcloud not currently deployed on any
+                system controller, or None if all config subclouds are deployed.
+
+        Raises:
+            KeywordException: If no subclouds are defined in lab config.
+        """
+        from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
+
+        lab_config = ConfigurationManager.get_lab_config()
+        config_subcloud_names = lab_config.get_subcloud_names()
+
+        if not config_subcloud_names:
+            raise KeywordException("pick_undeployed_with_fallback: No subclouds defined in lab config.")
+
+        primary_ssh = LabConnectionKeywords().get_active_controller_ssh()
+        primary_list = DcManagerSubcloudListKeywords(primary_ssh).get_dcmanager_subcloud_list()
+
+        secondary_config = lab_config.get_secondary_system_controller_config()
+        secondary_list = None
+        if secondary_config is not None:
+            secondary_ssh = LabConnectionKeywords().get_secondary_active_controller_ssh()
+            secondary_list = DcManagerSubcloudListKeywords(secondary_ssh).get_dcmanager_subcloud_list()
+
+        for subcloud_name in config_subcloud_names:
+            on_primary = primary_list.is_subcloud_in_output(subcloud_name)
+            on_secondary = secondary_list.is_subcloud_in_output(subcloud_name) if secondary_list is not None else False
+
+            if not on_primary and not on_secondary:
+                get_logger().log_info(f"pick_undeployed_with_fallback: '{subcloud_name}' is not deployed on any system controller")
+                return subcloud_name
+
+            location = "primary" if on_primary else "secondary"
+            get_logger().log_debug(f"pick_undeployed_with_fallback: '{subcloud_name}' is deployed on {location} SC, skipping")
+
+        get_logger().log_info(f"pick_undeployed_with_fallback: All config subclouds are deployed. Checked: {config_subcloud_names}")
+        return None
+
 
 def pick_subcloud_with_fallback(
     *,

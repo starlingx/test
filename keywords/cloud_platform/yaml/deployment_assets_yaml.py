@@ -36,7 +36,22 @@ class DeploymentAssetsHandler:
             raise Exception(f"Error writing YAML file: {e}")
 
     def inject_wrong_bootstrap_value(self):
-        """Function to change docker registry value"""
-        # inject wrong values in Bootstrap values
-        self.data["docker_registries"]["k8s.gcr.io"]["url"] = "registry.central:9001/k8s.gcr.io.wrong"
+        """Inject a wrong docker registry URL to force bootstrap failure.
+
+        Corrupts the registry.k8s.io URL since core Kubernetes components
+        (kube-apiserver, etcd, coredns, etc.) are pulled from there during bootstrap.
+
+        Raises:
+            KeyError: If docker_registries or registry.k8s.io key is not found.
+        """
+        if "docker_registries" not in self.data:
+            raise KeyError("'docker_registries' key not found in bootstrap YAML")
+
+        registries = self.data["docker_registries"]
+
+        if "registry.k8s.io" not in registries:
+            raise KeyError("'registry.k8s.io' key not found in docker_registries")
+
+        original_url = registries["registry.k8s.io"]["url"]
+        registries["registry.k8s.io"]["url"] = f"{original_url}.wrong"
         self.write_yaml()
