@@ -25,6 +25,57 @@ class SystemTableParser:
     def __init__(self, system_output):
         self.system_output = system_output
 
+    def _split_row_by_boundaries(self, line: str, boundaries: list[int]) -> list[str]:
+        """Split a table row into cell values using fixed column boundary positions.
+
+        The positions of the '+' characters in the separator line
+        ('+----+----+') mark exactly where the '|' column delimiters sit in
+        every header and content row. Splitting at those fixed positions
+        (instead of naively splitting on every '|') means a '|' that appears
+        inside a cell value - for example a regex like
+        '(2[5-7]\\.\\d+|[1-12]\\d+\\.\\d+)' in an application's progress column -
+        no longer corrupts the parse.
+
+        The boundaries are stored relative to the first delimiter, and each row
+        is anchored at its own first '|'. This keeps the parse robust even when
+        a line carries a leading prefix (e.g. an ANSI escape sequence or shell
+        echo) that the other lines do not.
+
+        Args:
+            line (str): A single header or content row from the table.
+            boundaries (list[int]): Column delimiter offsets relative to the
+                first delimiter, derived from the '+' positions in the
+                separator line.
+
+        Returns:
+            list[str]: The cell values between consecutive boundaries, or an
+                empty list if the row's delimiters do not align with the
+                boundaries (i.e. a malformed table).
+        """
+        # Only strip the trailing newline; internal spacing must be preserved
+        # so that character positions stay aligned with the separator line.
+        stripped_line = line.rstrip("\n")
+
+        # Anchor at the row's own first '|' so a leading prefix on any single
+        # line does not throw off the column alignment.
+        if "|" not in stripped_line:
+            return []
+        offset = stripped_line.index("|")
+
+        # A well-formed row must have a '|' at every column boundary position.
+        for boundary in boundaries:
+            position = offset + boundary
+            if position >= len(stripped_line) or stripped_line[position] != "|":
+                return []
+
+        values = []
+        for i in range(len(boundaries) - 1):
+            start = offset + boundaries[i] + 1
+            end = offset + boundaries[i + 1]
+            values.append(stripped_line[start:end])
+
+        return values
+
     def get_output_values_list(self) -> list[dict[str, str]]:
         """Getter for output values list.
 
@@ -64,6 +115,7 @@ class SystemTableParser:
         is_in_headers_block = False
         is_in_content_block = False
         number_of_columns = -1
+        column_boundaries: list[int] = []
 
         for line in self.system_output:
 
@@ -78,7 +130,14 @@ class SystemTableParser:
                 if not is_in_headers_block and not is_in_content_block:  # First separator -> Enter Headers
                     is_in_headers_block = True
                     is_in_content_block = False
-                    number_of_columns = line.count("+") - 1
+                    # Record the '+' positions relative to the first '+' - these
+                    # are the exact column delimiter offsets used to split every
+                    # row, so a '|' inside a cell value does not corrupt the
+                    # parse and a leading prefix on the separator line is ignored.
+                    separator_line = line.rstrip("\n")
+                    first_delimiter = separator_line.index("+")
+                    column_boundaries = [index - first_delimiter for index, character in enumerate(separator_line) if character == "+"]
+                    number_of_columns = len(column_boundaries) - 1
                     headers = [""] * number_of_columns
                     continue  # This is a separator line, don't try to parse anything.
                 elif is_in_headers_block and not is_in_content_block:  # Second separator -> Go to Content
@@ -91,7 +150,7 @@ class SystemTableParser:
 
             # Build the list of headers, which could be multi-lined.
             if is_in_headers_block:
-                headers_line = line.split("|")[1:-1]
+                headers_line = self._split_row_by_boundaries(line, column_boundaries)
                 if len(headers_line) != number_of_columns:
                     get_logger().log_error(f"Number of headers should be {number_of_columns} based on the number of '+' but the number of values was {len(headers_line)}.")
                     raise KeywordException("Number of headers and + separator do not match expected value")
@@ -101,7 +160,7 @@ class SystemTableParser:
 
             # Build the list of values, which could be multi-lined.
             if is_in_content_block:
-                values_line = line.split("|")[1:-1]
+                values_line = self._split_row_by_boundaries(line, column_boundaries)
                 if len(values_line) != number_of_columns:
                     get_logger().log_error(f"Number of values should be {number_of_columns} based on the number of '+' but the number of values was {len(values_line)}.")
                     raise KeywordException("Number of headers and values do not match expected value")

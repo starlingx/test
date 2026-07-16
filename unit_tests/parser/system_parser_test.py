@@ -34,6 +34,27 @@ application_list_output = [
     "+--------------------------+----------+-------------------------------------------+------------------+----------+-----------+\n ",  # noqa: E501
 ]
 
+# Regression fixture: real 'system application-list' output where the oran-o2
+# progress column contains a dependency message with regexes that include '|'
+# characters. This used to break the naive split("|") parser because the
+# embedded pipes were counted as column delimiters.
+application_list_output_with_pipe_in_progress = [
+    # NOTE: the oran-o2 row below looks wider than the others in source because
+    # each backslash in its regex is escaped as '\\'. The rendered string is
+    # still exactly the same width as every other row.
+    "+--------------------------+-----------+-------------------------------------------+------------------+--------------+-----------------------------------------------------------------------+\n",
+    "| application              | version   | manifest name                             | manifest file    | status       | progress                                                              |\n",
+    "+--------------------------+-----------+-------------------------------------------+------------------+--------------+-----------------------------------------------------------------------+\n",
+    "| cert-manager             | 26.10-71  | cert-manager-fluxcd-manifests             | fluxcd-manifests | applied      | completed                                                             |\n",
+    "| nginx-ingress-controller | 26.10-89  | nginx-ingress-controller-fluxcd-manifests | fluxcd-manifests | applied      | completed                                                             |\n",
+    "| node-feature-discovery   | 26.10-4   | node-feature-discovery-fluxcd-manifests   | fluxcd-manifests | uploaded     | completed                                                             |\n",
+    '| oidc-auth-apps           | 26.10-106 | oidc-auth-apps-fluxcd-manifests           | fluxcd-manifests | apply-failed | Failed to apply helm release "oidc-client".                           |\n',
+    "| openvswitch              | 26.10-40  | openvswitch-fluxcd-manifests              | fluxcd-manifests | uploaded     | completed                                                             |\n",
+    "| oran-o2                  | 26.10-46  | oran-o2-fluxcd-manifests                  | fluxcd-manifests | uploaded     | missing platform-integ-apps (version(s): (2[5-7]\\.\\d+|[1-12]\\d+)-\\d+) |\n",
+    "| platform-integ-apps      | 26.10-5   | platform-integ-apps-fluxcd-manifests      | fluxcd-manifests | uploaded     | completed                                                             |\n",
+    "+--------------------------+-----------+-------------------------------------------+------------------+--------------+-----------------------------------------------------------------------+\n",
+]
+
 system_host_show_output = [
     "+------------------------+----------------------------------------------------------------------+\n",
     "| Property               | Value                                                                |\n",
@@ -298,12 +319,11 @@ system_helm_override_show_with_multiline_yaml_pipes = [
     "|                |   dsa-controller-0.conf: |           |\n",
     "|                |     [                                |\n",
     "|                |       {                              |\n",
-    "|                |         \"wq_name\": \"shared_wq\"   |\n",
+    '|                |         "wq_name": "shared_wq"       |\n',
     "|                |       }                              |\n",
     "|                |     ]                                |\n",
     "+----------------+--------------------------------------+\n",
 ]
-
 
 
 def test_system_parser():
@@ -353,6 +373,33 @@ def test_system_parser_application_list_output():
     assert output["manifest file"] == "fluxcd-manifests"
     assert output["status"] == "applied"
     assert output["progress"] == "completed"
+
+
+def test_system_parser_application_list_with_pipe_in_progress():
+    """Test parsing a table whose progress column contains '|' characters.
+
+    Ensures the parser handles a progress column that contains '|' characters
+    (e.g. a regex in an app dependency message) without miscounting columns or
+    raising an exception.
+    """
+    system_table_parser = SystemTableParser(application_list_output_with_pipe_in_progress)
+    output_list = system_table_parser.get_output_values_list()
+
+    assert len(output_list) == 7
+
+    # The row whose progress value embeds '|' must parse into a single cell,
+    # keeping the other columns intact.
+    oran_o2 = next(row for row in output_list if row["application"] == "oran-o2")
+    assert oran_o2["version"] == "26.10-46"
+    assert oran_o2["manifest name"] == "oran-o2-fluxcd-manifests"
+    assert oran_o2["manifest file"] == "fluxcd-manifests"
+    assert oran_o2["status"] == "uploaded"
+    assert oran_o2["progress"] == "missing platform-integ-apps (version(s): (2[5-7]\\.\\d+|[1-12]\\d+)-\\d+)"
+
+    # Rows after the pipe-containing row must still be parsed correctly.
+    assert output_list[-1]["application"] == "platform-integ-apps"
+    assert output_list[-1]["status"] == "uploaded"
+    assert output_list[-1]["progress"] == "completed"
 
 
 def test_system_parser_error():
@@ -667,6 +714,7 @@ def test_system_vertical_table_parser_handles_binary_lines():
 def test_system_vertical_table_parser_with_multiline_yaml_containing_pipes():
     """
     Tests that the parser correctly handles multi-line YAML content with embedded pipes.
+
     This scenario occurs with 'system helm-override-show' when user_overrides contains
     YAML with pipe characters (e.g., 'dsa-controller-0.conf: |').
     """
@@ -674,9 +722,9 @@ def test_system_vertical_table_parser_with_multiline_yaml_containing_pipes():
     output_dict = parser.get_output_values_dict()
 
     assert len(output_dict.keys()) == 3
-    assert output_dict['name'] == 'dsa-manager'
-    assert output_dict['namespace'] == 'kube-system'
-    assert 'overrideConfig:' in output_dict['user_overrides']
-    assert 'dsa-controller-0.conf:' in output_dict['user_overrides']
-    assert 'wq_name' in output_dict['user_overrides']
-    assert 'shared_wq' in output_dict['user_overrides']
+    assert output_dict["name"] == "dsa-manager"
+    assert output_dict["namespace"] == "kube-system"
+    assert "overrideConfig:" in output_dict["user_overrides"]
+    assert "dsa-controller-0.conf:" in output_dict["user_overrides"]
+    assert "wq_name" in output_dict["user_overrides"]
+    assert "shared_wq" in output_dict["user_overrides"]
