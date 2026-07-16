@@ -1,5 +1,6 @@
 """Keywords for WAD (Windows Active Directory) DEX connector operations."""
 
+from config.security.objects.dex_config import DexConfig
 from framework.logging.automation_logger import get_logger
 from framework.resources.resource_finder import get_stx_resource_path
 from framework.ssh.ssh_connection import SSHConnection
@@ -23,7 +24,7 @@ class WadConnectorKeywords(DexConnectorKeywords):
         self.yaml_keywords = YamlKeywords(ssh_connection)
         self.file_keywords = FileKeywords(ssh_connection)
 
-    def apply_wad_override(self, config: dict, email_attr: str, username_attr: str, name_attr: str, reuse_values: bool = False) -> None:
+    def apply_wad_override(self, config: DexConfig, email_attr: str, username_attr: str, name_attr: str, reuse_values: bool = False) -> None:
         """Generate WAD-specific helm override YAML and apply to oidc-auth-apps.
 
         Generates a DEX helm override file from the WAD connector template
@@ -31,37 +32,37 @@ class WadConnectorKeywords(DexConnectorKeywords):
         the oidc-auth-apps application.
 
         Args:
-            config (dict): DEX connector configuration with working_dir, oidc_app_name, namespace.
+            config (DexConfig): DEX connector configuration object.
             email_attr (str): WAD emailAttr mapping (e.g., 'mail').
             username_attr (str): WAD usernameAttr mapping (e.g., 'sAMAccountName').
             name_attr (str): WAD nameAttr mapping (e.g., 'displayName').
             reuse_values (bool): If True, merge with existing overrides (preserves LDAP connector).
         """
-        self.file_keywords.create_directory(config["working_dir"])
+        self.file_keywords.create_directory(config.get_working_dir())
 
         template = get_stx_resource_path("resources/cloud_platform/security/oidc/dex-wad-attr-mapping-overrides.yaml")
-        wad_config = config["wad_connector"]
+        wad_config = config.get_wad_connector()
         replacements = {
-            "wad_server": wad_config["wad_server"],
-            "bind_dn": wad_config["bind_dn"],
-            "bind_pw": wad_config["bind_pw"],
-            "user_search_base": wad_config["user_search_base"],
-            "group_search_base": wad_config["group_search_base"],
+            "wad_server": wad_config.get_wad_server(),
+            "bind_dn": wad_config.get_bind_dn(),
+            "bind_pw": wad_config.get_bind_pw(),
+            "user_search_base": wad_config.get_user_search_base(),
+            "group_search_base": wad_config.get_group_search_base(),
             "email_attr": email_attr,
             "username_attr": username_attr,
             "name_attr": name_attr,
         }
 
         get_logger().log_info(f"Applying WAD override: emailAttr={email_attr}, " f"usernameAttr={username_attr}, nameAttr={name_attr}, reuse_values={reuse_values}")
-        override_file = self.yaml_keywords.generate_yaml_file_from_template(template, replacements, "dex-wad-attr-test.yaml", config["working_dir"])
+        override_file = self.yaml_keywords.generate_yaml_file_from_template(template, replacements, "dex-wad-attr-test.yaml", config.get_working_dir())
 
         if reuse_values:
             # Merge with existing override (preserves other connectors like LDAP)
-            self.helm_override_keywords.update_helm_override(override_file, config["oidc_app_name"], "dex", config["namespace"], reuse_values=True)
-            SystemApplicationApplyKeywords(self.ssh_connection).system_application_apply(config["oidc_app_name"])
-            self.wait_for_dex_ready(config["namespace"], raise_on_timeout=True)
+            self.helm_override_keywords.update_helm_override(override_file, config.get_oidc_app_name(), "dex", config.get_namespace(), reuse_values=True)
+            SystemApplicationApplyKeywords(self.ssh_connection).system_application_apply(config.get_oidc_app_name())
+            self.wait_for_dex_ready(config.get_namespace(), raise_on_timeout=True)
         else:
-            self.apply_dex_override_and_reapply(override_file, config["oidc_app_name"], config["namespace"])
+            self.apply_dex_override_and_reapply(override_file, config.get_oidc_app_name(), config.get_namespace())
 
     def get_wad_token(self, oam_ip: str, username: str, password: str) -> str:
         """Authenticate via WAD connector and return an ID token.

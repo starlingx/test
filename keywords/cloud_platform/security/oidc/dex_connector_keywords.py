@@ -147,6 +147,13 @@ class DexConnectorKeywords(BaseKeyword):
                 break
             time.sleep(5)
 
+        # Additional wait for DEX LDAP connector to fully initialize.
+        # The JWKS and apiserver stability checks confirm the infrastructure is ready,
+        # but the LDAP connector inside DEX may need a few more seconds to establish
+        # its connection pool. A brief stabilization period avoids transient 500 errors.
+        get_logger().log_info("Allowing DEX LDAP connector stabilization time (10s)")
+        time.sleep(10)
+
     def _wait_for_all_apiservers_ready(self, timeout: int = 300, require_fresh: bool = False) -> None:
         """Wait for all kube-apiserver pods to be 1/1 Ready.
 

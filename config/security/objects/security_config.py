@@ -1,5 +1,7 @@
 import json5
 
+from config.security.objects.dex_config import DexConfig
+
 
 class SecurityConfig:
     """Class to hold configuration for Security tests."""
@@ -121,14 +123,15 @@ class SecurityConfig:
 
         # DEX connector attribute mapping configuration
         self.dex_connector = security_dict.get("dex_connector", {})
+        self._dex_config = DexConfig(self.dex_connector)
 
-    def get_dex_connector_config(self) -> dict:
-        """Get the full DEX connector configuration dictionary.
+    def get_dex_connector_config(self) -> DexConfig:
+        """Get the DEX connector configuration object.
 
         Returns:
-            dict: DEX connector config with local_ldap, wad_connector, test_user, etc.
+            DexConfig: Typed DEX connector config with getters for all fields.
         """
-        return self.dex_connector
+        return self._dex_config
 
     def get_wad_server(self) -> str:
         """Get the WAD (Windows Active Directory) server address.
