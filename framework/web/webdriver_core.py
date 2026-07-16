@@ -74,29 +74,33 @@ class WebDriverCore:
             is_navigation_success = True
 
         timeout = time.time() + 60
-        reload_attempt_timeout = 2
+        poll_interval = 2
+        max_reloads = 3
+        reload_count = 0
 
-        while not is_navigation_success and time.time() < timeout:
-            try:
-                self.driver.get(url)
-            except Exception as e:
-                if "ERR_CONNECTION_REFUSED" in str(e):
-                    get_logger().log_debug(f"Connection refused for {url}, retrying in {reload_attempt_timeout}s")
-                    time.sleep(reload_attempt_timeout)
-                    reload_attempt_timeout = min(reload_attempt_timeout + 2, 10)
-                    continue
+        try:
+            self.driver.get(url)
+        except Exception as e:
+            if "ERR_CONNECTION_REFUSED" not in str(e):
                 raise
 
+        while not is_navigation_success and time.time() < timeout:
             for condition in conditions:
                 if condition.is_condition_satisfied(self.driver):
                     get_logger().log_debug(f"Condition Satisfied: {condition}")
                     is_navigation_success = True
 
             if not is_navigation_success:
-                get_logger().log_debug(f"Failed to load page with URL: {url}")
-                get_logger().log_debug(f"Reload page and sleep for {reload_attempt_timeout} seconds ")
-                time.sleep(reload_attempt_timeout)
-                reload_attempt_timeout = min(reload_attempt_timeout + 2, 10)
+                time.sleep(poll_interval)
+                reload_count += 1
+                if reload_count % max_reloads == 0:
+                    get_logger().log_debug(f"Failed to load page with URL: {url}")
+                    get_logger().log_debug(f"Reload page after {reload_count} failed checks")
+                    try:
+                        self.driver.get(url)
+                    except Exception as e:
+                        if "ERR_CONNECTION_REFUSED" not in str(e):
+                            raise
 
         if is_navigation_success:
             get_logger().log_debug(f"Navigation to {url} successful.")
