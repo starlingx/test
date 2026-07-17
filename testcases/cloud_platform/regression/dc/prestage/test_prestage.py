@@ -38,7 +38,7 @@ def ensure_subcloud_managed(ssh_connection: SSHConnection, subcloud_name: str) -
         DcManagerSubcloudManagerKeywords(ssh_connection).get_dcmanager_subcloud_manage(subcloud_name, 30)
 
 
-def prestage_subcloud(central_ssh: SSHConnection, subcloud_name: str, subcloud_password: str, release: str = None, for_sw_deploy: bool = False, force: bool = False, kill_process: bool = False, expect_fail: bool = False) -> None:
+def prestage_subcloud(central_ssh: SSHConnection, subcloud_name: str, subcloud_password: str, release: str = None, for_sw_deploy: bool = False, force: bool = False, kill_process: bool = False, expect_fail: bool = False, expect_rejection: bool = False) -> str:
     """Prestage a subcloud.
 
     Args:
@@ -49,25 +49,45 @@ def prestage_subcloud(central_ssh: SSHConnection, subcloud_name: str, subcloud_p
         for_sw_deploy (bool): Use --for-sw-deploy flag.
         force (bool): Use --force flag (bypasses alarm checks).
         kill_process (bool): Kill the prestage playbook to simulate failure.
-        expect_fail (bool): Whether the prestage is expected to fail.
+        expect_fail (bool): Whether the prestage is expected to fail asynchronously
+            (command accepted with rc=0 but prestage_status reaches "failed").
+        expect_rejection (bool): Whether the prestage command is expected to be
+            rejected immediately (rc=1, e.g. alarm check or already prestaging).
+
+    Returns:
+        str: Error output from the CLI when expect_rejection is True, empty string otherwise.
     """
-    get_logger().log_info(f"Prestage subcloud: {subcloud_name} (release={release}, for_sw_deploy={for_sw_deploy}, force={force}, expect_fail={expect_fail})")
+    get_logger().log_info(f"Prestage subcloud: {subcloud_name} (release={release}, for_sw_deploy={for_sw_deploy}, force={force}, expect_fail={expect_fail}, expect_rejection={expect_rejection})")
+    prestage_kw = DcmanagerSubcloudPrestage(central_ssh)
+
+    if expect_rejection:
+        # Command rejected immediately (rc=1) — capture error output, no wait needed
+        error_output = prestage_kw.dcmanager_subcloud_prestage_with_error(subcloud_name, subcloud_password, release=release, for_sw_deploy=for_sw_deploy, force=force)
+        get_logger().log_info(f"Prestage rejected as expected. Output: {error_output}")
+        return error_output
+
+    if expect_fail and not kill_process:
+        # Command accepted (rc=0) but prestage fails asynchronously
+        prestage_kw.dcmanager_subcloud_prestage(subcloud_name, subcloud_password, release=release, for_sw_deploy=for_sw_deploy, force=force, wait_completion=False)
+        prestage_kw.wait_for_prestage(subcloud=subcloud_name, expected_end_state="failed")
+        obj_subcloud = DcManagerSubcloudListKeywords(central_ssh).get_dcmanager_subcloud_list().get_subcloud_by_name(subcloud_name)
+        validate_equals(obj_subcloud.get_prestage_status(), "failed", f"Subcloud {subcloud_name} prestage failed as expected")
+        return ""
+
     wait_completion = not kill_process
-    DcmanagerSubcloudPrestage(central_ssh).dcmanager_subcloud_prestage(subcloud_name, subcloud_password, release=release, for_sw_deploy=for_sw_deploy, force=force, wait_completion=wait_completion)
+    prestage_kw.dcmanager_subcloud_prestage(subcloud_name, subcloud_password, release=release, for_sw_deploy=for_sw_deploy, force=force, wait_completion=wait_completion)
 
     if kill_process:
         prestage_playbook = "/usr/share/ansible/stx-ansible/playbooks/prestage_sw_packages.yml"
         PkillKeywords(central_ssh).pkill_by_pattern(prestage_playbook, send_as_sudo=True)
-
-    if expect_fail:
-        prestage_result = "failed"
-        success_msg = f"Subcloud {subcloud_name} prestage failed as expected."
-    else:
-        prestage_result = "complete"
-        success_msg = f"Subcloud {subcloud_name} prestage completed successfully."
+        prestage_kw.wait_for_prestage(subcloud=subcloud_name, expected_end_state="failed")
+        obj_subcloud = DcManagerSubcloudListKeywords(central_ssh).get_dcmanager_subcloud_list().get_subcloud_by_name(subcloud_name)
+        validate_equals(obj_subcloud.get_prestage_status(), "failed", f"Subcloud {subcloud_name} prestage failed as expected")
+        return ""
 
     obj_subcloud = DcManagerSubcloudListKeywords(central_ssh).get_dcmanager_subcloud_list().get_subcloud_by_name(subcloud_name)
-    validate_equals(obj_subcloud.get_prestage_status(), prestage_result, success_msg)
+    validate_equals(obj_subcloud.get_prestage_status(), "complete", f"Subcloud {subcloud_name} prestage completed successfully")
+    return ""
 
 
 # --- Prestage for Install ---
@@ -360,9 +380,9 @@ def test_prestage_single_simplex_subcloud_fails_with_mgmt_alarm_but_succeeds_wit
     get_logger().log_info(f"Injecting management affecting alarm on subcloud {subcloud_name}")
     fm_client_cli_keywords.raise_alarm(fm_client_cli_object)
 
-    # Attempt prestage - expect failure due to alarm
-    get_logger().log_info(f"Attempting prestage of {subcloud_name} (expecting failure due to alarm)")
-    prestage_subcloud(system_controller_ssh, subcloud_name, subcloud_password, for_sw_deploy=True, expect_fail=True)
+    # Attempt prestage - expect immediate rejection due to alarm
+    get_logger().log_info(f"Attempting prestage of {subcloud_name} (expecting rejection due to alarm)")
+    prestage_subcloud(system_controller_ssh, subcloud_name, subcloud_password, for_sw_deploy=True, expect_rejection=True)
 
     # Retry prestage with --force - expect success despite alarm
     get_logger().log_info(f"Retrying prestage of {subcloud_name} with --force flag")
