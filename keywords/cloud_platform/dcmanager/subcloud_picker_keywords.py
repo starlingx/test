@@ -479,6 +479,34 @@ class SubcloudPickerKeywords(BaseKeyword):
         get_logger().log_info(f"pick_undeployed_with_fallback: All config subclouds are deployed. Checked: {config_subcloud_names}")
         return None
 
+    @staticmethod
+    def find_subcloud_owner(subcloud_name: str, primary_ssh: SSHConnection, secondary_ssh: Optional[SSHConnection] = None) -> Optional[SSHConnection]:
+        """Find which system controller owns a deployed subcloud.
+
+        Checks the primary system controller first. If the subcloud is not found
+        and a secondary system controller is provided, checks there as well.
+
+        Args:
+            subcloud_name (str): Subcloud to find.
+            primary_ssh (SSHConnection): SSH connection to the primary system controller.
+            secondary_ssh (Optional[SSHConnection]): SSH connection to the secondary
+                system controller, or None if not configured.
+
+        Returns:
+            Optional[SSHConnection]: The SSH connection to the controller that owns
+                the subcloud, or None if the subcloud is not deployed on either.
+        """
+        primary_list = DcManagerSubcloudListKeywords(primary_ssh).get_dcmanager_subcloud_list()
+        if primary_list.is_subcloud_in_output(subcloud_name):
+            return primary_ssh
+
+        if secondary_ssh is not None:
+            secondary_list = DcManagerSubcloudListKeywords(secondary_ssh).get_dcmanager_subcloud_list()
+            if secondary_list.is_subcloud_in_output(subcloud_name):
+                return secondary_ssh
+
+        return None
+
 
 def pick_subcloud_with_fallback(
     *,
