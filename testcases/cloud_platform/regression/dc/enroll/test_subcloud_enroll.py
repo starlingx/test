@@ -157,6 +157,10 @@ def test_enroll_one_sx_subcloud():
     obj_health = HealthKeywords(subcloud_ssh_post)
     obj_health.validate_healty_cluster()  # Checks alarms, pods, app health
 
+    # Manage the subcloud
+    get_logger().log_info(f"Managing {subcloud_name}")
+    DcManagerSubcloudManagerKeywords(system_controller_ssh).get_dcmanager_subcloud_manage(subcloud_name, 10)
+
 @mark.p2
 @mark.lab_has_subcloud
 def test_retry_enroll_one_sx_subcloud(request):
