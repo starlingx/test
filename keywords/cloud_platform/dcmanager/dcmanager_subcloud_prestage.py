@@ -35,9 +35,7 @@ class DcmanagerSubcloudPrestage(BaseKeyword):
             bool: If prestage succeeded.
 
         """
-        cmd_options = f"--release {release}" if release else ""
-        cmd_options += " --for-sw-deploy" if for_sw_deploy else ""
-        cmd_options += " --force" if force else ""
+        cmd_options = self._build_cmd_options(release, for_sw_deploy, force)
         command = source_openrc(f"dcmanager subcloud prestage {cmd_options} {subcloud_name}" f" --sysadmin-password {syspass}")
 
         self.ssh_connection.send(command)
@@ -59,6 +57,7 @@ class DcmanagerSubcloudPrestage(BaseKeyword):
         self,
         subcloud: str,
         prestaging_packages: bool = False,
+        expected_end_state: str = "complete",
         check_interval: int = 10,
         timeout: int = 900,
     ) -> None:
@@ -68,6 +67,7 @@ class DcmanagerSubcloudPrestage(BaseKeyword):
         Args:
             subcloud (str): Subcloud name.
             prestaging_packages (bool): Sets the value to check if should wait for prestaging status or complete status.
+            expected_end_state (str): The expected terminal state to wait for ("complete" or "failed").
             check_interval (int): Interval to wait before looping again.
             timeout (int): Sets the await timeout.
         """
@@ -83,9 +83,57 @@ class DcmanagerSubcloudPrestage(BaseKeyword):
             if prestaging_packages:
                 return prestaged == "prestaging"
             else:
-                if prestaged == "failed":
-                    return "prestage failed"
+                if expected_end_state == "failed":
+                    if prestaged == "complete":
+                        return "prestage completed unexpectedly"
+                    return prestaged == "failed"
                 else:
+                    if prestaged == "failed":
+                        return "prestage failed"
                     return prestaged == "complete"
 
-        validate_equals_with_retry(function_to_execute=check_prestage, expected_value=True, validation_description=f"Waiting for {subcloud} prestage.", timeout=timeout, polling_sleep_time=check_interval, failure_values=["prestage failed"])
+        failure_values = ["prestage completed unexpectedly"] if expected_end_state == "failed" else ["prestage failed"]
+        validate_equals_with_retry(function_to_execute=check_prestage, expected_value=True, validation_description=f"Waiting for {subcloud} prestage to reach '{expected_end_state}'.", timeout=timeout, polling_sleep_time=check_interval, failure_values=failure_values)
+
+    def dcmanager_subcloud_prestage_with_error(self, subcloud_name: str, syspass: str, release: str = None, for_sw_deploy: bool = False, force: bool = False) -> str:
+        """Runs dcmanager subcloud prestage command expecting an error.
+
+        Executes the prestage command and validates that a non-zero return code
+        was received, confirming the command was rejected.
+
+        Args:
+            subcloud_name (str): The name of the subcloud.
+            syspass (str): The sysadmin password.
+            release (str): Release to use for prestage.
+            for_sw_deploy (bool): Whether to enable --for-sw-deploy flag.
+            force (bool): Whether to enable --force flag.
+
+        Returns:
+            str: Raw command output containing the error message.
+        """
+        cmd_options = self._build_cmd_options(release, for_sw_deploy, force)
+        command = source_openrc(f"dcmanager subcloud prestage {cmd_options} {subcloud_name}" f" --sysadmin-password {syspass}")
+
+        output = self.ssh_connection.send(command)
+        self.validate_cmd_rejection_return_code(self.ssh_connection)
+
+        if isinstance(output, list):
+            return "\n".join(line.strip() for line in output)
+        return output.strip() if isinstance(output, str) else str(output)
+
+    @staticmethod
+    def _build_cmd_options(release: str = None, for_sw_deploy: bool = False, force: bool = False) -> str:
+        """Build command options string for prestage command.
+
+        Args:
+            release (str): Release to use for prestage.
+            for_sw_deploy (bool): Whether to enable --for-sw-deploy flag.
+            force (bool): Whether to enable --force flag.
+
+        Returns:
+            str: Command options string.
+        """
+        cmd_options = f"--release {release}" if release else ""
+        cmd_options += " --for-sw-deploy" if for_sw_deploy else ""
+        cmd_options += " --force" if force else ""
+        return cmd_options
