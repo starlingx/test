@@ -201,7 +201,6 @@ def test_rehome_single_simplex_subcloud_n_release():
     # Destination is whichever cloud is NOT the origin
     destination_system_controller_ssh = cloud_b_ssh if origin_system_controller_ssh == cloud_a_ssh else cloud_a_ssh
 
-
     subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
 
     # Get deployment assets

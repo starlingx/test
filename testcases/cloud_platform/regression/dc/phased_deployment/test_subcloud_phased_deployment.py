@@ -12,47 +12,58 @@ from keywords.cloud_platform.dcmanager.dcmanager_subcloud_delete_keywords import
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_deploy_keywords import DCManagerSubcloudDeployKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_list_keywords import DcManagerSubcloudListKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_manager_keywords import DcManagerSubcloudManagerKeywords
+from keywords.cloud_platform.dcmanager.subcloud_picker_keywords import SubcloudPickerKeywords, pick_subcloud_with_fallback
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.cloud_platform.yaml.deployment_assets_yaml import DeploymentAssetsHandler
 from keywords.files.file_keywords import FileKeywords
 
 
-def get_undeployed_subcloud_name(ssh_connection: SSHConnection) -> str:
-    """Function get undeployed subcloud name
-
-    function to get undeployed subcloud name if no undeployed
-    subcloud found then delete the deployed one and return
+def _remove_subcloud(ssh_connection: SSHConnection, subcloud_name: str) -> None:
+    """Power off, unmanage, and delete a subcloud from a system controller.
 
     Args:
-        ssh_connection (SSHConnection): SSH connection object.
-
-    Returns:
-        str: subcloudname
+        ssh_connection (SSHConnection): SSH connection to the system controller that owns the subcloud.
+        subcloud_name (str): Subcloud to remove.
     """
     dcm_sc_list_kw = DcManagerSubcloudListKeywords(ssh_connection)
+    dcm_sc_manager_kw = DcManagerSubcloudManagerKeywords(ssh_connection)
 
-    undeployed_subcloud_name = dcm_sc_list_kw.get_dcmanager_subcloud_list().get_undeployed_subcloud_name()
-    config_subcloud_name = ConfigurationManager.get_lab_config().get_subcloud_names()[0]
-    if config_subcloud_name != undeployed_subcloud_name:
-        get_logger().log_info("No Undeployed Subcloud found deleting existing one")
-        dcm_sc_manager_kw = DcManagerSubcloudManagerKeywords(ssh_connection)
-        # poweroff the subcloud.
-        get_logger().log_test_case_step(f"Poweroff subcloud={config_subcloud_name}.")
-        dcm_sc_manager_kw.set_subcloud_poweroff(config_subcloud_name)
-        # Unmanage the subcloud.
-        if dcm_sc_list_kw.get_dcmanager_subcloud_list().get_subcloud_by_name(config_subcloud_name).get_management() == "managed":
-            get_logger().log_test_case_step(f"Unmanage subcloud={config_subcloud_name}.")
-            dcm_sc_manage_output = dcm_sc_manager_kw.get_dcmanager_subcloud_unmanage(config_subcloud_name, timeout=10)
-            get_logger().log_info(f"The management state of the subcloud {config_subcloud_name} was changed to {dcm_sc_manage_output.get_dcmanager_subcloud_manage_object().get_management()}.")
+    get_logger().log_setup_step(f"Power off subcloud '{subcloud_name}'")
+    dcm_sc_manager_kw.set_subcloud_poweroff(subcloud_name)
 
-        # delete the subcloud.
-        dcm_sc_del_kw = DcManagerSubcloudDeleteKeywords(ssh_connection)
-        dcm_sc_del_kw.dcmanager_subcloud_delete(config_subcloud_name)
+    subcloud = dcm_sc_list_kw.get_dcmanager_subcloud_list().get_subcloud_by_name(subcloud_name)
+    if subcloud.get_management() == "managed":
+        get_logger().log_setup_step(f"Unmanage subcloud '{subcloud_name}'")
+        dcm_sc_manage_output = dcm_sc_manager_kw.get_dcmanager_subcloud_unmanage(subcloud_name, timeout=10)
+        get_logger().log_info(f"Management state changed to {dcm_sc_manage_output.get_dcmanager_subcloud_manage_object().get_management()}")
 
-    return config_subcloud_name
+    get_logger().log_setup_step(f"Delete subcloud '{subcloud_name}'")
+    DcManagerSubcloudDeleteKeywords(ssh_connection).dcmanager_subcloud_delete(subcloud_name)
+
+
+def get_undeployed_subcloud_name() -> str:
+    """Get an undeployed subcloud name, checking both system controllers.
+
+    Uses pick_undeployed_with_fallback to find a config subcloud not deployed on
+    either system controller. If all are deployed, picks one via
+    pick_subcloud_with_fallback and removes it.
+
+    Returns:
+        str: Subcloud name ready for deployment on the primary system controller.
+    """
+    subcloud_name = SubcloudPickerKeywords.pick_undeployed_with_fallback()
+    if subcloud_name is not None:
+        return subcloud_name
+
+    get_logger().log_info("All config subclouds are deployed, removing one to free it")
+    owner_ssh, result = pick_subcloud_with_fallback(present_in_config=True)
+    subcloud_name = result.get_name()
+    _remove_subcloud(owner_ssh, subcloud_name)
+    return subcloud_name
+
 
 @mark.p0
-@mark.lab_has_min_2_subclouds
+@mark.lab_has_subcloud
 def test_phased_deployment(request):
     """Test Phased deployment steps for subcloud deployment.
 
@@ -68,10 +79,10 @@ def test_phased_deployment(request):
         - execute the phased deployment complete
         - execute the subcloud manage
     """
-    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
-    subcloud_name = get_undeployed_subcloud_name(ssh_connection)
-    dcm_sc_deploy_kw = DCManagerSubcloudDeployKeywords(ssh_connection)
-    dcm_sc_manager_kw = DcManagerSubcloudManagerKeywords(ssh_connection)
+    primary_ssh = LabConnectionKeywords().get_active_controller_ssh()
+    subcloud_name = get_undeployed_subcloud_name()
+    dcm_sc_deploy_kw = DCManagerSubcloudDeployKeywords(primary_ssh)
+    dcm_sc_manager_kw = DcManagerSubcloudManagerKeywords(primary_ssh)
 
     # dcmanager subcloud deploy create
     time_kpi_start_create = TimeKPI(time.time())
@@ -104,7 +115,7 @@ def test_phased_deployment(request):
     get_logger().log_info(f"The management state of the subcloud {subcloud_name} is {manage_status}")
 
 @mark.p0
-@mark.lab_has_min_2_subclouds
+@mark.lab_has_subcloud
 def test_subcloud_deploy_abort_resume(request):
     """Test Phased deployment steps for subcloud deployment.
 
@@ -120,10 +131,10 @@ def test_subcloud_deploy_abort_resume(request):
         - execute the phased deployment resume
         - execute the subcloud manage
     """
-    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
-    subcloud_name = get_undeployed_subcloud_name(ssh_connection)
-    dcm_sc_deploy_kw = DCManagerSubcloudDeployKeywords(ssh_connection)
-    dcm_sc_manager_kw = DcManagerSubcloudManagerKeywords(ssh_connection)
+    primary_ssh = LabConnectionKeywords().get_active_controller_ssh()
+    subcloud_name = get_undeployed_subcloud_name()
+    dcm_sc_deploy_kw = DCManagerSubcloudDeployKeywords(primary_ssh)
+    dcm_sc_manager_kw = DcManagerSubcloudManagerKeywords(primary_ssh)
 
     # dcmanager subcloud deploy create
     get_logger().log_info(f"dcmanager subcloud deploy create {subcloud_name}.")
@@ -141,10 +152,10 @@ def test_subcloud_deploy_abort_resume(request):
     sleep_time = 600
     get_logger().log_info(f"Sleeping for {sleep_time/60} Minutes.")
     time.sleep(sleep_time)
-    # dcmanager subcloud deploy bootstrap
+    # dcmanager subcloud deploy abort
     dcm_sc_deploy_kw.dcmanager_subcloud_deploy_abort(subcloud_name)
     get_logger().log_info(f"dcmanager subcloud deploy abort {subcloud_name}.")
-    dcm_sc_list_kw = DcManagerSubcloudListKeywords(ssh_connection)
+    dcm_sc_list_kw = DcManagerSubcloudListKeywords(primary_ssh)
     dcm_sc_list_kw.validate_subcloud_status(subcloud_name, "bootstrap-aborted")
     # dcmanager subcloud deploy resume
     time_kpi_start_resume = TimeKPI(time.time())
@@ -157,6 +168,7 @@ def test_subcloud_deploy_abort_resume(request):
     manage_status = dcmanager_subcloud_manage_output.get_dcmanager_subcloud_manage_object().get_management()
     get_logger().log_info(f"The management state of the subcloud {subcloud_name} is {manage_status}")
 
+@mark.lab_has_subcloud
 def test_bootstrap_failure_replay():
     """Test bootstrap failure and resume
 
@@ -176,8 +188,8 @@ def test_bootstrap_failure_replay():
         - execute the phased deployment resume
         - execute the subcloud manage
     """
-    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
-    subcloud_name = get_undeployed_subcloud_name(ssh_connection)
+    primary_ssh = LabConnectionKeywords().get_active_controller_ssh()
+    subcloud_name = get_undeployed_subcloud_name()
 
     # Get the subcloud deployment assets
     deployment_assets_config = ConfigurationManager.get_deployment_assets_config()
@@ -187,19 +199,19 @@ def test_bootstrap_failure_replay():
     bootstrap_bkup_file = f"{bootstrap_file}.bkup"
 
     # backup the file before editing
-    FileKeywords(ssh_connection).copy_file(bootstrap_file, bootstrap_bkup_file)
+    FileKeywords(primary_ssh).copy_file(bootstrap_file, bootstrap_bkup_file)
     # download file before for updation
-    FileKeywords(ssh_connection).download_file(bootstrap_file, local_bootstrap_file)
+    FileKeywords(primary_ssh).download_file(bootstrap_file, local_bootstrap_file)
 
     # download bootstrap values file
     bootstrap_yaml_obj = DeploymentAssetsHandler(local_bootstrap_file)
     bootstrap_yaml_obj.inject_wrong_bootstrap_value()
     # upload file
-    FileKeywords(ssh_connection).upload_file(local_bootstrap_file, bootstrap_file)
+    FileKeywords(primary_ssh).upload_file(local_bootstrap_file, bootstrap_file)
 
     # deploy the subcloud with wrong values
-    dcm_sc_deploy_kw = DCManagerSubcloudDeployKeywords(ssh_connection)
-    dcm_sc_manager_kw = DcManagerSubcloudManagerKeywords(ssh_connection)
+    dcm_sc_deploy_kw = DCManagerSubcloudDeployKeywords(primary_ssh)
+    dcm_sc_manager_kw = DcManagerSubcloudManagerKeywords(primary_ssh)
 
     # dcmanager subcloud deploy create
     get_logger().log_info(f"dcmanager subcloud deploy create {subcloud_name}.")
@@ -212,11 +224,11 @@ def test_bootstrap_failure_replay():
     # dcmanager subcloud deploy bootstrap
     get_logger().log_info(f"dcmanager subcloud deploy bootstrap {subcloud_name}.")
     dcm_sc_deploy_kw.dcmanager_subcloud_deploy_bootstrap(subcloud_name, wait_for_status=False)
-    dc_manager_sc_list_kw = DcManagerSubcloudListKeywords(ssh_connection)
+    dc_manager_sc_list_kw = DcManagerSubcloudListKeywords(primary_ssh)
     dc_manager_sc_list_kw.validate_subcloud_status(subcloud_name, "bootstrap-failed")
 
     # restore original file
-    FileKeywords(ssh_connection).rename_file(bootstrap_bkup_file, bootstrap_file)
+    FileKeywords(primary_ssh).rename_file(bootstrap_bkup_file, bootstrap_file)
 
     # dcmanager subcloud deploy resume
     time_kpi_start_resume = TimeKPI(time.time())
