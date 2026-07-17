@@ -124,8 +124,8 @@ def test_rehome_single_duplex_subcloud_n_release():
 
     subcloud_name = result.get_name()
 
-    # Destination is whichever cloud is NOT the origin
-    destination_system_controller_ssh = cloud_b_ssh if origin_system_controller_ssh == cloud_a_ssh else cloud_a_ssh
+    # Destination is whichever cloud is NOT the origin (compare by host IP, not object identity)
+    destination_system_controller_ssh = cloud_b_ssh if origin_system_controller_ssh.host == cloud_a_ssh.host else cloud_a_ssh
 
 
     subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
@@ -198,8 +198,8 @@ def test_rehome_single_simplex_subcloud_n_release():
 
     subcloud_name = result.get_name()
 
-    # Destination is whichever cloud is NOT the origin
-    destination_system_controller_ssh = cloud_b_ssh if origin_system_controller_ssh == cloud_a_ssh else cloud_a_ssh
+    # Destination is whichever cloud is NOT the origin (compare by host IP, not object identity)
+    destination_system_controller_ssh = cloud_b_ssh if origin_system_controller_ssh.host == cloud_a_ssh.host else cloud_a_ssh
 
     subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
 
@@ -265,8 +265,8 @@ def test_rehome_duplex_subcloud_fails_when_c1_is_active():
 
     subcloud_name = result.get_name()
 
-    # Destination is whichever cloud is NOT the origin
-    destination_system_controller_ssh = cloud_b_ssh if origin_system_controller_ssh == cloud_a_ssh else cloud_a_ssh
+    # Destination is whichever cloud is NOT the origin (compare by host IP, not object identity)
+    destination_system_controller_ssh = cloud_b_ssh if origin_system_controller_ssh.host == cloud_a_ssh.host else cloud_a_ssh
 
     subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
 
@@ -341,8 +341,8 @@ def test_rehome_simplex_subcloud_fails_with_alarm_and_succeeds_after_clear(reque
 
     subcloud_name = result.get_name()
 
-    # Destination is whichever cloud is NOT the origin
-    destination_system_controller_ssh = cloud_b_ssh if origin_system_controller_ssh == cloud_a_ssh else cloud_a_ssh
+    # Destination is whichever cloud is NOT the origin (compare by host IP, not object identity)
+    destination_system_controller_ssh = cloud_b_ssh if origin_system_controller_ssh.host == cloud_a_ssh.host else cloud_a_ssh
 
     # Get deployment assets
     deployment_assets_config = ConfigurationManager.get_deployment_assets_config()
