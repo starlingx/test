@@ -439,7 +439,7 @@ class FileKeywords(BaseKeyword):
         if ":" in remote_server and not remote_server.startswith("["):
             remote_server = f"[{remote_server}]"
 
-        cmd = f"sshpass -p '{remote_password}' rsync {opts} -e 'ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10' {local_dest_path} {remote_user}@{remote_server}:{remote_path}"
+        cmd = f"sshpass -p '{remote_password}' rsync {opts} -e 'ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=10' {local_dest_path} {remote_user}@{remote_server}:{remote_path}"
 
         get_logger().log_info(f"Executing rsync command: {cmd}")
 
@@ -486,7 +486,7 @@ class FileKeywords(BaseKeyword):
         if ":" in remote_server and not remote_server.startswith("["):
             remote_server = f"[{remote_server}]"
 
-        cmd = f"sshpass -p '{remote_password}' rsync {opts} -e 'ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10' {remote_user}@{remote_server}:{remote_path} {local_dest_path}"
+        cmd = f"sshpass -p '{remote_password}' rsync {opts} -e 'ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=10' {remote_user}@{remote_server}:{remote_path} {local_dest_path}"
 
         get_logger().log_info(f"Executing rsync command: {cmd}")
 
