@@ -323,7 +323,7 @@ class ImageKeywords(BaseKeyword):
         image = image_service.find_image(image_name_or_id, ignore_missing=False)
         image_service.delete_image(image.id)
 
-    def wait_for_image_status(self, image_name_or_id: str, expected_status: str, timeout: int = 120, poll_interval: int = 5) -> ImageObject:
+    def wait_for_image_status(self, image_name_or_id: str, expected_status: str, timeout: int = 120, poll_interval: int = 5, fail_on_revert: bool = True) -> str:
         """Poll until image reaches expected status.
 
         Args:
@@ -331,25 +331,34 @@ class ImageKeywords(BaseKeyword):
             expected_status (str): Expected status string (e.g. 'active').
             timeout (int): Maximum wait time in seconds.
             poll_interval (int): Seconds between polls.
+            fail_on_revert (bool): If True, raise on timeout. If False,
+                return the current status when timeout or revert is detected.
 
         Returns:
-            ImageObject: Image details once status is reached.
+            str: Final image status.
 
         Raises:
             TimeoutError: If status is not reached within timeout.
-            RuntimeError: If image enters killed state.
+            RuntimeError: If image enters killed state or reverts unexpectedly.
         """
         image_service = self.openstack_connection.get_image()
         end_time = time.time() + timeout
+        prev_status = None
         while time.time() < end_time:
             image = image_service.find_image(image_name_or_id, ignore_missing=False)
             current_status = image.status.lower()
             if current_status == expected_status.lower():
                 get_logger().log_info(f"Image '{image_name_or_id}' reached status '{expected_status}'")
-                return ImageListOutput([image.to_dict()]).get_images()[0]
+                return current_status
             if current_status == "killed":
                 raise RuntimeError(f"Image '{image_name_or_id}' entered killed state")
+            if prev_status in ("importing", "saving") and current_status == "queued":
+                if fail_on_revert:
+                    raise RuntimeError(f"Image '{image_name_or_id}' reverted from '{prev_status}' to 'queued' (import failed)")
+                get_logger().log_warning(f"Image '{image_name_or_id}' reverted from '{prev_status}' to 'queued' (import failed)")
+                return current_status
             get_logger().log_info(f"Image '{image_name_or_id}' status is '{image.status}', waiting for '{expected_status}'...")
+            prev_status = current_status
             time.sleep(poll_interval)
         raise TimeoutError(f"Image '{image_name_or_id}' did not reach '{expected_status}' within {timeout}s")
 
