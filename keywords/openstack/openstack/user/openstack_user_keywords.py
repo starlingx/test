@@ -1,3 +1,5 @@
+import shlex
+
 from framework.ssh.ssh_connection import SSHConnection
 from keywords.base_keyword import BaseKeyword
 from keywords.cloud_platform.command_wrappers import source_openrc
@@ -33,6 +35,39 @@ class OpenstackUserListKeywords(BaseKeyword):
         complete_output = "\n".join(output) if isinstance(output, list) else output
 
         return OpenstackUserListOutput(complete_output)
+
+    def create_user(self, username: str, password: str) -> str:
+        """
+        Create an OpenStack user.
+
+        Args:
+            username (str): The username for the new user.
+            password (str): The password for the new user.
+
+        Returns:
+            str: Command output from user creation.
+        """
+        cmd = f"openstack user create {username} --password {shlex.quote(password)}"
+        output = self.ssh_connection.send(source_openrc(cmd), get_pty=True)
+        self.validate_success_return_code(self.ssh_connection)
+
+        return "\n".join(output) if isinstance(output, list) else output
+
+    def show_user(self, username: str) -> str:
+        """
+        Show details of an OpenStack user.
+
+        Args:
+            username (str): The username or ID to show.
+
+        Returns:
+            str: Command output from user show.
+        """
+        cmd = f"openstack user show {username}"
+        output = self.ssh_connection.send(source_openrc(cmd), get_pty=True)
+        self.validate_success_return_code(self.ssh_connection)
+
+        return "\n".join(output) if isinstance(output, list) else output
 
     def delete_user(self, user_id: str) -> str:
         """
