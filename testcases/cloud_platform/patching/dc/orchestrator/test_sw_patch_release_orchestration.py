@@ -9,6 +9,7 @@ from keywords.cloud_platform.dcmanager.dcmanager_strategy_step_keywords import D
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_list_keywords import DcManagerSubcloudListKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_prestage import DcmanagerSubcloudPrestage
 from keywords.cloud_platform.dcmanager.dcmanager_sw_deploy_strategy_keywords import DcmanagerSwDeployStrategy
+from keywords.cloud_platform.health.health_keywords import HealthKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.cloud_platform.swmanager.swmanager_sw_deploy_strategy_keywords import SwManagerSwDeployStrategyKeywords
 from keywords.cloud_platform.swmanager.objects.swmanager_sw_deploy_strategy_create_config import SwManagerSwDeployStrategyCreateConfig
@@ -36,6 +37,11 @@ def test_patch_apply(request):
 
     # Get the subcloud name from the lab config
     subcloud_name = ConfigurationManager.get_lab_config().get_subcloud_names()[0]
+
+    # Wait for subcloud to be healthy before patching
+    subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
+    get_logger().log_info(f"Waiting for {subcloud_name} to be healthy before patch apply")
+    HealthKeywords(subcloud_ssh).validate_healty_cluster()
 
     # Gets the subcloud sysadmin password needed for prestage.
     lab_config = ConfigurationManager.get_lab_config().get_subcloud(subcloud_name)
@@ -90,6 +96,10 @@ def test_patch_remove(request):
     # Get the subcloud name and SSH
     subcloud_name = ConfigurationManager.get_lab_config().get_subcloud_names()[0]
     subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
+
+    # Wait for subcloud to be healthy before patching
+    get_logger().log_info(f"Waiting for {subcloud_name} to be healthy before patch removal")
+    HealthKeywords(subcloud_ssh).validate_healty_cluster()
 
     # Get all deployed releases on the subcloud
     sw_releases = SoftwareListKeywords(subcloud_ssh).get_software_list().get_release_name_by_state("deployed")
