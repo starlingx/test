@@ -1,6 +1,6 @@
 from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
-from framework.validation.validation import validate_equals_with_retry, validate_str_contains_with_retry
+from framework.validation.validation import validate_equals_with_retry, validate_not_equals_with_retry, validate_str_contains_with_retry
 from framework.validation.validation_response import ValidationResponse
 from keywords.base_keyword import BaseKeyword
 from keywords.cloud_platform.command_wrappers import source_openrc
@@ -100,3 +100,23 @@ class SystemApplicationShowKeywords(BaseKeyword):
             return ValidationResponse(system_application_object.get_progress(), system_application_object)
 
         return validate_str_contains_with_retry(get_progress, expected_progress, f"Application '{app_name}' progress is '{expected_progress}'", timeout=300)
+
+    def validate_app_updated_at_changed(self, app_name: str, previous_updated_at: str, timeout: int = 300, polling_sleep_time: int = 10) -> SystemApplicationShowObject:
+        """
+        Validates that the application's updated_at timestamp has changed from its previous value.
+
+        Args:
+            app_name (str): Name of the application
+            previous_updated_at (str): The previous updated_at value to compare against
+            timeout (int): Maximum time in seconds to wait for the change (default: 300)
+            polling_sleep_time (int): Time in seconds between polls (default: 10)
+
+        Returns:
+            SystemApplicationShowObject:
+        """
+
+        def get_updated_at():
+            system_application_object = self.get_system_application_show(app_name).get_system_application_object()
+            return ValidationResponse(system_application_object.get_updated_at(), system_application_object)
+
+        return validate_not_equals_with_retry(get_updated_at, previous_updated_at, f"Application '{app_name}' updated_at changed", timeout=timeout, polling_sleep_time=polling_sleep_time)

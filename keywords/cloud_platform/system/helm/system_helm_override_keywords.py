@@ -1,12 +1,11 @@
+from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
 from framework.validation.validation import validate_str_contains
 from keywords.base_keyword import BaseKeyword
 from keywords.cloud_platform.command_wrappers import source_openrc
+from keywords.cloud_platform.system.application.system_application_apply_keywords import SystemApplicationApplyKeywords
 from keywords.cloud_platform.system.helm.objects.system_helm_override_output import SystemHelmOverrideOutput
 from keywords.cloud_platform.system.helm.objects.system_helm_override_show_output import SystemHelmOverrideShowOutput
-
-from framework.logging.automation_logger import get_logger
-from keywords.cloud_platform.system.application.system_application_apply_keywords import SystemApplicationApplyKeywords
 from keywords.files.file_keywords import FileKeywords
 
 
@@ -44,7 +43,7 @@ class SystemHelmOverrideKeywords(BaseKeyword):
         system_helm_override_output = SystemHelmOverrideOutput(output)
         return system_helm_override_output
 
-    def update_helm_override_via_set(self, override_values: str, app_name: str, chart_name: str, namespace: str) -> SystemHelmOverrideOutput:
+    def update_helm_override_via_set(self, override_values: str, app_name: str, chart_name: str, namespace: str, reuse_values: bool = False, reapply: str = "") -> SystemHelmOverrideOutput:
         """
         Update the helm-override values via --set parameter
 
@@ -53,11 +52,17 @@ class SystemHelmOverrideKeywords(BaseKeyword):
             app_name (str): the app name
             chart_name (str): the chart name
             namespace (str): the namespace
+            reuse_values (bool): whether to reuse existing values
+            reapply (str): reapply flag, can be "--reapply" or "--reapply-all". Triggers an evaluation
+                of the target application for reapply. Reapply will only occur if the application has
+                pending override changes and declares the on-demand-reapply trigger in its metadata.yaml.
 
         Returns:
             SystemHelmOverrideOutput: object with the list of helm overrides.
         """
-        command = source_openrc(f"system helm-override-update --set {override_values} {app_name} {chart_name} {namespace}")
+        reuse_flag = "--reuse-values " if reuse_values else ""
+        reapply_flag = f"{reapply} " if reapply else ""
+        command = source_openrc(f"system helm-override-update --set {override_values} {app_name} {chart_name} {namespace} {reuse_flag} {reapply_flag}")
         output = self.ssh_connection.send(command)
         self.validate_success_return_code(self.ssh_connection)
         system_helm_override_output = SystemHelmOverrideOutput(output)
@@ -183,18 +188,12 @@ class SystemHelmOverrideKeywords(BaseKeyword):
         app_apply_kw = SystemApplicationApplyKeywords(self.ssh_connection)
 
         if force_apply:
-            get_logger().log_info(
-                f"Force-applying helm overrides for {app_name}/{chart_name} in {namespace}"
-            )
+            get_logger().log_info(f"Force-applying helm overrides for {app_name}/{chart_name} in {namespace}")
             desired_empty = desired_overrides is None or desired_overrides.strip() == ""
             if desired_empty:
-                app_apply_kw.system_application_apply(
-                    app_name, timeout=timeout, polling_sleep_time=polling_sleep_time
-                )
+                app_apply_kw.system_application_apply(app_name, timeout=timeout, polling_sleep_time=polling_sleep_time)
             else:
-                self._write_and_apply(
-                    desired_overrides, app_name, chart_name, namespace, timeout, polling_sleep_time
-                )
+                self._write_and_apply(desired_overrides, app_name, chart_name, namespace, timeout, polling_sleep_time)
             return True
 
         # Normal path: retrieve current overrides and compare
@@ -202,28 +201,16 @@ class SystemHelmOverrideKeywords(BaseKeyword):
             show_output = self.get_system_helm_override_show(app_name, chart_name, namespace)
             show_object = show_output.get_helm_override_show()
         except Exception as e:
-            get_logger().log_warning(
-                f"Failed to retrieve current overrides for {app_name}/{chart_name} "
-                f"in {namespace}: {e} — proceeding with apply"
-            )
-            self._write_and_apply(
-                desired_overrides, app_name, chart_name, namespace, timeout, polling_sleep_time
-            )
+            get_logger().log_warning(f"Failed to retrieve current overrides for {app_name}/{chart_name} " f"in {namespace}: {e} — proceeding with apply")
+            self._write_and_apply(desired_overrides, app_name, chart_name, namespace, timeout, polling_sleep_time)
             return True
 
         if show_object.user_overrides_match(desired_overrides):
-            get_logger().log_info(
-                f"Helm override apply skipped — overrides already match for "
-                f"{app_name}/{chart_name} in {namespace}"
-            )
+            get_logger().log_info(f"Helm override apply skipped — overrides already match for " f"{app_name}/{chart_name} in {namespace}")
             return False
 
-        get_logger().log_info(
-            f"Helm override apply executed for {app_name}/{chart_name} in {namespace}"
-        )
-        self._write_and_apply(
-            desired_overrides, app_name, chart_name, namespace, timeout, polling_sleep_time
-        )
+        get_logger().log_info(f"Helm override apply executed for {app_name}/{chart_name} in {namespace}")
+        self._write_and_apply(desired_overrides, app_name, chart_name, namespace, timeout, polling_sleep_time)
         return True
 
     def _write_and_apply(
@@ -254,8 +241,6 @@ class SystemHelmOverrideKeywords(BaseKeyword):
         try:
             file_kw.create_file_with_heredoc(override_file_path, desired_overrides)
             self.update_helm_override(override_file_path, app_name, chart_name, namespace)
-            app_apply_kw.system_application_apply(
-                app_name, timeout=timeout, polling_sleep_time=polling_sleep_time
-            )
+            app_apply_kw.system_application_apply(app_name, timeout=timeout, polling_sleep_time=polling_sleep_time)
         finally:
             self.ssh_connection.send(f"rm -rf {tmpdir}")
