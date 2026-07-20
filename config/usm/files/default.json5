@@ -78,7 +78,7 @@
   // Metapackage deployment configuration
   // Controls which metapackages are deployed during an upgrade.
   // - "None": skip metapackage deployment entirely
-  // - "All": deploy all metapackages in the 'available' state
+  // - "All": deploy all metapackages in the 'available' state from to_release_ids
   // - ["base_11.00.0", "infra_11.00.0"]: deploy only the listed metapackages (as example)
   "metapackages": "None",
 

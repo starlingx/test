@@ -31,7 +31,7 @@ class SoftwareDeploySelectKeywords(BaseKeyword):
         transitioning them from 'available' to 'deploy-selected'.
 
         Args:
-            release (str): The release ID to select (e.g., 'starlingx-11.00.0').
+            release (str): The release ID to select (e.g., 'starlingx-12.00.0').
 
         Raises:
             KeywordException: If release is empty.
@@ -49,7 +49,7 @@ class SoftwareDeploySelectKeywords(BaseKeyword):
 
         Args:
             metapackages (List[str]): One or more metapackage release names to select
-                (e.g., ['base_11.00.0', 'infra_11.00.0']).
+                (e.g., ['base_12.00.0', 'infra_12.00.0']).
 
         Raises:
             KeywordException: If the metapackages list is empty.
