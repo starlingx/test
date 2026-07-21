@@ -103,7 +103,7 @@ class USMKeywords(BaseKeyword):
         self.validate_success_return_code(self.ssh_connection)
         return output
 
-    def upload_release(self, iso_path: str, sig_path: str, sudo: bool = False, os_region_name: str = "") -> None:
+    def upload_release(self, iso_path: str, sig_path: str, sudo: bool = False, os_region_name: str = "") -> SoftwareUploadOutput:
         """
         Upload a full software release using 'software upload'.
 
@@ -131,8 +131,9 @@ class USMKeywords(BaseKeyword):
             output = self.ssh_connection.send(cmd, command_timeout=timeout, reconnect_timeout=timeout, get_pty=True)
         self.validate_success_return_code(self.ssh_connection)
         get_logger().log_info("Release upload completed:\n" + "\n".join(output))
+        return SoftwareUploadOutput(output)
 
-    def upload_and_verify_patch_file(self, patch_file_path: str, expected_release_id: str, timeout: int, poll_interval: int, sudo: bool = False, os_region_name: str = "") -> None:
+    def upload_and_verify_patch_file(self, patch_file_path: str, expected_release_id: str, timeout: int, poll_interval: int, sudo: bool = False, os_region_name: str = "") -> SoftwareUploadOutput:
         """Upload a patch and verify that it becomes available.
 
         This method is used for USM patching operations. It uploads a `.patch` file
@@ -149,8 +150,11 @@ class USMKeywords(BaseKeyword):
 
         Raises:
             KeywordException: If upload fails or release does not become available in time.
+
+        Returns:
+            SoftwareUploadOutput: Parsed output from the upload command.
         """
-        self.upload_patch_file(patch_file_path, sudo, os_region_name=os_region_name)
+        upload_output = self.upload_patch_file(patch_file_path, sudo, os_region_name=os_region_name)
 
         validate_equals_with_retry(
             function_to_execute=lambda: SoftwareListKeywords(self.ssh_connection).get_software_list(sudo=True).get_release_state_by_release_name(expected_release_id),
@@ -159,8 +163,9 @@ class USMKeywords(BaseKeyword):
             timeout=timeout,
             polling_sleep_time=poll_interval,
         )
+        return upload_output
 
-    def upload_and_verify_release(self, iso_path: str, sig_path: str, expected_release_id: str, timeout: int, poll_interval: int, sudo: bool = False, os_region_name: str = "") -> None:
+    def upload_and_verify_release(self, iso_path: str, sig_path: str, expected_release_id: str, timeout: int, poll_interval: int, sudo: bool = False, os_region_name: str = "") -> SoftwareUploadOutput:
         """Upload a software release and verify that it becomes available.
 
         This method is used for USM upgrade operations. It uploads a `.iso` and `.sig`
@@ -178,8 +183,11 @@ class USMKeywords(BaseKeyword):
 
         Raises:
             KeywordException: If upload fails or release does not become available in time.
+
+        Returns:
+            SoftwareUploadOutput: Parsed output from the upload command.
         """
-        self.upload_release(iso_path, sig_path, sudo, os_region_name)
+        upload_output = self.upload_release(iso_path, sig_path, sudo, os_region_name)
 
         validate_equals_with_retry(
             function_to_execute=lambda: SoftwareListKeywords(self.ssh_connection).get_software_list(sudo=True).get_release_state_by_release_name(expected_release_id),
@@ -188,6 +196,7 @@ class USMKeywords(BaseKeyword):
             timeout=timeout,
             polling_sleep_time=poll_interval,
         )
+        return upload_output
 
     def software_deploy_delete(self, sudo: bool = False) -> str:
         """
