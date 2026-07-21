@@ -184,7 +184,11 @@ def get_healthy_subcloud(release: str = None) -> str:
         pytest.skip: If no healthy subcloud is found.
     """
     central_ssh = LabConnectionKeywords().get_active_controller_ssh()
-    for subcloud_name in ConfigurationManager.get_lab_config().get_subcloud_names():
+    subcloud_list = ConfigurationManager.get_lab_config().get_subcloud_names()
+    dcmanager_subcloud_list = [sc.get_name() for sc in DcManagerSubcloudListKeywords(central_ssh).get_dcmanager_subcloud_list().get_dcmanager_subcloud_list_objects()]
+    for subcloud_name in subcloud_list:
+        if subcloud_name not in dcmanager_subcloud_list:
+            continue
         subcloud_sw_version = DcManagerSubcloudShowKeywords(central_ssh).get_dcmanager_subcloud_show(subcloud_name).get_dcmanager_subcloud_show_object().get_software_version()
         if release:
             if release != subcloud_sw_version:
@@ -210,7 +214,6 @@ def test_verify_backup_central_simplex(request):
     """
     central_ssh = LabConnectionKeywords().get_active_controller_ssh()
     subcloud_name = get_healthy_subcloud()
-    validate_subcloud_health(subcloud_name)
     verify_backup_central(central_ssh, subcloud_name)
 
 @mark.p0
@@ -227,7 +230,6 @@ def test_verify_backup_central_duplex(request):
     """
     central_ssh = LabConnectionKeywords().get_active_controller_ssh()
     subcloud_name = get_healthy_subcloud()
-    validate_subcloud_health(subcloud_name)
     verify_backup_central(central_ssh, subcloud_name)
 
 @mark.p0
@@ -244,7 +246,6 @@ def test_verify_backup_local_simplex(request):
     """
     central_ssh = LabConnectionKeywords().get_active_controller_ssh()
     subcloud_name = get_healthy_subcloud()
-    validate_subcloud_health(subcloud_name)
     verify_backup_local(central_ssh, subcloud_name)
 
 @mark.p0
@@ -261,7 +262,6 @@ def test_verify_backup_local_custom_path_simplex(request):
     """
     central_ssh = LabConnectionKeywords().get_active_controller_ssh()
     subcloud_name = get_healthy_subcloud()
-    validate_subcloud_health(subcloud_name)
     verify_backup_local(central_ssh, subcloud_name, custom_path=True)
 
 @mark.p0
@@ -278,7 +278,6 @@ def test_verify_backup_local_duplex(request):
     """
     central_ssh = LabConnectionKeywords().get_active_controller_ssh()
     subcloud_name = get_healthy_subcloud()
-    validate_subcloud_health(subcloud_name)
     verify_backup_local(central_ssh, subcloud_name)
 
 @mark.p0
@@ -295,7 +294,6 @@ def test_verify_backup_local_images(request):
     """
     central_ssh = LabConnectionKeywords().get_active_controller_ssh()
     subcloud_name = get_healthy_subcloud()
-    validate_subcloud_health(subcloud_name)
     verify_backup_local(central_ssh, subcloud_name, registry=True)
 
 @mark.p2
@@ -321,7 +319,6 @@ def test_c1_verify_remote_backup(request):
         SystemHostSwactKeywords(central_ssh).wait_for_swact(active_controller, standby_controller)
 
     subcloud_name = get_healthy_subcloud()
-    validate_subcloud_health(subcloud_name)
     verify_backup_local(central_ssh, subcloud_name)
 
 @mark.p2
@@ -348,7 +345,6 @@ def test_c1_verify_central_backup(request):
 
 
     subcloud_name = get_healthy_subcloud()
-    validate_subcloud_health(subcloud_name)
     verify_backup_central(central_ssh, subcloud_name)
 
 @mark.p0
@@ -366,7 +362,6 @@ def test_verify_backup_central_std(request):
     central_ssh = LabConnectionKeywords().get_active_controller_ssh()
 
     subcloud_name = get_healthy_subcloud()
-    validate_subcloud_health(subcloud_name)
     verify_backup_central(central_ssh, subcloud_name)
 
 @mark.p0
@@ -385,7 +380,6 @@ def test_verify_backup_local_std(request):
     central_ssh = LabConnectionKeywords().get_active_controller_ssh()
 
     subcloud_name = get_healthy_subcloud()
-    validate_subcloud_health(subcloud_name)
     verify_backup_local(central_ssh, subcloud_name)
 
 @mark.p2
@@ -408,7 +402,6 @@ def test_verify_backup_central_with_backup_values(request):
     central_ssh = LabConnectionKeywords().get_active_controller_ssh()
 
     subcloud_name = get_healthy_subcloud()
-    validate_subcloud_health(subcloud_name)
     verify_backup_central(central_ssh, subcloud_name, backup_values=True)
 
 @mark.p0
@@ -426,7 +419,6 @@ def test_verify_backup_local_with_backup_values(request):
     central_ssh = LabConnectionKeywords().get_active_controller_ssh()
 
     subcloud_name = get_healthy_subcloud()
-    validate_subcloud_health(subcloud_name)
     verify_backup_local(central_ssh, subcloud_name, backup_values=True)
 
 @mark.p2
@@ -446,7 +438,6 @@ def test_verify_backup_on_central_n_minus_one_simplex(request):
     subcloud_name = get_healthy_subcloud(release=required_release)
     subcloud_sw_version = DcManagerSubcloudShowKeywords(central_ssh).get_dcmanager_subcloud_show(subcloud_name).get_dcmanager_subcloud_show_object().get_software_version()
     validate_not_equals(subcloud_sw_version, required_release, "Validate that subcloud is running with required load.")
-    validate_subcloud_health(subcloud_name)
     verify_backup_central(central_ssh, subcloud_name)
 
 @mark.p2
@@ -465,7 +456,6 @@ def test_verify_backup_on_central_n_minus_two_simplex(request):
     subcloud_name = get_healthy_subcloud(release=required_release)
     subcloud_sw_version = DcManagerSubcloudShowKeywords(central_ssh).get_dcmanager_subcloud_show(subcloud_name).get_dcmanager_subcloud_show_object().get_software_version()
     validate_not_equals(subcloud_sw_version, required_release, "Validate that subcloud is running with required load.")
-    validate_subcloud_health(subcloud_name)
     verify_backup_central(central_ssh, subcloud_name)
 
 @mark.p2
@@ -484,7 +474,6 @@ def test_verify_backup_local_n_minus_one_simplex(request):
     subcloud_name = get_healthy_subcloud(release=required_release)
     subcloud_sw_version = DcManagerSubcloudShowKeywords(central_ssh).get_dcmanager_subcloud_show(subcloud_name).get_dcmanager_subcloud_show_object().get_software_version()
     validate_not_equals(subcloud_sw_version, required_release, "Validate that subcloud is running with required load.")
-    validate_subcloud_health(subcloud_name)
     verify_backup_local(central_ssh, subcloud_name)
 
 @mark.p2
@@ -503,7 +492,6 @@ def test_verify_backup_local_n_minus_two_simplex(request):
     subcloud_name = get_healthy_subcloud(release=required_release)
     subcloud_sw_version = DcManagerSubcloudShowKeywords(central_ssh).get_dcmanager_subcloud_show(subcloud_name).get_dcmanager_subcloud_show_object().get_software_version()
     validate_not_equals(subcloud_sw_version, required_release, "Validate that subcloud is running with required load.")
-    validate_subcloud_health(subcloud_name)
     verify_backup_local(central_ssh, subcloud_name)
 
 @mark.p2
@@ -522,7 +510,6 @@ def test_verify_backup_on_central_n_minus_one_duplex(request):
     subcloud_name = get_healthy_subcloud(release=required_release)
     subcloud_sw_version = DcManagerSubcloudShowKeywords(central_ssh).get_dcmanager_subcloud_show(subcloud_name).get_dcmanager_subcloud_show_object().get_software_version()
     validate_not_equals(subcloud_sw_version, required_release, "Validate that subcloud is running with required load.")
-    validate_subcloud_health(subcloud_name)
     verify_backup_central(central_ssh, subcloud_name)
 
 @mark.p2
@@ -541,7 +528,6 @@ def test_verify_backup_on_central_n_minus_two_duplex(request):
     subcloud_name = get_healthy_subcloud(release=required_release)
     subcloud_sw_version = DcManagerSubcloudShowKeywords(central_ssh).get_dcmanager_subcloud_show(subcloud_name).get_dcmanager_subcloud_show_object().get_software_version()
     validate_not_equals(subcloud_sw_version, required_release, "Validate that subcloud is running with required load.")
-    validate_subcloud_health(subcloud_name)
     verify_backup_central(central_ssh, subcloud_name)
 
 @mark.p2
@@ -560,7 +546,6 @@ def test_verify_backup_local_n_minus_one_duplex(request):
     subcloud_name = get_healthy_subcloud(release=required_release)
     subcloud_sw_version = DcManagerSubcloudShowKeywords(central_ssh).get_dcmanager_subcloud_show(subcloud_name).get_dcmanager_subcloud_show_object().get_software_version()
     validate_not_equals(subcloud_sw_version, required_release, "Validate that subcloud is running with required load.")
-    validate_subcloud_health(subcloud_name)
     verify_backup_local(central_ssh, subcloud_name)
 
 @mark.p2
@@ -579,7 +564,6 @@ def test_verify_backup_local_n_minus_two_duplex(request):
     subcloud_name = get_healthy_subcloud(release=required_release)
     subcloud_sw_version = DcManagerSubcloudShowKeywords(central_ssh).get_dcmanager_subcloud_show(subcloud_name).get_dcmanager_subcloud_show_object().get_software_version()
     validate_not_equals(subcloud_sw_version, required_release, "Validate that subcloud is running with required load.")
-    validate_subcloud_health(subcloud_name)
     verify_backup_local(central_ssh, subcloud_name)
 
 @mark.p2
@@ -608,7 +592,6 @@ def test_c1_verify_backup_on_central_n_minus_one(request):
     subcloud_name = get_healthy_subcloud(release=required_release)
     subcloud_sw_version = DcManagerSubcloudShowKeywords(central_ssh).get_dcmanager_subcloud_show(subcloud_name).get_dcmanager_subcloud_show_object().get_software_version()
     validate_not_equals(subcloud_sw_version, required_release, "Validate that subcloud is running with required load.")
-    validate_subcloud_health(subcloud_name)
     verify_backup_central(central_ssh, subcloud_name)
 
 @mark.p2
@@ -638,7 +621,6 @@ def test_c1_verify_backup_on_central_n_minus_two(request):
     subcloud_name = get_healthy_subcloud(release=required_release)
     subcloud_sw_version = DcManagerSubcloudShowKeywords(central_ssh).get_dcmanager_subcloud_show(subcloud_name).get_dcmanager_subcloud_show_object().get_software_version()
     validate_not_equals(subcloud_sw_version, required_release, "Validate that subcloud is running with required load.")
-    validate_subcloud_health(subcloud_name)
     verify_backup_central(central_ssh, subcloud_name)
 
 @mark.p2
@@ -668,7 +650,6 @@ def test_c1_verify_backup_local_n_minus_one(request):
     subcloud_name = get_healthy_subcloud(release=required_release)
     subcloud_sw_version = DcManagerSubcloudShowKeywords(central_ssh).get_dcmanager_subcloud_show(subcloud_name).get_dcmanager_subcloud_show_object().get_software_version()
     validate_not_equals(subcloud_sw_version, required_release, "Validate that subcloud is running with required load.")
-    validate_subcloud_health(subcloud_name)
     verify_backup_local(central_ssh, subcloud_name)
 
 @mark.p2
@@ -698,7 +679,6 @@ def test_c1_verify_backup_local_n_minus_two(request):
     subcloud_name = get_healthy_subcloud(release=required_release)
     subcloud_sw_version = DcManagerSubcloudShowKeywords(central_ssh).get_dcmanager_subcloud_show(subcloud_name).get_dcmanager_subcloud_show_object().get_software_version()
     validate_not_equals(subcloud_sw_version, required_release, "Validate that subcloud is running with required load.")
-    validate_subcloud_health(subcloud_name)
     verify_backup_local(central_ssh, subcloud_name)
 
 @mark.p0
