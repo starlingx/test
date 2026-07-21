@@ -299,7 +299,6 @@ def test_postgresql_conf_and_pg_hba_validation():
     result = pg_keywords.query_database("postgres", "SHOW password_encryption")
     get_logger().log_info(f"Raw query_database return (repr): {repr(result)}")
     get_logger().log_info(f"Return length: {len(result)}")
-    # get_logger().log_info(f"result of show encrt {result}")
     validate_str_contains(result, "scram-sha-256", "password_encryption is scram-sha-256")
     get_logger().log_info("password_encryption: scram-sha-256")
 
@@ -334,7 +333,7 @@ def test_postgresql_conf_and_pg_hba_validation():
 
 
 @mark.p2
-@mark.lab_is_duplex
+@mark.lab_has_standby_controller
 def test_postgresql_db_replication_between_controllers(request: FixtureRequest):
     """TC5: Verify DB replication between controllers (AIO-DX).
 
