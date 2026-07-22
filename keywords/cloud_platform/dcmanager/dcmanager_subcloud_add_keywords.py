@@ -18,12 +18,13 @@ class DcManagerSubcloudAddKeywords(BaseKeyword):
         """
         self.ssh_connection = ssh_connection
 
-    def dcmanager_subcloud_add(self, subcloud_name: str, release_id: str = None):
+    def dcmanager_subcloud_add(self, subcloud_name: str, release_id: str = None, wait_for_status: bool = True):
         """Adds the subcloud using 'dcmanager subcloud add '.
 
         Args:
             subcloud_name (str): a str name for the subcloud.
             release_id (str): a str name for the release_id.
+            wait_for_status (bool): whether to wait for deploy status to reach complete. Defaults to True.
 
         """
         # Get the subcloud config
@@ -46,8 +47,9 @@ class DcManagerSubcloudAddKeywords(BaseKeyword):
         self.validate_success_return_code(self.ssh_connection)
 
         # validate subcloud status until complete
-        dc_manager_sc_list_kw = DcManagerSubcloudListKeywords(self.ssh_connection)
-        dc_manager_sc_list_kw.validate_subcloud_status(subcloud_name, "complete")
+        if wait_for_status:
+            dc_manager_sc_list_kw = DcManagerSubcloudListKeywords(self.ssh_connection)
+            dc_manager_sc_list_kw.validate_subcloud_status(subcloud_name, "complete")
 
     def dcmanager_subcloud_add_migrate(self, subcloud_name: str, bootstrap_values: str, install_values: str, release_id: str = None):
         """
