@@ -1,6 +1,10 @@
 """Software Show Output."""
 
+import json
+from typing import List
+
 from keywords.cloud_platform.system.system_table_parser import SystemTableParser
+from keywords.cloud_platform.upgrade.objects.software_metapackage_list_object import SoftwareMetapackageListObject
 from keywords.cloud_platform.upgrade.objects.software_show_object import SoftwareShowObject
 
 
@@ -39,6 +43,17 @@ class SoftwareShowOutput:
         """
         software_show = self.software_show
         return software_show
+
+    def get_metapackages(self) -> List[SoftwareMetapackageListObject]:
+        """
+        Parse the 'metapackages' property from 'software show --metapackages' output.
+
+        Returns:
+            List[SoftwareMetapackageListObject]: Parsed metapackage entries with release name and state.
+        """
+        raw = self.get_property_value("metapackages")
+        metapackages_dict = json.loads(raw)
+        return [SoftwareMetapackageListObject(release, "", attrs["state"]) for release, attrs in metapackages_dict.items()]
 
     def get_property_value(self, property_name: str) -> str:
         """

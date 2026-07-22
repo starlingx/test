@@ -18,25 +18,26 @@ class SoftwareShowKeywords(BaseKeyword):
         """
         self.ssh_connection = ssh_connection
 
-    def get_software_show(self, sudo: bool = False, release_id: str = None) -> SoftwareShowOutput:
+    def get_software_show(self, sudo: bool = False, release_id: str = None, metapackages: bool = False) -> SoftwareShowOutput:
         """
         Get the software show.
 
         Args:
             sudo (bool): True or False
             release_id (str): Release Name
+            metapackages (bool): If True, passes --metapackages flag to include metapackage details.
 
         Returns:
             SoftwareShowOutput: The software show output object.
         """
+        flag = "--metapackages " if metapackages else ""
+        cmd = f"software show {flag}{release_id}"
         if sudo:
-            output = self.ssh_connection.send_as_sudo(f"software show {release_id}")
+            output = self.ssh_connection.send_as_sudo(cmd)
         else:
-            output = self.ssh_connection.send(source_openrc(f"software show {release_id}"))
+            output = self.ssh_connection.send(source_openrc(cmd))
         self.validate_success_return_code(self.ssh_connection)
-        software_show_output = SoftwareShowOutput(output)
-
-        return software_show_output
+        return SoftwareShowOutput(output)
 
     def get_release_state(self, release_id: str) -> str:
         """
