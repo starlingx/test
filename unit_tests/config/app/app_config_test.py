@@ -26,6 +26,8 @@ def test_default_app_config():
     assert default_config.get_metrics_server_app_tarball() == "fake_path", "metrics server app tarball default was incorrect"
     assert default_config.get_rook_ceph_app_name() == "rook-ceph", "rook-ceph default app name was incorrect"
     assert default_config.get_rook_ceph_app_tarball() == "fake_path", "rook-ceph app tarball default was incorrect"
+    assert default_config.get_cert_manager_name() == "cert-manager", "cert manager default app name was incorrect"
+    assert default_config.get_nginx_ingress_controller_name() == "nginx-ingress-controller", "nginx ingress controller default app name was incorrect"
 
 
 def test_custom_app_config():
@@ -53,3 +55,5 @@ def test_custom_app_config():
     assert custom_config.get_metrics_server_app_tarball() == "fake_path", "metrics server app tarball custom was incorrect"
     assert custom_config.get_rook_ceph_app_name() == "rook-ceph_custom", "rook-ceph custom app name was incorrect"
     assert custom_config.get_rook_ceph_app_tarball() == "fake_rook_ceph_path", "rook-ceph app tarball custom was incorrect"
+    assert custom_config.get_cert_manager_name() == "cert-manager_custom", "cert manager custom app name was incorrect"
+    assert custom_config.get_nginx_ingress_controller_name() == "nginx-ingress-controller_custom", "nginx ingress controller custom app name was incorrect"
