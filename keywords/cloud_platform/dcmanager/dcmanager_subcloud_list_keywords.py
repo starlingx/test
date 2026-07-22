@@ -6,7 +6,7 @@ from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
 from framework.validation.validation import validate_equals_with_retry
 from keywords.base_keyword import BaseKeyword
-from keywords.cloud_platform.command_wrappers import source_openrc
+from keywords.cloud_platform.command_wrappers import oidc_auth_wrap, source_openrc
 from keywords.cloud_platform.dcmanager.dcmanager_alarm_summary_keywords import DcManagerAlarmSummaryKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_show_keywords import DcManagerSubcloudShowKeywords
 from keywords.cloud_platform.dcmanager.objects.dcmanager_subcloud_list_object import DcManagerSubcloudListObject
@@ -19,14 +19,29 @@ class DcManagerSubcloudListKeywords(BaseKeyword):
     This class contains all the keywords related to the 'dcmanager subcloud list' commands.
     """
 
-    def __init__(self, ssh_connection: SSHConnection):
+    def __init__(self, ssh_connection: SSHConnection, use_oidc: bool = False):
         """Constructor
 
         Args:
             ssh_connection (SSHConnection): ssh object
+            use_oidc (bool): If True, use OIDC authentication instead of source_openrc.
 
         """
         self.ssh_connection = ssh_connection
+        self.use_oidc = use_oidc
+
+    def _wrap_command(self, cmd: str) -> str:
+        """Wrap a dcmanager command with the appropriate auth method.
+
+        Args:
+            cmd (str): Raw dcmanager command.
+
+        Returns:
+            str: Command wrapped with either source_openrc or OIDC auth.
+        """
+        if self.use_oidc:
+            return oidc_auth_wrap(cmd)
+        return source_openrc(cmd)
 
     def get_dcmanager_subcloud_list(self) -> DcManagerSubcloudListOutput:
         """Gets the 'dcmanager subcloud list' output.
@@ -38,7 +53,7 @@ class DcManagerSubcloudListKeywords(BaseKeyword):
             the output of the command 'dcmanager subcloud list'.
 
         """
-        output = self.ssh_connection.send(source_openrc("dcmanager subcloud list"))
+        output = self.ssh_connection.send(self._wrap_command("dcmanager subcloud list"))
         self.validate_success_return_code(self.ssh_connection)
         dcmanager_subcloud_list_output = DcManagerSubcloudListOutput(output)
 
@@ -54,7 +69,7 @@ class DcManagerSubcloudListKeywords(BaseKeyword):
             the output of the command 'dcmanager subcloud list --all'.
 
         """
-        output = self.ssh_connection.send(source_openrc("dcmanager subcloud list --all"))
+        output = self.ssh_connection.send(self._wrap_command("dcmanager subcloud list --all"))
         self.validate_success_return_code(self.ssh_connection)
         dcmanager_subcloud_list_output = DcManagerSubcloudListOutput(output)
 

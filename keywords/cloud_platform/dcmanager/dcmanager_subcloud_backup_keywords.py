@@ -4,7 +4,7 @@ from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
 from framework.validation.validation import validate_equals, validate_equals_with_retry
 from keywords.base_keyword import BaseKeyword
-from keywords.cloud_platform.command_wrappers import source_openrc
+from keywords.cloud_platform.command_wrappers import oidc_auth_wrap, source_openrc
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_show_keywords import DcManagerSubcloudShowKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.files.file_keywords import FileKeywords
@@ -15,14 +15,29 @@ class DcManagerSubcloudBackupKeywords(BaseKeyword):
     This class contains all the keywords related to the 'dcmanager subcloud-backup <create/delete>' command.
     """
 
-    def __init__(self, ssh_connection: SSHConnection):
+    def __init__(self, ssh_connection: SSHConnection, use_oidc: bool = False):
         """
         Constructor.
 
         Args:
             ssh_connection (SSHConnection): SSH connection to the target system.
+            use_oidc (bool): If True, use OIDC authentication instead of source_openrc.
         """
         self.ssh_connection = ssh_connection
+        self.use_oidc = use_oidc
+
+    def _wrap_command(self, cmd: str) -> str:
+        """Wrap a dcmanager command with the appropriate auth method.
+
+        Args:
+            cmd (str): Raw dcmanager command.
+
+        Returns:
+            str: Command wrapped with either source_openrc or OIDC auth.
+        """
+        if self.use_oidc:
+            return oidc_auth_wrap(cmd)
+        return source_openrc(cmd)
 
     def get_backup_path(self, subcloud_name: str, release: str, local_only: bool = False) -> str:
         """
@@ -86,7 +101,7 @@ class DcManagerSubcloudBackupKeywords(BaseKeyword):
         if registry:
             cmd += " --registry-images"
 
-        self.ssh_connection.send(source_openrc(cmd))
+        self.ssh_connection.send(self._wrap_command(cmd))
         if expect_cmd_rejection:
             rejected = self.validate_cmd_rejection_return_code(self.ssh_connection)
             validate_equals(rejected, True, "Validate backup command was rejected.")
@@ -183,7 +198,7 @@ class DcManagerSubcloudBackupKeywords(BaseKeyword):
         if registry:
             cmd += " --registry-images"
 
-        self.ssh_connection.send(source_openrc(cmd))
+        self.ssh_connection.send(self._wrap_command(cmd))
         self.validate_success_return_code(self.ssh_connection)
 
         if group:
@@ -278,7 +293,7 @@ class DcManagerSubcloudBackupKeywords(BaseKeyword):
         if sysadmin_password:
             cmd += f" --sysadmin-password {sysadmin_password}"
 
-        self.ssh_connection.send(source_openrc(cmd))
+        self.ssh_connection.send(self._wrap_command(cmd))
         rejected = self.validate_cmd_rejection_return_code(self.ssh_connection)
         validate_equals(rejected, True, "Validate backup command was rejected.")
 
@@ -320,7 +335,7 @@ class DcManagerSubcloudBackupKeywords(BaseKeyword):
         if sysadmin_password:
             cmd += f" --sysadmin-password {sysadmin_password}"
 
-        self.ssh_connection.send(source_openrc(cmd))
+        self.ssh_connection.send(self._wrap_command(cmd))
         self.validate_success_return_code(self.ssh_connection)
 
         if group:
@@ -461,7 +476,7 @@ class DcManagerSubcloudBackupKeywords(BaseKeyword):
         if auto_restore:
             cmd += " --auto"
 
-        self.ssh_connection.send(source_openrc(cmd))
+        self.ssh_connection.send(self._wrap_command(cmd))
         self.validate_success_return_code(self.ssh_connection)
 
         if group:
