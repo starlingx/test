@@ -1,5 +1,3 @@
-import time
-
 from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
 from framework.validation.validation import validate_equals_with_retry
@@ -129,10 +127,19 @@ class SwManagerKubeUpgradeStrategyKeywords(BaseKeyword):
         output = self.ssh_connection.send(command)
         rc = self.ssh_connection.get_return_code()
 
-        # Allow connection refused and internal server errors during upgrade (service temporarily unavailable)
+        # During host lock/unlock/reboot/swact (e.g. the kubelet stage) the SSH
+        # session to the active controller can drop and reconnect. In that window
+        # send() may return None or non-list output. Treat that as a transient
+        # unavailability and signal the caller to retry, rather than letting the
+        # parser crash with "can only join an iterable".
+        if not isinstance(output, list):
+            raise ConnectionRefusedError("sw-manager show returned no usable output (host lock/unlock/swact in progress)")
+
+        # Allow connection refused, internal server errors, and empty responses during
+        # upgrade (sw-manager service temporarily unavailable while hosts cycle).
         if rc != 0:
             error_output = "\n".join(output)
-            if "Connection refused" in error_output or "500 Server Error: Internal Server Error" in error_output:
+            if "Connection refused" in error_output or "500 Server Error: Internal Server Error" in error_output or "Unable to establish connection" in error_output or error_output.strip() == "":
                 raise ConnectionRefusedError("sw-manager service temporarily unavailable")
 
         return SwManagerKubeUpgradeStrategyShowOutput(output)
@@ -249,8 +256,11 @@ class SwManagerKubeUpgradeStrategyKeywords(BaseKeyword):
         """Wait for strategy to be applied.
 
         This method monitors the Kubernetes upgrade strategy until it completes.
-        The method handles temporary service unavailability (up to 3 minutes) which
-        can occur during certain upgrade operations like control plane upgrades.
+        It tolerates transient unavailability of the sw-manager API and of the SSH
+        session to the active controller, which happens while hosts are
+        locked/unlocked/rebooted/swacted during the strategy (notably the kubelet
+        stage). Such transient errors are retried; the overall ``timeout`` bounds
+        the total wait. Only real terminal failure states abort the wait.
 
         Args:
             timeout (int): Maximum time to wait in seconds.
@@ -259,39 +269,27 @@ class SwManagerKubeUpgradeStrategyKeywords(BaseKeyword):
             SwManagerKubeUpgradeStrategyObject: Strategy object when applied.
 
         Raises:
-            Exception: If strategy enters Apply-failed or Aborted state, or if
-                      sw-manager service is unavailable for more than 3 minutes.
+            Exception: If strategy enters Apply-failed, Aborted, or Abort-failed state,
+                      or if the strategy does not reach 'applied' within ``timeout``.
         """
-        unavailable_start = None
 
         def check_applied() -> bool:
-            nonlocal unavailable_start
-
             try:
                 # Attempt to get current strategy status
                 strategy_output = self.show_kube_upgrade_strategy()
                 strategy_obj = strategy_output.get_swmanager_kube_upgrade_strategy_show()
-
-                # Service is available - reset unavailability timer if it was set
-                unavailable_start = None
 
                 # Check strategy state and log progress or raise exceptions for failures
                 self._check_strategy_state(strategy_obj)
                 # Return True if strategy is applied, False otherwise to continue polling
                 return strategy_obj.is_applied()
             except ConnectionRefusedError:
-                # Service temporarily unavailable - track elapsed time
-                if unavailable_start is None:
-                    # First time seeing unavailability - start timer
-                    unavailable_start = time.time()
-                    get_logger().log_debug("sw-manager service temporarily unavailable, will retry")
-                elif time.time() - unavailable_start > 180:
-                    # Fail if service has been unavailable for more than 3 minutes
-                    raise Exception("sw-manager service unavailable for more than 3 minutes")
-                else:
-                    # Service still unavailable - log elapsed time
-                    get_logger().log_debug(f"sw-manager service still unavailable ({int(time.time() - unavailable_start)}s elapsed, max 180s)")
-                # Return False to retry after polling interval
+                # sw-manager API or the SSH session to the active controller is
+                # temporarily unavailable while a host is locked/unlocked/rebooted/
+                # swacted during the strategy. Keep polling; the outer 'timeout'
+                # bounds the total wait so a lengthy reboot/swact no longer causes a
+                # spurious failure.
+                get_logger().log_info("sw-manager service/SSH temporarily unavailable during host lock/unlock/swact, retrying")
                 return False
 
         # Poll check_applied() every 30 seconds until it returns True or timeout
