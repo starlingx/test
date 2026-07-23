@@ -1,5 +1,6 @@
 from typing import Iterable, List, Optional, Tuple
 
+from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from config.configuration_manager import ConfigurationManager
 from config.lab.objects.lab_type_enum import LabTypeEnum
 from framework.exceptions.keyword_exception import KeywordException
@@ -14,6 +15,7 @@ from keywords.cloud_platform.dcmanager.objects.dcmanager_subcloud_show_object im
 from keywords.cloud_platform.dcmanager.objects.dcmanger_subcloud_list_availability_enum import DcManagerSubcloudListAvailabilityEnum
 from keywords.cloud_platform.dcmanager.objects.dcmanger_subcloud_list_management_enum import DcManagerSubcloudListManagementEnum
 from keywords.cloud_platform.dcmanager.objects.subcloud_pick_result import SubcloudPickResult
+from keywords.cloud_platform.upgrade.software_list_keywords import SoftwareListKeywords
 from keywords.cloud_platform.version_info.cloud_platform_version_manager import CloudPlatformVersionManagerClass
 
 
@@ -56,6 +58,7 @@ class SubcloudPickerKeywords(BaseKeyword):
         load: Optional[str] = None,
         lab_type: Optional[LabTypeEnum] = None,
         present_in_config: bool = True,
+        multiple_releases: str = None,
     ) -> SubcloudPickResult:
         """Return the lowest-id subcloud satisfying every supplied filter.
 
@@ -80,6 +83,10 @@ class SubcloudPickerKeywords(BaseKeyword):
                 config matches are accepted. Requires ``present_in_config=True``.
             present_in_config (bool): When True (default), the subcloud must
                 also appear in ``LabConfig.get_subcloud_names()``.
+            multiple_releases (Optional[str]): Software release state (e.g.
+                ``"available"``, ``"deployed"``). When provided, ``software
+                list`` is run on each surviving candidate subcloud and only
+                subclouds with at least one release in this state are kept.
 
         Returns:
             SubcloudPickResult: The selected subcloud.
@@ -95,6 +102,7 @@ class SubcloudPickerKeywords(BaseKeyword):
             load=load,
             lab_type=lab_type,
             present_in_config=present_in_config,
+            multiple_releases=multiple_releases,
         )
         return results[0]
 
@@ -107,6 +115,7 @@ class SubcloudPickerKeywords(BaseKeyword):
         load: Optional[str] = None,
         lab_type: Optional[LabTypeEnum] = None,
         present_in_config: bool = True,
+        multiple_releases: str = None,
     ) -> List[SubcloudPickResult]:
         """Return all subclouds satisfying every supplied filter, ordered by id.
 
@@ -117,6 +126,7 @@ class SubcloudPickerKeywords(BaseKeyword):
             load: see ``pick_one``.
             lab_type: see ``pick_one``.
             present_in_config: see ``pick_one``.
+            multiple_releases: see ``pick_one``.
 
         Returns:
             List[SubcloudPickResult]: Selected subclouds, sorted by numeric
@@ -133,6 +143,7 @@ class SubcloudPickerKeywords(BaseKeyword):
                 load=load,
                 lab_type=lab_type,
                 present_in_config=present_in_config,
+                multiple_releases=multiple_releases,
             )
         )
 
@@ -145,6 +156,7 @@ class SubcloudPickerKeywords(BaseKeyword):
         load: Optional[str],
         lab_type: Optional[LabTypeEnum],
         present_in_config: bool,
+        multiple_releases: str = None,
     ) -> List[SubcloudPickResult]:
         """Run the full filter pipeline. See ``pick_one``/``pick_all``."""
         self.validate_argument(
@@ -154,6 +166,7 @@ class SubcloudPickerKeywords(BaseKeyword):
             load=load,
             lab_type=lab_type,
             present_in_config=present_in_config,
+            multiple_releases=multiple_releases,
         )
         load_resolved = self._resolve_load(load)
         if in_sync is True:
@@ -170,6 +183,7 @@ class SubcloudPickerKeywords(BaseKeyword):
             "load": self._format_load_for_log(load, load_resolved),
             "lab_type": lab_type.value if lab_type is not None else None,
             "present_in_config": present_in_config,
+            "multiple_releases": multiple_releases,
         }
         get_logger().log_info(f"SubcloudPickerKeywords: applied filters: {filter_set}")
 
@@ -199,6 +213,13 @@ class SubcloudPickerKeywords(BaseKeyword):
             )
             rejections.extend(show_rejections)
 
+        if multiple_releases is not None:
+            survivors, release_rejections = self._apply_multiple_releases_filter(
+                survivors=survivors,
+                state=multiple_releases,
+            )
+            rejections.extend(release_rejections)
+
         if not survivors:
             raise KeywordException(self._format_rejection_report(filter_set, rejections))
 
@@ -214,6 +235,7 @@ class SubcloudPickerKeywords(BaseKeyword):
         load: Optional[str],
         lab_type: Optional[LabTypeEnum],
         present_in_config: bool,
+        multiple_releases: Optional[str] = None,
     ) -> None:
         """Reject invalid parameter types before any SSH activity occurs."""
         if management_status is not None and not isinstance(management_status, DcManagerSubcloudListManagementEnum):
@@ -254,6 +276,15 @@ class SubcloudPickerKeywords(BaseKeyword):
         if isinstance(load, str) and load == "":
             raise KeywordException(
                 "SubcloudPickerKeywords: invalid parameter 'load': must be None, 'N-1' or a non-empty explicit version."
+            )
+        if multiple_releases is not None and not isinstance(multiple_releases, str):
+            raise KeywordException(
+                "SubcloudPickerKeywords: invalid parameter 'multiple_releases': "
+                f"expected None or str, received {type(multiple_releases).__name__} ({multiple_releases!r})."
+            )
+        if isinstance(multiple_releases, str) and multiple_releases == "":
+            raise KeywordException(
+                "SubcloudPickerKeywords: invalid parameter 'multiple_releases': must be None or a non-empty software release state."
             )
 
     def _resolve_load(self, load: Optional[str]) -> Optional[str]:
@@ -388,6 +419,36 @@ class SubcloudPickerKeywords(BaseKeyword):
             new_survivors.append((list_obj, show_obj))
         return new_survivors, rejections
 
+    def _apply_multiple_releases_filter(
+        self,
+        *,
+        survivors: List[Tuple[DcManagerSubcloudListObject, Optional[DcManagerSubcloudShowObject]]],
+        state: str,
+    ) -> Tuple[List[Tuple[DcManagerSubcloudListObject, Optional[DcManagerSubcloudShowObject]]], List[Tuple[str, str]]]:
+        """Keep only subclouds that have at least one release in ``state``.
+
+        Runs ``software list`` directly on each surviving candidate subcloud
+        (via SSH) and checks whether any release is reported in the given
+        state (e.g. ``"available"``, ``"deployed"``).
+        """
+        new_survivors: List[Tuple[DcManagerSubcloudListObject, Optional[DcManagerSubcloudShowObject]]] = []
+        rejections: List[Tuple[str, str]] = []
+
+        for list_obj, show_obj in survivors:
+            name = list_obj.get_name()
+            subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(name)
+            releases_in_state = SoftwareListKeywords(subcloud_ssh).get_software_list().get_product_version_with_patch_by_state(state)
+            if not releases_in_state:
+                rejections.append(
+                    (
+                        name,
+                        f"no software release found in state={state}",
+                    )
+                )
+                continue
+            new_survivors.append((list_obj, show_obj))
+        return new_survivors, rejections
+
     @staticmethod
     def _build_result(
         list_obj: DcManagerSubcloudListObject,
@@ -516,6 +577,7 @@ def pick_subcloud_with_fallback(
     load: Optional[str] = None,
     lab_type: Optional[LabTypeEnum] = None,
     present_in_config: bool = True,
+    multiple_releases: str = None,
 ) -> Tuple[SSHConnection, "SubcloudPickResult"]:
     """Pick a subcloud with automatic fallback to secondary system controller.
 
@@ -534,6 +596,7 @@ def pick_subcloud_with_fallback(
         load (Optional[str]): Software version filter. "N", "N-1", or explicit version.
         lab_type (Optional[LabTypeEnum]): Lab type filter (SIMPLEX, DUPLEX).
         present_in_config (bool): Whether subcloud must be in lab config.
+        multiple_releases (str): If defined, it will search for an another release available.
 
     Returns:
         Tuple[SSHConnection, SubcloudPickResult]: The SSH connection to the system
@@ -542,7 +605,6 @@ def pick_subcloud_with_fallback(
     Raises:
         KeywordException: If no subcloud matches on either system controller.
     """
-    from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 
     system_controller_ssh = LabConnectionKeywords().get_active_controller_ssh()
 
@@ -554,6 +616,7 @@ def pick_subcloud_with_fallback(
             load=load,
             lab_type=lab_type,
             present_in_config=present_in_config,
+            multiple_releases=multiple_releases
         )
         return system_controller_ssh, result
     except KeywordException:
@@ -569,5 +632,6 @@ def pick_subcloud_with_fallback(
             load=load,
             lab_type=lab_type,
             present_in_config=present_in_config,
+            multiple_releases=multiple_releases,
         )
         return system_controller_ssh, result
