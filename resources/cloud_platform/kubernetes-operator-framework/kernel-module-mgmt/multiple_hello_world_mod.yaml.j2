@@ -9,12 +9,12 @@ spec:
       modprobe:
         moduleName: hello_world_dmesg
       kernelMappings:
-        - literal: "6.12.0-1-amd64"
+        - literal: "{{ kernel_version }}-amd64"
           containerImage: {{ image_directory }}/kmm/kmm-hello-world:amd64-hw
           build:
             buildArgs:
               - name: KERNEL_FULL_VERSION
-                value: "6.12.0-1-amd64"
+                value: "{{ kernel_version }}-amd64"
             baseImageRegistryTLS:
               insecure: false
               insecureSkipTLSVerify: true
@@ -24,12 +24,12 @@ spec:
             insecure: false
             insecureSkipTLSVerify: true
  
-        - literal: "6.12.0-1-rt-amd64"
+        - literal: "{{ kernel_version }}-rt-amd64"
           containerImage: {{ image_directory }}/kmm/kmm-hello-world:rt-amd64-hw
           build:
             buildArgs:
               - name: KERNEL_FULL_VERSION
-                value: "6.12.0-1-rt-amd64"
+                value: "{{ kernel_version }}-rt-amd64"
             baseImageRegistryTLS:
               insecure: false
               insecureSkipTLSVerify: true
@@ -62,12 +62,12 @@ spec:
       modprobe:
         moduleName: hello_world_dmesg
       kernelMappings:
-        - literal: "6.12.0-1-amd64"
+        - literal: "{{ kernel_version }}-amd64"
           containerImage: {{ image_directory }}/kmm/kmm-hello-world:amd64-hw
           build:
             buildArgs:
               - name: KERNEL_FULL_VERSION
-                value: "6.12.0-1-amd64"
+                value: "{{ kernel_version }}-amd64"
             baseImageRegistryTLS:
               insecure: false
               insecureSkipTLSVerify: true
@@ -77,12 +77,12 @@ spec:
             insecure: false
             insecureSkipTLSVerify: true
  
-        - literal: "6.12.0-1-rt-amd64"
+        - literal: "{{ kernel_version }}-rt-amd64"
           containerImage: {{ image_directory }}/kmm/kmm-hello-world:rt-amd64-hw
           build:
             buildArgs:
               - name: KERNEL_FULL_VERSION
-                value: "6.12.0-1-rt-amd64"
+                value: "{{ kernel_version }}-rt-amd64"
             baseImageRegistryTLS:
               insecure: false
               insecureSkipTLSVerify: true

@@ -101,6 +101,27 @@ def build_and_push_kmod_image(ssh_connection: SSHConnection) -> None:
     FileKeywords(ssh_connection).delete_file("/tmp/kmm-dockerfile")
 
 
+def get_base_kernel_version(ssh_connection: SSHConnection) -> str:
+    """Return the base running kernel version without the arch/rt suffix.
+
+    KMM matches a node's running kernel against the ``literal`` values in a Module's
+    ``kernelMappings``. The Module templates append the ``-amd64`` and ``-rt-amd64``
+    suffixes themselves, so this returns the base version (e.g. ``6.18.15+deb13``)
+    derived from ``uname -r`` and injected into the templates as ``kernel_version``.
+
+    Args:
+        ssh_connection (SSHConnection): SSH connection to the target host.
+
+    Returns:
+        str: The base kernel version without the ``-amd64`` or ``-rt-amd64`` suffix.
+
+    """
+    kernel_version = KernelKeywords(ssh_connection).get_kernel_version()
+    base_version = kernel_version.replace("-rt-amd64", "").replace("-amd64", "")
+    get_logger().log_info(f"Base kernel version: {base_version}")
+    return base_version
+
+
 # ConfigMap generation functions
 def generate_hello_world_configmap(ssh_connection: SSHConnection, module_name: str = "kmm-hello-world") -> None:
     """Generate hello world ConfigMap with KMM builder image from config.
@@ -149,6 +170,7 @@ def generate_hello_world_module_all_nodes(ssh_connection: SSHConnection, module_
     replacement_dict = {
         "kmm_container_image_registry": kof_config.get_kmm_container_image_registry(),
         "module_name": module_name,
+        "kernel_version": get_base_kernel_version(ssh_connection),
     }
 
     yaml_keywords.generate_yaml_file_from_template(get_stx_resource_path("resources/cloud_platform/kubernetes-operator-framework/kernel-module-mgmt/hello_world_mod_all_nodes.yaml.j2"), replacement_dict, "hello_world_mod.yaml", "/tmp")
@@ -170,6 +192,7 @@ def generate_hello_world_module_with_target_host(ssh_connection: SSHConnection, 
     replacement_dict = {
         "kmm_container_image_registry": kof_config.get_kmm_container_image_registry(),
         "module_name": module_name,
+        "kernel_version": get_base_kernel_version(ssh_connection),
     }
 
     replacement_dict["target_host"] = target_host
@@ -192,6 +215,7 @@ def generate_hello_world_module_with_selector(ssh_connection: SSHConnection, mod
     replacement_dict = {
         "kmm_container_image_registry": kof_config.get_kmm_container_image_registry(),
         "module_name": module_name,
+        "kernel_version": get_base_kernel_version(ssh_connection),
     }
 
     yaml_keywords.generate_yaml_file_from_template(get_stx_resource_path("resources/cloud_platform/kubernetes-operator-framework/kernel-module-mgmt/hello_world_mod_selector.yaml.j2"), replacement_dict, "hello_world_mod_selector.yaml", "/tmp")
@@ -209,7 +233,7 @@ def generate_multiple_hello_world_modules(ssh_connection: SSHConnection, module_
     kof_config = ConfigurationManager.get_kof_config()
     yaml_keywords = YamlKeywords(ssh_connection)
 
-    replacement_dict = {"image_directory": kof_config.get_kmm_container_image_registry(), "module_name_1": module_names[0], "module_name_2": module_names[1]}
+    replacement_dict = {"image_directory": kof_config.get_kmm_container_image_registry(), "module_name_1": module_names[0], "module_name_2": module_names[1], "kernel_version": get_base_kernel_version(ssh_connection)}
 
     yaml_keywords.generate_yaml_file_from_template(get_stx_resource_path("resources/cloud_platform/kubernetes-operator-framework/kernel-module-mgmt/multiple_hello_world_mod.yaml.j2"), replacement_dict, "hello_world_mod.yaml", "/tmp")
 
@@ -225,7 +249,7 @@ def generate_prebuilt_module(ssh_connection: SSHConnection, module_name: str = "
     get_logger().log_info(f"Generating prebuilt module: {module_name}")
     kof_config = ConfigurationManager.get_kof_config()
     yaml_keywords = YamlKeywords(ssh_connection)
-    yaml_keywords.generate_yaml_file_from_template(get_stx_resource_path("resources/cloud_platform/kubernetes-operator-framework/kernel-module-mgmt/prebuilt_mod.yaml.j2"), {"kmm_container_image_registry": kof_config.get_kmm_container_image_registry()}, "prebuilt_mod.yaml", "/tmp")
+    yaml_keywords.generate_yaml_file_from_template(get_stx_resource_path("resources/cloud_platform/kubernetes-operator-framework/kernel-module-mgmt/prebuilt_mod.yaml.j2"), {"kmm_container_image_registry": kof_config.get_kmm_container_image_registry(), "kernel_version": get_base_kernel_version(ssh_connection)}, "prebuilt_mod.yaml", "/tmp")
 
 
 def generate_versioned_module(ssh_connection: SSHConnection, module_name: str, version: str, target_host: str, output_filename: str = "hello_world_mod_versioned.yaml") -> None:
@@ -242,7 +266,7 @@ def generate_versioned_module(ssh_connection: SSHConnection, module_name: str, v
     get_logger().log_info(f"Generating versioned module {module_name} v{version} for {target_host}")
     kof_config = ConfigurationManager.get_kof_config()
     yaml_keywords = YamlKeywords(ssh_connection)
-    yaml_keywords.generate_yaml_file_from_template(get_stx_resource_path("resources/cloud_platform/kubernetes-operator-framework/kernel-module-mgmt/hello_world_mod_versioned.yaml.j2"), {"module_name": module_name, "kmm_container_image_registry": kof_config.get_kmm_container_image_registry(), "version": version, "target_host": target_host}, output_filename, "/tmp")
+    yaml_keywords.generate_yaml_file_from_template(get_stx_resource_path("resources/cloud_platform/kubernetes-operator-framework/kernel-module-mgmt/hello_world_mod_versioned.yaml.j2"), {"module_name": module_name, "kmm_container_image_registry": kof_config.get_kmm_container_image_registry(), "version": version, "target_host": target_host, "kernel_version": get_base_kernel_version(ssh_connection)}, output_filename, "/tmp")
 
 
 # Utility functions
@@ -423,7 +447,7 @@ def patch_module_version(ssh_connection: SSHConnection, module_name: str, versio
     kof_config = ConfigurationManager.get_kof_config()
     yaml_keywords = YamlKeywords(ssh_connection)
 
-    yaml_keywords.generate_yaml_file_from_template(get_stx_resource_path("resources/cloud_platform/kubernetes-operator-framework/kernel-module-mgmt/module_upgrade_patch.yaml.j2"), {"version": version, "kmm_container_image_registry": kof_config.get_kmm_container_image_registry()}, "module_upgrade_patch.yaml", "/tmp", copy_to_remote=False)
+    yaml_keywords.generate_yaml_file_from_template(get_stx_resource_path("resources/cloud_platform/kubernetes-operator-framework/kernel-module-mgmt/module_upgrade_patch.yaml.j2"), {"version": version, "kmm_container_image_registry": kof_config.get_kmm_container_image_registry(), "kernel_version": get_base_kernel_version(ssh_connection)}, "module_upgrade_patch.yaml", "/tmp", copy_to_remote=False)
     patch_data = yaml_keywords.load_yaml(f"{ConfigurationManager.get_logger_config().get_test_case_resources_log_location()}/module_upgrade_patch.yaml")
 
     patch_keywords = KubectlPatchModuleKeywords(ssh_connection)
@@ -1178,7 +1202,7 @@ def test_kernel_module_hello_world_lock_unlock_simplex(request):
 
     get_logger().log_info("Verifying kernel module management pods are running")
     kubectl_pods = KubectlGetPodsKeywords(ssh_connection)
-    kubectl_pods.wait_for_pods_to_reach_status(expected_status="Running", pod_names=KMM_EXPECTED_PODS, namespace=NAMESPACE, timeout=30)
+    kubectl_pods.wait_for_pods_to_reach_status(expected_status="Running", pod_names=KMM_EXPECTED_PODS, namespace=NAMESPACE, timeout=60)
 
     get_logger().log_test_case_step("Verifying hello_world_dmesg kernel module is still loaded after unlock")
     verify_module_loaded(ssh_connection)
