@@ -29,6 +29,7 @@ class ConfigurationFileLocationsManager:
         self.kof_config_file = None
         self.backup_restore_config_file = None
         self.kubernetes_upgrade_config_file = None
+        self.cyclictest_config_file = None
 
     def set_configs_from_pytest_args(self, session: Session):
         """
@@ -109,6 +110,10 @@ class ConfigurationFileLocationsManager:
         kubernetes_upgrade_config_file = session.config.getoption("--kubernetes_upgrade_config_file")
         if kubernetes_upgrade_config_file:
             self.set_kubernetes_upgrade_config_file(kubernetes_upgrade_config_file)
+
+        cyclictest_config_file = session.config.getoption("--cyclictest_config_file")
+        if cyclictest_config_file:
+            self.set_cyclictest_config_file(cyclictest_config_file)
 
     def set_configs_from_options_parser(self, parser: OptionParser = None):
         """
@@ -198,6 +203,10 @@ class ConfigurationFileLocationsManager:
         if kubernetes_upgrade_config_file:
             self.set_kubernetes_upgrade_config_file(kubernetes_upgrade_config_file)
 
+        cyclictest_config_file = options.cyclictest_config_file
+        if cyclictest_config_file:
+            self.set_cyclictest_config_file(cyclictest_config_file)
+
     @staticmethod
     def add_options(safe_parser: SafeOptionParser):
         """
@@ -225,6 +234,7 @@ class ConfigurationFileLocationsManager:
         safe_parser.add_option("--kof_config_file", action="store", dest="kof_config_file", help="The KOF (Kubernetes Operator Framework) config file")
         safe_parser.add_option("--backup_restore_config_file", action="store", dest="backup_restore_config_file", help="The backup and restore config file")
         safe_parser.add_option("--kubernetes_upgrade_config_file", action="store", dest="kubernetes_upgrade_config_file", help="The Kubernetes upgrade config file")
+        safe_parser.add_option("--cyclictest_config_file", action="store", dest="cyclictest_config_file", help="The cyclictest config file")
 
     def set_lab_config_file(self, lab_config_file: str):
         """
@@ -588,3 +598,22 @@ class ConfigurationFileLocationsManager:
             str: the kubernetes upgrade config file
         """
         return self.kubernetes_upgrade_config_file
+
+    def set_cyclictest_config_file(self, cyclictest_config_file: str):
+        """
+        Setter for cyclictest config file
+
+        Args:
+            cyclictest_config_file (str): the cyclictest config file
+
+        """
+        self.cyclictest_config_file = cyclictest_config_file
+
+    def get_cyclictest_config_file(self) -> str:
+        """
+        Getter for cyclictest config file
+
+        Returns:
+            str: the cyclictest config file
+        """
+        return self.cyclictest_config_file

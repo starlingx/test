@@ -1,7 +1,9 @@
 import math
 import os
 import shlex
+import shutil
 import time
+from typing import Optional
 
 from jinja2 import Template
 
@@ -621,3 +623,36 @@ class FileKeywords(BaseKeyword):
             self.upload_file(local_path, remote_path)
             remote_paths.append(remote_path)
         return remote_paths
+
+    def compress_and_remove_directory(self, local_dir: str) -> Optional[str]:
+        """Archive a local directory to a ``.tar.gz`` and remove the original.
+
+        Creates a gzip-compressed tar archive of *local_dir* using
+        ``shutil.make_archive``, logs the output path, then removes the
+        original directory with ``shutil.rmtree``.  If *local_dir* does not
+        exist the method logs a warning and returns ``None`` — this makes it
+        safe to call idempotently from both setup (compress stale results)
+        and teardown (compress current run).
+
+        Args:
+            local_dir (str): Absolute path to the local directory to compress,
+                e.g. ``/var/log/automation/<run-id>/<test>/system_logs``.
+
+        Returns:
+            Optional[str]: Absolute path to the created ``.tar.gz`` file, or
+                ``None`` if *local_dir* did not exist.
+        """
+        if not os.path.isdir(local_dir):
+            get_logger().log_info(f"compress_and_remove_directory: '{local_dir}' does not exist — nothing to compress")
+            return None
+
+        base_dir = os.path.dirname(local_dir)
+        archive_name = os.path.basename(local_dir)
+        archive_base = os.path.join(base_dir, archive_name)
+
+        get_logger().log_info(f"Compressing '{local_dir}/' → '{archive_base}.tar.gz'")
+        archive_path = shutil.make_archive(archive_base, "gztar", root_dir=base_dir, base_dir=archive_name)
+        get_logger().log_info(f"Compressed archive: {archive_path}")
+        shutil.rmtree(local_dir)
+        get_logger().log_info(f"Removed source directory: {local_dir}")
+        return archive_path

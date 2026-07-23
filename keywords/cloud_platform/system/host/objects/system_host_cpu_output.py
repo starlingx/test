@@ -245,11 +245,7 @@ class SystemHostCPUOutput:
             cpu = self.get_system_host_cpu_from_log_core(cpu_id)
 
             # Find all logical CPUs that share the same physical core (siblings)
-            siblings = {
-                c.get_log_core()
-                for c in self.get_system_host_cpu_objects(processor_id=cpu.get_processor())
-                if c.get_phy_core() == cpu.get_phy_core()
-            }
+            siblings = {c.get_log_core() for c in self.get_system_host_cpu_objects(processor_id=cpu.get_processor()) if c.get_phy_core() == cpu.get_phy_core()}
 
             # If more than one sibling is in the cpuset, this CPU is paired
             if len(cpuset.intersection(siblings)) > 1:
@@ -290,11 +286,7 @@ class SystemHostCPUOutput:
             cpu = self.get_system_host_cpu_from_log_core(cpu_id)
 
             # Find all logical CPUs that share the same physical core (siblings)
-            siblings = {
-                c.get_log_core()
-                for c in self.get_system_host_cpu_objects(processor_id=cpu.get_processor())
-                if c.get_phy_core() == cpu.get_phy_core()
-            }
+            siblings = {c.get_log_core() for c in self.get_system_host_cpu_objects(processor_id=cpu.get_processor()) if c.get_phy_core() == cpu.get_phy_core()}
 
             # If only one sibling is in the cpuset, this CPU is a singleton
             if len(cpuset.intersection(siblings)) == 1:
@@ -314,3 +306,96 @@ class SystemHostCPUOutput:
                  the given function name.
         """
         return sum(1 for item in self.system_host_cpus if item.assigned_function.lower() == assigned_function.lower())
+
+    def get_thread_count(self) -> int:
+        """Return the number of distinct thread IDs across all CPUs.
+
+        On a hyperthreaded host each physical core exposes two logical threads
+        (thread 0 and thread 1). This count is therefore 1 on a non-HT host
+        and 2 on a hyperthreaded host.
+
+        Returns:
+            int: Number of distinct thread IDs.
+        """
+        return len({c.get_thread() for c in self.system_host_cpus})
+
+    def get_cpu_ids_as_range_string(self, assigned_function: str = None, processor_id: int = -1) -> str:
+        """Get logical CPU IDs for a given function as a compact range string.
+
+        Combines :meth:`get_system_host_cpu_objects` filtering with
+        :meth:`normalize_cpu_list` formatting so callers can obtain a
+        CPU affinity string in a single call.
+
+        Args:
+            assigned_function (str): Filter by assigned function
+                (e.g. ``'Application-isolated'``). ``None`` returns all CPUs.
+            processor_id (int): Filter by processor/NUMA node. ``-1`` returns
+                CPUs from all processors.
+
+        Returns:
+            str: Compact range string, e.g. ``'2-5,8,10-12'``.
+        """
+        cpus = [c.get_log_core() for c in self.get_system_host_cpu_objects(processor_id=processor_id, assigned_function=assigned_function)]
+        return self.normalize_cpu_list(cpus)
+
+    @staticmethod
+    def normalize_cpu_list(cpus: list) -> str:
+        """Convert a list of CPU IDs to a compact range string.
+
+        Consecutive IDs are collapsed into ``lo-hi`` ranges only when the
+        span is 3 or more (e.g. ``[2,3,4]`` → ``'2-4'``); shorter spans are
+        left as comma-separated values (e.g. ``[2,3]`` → ``'2,3'``).
+
+        Args:
+            cpus (list): List of integer CPU IDs.  Duplicates are removed and
+                the list is sorted before processing.
+
+        Returns:
+            str: Compact range string, e.g. ``'0,2-5,8,10-12'``, or ``''``
+                if *cpus* is empty.
+        """
+        if not cpus:
+            return ""
+        if len(cpus) < 3:
+            return ",".join(str(c) for c in sorted(set(cpus)))
+        unique = sorted(set(cpus))
+        ranges = []
+        beg = prv = unique[0]
+        for c in unique[1:]:
+            if c > prv + 1:
+                ranges.append((beg, prv))
+                beg = c
+            prv = c
+        ranges.append((beg, unique[-1]))
+        parts = []
+        for lo, hi in ranges:
+            if hi < lo + 3:
+                parts.append(",".join(str(n) for n in range(lo, hi + 1)))
+            else:
+                parts.append(f"{lo}-{hi}")
+        return ",".join(parts)
+
+    @staticmethod
+    def calculate_range_length(cores_range: str) -> int:
+        """Count the number of CPUs described by a range string.
+
+        Parses a string like ``'2-15,16-20,25'`` and returns the total
+        number of CPU IDs it represents (``14 + 5 + 1 = 20`` in this
+        example).
+
+        Args:
+            cores_range (str): CPU range string using commas and hyphens,
+                e.g. ``'0-3,5,8-11'``.
+
+        Returns:
+            int: Total number of CPU IDs represented by the range string.
+        """
+        total = 0
+        for part in cores_range.split(","):
+            part = part.strip()
+            if "-" in part:
+                lo, hi = part.split("-", 1)
+                total += int(hi) - int(lo) + 1
+            else:
+                total += 1
+        return total
