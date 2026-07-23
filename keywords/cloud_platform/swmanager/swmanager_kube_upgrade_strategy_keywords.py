@@ -67,7 +67,7 @@ class SwManagerKubeUpgradeStrategyKeywords(BaseKeyword):
         # Wait for strategy to be built
         return self.wait_for_ready_to_apply(180)
 
-    def apply_kube_upgrade_strategy(self, timeout: int = 7200) -> SwManagerKubeUpgradeStrategyObject:
+    def apply_kube_upgrade_strategy(self, timeout: int = 9600) -> SwManagerKubeUpgradeStrategyObject:
         """Apply the Kubernetes upgrade strategy.
 
         Args:
