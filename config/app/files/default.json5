@@ -24,5 +24,7 @@
   //  sriov_fec_operator_app_name: "",
   //  rook_ceph_app_name: "",
   //  ptp_notification_app_name: "",
+  //  nginx_ingress_controller_name: "",
+  //  cert_manager_name: "",
 
 }

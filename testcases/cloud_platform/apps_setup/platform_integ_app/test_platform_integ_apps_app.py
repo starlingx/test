@@ -12,10 +12,14 @@ from keywords.cloud_platform.system.application.system_application_list_keywords
 from keywords.cloud_platform.system.application.system_application_remove_keywords import SystemApplicationRemoveKeywords
 from keywords.cloud_platform.system.application.system_application_show_keywords import SystemApplicationShowKeywords
 from keywords.cloud_platform.system.application.system_application_upload_keywords import SystemApplicationUploadKeywords
+from keywords.cloud_platform.version_info.cloud_platform_version_manager import CloudPlatformVersionManagerClass
+
+
 
 
 @mark.p2
-def test_pre_upgrade_check_platform_integ_apps_app():
+@mark.lab_has_ceph
+def test_pre_upgrade_check_platform_integ_apps():
     """
     Check ceph health and ensure the platform-integ-apps application is applied.
 
@@ -25,6 +29,7 @@ def test_pre_upgrade_check_platform_integ_apps_app():
         - Upload and apply platform-integ-apps if not present
         - Apply platform-integ-apps if present but not in applied state
     """
+    platform_version = CloudPlatformVersionManagerClass().get_sw_version().get_name()
     active_ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     app_config = ConfigurationManager.get_app_config()
     platform_integ_apps_name = app_config.get_platform_integ_apps_app_name()
@@ -50,9 +55,13 @@ def test_pre_upgrade_check_platform_integ_apps_app():
             get_logger().log_test_case_step("Apply platform-integ-apps app.")
             SystemApplicationApplyKeywords(active_ssh_connection).system_application_apply(app_name=platform_integ_apps_name, timeout=1800)
 
+    get_logger().log_test_case_step("Validate platform-integ-apps app is present and applied, and the version matches.")
+    SystemApplicationListKeywords(active_ssh_connection).validate_app_status(platform_integ_apps_name, "applied")
+    SystemApplicationListKeywords(active_ssh_connection).validate_app_version(platform_integ_apps_name, platform_version)
 
 @mark.p2
-def test_post_upgrade_check_platform_integ_apps_app():
+@mark.lab_has_ceph
+def test_post_upgrade_check_platform_integ_apps():
     """
     Verify ceph health and platform-integ-apps application status after upgrade, then remove, apply, abort, and re-apply.
 
@@ -66,14 +75,17 @@ def test_post_upgrade_check_platform_integ_apps_app():
         - Apply the platform-integ-apps application again to ensure it can be applied after aborting
         - Verify ceph health status is healthy
     """
+    platform_version = CloudPlatformVersionManagerClass().get_sw_version().get_name()
     active_ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
-    platform_integ_apps_name = ConfigurationManager.get_app_config().get_platform_integ_apps_app_name()
+    app_config = ConfigurationManager.get_app_config()
+    platform_integ_apps_name = app_config.get_platform_integ_apps_app_name()
 
     get_logger().log_test_case_step("Checking ceph health.")
     CephStatusKeywords(active_ssh_connection).wait_for_ceph_health_status(expect_health_status=True)
 
     get_logger().log_test_case_step("Validate platform-integ-apps app is applied.")
     SystemApplicationListKeywords(active_ssh_connection).validate_app_status(platform_integ_apps_name, "applied")
+    SystemApplicationListKeywords(active_ssh_connection).validate_app_version(platform_integ_apps_name, platform_version)
 
     get_logger().log_test_case_step("Remove platform-integ-apps.")
     system_application_remove_input = SystemApplicationRemoveInput()
@@ -96,3 +108,36 @@ def test_post_upgrade_check_platform_integ_apps_app():
 
     get_logger().log_test_case_step("Checking ceph health.")
     CephStatusKeywords(active_ssh_connection).wait_for_ceph_health_status(expect_health_status=True)
+
+
+@mark.p2
+@mark.lab_has_ceph
+def test_compare_post_rollback_and_pre_upgrade_platform_integ_apps():
+    """
+    After rollback to the pre-upgrade version, verify platform-integ-apps is applied and matches pre-upgrade version.
+
+    Test Steps:
+        - Verify ceph health status is healthy
+        - Verify platform-integ-apps application is present in the system application list
+        - Validate platform-integ-apps application status is 'applied' after rollback
+        - Record platform-integ-apps application version after rollback
+        - Compare post-rollback version matches the pre-upgrade version
+    """
+    platform_version = CloudPlatformVersionManagerClass().get_sw_version().get_name()
+    active_ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    app_config = ConfigurationManager.get_app_config()
+    platform_integ_apps_name = app_config.get_platform_integ_apps_app_name()
+
+    get_logger().log_test_case_step("Checking ceph health.")
+    CephStatusKeywords(active_ssh_connection).wait_for_ceph_health_status(expect_health_status=True)
+
+    get_logger().log_test_case_step("Verify platform-integ-apps app is applied after rollback.")
+    app_list_keywords = SystemApplicationListKeywords(active_ssh_connection)
+    app_list_keywords.validate_app_status(platform_integ_apps_name, "applied")
+    app_list_keywords.validate_app_version(platform_integ_apps_name, platform_version)
+
+    get_logger().log_test_case_step("Record platform-integ-apps app version after rollback.")
+    app_show_output = SystemApplicationShowKeywords(active_ssh_connection).get_system_application_show(platform_integ_apps_name)
+    app_version = app_show_output.get_system_application_object().get_version()
+    app_status = app_show_output.get_system_application_object().get_status()
+    get_logger().log_info(f"platform-integ-apps version after rollback: {app_version}, status: {app_status}")

@@ -13,5 +13,7 @@
   platform_integ_app_tarball: "fake_path",
   metrics_server_app_tarball: "fake_path",
   rook_ceph_app_name: "rook-ceph_custom",
-  rook_ceph_app_tarball: "fake_rook_ceph_path"
+  rook_ceph_app_tarball: "fake_rook_ceph_path",
+  cert_manager_name: "cert-manager_custom",
+  nginx_ingress_controller_name: "nginx-ingress-controller_custom"
 }

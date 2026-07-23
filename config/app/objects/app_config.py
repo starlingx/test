@@ -77,6 +77,13 @@ class AppConfig:
         if "ptp_notification_app_name" in app_dict:
             self.ptp_notification_app_name = app_dict["ptp_notification_app_name"]
 
+        self.cert_manager_name = "cert-manager"
+        if "cert_manager_name" in app_dict:
+            self.cert_manager_name = app_dict["cert_manager_name"]
+
+        self.nginx_ingress_controller_name = "nginx-ingress-controller"
+        if "nginx_ingress_controller_name" in app_dict:
+            self.nginx_ingress_controller_name = app_dict["nginx_ingress_controller_name"]
 
     def get_base_application_path(self) -> str:
         """
@@ -257,3 +264,23 @@ class AppConfig:
 
         """
         return self.ptp_notification_app_name
+
+    def get_cert_manager_name(self) -> str:
+        """
+        Getter for cert manager app name
+
+        Returns:
+            str: the cert manager app name path
+
+        """
+        return self.cert_manager_name
+
+    def get_nginx_ingress_controller_name(self) -> str:
+        """
+        Getter for nginx ingress controller app name
+
+        Returns:
+            str: the nginx ingress controller app name path
+
+        """
+        return self.nginx_ingress_controller_name

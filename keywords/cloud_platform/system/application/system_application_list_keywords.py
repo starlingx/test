@@ -3,7 +3,7 @@ from typing import Any, List, Sequence
 from framework.exceptions.keyword_exception import KeywordException
 from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
-from framework.validation.validation import validate_equals_with_retry, validate_list_contains_with_retry
+from framework.validation.validation import validate_equals_with_retry, validate_list_contains_with_retry, validate_str_contains
 from keywords.base_keyword import BaseKeyword
 from keywords.cloud_platform.command_wrappers import source_openrc
 from keywords.cloud_platform.system.application.object.system_application_list_output import SystemApplicationListOutput
@@ -160,3 +160,19 @@ class SystemApplicationListKeywords(BaseKeyword):
             application = self.get_system_application_list().get_application(app_name)
             return application.get_status() == SystemApplicationStatusEnum.APPLIED.value or application.get_status() == SystemApplicationStatusEnum.APPLY_FAILED.value or application.get_status() == SystemApplicationStatusEnum.REMOVE_FAILED.value
         return False
+
+    def validate_app_version(self, application_name: str, version: str):
+        """This function will validate that the application specified reaches the desired version.
+
+        Args:
+            application_name (str): Name of the application that we are waiting for.
+            version (str): Version in which we expect the application to be.
+
+        Returns: None
+
+        """
+        system_applications = self.get_system_application_list()
+        application_version = system_applications.get_application(application_name).get_version()
+
+        message = f"Application {application_name}'s version is {version}"
+        validate_str_contains(application_version, version, message)
