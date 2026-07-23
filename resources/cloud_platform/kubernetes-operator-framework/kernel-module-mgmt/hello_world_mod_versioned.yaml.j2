@@ -10,12 +10,12 @@ spec:
         moduleName: hello_world_dmesg
       version: "{{ version }}"
       kernelMappings:
-        - literal: "6.12.0-1-amd64"
+        - literal: "{{ kernel_version }}-amd64"
           containerImage: {{ kmm_container_image_registry }}:amd64-hw
           build:
             buildArgs:
               - name: KERNEL_FULL_VERSION
-                value: "6.12.0-1-amd64"
+                value: "{{ kernel_version }}-amd64"
             baseImageRegistryTLS:
               insecure: false
               insecureSkipTLSVerify: true
@@ -25,12 +25,12 @@ spec:
             insecure: false
             insecureSkipTLSVerify: true
  
-        - literal: "6.12.0-1-rt-amd64"
+        - literal: "{{ kernel_version }}-rt-amd64"
           containerImage: {{ kmm_container_image_registry }}:rt-amd64-hw
           build:
             buildArgs:
               - name: KERNEL_FULL_VERSION
-                value: "6.12.0-1-rt-amd64"
+                value: "{{ kernel_version }}-rt-amd64"
             baseImageRegistryTLS:
               insecure: false
               insecureSkipTLSVerify: true
