@@ -587,6 +587,83 @@ def test_ovs_bridge_crd_operations(request: FixtureRequest):
 
 @mark.p2
 @mark.lab_has_standby_controller
+def test_lock_unlock_active_controller_openvswitch(request: FixtureRequest):
+    """Verify openvswitch app survives lock/unlock of the (originally active) controller.
+
+    Test Steps:
+        - Get active controller name
+        - Swact activity to the standby, reconnect to new active
+        - Verify app still applied after swact
+        - Lock the originally-active controller (now standby)
+        - Unlock it and wait for it to be available
+        - Verify agent pod running on the unlocked node
+
+    Teardown:
+        - Unlock the originally-active controller if still locked
+
+    Args:
+        request (FixtureRequest): pytest request fixture for test setup and teardown
+    """
+    active_ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    setup(request, active_ssh_connection)
+
+    host_list_keywords = SystemHostListKeywords(active_ssh_connection)
+    orig_active_name = host_list_keywords.get_active_controller().get_host_name()
+
+    def teardown():
+        get_logger().log_teardown_step(f"Ensure {orig_active_name} is unlocked")
+        teardown_ssh = LabConnectionKeywords().get_active_controller_ssh()
+        teardown_lock = SystemHostLockKeywords(teardown_ssh)
+        if teardown_lock.is_host_locked(orig_active_name):
+            teardown_lock.unlock_host(orig_active_name)
+            teardown_lock.wait_for_host_unlocked(orig_active_name)
+
+    request.addfinalizer(teardown)
+
+    get_logger().log_test_case_step(f"Swact activity away from active controller {orig_active_name}")
+    swact_success = SystemHostSwactKeywords(active_ssh_connection).host_swact()
+    validate_equals(swact_success, True, "Controller swact should succeed")
+
+    get_logger().log_test_case_step("Reconnect to new active controller")
+    new_ssh = LabConnectionKeywords().get_active_controller_ssh()
+    new_lock_keywords = SystemHostLockKeywords(new_ssh)
+
+    get_logger().log_test_case_step("Verify app still applied after swact")
+    SystemApplicationListKeywords(new_ssh).validate_app_status(APP_NAME, "applied", timeout=60)
+
+    get_logger().log_test_case_step(f"Lock originally-active controller {orig_active_name} (now standby)")
+    lock_success = new_lock_keywords.lock_host(orig_active_name)
+    validate_equals(lock_success, True, "Originally-active controller should lock successfully")
+    new_lock_keywords.wait_for_host_locked(orig_active_name)
+
+    get_logger().log_test_case_step("Verify app still applied while host locked")
+    SystemApplicationListKeywords(new_ssh).validate_app_status(APP_NAME, "applied", timeout=60)
+
+    get_logger().log_test_case_step(f"Unlock {orig_active_name}")
+    unlock_success = new_lock_keywords.unlock_host(orig_active_name)
+    validate_equals(unlock_success, True, "Controller should unlock successfully")
+    new_lock_keywords.wait_for_host_unlocked(orig_active_name)
+
+    get_logger().log_test_case_step(f"Verify agent pod running on {orig_active_name} after unlock")
+
+    def get_agent_status_on_orig_active():
+        pods = KubectlGetPodsKeywords(new_ssh).get_pods(namespace=APP_NAMESPACE, label="app=ovs-agent-operator")
+        node_pods = pods.get_pods_on_node(orig_active_name)
+        if not node_pods:
+            return "NoPod"
+        return node_pods[0].get_status()
+
+    validate_equals_with_retry(get_agent_status_on_orig_active, "Running", f"Agent pod on {orig_active_name} should be Running after unlock", timeout=120, polling_sleep_time=5)
+
+    get_logger().log_test_case_step(f"Swact activity back to restore {orig_active_name} as active")
+    SystemHostSwactKeywords(new_ssh).host_swact()
+    restored_ssh = LabConnectionKeywords().get_active_controller_ssh()
+    restored_active_name = SystemHostListKeywords(restored_ssh).get_active_controller().get_host_name()
+    validate_equals(restored_active_name, orig_active_name, f"{orig_active_name} should be active again after swact back")
+
+
+@mark.p2
+@mark.lab_has_standby_controller
 def test_lock_unlock_standby_controller_openvswitch(request: FixtureRequest):
     """Verify openvswitch app survives lock/unlock of standby controller.
 
@@ -663,6 +740,7 @@ def test_swact_openvswitch(request: FixtureRequest):
         - Reconnect to new active controller
         - Verify app still applied
         - Verify manager and agent pods running on new active
+        - Swact back to restore the original active controller
 
     Args:
         request (FixtureRequest): pytest request fixture for test setup and teardown
@@ -705,6 +783,10 @@ def test_swact_openvswitch(request: FixtureRequest):
         return node_pods[0].get_status()
 
     validate_equals_with_retry(get_agent_status_on_new_active, "Running", f"Agent pod on {new_active_name} should be Running after swact", timeout=120, polling_sleep_time=5)
+
+    get_logger().log_test_case_step("Swact back to restore the original active controller")
+    swact_back_success = SystemHostSwactKeywords(new_ssh).host_swact()
+    validate_equals(swact_back_success, True, "Controller swact back should complete successfully")
 
 
 @mark.p2
