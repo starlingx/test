@@ -5,7 +5,7 @@ from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
 from framework.validation.validation import validate_equals, validate_equals_with_retry
 from keywords.base_keyword import BaseKeyword
-from keywords.cloud_platform.command_wrappers import source_openrc
+from keywords.cloud_platform.command_wrappers import oidc_auth_wrap, source_openrc
 from keywords.cloud_platform.dcmanager.dcmanager_strategy_step_keywords import DcmanagerStrategyStepKeywords
 from keywords.cloud_platform.dcmanager.objects.dcmanager_prestage_strategy_object import DcmanagerPrestageStrategyObject
 from keywords.cloud_platform.dcmanager.objects.dcmanager_prestage_strategy_show_output import DcmanagerPrestageStrategyShowOutput
@@ -16,18 +16,33 @@ class DcmanagerPrestageStrategyKeywords(BaseKeyword):
     This class contains all the keywords related to the 'dcmanager prestage-strategy' commands.
     """
 
-    def __init__(self, ssh_connection: SSHConnection) -> str:
+    def __init__(self, ssh_connection: SSHConnection, use_oidc: bool = False) -> str:
         """
         Initializes DcmanagerPrestageStrategyKeywords.
 
         Args:
             ssh_connection (SSHConnection): The SSH connection object used for executing commands.
+            use_oidc (bool): If True, use OIDC authentication instead of source_openrc.
         """
         self.ssh_connection = ssh_connection
+        self.use_oidc = use_oidc
+
+    def _wrap_command(self, cmd: str) -> str:
+        """Wrap a dcmanager command with the appropriate auth method.
+
+        Args:
+            cmd (str): Raw dcmanager command.
+
+        Returns:
+            str: Command wrapped with either source_openrc or OIDC auth.
+        """
+        if self.use_oidc:
+            return oidc_auth_wrap(cmd)
+        return source_openrc(cmd)
 
     def get_dcmanager_prestage_strategy_abort(self) -> str:
         """Gets the prestage-strategy abort."""
-        command = source_openrc("dcmanager prestage-strategy abort")
+        command = self._wrap_command("dcmanager prestage-strategy abort")
         output = self.ssh_connection.send(command)
         self.validate_success_return_code(self.ssh_connection)
         return output
@@ -38,7 +53,7 @@ class DcmanagerPrestageStrategyKeywords(BaseKeyword):
         Returns:
             DcmanagerPrestageStrategyObject: An object containing details of the prestage strategy.
         """
-        command = source_openrc("dcmanager prestage-strategy apply")
+        command = self._wrap_command("dcmanager prestage-strategy apply")
         self.ssh_connection.send(command)
         self.validate_success_return_code(self.ssh_connection)
         # wait for apply to complete
@@ -62,10 +77,10 @@ class DcmanagerPrestageStrategyKeywords(BaseKeyword):
         release_id = f"--release {release}" if release else ""
         
         if subcloud_group:
-            command = source_openrc(f"dcmanager prestage-strategy create {release_id} {sw_deploy_arg} --sysadmin-password {sysadmin_password} --group {subcloud_group}")
+            command = self._wrap_command(f"dcmanager prestage-strategy create {release_id} {sw_deploy_arg} --sysadmin-password {sysadmin_password} --group {subcloud_group}")
         else:
             subcloud_name_arg = subcloud_name if subcloud_name else ""
-            command = source_openrc(f"dcmanager prestage-strategy create {release_id} {sw_deploy_arg} --sysadmin-password {sysadmin_password} {subcloud_name_arg}")
+            command = self._wrap_command(f"dcmanager prestage-strategy create {release_id} {sw_deploy_arg} --sysadmin-password {sysadmin_password} {subcloud_name_arg}")
         
         output = self.ssh_connection.send(command)
         self.validate_success_return_code(self.ssh_connection)
@@ -78,14 +93,14 @@ class DcmanagerPrestageStrategyKeywords(BaseKeyword):
         Returns:
             DcmanagerPrestageStrategyShowOutput: An object containing details of the prestage strategy .
         """
-        command = source_openrc("dcmanager prestage-strategy show")
+        command = self._wrap_command("dcmanager prestage-strategy show")
         output = self.ssh_connection.send(command)
         self.validate_success_return_code(self.ssh_connection)
         return DcmanagerPrestageStrategyShowOutput(output)
 
     def check_dcmanager_prestage_strategy_delete(self):
         """Gets the prestage-strategy delete."""
-        command = source_openrc("dcmanager prestage-strategy delete")
+        command = self._wrap_command("dcmanager prestage-strategy delete")
         output = self.ssh_connection.send(command)
         if "Unable to delete strategy of type" in "".join(output):
             get_logger().log_info("No strategy to be deleted, moving on...")

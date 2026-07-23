@@ -2,7 +2,7 @@ from framework.exceptions.validation_failure_error import ValidationFailureError
 from framework.ssh.ssh_connection import SSHConnection
 from framework.validation.validation import validate_equals_with_retry
 from keywords.base_keyword import BaseKeyword
-from keywords.cloud_platform.command_wrappers import source_openrc
+from keywords.cloud_platform.command_wrappers import oidc_auth_wrap, source_openrc
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_show_keywords import DcManagerSubcloudShowKeywords
 
 
@@ -11,14 +11,29 @@ class DcmanagerSubcloudPrestage(BaseKeyword):
     This class executes subcloud prestage command
     """
 
-    def __init__(self, ssh_connection: SSHConnection) -> None:
+    def __init__(self, ssh_connection: SSHConnection, use_oidc: bool = False) -> None:
         """
         Constructor.
 
         Args:
             ssh_connection (SSHConnection): The SSH connection object used for executing commands.
+            use_oidc (bool): If True, use OIDC authentication instead of source_openrc.
         """
         self.ssh_connection = ssh_connection
+        self.use_oidc = use_oidc
+
+    def _wrap_command(self, cmd: str) -> str:
+        """Wrap a dcmanager command with the appropriate auth method.
+
+        Args:
+            cmd (str): Raw dcmanager command.
+
+        Returns:
+            str: Command wrapped with either source_openrc or OIDC auth.
+        """
+        if self.use_oidc:
+            return oidc_auth_wrap(cmd)
+        return source_openrc(cmd)
 
     def dcmanager_subcloud_prestage(self, subcloud_name: str, syspass: str, release: str = None, for_sw_deploy: bool = False, force: bool = False, wait_completion: bool = True) -> bool:
         """
@@ -36,7 +51,7 @@ class DcmanagerSubcloudPrestage(BaseKeyword):
 
         """
         cmd_options = self._build_cmd_options(release, for_sw_deploy, force)
-        command = source_openrc(f"dcmanager subcloud prestage {cmd_options} {subcloud_name}" f" --sysadmin-password {syspass}")
+        command = self._wrap_command(f"dcmanager subcloud prestage {cmd_options} {subcloud_name}" f" --sysadmin-password {syspass}")
 
         self.ssh_connection.send(command)
         self.validate_success_return_code(self.ssh_connection)
@@ -112,7 +127,7 @@ class DcmanagerSubcloudPrestage(BaseKeyword):
             str: Raw command output containing the error message.
         """
         cmd_options = self._build_cmd_options(release, for_sw_deploy, force)
-        command = source_openrc(f"dcmanager subcloud prestage {cmd_options} {subcloud_name}" f" --sysadmin-password {syspass}")
+        command = self._wrap_command(f"dcmanager subcloud prestage {cmd_options} {subcloud_name}" f" --sysadmin-password {syspass}")
 
         output = self.ssh_connection.send(command)
         self.validate_cmd_rejection_return_code(self.ssh_connection)
