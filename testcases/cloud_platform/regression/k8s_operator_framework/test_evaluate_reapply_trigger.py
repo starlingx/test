@@ -43,7 +43,7 @@ def test_evaluate_reapply_trigger(request: FixtureRequest):
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
 
     # Download docker images
-    download_docker_images_to_local_registry(request, ssh_connection, namespaces=[app_name])
+    download_docker_images_to_local_registry(request, ssh_connection, namespaces=[namespace])
 
     # Transfer the app file to the active controller
     get_logger().log_test_case_step(f"Copy app {app_name} to active controller")
@@ -122,7 +122,7 @@ def test_evaluate_reapply_all_trigger(request: FixtureRequest):
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
 
     # Download docker images
-    download_docker_images_to_local_registry(request, ssh_connection, namespaces=[app_name])
+    download_docker_images_to_local_registry(request, ssh_connection, namespaces=[namespace])
 
     # Transfer the app file to the active controller
     get_logger().log_test_case_step(f"Copy app {app_name} to active controller")
@@ -209,7 +209,7 @@ def test_evaluate_reapply_all_triggers_reapply_for_all_apps(request: FixtureRequ
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
 
     # Download docker images for both apps
-    download_docker_images_to_local_registry(request, ssh_connection, namespaces=[app_1_name, app_2_name])
+    download_docker_images_to_local_registry(request, ssh_connection, namespaces=[app_1_namespace, app_2_namespace])
 
     # Transfer both app files to the active controller
     get_logger().log_test_case_step(f"Copy apps {app_1_name} and {app_2_name} to active controller")
@@ -322,7 +322,7 @@ def test_reapply_all_does_not_reapply_already_reapplied_app(request: FixtureRequ
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
 
     # Download docker images for both apps
-    download_docker_images_to_local_registry(request, ssh_connection, namespaces=[app_1_name, app_2_name])
+    download_docker_images_to_local_registry(request, ssh_connection, namespaces=[app_1_namespace, app_2_namespace])
 
     # Transfer both app files to the active controller
     get_logger().log_test_case_step(f"Copy apps {app_1_name} and {app_2_name} to active controller")
@@ -438,7 +438,7 @@ def test_reapply_all_does_not_reapply_app_without_trigger(request: FixtureReques
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
 
     # Download docker images for both apps
-    download_docker_images_to_local_registry(request, ssh_connection, namespaces=[no_trigger_app_name, trigger_app_name])
+    download_docker_images_to_local_registry(request, ssh_connection, namespaces=[no_trigger_namespace, trigger_namespace])
 
     # Transfer both app files to the active controller
     get_logger().log_test_case_step(f"Copy apps {no_trigger_app_name} and {trigger_app_name} to active controller")
