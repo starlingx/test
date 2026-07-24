@@ -99,6 +99,15 @@ class SoftwareListOutput:
                 product_version.append(match.group(1) if match else "")
         return product_version
 
+    def get_deployed_release_names(self) -> List[str]:
+        """
+        Get names of all releases in a deployed or deployed-partial state.
+
+        Returns:
+            List[str]: Release names with state 'deployed' or 'deployed-partial'.
+        """
+        return [entry["Release"] for entry in self.output_values if entry["State"] in ("deployed", "deployed-partial")]
+
     def system_has_patch(self) -> str:
         """
         Verify if the system has a patch value differant from 0.
@@ -106,7 +115,8 @@ class SoftwareListOutput:
         Returns:
             str: Release value with patch. None if system has no patch.
         """
-        release = max(self.get_product_version_with_patch_by_state("deployed"))
+        deployed_versions = self.get_product_version_with_patch_by_state("deployed") + self.get_product_version_with_patch_by_state("deployed-partial")
+        release = max(deployed_versions)
         patch = re.findall(r"(\.\d+)", release)[1]
 
         if not patch or patch == ".0":

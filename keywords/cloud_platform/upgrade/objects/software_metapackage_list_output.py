@@ -40,7 +40,7 @@ class SoftwareMetapackageListOutput:
         """Get all metapackages with a given state.
 
         Args:
-            state (str): Desired state (e.g., 'deployed', 'available').
+            state (str): Desired state (e.g., 'deployed', 'available', 'unavailable', 'deploy-selected').
 
         Returns:
             List[SoftwareMetapackageListObject]: Matching metapackage entries.
