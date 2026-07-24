@@ -68,6 +68,25 @@ class OpenvSwitchKeywords(BaseKeyword):
         )
         return self._to_str(self.ssh_connection.send(full_cmd))
 
+    def exec_in_pod(self, ovs_agent_pod: str, cmd: str, container: str = OVS_CONTAINER) -> str:
+        """Execute an arbitrary command inside the OVS agent pod container.
+
+        Use this for system commands (ip, ping, etc.) that need to run
+        in the same network namespace as OVS.
+
+        Args:
+            ovs_agent_pod: Name of the ovs-agent pod.
+            cmd: Command to execute.
+            container: Container name (default: ovs-vswitchd).
+
+        Returns:
+            str: Command output.
+        """
+        full_cmd = export_k8s_config(
+            f"kubectl exec -n {OVS_NAMESPACE} {ovs_agent_pod} -c {container} -- {cmd}"
+        )
+        return self._to_str(self.ssh_connection.send(full_cmd))
+
     def kubectl_apply_yaml(self, yaml_content: str) -> str:
         """Apply a YAML manifest via kubectl.
 
@@ -193,3 +212,60 @@ class OpenvSwitchKeywords(BaseKeyword):
         lines = output.split("\n")
         filtered = [l for l in lines if not any(m in l for m in banner_markers)]
         return "\n".join(filtered)
+
+    def get_bfd_config(self, ovs_agent_pod: str, interface: str) -> str:
+        """Get BFD configuration for an interface.
+
+        Args:
+            ovs_agent_pod: Name of the ovs-agent pod.
+            interface: Interface name.
+
+        Returns:
+            str: BFD configuration string.
+        """
+        return self.ovs_vsctl(ovs_agent_pod, f"get interface {interface} bfd")
+
+    def get_bfd_status(self, ovs_agent_pod: str, interface: str) -> str:
+        """Get BFD status for an interface.
+
+        Args:
+            ovs_agent_pod: Name of the ovs-agent pod.
+            interface: Interface name.
+
+        Returns:
+            str: BFD status string.
+        """
+        return self.ovs_vsctl(ovs_agent_pod, f"get interface {interface} bfd_status")
+
+    def verify_connectivity(self, ovs_agent_pod: str, target_ip: str, ipv6: bool = False) -> str:
+        """Verify IP connectivity from inside the OVS agent pod.
+
+        Args:
+            ovs_agent_pod: Name of the ovs-agent pod.
+            target_ip: Target IP to ping.
+            ipv6: Whether to use ping6.
+
+        Returns:
+            str: Output containing 'reply' on success or 'timeout' on failure.
+        """
+        ping_cmd = "ping6" if ipv6 or ":" in target_ip else "ping"
+        return self.exec_in_pod(
+            ovs_agent_pod,
+            f"bash -c '{ping_cmd} -c 3 -W 2 {target_ip} && echo reply || echo timeout'"
+        )
+
+    def add_vlan_internal_port(self, ovs_agent_pod: str, bridge: str, vlan_name: str, vlan_id: int, host_ip: str) -> None:
+        """Create OVS internal port with VLAN tag and assign IP.
+
+        Args:
+            ovs_agent_pod: Name of the ovs-agent pod.
+            bridge: Bridge name to add port to.
+            vlan_name: Name for the internal port.
+            vlan_id: VLAN tag ID.
+            host_ip: IP address to assign to the port.
+        """
+        self.ovs_vsctl(ovs_agent_pod, f"add-port {bridge} {vlan_name} tag={vlan_id} -- set interface {vlan_name} type=internal")
+        ip_version = "-6 " if ":" in host_ip else ""
+        prefix = "64" if ":" in host_ip else "24"
+        self.exec_in_pod(ovs_agent_pod, f"ip {ip_version}addr add {host_ip}/{prefix} dev {vlan_name} 2>/dev/null || true")
+        self.exec_in_pod(ovs_agent_pod, f"ip link set {vlan_name} up")
