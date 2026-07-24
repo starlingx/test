@@ -5,6 +5,7 @@ import json5
 from config.host.objects.host_configuration import HostConfiguration
 from config.lab.objects.credentials import Credentials
 from config.lab.objects.node import Node
+from config.ovs.ovs_config import OvsConfig
 from framework.resources.resource_finder import get_stx_resource_path
 
 
@@ -102,6 +103,11 @@ class LabConfig:
             self.factory_credentials = Credentials(lab_dict["factory_credentials"])
 
         self.lab_config_file = config
+
+        # OVS configuration (optional section for OVS L2 Forwarding tests)
+        self.ovs_config: Optional[OvsConfig] = None
+        if "ovs" in lab_dict and lab_dict["ovs"]:
+            self.ovs_config = OvsConfig(lab_dict["ovs"], self.admin_credentials.get_password())
 
     def get_floating_ip(self) -> str:
         """
@@ -621,3 +627,11 @@ class LabConfig:
             raise Exception("Others controller Not Found")
         else:
             return counterpart_controllers[0]
+
+    def get_ovs_config(self) -> Optional[OvsConfig]:
+        """Get OVS test configuration.
+
+        Returns:
+            OvsConfig: OVS configuration object, or None if not configured.
+        """
+        return self.ovs_config
