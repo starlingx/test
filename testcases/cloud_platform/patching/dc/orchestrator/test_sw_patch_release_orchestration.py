@@ -1,14 +1,17 @@
+import re
+
 from pytest import mark
 
 from config.configuration_manager import ConfigurationManager
 from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
-from framework.validation.validation import validate_equals
+from framework.validation.validation import validate_equals, validate_not_equals
 from keywords.cloud_platform.dcmanager.dcmanager_prestage_strategy_keywords import DcmanagerPrestageStrategyKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_strategy_step_keywords import DcmanagerStrategyStepKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_list_keywords import DcManagerSubcloudListKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_prestage import DcmanagerSubcloudPrestage
 from keywords.cloud_platform.dcmanager.dcmanager_sw_deploy_strategy_keywords import DcmanagerSwDeployStrategy
+from keywords.files.file_keywords import FileKeywords
 from keywords.cloud_platform.health.health_keywords import HealthKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.cloud_platform.swmanager.swmanager_sw_deploy_strategy_keywords import SwManagerSwDeployStrategyKeywords
@@ -17,6 +20,193 @@ from keywords.cloud_platform.system.host.system_host_lock_keywords import System
 from keywords.cloud_platform.upgrade.software_deploy_show_keywords import SoftwareDeployShowKeywords
 from keywords.cloud_platform.upgrade.software_list_keywords import SoftwareListKeywords
 from keywords.cloud_platform.upgrade.usm_keywords import USMKeywords
+
+
+# --- Helper Functions ---
+
+
+def extract_patch_version(filepath: str, sw_version: str) -> int:
+    """Extract the numeric patch version from a filename.
+
+    Given sw_version='26.03' and filepath='26.03.200-software-rr.patch',
+    extracts 200.
+
+    Args:
+        filepath: Full path to the patch file.
+        sw_version: The base SW_VERSION (e.g. '26.03').
+
+    Returns:
+        int: The numeric patch version, or 0 if not found.
+    """
+    match = re.search(rf'{re.escape(sw_version)}\.(\d+)', filepath)
+    return int(match.group(1)) if match else 0
+
+
+def get_sw_version(ssh_connection: SSHConnection) -> str:
+    """Read SW_VERSION from /etc/build.info on the target system.
+
+    Args:
+        ssh_connection: SSH connection to the target host.
+
+    Returns:
+        str: The SW_VERSION value (e.g. '26.03').
+    """
+    build_info_output = ssh_connection.send("grep SW_VERSION /etc/build.info")
+    for line in build_info_output:
+        if "SW_VERSION" in line:
+            return line.split("=")[1].strip().strip('"')
+    return ""
+
+
+def find_highest_undeployed_patch(ssh_connection: SSHConnection, sw_version: str) -> str:
+    """Find the highest undeployed .patch file in /home/sysadmin/.
+
+    Lists patch files matching the sw_version, filters out those already
+    deployed, and returns the one with the highest numeric version.
+
+    Args:
+        ssh_connection: SSH connection to the system controller.
+        sw_version: The base SW_VERSION (e.g. '26.03').
+
+    Returns:
+        str: Full path to the highest undeployed patch file.
+
+    Raises:
+        AssertionError: If no matching or undeployed patch files are found.
+    """
+    # Find .patch files matching the release prefix
+    file_keywords = FileKeywords(ssh_connection)
+    all_files = file_keywords.get_files_in_dir("/home/sysadmin/")
+    patch_files = [f"/home/sysadmin/{f}" for f in all_files if sw_version in f and f.endswith(".patch")]
+    validate_equals(len(patch_files) > 0, True, f"At least one .patch file matching '{sw_version}' must exist in /home/sysadmin/.")
+
+    # Filter out patches that are already deployed
+    deployed_releases = SoftwareListKeywords(ssh_connection).get_software_list().get_release_name_by_state("deployed")
+    get_logger().log_info(f"Currently deployed releases: {deployed_releases}")
+
+    undeployed_patches = []
+    for pf in patch_files:
+        already_deployed = False
+        for deployed in deployed_releases:
+            # Strip any product prefix to get just the version number
+            version_part = deployed.split("-", 1)[-1] if "-" in deployed else deployed
+            if version_part in pf:
+                already_deployed = True
+                break
+        if not already_deployed:
+            undeployed_patches.append(pf)
+
+    validate_equals(len(undeployed_patches) > 0, True, "At least one undeployed .patch file must exist in /home/sysadmin/.")
+    get_logger().log_info(f"Undeployed patch files: {undeployed_patches}")
+
+    # Select the highest by numeric version
+    return max(undeployed_patches, key=lambda f: extract_patch_version(f, sw_version))
+
+
+def swman_sw_deploy_strategy_create_apply(release: str):
+    """Create and apply a sw-manager sw-deploy strategy on the system controller.
+
+    Args:
+        release: The software release to deploy (e.g. '26.03.200').
+    """
+    central_ssh = LabConnectionKeywords().get_active_controller_ssh()
+    swman_deploy_kw = SwManagerSwDeployStrategyKeywords(central_ssh)
+
+    get_logger().log_test_case_step("Through the VIM orchestration deploy the patch in the system controller")
+    config = SwManagerSwDeployStrategyCreateConfig(release=release, delete=True)
+    create_success = swman_deploy_kw.get_sw_deploy_strategy_create(config)
+    validate_equals(create_success, True, "sw-deploy strategy created successfully.")
+
+    # Wait for strategy to be ready to apply
+    strategy_ready = swman_deploy_kw.wait_for_state(["ready-to-apply", "build-failed"])
+    validate_equals(strategy_ready, True, "Strategy reached ready-to-apply state.")
+
+    # Show strategy details
+    strategy_show = swman_deploy_kw.get_sw_deploy_strategy_show().get_swmanager_sw_deploy_strategy_show()
+    get_logger().log_info(f"Created sw-deploy strategy: {strategy_show.get_strategy_uuid()} for release {strategy_show.get_release_id()}")
+
+    # Apply the strategy
+    get_logger().log_test_case_step("Apply the strategy")
+    apply_success = swman_deploy_kw.get_sw_deploy_strategy_apply()
+    validate_equals(apply_success, True, "sw-deploy strategy apply command succeeded.")
+
+    # Wait for strategy to complete
+    strategy_done = swman_deploy_kw.wait_for_state(["applied", "apply-failed"])
+    validate_equals(strategy_done, True, "Strategy reached applied state.")
+
+    # Verify completion
+    strategy_show = swman_deploy_kw.get_sw_deploy_strategy_show().get_swmanager_sw_deploy_strategy_show()
+    get_logger().log_info(f"Strategy state: {strategy_show.get_state()}, completion: {strategy_show.get_current_phase_completion()}")
+    validate_equals(strategy_show.get_current_phase_completion(), "100%", "deploy strategy completed successfully.")
+
+
+def fetch_sw_list(ssh_connection: SSHConnection, log_message: str) -> list:
+    """Fetch and log the software list from a host.
+
+    Args:
+        ssh_connection: SSH connection to the target host.
+        log_message: Message to log before fetching.
+
+    Returns:
+        list: List of software release objects.
+    """
+    get_logger().log_test_case_step(log_message)
+    sw_list = SoftwareListKeywords(ssh_connection).get_software_list().get_software_lists()
+    get_logger().log_info(f"Current software list: {[sw.get_release() for sw in sw_list]}")
+    return sw_list
+
+# --- Test Cases ---
+
+
+@mark.p2
+def test_upload_patch_to_system_controller(request):
+    """
+    Find the highest patch file in /home/sysadmin/ matching the lab release, upload and deploy.
+
+    Assumes the .patch file(s) have already been placed in /home/sysadmin/ on
+    the system controller.
+
+    Test Steps:
+        - Get the SW_VERSION from the system controller
+        - List .patch files in /home/sysadmin/ matching the release prefix
+        - Filter out already-deployed patches and select the highest
+        - Upload it via 'software upload'
+        - Verify the patch becomes available
+        - Create and apply sw-deploy strategy on the system controller
+        - Verify the patch is deployed on the system controller
+
+    """
+    central_ssh = LabConnectionKeywords().get_active_controller_ssh()
+    usm_keywords = USMKeywords(central_ssh)
+
+    # Get the SW_VERSION and find the highest undeployed patch
+    sw_version = get_sw_version(central_ssh)
+    validate_equals(len(sw_version) > 0, True, "SW_VERSION must be present in /etc/build.info.")
+    get_logger().log_info(f"Lab SW_VERSION: {sw_version}")
+
+    patch_file_path = find_highest_undeployed_patch(central_ssh, sw_version)
+    get_logger().log_info(f"Highest undeployed patch file: {patch_file_path}")
+
+    # Upload the patch to the system controller
+    upload_patch_out = usm_keywords.upload_patch_file(patch_file_path)
+    upload_patch_obj = upload_patch_out.get_software_uploaded()
+    validate_not_equals(upload_patch_obj, None, f"Patch file {patch_file_path} uploaded successfully.")
+    release = upload_patch_obj[0].get_release()
+    get_logger().log_info(f"Uploaded patch file: {patch_file_path} with release ID: {release}")
+
+    # Verify the patch is available on the system controller
+    sw_list = SoftwareListKeywords(central_ssh).get_software_list()
+    patch_state = sw_list.get_release_state_by_release_name(release)
+    validate_equals(patch_state, "available", f"Patch {release} is available on system controller after upload.")
+
+    # Deploy the patch on the system controller via sw-manager
+    get_logger().log_info(f"Deploying patch {release} on system controller via sw-manager")
+    swman_sw_deploy_strategy_create_apply(release=release)
+
+    # Verify the patch is deployed on the system controller
+    sw_list = SoftwareListKeywords(central_ssh).get_software_list()
+    patch_state = sw_list.get_release_state_by_release_name(release)
+    validate_equals(patch_state, "deployed", f"Patch {release} is deployed on system controller.")
 
 
 @mark.p2
@@ -118,12 +308,11 @@ def test_patch_remove(request):
     # Wait for deploy-start-done
     usm_keywords.wait_for_deploy_state("deploy-start-done")
 
-    # Get the actual release being removed from deploy show
+    # Get the RR flag from deploy show
     deploy_show_kw = SoftwareDeployShowKeywords(subcloud_ssh)
     deploy_show_obj = deploy_show_kw.get_software_deploy_show().get_software_deploy_show()
-    release_being_removed = f"WRCP-{deploy_show_obj.get_from_release()}"
     rr = deploy_show_obj.get_rr().lower() == "true"
-    get_logger().log_info(f"Removing release: {release_being_removed}, RR: {rr}")
+    get_logger().log_info(f"Removing release: {latest_release}, RR: {rr}")
 
     # Lock → deploy host → unlock (lock only if RR=True)
     lock_kw = SystemHostLockKeywords(subcloud_ssh)
@@ -150,50 +339,8 @@ def test_patch_remove(request):
     # Verify the patch was removed
     sw_list_after = SoftwareListKeywords(subcloud_ssh).get_software_list().get_release_name_by_state("deployed")
     get_logger().log_info(f"Releases after removal: {sw_list_after}")
-    validate_equals(release_being_removed not in sw_list_after, True, f"Patch {release_being_removed} was removed from subcloud.")
-    get_logger().log_info(f"Patch {release_being_removed} successfully removed from {subcloud_name}")
-
-
-def swman_sw_deploy_strategy_create_apply(release: str):
-    """Helper function to create and apply a software deploy strategy.
-
-    Args:
-        release (str): The software release to be used for the strategy.
-    """
-    central_ssh = LabConnectionKeywords().get_active_controller_ssh()
-    swman_deploy_kw = SwManagerSwDeployStrategyKeywords(central_ssh)
-
-    get_logger().log_test_case_step("Through the VIM orchestration deploy the patch in the system controller")
-    config = SwManagerSwDeployStrategyCreateConfig(release=release, delete=True)
-    create_success = swman_deploy_kw.get_sw_deploy_strategy_create(config)
-    validate_equals(create_success, True, "sw-deploy strategy created successfully.")
-    swman_obj = swman_deploy_kw.wait_for_state(["ready-to-apply", "build-failed"])
-    validate_equals(swman_obj, True, "Strategy reached ready-to-apply state.")
-    get_logger().log_info(f"Created sw-deploy strategy: {swman_obj.get_strategy_uuid()} for release {swman_obj.get_release_id()}")
-    get_logger().log_info(f"release = {release}  get_release_id = {swman_obj.get_release_id()}")
-    get_logger().log_test_case_step("Apply the strategy")
-    swman_obj = swman_deploy_kw.get_sw_deploy_strategy_apply()
-    # Verify that the strategy applied
-    validate_equals(swman_obj.get_state(), "applied", "deploy strategy applied successfully.")
-
-    # Verify that the current phase completed successfully
-    validate_equals(swman_obj.get_current_phase_completion(), "100%", "deploy strategy completed successfully.")
-
-
-def fetch_sw_list(ssh_connection: SSHConnection, log_message: str) -> list:
-    """Fetches the software list from the given SSH connection and logs the information.
-
-    Args:
-        ssh_connection (SSHConnection): The SSH connection to the system controller or subcloud.
-        log_message (str): Optional message to log before fetching the software list.
-
-    Returns:
-        list: A list of software releases.
-    """
-    get_logger().log_test_case_step(log_message)
-    sw_list = SoftwareListKeywords(ssh_connection).get_software_list().get_software_lists()
-    get_logger().log_info(f"Current software list: {[sw.get_release() for sw in sw_list]}")
-    return sw_list
+    validate_equals(latest_release not in sw_list_after, True, f"Patch {latest_release} was removed from subcloud.")
+    get_logger().log_info(f"Patch {latest_release} successfully removed from {subcloud_name}")
 
 
 @mark.p2
