@@ -70,3 +70,17 @@ class HorizonLoginPageLocators:
             WebLocator: CSS selector for the error message element.
         """
         return WebLocator(".alert-danger, .alert.alert-danger, .error", By.CSS_SELECTOR)
+
+    def get_locator_table_row_by_display_name(self, name: str) -> WebLocator:
+        """Locator for a visible element containing the resource display name.
+
+        Targets any visible element on the page whose direct text content
+        contains the specified resource name.
+
+        Args:
+            name (str): The display name of the resource to find.
+
+        Returns:
+            WebLocator: XPath locator for the element containing the display name.
+        """
+        return WebLocator(f"//*[contains(text(), '{name}')]", By.XPATH)
