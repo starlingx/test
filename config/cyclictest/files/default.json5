@@ -1,0 +1,8 @@
+{
+  // Cyclictest configuration
+  "duration": 180,        // seconds; overridden per-test
+  "cores": "",             // empty = auto-detect; e.g. "4-6,8"
+  "cpu_mon": false,        // enable CPU usage monitoring thread
+  "cyclictest_dir": "/home/sysadmin/cyclictest",
+  "cyclictest_exe": "/home/sysadmin/cyclictest/cyclictest",
+}

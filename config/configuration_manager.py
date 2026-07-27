@@ -1,6 +1,7 @@
 from config.app.objects.app_config import AppConfig
 from config.backup_restore.objects.backup_restore_config import BackupRestoreConfig
 from config.configuration_file_locations_manager import ConfigurationFileLocationsManager
+from config.cyclictest.objects.cyclictest_config import CyclictestConfig
 from config.database.objects.database_config import DatabaseConfig
 from config.deployment_assets.objects.deployment_assets_config import DeploymentAssetsConfig
 from config.docker.objects.docker_config import DockerConfig
@@ -46,6 +47,7 @@ class ConfigurationManagerClass:
         self.kof_config: KofConfig = None
         self.backup_restore_config: BackupRestoreConfig = None
         self.kubernetes_upgrade_config: KubernetesUpgradeConfig = None
+        self.cyclictest_config: CyclictestConfig = None
 
     def is_config_loaded(self) -> bool:
         """
@@ -144,6 +146,10 @@ class ConfigurationManagerClass:
         if not kubernetes_upgrade_config_file:
             kubernetes_upgrade_config_file = get_stx_resource_path("config/kubernetes_upgrade/files/default.json5")
 
+        cyclictest_config_file = config_file_locations.get_cyclictest_config_file()
+        if not cyclictest_config_file:
+            cyclictest_config_file = get_stx_resource_path("config/cyclictest/files/default.json5")
+
         if not self.loaded:
             try:
                 self.lab_config = LabConfig(lab_config_file)
@@ -164,6 +170,7 @@ class ConfigurationManagerClass:
                 self.kof_config = KofConfig(kof_config_file)
                 self.backup_restore_config = BackupRestoreConfig(backup_restore_config_file)
                 self.kubernetes_upgrade_config = KubernetesUpgradeConfig(kubernetes_upgrade_config_file)
+                self.cyclictest_config = CyclictestConfig(cyclictest_config_file)
                 self.loaded = True
             except FileNotFoundError as e:
                 print(f"Unable to load the config using file: {str(e.filename)} ")
@@ -347,6 +354,15 @@ class ConfigurationManagerClass:
         """
         return self.kubernetes_upgrade_config
 
+    def get_cyclictest_config(self) -> CyclictestConfig:
+        """
+        Getter for cyclictest config.
+
+        Returns:
+            CyclictestConfig: the cyclictest config
+        """
+        return self.cyclictest_config
+
     def get_config_pytest_args(self) -> [str]:
         """
         Returns the configuration file locations as pytest args.
@@ -392,6 +408,8 @@ class ConfigurationManagerClass:
             pytest_config_args.append(f"--backup_restore_config_file={self.configuration_locations_manager.get_backup_restore_config_file()}")
         if self.configuration_locations_manager.kubernetes_upgrade_config_file:
             pytest_config_args.append(f"--kubernetes_upgrade_config_file={self.configuration_locations_manager.get_kubernetes_upgrade_config_file()}")
+        if self.configuration_locations_manager.cyclictest_config_file:
+            pytest_config_args.append(f"--cyclictest_config_file={self.configuration_locations_manager.get_cyclictest_config_file()}")
 
         return pytest_config_args
 

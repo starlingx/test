@@ -1,7 +1,7 @@
 from framework.ssh.ssh_connection import SSHConnection
 from keywords.base_keyword import BaseKeyword
 from keywords.cloud_platform.command_wrappers import source_openrc
-from starlingx.keywords.cloud_platform.system.host.objects.system_host_kernel_show_output import SystemHostKernelShowOutput
+from keywords.cloud_platform.system.host.objects.system_host_kernel_show_output import SystemHostKernelShowOutput
 
 
 class SystemHostKernelKeywords(BaseKeyword):
