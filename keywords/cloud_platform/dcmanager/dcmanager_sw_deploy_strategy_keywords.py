@@ -24,7 +24,7 @@ class DcmanagerSwDeployStrategy(BaseKeyword):
         self.ssh_connection = ssh_connection
         self.usm_config = ConfigurationManager.get_usm_config()
 
-    def dcmanager_sw_deploy_strategy_create(self, subcloud_name: str = None, release: str = None, subcloud_group: str = None, with_delete: bool = False, delete_only: bool = False, rollback: bool = False, snapshot: bool = False, kube_upgrade: str = None):
+    def dcmanager_sw_deploy_strategy_create(self, subcloud_name: str = None, release: str = None, subcloud_group: str = None, with_delete: bool = False, delete_only: bool = False, rollback: bool = False, snapshot: bool = False, kube_upgrade: str = None, with_prestage: bool = False, sysadmin_password: str = None):
         """
         Runs dcmanager sw-deploy-strategy create command.
 
@@ -37,6 +37,8 @@ class DcmanagerSwDeployStrategy(BaseKeyword):
             rollback (bool): If true, adds parameter --rollback
             snapshot (bool): If true, adds parameter --snapshot
             kube_upgrade (str): Target K8s version for combined P&K upgrade (e.g., 'v1.29.2').
+            with_prestage (bool): If true, adds parameter --with-prestage (requires sysadmin_password).
+            sysadmin_password (str): Sysadmin password for prestage (required when with_prestage is True).
         """
         release_id = f"--release-id {release}" if release else ""
         delete = "--with-delete" if with_delete else ""
@@ -44,13 +46,15 @@ class DcmanagerSwDeployStrategy(BaseKeyword):
         rollback = "--rollback" if rollback else ""
         snapshot = "--snapshot" if snapshot else ""
         kube_upgrade_arg = f"--kube-upgrade {kube_upgrade}" if kube_upgrade else ""
+        prestage_arg = "--with-prestage" if with_prestage else ""
+        sysadmin_password_arg = f"--sysadmin-password {sysadmin_password}" if sysadmin_password else ""
 
         if subcloud_group:
-            command = source_openrc(f"dcmanager sw-deploy-strategy create --group {subcloud_group} {rollback} {snapshot} {release_id} {delete} {clean_up_delete} {kube_upgrade_arg}")
+            command = source_openrc(f"dcmanager sw-deploy-strategy create --group {subcloud_group} {rollback} {snapshot} {release_id} {delete} {clean_up_delete} {kube_upgrade_arg} {prestage_arg} {sysadmin_password_arg}")
             target = subcloud_group
             is_group = True
         else:
-            command = source_openrc(f"dcmanager sw-deploy-strategy create {subcloud_name} {rollback} {snapshot} {release_id} {delete} {clean_up_delete} {kube_upgrade_arg}")
+            command = source_openrc(f"dcmanager sw-deploy-strategy create {subcloud_name} {rollback} {snapshot} {release_id} {delete} {clean_up_delete} {kube_upgrade_arg} {prestage_arg} {sysadmin_password_arg}")
             target = subcloud_name
             is_group = False
 
