@@ -10,6 +10,7 @@ from keywords.cloud_platform.command_wrappers import source_openrc
 from keywords.cloud_platform.fault_management.alarms.alarm_list_keywords import AlarmListKeywords
 from keywords.cloud_platform.system.host.system_host_list_keywords import SystemHostListKeywords
 from keywords.cloud_platform.system.host.system_host_show_keywords import SystemHostShowKeywords
+from keywords.cloud_platform.upgrade.objects.precheck_item import PrecheckItem
 from keywords.cloud_platform.upgrade.objects.software_deploy_precheck_output import SoftwareDeployPrecheckOutput
 from keywords.k8s.node.kubectl_nodes_keywords import KubectlNodesKeywords
 from keywords.k8s.pods.kubectl_get_pods_keywords import KubectlGetPodsKeywords
@@ -172,3 +173,51 @@ class SoftwareDeployPrecheckKeywords(BaseKeyword):
         get_logger().log_info("Deploy precheck completed:\n" + "\n".join(precheck_output.get_raw_output()))
 
         return precheck_output
+
+    def get_precheck_item_status(self, release_id: str, check: PrecheckItem, sudo: bool = False) -> bool | None:
+        """
+        Run 'software deploy precheck' and return the status of a specific check item.
+
+        This method runs the precheck command and looks for the specified check
+        item in the output. It uses partial matching to handle items with dynamic
+        content (e.g., version numbers, release names).
+
+        Args:
+            release_id (str): Release to be prechecked.
+            check (PrecheckItem): The specific precheck item to look for.
+            sudo (bool): Option to pass the command with sudo.
+
+        Returns:
+            bool | True if the item status is [OK], False if the item exists
+                but is not [OK], None if the item is not found in the output or
+                the precheck command failed.
+
+        Raises:
+            KeywordException: If the release_id is missing.
+        """
+        if not release_id:
+            raise KeywordException("Missing release ID for software deploy precheck")
+
+        get_logger().log_info(f"Running deploy precheck to check '{check.value}' for release: {release_id}")
+        base_cmd = f"software deploy precheck {release_id}"
+        cmd = source_openrc(base_cmd)
+        timeout = self.usm_config.get_precheck_timeout_sec()
+
+        if sudo:
+            output = self.ssh_connection.send_as_sudo(cmd, command_timeout=timeout, reconnect_timeout=timeout)
+        else:
+            output = self.ssh_connection.send(cmd, command_timeout=timeout, reconnect_timeout=timeout, get_pty=True)
+
+        precheck_output = SoftwareDeployPrecheckOutput(output)
+
+        # Use partial match since some precheck items have dynamic content
+        # (e.g., version numbers, release names) appended to the static prefix.
+        for item_name, item_status in precheck_output.get_status_dict().items():
+            if check.value in item_name:
+                is_ok = "[OK]" in item_status
+                get_logger().log_info(f"Precheck item '{check.value}' status: {item_status}")
+                return is_ok
+
+        get_logger().log_info(f"Precheck item '{check.value}' not found in output")
+        return None
+        
