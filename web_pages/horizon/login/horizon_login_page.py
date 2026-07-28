@@ -1,6 +1,7 @@
 """Horizon Login Page object for browser-based Horizon interactions."""
 
 from config.configuration_manager import ConfigurationManager
+from framework.logging.automation_logger import get_logger
 from framework.web.condition.web_condition_element_not_visible import WebConditionElementNotVisible
 from framework.web.condition.web_condition_element_visible import WebConditionElementVisible
 from framework.web.webdriver_core import WebDriverCore
@@ -133,9 +134,23 @@ class HorizonLoginPage(BasePage):
         """Check if the given text is present on the current page.
 
         Args:
-            text (str): Text to search for in the page.
+            text (str): Text to search for on the page.
 
         Returns:
-            bool: True if text is found on the page.
+            bool: True if an element containing the text is found, False otherwise.
         """
-        return self.driver.is_text_on_page(text)
+        locator = self.locators.get_locator_table_row_by_display_name(text)
+        return self.driver.is_exists(locator)
+
+    def switch_project(self, project_id: str) -> None:
+        """Switch the active project in Horizon by navigating to the switch URL.
+
+        Args:
+            project_id (str): ID of the project to switch to.
+        """
+        current_url = self.driver.get_current_url()
+        base_parts = current_url.split('/')
+        base_url = f"{base_parts[0]}//{base_parts[2]}"
+        switch_url = f"{base_url}/auth/switch/{project_id}/?next=/project/"
+        get_logger().log_info(f"Switching project via {switch_url}")
+        self.driver.navigate_to_url(switch_url)
