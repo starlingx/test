@@ -1668,7 +1668,7 @@ def test_kernel_module_invalid_module_handling(request):
     # Test 1: Invalid container image reference
     get_logger().log_test_case_step("Uploading module with invalid container image")
     yaml_keywords = YamlKeywords(ssh_connection)
-    yaml_keywords.generate_yaml_file_from_template(get_stx_resource_path("resources/cloud_platform/kubernetes-operator-framework/kernel-module-mgmt/hello_world_mod.yaml.j2"), {"kmm_container_image_registry": "registry.local:9001/invalid/nonexistent", "module_name": module_name, "target_host": active_controller}, "hello_world_mod.yaml", "/tmp")
+    yaml_keywords.generate_yaml_file_from_template(get_stx_resource_path("resources/cloud_platform/kubernetes-operator-framework/kernel-module-mgmt/hello_world_mod.yaml.j2"), {"kmm_container_image_registry": "registry.local:9001/invalid/nonexistent", "module_name": module_name, "target_host": active_controller, "kernel_version": get_base_kernel_version(ssh_connection)}, "hello_world_mod.yaml", "/tmp")
 
     get_logger().log_test_case_step("Applying module with invalid image")
     apply_keywords = KubectlFileApplyKeywords(ssh_connection)
