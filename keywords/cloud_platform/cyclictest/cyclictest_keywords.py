@@ -21,6 +21,7 @@ from keywords.cloud_platform.system.host.system_host_cpu_keywords import SystemH
 from keywords.cloud_platform.system.host.system_host_label_keywords import SystemHostLabelKeywords
 from keywords.cloud_platform.system.host.system_host_list_keywords import SystemHostListKeywords
 from keywords.cloud_platform.system.host.system_host_lock_keywords import SystemHostLockKeywords
+from keywords.cloud_platform.system.host.system_host_swact_keywords import SystemHostSwactKeywords
 from keywords.cloud_platform.system.host.system_host_task_affinity_keywords import SystemHostTaskAffinityKeywords
 from keywords.files.file_keywords import FileKeywords
 from keywords.linux.process_status.process_status_psr_keywords import ProcessStatusPsrKeywords
@@ -76,7 +77,7 @@ class CyclictestKeywords(BaseKeyword):
             ssh_connection (SSHConnection): SSH connection to the active controller.
         """
         self._ssh_connection = ssh_connection
-        self._cfg = ConfigurationManager.get_cyclictest_config()
+        self._cyclictest_cfg = ConfigurationManager.get_cyclictest_config()
 
     def _build_cyclictest_params(self) -> CyclictestParamsObject:
         """Build the cyclictest parameter object for isolated-core runs.
@@ -153,11 +154,7 @@ class CyclictestKeywords(BaseKeyword):
             get_logger().log_debug(f"Processing hypervisor {hostname}")
             host_ssh = LabConnectionKeywords().get_ssh_for_hostname(hostname)
 
-            # Step 1 — diagnostic collection (lscpu + /proc/cpuinfo always logged).
-            diag_output = "".join(host_ssh.send("lscpu; cat /proc/cpuinfo"))
-            get_logger().log_debug(f"Host diagnostic info for {hostname}:\n{diag_output}")
-
-            # Step 2 — read platform.conf via output object.
+            # Step 1 — read platform.conf via output object.
             platform_conf_raw = "".join(host_ssh.send("cat /etc/platform/platform.conf"))
             subfunction = PlatformConfOutput(platform_conf_raw).get_subfunction()
             get_logger().log_debug(f"{hostname} subfunction: '{subfunction}'")
@@ -167,7 +164,7 @@ class CyclictestKeywords(BaseKeyword):
                 get_logger().log_debug(f"{hostname}: 'lowlatency' not in subfunction — skipping")
                 continue
 
-            # Step 3 — verify the running kernel via uname -a.
+            # Step 2 — verify the running kernel via uname -a.
             kernel_output = "".join(host_ssh.send("uname -a"))
             get_logger().log_info(f"KERNEL VERSION on {hostname}: {kernel_output.strip()}")
 
@@ -175,7 +172,7 @@ class CyclictestKeywords(BaseKeyword):
                 expected_flag = _KERNEL_MODE_FLAGS[kernel_mode]
                 validate_str_contains(kernel_output, expected_flag, f"{hostname} kernel contains '{expected_flag}' flag for kernel_mode='{kernel_mode}'")
 
-            # Step 4 — collect CPU function assignments and filter to online CPUs.
+            # Step 3 — collect CPU function assignments and filter to online CPUs.
             cpu_output = SystemHostCPUKeywords(self._ssh_connection).get_system_host_cpu_list(hostname)
 
             num_threads = cpu_output.get_thread_count()
@@ -266,29 +263,119 @@ class CyclictestKeywords(BaseKeyword):
             return active_controller_name
         return next(iter(testable_hypervisors))
 
-    def assign_cpu_policy_labels(self, hostname: str) -> None:
-        """Assign the kube CPU/topology manager labels on a hypervisor.
+    def ensure_kpi_labels_and_isolated_cpus(self, hostname: str) -> None:
+        """Ensure KPI CPU-policy labels and Application-isolated cores are both correct in a single lock/unlock.
 
-        Ensures ``kube-cpu-mgr-policy=static`` and
-        ``kube-topology-mgr-policy=restricted`` are set on *hostname* via
-        lock/unlock. If the labels are already correct the lock/unlock cycle
-        is skipped entirely — saving ~10 minutes on AIO-SX labs. The caller
-        is responsible for registering an unlock finalizer (see
-        :meth:`ensure_host_unlocked`) before invoking this method.
+        Verifies ``kube-cpu-mgr-policy=static``, ``kube-topology-mgr-policy=restricted``,
+        and the Application-isolated core count on processor 0. Configures only what
+        is wrong:
+
+        - If both are already correct the lock is skipped entirely.
+        - If either needs a change the host is locked once, all required
+          changes are applied, then the host is unlocked.
+        - On duplex systems where *hostname* is the active controller, a swact
+          is performed before locking (the active controller cannot be locked
+          directly), and a swact back is performed after unlock to restore the
+          original active.
+        - On simplex systems the host is locked and unlocked directly.
+
+        The caller is responsible for registering an ``ensure_host_unlocked``
+        finalizer **before** calling this method so the host is always
+        recovered if this method is interrupted mid-lock.
+
+        Formula for target isolated core count (counting only the primary hyperthread sibling):
+
+        .. code-block:: text
+
+            config_cores = p0_app_cores + p0_isolated_cores - 1
+            target       = (config_cores + 1) // 2
 
         Args:
-            hostname (str): Target hypervisor to label, e.g. ``"controller-0"``.
-        """
-        get_logger().log_setup_step(f"Set kube-cpu-mgr-policy=static and kube-topology-mgr-policy=restricted on {hostname}")
-        label_list = SystemHostLabelKeywords(self._ssh_connection).get_system_host_label_list(hostname)
-        labels_already_correct = all(label_list.get_label_value(key) == expected for key, expected in KPI_LABEL_EXPECTED.items())
+            hostname (str): Target hypervisor to verify and configure, e.g. ``"controller-0"``.
 
-        if labels_already_correct:
-            get_logger().log_info(f"CPU policy labels already correct on {hostname}: {KPI_LABEL_EXPECTED} — skipping lock/unlock")
-        else:
-            get_logger().log_info(f"CPU policy labels wrong or missing on {hostname} — expected {KPI_LABEL_EXPECTED}. Assigning via lock/unlock")
-            SystemHostLabelKeywords(self._ssh_connection).lock_host_assign_labels_and_unlock(hostname, KPI_LABELS, overwrite=True)
-            get_logger().log_info(f"CPU policy labels assigned successfully on {hostname}")
+        Raises:
+            Exception: If ``p0_app_cores`` is 0 or ``config_cores`` is not positive
+                (raised by :func:`~framework.validation.validation.validate_greater_than`) —
+                there is no valid Application/Application-isolated split to compute,
+                typically because proc0 cores are already fully assigned to
+                Application-isolated from a prior run. Proceeding in this state would
+                silently run the KPI test against a stale, incorrect core count instead
+                of the correct mid-point split.
+            Exception: If locking, label assignment, CPU modification, or swact fails
+                (propagated from :class:`SystemHostLockKeywords`,
+                :class:`SystemHostLabelKeywords`, :class:`SystemHostCPUKeywords`,
+                or :class:`SystemHostSwactKeywords`).
+        """
+        get_logger().log_setup_step(f"Ensure KPI labels and isolated CPUs are correct on {hostname}")
+
+        # --- Verify labels ---
+        label_list = SystemHostLabelKeywords(self._ssh_connection).get_system_host_label_list(hostname)
+        labels_ok = all(label_list.get_label_value(k) == v for k, v in KPI_LABEL_EXPECTED.items())
+
+        # --- Verify CPU assignment ---
+        # Counts are restricted to thread 0 (primary HT sibling) — on a hyperthreaded host,
+        # counting both HT siblings would double config_cores and produce a target_isolated
+        # value roughly 2x too large relative to the number of distinct physical cores.
+        cpu_output = SystemHostCPUKeywords(self._ssh_connection).get_system_host_cpu_list(hostname)
+        p0_app_cores = len(cpu_output.get_system_host_cpu_objects(processor_id=0, assigned_function=CPU_APPLICATION, thread=0))
+        p0_isolated_cores = len(cpu_output.get_system_host_cpu_objects(processor_id=0, assigned_function=CPU_APPLICATION_ISOLATED, thread=0))
+        get_logger().log_info(f"{hostname}: p0_app_cores={p0_app_cores} p0_isolated_cores={p0_isolated_cores}")
+
+        # Reserve one core for the platform; the rest are available for Application / Application-isolated.
+        config_cores = p0_app_cores + p0_isolated_cores - 1
+
+        # p0_app_cores == 0 means all proc0 cores are already assigned to Application-isolated
+        # (e.g. left over from a prior run) and there is no valid split to compute — proceeding
+        # would silently run the KPI against a stale/incorrect core count instead of the correct
+        # mid-point split. config_cores must also be positive, since a value of 0 or less means
+        # there aren't enough proc0 cores to reserve one for platform and split the remainder.
+        validate_greater_than(p0_app_cores, 0, f"{hostname}: p0_app_cores is available for computing an Application-isolated core split")
+        validate_greater_than(config_cores, 0, f"{hostname}: config_cores is positive and a valid isolated-core split can be computed")
+
+        target_isol = (config_cores + 1) // 2
+        cpu_ok = target_isol == p0_isolated_cores
+        get_logger().log_info(f"{hostname}: config_cores={config_cores} target_isolated={target_isol} current_isolated={p0_isolated_cores}")
+
+        # --- Short-circuit if both already correct ---
+        if labels_ok and cpu_ok:
+            get_logger().log_info(f"{hostname}: labels and CPU assignment already correct — skipping lock/unlock")
+            return
+
+        # --- Determine if a swact is needed before locking ---
+        # SX: lock directly. DX/Std: if hostname is active controller, swact first then lock.
+        controllers = SystemHostListKeywords(self._ssh_connection).get_controllers()
+        active_name = SystemHostListKeywords(self._ssh_connection).get_active_controller().get_host_name()
+        needs_swact = len(controllers) > 1 and hostname == active_name
+
+        get_logger().log_info(f"{hostname}: labels_ok={labels_ok} cpu_ok={cpu_ok} needs_swact={needs_swact} — locking once to apply required changes")
+
+        # Use a local ssh_connection variable — never mutate self._ssh_connection (side-effect risk on shared instance)
+        ssh_connection = self._ssh_connection
+
+        if needs_swact:
+            get_logger().log_info(f"{hostname} is the active controller on a duplex system — swacting before lock")
+            SystemHostSwactKeywords(ssh_connection).host_swact()
+            ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+            get_logger().log_info("SSH re-established on new active controller after swact")
+
+        SystemHostLockKeywords(ssh_connection).lock_host(hostname)
+
+        if not labels_ok:
+            get_logger().log_info(f"{hostname}: assigning KPI labels {KPI_LABELS}")
+            SystemHostLabelKeywords(ssh_connection).system_host_label_assign(hostname, " ".join(KPI_LABELS), overwrite=True)
+
+        if not cpu_ok:
+            get_logger().log_info(f"{hostname}: assigning {target_isol} Application-isolated cores on proc0")
+            SystemHostCPUKeywords(ssh_connection).system_host_cpu_modify(hostname, "application-isolated", num_cores_on_processor_0=target_isol)
+
+        SystemHostLockKeywords(ssh_connection).unlock_host(hostname)
+
+        if needs_swact:
+            get_logger().log_info(f"Swacting back to restore {hostname} as active controller")
+            SystemHostSwactKeywords(ssh_connection).host_swact()
+            get_logger().log_info(f"{hostname} restored as active controller")
+
+        get_logger().log_info(f"{hostname}: KPI labels and isolated CPU assignment complete")
 
     def ensure_host_unlocked(self, hostname: str) -> None:
         """Unlock *hostname* if it is not already unlocked.
@@ -325,8 +412,8 @@ class CyclictestKeywords(BaseKeyword):
             RuntimeError: If the cyclictest binary is not found at its
                 configured source path, or if the copy to the destination fails.
         """
-        cyclictest_dir = self._cfg.get_cyclictest_dir()
-        cyclictest_exe = self._cfg.get_cyclictest_exe()
+        cyclictest_dir = self._cyclictest_cfg.get_cyclictest_dir()
+        cyclictest_exe = self._cyclictest_cfg.get_cyclictest_exe()
 
         if not cyclictest_dir or cyclictest_dir.strip() in ("", "/"):
             raise ValueError(f"cyclictest_dir is empty or unsafe: '{cyclictest_dir}'. Check the cyclictest config.")
@@ -342,13 +429,12 @@ class CyclictestKeywords(BaseKeyword):
         if not file_kw.file_exists(dest):
             active_controller = SystemHostListKeywords(self._ssh_connection).get_active_controller().get_host_name()
             if target == active_controller:
-                # Same host — source binary must already be present (e.g. placed by Jenkins).
-                validate_equals(
-                    file_kw.file_exists(cyclictest_exe),
-                    True,
-                    f"cyclictest binary exists at '{cyclictest_exe}' on {target} (pre-deployed by Jenkins or set in cyclictest config)",
-                )
-                file_kw.copy_file(cyclictest_exe, dest)
+                # Upload binary from automation runner (cyclictest_exe) to the
+                # controller via SFTP. This handles the case where the binary
+                # is missing after a lock/unlock cycle wipes the controller
+                # filesystem, without requiring the binary to be pre-deployed.
+                get_logger().log_info(f"Uploading cyclictest binary from runner {cyclictest_exe} → {dest} on {target}")
+                FileKeywords(host_ssh).upload_file(cyclictest_exe, dest)
             else:
                 # Different host — transfer from active controller via rsync.
                 lab_cfg = ConfigurationManager.get_lab_config()
@@ -397,15 +483,15 @@ class CyclictestKeywords(BaseKeyword):
                 plus the histofall flag.
         """
         get_logger().log_test_case_step(f"Run cyclictest on {target}")
-        cyclictest_exe = self._cfg.get_cyclictest_exe()
-        cyclictest_dir = self._cfg.get_cyclictest_dir()
+        cyclictest_exe = self._cyclictest_cfg.get_cyclictest_exe()
+        cyclictest_dir = self._cyclictest_cfg.get_cyclictest_dir()
         exe_name = os.path.basename(cyclictest_exe)
         program = os.path.join(cyclictest_dir, exe_name)
 
         params = dict(settings.to_dict() if settings is not None else self._build_cyclictest_params().to_dict())
         # Duration: explicit argument → config file (default.json5).
         # The explicit argument exists only for per-test overrides.
-        params["duration"] = duration if duration is not None else self._cfg.get_duration()
+        params["duration"] = duration if duration is not None else self._cyclictest_cfg.get_duration()
         histofall_mode = "histofall" in params
 
         timestamp = time.strftime("%Y-%m-%d-%H-%M-%S")
@@ -417,19 +503,21 @@ class CyclictestKeywords(BaseKeyword):
 
         # Build --affinity and --threads options via SystemHostCPUOutput helpers.
         options = " ".join(f"--{k} {v}" for k, v in params.items())
-        plat_cores = [c.get_log_core() for c in SystemHostCPUKeywords(self._ssh_connection).get_system_host_cpu_list(target).get_system_host_cpu_objects(assigned_function=CPU_PLATFORM)]
+        # Use proc0 Platform cores, thread 0 only, for --mainaffinity. Without the thread
+        # filter this would include the HT sibling (e.g. "0,64" instead of "0"), which is
+        # not the intended set of Platform-affined threads for cyclictest's main thread.
+        plat_cores = [c.get_log_core() for c in SystemHostCPUKeywords(self._ssh_connection).get_system_host_cpu_list(target).get_system_host_cpu_objects(processor_id=0, assigned_function=CPU_PLATFORM, thread=0)]
         main_affinity = f" --mainaffinity {SystemHostCPUOutput.normalize_cpu_list(plat_cores)}" if plat_cores else ""
 
         isol = getattr(cpu_output, "isolated_cores", [])
-        user_cores = self._cfg.get_cores()
+        user_cores = self._cyclictest_cfg.get_cores()
         if isol:
             options += f" --affinity {SystemHostCPUOutput.normalize_cpu_list(isol)} --threads {len(isol)}{main_affinity}"
         elif user_cores:
             count = SystemHostCPUOutput.calculate_range_length(user_cores)
             options += f" --affinity {user_cores} --threads {count}{main_affinity}"
         else:
-            vm_cores = getattr(cpu_output, "vm_cores", [])
-            options += f" --affinity {SystemHostCPUOutput.normalize_cpu_list(vm_cores)} --threads {len(vm_cores)}{main_affinity}"
+            raise ValueError("No CPU affinity source available: 'isolated_cores' is empty and " "'cores' is not set in the cyclictest config. Cannot run cyclictest.")
 
         cmd = f"{program} {options}"
         script = f"{cyclictest_dir}/runcyclictest.sh"
@@ -494,7 +582,7 @@ class CyclictestKeywords(BaseKeyword):
         """
         get_logger().log_test_case_step("Fetch cyclictest results to localhost")
 
-        cyclictest_dir = self._cfg.get_cyclictest_dir()
+        cyclictest_dir = self._cyclictest_cfg.get_cyclictest_dir()
 
         # chmod so root-owned files are readable for SFTP download.
         host_ssh.send_as_sudo(f"chmod -R 755 {cyclictest_dir}/*.txt")
@@ -593,12 +681,17 @@ class CyclictestKeywords(BaseKeyword):
             cpu_output.vm_cores = []
             cpu_output.for_host_test = False
 
-        # Refresh isolated cores and filter to online CPUs.
+        # Re-read isolated cores from system host-cpu-list after
+        # ensure_kpi_labels_and_isolated_cpus has run so the fresh assignment
+        # is picked up. The cpu_output from get_suitable_hypervisors was
+        # populated before the assignment and must not be used here.
         host_ssh = LabConnectionKeywords().get_ssh_for_hostname(chosen)
-        isol_cores = [c.get_log_core() for c in cpu_output.get_system_host_cpu_objects(assigned_function=CPU_APPLICATION_ISOLATED)]
+        fresh_cpu_output = SystemHostCPUKeywords(self._ssh_connection).get_system_host_cpu_list(chosen)
+        isol_cores = [c.get_log_core() for c in fresh_cpu_output.get_system_host_cpu_objects(assigned_function=CPU_APPLICATION_ISOLATED)]
         online = CyclictestKeywords(host_ssh).get_online_cpus()
         if online is not None:
             isol_cores = [c for c in isol_cores if c in online.get_online_cpu_ids()]
+        get_logger().log_info(f"{chosen} app_isolated_cores={isol_cores}")
         cpu_output.isolated_cores = isol_cores
         cpu_output.for_host_test = True
 

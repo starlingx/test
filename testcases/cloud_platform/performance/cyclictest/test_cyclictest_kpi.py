@@ -70,12 +70,12 @@ def _prepare_platform(request: FixtureRequest, kernel_mode: str) -> SuitableHype
     get_logger().log_setup_step(f"Verify lab has {kernel_mode}-kernel hypervisors")
     targets = cyclictest_kw.get_suitable_hypervisors(kernel_mode=kernel_mode)
 
-    # 3. Assign CPU/topology manager labels on the hypervisor that will run
-    #    the KPI. Register the unlock finalizer BEFORE assigning so the host
-    #    is always recovered even if label assignment fails mid-lock.
+    # 3. Verify and configure KPI labels and isolated CPUs on the target host.
+    #    Register the unlock finalizer BEFORE calling so the host is always
+    #    recovered even if the operation is interrupted mid-lock.
     target_host = cyclictest_kw.select_label_target_host(targets)
     request.addfinalizer(lambda: cyclictest_kw.ensure_host_unlocked(target_host))
-    cyclictest_kw.assign_cpu_policy_labels(target_host)
+    cyclictest_kw.ensure_kpi_labels_and_isolated_cpus(target_host)
 
     return targets
 
@@ -153,7 +153,7 @@ def test_cyclictest_rt_c1p0(request: FixtureRequest):
 
     cyclictest_kw = CyclictestKeywords(ssh)
 
-    # Setup Step 6 (mirrors TIS): compress stale results from a prior run (idempotent).
+    # Setup Step 6: compress stale results from a prior run (idempotent).
     get_logger().log_setup_step("Compress stale cyclictest execution logs from prior run (if any)")
     cyclictest_kw.compress_results(os.path.join(get_logger().get_test_case_log_dir(), "system_logs"))
 

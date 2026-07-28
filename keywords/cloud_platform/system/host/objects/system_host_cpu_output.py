@@ -71,13 +71,16 @@ class SystemHostCPUOutput:
 
             self.system_host_cpus.append(system_host_cpu_object)
 
-    def get_system_host_cpu_objects(self, processor_id: int = -1, assigned_function: str = None) -> List[SystemHostCPUObject]:
+    def get_system_host_cpu_objects(self, processor_id: int = -1, assigned_function: str = None, thread: int = -1) -> List[SystemHostCPUObject]:
         """
         This function will return the list of SystemHostCPU objects matching the specified parmeters.
 
         Args:
             processor_id (int): The ID (e.g. 0)  of the processor of interest. (-1 means any processor)
             assigned_function (str): If we want to limit the CPUs returned to specific functions.
+            thread (int): The hyperthread sibling ID to filter on (e.g. 0 for the primary thread,
+                counting only the primary hyperthread sibling). (-1 means any thread —
+                returns all HT siblings.)
 
         Returns:
             List[SystemHostCPUObject]: List of SystemHostCPU objects matching the parameters.
@@ -94,8 +97,12 @@ class SystemHostCPUOutput:
             if assigned_function:
                 is_matching_assigned_function = system_host_cpu.get_assigned_function() == assigned_function
 
+            is_matching_thread = True
+            if thread > -1:
+                is_matching_thread = system_host_cpu.get_thread() == thread
+
             # If the system_host_cpu matches all the required criteria, add it to the target list.
-            if is_matching_processor_id and is_matching_assigned_function:
+            if is_matching_processor_id and is_matching_assigned_function and is_matching_thread:
                 target_system_host_cpu_objects.append(system_host_cpu)
 
         return target_system_host_cpu_objects
