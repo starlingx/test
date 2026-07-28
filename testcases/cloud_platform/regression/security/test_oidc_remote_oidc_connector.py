@@ -31,30 +31,18 @@ from keywords.k8s.secret.kubectl_get_secret_keywords import KubectlGetSecretsKey
 
 
 def _load_dex_config() -> dict:
-    """Load DEX connector config from JSON5.
-
-    Returns:
-        dict: Configuration dictionary.
-    """
+    """Load DEX connector config from JSON5."""
     return ConfigurationManager.get_security_config().get_dex_connector_config()
 
 
-def _get_keycloak_test_user_config() -> dict:
-    """Load Keycloak test user configuration.
-
-    Returns:
-        dict: Keycloak test user config with username, password, email, crb_name, realm.
-    """
-    return _load_dex_config()["keycloak_test_user"]
+def _get_keycloak_test_user_config():
+    """Load Keycloak test user configuration."""
+    return _load_dex_config().get_keycloak_test_user()
 
 
-def _get_remote_oidc_config() -> dict:
-    """Load Remote OIDC connector configuration.
-
-    Returns:
-        dict: Remote OIDC config with issuer_url, client_id, client_secret, claim_mapping.
-    """
-    return _load_dex_config()["remote_oidc"]
+def _get_remote_oidc_config():
+    """Load Remote OIDC connector configuration."""
+    return _load_dex_config().get_remote_oidc()
 
 
 def _get_oidc_prefixed_username(oam_ip: str, username: str) -> str:
@@ -260,21 +248,21 @@ def test_remote_oidc_claim_mapping(request):
 
     def cleanup():
         ssh = LabConnectionKeywords().get_active_controller_ssh()
-        FileKeywords(ssh).delete_directory(config["working_dir"])
+        FileKeywords(ssh).delete_directory(config.get_working_dir())
 
     request.addfinalizer(cleanup)
 
-    get_logger().log_info(f"Applying Remote OIDC override with claimMapping: {oidc_config['claim_mapping']}")
+    get_logger().log_info(f"Applying Remote OIDC override with claimMapping: {oidc_config.get_claim_mapping()}")
     oidc_keywords = RemoteOidcConnectorKeywords(ssh_connection)
-    oidc_keywords.apply_remote_oidc_override(config=config, claim_mapping=oidc_config["claim_mapping"])
+    oidc_keywords.apply_remote_oidc_override(config=config, claim_mapping=oidc_config.get_claim_mapping())
 
     get_logger().log_info("Authenticating Keycloak user and decoding token")
-    kc_ssh = _create_keycloak_ssh(kc_user["username"], kc_user["password"], oam_ip)
+    kc_ssh = _create_keycloak_ssh(kc_user.get_username(), kc_user.get_password(), oam_ip)
     claims = _decode_id_token(kc_ssh)
     kc_ssh.close()
 
-    validate_equals(claims.get_email(), kc_user["email"], "Token email claim should match Keycloak user email")
-    validate_equals(claims.get_preferred_username(), kc_user["username"], "Token preferred_username should match Keycloak username")
+    validate_equals(claims.get_email(), kc_user.get_email(), "Token email claim should match Keycloak user email")
+    validate_equals(claims.get_preferred_username(), kc_user.get_username(), "Token preferred_username should match Keycloak username")
     validate_equals(claims.has_name(), True, "Token should contain name claim from Keycloak")
 
 
@@ -306,18 +294,18 @@ def test_remote_oidc_access_with_preferred_username_claim(request):
 
     def cleanup():
         ssh = LabConnectionKeywords().get_active_controller_ssh()
-        KubectlCreateClusterRoleBindingKeywords(ssh).delete_clusterrolebinding(kc_user["crb_name"])
-        DexConnectorKeywords(ssh).set_oidc_username_claim(config["oidc_username_claim"]["default"])
-        FileKeywords(ssh).delete_directory(config["working_dir"])
+        KubectlCreateClusterRoleBindingKeywords(ssh).delete_clusterrolebinding(kc_user.get_crb_name())
+        DexConnectorKeywords(ssh).set_oidc_username_claim(config.get_oidc_username_claim().get_default())
+        FileKeywords(ssh).delete_directory(config.get_working_dir())
 
     request.addfinalizer(cleanup)
 
-    oidc_keywords.apply_remote_oidc_override(config=config, claim_mapping=oidc_config["claim_mapping"])
-    dex_keywords.set_oidc_username_claim(config["oidc_username_claim"]["default"])
-    crb_keywords.create_clusterrolebinding_for_user(kc_user["crb_name"], "cluster-admin", _get_oidc_prefixed_username(oam_ip, kc_user["username"]))
+    oidc_keywords.apply_remote_oidc_override(config=config, claim_mapping=oidc_config.get_claim_mapping())
+    dex_keywords.set_oidc_username_claim(config.get_oidc_username_claim().get_default())
+    crb_keywords.create_clusterrolebinding_for_user(kc_user.get_crb_name(), "cluster-admin", _get_oidc_prefixed_username(oam_ip, kc_user.get_username()))
 
     get_logger().log_info("SSH as Keycloak user, oidc-auth, verify kubectl")
-    kc_ssh = _create_keycloak_ssh(kc_user["username"], kc_user["password"], oam_ip)
+    kc_ssh = _create_keycloak_ssh(kc_user.get_username(), kc_user.get_password(), oam_ip)
     _verify_kubectl_and_stx_access(kc_ssh, expect_success=True)
     kc_ssh.close()
 
@@ -345,18 +333,18 @@ def test_remote_oidc_access_with_email_claim(request):
 
     def cleanup():
         ssh = LabConnectionKeywords().get_active_controller_ssh()
-        KubectlCreateClusterRoleBindingKeywords(ssh).delete_clusterrolebinding(kc_user["crb_name"])
-        DexConnectorKeywords(ssh).set_oidc_username_claim(config["oidc_username_claim"]["default"])
-        FileKeywords(ssh).delete_directory(config["working_dir"])
+        KubectlCreateClusterRoleBindingKeywords(ssh).delete_clusterrolebinding(kc_user.get_crb_name())
+        DexConnectorKeywords(ssh).set_oidc_username_claim(config.get_oidc_username_claim().get_default())
+        FileKeywords(ssh).delete_directory(config.get_working_dir())
 
     request.addfinalizer(cleanup)
 
-    oidc_keywords.apply_remote_oidc_override(config=config, claim_mapping=oidc_config["claim_mapping"])
-    dex_keywords.set_oidc_username_claim(config["oidc_username_claim"]["alternative"])
-    crb_keywords.create_clusterrolebinding_for_user(kc_user["crb_name"], "cluster-admin", kc_user["email"])
+    oidc_keywords.apply_remote_oidc_override(config=config, claim_mapping=oidc_config.get_claim_mapping())
+    dex_keywords.set_oidc_username_claim(config.get_oidc_username_claim().get_alternative())
+    crb_keywords.create_clusterrolebinding_for_user(kc_user.get_crb_name(), "cluster-admin", kc_user.get_email())
 
     get_logger().log_info("SSH as Keycloak user, oidc-auth, verify kubectl with email CRB")
-    kc_ssh = _create_keycloak_ssh(kc_user["username"], kc_user["password"], oam_ip)
+    kc_ssh = _create_keycloak_ssh(kc_user.get_username(), kc_user.get_password(), oam_ip)
     _verify_kubectl_and_stx_access(kc_ssh, expect_success=True)
     kc_ssh.close()
 
@@ -400,27 +388,27 @@ def test_keycloak_unverified_email_rejected(request):
         admin_username=security_config.get_oidc_keycloak_admin_username(),
         admin_password=security_config.get_oidc_keycloak_admin_password(),
     )
-    keycloak_admin.set_email_verified(kc_user["username"], False)
+    keycloak_admin.set_email_verified(kc_user.get_username(), False)
 
     def cleanup():
         ssh = LabConnectionKeywords().get_active_controller_ssh()
-        KubectlCreateClusterRoleBindingKeywords(ssh).delete_clusterrolebinding(kc_user["crb_name"])
-        DexConnectorKeywords(ssh).set_oidc_username_claim(config["oidc_username_claim"]["default"])
-        FileKeywords(ssh).delete_directory(config["working_dir"])
+        KubectlCreateClusterRoleBindingKeywords(ssh).delete_clusterrolebinding(kc_user.get_crb_name())
+        DexConnectorKeywords(ssh).set_oidc_username_claim(config.get_oidc_username_claim().get_default())
+        FileKeywords(ssh).delete_directory(config.get_working_dir())
         # Restore emailVerified=true for other tests
-        keycloak_admin.set_email_verified(kc_user["username"], True)
+        keycloak_admin.set_email_verified(kc_user.get_username(), True)
 
     request.addfinalizer(cleanup)
 
     get_logger().log_info("Applying Remote OIDC connector override")
-    oidc_keywords.apply_remote_oidc_override(config=config, claim_mapping=oidc_config["claim_mapping"])
+    oidc_keywords.apply_remote_oidc_override(config=config, claim_mapping=oidc_config.get_claim_mapping())
 
     get_logger().log_info("Setting oidc-username-claim=email and creating CRB by email")
-    dex_keywords.set_oidc_username_claim(config["oidc_username_claim"]["alternative"])
-    crb_keywords.create_clusterrolebinding_for_user(kc_user["crb_name"], "cluster-admin", kc_user["email"])
+    dex_keywords.set_oidc_username_claim(config.get_oidc_username_claim().get_alternative())
+    crb_keywords.create_clusterrolebinding_for_user(kc_user.get_crb_name(), "cluster-admin", kc_user.get_email())
 
     get_logger().log_info("Auth with Keycloak user (email_verified=false) — should be denied")
-    kc_ssh = _create_keycloak_ssh(kc_user["username"], kc_user["password"], oam_ip)
+    kc_ssh = _create_keycloak_ssh(kc_user.get_username(), kc_user.get_password(), oam_ip)
     _verify_kubectl_and_stx_access(kc_ssh, expect_success=False)
     kc_ssh.close()
 
@@ -452,17 +440,17 @@ def test_dc_remote_oidc_centralized_auth(request):
 
     def cleanup():
         ssh = LabConnectionKeywords().get_active_controller_ssh()
-        KubectlCreateClusterRoleBindingKeywords(ssh).delete_clusterrolebinding(kc_user["crb_name"])
-        DexConnectorKeywords(ssh).set_oidc_username_claim(config["oidc_username_claim"]["default"])
-        FileKeywords(ssh).delete_directory(config["working_dir"])
+        KubectlCreateClusterRoleBindingKeywords(ssh).delete_clusterrolebinding(kc_user.get_crb_name())
+        DexConnectorKeywords(ssh).set_oidc_username_claim(config.get_oidc_username_claim().get_default())
+        FileKeywords(ssh).delete_directory(config.get_working_dir())
 
     request.addfinalizer(cleanup)
 
-    oidc_keywords.apply_remote_oidc_override(config=config, claim_mapping=oidc_config["claim_mapping"])
-    dex_keywords.set_oidc_username_claim(config["oidc_username_claim"]["default"])
-    crb_keywords.create_clusterrolebinding_for_user(kc_user["crb_name"], "cluster-admin", _get_oidc_prefixed_username(oam_ip, kc_user["username"]))
+    oidc_keywords.apply_remote_oidc_override(config=config, claim_mapping=oidc_config.get_claim_mapping())
+    dex_keywords.set_oidc_username_claim(config.get_oidc_username_claim().get_default())
+    crb_keywords.create_clusterrolebinding_for_user(kc_user.get_crb_name(), "cluster-admin", _get_oidc_prefixed_username(oam_ip, kc_user.get_username()))
 
     get_logger().log_info("Verifying Remote OIDC access on DC System Controller")
-    kc_ssh = _create_keycloak_ssh(kc_user["username"], kc_user["password"], oam_ip)
+    kc_ssh = _create_keycloak_ssh(kc_user.get_username(), kc_user.get_password(), oam_ip)
     _verify_kubectl_and_stx_access(kc_ssh, expect_success=True)
     kc_ssh.close()

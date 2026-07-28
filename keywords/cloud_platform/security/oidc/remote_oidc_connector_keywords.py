@@ -1,6 +1,7 @@
 """Keywords for Remote OIDC (Keycloak) DEX connector operations."""
 
 from config.configuration_manager import ConfigurationManager
+from config.security.objects.dex_config import DexConfig
 from framework.logging.automation_logger import get_logger
 from framework.resources.resource_finder import get_stx_resource_path
 from framework.ssh.ssh_connection import SSHConnection
@@ -23,7 +24,7 @@ class RemoteOidcConnectorKeywords(DexConnectorKeywords):
         self.yaml_keywords = YamlKeywords(ssh_connection)
         self.file_keywords = FileKeywords(ssh_connection)
 
-    def apply_remote_oidc_override(self, config: dict, claim_mapping: dict) -> None:
+    def apply_remote_oidc_override(self, config: DexConfig, claim_mapping: dict) -> None:
         """Generate Remote OIDC connector override YAML and apply to oidc-auth-apps.
 
         Generates a DEX helm override file from the Keycloak connector template
@@ -31,21 +32,21 @@ class RemoteOidcConnectorKeywords(DexConnectorKeywords):
         the oidc-auth-apps application.
 
         Args:
-            config (dict): DEX connector configuration with working_dir, oidc_app_name, namespace.
+            config (DexConfig): DEX connector configuration object.
             claim_mapping (dict): Claim mapping with keys 'email', 'name',
                 'preferred_username' mapping to the corresponding IdP claim names.
         """
         lab_config = ConfigurationManager.get_lab_config()
         security_config = ConfigurationManager.get_security_config()
 
-        self.file_keywords.create_directory(config["working_dir"])
+        self.file_keywords.create_directory(config.get_working_dir())
 
         # Import upstream IdP CA certificate (required for Dex to verify Keycloak TLS)
-        oidc_config = config["remote_oidc"]
+        remote_oidc_config = config.get_remote_oidc()
         ca_cert_pem = security_config.get_oidc_keycloak_ca_cert()
         template = get_stx_resource_path("resources/cloud_platform/security/oidc/upstream-idp-ca-secret.yaml")
         replacement_dict = {"keycloak_ca_cert": ca_cert_pem.replace("\n", "\\n")}
-        secret_yaml = self.yaml_keywords.generate_yaml_file_from_template(template, replacement_dict, "upstream-idp-ca-secret.yaml", config["working_dir"])
+        secret_yaml = self.yaml_keywords.generate_yaml_file_from_template(template, replacement_dict, "upstream-idp-ca-secret.yaml", config.get_working_dir())
         KubectlFileApplyKeywords(self.ssh_connection).apply_resource_from_yaml(secret_yaml)
 
         template = get_stx_resource_path("resources/cloud_platform/security/oidc/dex-remote-oidc-claim-mapping-overrides.yaml")
@@ -54,9 +55,9 @@ class RemoteOidcConnectorKeywords(DexConnectorKeywords):
             oam_ip = f"[{oam_ip}]"
         replacements = {
             "oam_ip": oam_ip,
-            "client_id": oidc_config["client_id"],
-            "client_secret": oidc_config["client_secret"],
-            "external_idp_issuer_url": oidc_config["issuer_url"],
+            "client_id": remote_oidc_config.get_client_id(),
+            "client_secret": remote_oidc_config.get_client_secret(),
+            "external_idp_issuer_url": remote_oidc_config.get_issuer_url(),
             "oidc_client_secret": security_config.get_oidc_keycloak_static_client_secret(),
             "email_claim": claim_mapping.get("email", "email"),
             "name_claim": claim_mapping.get("name", "name"),
@@ -64,8 +65,8 @@ class RemoteOidcConnectorKeywords(DexConnectorKeywords):
         }
 
         get_logger().log_info(f"Applying Remote OIDC override with claimMapping: {claim_mapping}")
-        override_file = self.yaml_keywords.generate_yaml_file_from_template(template, replacements, "dex-remote-oidc-claim-test.yaml", config["working_dir"])
-        self.apply_dex_override_and_reapply(override_file, config["oidc_app_name"], config["namespace"])
+        override_file = self.yaml_keywords.generate_yaml_file_from_template(template, replacements, "dex-remote-oidc-claim-test.yaml", config.get_working_dir())
+        self.apply_dex_override_and_reapply(override_file, config.get_oidc_app_name(), config.get_namespace())
 
     def get_keycloak_token(self, oam_ip: str, username: str, password: str, client_id: str, client_secret: str, realm: str) -> str:
         """Authenticate via Keycloak and return an ID token.
