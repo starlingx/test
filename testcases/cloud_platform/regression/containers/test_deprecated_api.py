@@ -88,6 +88,7 @@ def test_deprecated_api_system_kubevirt():
     system_application_remove_input = SystemApplicationRemoveInput()
     system_application_remove_input.set_app_name(kubevirt_app_name)
     system_application_remove_input.set_force_removal(False)
+    system_application_remove_input.set_timeout_in_seconds(300)
     system_application_output = SystemApplicationRemoveKeywords(ssh_connection).system_application_remove(system_application_remove_input)
     validate_equals(system_application_output.get_system_application_object().get_status(), SystemApplicationStatusEnum.UPLOADED.value, "Application removal status validation")
 
