@@ -4,6 +4,7 @@ Provides helper methods for interacting with OVS bridges, ports,
 and CRDs via kubectl and ovs-vsctl/ovs-appctl commands.
 """
 
+from config.configuration_manager import ConfigurationManager
 from framework.ssh.ssh_connection import SSHConnection
 from keywords.base_keyword import BaseKeyword
 from keywords.k8s.k8s_command_wrapper import export_k8s_config
@@ -33,7 +34,8 @@ class OpenvSwitchKeywords(BaseKeyword):
             str: The pod name.
         """
         output = self.ssh_connection.send(export_k8s_config(
-            f"kubectl get pods -n {OVS_NAMESPACE} --no-headers | grep ovs-agent | awk '{{print $1}}'"
+            f"kubectl get pods -n {OVS_NAMESPACE} --no-headers"
+            " | grep ovs-agent | awk '{print $1}'"
         ))
         raw = self._to_str(output)
         return raw.strip().split("\n")[0].strip()
@@ -49,7 +51,8 @@ class OpenvSwitchKeywords(BaseKeyword):
             str: Command output.
         """
         full_cmd = export_k8s_config(
-            f"kubectl exec -n {OVS_NAMESPACE} {ovs_agent_pod} -c {OVS_CONTAINER} -- ovs-vsctl {cmd}"
+            f"kubectl exec -n {OVS_NAMESPACE} {ovs_agent_pod}"
+            f" -c {OVS_CONTAINER} -- ovs-vsctl {cmd}"
         )
         return self._to_str(self.ssh_connection.send(full_cmd))
 
@@ -64,15 +67,13 @@ class OpenvSwitchKeywords(BaseKeyword):
             str: Command output.
         """
         full_cmd = export_k8s_config(
-            f"kubectl exec -n {OVS_NAMESPACE} {ovs_agent_pod} -c {OVS_CONTAINER} -- ovs-appctl {cmd}"
+            f"kubectl exec -n {OVS_NAMESPACE} {ovs_agent_pod}"
+            f" -c {OVS_CONTAINER} -- ovs-appctl {cmd}"
         )
         return self._to_str(self.ssh_connection.send(full_cmd))
 
     def exec_in_pod(self, ovs_agent_pod: str, cmd: str, container: str = OVS_CONTAINER) -> str:
         """Execute an arbitrary command inside the OVS agent pod container.
-
-        Use this for system commands (ip, ping, etc.) that need to run
-        in the same network namespace as OVS.
 
         Args:
             ovs_agent_pod: Name of the ovs-agent pod.
@@ -83,34 +84,64 @@ class OpenvSwitchKeywords(BaseKeyword):
             str: Command output.
         """
         full_cmd = export_k8s_config(
-            f"kubectl exec -n {OVS_NAMESPACE} {ovs_agent_pod} -c {container} -- {cmd}"
+            f"kubectl exec -n {OVS_NAMESPACE} {ovs_agent_pod}"
+            f" -c {container} -- {cmd}"
         )
         return self._to_str(self.ssh_connection.send(full_cmd))
 
     def kubectl_apply_yaml(self, yaml_content: str) -> str:
         """Apply a YAML manifest via kubectl.
 
+        Captures stderr so that admission webhook denial messages are
+        available in the output for validation.
+
         Args:
             yaml_content: YAML string to apply.
 
         Returns:
-            str: Command output.
+            str: Command output (includes stderr).
         """
-        cmd = export_k8s_config(f"echo '{yaml_content}' | kubectl apply -f -")
+        cmd = export_k8s_config(
+            f"echo '{yaml_content}' | kubectl apply -f - 2>&1"
+        )
         return self._to_str(self.ssh_connection.send(cmd))
 
-    def kubectl_delete_resource(self, resource_type: str, name: str, namespace: str = OVS_NAMESPACE) -> str:
-        """Delete a kubernetes resource.
+    def get_ovs_crd_names(self, resource_type: str, namespace: str = OVS_NAMESPACE) -> list:
+        """Get names of OVS CRD resources.
 
         Args:
-            resource_type: Resource type (e.g. ovsbridge, ovsport).
-            name: Resource name.
+            resource_type: CRD type (e.g. ovsnodeconfig, ovsbridge, ovsaccess).
             namespace: Namespace.
 
         Returns:
-            str: Command output.
+            list: List of resource names.
         """
-        cmd = export_k8s_config(f"kubectl delete {resource_type} {name} -n {namespace} --ignore-not-found")
+        cmd = export_k8s_config(
+            f"kubectl get {resource_type} -n {namespace}"
+            " --no-headers -o custom-columns=NAME:.metadata.name"
+        )
+        output = self._to_str(self.ssh_connection.send(cmd))
+        return [name.strip() for name in output.strip().split("\n") if name.strip()]
+
+    def patch_ovs_crd(self, resource_type: str, name: str, namespace: str, patch: str) -> str:
+        """Attempt to patch an OVS CRD resource (expected to be denied).
+
+        Used for testing admission webhook denials. Captures stderr so
+        the denial message can be validated by the test.
+
+        Args:
+            resource_type: CRD type (e.g. ovsnodeconfig).
+            name: Resource name.
+            namespace: Namespace.
+            patch: JSON patch string.
+
+        Returns:
+            str: Command output (typically contains denial message).
+        """
+        cmd = export_k8s_config(
+            f"kubectl patch {resource_type} {name} -n {namespace}"
+            f" --type=merge -p '{patch}' 2>&1"
+        )
         return self._to_str(self.ssh_connection.send(cmd))
 
     def get_ovsbridge_status(self, bridge_name: str) -> str:
@@ -123,7 +154,8 @@ class OpenvSwitchKeywords(BaseKeyword):
             str: Status reason string.
         """
         cmd = export_k8s_config(
-            f"kubectl get ovsbridge {bridge_name} -n {OVS_NAMESPACE} -o jsonpath='{{.status.conditions[0].reason}}'"
+            f"kubectl get ovsbridge {bridge_name} -n {OVS_NAMESPACE}"
+            " -o jsonpath='{.status.conditions[0].reason}'"
         )
         return self._to_str(self.ssh_connection.send(cmd)).strip()
 
@@ -134,7 +166,8 @@ class OpenvSwitchKeywords(BaseKeyword):
             str: Space-separated port names.
         """
         cmd = export_k8s_config(
-            f"kubectl get ovsport -n {OVS_NAMESPACE} -o jsonpath='{{.items[*].metadata.name}}'"
+            f"kubectl get ovsport -n {OVS_NAMESPACE}"
+            " -o jsonpath='{.items[*].metadata.name}'"
         )
         return self._to_str(self.ssh_connection.send(cmd)).strip()
 
@@ -143,10 +176,9 @@ class OpenvSwitchKeywords(BaseKeyword):
 
         Used for inter-system OVS testing where the peer is an independent
         AIO-SX system (separate cluster, not reachable via local kubectl).
-        Connects via SSH hop through the local controller.
 
         Args:
-            remote_ip: IP of the remote host (separate AIO-SX cluster).
+            remote_ip: IP of the remote host.
             password: SSH password for the remote host.
             pod_name: Pod name on the remote host.
             cmd: Command to execute inside the pod.
@@ -155,8 +187,10 @@ class OpenvSwitchKeywords(BaseKeyword):
             str: Command output.
         """
         full_cmd = (
-            f"sshpass -p '{password}' ssh -o StrictHostKeyChecking=no sysadmin@{remote_ip} "
-            f"\"export KUBECONFIG=/etc/kubernetes/admin.conf && kubectl exec {pod_name} -- {cmd}\""
+            f"sshpass -p '{password}' ssh -o StrictHostKeyChecking=no"
+            f" sysadmin@{remote_ip}"
+            f" \"export KUBECONFIG=/etc/kubernetes/admin.conf"
+            f" && kubectl exec {pod_name} -- {cmd}\""
         )
         raw = self._to_str(self.ssh_connection.send(full_cmd))
         return self._strip_ssh_banner(raw)
@@ -165,7 +199,7 @@ class OpenvSwitchKeywords(BaseKeyword):
         """Discover a pod name by prefix on a separate remote host.
 
         Args:
-            remote_ip: IP of the remote host (separate AIO-SX cluster).
+            remote_ip: IP of the remote host.
             password: SSH password for the remote host.
             pod_prefix: Pod name prefix to search for.
 
@@ -173,9 +207,11 @@ class OpenvSwitchKeywords(BaseKeyword):
             str: Full pod name.
         """
         full_cmd = (
-            f"sshpass -p '{password}' ssh -o StrictHostKeyChecking=no sysadmin@{remote_ip} "
-            f"\"export KUBECONFIG=/etc/kubernetes/admin.conf && "
-            f"kubectl get pods --no-headers -o custom-columns=NAME:.metadata.name | grep {pod_prefix}\""
+            f"sshpass -p '{password}' ssh -o StrictHostKeyChecking=no"
+            f" sysadmin@{remote_ip}"
+            f" \"export KUBECONFIG=/etc/kubernetes/admin.conf"
+            f" && kubectl get pods --no-headers"
+            f" -o custom-columns=NAME:.metadata.name | grep {pod_prefix}\""
         )
         raw = self._to_str(self.ssh_connection.send(full_cmd))
         cleaned = self._strip_ssh_banner(raw)
@@ -184,10 +220,6 @@ class OpenvSwitchKeywords(BaseKeyword):
     @staticmethod
     def _strip_ssh_banner(output: str) -> str:
         """Remove SSH login banner lines from command output.
-
-        StarlingX systems display a mandatory security banner on SSH login
-        (configured via /etc/issue.net). This method strips those lines
-        when executing commands on remote hosts via SSH hop.
 
         Args:
             output: Raw command output that may contain banner text.
@@ -237,21 +269,55 @@ class OpenvSwitchKeywords(BaseKeyword):
         """
         return self.ovs_vsctl(ovs_agent_pod, f"get interface {interface} bfd_status")
 
-    def verify_connectivity(self, ovs_agent_pod: str, target_ip: str, ipv6: bool = False) -> str:
-        """Verify IP connectivity from inside the OVS agent pod.
+    def verify_connectivity(self, ovs_agent_pod: str, target_ip: str, bridge_name: str = "", ipv6: bool = False) -> str:
+        """Verify IP connectivity using ip neighbor solicitation.
+
+        Since the ovs-agent pod does not have ping/ping6 utilities,
+        uses ip neigh after NDP/ARP probe to check reachability.
 
         Args:
             ovs_agent_pod: Name of the ovs-agent pod.
-            target_ip: Target IP to ping.
-            ipv6: Whether to use ping6.
+            target_ip: Target IP to verify reachability.
+            bridge_name: Bridge interface to probe on (from config if empty).
+            ipv6: Whether target is IPv6 (auto-detected from ':' in IP).
 
         Returns:
-            str: Output containing 'reply' on success or 'timeout' on failure.
+            str: Output containing 'reply' on success, 'timeout' otherwise.
         """
-        ping_cmd = "ping6" if ipv6 or ":" in target_ip else "ping"
-        return self.exec_in_pod(
-            ovs_agent_pod,
-            f"bash -c '{ping_cmd} -c 3 -W 2 {target_ip} && echo reply || echo timeout'"
+        if not bridge_name:
+            bridge_name = ConfigurationManager.get_lab_config().get_ovs_config().get_bridge_name()
+
+        is_ipv6 = ipv6 or ":" in target_ip
+        if is_ipv6:
+            cmd = (
+                f"ip -6 neigh add {target_ip} dev {bridge_name} nud probe 2>/dev/null; "
+                f"ip -6 neigh show {target_ip}"
+                " | grep -q 'REACHABLE\\|STALE\\|DELAY' && echo reply || echo timeout"
+            )
+        else:
+            cmd = (
+                f"ip neigh add {target_ip} dev {bridge_name} nud probe 2>/dev/null; "
+                f"ip neigh show {target_ip}"
+                " | grep -q 'REACHABLE\\|STALE\\|DELAY' && echo reply || echo timeout"
+            )
+        return self.exec_in_pod(ovs_agent_pod, f"sh -c '{cmd}'")
+
+    def verify_connectivity_from_remote(self, remote_ip: str, password: str, pod_name: str, target_ip: str) -> str:
+        """Verify connectivity by pinging from a remote traffic pod.
+
+        Args:
+            remote_ip: IP of the remote host.
+            password: SSH password for the remote host.
+            pod_name: Pod name on the remote host.
+            target_ip: Target IP to ping.
+
+        Returns:
+            str: Ping output (check for '0% packet loss' or 'bytes from').
+        """
+        ping_cmd = "ping6" if ":" in target_ip else "ping"
+        return self.exec_on_remote_pod(
+            remote_ip, password, pod_name,
+            f"{ping_cmd} -c 3 -W 2 {target_ip}"
         )
 
     def add_vlan_internal_port(self, ovs_agent_pod: str, bridge: str, vlan_name: str, vlan_id: int, host_ip: str) -> None:
@@ -264,8 +330,15 @@ class OpenvSwitchKeywords(BaseKeyword):
             vlan_id: VLAN tag ID.
             host_ip: IP address to assign to the port.
         """
-        self.ovs_vsctl(ovs_agent_pod, f"add-port {bridge} {vlan_name} tag={vlan_id} -- set interface {vlan_name} type=internal")
+        self.ovs_vsctl(
+            ovs_agent_pod,
+            f"add-port {bridge} {vlan_name} tag={vlan_id}"
+            f" -- set interface {vlan_name} type=internal"
+        )
         ip_version = "-6 " if ":" in host_ip else ""
         prefix = "64" if ":" in host_ip else "24"
-        self.exec_in_pod(ovs_agent_pod, f"ip {ip_version}addr add {host_ip}/{prefix} dev {vlan_name} 2>/dev/null || true")
+        self.exec_in_pod(
+            ovs_agent_pod,
+            f"ip {ip_version}addr add {host_ip}/{prefix} dev {vlan_name} 2>/dev/null || true"
+        )
         self.exec_in_pod(ovs_agent_pod, f"ip link set {vlan_name} up")
