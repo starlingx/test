@@ -747,6 +747,61 @@ def test_kernel_module_management_label_override(request):
     cleanup_kernel_module_management_environment(ssh_connection)
 
 
+@mark.p2
+def test_kernel_module_management_helm_override_update(request):
+    """Test updating a Helm override value on the kernel module management chart.
+
+    Uses 'system helm-override-update --set' to change a benign pod-spec value
+    (the controller termination grace period), confirms the value is recorded in
+    the chart's user overrides, reapplies the application, and verifies the
+    operator pods return to Running.
+
+    Steps:
+        - Cleanup kernel module management application
+        - Setup kernel module management environment
+        - Update the controller termination grace period via helm-override-update --set
+        - Verify the value is recorded in the chart user overrides
+        - Reapply the application with the updated override
+        - Verify kernel module management pods are running
+        - Cleanup kernel module management application
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    override_key = "controller.terminationGracePeriodSeconds"
+    override_value = "30"
+    # helm stores a --set numeric value as a quoted string in the user overrides
+    expected_user_override = f'terminationGracePeriodSeconds: "{override_value}"'
+
+    get_logger().log_test_case_step("Cleanup kernel module management application")
+    cleanup_kernel_module_management_environment(ssh_connection)
+
+    def cleanup():
+        get_logger().log_teardown_step("Removing kernel module management application")
+        cleanup_kernel_module_management_environment(ssh_connection)
+
+    request.addfinalizer(cleanup)
+
+    get_logger().log_test_case_step("Setting up kernel module management environment")
+    setup_kernel_module_management_environment(ssh_connection)
+
+    get_logger().log_test_case_step("Updating controller termination grace period via helm-override-update")
+    helm_override_keywords = SystemHelmOverrideKeywords(ssh_connection)
+    helm_override_keywords.update_helm_override_via_set(f"{override_key}={override_value}", APP_NAME, CHART_NAME, NAMESPACE, reuse_values=True)
+
+    get_logger().log_test_case_step("Verifying the override value is recorded in the chart user overrides")
+    helm_override_keywords.verify_helm_user_override(expected_user_override, APP_NAME, CHART_NAME, NAMESPACE)
+
+    get_logger().log_test_case_step("Reapplying application with the updated override")
+    system_app_apply = SystemApplicationApplyKeywords(ssh_connection)
+    system_app_apply.system_application_apply(APP_NAME)
+
+    get_logger().log_test_case_step("Verifying kernel module management pods are running")
+    kubectl_pods = KubectlGetPodsKeywords(ssh_connection)
+    kubectl_pods.wait_for_pods_to_reach_status(expected_status="Running", pod_names=KMM_EXPECTED_PODS, namespace=NAMESPACE, timeout=30)
+
+    get_logger().log_test_case_step("Removing kernel module management application")
+    cleanup_kernel_module_management_environment(ssh_connection)
+
+
 @mark.p1
 def test_kernel_module_and_config_map_load_and_build(request):
     """Test kernel module hello world build and load.
