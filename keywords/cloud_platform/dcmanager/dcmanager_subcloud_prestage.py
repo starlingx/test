@@ -35,7 +35,7 @@ class DcmanagerSubcloudPrestage(BaseKeyword):
             return oidc_auth_wrap(cmd)
         return source_openrc(cmd)
 
-    def dcmanager_subcloud_prestage(self, subcloud_name: str, syspass: str, release: str = None, for_sw_deploy: bool = False, force: bool = False, wait_completion: bool = True) -> bool:
+    def dcmanager_subcloud_prestage(self, subcloud_name: str, syspass: str, release: str = None, for_sw_deploy: bool = False, for_install: bool = False, force: bool = False, wait_completion: bool = True) -> bool:
         """
         Runs dcmanager subcloud prestage command.
 
@@ -44,13 +44,14 @@ class DcmanagerSubcloudPrestage(BaseKeyword):
             syspass (str): The sysadmin password to be passed to the command.
             release (str): Release to use for prestage.
             for_sw_deploy (bool): whether to enable --for-sw-deploy flag.
+            for_install (bool): enables --for_install flag.
             force (bool): whether to enable --force flag (bypasses alarm checks).
             wait_completion (bool): whether to wait for prestage to complete
         Returns:
             bool: If prestage succeeded.
 
         """
-        cmd_options = self._build_cmd_options(release, for_sw_deploy, force)
+        cmd_options = self._build_cmd_options(release=release, for_sw_deploy=for_sw_deploy, for_install=for_install, force=force)
         command = self._wrap_command(f"dcmanager subcloud prestage {cmd_options} {subcloud_name}" f" --sysadmin-password {syspass}")
 
         self.ssh_connection.send(command)
@@ -126,7 +127,7 @@ class DcmanagerSubcloudPrestage(BaseKeyword):
         Returns:
             str: Raw command output containing the error message.
         """
-        cmd_options = self._build_cmd_options(release, for_sw_deploy, force)
+        cmd_options = self._build_cmd_options(release=release, for_sw_deploy=for_sw_deploy, force=force)
         command = self._wrap_command(f"dcmanager subcloud prestage {cmd_options} {subcloud_name}" f" --sysadmin-password {syspass}")
 
         output = self.ssh_connection.send(command)
@@ -137,18 +138,24 @@ class DcmanagerSubcloudPrestage(BaseKeyword):
         return output.strip() if isinstance(output, str) else str(output)
 
     @staticmethod
-    def _build_cmd_options(release: str = None, for_sw_deploy: bool = False, force: bool = False) -> str:
+    def _build_cmd_options(release: str = None, for_sw_deploy: bool = False, for_install: bool = False, force: bool = False) -> str:
         """Build command options string for prestage command.
 
         Args:
             release (str): Release to use for prestage.
             for_sw_deploy (bool): Whether to enable --for-sw-deploy flag.
+            for_install (bool): enables --for_install flag.
             force (bool): Whether to enable --force flag.
 
         Returns:
             str: Command options string.
         """
+
+        if for_install and for_sw_deploy:
+            raise Exception("--for-sw-deploy and --for-install cannot be combined.")
+
         cmd_options = f"--release {release}" if release else ""
         cmd_options += " --for-sw-deploy" if for_sw_deploy else ""
+        cmd_options += " --for-install" if for_install else ""
         cmd_options += " --force" if force else ""
         return cmd_options
