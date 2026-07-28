@@ -6,9 +6,12 @@ All lab-specific values (IPs, VLANs, VRRP VIPs) are loaded at runtime,
 keeping test code portable across different lab environments.
 """
 
+from config.ovs.ovs_access_config import OvsAccessConfig
+from config.ovs.vrrp_config import VrrpConfig
+
 
 class OvsConfig:
-    """OVS test configuration parsed from the lab config 'ovs' section.
+    """OVS test configuration parsed from the lab config ovs section.
 
     Access pattern:
         from config.configuration_manager import ConfigurationManager
@@ -16,10 +19,10 @@ class OvsConfig:
     """
 
     def __init__(self, ovs_dict: dict, admin_password: str = ""):
-        """Initialize from the 'ovs' dictionary in the lab config.
+        """Initialize from the ovs dictionary in the lab config.
 
         Args:
-            ovs_dict: The 'ovs' section from default.json5.
+            ovs_dict: The ovs section from the lab config file.
             admin_password: Admin password from lab config credentials.
         """
         self.remote_peer_ip: str = ovs_dict.get("remote_peer_ip", "")
@@ -32,6 +35,7 @@ class OvsConfig:
         self.bfd_interfaces: list = ovs_dict.get("bfd_interfaces", [])
         self.helm_overrides: dict = ovs_dict.get("helm_overrides", {})
         self.traffic_pod_prefix: str = ovs_dict.get("traffic_pod_prefix", "pod1-deployment")
+        self.ovsaccess: dict = ovs_dict.get("ovsaccess", {})
         self._admin_password: str = admin_password
 
     def get_remote_peer_ip(self) -> str:
@@ -55,19 +59,23 @@ class OvsConfig:
         return self.ports
 
     def get_bridge_ip(self, vlan_key: str) -> str:
-        """Get a bridge IP for the given VLAN key (e.g., 'untagged', 'vlan100')."""
+        """Get a bridge IP for the given VLAN key (e.g., untagged, vlan100)."""
         return self.bridge_ips.get(vlan_key, "")
 
     def get_peer_ip(self, vlan_key: str) -> str:
-        """Get a peer IP for the given VLAN key (e.g., 'untagged', 'vlan100')."""
+        """Get a peer IP for the given VLAN key (e.g., untagged, vlan100)."""
         return self.peer_ips.get(vlan_key, "")
 
-    def get_vrrp_config(self, vlan_key: str) -> dict:
-        """Get VRRP config for a VLAN key (e.g., 'vlan702').
+    def get_vrrp_config(self, vlan_key: str) -> VrrpConfig:
+        """Get typed VRRP config for a VLAN key.
 
-        Returns dict with keys: vip_v4, vip_v6, host_v4, host_v6, vlan_id
+        Args:
+            vlan_key: VLAN identifier (e.g., vlan110, oru_oam).
+
+        Returns:
+            VrrpConfig: Typed config object with getters.
         """
-        return self.vrrp.get(vlan_key, {})
+        return VrrpConfig(self.vrrp[vlan_key])
 
     def get_bfd_interfaces(self) -> list:
         """Get the list of BFD-enabled interface names."""
@@ -80,3 +88,11 @@ class OvsConfig:
     def get_traffic_pod_prefix(self) -> str:
         """Get the traffic pod name prefix on the remote peer."""
         return self.traffic_pod_prefix
+
+    def get_ovsaccess_config(self) -> OvsAccessConfig:
+        """Get typed OVSAccess test configuration.
+
+        Returns:
+            OvsAccessConfig: Typed config with get_interface_name()/get_node_name().
+        """
+        return OvsAccessConfig(self.ovsaccess)
