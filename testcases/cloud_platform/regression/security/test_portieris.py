@@ -97,13 +97,7 @@ def setup_portieris_environment(ssh_connection: SSHConnection, security_config: 
         helm_keywords.helm_override_update(APP_NAME, "portieris", "portieris", portieris_overrides)
 
         get_logger().log_info(f"Applying {APP_NAME} application")
-        system_app_apply.system_application_apply(APP_NAME)
-
-    # Wait for Portieris pods
-    kubectl_pods = KubectlGetPodsKeywords(ssh_connection)
-    pods_output = kubectl_pods.get_pods("portieris")
-    running_pods = pods_output.get_pods_with_status("Running")
-    validate_equals(len(running_pods) > 0, True, "At least one Portieris pod should be running")
+        system_app_apply.system_application_apply(APP_NAME, wait_for_pods_namespace="portieris")
 
     # Verify portieris-certs certificate is issued by cert-manager
     get_logger().log_info("Verifying portieris-certs certificate is Ready")
@@ -208,7 +202,7 @@ def test_portieris_image_security_policy(request):
 
     # Validate signatures using docker trust keywords
     get_logger().log_info("Verifying signed image has valid signatures")
-    trust_output = docker_trust.inspect_docker_trust(security_config.get_portieris_signed_image_name(), security_config.get_portieris_trust_server())
+    trust_output = docker_trust.inspect_docker_trust(security_config.get_portieris_signed_image_name(), security_config.get_portieris_trust_server(), security_config.get_portieris_registry_username(), security_config.get_portieris_registry_password())
     validate_str_contains(trust_output, "Signers", "Signed image should have valid signatures")
 
     # Test signed image (should be accepted)
@@ -278,7 +272,7 @@ def test_portieris_image_security_before_after_swact(request):
     validate_str_contains(error_output, "trust.hooks.securityenforcement.admission.cloud.ibm.com", "Output should contain Portieris admission webhook")
 
     # Verify BEFORE swact: signed accepted
-    trust_output = docker_trust.inspect_docker_trust(security_config.get_portieris_signed_image_name(), security_config.get_portieris_trust_server())
+    trust_output = docker_trust.inspect_docker_trust(security_config.get_portieris_signed_image_name(), security_config.get_portieris_trust_server(), security_config.get_portieris_registry_username(), security_config.get_portieris_registry_password())
     validate_str_contains(trust_output, "Signers", "Signed image should have valid signatures")
 
     signed_template = get_stx_resource_path("resources/cloud_platform/security/portieris/signed-image.yaml")
@@ -300,9 +294,7 @@ def test_portieris_image_security_before_after_swact(request):
     new_yaml_keywords = YamlKeywords(new_ssh)
 
     # Wait for portieris pods after swact
-    portieris_pods = new_kubectl_pods.get_pods("portieris")
-    running_pods = portieris_pods.get_pods_with_status("Running")
-    validate_equals(len(running_pods) > 0, True, "Portieris pods should be running after swact")
+    new_kubectl_pods.wait_for_pods_to_reach_status("Running", namespace="portieris", timeout=300)
 
     # Cleanup pre-swact test pod
     KubectlDeletePodsKeywords(new_ssh).cleanup_pod("test-pod", NAMESPACE)
@@ -377,7 +369,7 @@ def test_portieris_image_security_before_after_reboot(request):
     validate_str_contains(error_output, "trust.hooks.securityenforcement.admission.cloud.ibm.com", "Output should contain Portieris admission webhook")
 
     # Verify BEFORE reboot: signed accepted
-    trust_output = docker_trust.inspect_docker_trust(security_config.get_portieris_signed_image_name(), security_config.get_portieris_trust_server())
+    trust_output = docker_trust.inspect_docker_trust(security_config.get_portieris_signed_image_name(), security_config.get_portieris_trust_server(), security_config.get_portieris_registry_username(), security_config.get_portieris_registry_password())
     validate_str_contains(trust_output, "Signers", "Signed image should have valid signatures")
 
     signed_template = get_stx_resource_path("resources/cloud_platform/security/portieris/signed-image.yaml")
@@ -495,7 +487,7 @@ def test_portieris_cluster_image_policy(request):
 
     # Validate signatures using docker trust keywords
     get_logger().log_info("Verifying signed image has valid signatures")
-    trust_output = docker_trust.inspect_docker_trust(security_config.get_portieris_signed_image_name(), security_config.get_portieris_trust_server())
+    trust_output = docker_trust.inspect_docker_trust(security_config.get_portieris_signed_image_name(), security_config.get_portieris_trust_server(), security_config.get_portieris_registry_username(), security_config.get_portieris_registry_password())
     validate_str_contains(trust_output, "Signers", "Signed image should have valid signatures")
 
     # Test signed image (should be accepted)
@@ -554,12 +546,10 @@ def test_portieris_helm_override_cpu_core_apply(request):
     system_app_apply = SystemApplicationApplyKeywords(ssh_connection)
     system_app_apply.system_application_apply(APP_NAME)
 
-    # Verify pods recover
-    get_logger().log_info("Verifying portieris pods recover after helm override reapply")
+    # Wait for pods to recover after helm override reapply
+    get_logger().log_info("Waiting for portieris pods to recover after helm override reapply")
     kubectl_pods = KubectlGetPodsKeywords(ssh_connection)
-    pods_output = kubectl_pods.get_pods("portieris")
-    running_pods = pods_output.get_pods_with_status("Running")
-    validate_equals(len(running_pods) > 0, True, "Portieris pods should recover after helm override reapply")
+    kubectl_pods.wait_for_pods_to_reach_status("Running", namespace="portieris", timeout=300)
 
     # Wait for webhook to be ready after pod recreation
     get_logger().log_info("Waiting for portieris webhook to be ready after pod recreation")
@@ -608,6 +598,8 @@ def test_portieris_helm_override_cpu_core_apply(request):
     trust_output = docker_trust.inspect_docker_trust(
         security_config.get_portieris_signed_image_name(),
         security_config.get_portieris_trust_server(),
+        security_config.get_portieris_registry_username(),
+        security_config.get_portieris_registry_password(),
     )
     validate_str_contains(trust_output, "Signers", "Signed image should have valid signatures")
 
@@ -723,6 +715,8 @@ def test_portieris_dc_subcloud_deploy(request):
     trust_output = docker_trust.inspect_docker_trust(
         security_config.get_portieris_signed_image_name(),
         security_config.get_portieris_trust_server(),
+        security_config.get_portieris_registry_username(),
+        security_config.get_portieris_registry_password(),
     )
     validate_str_contains(trust_output, "Signers", "Signed image should have valid signatures")
 

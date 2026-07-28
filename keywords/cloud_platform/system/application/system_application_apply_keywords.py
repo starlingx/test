@@ -6,6 +6,7 @@ from keywords.cloud_platform.command_wrappers import source_openrc
 from keywords.cloud_platform.system.application.object.system_application_output import SystemApplicationOutput
 from keywords.cloud_platform.system.application.object.system_application_status_enum import SystemApplicationStatusEnum
 from keywords.cloud_platform.system.application.system_application_list_keywords import SystemApplicationListKeywords
+from keywords.k8s.pods.kubectl_get_pods_keywords import KubectlGetPodsKeywords
 from keywords.python.string import String
 
 
@@ -23,7 +24,7 @@ class SystemApplicationApplyKeywords(BaseKeyword):
         """
         self.ssh_connection = ssh_connection
 
-    def system_application_apply(self, app_name: str, timeout: int = 300, polling_sleep_time: int = 5, wait_for_applied: bool = True) -> SystemApplicationOutput:
+    def system_application_apply(self, app_name: str, timeout: int = 300, polling_sleep_time: int = 5, wait_for_applied: bool = True, wait_for_pods_namespace: str = None, pods_timeout: int = 300) -> SystemApplicationOutput:
         """
         Executes the applying of an application file by executing the command 'system application-apply'.
 
@@ -32,6 +33,8 @@ class SystemApplicationApplyKeywords(BaseKeyword):
             timeout (int): Timeout in seconds
             polling_sleep_time (int): wait time in seconds before the next attempt when unsuccessful validation
             wait_for_applied (bool): whether wait for the app status from applying to applied
+            wait_for_pods_namespace (str): if provided, wait for all pods in this namespace to reach Running after apply
+            pods_timeout (int): timeout in seconds to wait for pods to reach Running status
 
         Returns:
             SystemApplicationOutput: an object representing status values related to the current installation
@@ -53,6 +56,10 @@ class SystemApplicationApplyKeywords(BaseKeyword):
 
             # If the execution arrived here the status of the application is 'applied'.
             system_application_output.get_system_application_object().set_status("applied")
+
+        if wait_for_pods_namespace:
+            get_logger().log_info(f"Waiting for pods in namespace '{wait_for_pods_namespace}' to reach Running after apply")
+            KubectlGetPodsKeywords(self.ssh_connection).wait_for_pods_to_reach_status("Running", namespace=wait_for_pods_namespace, timeout=pods_timeout)
 
         return system_application_output
 
