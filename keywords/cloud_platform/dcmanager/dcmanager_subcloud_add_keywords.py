@@ -59,7 +59,7 @@ class DcManagerSubcloudAddKeywords(BaseKeyword):
             subcloud_name (str): Subcloud name.
             bootstrap_values (str): Bootstrap values file name.
             install_values (str): Install values file name.
-            release_id (str) a str name for the release_id.
+            release_id (str): Release ID for the subcloud.
         """
         lab_config = ConfigurationManager.get_lab_config()
         subcloud_obj = lab_config.get_subcloud(subcloud_name)
@@ -75,8 +75,7 @@ class DcManagerSubcloudAddKeywords(BaseKeyword):
         self.validate_success_return_code(self.ssh_connection)
 
     def dcmanager_subcloud_add_enroll(self, subcloud_name: str, bootstrap_values: str, install_values: str, deploy_config_file: str):
-        """
-        Runs 'dcmanager subcloud add --enroll' command.
+        """Runs 'dcmanager subcloud add --enroll' command.
 
         Args:
             subcloud_name (str): Subcloud name.
@@ -86,12 +85,35 @@ class DcManagerSubcloudAddKeywords(BaseKeyword):
         """
         lab_config = ConfigurationManager.get_lab_config()
         subcloud_obj = lab_config.get_subcloud(subcloud_name)
-
         subcloud_ip = subcloud_obj.get_floating_ip()
         subcloud_psswr = subcloud_obj.get_admin_credentials().get_password()
         bmc_psswr = subcloud_obj.get_bm_password() or subcloud_psswr
-
-        cmd = source_openrc(f"dcmanager subcloud add --enroll --bootstrap-address {subcloud_ip} --bootstrap-values {bootstrap_values} --install-values {install_values} --deploy-config {deploy_config_file} --sysadmin-password {subcloud_psswr} --bmc-password {bmc_psswr}")
-
-        self.ssh_connection.send(cmd)
+        cmd = f"dcmanager subcloud add --enroll" f" --bootstrap-address {subcloud_ip}" f" --bootstrap-values {bootstrap_values}" f" --install-values {install_values}" f" --deploy-config {deploy_config_file}" f" --sysadmin-password {subcloud_psswr}" f" --bmc-password {bmc_psswr}"
+        self.ssh_connection.send(source_openrc(cmd))
         self.validate_success_return_code(self.ssh_connection)
+
+    def dcmanager_subcloud_add_enroll_with_error(self, subcloud_name: str, bootstrap_values: str, install_values: str, deploy_config_file: str) -> tuple:
+        """Runs 'dcmanager subcloud add --enroll' and returns output and rc without asserting.
+
+        Used for negative testing where the command is expected to be rejected.
+
+        Args:
+            subcloud_name (str): Subcloud name.
+            bootstrap_values (str): Bootstrap values file name.
+            install_values (str): Install values file name.
+            deploy_config_file (str): Deployment config file name.
+
+        Returns:
+            tuple: (output_str, return_code_int).
+        """
+        lab_config = ConfigurationManager.get_lab_config()
+        subcloud_obj = lab_config.get_subcloud(subcloud_name)
+        subcloud_ip = subcloud_obj.get_floating_ip()
+        subcloud_psswr = subcloud_obj.get_admin_credentials().get_password()
+        bmc_psswr = subcloud_obj.get_bm_password() or subcloud_psswr
+        cmd = f"dcmanager subcloud add --enroll" f" --bootstrap-address {subcloud_ip}" f" --bootstrap-values {bootstrap_values}" f" --install-values {install_values}" f" --deploy-config {deploy_config_file}" f" --sysadmin-password {subcloud_psswr}" f" --bmc-password {bmc_psswr}"
+        output = self.ssh_connection.send(source_openrc(cmd))
+        rc = self.ssh_connection.get_return_code()
+        if isinstance(output, list):
+            output = "\n".join(str(line).strip() for line in output)
+        return output, rc

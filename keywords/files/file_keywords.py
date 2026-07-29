@@ -656,3 +656,38 @@ class FileKeywords(BaseKeyword):
         shutil.rmtree(local_dir)
         get_logger().log_info(f"Removed source directory: {local_dir}")
         return archive_path
+
+    def remove_line_matching(self, file_path: str, pattern: str) -> None:
+        """Remove all lines matching a pattern from a remote file.
+
+        Uses sed to delete lines in-place on the remote host.
+
+        Args:
+            file_path (str): Remote file path.
+            pattern (str): Regex pattern for sed to match lines to delete.
+        """
+        self.ssh_connection.send(f"sed -i '\\|{pattern}|d' {file_path}")
+        self.validate_success_return_code(self.ssh_connection)
+
+    def replace_line_matching(self, file_path: str, pattern: str, replacement: str) -> None:
+        """Replace lines matching a pattern in a remote file.
+
+        Uses sed to perform in-place substitution on the remote host.
+
+        Args:
+            file_path (str): Remote file path.
+            pattern (str): Regex pattern for sed to match.
+            replacement (str): Replacement string.
+        """
+        self.ssh_connection.send(f"sed -i 's|{pattern}|{replacement}|' {file_path}")
+        self.validate_success_return_code(self.ssh_connection)
+
+    def append_to_file(self, file_path: str, content: str) -> None:
+        """Append content to a remote file.
+
+        Args:
+            file_path (str): Remote file path.
+            content (str): Content to append (may contain newlines).
+        """
+        self.ssh_connection.send(f"printf '%s\n' '{content}' >> {file_path}")
+        self.validate_success_return_code(self.ssh_connection)
