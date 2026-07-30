@@ -42,12 +42,13 @@ class DCManagerSubcloudDeployKeywords(BaseKeyword):
         self.ssh_connection.send(source_openrc(cmd))
         self.validate_success_return_code(self.ssh_connection)
 
-    def dcmanager_subcloud_deploy_create(self, subcloud_name: str, wait_for_status: bool = True):
+    def dcmanager_subcloud_deploy_create(self, subcloud_name: str, wait_for_status: bool = True, release_id: str = None):
         """Creates the subcloud using 'dcmanager subcloud deploy create'.
 
         Args:
             subcloud_name (str): a str name for the subcloud.
             wait_for_status (bool): wheteher to check for status or not default is True
+            release_id (str): Optional release ID for N-1/N-2 deployments.
         """
         # Get the subcloud config
         sc_config = ConfigurationManager.get_lab_config().get_subcloud(subcloud_name)
@@ -60,8 +61,9 @@ class DCManagerSubcloudDeployKeywords(BaseKeyword):
 
         # Get the subcloud bootstrap address
         boot_add = sc_config.get_first_controller().get_ip()
+        release = "" if release_id is None else f"--release {release_id}"
         # Execute the command
-        cmd = f"dcmanager subcloud deploy create --bootstrap-address {boot_add} --bootstrap-values {bootstrap_file} --install-values {install_file} --bmc-password {sc_config.get_bm_password()} --deploy-config {deploy_file} "
+        cmd = f"dcmanager subcloud deploy create --bootstrap-address {boot_add} --bootstrap-values {bootstrap_file} --install-values {install_file} --bmc-password {sc_config.get_bm_password()} --deploy-config {deploy_file} {release}"
         self.ssh_connection.send(source_openrc(cmd))
         self.validate_success_return_code(self.ssh_connection)
 
@@ -71,12 +73,13 @@ class DCManagerSubcloudDeployKeywords(BaseKeyword):
             dc_manager_sc_list_kw = DcManagerSubcloudListKeywords(self.ssh_connection)
             dc_manager_sc_list_kw.validate_subcloud_status(subcloud_name, success_status)
 
-    def dcmanager_subcloud_deploy_install(self, subcloud_name: str, wait_for_status: bool = True):
+    def dcmanager_subcloud_deploy_install(self, subcloud_name: str, wait_for_status: bool = True, release_id: str = None):
         """Installs the subcloud using 'dcmanager subcloud deploy install'.
 
         Args:
             subcloud_name (str): a str name for the subcloud.
             wait_for_status (bool): wheteher to check for status or not default is True
+            release_id (str): Optional release ID for N-1/N-2 deployments.
         """
         # Get the subcloud config
         deployment_assets_config = ConfigurationManager.get_deployment_assets_config()
@@ -86,8 +89,9 @@ class DCManagerSubcloudDeployKeywords(BaseKeyword):
         admin_creds = sc_config.get_admin_credentials()
         install_file = sc_assets.get_install_file()
 
+        release = "" if release_id is None else f"--release {release_id}"
         # Execute the command
-        cmd = f"dcmanager subcloud deploy install {subcloud_name} --sysadmin-password {admin_creds.get_password()} --bmc-password {sc_config.get_bm_password()} --install-values {install_file} "
+        cmd = f"dcmanager subcloud deploy install {subcloud_name} --sysadmin-password {admin_creds.get_password()} --bmc-password {sc_config.get_bm_password()} --install-values {install_file} {release}"
         self.ssh_connection.send(source_openrc(cmd))
         self.validate_success_return_code(self.ssh_connection)
 
