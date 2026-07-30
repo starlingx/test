@@ -28,6 +28,7 @@ def test_bfd_session_established():
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     ovs_kw = OpenvSwitchKeywords(ssh_connection)
+    ovs_kw.ensure_ovs_setup()
     ovs_agent = ovs_kw.get_ovs_agent_pod()
     ovs_config = ConfigurationManager.get_lab_config().get_ovs_config()
     bfd_interfaces = ovs_config.get_bfd_interfaces()
@@ -63,6 +64,7 @@ def test_bfd_failover(request: FixtureRequest):
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     ovs_kw = OpenvSwitchKeywords(ssh_connection)
+    ovs_kw.ensure_ovs_setup()
     ovs_agent = ovs_kw.get_ovs_agent_pod()
     ovs_config = ConfigurationManager.get_lab_config().get_ovs_config()
     test_interface = ovs_config.get_bfd_interfaces()[0]
@@ -105,6 +107,7 @@ def test_bfd_recovery(request: FixtureRequest):
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     ovs_kw = OpenvSwitchKeywords(ssh_connection)
+    ovs_kw.ensure_ovs_setup()
     ovs_agent = ovs_kw.get_ovs_agent_pod()
     ovs_config = ConfigurationManager.get_lab_config().get_ovs_config()
     test_interface = ovs_config.get_bfd_interfaces()[0]
@@ -154,6 +157,7 @@ def test_ovs_agent_restart_bfd():
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     ovs_kw = OpenvSwitchKeywords(ssh_connection)
+    ovs_kw.ensure_ovs_setup()
     ovs_config = ConfigurationManager.get_lab_config().get_ovs_config()
     test_interface = ovs_config.get_bfd_interfaces()[0]
     namespace = ovs_config.get_namespace()
@@ -201,6 +205,7 @@ def test_link_failure_bfd_detection(request: FixtureRequest):
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     ovs_kw = OpenvSwitchKeywords(ssh_connection)
+    ovs_kw.ensure_ovs_setup()
     ovs_agent = ovs_kw.get_ovs_agent_pod()
     ovs_config = ConfigurationManager.get_lab_config().get_ovs_config()
     bfd_interfaces = ovs_config.get_bfd_interfaces()
@@ -245,6 +250,7 @@ def test_port_flap_bfd(request: FixtureRequest):
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     ovs_kw = OpenvSwitchKeywords(ssh_connection)
+    ovs_kw.ensure_ovs_setup()
     ovs_agent = ovs_kw.get_ovs_agent_pod()
     ovs_config = ConfigurationManager.get_lab_config().get_ovs_config()
     test_interface = ovs_config.get_bfd_interfaces()[0]

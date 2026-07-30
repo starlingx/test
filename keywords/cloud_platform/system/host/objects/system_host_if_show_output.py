@@ -100,6 +100,10 @@ class SystemHostIfShowOutput:
         if accelerated:
             self.system_host_interface_object.set_accelerated(accelerated)
 
+        ovs_access = self.get_property_value('ovs_access')
+        if ovs_access:
+            self.system_host_interface_object.set_ovs_access(ovs_access)
+
     def get_property_value(self, property: str):
         """
         Returns the value of the property

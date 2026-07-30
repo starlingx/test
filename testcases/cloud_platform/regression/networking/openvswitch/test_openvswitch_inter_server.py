@@ -26,6 +26,7 @@ def test_inter_server_l2_untagged():
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     ovs_kw = OpenvSwitchKeywords(ssh_connection)
+    ovs_kw.ensure_ovs_setup()
     ovs_config = ConfigurationManager.get_lab_config().get_ovs_config()
 
     remote_ip = ovs_config.get_remote_peer_ip()
@@ -52,6 +53,7 @@ def test_inter_server_l2_vlan100():
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     ovs_kw = OpenvSwitchKeywords(ssh_connection)
+    ovs_kw.ensure_ovs_setup()
     ovs_config = ConfigurationManager.get_lab_config().get_ovs_config()
 
     remote_ip = ovs_config.get_remote_peer_ip()
@@ -78,6 +80,7 @@ def test_inter_server_l2_vlan200():
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     ovs_kw = OpenvSwitchKeywords(ssh_connection)
+    ovs_kw.ensure_ovs_setup()
     ovs_config = ConfigurationManager.get_lab_config().get_ovs_config()
 
     remote_ip = ovs_config.get_remote_peer_ip()
@@ -107,6 +110,7 @@ def test_inter_server_vrrp_gateway(request: FixtureRequest):
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     ovs_kw = OpenvSwitchKeywords(ssh_connection)
+    ovs_kw.ensure_ovs_setup()
     ovs_agent = ovs_kw.get_ovs_agent_pod()
     ovs_config = ConfigurationManager.get_lab_config().get_ovs_config()
 
@@ -146,6 +150,7 @@ def test_inter_server_bfd_vrrp_combined(request: FixtureRequest):
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     ovs_kw = OpenvSwitchKeywords(ssh_connection)
+    ovs_kw.ensure_ovs_setup()
     ovs_agent = ovs_kw.get_ovs_agent_pod()
     ovs_config = ConfigurationManager.get_lab_config().get_ovs_config()
 

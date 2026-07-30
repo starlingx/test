@@ -25,6 +25,7 @@ def test_l2_untagged_forwarding():
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     ovs_kw = OpenvSwitchKeywords(ssh_connection)
+    ovs_kw.ensure_ovs_setup()
     ovs_config = ConfigurationManager.get_lab_config().get_ovs_config()
 
     remote_ip = ovs_config.get_remote_peer_ip()
@@ -51,6 +52,7 @@ def test_l2_vlan100_forwarding():
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     ovs_kw = OpenvSwitchKeywords(ssh_connection)
+    ovs_kw.ensure_ovs_setup()
     ovs_config = ConfigurationManager.get_lab_config().get_ovs_config()
 
     remote_ip = ovs_config.get_remote_peer_ip()
@@ -77,6 +79,7 @@ def test_l2_ipv6_unicast():
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     ovs_kw = OpenvSwitchKeywords(ssh_connection)
+    ovs_kw.ensure_ovs_setup()
     ovs_config = ConfigurationManager.get_lab_config().get_ovs_config()
 
     remote_ip = ovs_config.get_remote_peer_ip()
@@ -103,6 +106,7 @@ def test_l2_vlan200_forwarding():
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     ovs_kw = OpenvSwitchKeywords(ssh_connection)
+    ovs_kw.ensure_ovs_setup()
     ovs_config = ConfigurationManager.get_lab_config().get_ovs_config()
 
     remote_ip = ovs_config.get_remote_peer_ip()
@@ -129,6 +133,7 @@ def test_native_vlan_forwarding():
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     ovs_kw = OpenvSwitchKeywords(ssh_connection)
+    ovs_kw.ensure_ovs_setup()
     ovs_config = ConfigurationManager.get_lab_config().get_ovs_config()
 
     remote_ip = ovs_config.get_remote_peer_ip()

@@ -16,7 +16,6 @@ from framework.validation.validation import (
 from keywords.cloud_platform.networking.openvswitch.openvswitch_keywords import OpenvSwitchKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.cloud_platform.system.application.system_application_apply_keywords import SystemApplicationApplyKeywords
-from keywords.k8s.delete_resource.kubectl_delete_resource_keywords import KubectlDeleteResourceKeywords
 from keywords.k8s.pods.kubectl_delete_pods_keywords import KubectlDeletePodsKeywords
 
 # Test-specific constants for concurrent failure test
@@ -39,6 +38,7 @@ def test_ovsnodeconfig_immutable():
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     ovs_kw = OpenvSwitchKeywords(ssh_connection)
+    ovs_kw.ensure_ovs_setup()
     ovs_config = ConfigurationManager.get_lab_config().get_ovs_config()
     namespace = ovs_config.get_namespace()
 
@@ -71,6 +71,7 @@ def test_helm_upgrade_bridge_persistence():
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     ovs_kw = OpenvSwitchKeywords(ssh_connection)
+    ovs_kw.ensure_ovs_setup()
     ovs_config = ConfigurationManager.get_lab_config().get_ovs_config()
     ovs_agent = ovs_kw.get_ovs_agent_pod()
     bridge = ovs_config.get_bridge_name()
@@ -121,6 +122,7 @@ def test_concurrent_vrrp_agent_restart(request: FixtureRequest):
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     ovs_kw = OpenvSwitchKeywords(ssh_connection)
+    ovs_kw.ensure_ovs_setup()
     ovs_config = ConfigurationManager.get_lab_config().get_ovs_config()
     ovs_agent = ovs_kw.get_ovs_agent_pod()
     bridge = ovs_config.get_bridge_name()

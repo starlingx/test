@@ -34,6 +34,7 @@ def test_oru_traffic_vlan110(request: FixtureRequest):
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     ovs_kw = OpenvSwitchKeywords(ssh_connection)
+    ovs_kw.ensure_ovs_setup()
     ovs_config = ConfigurationManager.get_lab_config().get_ovs_config()
     ovs_agent = ovs_kw.get_ovs_agent_pod()
     bridge = ovs_config.get_bridge_name()
@@ -81,6 +82,7 @@ def test_oru_oam_vrrp_reachable(request: FixtureRequest):
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     ovs_kw = OpenvSwitchKeywords(ssh_connection)
+    ovs_kw.ensure_ovs_setup()
     ovs_config = ConfigurationManager.get_lab_config().get_ovs_config()
     ovs_agent = ovs_kw.get_ovs_agent_pod()
     bridge = ovs_config.get_bridge_name()
@@ -131,6 +133,7 @@ def test_oru_oam_vrrp_failover(request: FixtureRequest):
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     ovs_kw = OpenvSwitchKeywords(ssh_connection)
+    ovs_kw.ensure_ovs_setup()
     ovs_config = ConfigurationManager.get_lab_config().get_ovs_config()
     ovs_agent = ovs_kw.get_ovs_agent_pod()
     bridge = ovs_config.get_bridge_name()
@@ -205,6 +208,7 @@ def test_oru_slaac_ipv6():
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     ovs_kw = OpenvSwitchKeywords(ssh_connection)
+    ovs_kw.ensure_ovs_setup()
     ovs_config = ConfigurationManager.get_lab_config().get_ovs_config()
 
     remote_ip = ovs_config.get_remote_peer_ip()
@@ -244,6 +248,7 @@ def test_oru_dhcpv6_flow():
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     ovs_kw = OpenvSwitchKeywords(ssh_connection)
+    ovs_kw.ensure_ovs_setup()
     ovs_config = ConfigurationManager.get_lab_config().get_ovs_config()
 
     remote_ip = ovs_config.get_remote_peer_ip()

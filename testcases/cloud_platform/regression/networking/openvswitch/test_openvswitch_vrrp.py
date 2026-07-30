@@ -28,6 +28,7 @@ def test_vrrp_failover_vlan702(request: FixtureRequest):
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     ovs_kw = OpenvSwitchKeywords(ssh_connection)
+    ovs_kw.ensure_ovs_setup()
     ovs_agent = ovs_kw.get_ovs_agent_pod()
     ovs_config = ConfigurationManager.get_lab_config().get_ovs_config()
 
@@ -69,6 +70,7 @@ def test_vrrp_failover_vlan707(request: FixtureRequest):
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     ovs_kw = OpenvSwitchKeywords(ssh_connection)
+    ovs_kw.ensure_ovs_setup()
     ovs_agent = ovs_kw.get_ovs_agent_pod()
     ovs_config = ConfigurationManager.get_lab_config().get_ovs_config()
 
@@ -110,6 +112,7 @@ def test_vrrp_failover_vlan708(request: FixtureRequest):
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     ovs_kw = OpenvSwitchKeywords(ssh_connection)
+    ovs_kw.ensure_ovs_setup()
     ovs_agent = ovs_kw.get_ovs_agent_pod()
     ovs_config = ConfigurationManager.get_lab_config().get_ovs_config()
 

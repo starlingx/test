@@ -52,30 +52,54 @@ class SystemHostInterfaceKeywords(BaseKeyword):
 
         return system_host_interface_show_output.get_system_host_interface_object()
 
-    def system_host_interface_add(self, hostname: str, name: str, if_type: str, iface: str, vf_driver: str = None, ifclass: str = None, num_vfs: int = -1):
-        """
-        Adds the interface
+    def system_host_interface_add(self, hostname: str, name: str, if_type: str, iface: str, vf_driver: str = None, ifclass: str = None, num_vfs: int = None, ovs_access: bool = False):
+        """Add an interface to a host.
+
         Args:
-            hostname (): the hostname
-            name (): the name of the new interface
-            if_type (): the interface type
-            iface (): the interface parent
-            vf_driver (): the vf driver
-            ifclass (): the interface class
-            num_vfs (): the number of vfs
-
-        Returns:
-
+            hostname: The hostname.
+            name: The name of the new interface.
+            if_type: The interface type (e.g., ethernet, vlan, ae).
+            iface: The interface parent.
+            vf_driver: The VF driver (optional).
+            ifclass: The interface class (optional, e.g., platform, pci-sriov).
+            num_vfs: The number of VFs (optional).
+            ovs_access: Whether to enable OVS access on this interface.
         """
         extra_args = ''
         if vf_driver:
             extra_args += f'--vf-driver {vf_driver} '
         if ifclass:
             extra_args += f'--ifclass {ifclass} '
-        if num_vfs:
+        if num_vfs is not None and num_vfs > 0:
             extra_args += f'--num-vfs {num_vfs} '
+        if ovs_access:
+            extra_args += '--ovs-access true '
         self.ssh_connection.send(source_openrc(f'system host-if-add {hostname} {name} {if_type} {iface} {extra_args}'))
         self.validate_success_return_code(self.ssh_connection)
+
+    def system_host_interface_add_with_error(self, hostname: str, name: str, if_type: str, iface: str, ifclass: str = None, ovs_access: bool = False) -> str:
+        """Attempt to add an interface and return the output without asserting success.
+
+        Used for negative test cases where the command is expected to fail.
+
+        Args:
+            hostname: The hostname.
+            name: The name of the new interface.
+            if_type: The interface type.
+            iface: The interface parent.
+            ifclass: The interface class (optional).
+            ovs_access: Whether to enable OVS access.
+
+        Returns:
+            str: The raw command output (may contain error message).
+        """
+        extra_args = ''
+        if ifclass:
+            extra_args += f'--ifclass {ifclass} '
+        if ovs_access:
+            extra_args += '--ovs-access true '
+        output = self.ssh_connection.send(source_openrc(f'system host-if-add {hostname} {name} {if_type} {iface} {extra_args}'))
+        return str(output)
 
     def system_interface_delete(self, hostname: str, interface_name: str):
         """
@@ -105,14 +129,24 @@ class SystemHostInterfaceKeywords(BaseKeyword):
         if rc != 0:
             get_logger().log_error(f"interface {interface_name} failed to delete")
 
-    def system_host_interface_modify(self, hostname: str, interface_name: str, ifclass: str) -> None:
-        """
-        Modify host interface class
-        
+    def system_host_interface_modify(self, hostname: str, interface_name: str, ifclass: str,
+                                     num_vfs: int = None, vf_driver: str = None, mtu: int = None) -> None:
+        """Modify host interface properties.
+
         Args:
-            hostname (str): The hostname
-            interface_name (str): The interface name
-            ifclass (str): The interface class (e.g., 'platform')
+            hostname: The hostname.
+            interface_name: The interface name.
+            ifclass: The interface class (e.g., 'platform', 'pci-sriov').
+            num_vfs: Number of VFs for SR-IOV (optional).
+            vf_driver: VF driver for SR-IOV (optional, e.g., 'netdevice').
+            mtu: MTU value (optional).
         """
-        self.ssh_connection.send(source_openrc(f'system host-if-modify {hostname} {interface_name} -c {ifclass}'))
+        extra_args = f'-c {ifclass}'
+        if num_vfs is not None and num_vfs > 0:
+            extra_args += f' --num-vfs {num_vfs}'
+        if vf_driver:
+            extra_args += f' --vf-driver={vf_driver}'
+        if mtu is not None:
+            extra_args += f' --imtu {mtu}'
+        self.ssh_connection.send(source_openrc(f'system host-if-modify {hostname} {interface_name} {extra_args}'))
         self.validate_success_return_code(self.ssh_connection)

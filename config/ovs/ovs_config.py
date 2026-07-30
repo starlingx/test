@@ -7,6 +7,7 @@ keeping test code portable across different lab environments.
 """
 
 from config.ovs.ovs_access_config import OvsAccessConfig
+from config.ovs.sriov_interface_config import SriovInterfaceConfig
 from config.ovs.vrrp_config import VrrpConfig
 
 
@@ -34,6 +35,7 @@ class OvsConfig:
         self.vrrp: dict = ovs_dict.get("vrrp", {})
         self.bfd_interfaces: list = ovs_dict.get("bfd_interfaces", [])
         self.helm_overrides: dict = ovs_dict.get("helm_overrides", {})
+        self.sriov_interfaces: list = ovs_dict.get("sriov_interfaces", [])
         self.traffic_pod_prefix: str = ovs_dict.get("traffic_pod_prefix", "pod1-deployment")
         self.ovsaccess: dict = ovs_dict.get("ovsaccess", {})
         self._admin_password: str = admin_password
@@ -62,9 +64,17 @@ class OvsConfig:
         """Get a bridge IP for the given VLAN key (e.g., untagged, vlan100)."""
         return self.bridge_ips.get(vlan_key, "")
 
+    def get_bridge_ips(self) -> dict:
+        """Get all bridge IPs as a dict of vlan_key -> IP address."""
+        return self.bridge_ips
+
     def get_peer_ip(self, vlan_key: str) -> str:
         """Get a peer IP for the given VLAN key (e.g., untagged, vlan100)."""
         return self.peer_ips.get(vlan_key, "")
+
+    def get_peer_ips(self) -> dict:
+        """Get all peer IPs as a dict of vlan_key -> IP address."""
+        return self.peer_ips
 
     def get_vrrp_config(self, vlan_key: str) -> VrrpConfig:
         """Get typed VRRP config for a VLAN key.
@@ -84,6 +94,23 @@ class OvsConfig:
     def get_helm_overrides(self) -> dict:
         """Get helm override image/tag configuration."""
         return self.helm_overrides
+
+    def get_sriov_interfaces(self) -> list:
+        """Get the list of SR-IOV interface configurations.
+
+        Each entry is a SriovInterfaceConfig with typed getters.
+        Used by ensure_ovs_setup to provision SR-IOV on fresh installs.
+
+        Returns:
+            list[SriovInterfaceConfig]: Typed SR-IOV interface configs.
+
+        Example config:
+            "sriov_interfaces": [
+                {"port_name": "ens2f0", "num_vfs": 8, "vf_driver": "netdevice", "mtu": 1500},
+                {"port_name": "ens2f1", "num_vfs": 8, "vf_driver": "netdevice", "mtu": 1500}
+            ]
+        """
+        return [SriovInterfaceConfig(cfg) for cfg in self.sriov_interfaces]
 
     def get_traffic_pod_prefix(self) -> str:
         """Get the traffic pod name prefix on the remote peer."""

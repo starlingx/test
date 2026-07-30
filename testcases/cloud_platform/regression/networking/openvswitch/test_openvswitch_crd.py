@@ -95,6 +95,7 @@ def test_create_ovsbridge(request: FixtureRequest):
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     ovs_kw = OpenvSwitchKeywords(ssh_connection)
+    ovs_kw.ensure_ovs_setup()
     ovs_agent_pod = ovs_kw.get_ovs_agent_pod()
 
     def teardown():
@@ -132,6 +133,7 @@ def test_ovsport_operational():
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     ovs_kw = OpenvSwitchKeywords(ssh_connection)
+    ovs_kw.ensure_ovs_setup()
     ovs_agent_pod = ovs_kw.get_ovs_agent_pod()
 
     get_logger().log_test_case_step("Verify OVSPort CRs exist")
@@ -158,6 +160,7 @@ def test_invalid_ovsbridge_rejected():
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     ovs_kw = OpenvSwitchKeywords(ssh_connection)
+    ovs_kw.ensure_ovs_setup()
 
     get_logger().log_test_case_step("Apply invalid OVSBridge CR with empty bridgeName")
     output = ovs_kw.kubectl_apply_yaml(INVALID_BRIDGE_YAML)
@@ -178,6 +181,7 @@ def test_invalid_ovsport_not_in_ovs(request: FixtureRequest):
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     ovs_kw = OpenvSwitchKeywords(ssh_connection)
+    ovs_kw.ensure_ovs_setup()
     ovs_agent_pod = ovs_kw.get_ovs_agent_pod()
 
     def teardown():
@@ -213,6 +217,7 @@ def test_cr_deletion_cleans_ovs(request: FixtureRequest):
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     ovs_kw = OpenvSwitchKeywords(ssh_connection)
+    ovs_kw.ensure_ovs_setup()
     ovs_agent_pod = ovs_kw.get_ovs_agent_pod()
 
     def teardown():
@@ -256,6 +261,7 @@ def test_cr_modification_reconciled(request: FixtureRequest):
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     ovs_kw = OpenvSwitchKeywords(ssh_connection)
+    ovs_kw.ensure_ovs_setup()
     ovs_agent_pod = ovs_kw.get_ovs_agent_pod()
 
     def teardown():

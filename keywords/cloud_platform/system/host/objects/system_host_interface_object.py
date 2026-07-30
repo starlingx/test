@@ -26,6 +26,7 @@ class SystemHostInterfaceObject:
         self.sriov_vf_driver = None
         self.max_tx_rate = None
         self.accelerated = None
+        self.ovs_access: bool = None
 
     def set_ifname(self, ifname: str):
         """
@@ -444,3 +445,19 @@ class SystemHostInterfaceObject:
 
         """
         return self.accelerated
+
+    def set_ovs_access(self, ovs_access: str):
+        """Setter for ovs_access.
+
+        Args:
+            ovs_access: The ovs_access value string from CLI output.
+        """
+        self.ovs_access = str(ovs_access).lower() == "true"
+
+    def get_ovs_access(self) -> bool:
+        """Getter for ovs_access.
+
+        Returns:
+            bool: Whether ovs_access is enabled.
+        """
+        return self.ovs_access

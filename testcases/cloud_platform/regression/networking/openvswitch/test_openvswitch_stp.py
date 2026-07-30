@@ -24,6 +24,7 @@ def test_rstp_enabled_and_operational():
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     ovs_kw = OpenvSwitchKeywords(ssh_connection)
+    ovs_kw.ensure_ovs_setup()
     ovs_agent_pod = ovs_kw.get_ovs_agent_pod()
 
     get_logger().log_test_case_step("Verify RSTP is enabled on br-sriov")
