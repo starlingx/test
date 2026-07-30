@@ -56,6 +56,23 @@ class KubectlGetPodsKeywords(K8sBaseKeyword):
 
         return pods_list_output
 
+    def get_pods_json(self, namespace: str = None) -> KubectlGetPodsOutput:
+        """Get pods using JSON output format.
+
+        Provides richer data than table format, including container images.
+
+        Args:
+            namespace (str, optional): Namespace to search. If None, uses all namespaces.
+
+        Returns:
+            KubectlGetPodsOutput: Parsed pod output with source="json".
+        """
+        ns_arg = f"-n {namespace}" if namespace else "--all-namespaces"
+        cmd = f"kubectl get pods {ns_arg} -o json"
+        output = self.ssh_connection.send(self.k8s_config.export(cmd))
+        self.validate_success_return_code(self.ssh_connection)
+        return KubectlGetPodsOutput(output, source="json")
+
     def get_pods_no_validation(self, namespace: str = None) -> KubectlGetPodsOutput:
         """Get the k8s pods that are available using '-o wide'.
 
