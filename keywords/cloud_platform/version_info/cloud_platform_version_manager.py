@@ -17,7 +17,7 @@ class CloudPlatformVersionManagerClass:
         self.sw_version: ProductVersion = None
         self._is_trixie: bool = None
 
-    def _get_product_version_object(self, version_name: str) -> ProductVersion:
+    def get_product_version_object(self, version_name: str) -> ProductVersion:
         """
         This function will find the Product Version object that matches the version_name provided.
 
@@ -53,7 +53,7 @@ class CloudPlatformVersionManagerClass:
         system_output = GetSystemKeywords().get_system()
         system_object = system_output.get_system_object()
         sw_version = system_object.get_software_version()
-        product_version = self._get_product_version_object(sw_version)
+        product_version = self.get_product_version_object(sw_version)
 
         return product_version
 

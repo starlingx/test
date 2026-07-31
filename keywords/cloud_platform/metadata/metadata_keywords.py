@@ -24,7 +24,7 @@ class MetadataKeywords(BaseKeyword):
         self.ssh_connection = ssh_connection
         self.file_keywords = FileKeywords(ssh_connection)
 
-    def create_fake_release_metadata(self, source_release: str, fake_release: str, source_state: str = "deployed", target_state: str = "available") -> str:
+    def create_fake_release_metadata(self, source_release: str, fake_release: str, source_state: str = "deployed", target_state: str = "available", base_dir: str = "/opt/software/metadata") -> str:
         """
         Create a fake release metadata file by copying from an existing release and replacing the release ID.
 
@@ -36,12 +36,14 @@ class MetadataKeywords(BaseKeyword):
             fake_release (str): The new release name to use in the fake metadata (e.g. "starlingx-24.09.0-fake").
             source_state (str): The state directory of the source metadata (default: "deployed").
             target_state (str): The state directory where the fake metadata will be created (default: "available").
+            base_dir (str): Base metadata directory (default: "/opt/software/metadata"). Use
+                "/opt/software/releases/metadata" for releases >= 26.10.
 
         Returns:
             str: The path to the created fake metadata file.
         """
-        source_metadata = f"/opt/software/metadata/{source_state}/{source_release}-metadata.xml"
-        fake_metadata = f"/opt/software/metadata/{target_state}/{fake_release}-metadata.xml"
+        source_metadata = f"{base_dir}/{source_state}/{source_release}-metadata.xml"
+        fake_metadata = f"{base_dir}/{target_state}/{fake_release}-metadata.xml"
 
         self.file_keywords.copy_file(source_metadata, fake_metadata, sudo=True)
         self.ssh_connection.send_as_sudo(f"sed -i 's|<id>{source_release}</id>|<id>{fake_release}</id>|g' {fake_metadata}")
