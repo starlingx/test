@@ -244,10 +244,11 @@ def test_add_valid_parameter_turn_on_audit_policy_logs_to_k8s_simplex():
         Clean up any existing parameters and prepare configuration files.
         Add audit-policy-file parameter and apply to Kubernetes.
         Assert out-of-date alarm is present at hosts.
-        Apply Kubernetes service parameters and wait for stabilization.
+        Apply Kubernetes service parameters and wait for alarm 250.001 to clear (puppet run complete).
         Verify the new configuration is applied.
-        Delete parameters and verify deletion was successful.
-        Apply Kubernetes service parameters after deletion.
+        Delete parameters and the audit policy file.
+        Apply Kubernetes service parameters after deletion and wait for alarm 250.001 to clear.
+        Verify parameters were deleted.
     """
 
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
@@ -268,6 +269,9 @@ def test_add_valid_parameter_turn_on_audit_policy_logs_to_k8s_simplex():
     get_logger().log_test_case_step("Applying parameters for Kubernetes")
     SystemServiceParameterKeywords(ssh_connection).apply_service_parameters("kubernetes")
 
+    get_logger().log_test_case_step("Waiting for alarm 250.001 to clear (puppet run complete, apiserver stable)")
+    AlarmListKeywords(ssh_connection).wait_for_all_alarms_cleared_excluding(excluded_alarm_ids=[])
+
     get_logger().log_test_case_step("Verifying the new configuration is applied")
     verify_parameters_applied(ssh_connection, parameter_turn_on_audit_policy_logs_list())
 
@@ -276,6 +280,10 @@ def test_add_valid_parameter_turn_on_audit_policy_logs_to_k8s_simplex():
 
     get_logger().log_test_case_step("Applying parameters for Kubernetes after deletion")
     SystemServiceParameterKeywords(ssh_connection).apply_service_parameters("kubernetes")
+
+    get_logger().log_test_case_step("Waiting for alarm 250.001 to clear after deletion apply")
+    AlarmListKeywords(ssh_connection).wait_for_all_alarms_cleared_excluding(excluded_alarm_ids=[])
+
     verify_parameters_deleted(ssh_connection, parameter_turn_on_audit_policy_logs_list())
 
     get_logger().log_info("Custom k8s configuration tests passed")
@@ -351,12 +359,13 @@ def test_add_valid_parameter_turn_on_audit_policy_logs_to_k8s_multinode():
         Clean up any existing parameters and prepare configuration files.
         Add audit-policy-file parameter and apply to Kubernetes.
         Assert out-of-date alarm is present at hosts.
-        Apply Kubernetes service parameters and wait for stabilization.
+        Apply Kubernetes service parameters and wait for alarm 250.001 to clear (puppet run complete).
         Verify the new configuration is applied.
         Apply host-swact between controllers.
         Verify the synced configuration between controllers.
-        Delete parameters and verify deletion was successful.
-        Apply Kubernetes service parameters after deletion.
+        Delete parameters and the audit policy file.
+        Apply Kubernetes service parameters after deletion and wait for alarm 250.001 to clear.
+        Verify parameters were deleted.
     """
 
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
@@ -377,6 +386,9 @@ def test_add_valid_parameter_turn_on_audit_policy_logs_to_k8s_multinode():
     get_logger().log_test_case_step("Applying parameters for Kubernetes")
     SystemServiceParameterKeywords(ssh_connection).apply_service_parameters("kubernetes")
 
+    get_logger().log_test_case_step("Waiting for alarm 250.001 to clear (puppet run complete, apiserver stable)")
+    AlarmListKeywords(ssh_connection).wait_for_all_alarms_cleared_excluding(excluded_alarm_ids=[])
+
     get_logger().log_test_case_step("Verifying the new configuration is applied")
     verify_parameters_applied(ssh_connection, parameter_turn_on_audit_policy_logs_list())
 
@@ -391,6 +403,10 @@ def test_add_valid_parameter_turn_on_audit_policy_logs_to_k8s_multinode():
 
     get_logger().log_test_case_step("Applying parameters for Kubernetes after deletion")
     SystemServiceParameterKeywords(ssh_connection).apply_service_parameters("kubernetes")
+
+    get_logger().log_test_case_step("Waiting for alarm 250.001 to clear after deletion apply")
+    AlarmListKeywords(ssh_connection).wait_for_all_alarms_cleared_excluding(excluded_alarm_ids=[])
+
     verify_parameters_deleted(ssh_connection, parameter_turn_on_audit_policy_logs_list())
 
     get_logger().log_info("Custom k8s configuration tests passed")
