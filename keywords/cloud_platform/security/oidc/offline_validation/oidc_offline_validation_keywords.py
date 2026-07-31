@@ -34,9 +34,7 @@ class OidcOfflineValidationKeywords(BaseKeyword):
         """
         self.ssh_connection = ssh_connection
 
-    def setup_oidc_with_ldap_connector(
-        self, security_config: SecurityConfig, lab_config: LabConfig
-    ) -> bool:
+    def setup_oidc_with_ldap_connector(self, security_config: SecurityConfig, lab_config: LabConfig) -> bool:
         """Check if OIDC environment with LDAP connector is already configured.
 
         Returns True if already configured (no action needed), False if setup required.
@@ -52,17 +50,10 @@ class OidcOfflineValidationKeywords(BaseKeyword):
         if app_list.application_exists("oidc-auth-apps"):
             app = app_list.get_application("oidc-auth-apps")
             if app.get_status() == "applied":
-                output = self.ssh_connection.send(
-                    source_openrc(
-                        "system helm-override-show oidc-auth-apps dex kube-system"
-                        " 2>/dev/null | grep -c 'ldapadmin'"
-                    )
-                )
+                output = self.ssh_connection.send(source_openrc("system helm-override-show oidc-auth-apps dex kube-system" " 2>/dev/null | grep -c 'ldapadmin'"))
                 raw = "\n".join(output) if isinstance(output, list) else output
                 if raw.strip() != "0":
-                    get_logger().log_info(
-                        "oidc-auth-apps already applied with LDAP connector — skipping re-apply"
-                    )
+                    get_logger().log_info("oidc-auth-apps already applied with LDAP connector — skipping re-apply")
                     return True
         return False
 
@@ -74,6 +65,7 @@ class OidcOfflineValidationKeywords(BaseKeyword):
             group_name (str): Group that should appear in the user's groups.
             timeout (int): Maximum seconds to wait.
         """
+
         def check_group_visible() -> bool:
             """Check if id command shows the group.
 
@@ -106,7 +98,7 @@ class OidcOfflineValidationKeywords(BaseKeyword):
         """Get the list of CLI commands to test based on lab type.
 
         Returns:
-            list: List of (command, label, mandatory) tuples.
+            List[Tuple[str, str, bool]]: List of (command, label, mandatory) tuples.
         """
         commands = [
             ("fm alarm-list", "FM", True),
@@ -163,10 +155,7 @@ class OidcOfflineValidationKeywords(BaseKeyword):
             Returns:
                 bool: True if pod exists.
             """
-            output = self.ssh_connection.send(
-                f"kubectl --kubeconfig {admin_kubeconfig} get pods -l {dex_label}"
-                f" -n {dex_namespace} --no-headers 2>/dev/null | wc -l"
-            )
+            output = self.ssh_connection.send(f"kubectl --kubeconfig {admin_kubeconfig} get pods -l {dex_label}" f" -n {dex_namespace} --no-headers 2>/dev/null | wc -l")
             raw = "\n".join(output) if isinstance(output, list) else output
             return raw.strip() != "0"
 
@@ -197,10 +186,7 @@ class OidcOfflineValidationKeywords(BaseKeyword):
             Returns:
                 bool: True if no dex pods exist.
             """
-            output = self.ssh_connection.send(
-                f"kubectl --kubeconfig {admin_kubeconfig} get pods -l {dex_label}"
-                f" -n {dex_namespace} --no-headers 2>/dev/null | wc -l"
-            )
+            output = self.ssh_connection.send(f"kubectl --kubeconfig {admin_kubeconfig} get pods -l {dex_label}" f" -n {dex_namespace} --no-headers 2>/dev/null | wc -l")
             raw = "\n".join(output) if isinstance(output, list) else output
             return raw.strip() == "0"
 
@@ -227,12 +213,7 @@ class OidcOfflineValidationKeywords(BaseKeyword):
             Returns:
                 bool: True if dex responds.
             """
-            output = self.ssh_connection.send(
-                source_openrc(
-                    f"curl -sk -o /dev/null -w '%{{http_code}}'"
-                    f" https://{oam_target}:30556/keys 2>/dev/null"
-                )
-            )
+            output = self.ssh_connection.send(source_openrc(f"curl -sk -o /dev/null -w '%{{http_code}}'" f" https://{oam_target}:30556/dex/keys 2>/dev/null"))
             raw = "\n".join(output) if isinstance(output, list) else output
             http_code = raw.strip().strip("'")
             return http_code not in ("000", "")
@@ -257,9 +238,7 @@ class OidcOfflineValidationKeywords(BaseKeyword):
         except Exception:
             get_logger().log_info("restore_dex: encountered an error (may already be running)")
 
-    def run_oidc_command(
-        self, fm_oidc_kw: FmOidcKeywords, username: str, password: str, lab_oam_ip: str, command: str
-    ) -> bool:
+    def run_oidc_command(self, fm_oidc_kw: FmOidcKeywords, username: str, password: str, lab_oam_ip: str, command: str) -> bool:
         """Run a CLI command via OIDC and return success status.
 
         Args:
@@ -279,13 +258,7 @@ class OidcOfflineValidationKeywords(BaseKeyword):
         ldap_ssh = fm_oidc_kw.get_authenticated_session(username, password, lab_oam_ip)
         cli_name = command.split()[0]
         cmd_with_arg = command.replace(f"{cli_name} ", f"{cli_name} --stx-auth-type=oidc ", 1)
-        full_cmd = (
-            f"export KUBECONFIG=$HOME/.kube/config && "
-            f"source /etc/platform/openrc --no_credentials && "
-            f"export OS_USERNAME={username} && "
-            f"export OS_PASSWORD={password} && "
-            f"{cmd_with_arg}"
-        )
+        full_cmd = f"export KUBECONFIG=$HOME/.kube/config && " f"source /etc/platform/openrc --no_credentials && " f"export OS_USERNAME={username} && " f"export OS_PASSWORD={password} && " f"{cmd_with_arg}"
         output = ldap_ssh.send(full_cmd, command_timeout=120)
         raw = "\n".join(output) if isinstance(output, list) else output
         if raw is None:
@@ -312,9 +285,7 @@ class OidcOfflineValidationKeywords(BaseKeyword):
         if expected and expected not in raw:
             if raw.strip() == "":
                 return True
-            get_logger().log_info(
-                f"Command '{command}' missing expected content '{expected}': {raw[:150]}"
-            )
+            get_logger().log_info(f"Command '{command}' missing expected content '{expected}': {raw[:150]}")
             return False
         return True
 
@@ -324,6 +295,7 @@ class OidcOfflineValidationKeywords(BaseKeyword):
         Args:
             timeout (int): Maximum seconds to wait.
         """
+
         def check_fm_api_running() -> bool:
             """Check if fm-api is active and listening.
 

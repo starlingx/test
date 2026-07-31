@@ -254,10 +254,12 @@ def test_oidc_software_admin_allowed_all(request: FixtureRequest) -> None:
     group_name = "SwAdminGroup"
     dummy_iso = "/tmp/test_oidc_admin.iso"
     dummy_sig = "/tmp/test_oidc_admin.sig"
-    patch_path = usm_config.get_patch_path()
+    patch_suffix = "software-insvc"
+    patch_path = usm_config.resolve_test_patch_path(patch_suffix)
     dest_dir = usm_config.get_dest_dir()
-    patch_filename = os.path.basename(patch_path) if patch_path else ""
-    patch_local_path = os.path.join(dest_dir, patch_filename) if patch_path else ""
+    patch_filename = os.path.basename(patch_path)
+    patch_local_path = os.path.join(dest_dir, patch_filename)
+    uploaded_release_id = usm_config.get_test_patch_single_release_id()
 
     sw_oidc_kw = SoftwareOidcKeywords(ssh_connection)
     file_kw = FileKeywords(ssh_connection)
@@ -296,8 +298,8 @@ def test_oidc_software_admin_allowed_all(request: FixtureRequest) -> None:
     validate_equals(result.is_forbidden(), False, "Admin role must NOT be denied 'software upload'")
 
     get_logger().log_test_case_step("Step 7: Verify admin can upload a real patch file")
-    # Copy real patch from build server and upload via OIDC
-    if usm_config.get_copy_from_remote():
+    # Copy real patch from build server and upload via OIDC.
+    if patch_path and usm_config.get_copy_from_remote():
         file_kw.create_directory(dest_dir)
         file_kw.rsync_from_remote_server(
             remote_server=usm_config.get_remote_server(),
@@ -311,7 +313,6 @@ def test_oidc_software_admin_allowed_all(request: FixtureRequest) -> None:
     validate_equals(result.is_successful(), True, "Admin real patch upload must succeed")
 
     get_logger().log_test_case_step("Step 8: Verify admin can delete the uploaded release")
-    uploaded_release_id = usm_config.get_to_release_ids()[0]
     result = sw_oidc_kw.run_software_command_as_oidc_user(username, password, lab_oam_ip, f"software delete {uploaded_release_id}")
     validate_equals(result.is_forbidden(), False, "Admin role must NOT be denied 'software delete'")
 
@@ -622,7 +623,11 @@ def test_oidc_software_refresh_token(request: FixtureRequest) -> None:
     chart_name = "dex"
     namespace = "kube-system"
     short_expiry = "config.expiry.idTokens=2m"
+    short_refresh_valid = "config.expiry.refreshTokens.validIfNotUsedFor=5m"
+    short_refresh_lifetime = "config.expiry.refreshTokens.absoluteLifetime=10m"
     original_expiry = "config.expiry.idTokens=24h"
+    original_refresh_valid = "config.expiry.refreshTokens.validIfNotUsedFor=0"
+    original_refresh_lifetime = "config.expiry.refreshTokens.absoluteLifetime=0"
 
     sw_oidc_kw = SoftwareOidcKeywords(ssh_connection)
     helm_kw = SystemHelmOverrideKeywords(ssh_connection)
@@ -631,7 +636,13 @@ def test_oidc_software_refresh_token(request: FixtureRequest) -> None:
     def restore_expiry() -> None:
         """Restore token expiry to 24h and reapply."""
         get_logger().log_info("Restoring token expiry to 24h")
-        helm_kw.helm_override_update_with_list_of_values(app_name, chart_name, namespace, True, [original_expiry])
+        helm_kw.helm_override_update_with_list_of_values(
+            app_name,
+            chart_name,
+            namespace,
+            True,
+            [original_expiry, original_refresh_valid, original_refresh_lifetime],
+        )
         app_apply_kw.system_application_apply(app_name, timeout=900)
 
     request.addfinalizer(restore_expiry)
@@ -647,7 +658,13 @@ def test_oidc_software_refresh_token(request: FixtureRequest) -> None:
     setup_role_bindings(ssh_connection, request, group_name, "admin")
 
     get_logger().log_test_case_step("Step 4: Set token expiry to 2 minutes and reapply")
-    helm_kw.helm_override_update_with_list_of_values(app_name, chart_name, namespace, True, [short_expiry])
+    helm_kw.helm_override_update_with_list_of_values(
+        app_name,
+        chart_name,
+        namespace,
+        True,
+        [short_expiry, short_refresh_valid, short_refresh_lifetime],
+    )
     app_apply_kw.system_application_apply(app_name, timeout=900)
     # Wait for DEX pod to be fully ready after reapply
     get_logger().log_info("Waiting for DEX pod to stabilize after reapply")
@@ -711,5 +728,11 @@ def test_oidc_software_refresh_token(request: FixtureRequest) -> None:
     validate_equals(result.is_successful(), True, "software list must succeed after token refresh")
 
     get_logger().log_test_case_step("Step 8: Restore token expiry to 24h")
-    helm_kw.helm_override_update_with_list_of_values(app_name, chart_name, namespace, True, [original_expiry])
+    helm_kw.helm_override_update_with_list_of_values(
+        app_name,
+        chart_name,
+        namespace,
+        True,
+        [original_expiry, original_refresh_valid, original_refresh_lifetime],
+    )
     app_apply_kw.system_application_apply(app_name, timeout=900)

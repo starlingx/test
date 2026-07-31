@@ -204,7 +204,11 @@ class FmOidcKeywords(BaseKeyword):
             self.authenticated_user = None
 
     def create_ldap_ssh(self, username: str, password: str, lab_oam_ip: str) -> SSHConnection:
-        """Create a direct SSH connection as the LDAP user.
+        """Create an SSH connection as the LDAP user.
+
+        Tries direct SSH to OAM first. If that fails (e.g. labs that restrict
+        LDAP user SSH on OAM interface), falls back to tunnelling through the
+        existing sysadmin SSH connection to localhost.
 
         Args:
             username (str): LDAP username.
@@ -228,6 +232,26 @@ class FmOidcKeywords(BaseKeyword):
             ssh_port=lab_config.get_ssh_port(),
             jump_host=jump_host_config,
         )
-        if not ssh:
-            raise KeywordException(f"Failed to create SSH connection as LDAP user {username}@{lab_oam_ip}")
+        if ssh and ssh.is_connected:
+            return ssh
+
+        # Fallback: use sshpass to run commands as LDAP user via localhost
+        get_logger().log_info(f"Direct SSH as {username}@{lab_oam_ip} failed — " f"falling back to sshpass-based SSH via sysadmin connection")
+
+        admin_password = lab_config.get_admin_credentials().get_password()
+
+        # Create a new SSH connection as sysadmin
+        ssh = SSHConnectionManager.create_ssh_connection(
+            lab_oam_ip,
+            lab_config.get_admin_credentials().get_user_name(),
+            admin_password,
+            name=f"oidc-{username}-via-sysadmin",
+            ssh_port=lab_config.get_ssh_port(),
+            jump_host=jump_host_config,
+        )
+        if not ssh or not ssh.is_connected:
+            raise KeywordException(f"Failed to create fallback SSH connection for LDAP user {username}")
+
+        # Use the framework's sshpass pattern to run commands as the LDAP user
+        ssh.setup_ssh_pass("localhost", username, password)
         return ssh

@@ -11,6 +11,7 @@ INVALID_CREDENTIALS_MSG = "Invalid Identity credentials"
 MUST_PROVIDE_USERNAME_MSG = "You must provide a username"
 UNABLE_OIDC_TOKEN_MSG = "Unable to get OIDC token"
 AUTH_ERROR_MSGS = [INVALID_CREDENTIALS_MSG, MUST_PROVIDE_USERNAME_MSG, UNABLE_OIDC_TOKEN_MSG]
+CONNECTION_ERROR_MSGS = ["Connection refused", "Error finding address", "Max retries exceeded"]
 
 
 class FmOidcCommandResultOutput:
@@ -36,8 +37,9 @@ class FmOidcCommandResultOutput:
         self._result.set_raw_output(raw_output)
         is_forbidden = FORBIDDEN_MSG in raw_output or NOT_AUTHORIZED_MSG in raw_output
         has_auth_error = any(msg in raw_output for msg in AUTH_ERROR_MSGS)
+        has_connection_error = any(msg in raw_output for msg in CONNECTION_ERROR_MSGS)
         self._result.set_forbidden(is_forbidden)
-        self._result.set_succeeded(not is_forbidden and not has_auth_error)
+        self._result.set_succeeded(not is_forbidden and not has_auth_error and not has_connection_error)
 
         if has_auth_error:
             get_logger().log_error(f"OIDC auth error in '{command}': {raw_output[:200]}")
