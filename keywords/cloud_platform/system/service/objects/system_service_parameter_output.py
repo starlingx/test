@@ -131,6 +131,48 @@ class SystemServiceParameterOutput:
         """
         return self.parameters
 
+    def get_parameter_by_name(self, name: str) -> SystemServiceParameterObject:
+        """Get a service parameter by its name.
+
+        Args:
+            name (str): The parameter name to find.
+
+        Returns:
+            SystemServiceParameterObject: The matching parameter.
+
+        Raises:
+            ValueError: If no parameter with the given name is found.
+        """
+        for param in self.parameters:
+            if param.get_name() == name:
+                return param
+        raise ValueError(f"Service parameter '{name}' not found")
+
+    def get_value_by_name(self, name: str) -> str:
+        """Get the value of a service parameter by name.
+
+        Args:
+            name (str): The parameter name to find.
+
+        Returns:
+            str: The parameter value.
+
+        Raises:
+            ValueError: If no parameter with the given name is found.
+        """
+        return self.get_parameter_by_name(name).get_value()
+
+    def has_parameter(self, name: str) -> bool:
+        """Check if a service parameter exists by name.
+
+        Args:
+            name (str): The parameter name to check.
+
+        Returns:
+            bool: True if the parameter exists.
+        """
+        return any(param.get_name() == name for param in self.parameters)
+
     @staticmethod
     def is_valid_output(output: str) -> bool:
         """
