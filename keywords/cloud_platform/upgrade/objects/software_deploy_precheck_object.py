@@ -60,4 +60,4 @@ class SoftwareDeployPrecheckItemObject:
         Returns:
             str: Class name and field values.
         """
-        return f"{self.__class__.__name__}(name={self._name}, status={self._status})"
+        return str(self)
