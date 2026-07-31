@@ -1,6 +1,5 @@
 from typing import Dict, List
 
-from framework.logging.automation_logger import get_logger
 from keywords.cloud_platform.upgrade.objects.software_deploy_precheck_object import SoftwareDeployPrecheckItemObject
 
 
@@ -34,19 +33,16 @@ class SoftwareDeployPrecheckOutput:
         """
         Internal parsing of the raw output into objects and a name->status mapping.
 
+        Only lines containing a status marker ([OK] or [Fail]) are collected.
+        All other lines (headers, error messages, detail lines) are ignored.
         """
-        lines_to_parse = self._raw_output[:-1]
-        for line in lines_to_parse:
-            if ":" not in line:
-                get_logger().log_warning(f"There is unexpected output {line}")
+        for line in self._raw_output:
+            if "[OK]" not in line and "[Fail]" not in line:
                 continue
 
             key, value = line.split(":", 1)
-            key = key.strip()
-            value = value.strip()
-
-            self._status_by_name[key] = value
-            self._items.append(SoftwareDeployPrecheckItemObject(name=key, status=value))
+            self._status_by_name[key.strip()] = value.strip()
+            self._items.append(SoftwareDeployPrecheckItemObject(name=key.strip(), status=value.strip()))
 
     def get_items(self) -> List[SoftwareDeployPrecheckItemObject]:
         """
@@ -86,6 +82,15 @@ class SoftwareDeployPrecheckOutput:
             List[SoftwareDeployPrecheckItemObject]: Items where status does not contain "[OK]".
         """
         return [item for item in self._items if not item.is_ok()]
+
+    def has_unhealthy_metapackages(self) -> bool:
+        """
+        Check if the output contains the unhealthy metapackages summary line.
+
+        Returns:
+            bool: True if any line contains 'unhealthy', False otherwise.
+        """
+        return any("unhealthy" in line for line in self._raw_output)
 
     def get_raw_output(self) -> List[str]:
         """
