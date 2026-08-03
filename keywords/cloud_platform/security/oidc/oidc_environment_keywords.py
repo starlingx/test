@@ -206,8 +206,12 @@ class OidcEnvironmentKeywords(BaseKeyword):
     def teardown(self, oidc_app_name: str, namespace: str) -> None:
         """Remove OIDC app and delete overrides to leave lab in safe state.
 
-        Cleans up test-specific resources (secrets, ClusterRoleBindings) but
-        leaves helm overrides and app in applied state. The next test's setup
+        Cleans up test-specific resources (secrets, ClusterRoleBindings),
+        restores the default kubeconfig, and removes the OIDC working directory
+        to prevent subsequent tests from picking up the OIDC exec-based
+        kubeconfig which prompts for interactive authentication.
+
+        Leaves helm overrides and app in applied state. The next test's setup
         uses reuse_values=False which fully replaces overrides with fresh values.
 
         Args:
@@ -219,6 +223,14 @@ class OidcEnvironmentKeywords(BaseKeyword):
 
         get_logger().log_teardown_step("Removing ClusterRoleBinding")
         self.ssh_connection.send("export KUBECONFIG=/etc/kubernetes/admin.conf;kubectl delete clusterrolebinding wrcp-admin-binding --ignore-not-found")
+
+        get_logger().log_teardown_step("Restoring default kubeconfig")
+        self.ssh_connection.send("sudo cp /etc/kubernetes/admin.conf /home/sysadmin/.kube/config && sudo chown sysadmin:sys_protected /home/sysadmin/.kube/config")
+
+        get_logger().log_teardown_step("Removing OIDC working directory")
+        security_config = ConfigurationManager.get_security_config()
+        working_dir = security_config.get_oidc_keycloak_working_dir()
+        self.ssh_connection.send(f"rm -rf {working_dir}")
 
         get_logger().log_info("OIDC teardown complete — app remains applied with valid overrides")
 
@@ -336,7 +348,9 @@ class OidcEnvironmentKeywords(BaseKeyword):
     def cleanup(self, secret_name: str, namespace: str, crb_binding_name: str) -> None:
         """Clean up the OIDC Keycloak environment.
 
-        Deletes the upstream IdP CA secret and the ClusterRoleBinding.
+        Deletes the upstream IdP CA secret, the ClusterRoleBinding, restores
+        the default kubeconfig, and removes the OIDC working directory to
+        prevent subsequent tests from picking up the OIDC exec-based kubeconfig.
 
         Args:
             secret_name (str): Name of the upstream IdP CA secret to delete.
@@ -347,3 +361,11 @@ class OidcEnvironmentKeywords(BaseKeyword):
         self.kubectl_delete_secrets.cleanup_secret(secret_name=secret_name, namespace=namespace)
         get_logger().log_info(f"Cleanup: deleting ClusterRoleBinding '{crb_binding_name}'")
         self.kubectl_crb.delete_clusterrolebinding(crb_binding_name)
+
+        get_logger().log_info("Cleanup: restoring default kubeconfig")
+        self.ssh_connection.send("sudo cp /etc/kubernetes/admin.conf /home/sysadmin/.kube/config && sudo chown sysadmin:sys_protected /home/sysadmin/.kube/config")
+
+        get_logger().log_info("Cleanup: removing OIDC working directory")
+        security_config = ConfigurationManager.get_security_config()
+        working_dir = security_config.get_oidc_keycloak_working_dir()
+        self.ssh_connection.send(f"rm -rf {working_dir}")
