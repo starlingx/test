@@ -306,6 +306,31 @@ class KubectlGetPodsKeywords(K8sBaseKeyword):
 
         return self.wait_for_pod_max_age(pod_name="kube-apiserver-controller-0", max_age=3, namespace="kube-system", timeout=timeout)
 
+    def wait_for_kubernetes_api_available(self, timeout: int = 300) -> None:
+        """Wait for the Kubernetes API to become available.
+
+        Polls using get_pods_no_validation() which returns None when the API
+        is unreachable (non-zero return code) without raising an exception.
+        Useful in teardowns and post-unlock/swact scenarios where the API
+        may be temporarily unavailable.
+
+        Args:
+            timeout (int): Maximum time to wait in seconds. Defaults to 300.
+
+        Raises:
+            TimeoutError: If the API does not become available within timeout.
+        """
+
+        def is_api_available() -> bool:
+            return self.get_pods_no_validation() is not None
+
+        validate_equals_with_retry(
+            function_to_execute=is_api_available,
+            expected_value=True,
+            validation_description="Kubernetes API is available",
+            timeout=timeout,
+        )
+
     def wait_for_pods_to_be_deleted(self, namespace: str, poll_interval: int = 10, timeout: int = 180) -> None:
         """Wait for all pods in a namespace to be deleted.
 

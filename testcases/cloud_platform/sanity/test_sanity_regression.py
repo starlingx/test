@@ -6,7 +6,7 @@ from config.configuration_manager import ConfigurationManager
 from framework.logging.automation_logger import get_logger
 from framework.resources.resource_finder import get_stx_resource_path
 from framework.ssh.ssh_connection import SSHConnection
-from framework.validation.validation import validate_equals_with_retry
+from framework.validation.validation import validate_equals, validate_equals_with_retry
 from keywords.cloud_platform.helm.helm_keywords import HelmKeywords
 from keywords.cloud_platform.networking.sriov.get_sriov_config_keywords import GetSriovConfigKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
@@ -37,7 +37,6 @@ from keywords.k8s.network_definition.kubectl_delete_network_definition_keywords 
 from keywords.k8s.node.kubectl_describe_node_keywords import KubectlDescribeNodeKeywords
 from keywords.k8s.pods.kubectl_apply_pods_keywords import KubectlApplyPodsKeywords
 from keywords.k8s.pods.kubectl_copy_to_pod_keywords import KubectlCopyToPodKeywords
-from keywords.k8s.pods.kubectl_create_pods_keywords import KubectlCreatePodsKeywords
 from keywords.k8s.pods.kubectl_delete_pods_keywords import KubectlDeletePodsKeywords
 from keywords.k8s.pods.kubectl_exec_in_pods_keywords import KubectlExecInPodsKeywords
 from keywords.k8s.pods.kubectl_get_pods_keywords import KubectlGetPodsKeywords
@@ -195,11 +194,11 @@ def test_host_operations_with_custom_kubectl_app_simplex(request):
 
     # lock/unlock controller
     lock_success = SystemHostLockKeywords(ssh_connection).lock_host("controller-0")
-    assert lock_success, "Controller was not locked successfully."
+    validate_equals(lock_success, True, "Controller was not locked successfully.")
     unlock_success = SystemHostLockKeywords(ssh_connection).unlock_host("controller-0")
-    assert unlock_success, "Controller was not unlocked successfully."
+    validate_equals(unlock_success, True, "Controller was not unlocked successfully.")
 
-    assert wait_for_pods_status_running, "Consumer pods did not reach running status in expected time after lock/unlock"
+    validate_equals(wait_for_pods_status_running(ssh_connection), True, "Consumer pods did not reach running status in expected time after lock/unlock")
 
 
 @mark.p0
@@ -230,7 +229,7 @@ def test_host_operations_with_custom_kubectl_app_standby(request):
 
     request.addfinalizer(swact_controller)
 
-    assert wait_for_pods_status_running, "Consumer pods did not reach running status in expected time after swact"
+    validate_equals(wait_for_pods_status_running(ssh_connection), True, "Consumer pods did not reach running status in expected time after swact")
 
 
 @mark.p0
@@ -536,19 +535,20 @@ def deploy_pods(request: any, ssh_connection: SSHConnection):
         Finalizer to remove deployments and pods
 
         """
+        # Wait for k8s API to be available (may be down after lock/unlock or swact)
+        KubectlGetPodsKeywords(ssh_connection).wait_for_kubernetes_api_available(timeout=300)
         rc = KubectlDeleteDeploymentsKeywords(ssh_connection).cleanup_deployment("resource-consumer")
         rc += KubectlDeleteServiceKeywords(ssh_connection).cleanup_service("resource-consumer")
         rc += KubectlDeleteNamespaceKeywords(ssh_connection).cleanup_namespace("resource-consumer")
 
-        assert rc == 0
+        validate_equals(rc, 0, "Teardown failed: could not clean up resource-consumer deployment/service/namespace")
 
     request.addfinalizer(remove_deployments_and_pods)
 
     FileKeywords(ssh_connection).upload_file(get_stx_resource_path("resources/cloud_platform/sanity/pods/consumer_app.yaml"), "/home/sysadmin/consumer_app.yaml")
-    kubectl_create_pods_keyword = KubectlCreatePodsKeywords(ssh_connection)
-    kubectl_create_pods_keyword.create_from_yaml("/home/sysadmin/consumer_app.yaml")
+    KubectlApplyPodsKeywords(ssh_connection).apply_from_yaml("/home/sysadmin/consumer_app.yaml")
 
-    assert wait_for_pods_status_running(ssh_connection), "Consumer pods did not reach running status in expected time"
+    validate_equals(wait_for_pods_status_running(ssh_connection), True, "Consumer pods did not reach running status in expected time")
 
 
 def wait_for_pods_status_running(ssh_connection: SSHConnection) -> bool:
@@ -565,11 +565,14 @@ def wait_for_pods_status_running(ssh_connection: SSHConnection) -> bool:
 
     # Wait until the pods are created.
     def get_number_of_consumer_pods():
-        pods = KubectlGetPodsKeywords(ssh_connection).get_pods()
+        pods = KubectlGetPodsKeywords(ssh_connection).get_pods_no_validation()
+        if pods is None:
+            get_logger().log_info("k8s API returned non-zero rc, retrying pod count check")
+            return 0
         consumer_pods = pods.get_pods_start_with("resource-consumer")
         return len(consumer_pods)
 
-    validate_equals_with_retry(get_number_of_consumer_pods, 2, "There are 2 resource-consumer pods created")
+    validate_equals_with_retry(get_number_of_consumer_pods, 2, "There are 2 resource-consumer pods created", timeout=300)
 
     # Get the full names of those consumer pods
     pods = KubectlGetPodsKeywords(ssh_connection).get_pods()

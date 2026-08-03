@@ -21,6 +21,7 @@ spec:
       containers:
       - name: resource-consumer
         image: registry.local:9001/resource-consumer
+        imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 80
         resources:
