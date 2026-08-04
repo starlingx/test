@@ -1,6 +1,7 @@
 from typing import Optional
 
 from framework.logging.automation_logger import get_logger
+from framework.ssh.prompt_response import PromptResponse
 from framework.ssh.ssh_connection import SSHConnection
 from framework.validation.validation import validate_equals, validate_equals_with_retry
 from keywords.base_keyword import BaseKeyword
@@ -266,7 +267,7 @@ class DcManagerSubcloudBackupKeywords(BaseKeyword):
         subcloud: Optional[str] = None,
         local_only: bool = False,
         group: Optional[str] = None,
-        sysadmin_password: str = None,
+        sysadmin_password: Optional[str] = None,
     ) -> None:
         """
         Sends the command to delete the backup of the specified subcloud and expects a command rejection.
@@ -305,7 +306,7 @@ class DcManagerSubcloudBackupKeywords(BaseKeyword):
         subcloud: Optional[str] = None,
         local_only: bool = False,
         group: Optional[str] = None,
-        sysadmin_password: str = None,
+        sysadmin_password: Optional[str] = None,
         subcloud_list: Optional[list] = None,
     ) -> None:
         """
@@ -444,6 +445,8 @@ class DcManagerSubcloudBackupKeywords(BaseKeyword):
              as listed in the product documentation for the ansible restore. Default as None
             group (Optional[str]): Subcloud group name to create backup. Defaults to None.
             registry (bool): Option to add the registry backup in the same task. Defaults to False.
+            factory (bool): Restore from factory backup. Defaults to False.
+            auto_restore (bool): Auto-restore mode. Defaults to False.
             release (Optional[str]): Release version required to check backup. Defaults to None.
             subcloud_list (Optional[list]): List of subcloud names when restoring a group backup. Defaults to None.
             timeout (int): Maximum time (in seconds) to wait for the restore to complete. Defaults to 3600.
@@ -481,7 +484,7 @@ class DcManagerSubcloudBackupKeywords(BaseKeyword):
 
         if group:
             for subcloud_name in subcloud_list:
-            
+
                 self.wait_for_backup_restore(con_ssh, subcloud_name, timeout=timeout)
 
         else:
@@ -533,3 +536,76 @@ class DcManagerSubcloudBackupKeywords(BaseKeyword):
             polling_sleep_time=check_interval,
             failure_values=[f"{subcloud} backup restore failed."]
         )
+
+    def restore_subcloud_backup_with_error(
+        self,
+        sysadmin_password: Optional[str] = None,
+        subcloud: Optional[str] = None,
+        local_only: bool = False,
+        group: Optional[str] = None,
+        registry: bool = False,
+        factory: bool = False,
+        auto_restore: bool = False,
+        release: Optional[str] = None,
+        with_install: bool = False,
+    ) -> tuple:
+        """Sends the restore command and returns output and rc without asserting.
+
+        Used for negative testing where the command is expected to be rejected.
+
+        Args:
+            sysadmin_password (Optional[str]): Subcloud sysadmin password. Defaults to None for testing missing password.
+            subcloud (Optional[str]): Name of the subcloud to restore. Defaults to None.
+            local_only (bool): If True, restore from local backup. Defaults to False.
+            group (Optional[str]): Subcloud group name. Defaults to None.
+            registry (bool): Include registry images in restore. Defaults to False.
+            factory (bool): Restore from factory backup. Defaults to False.
+            auto_restore (bool): Auto-restore mode. Defaults to False.
+            release (Optional[str]): Release version. Defaults to None.
+            with_install (bool): Reinstall before restore. Defaults to False.
+
+        Returns:
+            tuple: (output_str, return_code_int).
+        """
+        cmd = "dcmanager subcloud-backup restore"
+        if sysadmin_password:
+            cmd += f" --sysadmin-password {sysadmin_password}"
+        if subcloud:
+            cmd += f" --subcloud {subcloud}"
+        if group:
+            cmd += f" --group {group}"
+        if local_only:
+            cmd += " --local-only"
+        if registry:
+            cmd += " --registry-images"
+        if factory:
+            cmd += " --factory"
+        if auto_restore:
+            cmd += " --auto"
+        if release:
+            cmd += f" --release {release}"
+        if with_install:
+            cmd += " --with-install"
+        output = self.ssh_connection.send(source_openrc(cmd))
+        rc = self.ssh_connection.get_return_code()
+        if isinstance(output, list):
+            output = "\n".join(str(line).strip() for line in output)
+        return output, rc
+
+    def restore_subcloud_backup_prompt_check(self, subcloud: str) -> str:
+        """Run restore without --sysadmin-password and capture the password prompt.
+
+        Sends Ctrl+C after detecting the prompt to cancel the operation.
+        Used to validate the CLI prompts for password when not provided.
+
+        Args:
+            subcloud (str): Name of the subcloud to restore.
+
+        Returns:
+            str: The output captured up to and including the password prompt.
+        """
+        password_prompt = PromptResponse("assword", "\x03")
+        shell_prompt = PromptResponse("$", None)
+        cmd = source_openrc(f"dcmanager subcloud-backup restore --subcloud {subcloud}")
+        self.ssh_connection.send_expect_prompts(cmd, [password_prompt, shell_prompt])
+        return password_prompt.get_complete_output()

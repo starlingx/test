@@ -63,6 +63,12 @@ PARTIAL_ADMIN_NETWORK_SCENARIOS = [
 
 GENERIC_DCMANAGER_ERROR = "the server could not comply with the request since it is either malformed or otherwise incorrect."
 
+CLOUD_INIT_CONFIG_WITHOUT_ENROLL_ERROR = "cloud-init-config is only valid with --enroll option"
+
+CLOUD_INIT_CONFIG_INVALID_TARBALL_ERROR = "cloud-init-config is not a valid .tar archive"
+
+EMPTY_EXTRA_BOOT_PARAMS_ERROR = "The install value extra_boot_params must not be empty."
+
 
 def _create_temp_files_with_missing_keys(system_controller_ssh: SSHConnection, source_file: str, temp_dir: str, scenarios: list) -> dict:
     """Copy a YAML file to temp dir and remove one required key per copy.
@@ -532,3 +538,175 @@ def test_enroll_rejects_software_version_mismatch(request: FixtureRequest):
     validate_not_equals(rc, 0, f"Command should be rejected (non-zero rc). Got rc={rc}. Output: {output}")
     validate_str_contains(output.lower(), GENERIC_DCMANAGER_ERROR, "Generic dcmanager error message present in output")
     validate_str_contains(output.lower(), expected_error.lower(), "Specific error detail present in output")
+
+
+@mark.p2
+@mark.lab_has_subcloud
+def test_enroll_rejects_cloud_init_config_without_enroll_flag(request: FixtureRequest):
+    """Verify dcmanager rejects cloud-init-config when --enroll flag is not provided.
+
+    Tests the scenario where a user provides --cloud-init-config but forgets
+    to include --enroll on a subcloud add command.
+
+    Preconditions:
+        - Lab has at least one subcloud with deployment assets configured.
+        - System controller is accessible.
+
+    Test Steps:
+        1. Run dcmanager subcloud add with --cloud-init-config but without --enroll.
+        2. Validate command is rejected with appropriate error.
+
+    Expected Results:
+        - Command returns non-zero exit code.
+        - Error output contains 'cloud-init-config is only valid with --enroll option'.
+    """
+    system_controller_ssh = LabConnectionKeywords().get_active_controller_ssh()
+    deployment_assets_config = ConfigurationManager.get_deployment_assets_config()
+    lab_config = ConfigurationManager.get_lab_config()
+    subcloud_name = lab_config.get_subcloud_names()[0]
+
+    bootstrap_values = deployment_assets_config.get_subcloud_deployment_assets(subcloud_name).get_bootstrap_file()
+
+    subcloud_dir = os.path.dirname(bootstrap_values)
+    temp_dir = f"{subcloud_dir}/temp"
+    dummy_tarball = f"{temp_dir}/dummy_cloud_init.tar"
+
+    file_kw = FileKeywords(system_controller_ssh)
+
+    def teardown():
+        get_logger().log_teardown_step(f"Remove temp directory {temp_dir}")
+        file_kw.delete_directory(temp_dir)
+
+    request.addfinalizer(teardown)
+
+    get_logger().log_test_case_step("Creating dummy tarball for cloud-init-config")
+    file_kw.create_directory(temp_dir)
+    file_kw.create_file_with_echo(dummy_tarball, "dummy")
+
+    get_logger().log_test_case_step("Running subcloud add with --cloud-init-config but without --enroll")
+    output, rc = DcManagerSubcloudAddKeywords(system_controller_ssh).dcmanager_subcloud_add_with_error(subcloud_name, bootstrap_values, cloud_init_config=dummy_tarball)
+
+    if rc == 0:
+        _delete_subcloud_if_created(system_controller_ssh, subcloud_name)
+
+    validate_not_equals(rc, 0, f"Command should be rejected (non-zero rc). Got rc={rc}. Output: {output}")
+    validate_str_contains(output.lower(), CLOUD_INIT_CONFIG_WITHOUT_ENROLL_ERROR, "Error about cloud-init-config requiring --enroll flag")
+
+
+@mark.p2
+@mark.lab_has_subcloud
+def test_enroll_rejects_invalid_cloud_init_config_tarball(request: FixtureRequest):
+    """Verify dcmanager rejects enrollment when cloud-init-config is not a valid tar archive.
+
+    Tests the scenario where a user provides a non-tar file as --cloud-init-config.
+
+    Preconditions:
+        - Lab has at least one subcloud with deployment assets configured.
+        - System controller is accessible.
+
+    Test Steps:
+        1. Create a dummy non-tar file to use as cloud-init-config.
+        2. Run dcmanager subcloud add --enroll with the invalid tarball.
+        3. Validate command is rejected with appropriate error.
+
+    Expected Results:
+        - Command returns non-zero exit code.
+        - Error output contains 'cloud-init-config is not a valid .tar archive'.
+        - No subcloud state is changed.
+    """
+    system_controller_ssh = LabConnectionKeywords().get_active_controller_ssh()
+    deployment_assets_config = ConfigurationManager.get_deployment_assets_config()
+    subcloud_name = ConfigurationManager.get_lab_config().get_subcloud_names()[0]
+
+    bootstrap_values = deployment_assets_config.get_subcloud_deployment_assets(subcloud_name).get_bootstrap_file()
+    install_values = deployment_assets_config.get_subcloud_deployment_assets(subcloud_name).get_install_file()
+    deploy_config_file = deployment_assets_config.get_subcloud_deployment_assets(subcloud_name).get_deployment_config_file()
+
+    subcloud_dir = os.path.dirname(bootstrap_values)
+    temp_dir = f"{subcloud_dir}/temp"
+    invalid_tarball = f"{temp_dir}/invalid_cloud_init.tar"
+
+    file_kw = FileKeywords(system_controller_ssh)
+
+    def teardown():
+        get_logger().log_teardown_step(f"Remove temp directory {temp_dir}")
+        file_kw.delete_directory(temp_dir)
+
+    request.addfinalizer(teardown)
+
+    get_logger().log_test_case_step("Creating invalid tarball file")
+    file_kw.create_directory(temp_dir)
+    file_kw.create_file_with_echo(invalid_tarball, "this is not a tar file")
+
+    get_logger().log_test_case_step("Running enrollment with invalid cloud-init-config tarball")
+    lab_config = ConfigurationManager.get_lab_config()
+    subcloud_obj = lab_config.get_subcloud(subcloud_name)
+    bmc_psswr = subcloud_obj.get_bm_password() or subcloud_obj.get_admin_credentials().get_password()
+
+    output, rc = DcManagerSubcloudAddKeywords(system_controller_ssh).dcmanager_subcloud_add_with_error(subcloud_name, bootstrap_values, enroll=True, install_values=install_values, deploy_config_file=deploy_config_file, bmc_password=bmc_psswr, cloud_init_config=invalid_tarball)
+
+    if rc == 0:
+        _delete_subcloud_if_created(system_controller_ssh, subcloud_name)
+
+    validate_not_equals(rc, 0, f"Command should be rejected (non-zero rc). Got rc={rc}. Output: {output}")
+    validate_str_contains(output.lower(), CLOUD_INIT_CONFIG_INVALID_TARBALL_ERROR, "Error about invalid tar archive")
+
+
+@mark.p2
+@mark.lab_has_subcloud
+def test_enroll_rejects_empty_extra_boot_params(request: FixtureRequest):
+    """Verify dcmanager rejects enrollment when extra_boot_params is set to empty string.
+
+    Tests the scenario where a user includes extra_boot_params in install-values
+    but leaves it empty.
+
+    Preconditions:
+        - Lab has at least one subcloud with deployment assets configured.
+        - System controller is accessible.
+
+    Test Steps:
+        1. Create a copy of install-values with extra_boot_params set to empty.
+        2. Run dcmanager subcloud add --enroll with the modified install-values.
+        3. Validate command is rejected with appropriate error.
+
+    Expected Results:
+        - Command returns non-zero exit code.
+        - Error output contains the generic dcmanager error message.
+        - Error output contains 'The install value extra_boot_params must not be empty.'
+        - No subcloud state is changed.
+    """
+    system_controller_ssh = LabConnectionKeywords().get_active_controller_ssh()
+    deployment_assets_config = ConfigurationManager.get_deployment_assets_config()
+    subcloud_name = ConfigurationManager.get_lab_config().get_subcloud_names()[0]
+
+    bootstrap_values = deployment_assets_config.get_subcloud_deployment_assets(subcloud_name).get_bootstrap_file()
+    install_values = deployment_assets_config.get_subcloud_deployment_assets(subcloud_name).get_install_file()
+    deploy_config_file = deployment_assets_config.get_subcloud_deployment_assets(subcloud_name).get_deployment_config_file()
+
+    subcloud_dir = os.path.dirname(install_values)
+    temp_dir = f"{subcloud_dir}/temp"
+    base_name = os.path.basename(install_values)
+    modified_install = f"{temp_dir}/empty_extra_boot_params_{base_name}"
+
+    file_kw = FileKeywords(system_controller_ssh)
+
+    def teardown():
+        get_logger().log_teardown_step(f"Remove temp directory {temp_dir}")
+        file_kw.delete_directory(temp_dir)
+
+    request.addfinalizer(teardown)
+
+    get_logger().log_test_case_step("Creating install-values with empty extra_boot_params")
+    file_kw.create_directory(temp_dir)
+    file_kw.copy_file(install_values, modified_install)
+    file_kw.append_to_file(modified_install, "extra_boot_params:")
+
+    get_logger().log_test_case_step("Running enrollment with empty extra_boot_params")
+    output, rc = DcManagerSubcloudAddKeywords(system_controller_ssh).dcmanager_subcloud_add_enroll_with_error(subcloud_name, bootstrap_values, modified_install, deploy_config_file)
+
+    if rc == 0:
+        _delete_subcloud_if_created(system_controller_ssh, subcloud_name)
+
+    validate_not_equals(rc, 0, f"Command should be rejected (non-zero rc). Got rc={rc}. Output: {output}")
+    validate_str_contains(output.lower(), GENERIC_DCMANAGER_ERROR, "Generic dcmanager error message present in output")
+    validate_str_contains(output.lower(), EMPTY_EXTRA_BOOT_PARAMS_ERROR.lower(), "Error about empty extra_boot_params")
