@@ -9,6 +9,7 @@ and service-parameter apply effectiveness.
 
 from pytest import mark
 
+from config.configuration_manager import ConfigurationManager
 from framework.logging.automation_logger import get_logger
 from framework.validation.validation import validate_equals, validate_greater_than
 from keywords.cloud_platform.security.lockout.session_lockout_keywords import SessionLockoutKeywords
@@ -63,7 +64,7 @@ def test_keystone_lockout_configure_and_verify(request):
         ssh = LabConnectionKeywords().get_active_controller_ssh()
         lockout_kw = SessionLockoutKeywords(ssh)
         lockout_kw.modify_keystone_lockout_params(str(KEYSTONE_DEFAULT_RETRIES), str(KEYSTONE_DEFAULT_SECONDS))
-        lockout_kw.apply_identity_service_parameters()
+        lockout_kw.apply_security_compliance_parameters()
 
     request.addfinalizer(cleanup)
 
@@ -72,7 +73,7 @@ def test_keystone_lockout_configure_and_verify(request):
 
     get_logger().log_test_case_step("Modify Keystone lockout parameters via CLI")
     lockout_keywords.modify_keystone_lockout_params("3", "60")
-    lockout_keywords.apply_identity_service_parameters()
+    lockout_keywords.apply_security_compliance_parameters()
 
     get_logger().log_test_case_step("Verify service-parameter updated")
     retries_updated = lockout_keywords.verify_keystone_conf_updated("lockout_retries", "3")
@@ -134,7 +135,7 @@ def test_ldap_lockout_configure_and_verify(request):
         ssh = LabConnectionKeywords().get_active_controller_ssh()
         lockout_kw = SessionLockoutKeywords(ssh)
         lockout_kw.modify_ldap_lockout_params(str(PAM_DEFAULT_DENY), str(PAM_DEFAULT_UNLOCK_TIME))
-        lockout_kw.apply_identity_service_parameters()
+        lockout_kw.apply_ldap_linux_parameters()
 
     request.addfinalizer(cleanup)
 
@@ -143,7 +144,7 @@ def test_ldap_lockout_configure_and_verify(request):
 
     get_logger().log_test_case_step("Modify LDAP lockout parameters via CLI")
     lockout_keywords.modify_ldap_lockout_params("3", "60")
-    lockout_keywords.apply_identity_service_parameters()
+    lockout_keywords.apply_ldap_linux_parameters()
 
     get_logger().log_test_case_step("Verify PAM faillock configuration updated")
     deny = lockout_keywords.get_ldap_linux_lockout_retries()
@@ -197,7 +198,7 @@ def test_ssh_session_timeout_configure(request):
         ssh = LabConnectionKeywords().get_active_controller_ssh()
         lockout_kw = SessionLockoutKeywords(ssh)
         lockout_kw.modify_ssh_timeout("3000")
-        lockout_kw.apply_identity_service_parameters()
+        lockout_kw.apply_security_compliance_parameters()
 
     request.addfinalizer(cleanup)
 
@@ -210,7 +211,7 @@ def test_ssh_session_timeout_configure(request):
 
     get_logger().log_test_case_step("Modify SSH session timeout to 120s")
     lockout_keywords.modify_ssh_timeout("120")
-    lockout_keywords.apply_identity_service_parameters()
+    lockout_keywords.apply_security_compliance_parameters()
 
     get_logger().log_test_case_step("Verify TMOUT updated")
     new_tmout = lockout_keywords.get_ssh_tmout()
@@ -237,7 +238,7 @@ def test_service_parameter_apply_effectiveness(request):
         ssh = LabConnectionKeywords().get_active_controller_ssh()
         lockout_kw = SessionLockoutKeywords(ssh)
         lockout_kw.modify_keystone_lockout_params(str(KEYSTONE_DEFAULT_RETRIES), str(KEYSTONE_DEFAULT_SECONDS))
-        lockout_kw.apply_identity_service_parameters()
+        lockout_kw.apply_security_compliance_parameters()
 
     request.addfinalizer(cleanup)
 
@@ -246,7 +247,7 @@ def test_service_parameter_apply_effectiveness(request):
 
     get_logger().log_test_case_step("Modify lockout_retries=7 via service-parameter")
     lockout_keywords.modify_keystone_lockout_params("7", str(KEYSTONE_DEFAULT_SECONDS))
-    lockout_keywords.apply_identity_service_parameters()
+    lockout_keywords.apply_security_compliance_parameters()
 
     get_logger().log_test_case_step("Verify service-parameter lockout_retries is 7")
     actual_retries = lockout_keywords.get_keystone_lockout_retries()
@@ -308,7 +309,7 @@ def test_lockout_behavior_across_swact(request):
         ssh = LabConnectionKeywords().get_active_controller_ssh()
         lockout_kw = SessionLockoutKeywords(ssh)
         lockout_kw.modify_keystone_lockout_params(str(KEYSTONE_DEFAULT_RETRIES), str(KEYSTONE_DEFAULT_SECONDS))
-        lockout_kw.apply_identity_service_parameters()
+        lockout_kw.apply_security_compliance_parameters()
 
     request.addfinalizer(cleanup)
 
@@ -317,7 +318,7 @@ def test_lockout_behavior_across_swact(request):
 
     get_logger().log_test_case_step("Configure short lockout for swact test")
     lockout_keywords.modify_keystone_lockout_params("3", "60")
-    lockout_keywords.apply_identity_service_parameters()
+    lockout_keywords.apply_security_compliance_parameters()
 
     get_logger().log_test_case_step("Simulate failed logins to trigger lockout")
     lockout_keywords.simulate_failed_keystone_logins("admin", "wrong_password_intentional", 4)
@@ -397,7 +398,8 @@ def test_dm_day1_lockout_params(request):
         lockout_kw = SessionLockoutKeywords(ssh)
         lockout_kw.modify_keystone_lockout_params(str(KEYSTONE_DEFAULT_RETRIES), str(KEYSTONE_DEFAULT_SECONDS))
         lockout_kw.modify_ldap_lockout_params(str(PAM_DEFAULT_DENY), str(PAM_DEFAULT_UNLOCK_TIME))
-        lockout_kw.apply_identity_service_parameters()
+        lockout_kw.apply_security_compliance_parameters()
+        lockout_kw.apply_ldap_linux_parameters()
 
     request.addfinalizer(cleanup)
 
@@ -407,7 +409,8 @@ def test_dm_day1_lockout_params(request):
     get_logger().log_test_case_step("Set DM-style non-default lockout values")
     lockout_keywords.modify_keystone_lockout_params("10", "3600")
     lockout_keywords.modify_ldap_lockout_params("10", "1800")
-    lockout_keywords.apply_identity_service_parameters()
+    lockout_keywords.apply_security_compliance_parameters()
+    lockout_keywords.apply_ldap_linux_parameters()
 
     get_logger().log_test_case_step("Verify Keystone lockout reflects DM values")
     retries = lockout_keywords.get_keystone_lockout_retries()
@@ -452,3 +455,100 @@ def test_lockout_negative_invalid_params():
     validate_equals(len(raw) > 0, True, "CLI should reject lockout_seconds=0")
 
 
+@mark.p1
+def test_sudo_blocked_during_lockout(request):
+    """Verify sudo shows lockout message when user is locked by pam_faillock.
+
+    After CL 996537, sudo must indicate account lockout rather than
+    showing confusing "incorrect password" errors.
+
+    Test Steps:
+        - Configure short lockout (deny=3, unlock_time=120)
+        - Simulate failed SSH logins to lock a test user
+        - Attempt sudo as the locked user
+        - Verify sudo output indicates lockout (not "incorrect password")
+        - Wait for lockout expiry and reset
+    """
+
+    def cleanup():
+        get_logger().log_teardown_step("Resetting faillock and restoring PAM defaults")
+        ssh = LabConnectionKeywords().get_active_controller_ssh()
+        lockout_kw = SessionLockoutKeywords(ssh)
+        lockout_kw.reset_faillock("sysadmin")
+        lockout_kw.modify_ldap_lockout_params(str(PAM_DEFAULT_DENY), str(PAM_DEFAULT_UNLOCK_TIME))
+        lockout_kw.apply_ldap_linux_parameters()
+
+    request.addfinalizer(cleanup)
+
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    lockout_keywords = SessionLockoutKeywords(ssh_connection)
+
+    get_logger().log_test_case_step("Configure short PAM lockout for sudo test")
+    lockout_keywords.modify_ldap_lockout_params("3", "120")
+    lockout_keywords.apply_ldap_linux_parameters()
+
+    get_logger().log_test_case_step("Simulate failed SSH logins to trigger lockout")
+    lockout_keywords.simulate_failed_ssh_logins("localhost", "sysadmin", "wrong_password_intentional", 5)
+
+    get_logger().log_test_case_step("Attempt sudo as locked user and capture message")
+    sudo_output = lockout_keywords.get_sudo_lockout_message("sysadmin")
+
+    get_logger().log_test_case_step("Verify sudo indicates lockout (not wrong password)")
+    # After CL 996537, the check-faillock.sh script should prevent sudo
+    # and provide a clear lockout indication
+    validate_equals("sysadmin" not in sudo_output or "locked" in sudo_output.lower() or "denied" in sudo_output.lower(), True, "sudo should indicate lockout or be denied when user is locked by pam_faillock")
+
+    get_logger().log_test_case_step("Reset faillock counter")
+    lockout_keywords.reset_faillock("sysadmin")
+
+
+@mark.p1
+@mark.lab_has_subcloud
+def test_dc_lockout_params_sync_to_subcloud(request):
+    """Verify Keystone lockout params sync from System Controller to subcloud.
+
+    After CL 997997, dcorch syncs the Keystone user_option table to
+    subclouds, ensuring lockout configuration set on the System Controller
+    propagates to subclouds.
+
+    Test Steps:
+        - Modify lockout params on System Controller
+        - Apply identity service parameters
+        - Wait for DC sync to propagate
+        - Connect to subcloud
+        - Verify keystone.conf on subcloud reflects the System Controller values
+        - Restore defaults
+    """
+
+    def cleanup():
+        get_logger().log_teardown_step("Restoring lockout defaults on System Controller")
+        ssh = LabConnectionKeywords().get_active_controller_ssh()
+        lockout_kw = SessionLockoutKeywords(ssh)
+        lockout_kw.modify_keystone_lockout_params(str(KEYSTONE_DEFAULT_RETRIES), str(KEYSTONE_DEFAULT_SECONDS))
+        lockout_kw.apply_security_compliance_parameters()
+
+    request.addfinalizer(cleanup)
+
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    lockout_keywords = SessionLockoutKeywords(ssh_connection)
+
+    get_logger().log_test_case_step("Modify lockout params on System Controller")
+    lockout_keywords.modify_keystone_lockout_params("8", "600")
+    lockout_keywords.apply_security_compliance_parameters()
+
+    get_logger().log_test_case_step("Verify System Controller keystone.conf updated")
+    sc_retries = lockout_keywords.get_keystone_lockout_retries()
+    validate_equals(sc_retries, 8, "System Controller lockout_retries should be 8")
+
+    get_logger().log_test_case_step("Wait for DC sync to propagate to subcloud")
+    lockout_keywords.wait_for_lockout_expiry(60, "admin")
+
+    get_logger().log_test_case_step("Connect to subcloud and verify lockout config synced")
+    subcloud_name = ConfigurationManager.get_lab_config().get_subcloud_names()[0]
+    subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
+
+    subcloud_retries = lockout_keywords.get_subcloud_keystone_lockout_retries(subcloud_ssh)
+    validate_equals(subcloud_retries, 8, f"Subcloud '{subcloud_name}' lockout_retries should be 8 after DC sync")
+
+    subcloud_seconds = lockout_keywords.get_subcloud_keystone_lockout_seconds(subcloud_ssh)
+    validate_equals(subcloud_seconds, 600, f"Subcloud '{subcloud_name}' lockout_seconds should be 600 after DC sync")

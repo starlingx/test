@@ -73,37 +73,15 @@ class SessionLockoutKeywords(BaseKeyword):
         return self._extract_table_value(output, "lockout_seconds")
 
     def get_ssh_tmout(self) -> int:
-        """Read the inactive_session_term_timeout_seconds from ldap-linux service parameters.
+        """Read the inactive_session_term_timeout_seconds from service parameters.
 
-        This value controls SSH session idle timeout (TMOUT) on the platform
-        via /etc/profile.d/custom.sh.
+        This value controls SSH session idle timeout (TMOUT) on the platform.
 
         Returns:
             int: The configured timeout value in seconds (0 if not set).
         """
-        output = self.service_params.list_service_parameters(service="identity", section="ldap-linux")
+        output = self.service_params.list_service_parameters(service="identity", section="security_compliance")
         return self._extract_table_value(output, "inactive_session_term_timeout_seconds")
-
-    def get_custom_sh_tmout(self) -> int:
-        """Read TMOUT value directly from /etc/profile.d/custom.sh.
-
-        This verifies that puppet actually wrote the SSH session timeout
-        value after service-parameter-apply for the ldap-linux section.
-
-        Returns:
-            int: The TMOUT value from custom.sh, or 0 if not found.
-        """
-        lines = self._grep_config_with_sudo("/etc/profile.d/custom.sh", "TMOUT")
-        raw = "\n".join(lines) if isinstance(lines, list) else str(lines)
-        for line in raw.strip().split("\n"):
-            stripped = line.strip()
-            if "readonly TMOUT=" in stripped:
-                value_part = stripped.split("TMOUT=")[1].split(";")[0].split(" ")[0].strip()
-                try:
-                    return int(value_part)
-                except ValueError:
-                    continue
-        return 0
 
     def simulate_failed_keystone_logins(self, username: str, password: str, attempts: int) -> int:
         """Simulate failed Keystone login attempts using openstack token issue.
@@ -119,9 +97,7 @@ class SessionLockoutKeywords(BaseKeyword):
         rejected_count = 0
         for i in range(attempts):
             get_logger().log_info(f"Simulating failed login attempt {i + 1}/{attempts} for user '{username}'")
-            output = self.ssh_connection.send(source_openrc(
-                f"openstack token issue --os-username {username} --os-password '{password}' --os-project-name admin --os-identity-api-version 3 2>&1 || true"
-            ))
+            output = self.ssh_connection.send(source_openrc(f"openstack token issue --os-username {username} --os-password '{password}' --os-project-name admin --os-identity-api-version 3 2>&1 || true"))
             raw = "\n".join(output) if isinstance(output, list) else str(output)
             if "Unauthorized" in raw or "HTTP 401" in raw or "Could not find token" in raw or "error" in raw.lower():
                 rejected_count += 1
@@ -137,9 +113,7 @@ class SessionLockoutKeywords(BaseKeyword):
         Returns:
             bool: True if user is locked out.
         """
-        output = self.ssh_connection.send(source_openrc(
-            f"openstack user show {username} -f value -c enabled 2>&1"
-        ))
+        output = self.ssh_connection.send(source_openrc(f"openstack user show {username} -f value -c enabled 2>&1"))
         raw = "\n".join(output) if isinstance(output, list) else str(output)
         return "False" in raw
 
@@ -156,8 +130,7 @@ class SessionLockoutKeywords(BaseKeyword):
         raw = "\n".join(output) if isinstance(output, list) else str(output)
         count = 0
         for line in raw.strip().split("\n"):
-            stripped = line.strip()
-            if stripped and "RHOST" in stripped:
+            if line.strip() and "/" in line and ":" in line:
                 count += 1
         return count
 
@@ -174,7 +147,6 @@ class SessionLockoutKeywords(BaseKeyword):
         """Simulate failed SSH login attempts against a host.
 
         Uses sshpass to attempt logins with an incorrect password.
-        Checks output for failure indicators rather than return code.
 
         Args:
             host (str): Target hostname or IP.
@@ -204,7 +176,7 @@ class SessionLockoutKeywords(BaseKeyword):
     def modify_keystone_lockout_params(self, retries: str, seconds: str) -> None:
         """Modify Keystone lockout parameters via service-parameter CLI.
 
-        Uses modify (parameters exist by default after initial deployment).
+        Uses modify (parameters exist by default on 26.10+).
 
         Args:
             retries (str): Number of failed attempts before lockout.
@@ -261,22 +233,22 @@ class SessionLockoutKeywords(BaseKeyword):
         self.service_params.modify_service_parameter("identity", "ldap-linux", "lockout_seconds", seconds)
 
     def modify_ssh_timeout(self, timeout_seconds: str) -> None:
-        """Modify SSH session inactive timeout via service-parameter CLI.
-
-        Modifies the ldap-linux section which controls TMOUT in
-        /etc/profile.d/custom.sh via platform::customsh::runtime puppet class.
+        """Modify SSH/session inactive timeout via service-parameter CLI.
 
         Args:
             timeout_seconds (str): Inactive session timeout in seconds.
         """
-        get_logger().log_info(f"Modifying SSH session timeout: {timeout_seconds}s")
-        self.service_params.modify_service_parameter("identity", "ldap-linux", "inactive_session_term_timeout_seconds", timeout_seconds)
+        get_logger().log_info(f"Modifying session timeout: {timeout_seconds}s")
+        try:
+            self.service_params.modify_service_parameter("identity", "security_compliance", "inactive_session_term_timeout_seconds", timeout_seconds)
+        except AssertionError:
+            self.service_params.add_service_parameter("identity", "security_compliance", "inactive_session_term_timeout_seconds", timeout_seconds)
 
     def modify_horizon_session_timeout(self, timeout_seconds: str) -> None:
         """Modify Horizon session timeout via service-parameter CLI.
 
-        Checks if the parameter exists first via list_service_parameters,
-        then uses modify if it exists or add if it doesn't.
+        Uses try/except pattern: attempts modify first, falls back to add
+        if the parameter does not yet exist.
 
         Args:
             timeout_seconds (str): SESSION_TIMEOUT value in seconds.
@@ -341,7 +313,7 @@ class SessionLockoutKeywords(BaseKeyword):
         """Read lockout_failure_attempts directly from /etc/keystone/keystone.conf.
 
         This verifies that puppet actually wrote the value to the config file
-        after service-parameter-apply.
+        after service-parameter-apply (regression for service-parameter apply).
 
         Returns:
             int: The lockout_failure_attempts value from keystone.conf, or 0 if not found.
@@ -353,7 +325,7 @@ class SessionLockoutKeywords(BaseKeyword):
         """Read lockout_duration directly from /etc/keystone/keystone.conf.
 
         This verifies that puppet actually wrote the value to the config file
-        after service-parameter-apply.
+        after service-parameter-apply (regression for service-parameter apply).
 
         Returns:
             int: The lockout_duration value from keystone.conf, or 0 if not found.
@@ -387,9 +359,6 @@ class SessionLockoutKeywords(BaseKeyword):
 
     def wait_for_lockout_expiry(self, lockout_seconds: int, username: str, margin: int = 10) -> bool:
         """Wait for a lockout period to expire by polling until authentication succeeds.
-
-        Polls with openstack token issue until the account is accessible again,
-        bounded by lockout_seconds plus a margin for clock drift.
 
         Args:
             lockout_seconds (int): Expected lockout duration.
@@ -490,7 +459,8 @@ class SessionLockoutKeywords(BaseKeyword):
     def _grep_config_with_sudo(self, file_path: str, pattern: str) -> str:
         """Read matching lines from a root-owned config file using sudo grep.
 
-        Delegates to FileKeywords.grep_file_with_sudo.
+        Used for large config files (keystone.conf, local_settings) where
+        reading the entire file would exceed SSH buffer limits.
 
         Args:
             file_path (str): Absolute path to the config file.
@@ -501,31 +471,37 @@ class SessionLockoutKeywords(BaseKeyword):
         """
         return self.file_keywords.grep_file_with_sudo(file_path, pattern)
 
-    def _wait_for_config_applied(self, timeout: int = 180, interval: int = 10) -> None:
+    def _wait_for_config_applied(self, timeout: int = 60, interval: int = 10) -> None:
         """Wait for identity service-parameter-apply to take effect.
 
-        After service-parameter-apply, puppet restarts Keystone which causes
-        a brief authentication outage. This method uses AlarmListKeywords to
-        wait for the config-out-of-date alarm to clear on controllers.
+        After service-parameter-apply, waits for the config-out-of-date alarm
+        (250.001) on controllers to clear. If no controller alarm appears,
+        waits a brief period for the apply to propagate.
 
         Args:
             timeout (int): Maximum seconds to wait.
             interval (int): Seconds between polls.
         """
         get_logger().log_info("Waiting for service-parameter apply to take effect")
-        time.sleep(15)
+        time.sleep(10)
 
-        self.alarm_keywords.set_timeout_in_seconds(timeout)
-        self.alarm_keywords.set_check_interval_in_seconds(interval)
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            alarms = self.alarm_keywords.alarm_list()
+            controller_config_alarm = False
+            for alarm in alarms:
+                if alarm.get_alarm_id() == CONFIG_OUT_OF_DATE_ALARM_ID:
+                    entity = alarm.get_entity_id()
+                    if "controller" in entity:
+                        controller_config_alarm = True
+                        break
+            if not controller_config_alarm:
+                get_logger().log_info("No controller config-out-of-date alarm — apply complete")
+                return
+            get_logger().log_info(f"Controller config alarm still active, waiting {interval}s")
+            time.sleep(interval)
 
-        if self.alarm_keywords.is_alarm_present(CONFIG_OUT_OF_DATE_ALARM_ID):
-            get_logger().log_info(f"Alarm {CONFIG_OUT_OF_DATE_ALARM_ID} present, waiting for it to clear")
-            try:
-                self.alarm_keywords.wait_for_all_alarms_cleared_excluding([])
-            except (AssertionError, Exception):
-                get_logger().log_info("Alarm did not clear within timeout, proceeding")
-        else:
-            get_logger().log_info("No config-out-of-date alarm — apply already complete")
+        get_logger().log_info("Config apply wait timed out, proceeding")
 
     def _extract_ini_value(self, lines: Union[str, list], key: str) -> int:
         """Extract an integer value from INI-style config file lines.
