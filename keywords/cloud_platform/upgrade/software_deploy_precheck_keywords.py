@@ -31,26 +31,20 @@ class SoftwareDeployPrecheckKeywords(BaseKeyword):
         self.ssh_connection = ssh_connection
         self.usm_config = ConfigurationManager.get_usm_config()
 
-    def _run_deploy_precheck(self, release_id: str, sudo: bool = False) -> SoftwareDeployPrecheckOutput:
+    def _run_deploy_precheck(self, targets: str, sudo: bool = False) -> SoftwareDeployPrecheckOutput:
         """
         Run the 'software deploy precheck' command and return its parsed output.
 
         Args:
-            release_id (str): Release to be prechecked.
+            targets (str): Arguments to pass to the command. Empty string runs with no arguments.
             sudo (bool): Option to pass the command with sudo.
 
         Returns:
             SoftwareDeployPrecheckOutput: Parsed precheck output.
-
-        Raises:
-            KeywordException: If the CLI command fails.
         """
-        if not release_id:
-            raise KeywordException("Missing release ID for software deploy precheck")
-
-        get_logger().log_info(f"Prechecking deploy software release: {release_id}")
+        get_logger().log_info(f"Prechecking deploy software: {targets or '(selected metapackages)'}")
         snapshot_flag = " --options snapshot=true" if self.usm_config.get_snapshot() else ""
-        base_cmd = f"software deploy precheck {snapshot_flag} {release_id}"
+        base_cmd = f"software deploy precheck{snapshot_flag} {targets}".strip()
         cmd = source_openrc(base_cmd)
         timeout = self.usm_config.get_precheck_timeout_sec()
 
@@ -63,21 +57,34 @@ class SoftwareDeployPrecheckKeywords(BaseKeyword):
         precheck_output = SoftwareDeployPrecheckOutput(output)
         return precheck_output
 
-    def deploy_precheck(self, release_id: str, sudo: bool = False) -> SoftwareDeployPrecheckOutput:
+    def deploy_precheck(self, release_id: str | None = None, sudo: bool = False) -> SoftwareDeployPrecheckOutput:
         """
         Run the deploy precheck for a software release and validate its result.
 
+        Target resolution from usm_config.get_metapackages():
+            - "All": passes release_id (software deploy precheck <release_id>)
+            - list: passes the listed metapackages (software deploy precheck <pkg1> <pkg2> ...)
+            - "None" or release_id is None: no arguments (software deploy precheck)
+
         Args:
-            release_id (str): Release to be prechecked.
+            release_id (str | None): Used when metapackages is "All". Ignored otherwise.
             sudo (bool): Option to pass the command with sudo.
 
         Returns:
             SoftwareDeployPrecheckOutput: Parsed and validated precheck output.
 
         Raises:
-            AssertionError: If any of the checks fail.
+            Exception: If any health check fails or any metapackage is unhealthy.
         """
-        precheck_output = self._run_deploy_precheck(release_id, sudo=sudo)
+        metapackages = self.usm_config.get_metapackages()
+        if isinstance(metapackages, list):
+            targets = " ".join(metapackages)
+        elif metapackages == "All" and release_id:
+            targets = release_id
+        else:
+            targets = ""
+
+        precheck_output = self._run_deploy_precheck(targets, sudo=sudo)
 
         failed_items = precheck_output.get_failed_items()
         validate_equals(failed_items, [], "Deploy precheck: no failed health checks")

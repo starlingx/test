@@ -240,20 +240,32 @@ class USMKeywords(BaseKeyword):
         self.validate_success_return_code(self.ssh_connection)
         return "\n".join(line.strip() for line in output)
 
-    def deploy_start(self, release: str, sudo: bool = False) -> str:
+    def deploy_start(self, targets: str = "", sudo: bool = False) -> str:
         """
-        This method executed the command 'software deploy start <release>'
+        Execute 'software deploy start [targets]'.
+
+        Targets are resolved from the USM config metapackages field:
+        - list of metapackages → 'software deploy start pkg1 pkg2 ...'
+        - "All" + release_id   → 'software deploy start <release_id>'
+        - otherwise            → 'software deploy start'
 
         Args:
-            release (str): release to be started
+            targets (str): Space-separated targets string. If empty, resolved from config.
             sudo (bool): flag to check if it needs to be run as sudo.
 
         Returns:
             str: software deploy start output
         """
+        if not targets:
+            metapackages = self.usm_config.get_metapackages()
+            release_ids = self.usm_config.get_to_release_ids()
+            if isinstance(metapackages, list):
+                targets = " ".join(metapackages)
+            else:
+                targets = release_ids[0] if release_ids else ""
         timeout = self.usm_config.get_deploy_start_timeout_sec()
         snapshot_flag = " --options snapshot=true" if self.usm_config.get_snapshot() else ""
-        base_cmd = f"software deploy start {snapshot_flag} {release}"
+        base_cmd = f"software deploy start{snapshot_flag} {targets}"
         cmd = source_openrc(base_cmd)
         if sudo:
             output = self.ssh_connection.send_as_sudo(cmd, command_timeout=timeout, reconnect_timeout=timeout)

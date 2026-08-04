@@ -25,14 +25,20 @@ class SoftwareDeployShowOutput:
         system_table_parser = SystemTableParser(software_deploy_show_output)
         self.output_values = system_table_parser.get_output_values_list()
 
-        for value in self.output_values:
-            software_deploy_show_object = SoftwareDeployShowObject(
-                value["From Release"],
-                value["To Release"],
-                value["RR"],
-                value["State"],
+        value = self.output_values[0]
+        if "From Release" in value:
+            self.software_deploy_show = SoftwareDeployShowObject(
+                rr=value["RR"],
+                state=value["State"],
+                from_release=value["From Release"],
+                to_release=value["To Release"],
             )
-            self.software_deploy_show = software_deploy_show_object
+        else:
+            self.software_deploy_show = SoftwareDeployShowObject(
+                rr=value["RR"],
+                state=value["State"],
+                releases=value["Releases"],
+            )
 
     def get_software_deploy_show(self) -> SoftwareDeployShowObject:
         """
