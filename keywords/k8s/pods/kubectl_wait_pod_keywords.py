@@ -35,3 +35,21 @@ class KubectlWaitPodKeywords(K8sBaseKeyword):
         cmd = f"kubectl wait --for=condition=Ready pod -l {label} -n {namespace} --timeout={timeout}s"
         self.ssh_connection.send(self.k8s_config.export(cmd))
         self.validate_success_return_code(self.ssh_connection)
+
+    def wait_for_all_pods_ready(self, namespace: str, timeout: int = 300) -> None:
+        """Wait for all pods in a namespace to pass their readiness probes.
+
+        Example usage::
+            kubectl wait --for=condition=Ready pod --all -n default --timeout=300s
+
+        Args:
+            namespace (str): Namespace of the pods.
+            timeout (int): Maximum time to wait in seconds. Defaults to 300.
+
+        Raises:
+            KeywordException: If pods do not become ready within the timeout.
+        """
+        get_logger().log_info(f"Waiting for all pods in namespace '{namespace}' to be ready")
+        cmd = f"kubectl wait --for=condition=Ready pod --all -n {namespace} --timeout={timeout}s"
+        self.ssh_connection.send(self.k8s_config.export(cmd))
+        self.validate_success_return_code(self.ssh_connection)
