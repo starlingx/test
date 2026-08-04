@@ -1,6 +1,7 @@
 import json5
 
 from config.security.objects.dex_config import DexConfig
+from config.security.objects.ejbca_config import EjbcaConfig
 
 
 class SecurityConfig:
@@ -125,6 +126,9 @@ class SecurityConfig:
         self.dex_connector = security_dict.get("dex_connector", {})
         self._dex_config = DexConfig(self.dex_connector)
 
+        # EJBCA PKI system application configuration
+        self._ejbca_config = EjbcaConfig(security_dict.get("ejbca", {}))
+
     def get_dex_connector_config(self) -> DexConfig:
         """Get the DEX connector configuration object.
 
@@ -132,6 +136,14 @@ class SecurityConfig:
             DexConfig: Typed DEX connector config with getters for all fields.
         """
         return self._dex_config
+
+    def get_ejbca_config(self) -> EjbcaConfig:
+        """Get the EJBCA PKI configuration object.
+
+        Returns:
+            EjbcaConfig: Typed EJBCA config with getters for all fields.
+        """
+        return self._ejbca_config
 
     def get_wad_server(self) -> str:
         """Get the WAD (Windows Active Directory) server address.
