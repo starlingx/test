@@ -282,5 +282,64 @@
             "crb_name": "kc-test-crb",
             "realm": "stx-realm"
         }
+    },
+
+    // EJBCA PKI System Application Configuration
+    "ejbca": {
+        "app_name": "ejbca",
+        "namespace": "ejbca",
+        "tarball_path": "/usr/local/share/applications/helm/ejbca.tgz",
+        "hostname": "ejbca.local",
+        "app_apply_timeout": 900,
+        "app_upload_timeout": 300,
+        "pod_ready_timeout": 600,
+        "pg_failover_timeout": 120,
+        "swact_recovery_timeout": 180,
+        "ejbca_pod_label": "app.kubernetes.io/name=ejbca",
+        "pg_cluster_name": "ejbca-pg-cluster",
+        "management_ca_name": "ManagementCA",
+        "crypto_token_name": "ManagementCAToken",
+        "superadmin_username": "SuperAdmin",
+        "superadmin_p12_path": "/opt/keyfactor/p12/SuperAdmin.p12",
+        "cmp": {
+            "alias": "cmp-wrcp",
+            "hmac_secret": "wrcp-hmac-secret-01",
+            "internal_server": "ejbca-ejbca-ce-httpd.ejbca.svc.cluster.local:443",
+            "internal_path": "/ejbca/publicweb/cmp/cmp-wrcp",
+            "external_port": 7443
+        },
+        "rest": {
+            "base_path": "/ejbca/ejbca-rest-api",
+            "cert_profile": "WRCP_TLS_SERVER",
+            "ee_profile": "WRCP_TLS_EEP",
+            "ca_name": "WRCP-root-ca",
+            "enroll_password": "enrollSecret01"
+        },
+        "postgres": {
+            "cluster_cr_name": "ejbca-pg-cluster",
+            "database_name": "ejbca",
+            "expected_table_count": 37,
+            "tls_secret_name": "ejbca-pg-cluster-server-tls"
+        },
+        "pod_counts": {
+            "simplex": {"ejbca_replicas": 1, "pg_instances": 1},
+            "duplex": {"ejbca_replicas": 2, "pg_instances": 2},
+            "standard": {"ejbca_replicas": 2, "pg_instances": 2}
+        },
+        "performance": {
+            "csr_rates": [0, 1, 10, 100],
+            "duration_seconds": 60,
+            "cpu_threshold_idle_percent": 5
+        },
+        "cert_manager": {
+            "issuer_group": "ejbca-issuer.keyfactor.com",
+            "cluster_issuer_name": "ejbca-clusterissuer",
+            "ca_bundle_secret_name": "ejbca-ca-bundle"
+        },
+        "backup": {
+            "playbook_path": "/usr/share/ansible/stx-ansible/playbooks/ejbca_backup.yml",
+            "restore_playbook_path": "/usr/share/ansible/stx-ansible/playbooks/ejbca_restore.yml",
+            "backup_dir": "/opt/platform-backup"
+        }
     }
 }
