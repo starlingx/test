@@ -1,6 +1,7 @@
 from framework.ssh.ssh_connection import SSHConnection
 from framework.validation.validation import validate_equals_with_retry
 from keywords.k8s.k8s_base_keyword import K8sBaseKeyword
+from keywords.k8s.sriov_fec_node_config.object.kubectl_get_sriov_fec_node_config_detail_output import KubectlGetSriovFecNodeConfigDetailOutput
 from keywords.k8s.sriov_fec_node_config.object.kubectl_get_sriov_fec_node_config_output import KubectlGetSriovFecNodeConfigOutput
 from keywords.k8s.sriov_fec_node_config.object.kubectl_sriov_fec_node_config_object import KubectlSriovFecNodeConfigObject
 
@@ -44,6 +45,24 @@ class KubectlGetSriovFecNodeConfigKeywords(K8sBaseKeyword):
         self.validate_success_return_code(self.ssh_connection)
         sriov_fec_output = KubectlGetSriovFecNodeConfigOutput(output)
         return sriov_fec_output.get_sriov_fec_node_config_by_name(node_name)
+
+    def get_sriov_fec_node_config_detail(self, node_name: str, namespace: str = "sriov-fec-system") -> KubectlGetSriovFecNodeConfigDetailOutput:
+        """Get the detailed (JSON) view of a specific SriovFecNodeConfig by node name.
+
+        Retrieves the full resource via '-o json', exposing the spec physical functions
+        (including pfDriver/vfDriver) and the status inventory accelerators (including the
+        actually-bound driver). Used to verify VFIO mode (pfDriver/driver == 'vfio-pci').
+
+        Args:
+            node_name (str): The name of the node to retrieve (e.g., 'controller-0').
+            namespace (str): Kubernetes namespace. Defaults to 'sriov-fec-system'.
+
+        Returns:
+            KubectlGetSriovFecNodeConfigDetailOutput: The parsed detailed SriovFecNodeConfig output.
+        """
+        output = self.ssh_connection.send(self.k8s_config.export(f"kubectl get sriovfecnodeconfigs.sriovfec.intel.com {node_name} -n {namespace} -o json"))
+        self.validate_success_return_code(self.ssh_connection)
+        return KubectlGetSriovFecNodeConfigDetailOutput(output)
 
     def wait_for_configured_status(self, node_name: str, expected_status: str = "Succeeded", namespace: str = "sriov-fec-system", timeout: int = 180, poll_interval: int = 10) -> None:
         """Wait for a SriovFecNodeConfig to reach the expected CONFIGURED status.
