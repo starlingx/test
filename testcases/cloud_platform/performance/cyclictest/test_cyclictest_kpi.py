@@ -20,6 +20,7 @@ from keywords.cloud_platform.system.host.system_host_kernel_keywords import Syst
 from keywords.cloud_platform.system.host.system_host_label_keywords import SystemHostLabelKeywords
 from keywords.cloud_platform.system.host.system_host_list_keywords import SystemHostListKeywords
 from keywords.cloud_platform.system.host.system_host_lock_keywords import SystemHostLockKeywords
+from keywords.cloud_platform.system.host.system_host_swact_keywords import SystemHostSwactKeywords
 from keywords.files.file_keywords import FileKeywords
 from keywords.linux.kernel.kernel_keywords import KernelKeywords
 
@@ -313,12 +314,23 @@ def _modify_controllers_kernel(request: FixtureRequest, kernel_value: str, expec
     controllers = SystemHostListKeywords(ssh_connection).get_controllers()
     cyclictest_kw = CyclictestKeywords(ssh_connection)
 
+    # Process standby controller first; active controller requires a swact before locking.
+    active_host = SystemHostListKeywords(ssh_connection).get_active_controller().get_host_name()
+    controllers = sorted(controllers, key=lambda c: c.get_host_name() == active_host)
+
     for ctrl in controllers:
         hostname = ctrl.get_host_name()
 
         # Register unlock recovery BEFORE locking so a controller left locked
         # by an interrupted modify/unlock sequence is always recovered.
         request.addfinalizer(lambda name=hostname: cyclictest_kw.ensure_host_unlocked(name))
+
+        # If this is the active controller, swact away first so it becomes standby.
+        if hostname == active_host:
+            get_logger().log_test_case_step(f"Swact away from {hostname} before locking")
+            SystemHostSwactKeywords(ssh_connection).host_swact()
+            ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+            cyclictest_kw = CyclictestKeywords(ssh_connection)
 
         get_logger().log_test_case_step(f"Lock {hostname}")
         SystemHostLockKeywords(ssh_connection).lock_host(hostname)
