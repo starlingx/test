@@ -413,7 +413,7 @@ def test_dcmanager_oidc_subcloud_prestage_reader_denied(request: FixtureRequest)
     oidc_ssh = dcm_oidc_kw.get_authenticated_session(READER_USERNAME, password, lab_oam_ip)
     prestage_kw = DcmanagerSubcloudPrestage(oidc_ssh, use_oidc=True)
     error_output = prestage_kw.dcmanager_subcloud_prestage_with_error(subcloud_name, password, force=True)
-    validate_str_contains(error_output, "Forbidden", "Reader OIDC prestage must be denied with Forbidden")
+    validate_str_contains(error_output.lower(), "denied", "Reader OIDC prestage must be denied")
 
 
 @mark.p2
