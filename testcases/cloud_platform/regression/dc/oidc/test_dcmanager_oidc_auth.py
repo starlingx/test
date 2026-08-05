@@ -6,7 +6,7 @@ from config.configuration_manager import ConfigurationManager
 from config.lab.objects.lab_config import LabConfig
 from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
-from framework.validation.validation import validate_equals, validate_str_contains
+from framework.validation.validation import validate_equals, validate_equals_with_retry, validate_str_contains
 from keywords.cloud_platform.command_wrappers import source_openrc
 from keywords.cloud_platform.dcmanager.dcmanager_oidc_keywords import DcManagerOidcKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_prestage_strategy_keywords import DcmanagerPrestageStrategyKeywords
@@ -19,6 +19,7 @@ from keywords.cloud_platform.dcmanager.objects.dcmanger_subcloud_list_availabili
 from keywords.cloud_platform.dcmanager.objects.dcmanger_subcloud_list_management_enum import DcManagerSubcloudListManagementEnum
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.cloud_platform.system.service.system_service_parameter_keywords import SystemServiceParameterKeywords
+from keywords.files.file_keywords import FileKeywords
 from keywords.linux.keyring.keyring_keywords import KeyringKeywords
 from keywords.linux.ldap.ldap_keywords import LdapKeywords
 
@@ -185,16 +186,22 @@ def ensure_role_bindings(ssh_connection: SSHConnection, group_name: str, role: s
     svc_param_kw.add_service_parameter(service, section, param_name, param_value)
     svc_param_kw.apply_service_parameters(service, section=section)
 
-    # Wait for puppet to create the rolebindings config file
-    from keywords.files.file_keywords import FileKeywords
-    from framework.validation.validation import validate_equals_with_retry
-
+    # Wait for puppet to write the rolebindings config with the expected group
     file_kw = FileKeywords(ssh_connection)
+
+    def rolebindings_file_contains_group() -> bool:
+        """Check that .rolebindings.conf contains the expected group name."""
+        if not file_kw.file_exists("/etc/platform/.rolebindings.conf"):
+            return False
+        content = file_kw.read_file("/etc/platform/.rolebindings.conf")
+        raw = "\n".join(content) if isinstance(content, list) else content
+        return group_name in raw
+
     validate_equals_with_retry(
-        function_to_execute=lambda: file_kw.validate_file_exists_with_sudo("/etc/platform/.rolebindings.conf"),
+        function_to_execute=rolebindings_file_contains_group,
         expected_value=True,
-        validation_description="Waiting for /etc/platform/.rolebindings.conf to be created by puppet",
-        timeout=60,
+        validation_description=f"Waiting for /etc/platform/.rolebindings.conf to contain '{group_name}'",
+        timeout=90,
         polling_sleep_time=5,
     )
 
