@@ -9,9 +9,9 @@ class TestCaseResult:
     Class for test case result
     """
 
-    def __init__(self, test_info_id: int, execution_result: str, start_time: datetime, end_time: datetime):
-        self.test_info_id = test_info_id
-        self.execution_result = execution_result
+    def __init__(self, test_id: int, result: str, start_time: datetime, end_time: datetime):
+        self.test_id = test_id
+        self.result = result
         self.start_time = start_time
         self.end_time = end_time
 
@@ -19,28 +19,34 @@ class TestCaseResult:
         self.log_location = get_logger().get_test_case_log_dir()
         self.test_case_result_id = -1
         self.duration = 0
-        self.test_run_execution_id = -1
+        self.session_id = None
 
-    def get_test_info_id(self) -> int:
+    def get_test_id(self) -> int:
         """
-        Getter for test info id
+        Getter for test id
+
         Returns:
+            int: the test id
 
         """
-        return self.test_info_id
+        return self.test_id
 
-    def get_execution_result(self) -> str:
+    def get_result(self) -> str:
         """
-        Getter for execution result
+        Getter for result
+
         Returns:
+            str: the result
 
         """
-        return self.execution_result
+        return self.result
 
     def get_start_time(self) -> datetime:
         """
         Getter for start time
+
         Returns:
+            datetime: the start time
 
         """
         return self.start_time
@@ -48,7 +54,9 @@ class TestCaseResult:
     def get_end_time(self) -> datetime:
         """
         Getter for end time
+
         Returns:
+            datetime: the end time
 
         """
         return self.end_time
@@ -56,7 +64,9 @@ class TestCaseResult:
     def get_duration(self) -> int:
         """
         Getter for duration
+
         Returns:
+            int: the duration
 
         """
         return self.duration
@@ -64,10 +74,9 @@ class TestCaseResult:
     def set_duration(self, duration: int):
         """
         Setter for duration
-        Args:
-            duration ():
 
-        Returns:
+        Args:
+            duration (int): the duration
 
         """
         self.duration = duration
@@ -75,7 +84,9 @@ class TestCaseResult:
     def get_test_case_result_id(self) -> int:
         """
         Getter for test case result id
+
         Returns:
+            int: the test case result id
 
         """
         return self.test_case_result_id
@@ -83,29 +94,29 @@ class TestCaseResult:
     def set_test_case_result_id(self, test_case_result_id: int):
         """
         Setter for test case result id
-        Args:
-            test_case_result_id (): the test case result id
 
-        Returns:
+        Args:
+            test_case_result_id (int): the test case result id
 
         """
         self.test_case_result_id = test_case_result_id
 
-    def get_test_run_execution_id(self) -> int:
+    def get_session_id(self) -> str:
         """
-        Getter for test run execution id
+        Getter for session id
+
         Returns:
+            str: the session id
 
         """
-        return self.test_run_execution_id
+        return self.session_id
 
-    def set_test_run_execution_id(self, test_run_execution_id: int):
+    def set_session_id(self, session_id: str):
         """
-        Setter for test run execution id
+        Setter for session id
+
         Args:
-            test_run_execution_id (): the test run execution id
-
-        Returns:
+            session_id (str): the session id
 
         """
-        self.test_run_execution_id = test_run_execution_id
+        self.session_id = session_id
