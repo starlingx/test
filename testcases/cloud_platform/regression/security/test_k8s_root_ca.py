@@ -205,12 +205,14 @@ def test_apply_kube_rootca_update_strategy(request):
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     strategy_keywords = SwManagerKubeRootcaUpdateStrategyKeywords(ssh_connection)
     security_config = ConfigurationManager.get_security_config()
+    usm_config = ConfigurationManager.get_usm_config()
 
     expiry_date = (datetime.now() + timedelta(days=365 * security_config.get_kube_rootca_cert_validity_years())).strftime("%Y-%m-%d")
     cert_subject = security_config.get_kube_rootca_cert_subject()
 
+    alarm_restrictions = usm_config.get_alarm_restrictions() or ""
     get_logger().log_test_case_step(f"Creating kube-rootca-update strategy (expiry: {expiry_date})")
-    strategy = strategy_keywords.create_kube_rootca_update_strategy(expiry_date=expiry_date, subject=cert_subject)
+    strategy = strategy_keywords.create_kube_rootca_update_strategy(expiry_date=expiry_date, subject=cert_subject, alarm_restrictions=alarm_restrictions)
     validate_equals(strategy.is_ready_to_apply(), True, "Strategy should reach ready-to-apply state")
 
     get_logger().log_test_case_step("Applying kube-rootca-update strategy")
