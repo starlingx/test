@@ -1,6 +1,6 @@
 """Software Deploy Show Output."""
 
-from typing import List
+from typing import List, Optional
 
 from keywords.cloud_platform.system.system_table_parser import SystemTableParser
 from keywords.cloud_platform.upgrade.objects.software_deploy_show_object import SoftwareDeployShowObject
@@ -21,7 +21,7 @@ class SoftwareDeployShowOutput:
         Args:
             software_deploy_show_output (str): Raw output from 'software deploy show' command.
         """
-        self.software_deploy_show: SoftwareDeployShowObject
+        self.software_deploy_show: Optional[SoftwareDeployShowObject] = None
         system_table_parser = SystemTableParser(software_deploy_show_output)
         self.output_values = system_table_parser.get_output_values_list()
 
@@ -34,12 +34,12 @@ class SoftwareDeployShowOutput:
             )
             self.software_deploy_show = software_deploy_show_object
 
-    def get_software_deploy_show(self) -> SoftwareDeployShowObject:
+    def get_software_deploy_show(self) -> Optional[SoftwareDeployShowObject]:
         """
         Get all software Deploy Show objects.
 
         Returns:
-            SoftwareDeployShowObject: Parsed software deploy show.
+            Optional[SoftwareDeployShowObject]: Parsed software deploy show, or None if no deploy is in progress.
         """
         return self.software_deploy_show
 
