@@ -1,3 +1,5 @@
+"""KubectlGetCertsOutput keywords."""
+
 from keywords.k8s.certificate.object.kubectl_cert_object import KubectlCertObject
 from keywords.k8s.certificate.object.kubectl_get_certificate_table_parser import KubectlGetCertsTableParser
 
@@ -36,6 +38,18 @@ class KubectlGetCertsOutput:
 
             if "AGE" in pod_dict:
                 certs.set_age(pod_dict["AGE"])
+
+            if "ALGORITHM" in pod_dict:
+                certs.set_algorithm(pod_dict["ALGORITHM"])
+
+            if "SIZE" in pod_dict:
+                certs.set_size(pod_dict["SIZE"])
+
+            if "ISSUER" in pod_dict:
+                certs.set_issuer_ref(pod_dict["ISSUER"])
+
+            if "REVISION" in pod_dict:
+                certs.set_revision(pod_dict["REVISION"])
 
             self.kubectl_certs.append(certs)
 

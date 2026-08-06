@@ -1,0 +1,17 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{cert_name}}
+  namespace: {{namespace}}
+spec:
+  secretName: {{cert_name}}
+  issuerRef:
+    name: {{issuer_name}}
+    kind: ClusterIssuer
+  privateKey:
+    algorithm: {{key_algorithm}}
+    size: {{key_size}}
+  dnsNames:
+    - {{dns_name}}
+  duration: 2160h
+  renewBefore: 360h

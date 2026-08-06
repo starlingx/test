@@ -1,3 +1,5 @@
+"""KubectlGetCertsTableParser keywords."""
+
 from keywords.k8s.k8s_table_parser_base import K8sTableParserBase
 
 
@@ -19,4 +21,8 @@ class KubectlGetCertsTableParser(K8sTableParserBase):
             "READY",
             "SECRET",
             "AGE",
+            "ALGORITHM",
+            "SIZE",
+            "ISSUER",
+            "REVISION",
         ]

@@ -284,3 +284,21 @@ class LdapKeywords(BaseKeyword):
             if line.startswith("mail:"):
                 return line.split(":", 1)[1].strip()
         return ""
+
+    def check_ldap_connectivity(self, host: str, use_tls: bool = True) -> bool:
+        """Check if LDAP server is reachable and responds to base search.
+
+        Args:
+            host (str): LDAP host IP or hostname (IPv6 wrapped in brackets).
+            use_tls (bool): Use ldaps:// protocol. Defaults to True.
+
+        Returns:
+            bool: True if LDAP responds to base search.
+        """
+        protocol = "ldaps" if use_tls else "ldap"
+        cmd = f"ldapsearch -x -H {protocol}://{host} -b '' -s base 2>&1 || true"
+        output = self.ssh_connection.send(cmd)
+        raw = "\n".join(output) if isinstance(output, list) else output
+        is_reachable = "result: 0" in raw or "namingcontexts" in raw.lower()
+        get_logger().log_info(f"LDAP connectivity to {host}: {'OK' if is_reachable else 'FAILED'}")
+        return is_reachable

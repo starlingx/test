@@ -709,3 +709,16 @@ class FileKeywords(BaseKeyword):
         output = self.ssh_connection.send_as_sudo(f"grep -E '{pattern}' {file_path} || true")
         raw = "\n".join(output) if isinstance(output, list) else str(output)
         return raw
+
+    def read_file_as_base64(self, file_path: str) -> str:
+        """Read a file and return its content as base64-encoded string.
+
+        Args:
+            file_path (str): Path to the file to read.
+
+        Returns:
+            str: Base64-encoded content of the file.
+        """
+        output = self.ssh_connection.send(f"base64 -w0 {file_path}")
+        self.validate_success_return_code(self.ssh_connection)
+        return "".join(output).strip() if isinstance(output, list) else output.strip()

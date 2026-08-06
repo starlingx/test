@@ -1,3 +1,5 @@
+"""KubectlGetCertIssuerKeywords keywords."""
+
 from framework.ssh.ssh_connection import SSHConnection
 from framework.validation.validation import validate_equals_with_retry
 from keywords.k8s.certificate.object.kubectl_get_issuer_output import KubectlGetIssuerOutput
@@ -39,6 +41,17 @@ class KubectlGetCertIssuerKeywords(K8sBaseKeyword):
         issuer_list_output = KubectlGetIssuerOutput(kubectl_get_issuer_output)
 
         return issuer_list_output
+
+    def get_clusterissuers(self) -> KubectlGetIssuerOutput:
+        """Get cluster-scoped issuers using 'kubectl get clusterissuer'.
+
+        Returns:
+            KubectlGetIssuerOutput: Parsed output of the 'kubectl get clusterissuer' command.
+        """
+        kubectl_get_issuer_output = self.ssh_connection.send(self.k8s_config.export("kubectl get clusterissuer"))
+        self.validate_success_return_code(self.ssh_connection)
+
+        return KubectlGetIssuerOutput(kubectl_get_issuer_output)
 
     def wait_for_issuer_status(self, issuer_name: str, is_ready: bool, namespace: str = None, timeout: int = 600) -> None:
         """
