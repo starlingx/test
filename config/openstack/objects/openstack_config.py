@@ -27,13 +27,26 @@ class OpenstackConfig:
         self.remote_config = RemoteInstaller(openstack_dict["remote"])
 
 
-    def get_app_name(self) :
-        """
-        Getter for the application name.
-        Returns: the application name.
+    def get_app_name(self) -> str:
+        """Getter for the application name.
 
+        Returns:
+            str: The application name.
         """
         return self.app_name
+
+    def set_app_name(self, app_name: str) -> None:
+        """Set the application name (used for runtime override).
+
+        Also updates the version_cmd path to match the new app name.
+
+        Args:
+            app_name (str): The detected application name.
+        """
+        old_app_name = self.app_name
+        self.app_name = app_name
+        if old_app_name in self.version_cmd:
+            self.version_cmd = self.version_cmd.replace(old_app_name, app_name)
 
     def get_version_cmd(self) :
         """

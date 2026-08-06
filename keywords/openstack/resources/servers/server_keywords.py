@@ -82,15 +82,20 @@ class ServerKeywords(BaseKeyword):
 
         flavor_id = compute.find_flavor(flavor).id
         network_id = network_service.find_network(network).id
-        
-        server = compute.create_server(
-            name=server_name,
-            flavor_id=flavor_id,
-            networks=[{"uuid": network_id}],
-            image_id=image_id,
-            availability_zone=availability_zone,
-            block_device_mapping=block_device_mapping_v2,
-        )
+
+        kwargs = {
+            "name": server_name,
+            "flavor_id": flavor_id,
+            "networks": [{"uuid": network_id}],
+        }
+        if image_id is not None:
+            kwargs["image_id"] = image_id
+        if availability_zone is not None:
+            kwargs["availability_zone"] = availability_zone
+        if block_device_mapping_v2 is not None:
+            kwargs["block_device_mapping"] = block_device_mapping_v2
+
+        server = compute.create_server(**kwargs)
         return ServerListOutput([server.to_dict()])
 
     def get_server(self, server_name_or_id: str) -> ServerListOutput:
