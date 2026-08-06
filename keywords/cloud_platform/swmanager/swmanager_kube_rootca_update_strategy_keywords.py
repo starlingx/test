@@ -1,5 +1,6 @@
 import time
 
+from config.configuration_manager import ConfigurationManager
 from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
 from framework.validation.validation import validate_equals_with_retry
@@ -20,18 +21,20 @@ class SwManagerKubeRootcaUpdateStrategyKeywords(BaseKeyword):
         """
         self.ssh_connection = ssh_connection
 
-    def create_kube_rootca_update_strategy(self, expiry_date: str, subject: str) -> SwManagerKubeRootcaUpdateStrategyObject:
+    def create_kube_rootca_update_strategy(self, expiry_date: str, subject: str, alarm_restrictions: str = "") -> SwManagerKubeRootcaUpdateStrategyObject:
         """Create kube-rootca-update strategy.
 
         Args:
             expiry_date (str): Certificate expiry date (YYYY-MM-DD).
             subject (str): Certificate subject string.
-
+            alarm_restrictions (str): Alarm restrictions string, with "" as default
         Returns:
             SwManagerKubeRootcaUpdateStrategyObject: Created strategy object.
         """
         get_logger().log_info(f"Creating kube-rootca-update strategy with expiry {expiry_date}")
         cmd = f'sw-manager kube-rootca-update-strategy create --expiry-date "{expiry_date}" --subject "{subject}"'
+        if alarm_restrictions:
+            cmd += f' --alarm-restrictions {alarm_restrictions}'
         self.ssh_connection.send(source_openrc(cmd))
         self.validate_success_return_code(self.ssh_connection)
         return self.wait_for_ready_to_apply(180)
