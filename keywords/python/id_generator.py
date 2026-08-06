@@ -1,6 +1,5 @@
 from datetime import datetime, timezone
 from typing import Optional
-from uuid import uuid4
 
 
 class IdGenerator:
@@ -9,11 +8,15 @@ class IdGenerator:
     The timestamp is captured once at instantiation so that all
     identifiers produced by the same instance share it, making
     related resources easy to group together.
+
+    The timestamp includes millisecond precision, making IDs
+    naturally sortable by creation time when each resource uses
+    its own IdGenerator instance.
     """
 
     def __init__(self):
-        """Initialize and capture the current UTC timestamp."""
-        self.ts = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
+        """Initialize and capture the current UTC timestamp with millisecond precision."""
+        self.ts = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S%f")[:17]
 
     def generate(self, prefix: Optional[str] = None) -> str:
         """Generate a unique identifier.
@@ -22,10 +25,9 @@ class IdGenerator:
             prefix (Optional[str]): Optional prefix prepended to the identifier.
 
         Returns:
-            str: Identifier in format "prefix-YYYYMMDDHHmmSS-xxxx" or
-                "YYYYMMDDHHmmSS-xxxx" if no prefix provided.
+            str: Identifier in format "prefix-YYYYMMDDHHmmSSmmm" or
+                "YYYYMMDDHHmmSSmmm" if no prefix provided.
         """
-        tail = uuid4().hex[:4]
         if prefix:
-            return f"{prefix}-{self.ts}-{tail}"
-        return f"{self.ts}-{tail}"
+            return f"{prefix}-{self.ts}"
+        return self.ts
