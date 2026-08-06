@@ -691,3 +691,21 @@ class FileKeywords(BaseKeyword):
         """
         self.ssh_connection.send(f"printf '%s\n' '{content}' >> {file_path}")
         self.validate_success_return_code(self.ssh_connection)
+
+    def grep_file_with_sudo(self, file_path: str, pattern: str) -> str:
+        """Read matching lines from a root-owned config file using sudo grep.
+
+        Fills the gap between read_large_file (grep but no sudo) and
+        read_file_with_sudo (sudo but no grep). Useful for large config
+        files where reading the entire file would exceed SSH buffer limits.
+
+        Args:
+            file_path (str): Absolute path to the config file.
+            pattern (str): Grep-compatible regex pattern.
+
+        Returns:
+            str: Matching lines from the file, or empty string if no match.
+        """
+        output = self.ssh_connection.send_as_sudo(f"grep -E '{pattern}' {file_path} || true")
+        raw = "\n".join(output) if isinstance(output, list) else str(output)
+        return raw
