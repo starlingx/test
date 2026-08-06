@@ -319,6 +319,32 @@ class TlsKeywords(BaseKeyword):
             f"ECDSA cipher '{cipher}' rejected on {endpoint_name} ({host}:{port})",
         )
 
+    def detect_platform_cert_type(self, host: str, port: int = 5000, is_ipv6: bool = False) -> str:
+        """Detect the platform certificate type (RSA or ECDSA).
+
+        Connects to the specified endpoint and checks the server certificate's
+        public key algorithm to determine if it's RSA or ECDSA.
+
+        Args:
+            host (str): Target host (OAM IP).
+            port (int): Target port (default 5000 for HAProxy/Keystone).
+            is_ipv6 (bool): Whether the host is IPv6.
+
+        Returns:
+            str: 'RSA' or 'ECDSA'
+        """
+        connect_str = self.build_connect_str(host, port, is_ipv6)
+        cmd = f"echo | openssl s_client -connect {connect_str} 2>/dev/null | openssl x509 -noout -text 2>&1 | grep 'Public Key Algorithm'"
+        output = self.ssh_connection.send(cmd)
+        output_str = self._normalize_output(output)
+
+        if "id-ecpublickey" in output_str or "ecdsa" in output_str:
+            get_logger().log_info(f"Platform certificate type detected: ECDSA (from {connect_str})")
+            return "ECDSA"
+        else:
+            get_logger().log_info(f"Platform certificate type detected: RSA (from {connect_str})")
+            return "RSA"
+
     def verify_tls13_ciphersuite_accepted(
         self,
         host: str,
@@ -527,6 +553,7 @@ class TlsKeywords(BaseKeyword):
         while time.time() < deadline:
             if not self.alarm_keywords.is_alarm_present(CONFIG_OUT_OF_DATE_ALARM_ID):
                 get_logger().log_info(f"Alarm {CONFIG_OUT_OF_DATE_ALARM_ID} cleared — config applied to all services")
+                self._wait_for_platform_apis_ready()
                 self.wait_for_app_reapply_alarm_clear()
                 return True
             get_logger().log_info(f"Alarm {CONFIG_OUT_OF_DATE_ALARM_ID} still active, retrying in {interval}s")
@@ -534,6 +561,22 @@ class TlsKeywords(BaseKeyword):
 
         get_logger().log_warning(f"Alarm {CONFIG_OUT_OF_DATE_ALARM_ID} did not clear within {timeout}s")
         return False
+
+    def _wait_for_platform_apis_ready(self, timeout: int = 180, interval: int = 10) -> None:
+        """Wait for HAProxy/Keystone (port 5000) to be ready after config apply.
+
+        HAProxy restarts during puppet apply, causing brief API unavailability.
+        On simplex systems this can take 2+ minutes. Polls until port responds.
+
+        Args:
+            timeout (int): Maximum seconds to wait.
+            interval (int): Seconds between retries.
+        """
+        ep_ips = self.get_endpoint_ips()
+        mgmt_ip = ep_ips.get_mgmt_ip()
+        is_ipv6 = ep_ips.is_ipv6_lab()
+        get_logger().log_info("Waiting for platform APIs (port 5000) to be ready")
+        self.wait_for_port_ready(mgmt_ip, 5000, is_ipv6)
 
     def wait_for_app_reapply_alarm_clear(self, timeout: int = 300, interval: int = 15) -> bool:
         """Wait for alarm 750.006 (app reapply needed) and 750.004 (apply in progress) to clear.
@@ -587,14 +630,14 @@ class TlsKeywords(BaseKeyword):
         output = self.ssh_connection.send(f"kubectl get cm -n {NGINX_INGRESS_NAMESPACE} {NGINX_INGRESS_CONFIGMAP} -o yaml | grep {key}")  # no validation needed
         return str(output)
 
-    def wait_for_port_ready(self, host: str, port: int, is_ipv6: bool = False, retries: int = 5, delay: int = 2) -> bool:
+    def wait_for_port_ready(self, host: str, port: int, is_ipv6: bool = False, retries: int = 18, delay: int = 10) -> bool:
         """Wait until a TCP port is accepting connections.
 
         Args:
             host (str): Target host.
             port (int): Target port.
             is_ipv6 (bool): Whether the host is IPv6.
-            retries (int): Number of retries.
+            retries (int): Number of retries (default 18 x 10s = 180s).
             delay (int): Seconds between retries.
 
         Returns:

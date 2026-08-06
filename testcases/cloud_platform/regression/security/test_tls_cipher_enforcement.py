@@ -110,12 +110,23 @@ def test_allowed_ciphers_accepted(request):
     get_logger().log_setup_step("Retrieving OAM and management IPs")
     ep_ips = tls_kw.get_endpoint_ips()
 
+    # Detect platform certificate type to determine which TLS 1.2 ciphers will work
+    first_ep = ENDPOINTS[0]
+    detect_host = tls_kw.resolve_host(first_ep, ep_ips.get_oam_ip(), ep_ips.get_mgmt_ip())
+    cert_type = tls_kw.detect_platform_cert_type(detect_host, first_ep["port"], ep_ips.is_ipv6_lab())
+
+    # Select TLS 1.2 ciphers matching the installed certificate type
+    if cert_type == "RSA":
+        tls12_ciphers_to_test = TLS12_RSA_CIPHERS
+    else:
+        tls12_ciphers_to_test = TLS12_ECDSA_CIPHERS
+
     for ep in ENDPOINTS:
         host = tls_kw.resolve_host(ep, ep_ips.get_oam_ip(), ep_ips.get_mgmt_ip())
         ep_is_ipv6 = ep_ips.is_ipv6_lab() and not ep.get("host")
 
-        # Test TLS 1.2 allowed ciphers
-        for cipher in TLS12_RSA_CIPHERS:
+        # Test TLS 1.2 allowed ciphers (matching cert type)
+        for cipher in tls12_ciphers_to_test:
             get_logger().log_test_case_step(f"Verifying TLS 1.2 cipher '{cipher}' accepted on {ep['name']}")
             tls_kw.verify_cipher_accepted(host, ep["port"], cipher, ep["name"], ep_is_ipv6)
 
@@ -168,19 +179,37 @@ def test_go_tls13_and_cert_mismatch_cipher_behavior(request):
     oam_ep = ENDPOINTS[0]
     oam_host = tls_kw.resolve_host(oam_ep, ep_ips.get_oam_ip(), ep_ips.get_mgmt_ip())
 
-    get_logger().log_test_case_step("ECDSA cipher rejection (RSA certificate mismatch)")
-    get_logger().log_info("Platform uses RSA certificates, so ECDSA ciphers are rejected at certificate level")
+    # Detect platform certificate type
+    cert_type = tls_kw.detect_platform_cert_type(oam_host, oam_ep["port"], ep_ips.is_ipv6_lab())
 
-    # ECDSA ciphers should be rejected due to certificate mismatch, not cipher enforcement
-    for cipher in TLS12_ECDSA_CIPHERS[:2]:  # Test first 2
-        tls_kw.verify_ecdsa_cipher_rejected_cert_mismatch(
-            oam_host,
-            oam_ep["port"],
-            cipher,
-            oam_ep["name"],
-            ep_ips.is_ipv6_lab(),
-        )
-        get_logger().log_info(f"ECDSA cipher '{cipher}' rejected due to RSA cert - NOT cipher enforcement")
+    if cert_type == "RSA":
+        get_logger().log_test_case_step("ECDSA cipher rejection (RSA certificate mismatch)")
+        get_logger().log_info("Platform uses RSA certificates, so ECDSA ciphers are rejected at certificate level")
+
+        # ECDSA ciphers should be rejected due to certificate mismatch, not cipher enforcement
+        for cipher in TLS12_ECDSA_CIPHERS[:2]:  # Test first 2
+            tls_kw.verify_ecdsa_cipher_rejected_cert_mismatch(
+                oam_host,
+                oam_ep["port"],
+                cipher,
+                oam_ep["name"],
+                ep_ips.is_ipv6_lab(),
+            )
+            get_logger().log_info(f"ECDSA cipher '{cipher}' rejected due to RSA cert - NOT cipher enforcement")
+    else:
+        get_logger().log_test_case_step("RSA cipher rejection (ECDSA certificate mismatch)")
+        get_logger().log_info("Platform uses ECDSA certificates, so RSA ciphers are rejected at certificate level")
+
+        # RSA ciphers should be rejected due to certificate mismatch
+        for cipher in TLS12_RSA_CIPHERS[:2]:  # Test first 2
+            tls_kw.verify_ecdsa_cipher_rejected_cert_mismatch(
+                oam_host,
+                oam_ep["port"],
+                cipher,
+                oam_ep["name"],
+                ep_ips.is_ipv6_lab(),
+            )
+            get_logger().log_info(f"RSA cipher '{cipher}' rejected due to ECDSA cert - NOT cipher enforcement")
 
     # Limitation 3: GnuTLS exclusion operates at cipher algorithm level (OpenLDAP)
     ldap_ep = next(ep for ep in ENDPOINTS if ep["name"] == "OpenLDAP")
@@ -189,17 +218,30 @@ def test_go_tls13_and_cert_mismatch_cipher_behavior(request):
     get_logger().log_test_case_step("GnuTLS algorithm-level exclusion (OpenLDAP)")
     get_logger().log_info("GnuTLS -ALGO exclusion removes cipher algorithm from ALL key exchanges (RSA and ECDSA)")
 
-    # Test that RSA ciphers work on OpenLDAP (algorithm allowed)
-    tls_kw.verify_cipher_accepted(ldap_host, ldap_ep["port"], TLS12_RSA_CIPHERS[0], ldap_ep["name"], ep_ips.is_ipv6_lab())
+    if cert_type == "RSA":
+        # Test that RSA ciphers work on OpenLDAP (algorithm allowed, cert matches)
+        tls_kw.verify_cipher_accepted(ldap_host, ldap_ep["port"], TLS12_RSA_CIPHERS[0], ldap_ep["name"], ep_ips.is_ipv6_lab())
 
-    # ECDSA ciphers rejected due to certificate mismatch (would be rejected by algorithm exclusion too)
-    tls_kw.verify_ecdsa_cipher_rejected_cert_mismatch(
-        ldap_host,
-        ldap_ep["port"],
-        TLS12_ECDSA_CIPHERS[0],
-        ldap_ep["name"],
-        ep_ips.is_ipv6_lab(),
-    )
+        # ECDSA ciphers rejected due to certificate mismatch
+        tls_kw.verify_ecdsa_cipher_rejected_cert_mismatch(
+            ldap_host,
+            ldap_ep["port"],
+            TLS12_ECDSA_CIPHERS[0],
+            ldap_ep["name"],
+            ep_ips.is_ipv6_lab(),
+        )
+    else:
+        # Test that ECDSA ciphers work on OpenLDAP (algorithm allowed, cert matches)
+        tls_kw.verify_cipher_accepted(ldap_host, ldap_ep["port"], TLS12_ECDSA_CIPHERS[0], ldap_ep["name"], ep_ips.is_ipv6_lab())
+
+        # RSA ciphers rejected due to certificate mismatch
+        tls_kw.verify_ecdsa_cipher_rejected_cert_mismatch(
+            ldap_host,
+            ldap_ep["port"],
+            TLS12_RSA_CIPHERS[0],
+            ldap_ep["name"],
+            ep_ips.is_ipv6_lab(),
+        )
 
     get_logger().log_info("Known limitations validation completed - behavior matches documented limitations")
 
@@ -221,7 +263,12 @@ def test_service_specific_cipher_matrix(request):
     get_logger().log_setup_step("Retrieving OAM and management IPs")
     ep_ips = tls_kw.get_endpoint_ips()
 
-    get_logger().log_info("Testing service-specific cipher enforcement matrix")
+    # Detect platform certificate type
+    first_ep = HAPROXY_ENDPOINTS[0]
+    detect_host = tls_kw.resolve_host(first_ep, ep_ips.get_oam_ip(), ep_ips.get_mgmt_ip())
+    cert_type = tls_kw.detect_platform_cert_type(detect_host, first_ep["port"], ep_ips.is_ipv6_lab())
+
+    get_logger().log_info(f"Testing service-specific cipher enforcement matrix (cert type: {cert_type})")
 
     # Service mapping for detailed testing
     # HAProxy SSL-terminating frontends (ports 5000, 6385, 6443, 7777, 9311, 15497, 18002, 4545)
@@ -239,20 +286,37 @@ def test_service_specific_cipher_matrix(request):
 
             get_logger().log_info(f"Testing {endpoint_name} ({service_type})")
 
-            # Test TLS 1.2 RSA ciphers (should be enforced on all services)
-            get_logger().log_info(f"TLS 1.2 RSA ciphers on {endpoint_name}: " f"{SERVICE_ENFORCEMENT_STATUS[service_type]['tls12_rsa']}")
-            for cipher in TLS12_RSA_CIPHERS:
-                tls_kw.verify_cipher_accepted(host, ep["port"], cipher, ep["name"], ep_is_ipv6)
+            # Detect cert type to determine which ciphers match
+            if cert_type == "RSA":
+                # Test TLS 1.2 RSA ciphers (should be accepted - cert matches)
+                get_logger().log_info(f"TLS 1.2 RSA ciphers on {endpoint_name}: accepted (RSA cert)")
+                for cipher in TLS12_RSA_CIPHERS:
+                    tls_kw.verify_cipher_accepted(host, ep["port"], cipher, ep["name"], ep_is_ipv6)
 
-            # Test TLS 1.2 ECDSA ciphers (should be rejected due to cert mismatch)
-            get_logger().log_info(f"TLS 1.2 ECDSA ciphers on {endpoint_name}: " f"{SERVICE_ENFORCEMENT_STATUS[service_type]['tls12_ecdsa']}")
-            tls_kw.verify_ecdsa_cipher_rejected_cert_mismatch(
-                host,
-                ep["port"],
-                TLS12_ECDSA_CIPHERS[0],
-                ep["name"],
-                ep_is_ipv6,
-            )
+                # Test TLS 1.2 ECDSA ciphers (should be rejected due to cert mismatch)
+                get_logger().log_info(f"TLS 1.2 ECDSA ciphers on {endpoint_name}: rejected (cert mismatch)")
+                tls_kw.verify_ecdsa_cipher_rejected_cert_mismatch(
+                    host,
+                    ep["port"],
+                    TLS12_ECDSA_CIPHERS[0],
+                    ep["name"],
+                    ep_is_ipv6,
+                )
+            else:
+                # Test TLS 1.2 ECDSA ciphers (should be accepted - cert matches)
+                get_logger().log_info(f"TLS 1.2 ECDSA ciphers on {endpoint_name}: accepted (ECDSA cert)")
+                for cipher in TLS12_ECDSA_CIPHERS:
+                    tls_kw.verify_cipher_accepted(host, ep["port"], cipher, ep["name"], ep_is_ipv6)
+
+                # Test TLS 1.2 RSA ciphers (should be rejected due to cert mismatch)
+                get_logger().log_info(f"TLS 1.2 RSA ciphers on {endpoint_name}: rejected (cert mismatch)")
+                tls_kw.verify_ecdsa_cipher_rejected_cert_mismatch(
+                    host,
+                    ep["port"],
+                    TLS12_RSA_CIPHERS[0],
+                    ep["name"],
+                    ep_is_ipv6,
+                )
 
             # Test TLS 1.3 ciphersuites (enforcement varies by service)
             tls13_status = SERVICE_ENFORCEMENT_STATUS[service_type]["tls13"]
@@ -471,7 +535,15 @@ def test_tls12_and_tls13_cipher_removal_enforcement(request):
     get_logger().log_setup_step("Retrieving OAM and management IPs")
     ep_ips = tls_kw.get_endpoint_ips()
 
-    removed_tls12_cipher = TLS12_RSA_CIPHERS[0]
+    # Detect cert type
+    first_ep = HAPROXY_ENDPOINTS[0]
+    detect_host = tls_kw.resolve_host(first_ep, ep_ips.get_oam_ip(), ep_ips.get_mgmt_ip())
+    cert_type = tls_kw.detect_platform_cert_type(detect_host, first_ep["port"], ep_ips.is_ipv6_lab())
+
+    if cert_type == "RSA":
+        removed_tls12_cipher = TLS12_RSA_CIPHERS[0]
+    else:
+        removed_tls12_cipher = TLS12_ECDSA_CIPHERS[0]
     removed_tls13_cipher = TLS13_CIPHERSUITES[2]
 
     def teardown() -> None:
@@ -503,7 +575,10 @@ def test_tls12_and_tls13_cipher_removal_enforcement(request):
         is_ipv6=ep_ips.is_ipv6_lab(),
     )
 
-    remaining_tls12 = TLS12_RSA_CIPHERS[1]
+    if cert_type == "RSA":
+        remaining_tls12 = TLS12_RSA_CIPHERS[1]
+    else:
+        remaining_tls12 = TLS12_ECDSA_CIPHERS[1]
     remaining_tls13 = TLS13_CIPHERSUITES[0]
     os_version = tls_kw.get_os_version()
 
@@ -544,8 +619,17 @@ def test_single_cipher_enforcement(request):
     get_logger().log_setup_step("Retrieving OAM and management IPs")
     ep_ips = tls_kw.get_endpoint_ips()
 
-    accepted_cipher_openssl = "ECDHE-RSA-AES128-GCM-SHA256"
-    rejected_ciphers = [c for c in TLS12_RSA_CIPHERS if c != accepted_cipher_openssl]
+    # Detect cert type
+    first_ep = HAPROXY_ENDPOINTS[0]
+    detect_host = tls_kw.resolve_host(first_ep, ep_ips.get_oam_ip(), ep_ips.get_mgmt_ip())
+    cert_type = tls_kw.detect_platform_cert_type(detect_host, first_ep["port"], ep_ips.is_ipv6_lab())
+
+    if cert_type == "RSA":
+        accepted_cipher_openssl = "ECDHE-RSA-AES128-GCM-SHA256"
+        rejected_ciphers = [c for c in TLS12_RSA_CIPHERS if c != accepted_cipher_openssl]
+    else:
+        accepted_cipher_openssl = "ECDHE-ECDSA-AES128-GCM-SHA256"
+        rejected_ciphers = [c for c in TLS12_ECDSA_CIPHERS if c != accepted_cipher_openssl]
 
     def teardown() -> None:
         """Restore the original cipher suite parameter."""
