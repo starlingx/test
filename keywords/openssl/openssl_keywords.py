@@ -9,6 +9,8 @@ from keywords.files.file_keywords import FileKeywords
 from keywords.k8s.secret.kubectl_get_secret_keywords import KubectlGetSecretsKeywords
 from keywords.openssl.object.cert_key_info_object import CertKeyInfoObject
 from keywords.openssl.object.cert_key_info_output import CertKeyInfoOutput
+from keywords.openssl.objects.certificate_info_object import CertificateInfoObject
+from keywords.openssl.objects.certificate_info_output import CertificateInfoOutput
 
 
 class OpenSSLKeywords(BaseKeyword):
@@ -152,15 +154,18 @@ class OpenSSLKeywords(BaseKeyword):
         self.ssh_connection.send(f"openssl req -x509 -new -nodes -key {key_path} -days {days} " f'-out {cert_path} -outform PEM -subj "{subj}"')
         self.validate_success_return_code(self.ssh_connection)
 
-    def create_certificate_signing_request(self, key_path: str, csr_path: str, subj: str) -> None:
+    def create_certificate_signing_request(self, key_path: str, csr_path: str, subj: str, san: str = "") -> None:
         """Create a certificate signing request (CSR).
 
         Args:
             key_path (str): Path to the private key.
             csr_path (str): Path to write the CSR.
             subj (str): Certificate subject string.
+            san (str): Subject Alternative Name extension value
+                (e.g. "DNS:example.com"). If empty, no SAN is added.
         """
-        self.ssh_connection.send(f'openssl req -new -key {key_path} -out {csr_path} -subj "{subj}"')
+        san_opt = f" -addext \"subjectAltName={san}\"" if san else ""
+        self.ssh_connection.send(f'openssl req -new -key {key_path} -out {csr_path} -subj "{subj}"{san_opt}')
         self.validate_success_return_code(self.ssh_connection)
 
     def sign_certificate(self, csr_path: str, ca_cert_path: str, ca_key_path: str, cert_path: str, days: int = 365) -> None:
@@ -197,6 +202,19 @@ class OpenSSLKeywords(BaseKeyword):
             elif line.startswith("serial="):
                 result["serial"] = line.split("=", 1)[1].strip()
         return result
+
+    def get_certificate_info(self, cert_path: str) -> CertificateInfoObject:
+        """Get subject, issuer, and serial from a certificate file in one call.
+
+        Args:
+            cert_path (str): Path to the certificate file.
+
+        Returns:
+            CertificateInfoObject: Object with get_subject(), get_issuer(), get_serial().
+        """
+        output = self.ssh_connection.send(f"openssl x509 -in {cert_path} -noout -subject -issuer -serial")
+        self.validate_success_return_code(self.ssh_connection)
+        return CertificateInfoOutput(output).get_certificate_info()
 
     def check_cert_expiry(self, cert_path: str, seconds: int = 2592000) -> bool:
         """Check if a certificate expires within the given time window.
