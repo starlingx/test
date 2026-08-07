@@ -534,3 +534,19 @@ def validate_less_than_or_equal(observed_value: int, baseline_value: int, valida
         get_logger().log_error(f"Baseline: {baseline_value}")
         get_logger().log_error(f"Observed: {observed_value}")
         raise Exception("Validation Failed")
+
+
+def fail(message: str) -> None:
+    """Explicitly fail a test with a descriptive message and logging integration.
+
+    Logs the failure reason via the ACE logger before raising, ensuring
+    the message appears in structured test logs alongside other validation output.
+
+    Args:
+        message (str): Description of why the test is being failed.
+
+    Raises:
+        AssertionError: Always raised with the provided message.
+    """
+    get_logger().log_error(f"Test Failed - {message}")
+    raise AssertionError(f"Test Failed - {message}")
