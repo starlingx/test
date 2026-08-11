@@ -10,6 +10,9 @@
   metrics_server_app_tarball_n2: "fake_path",
   rook_ceph_app_tarball: "fake_path",
 
+  // Application tarball used for OIDC upload/write tests
+  oidc_test_app_tarball: "auditd",
+
   // Optional Overrides of app_names.
 
   //  istio_app_name: "",

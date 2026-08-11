@@ -70,7 +70,7 @@ class LdapKeywords(BaseKeyword):
         self.ssh_connection.send_as_sudo(f"rm -rf /home/{username}")
 
         # Verify user exists — if playbook failed (SSSD race), create via ldapusersetup
-        if not self._user_exists_in_ldap(username):
+        if not self.user_exists_in_ldap(username):
             get_logger().log_info(f"User '{username}' not found after playbook. Creating via ldapusersetup fallback.")
             self.ssh_connection.send_as_sudo(f"ldapusersetup -u {username} --sudo --secondgroup sys_protected --passmax 90 --passwarning 2")
 
@@ -85,7 +85,7 @@ class LdapKeywords(BaseKeyword):
         self.ssh_connection.send_as_sudo("sss_cache -E")
         get_logger().log_info(f"LDAP user '{username}' ready for SSH login")
 
-    def _user_exists_in_ldap(self, username: str) -> bool:
+    def user_exists_in_ldap(self, username: str) -> bool:
         """Check if an LDAP user entry exists in the directory.
 
         Args:

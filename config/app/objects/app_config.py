@@ -73,6 +73,10 @@ class AppConfig:
         if "rook_ceph_app_tarball" in app_dict:
             self.rook_ceph_app_tarball = app_dict["rook_ceph_app_tarball"]
 
+        self.oidc_test_app_tarball = "auditd"
+        if "oidc_test_app_tarball" in app_dict:
+            self.oidc_test_app_tarball = app_dict["oidc_test_app_tarball"]
+
         self.ptp_notification_app_name = "ptp-notification"
         if "ptp_notification_app_name" in app_dict:
             self.ptp_notification_app_name = app_dict["ptp_notification_app_name"]
@@ -284,3 +288,15 @@ class AppConfig:
 
         """
         return self.nginx_ingress_controller_name
+
+    def get_oidc_test_app_tarball(self) -> str:
+        """Getter for OIDC test application tarball name.
+
+        Returns the app name used for application-upload OIDC tests.
+        The full path is constructed using base_application_path.
+
+        Returns:
+            str: the oidc test app tarball name (e.g. 'auditd')
+
+        """
+        return self.oidc_test_app_tarball
