@@ -12,6 +12,7 @@ from config.configuration_manager import ConfigurationManager
 from framework.logging.automation_logger import get_logger
 from framework.validation.validation import validate_not_equals, validate_str_contains
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_backup_keywords import DcManagerSubcloudBackupKeywords
+from keywords.cloud_platform.dcmanager.dcmanager_subcloud_manager_keywords import DcManagerSubcloudManagerKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 
 REGISTRY_WITHOUT_LOCAL_ONLY_ERROR = "Option --registry-images cannot be used without --local-only option."
@@ -20,6 +21,10 @@ BOTH_SUBCLOUD_AND_GROUP_ERROR = "The command only applies to a single subcloud o
 MISSING_SUBCLOUD_OR_GROUP_ERROR = "Please provide the subcloud or subcloud group name or id."
 AUTO_RESTORE_RELEASE_TOO_OLD_ERROR = "not supported for releases earlier than"
 RESTORE_PASSWORD_PROMPT = "Enter the sysadmin password for the subcloud"
+SUBCLOUD_NOT_FOUND_ERROR = "Subcloud not found"
+NO_MATCHING_ISO_ERROR = "invalid release version parameter"
+NONEXISTENT_SUBCLOUD_NAME = "nonexistent-subcloud-99"
+NONEXISTENT_RELEASE_VERSION = "99.99"
 
 
 @mark.p2
@@ -216,3 +221,81 @@ def test_restore_prompts_for_password_when_not_provided(request: FixtureRequest)
         RESTORE_PASSWORD_PROMPT.lower(),
         "CLI prompts for sysadmin password when not provided",
     )
+
+
+@mark.p2
+@mark.lab_has_subcloud
+def test_restore_rejects_nonexistent_subcloud(request: FixtureRequest):
+    """Verify backup restore is rejected when subcloud does not exist.
+
+    Preconditions:
+        - System controller is accessible.
+
+    Test Steps:
+        1. Run dcmanager subcloud-backup restore with a fabricated subcloud name.
+        2. Validate command is rejected with 'Subcloud not found' error.
+
+    Expected Results:
+        - Non-zero exit code.
+        - Error output contains 'Subcloud not found'.
+    """
+    system_controller_ssh = LabConnectionKeywords().get_active_controller_ssh()
+    subcloud_name = ConfigurationManager.get_lab_config().get_subcloud_names()[0]
+    lab_config = ConfigurationManager.get_lab_config().get_subcloud(subcloud_name)
+    subcloud_password = lab_config.get_admin_credentials().get_password()
+
+    get_logger().log_test_case_step(f"Running backup restore on non-existent subcloud '{NONEXISTENT_SUBCLOUD_NAME}'")
+    output, rc = DcManagerSubcloudBackupKeywords(system_controller_ssh).restore_subcloud_backup_with_error(
+        sysadmin_password=subcloud_password,
+        subcloud=NONEXISTENT_SUBCLOUD_NAME,
+    )
+
+    validate_not_equals(rc, 0, f"Command should be rejected (non-zero rc). Got rc={rc}. Output: {output}")
+    validate_str_contains(output.lower(), SUBCLOUD_NOT_FOUND_ERROR.lower(), "Error about subcloud not found")
+
+
+@mark.p2
+@mark.lab_has_subcloud
+def test_restore_rejects_nonexistent_release(request: FixtureRequest):
+    """Verify backup restore is rejected when specified release has no matching ISO.
+
+    Preconditions:
+        - Lab has at least one subcloud in managed/complete state.
+        - System controller is accessible.
+
+    Test Steps:
+        1. Unmanage the subcloud.
+        2. Run dcmanager subcloud-backup restore with --with-install and a
+           non-existent release version.
+        3. Validate command is rejected with error about release not available.
+        4. Re-manage the subcloud in teardown.
+
+    Expected Results:
+        - Non-zero exit code.
+        - Error output contains message about release/ISO not available.
+        - Subcloud re-managed in teardown.
+    """
+    system_controller_ssh = LabConnectionKeywords().get_active_controller_ssh()
+    subcloud_name = ConfigurationManager.get_lab_config().get_subcloud_names()[0]
+    lab_config = ConfigurationManager.get_lab_config().get_subcloud(subcloud_name)
+    subcloud_password = lab_config.get_admin_credentials().get_password()
+
+    def teardown():
+        get_logger().log_teardown_step(f"Re-managing subcloud {subcloud_name}")
+        DcManagerSubcloudManagerKeywords(system_controller_ssh).get_dcmanager_subcloud_manage(subcloud_name, 120)
+
+    request.addfinalizer(teardown)
+
+    get_logger().log_test_case_step(f"Unmanaging subcloud {subcloud_name}")
+    DcManagerSubcloudManagerKeywords(system_controller_ssh).get_dcmanager_subcloud_unmanage(subcloud_name, 60)
+
+    get_logger().log_test_case_step(f"Running backup restore with non-existent release '{NONEXISTENT_RELEASE_VERSION}'")
+    output, rc = DcManagerSubcloudBackupKeywords(system_controller_ssh).restore_subcloud_backup_with_error(
+        sysadmin_password=subcloud_password,
+        subcloud=subcloud_name,
+        with_install=True,
+        release=NONEXISTENT_RELEASE_VERSION,
+    )
+
+    validate_not_equals(rc, 0, f"Command should be rejected (non-zero rc). Got rc={rc}. Output: {output}")
+    validate_str_contains(output.lower(), NO_MATCHING_ISO_ERROR.lower(), "Error about release/ISO not available")
