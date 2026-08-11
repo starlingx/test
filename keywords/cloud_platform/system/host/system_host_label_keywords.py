@@ -1,10 +1,12 @@
 from typing import List
 
+from framework.logging.automation_logger import get_logger
 from keywords.base_keyword import BaseKeyword
 from keywords.cloud_platform.command_wrappers import source_openrc
 from keywords.cloud_platform.system.host.objects.system_host_label_assign_output import SystemHostLabelAssignOutput
 from keywords.cloud_platform.system.host.objects.system_host_label_list_output import SystemHostLabelListOutput
 from keywords.cloud_platform.system.host.system_host_lock_keywords import SystemHostLockKeywords
+from keywords.cloud_platform.system.host.system_host_list_keywords import SystemHostListKeywords
 
 
 class SystemHostLabelKeywords(BaseKeyword):
@@ -123,3 +125,21 @@ class SystemHostLabelKeywords(BaseKeyword):
         labels_str = ' '.join(labels)
         self.system_host_label_remove(host_name, labels_str)
         lock_keywords.unlock_host(host_name)
+
+    def assign_labels_to_all_hosts(self, labels: List[str], overwrite: bool = True) -> None:
+        """Assign labels to all hosts in the system with overwrite.
+
+        Iterates over all hosts and assigns the given labels using
+        --overwrite for idempotency. Labels are passed as a single
+        space-separated string per host.
+
+        Args:
+            labels (List[str]): Label strings (e.g. ['key1=value1', 'key2=value2']).
+            overwrite (bool): Use --overwrite flag. Defaults to True.
+        """
+
+        hosts = SystemHostListKeywords(self.ssh_connection).get_system_host_list().get_host_names()
+        labels_str = ' '.join(labels)
+        for host in hosts:
+            get_logger().log_info(f"Assigning labels on {host}: {labels}")
+            self.system_host_label_assign(host, labels_str, overwrite=overwrite)
