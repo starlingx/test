@@ -6,12 +6,11 @@ These instructions are for setting up the DB for the test automation results das
 4) Expand Automation folder and right click the Login/Group Roles folder and select Create ->  Login/Group Role
     - Name user automation_user
     - From Privileges tab, enable all permissions
-5) From pgadmin4, connect to the postgres db
-    - From Databases folder, Right click -> Create -> Database with name automation_central
-    - Right click on created db (automation_central) and select Restore
-        - Set format to Custom or tar
-        - Select the <repo_root>/framework/resource/db/automation_central_backup.sql file
-        - Select automation_user for Role name
-        - From Data Options -> Select Pre-data, Data, and Post-data
-        - Click Restore button
-4) -- config steps once created go here --
+5) Create the automation_central database and load the schema.
+
+        createdb -O automation_user automation_central
+        psql -v ON_ERROR_STOP=1 -d automation_central \
+             -f <repo_root>/framework/resources/db/create_automation_central_schema.sql
+
+        The script needs to be able to create the uuid-ossp extension, so run
+        it as a superuser unless automation_user already has that privilege.
