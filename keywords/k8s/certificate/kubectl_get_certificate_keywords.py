@@ -1,7 +1,16 @@
+"""KubectlGetCertStatusKeywords keywords."""
+
 from framework.ssh.ssh_connection import SSHConnection
 from framework.validation.validation import validate_equals_with_retry
 from keywords.k8s.certificate.object.kubectl_get_certificate_output import KubectlGetCertsOutput
 from keywords.k8s.k8s_base_keyword import K8sBaseKeyword
+
+CERT_EXTRA_COLUMNS = {
+    "algorithm": ".spec.privateKey.algorithm",
+    "size": ".spec.privateKey.size",
+    "issuer": ".spec.issuerRef.name",
+    "revision": ".status.revision",
+}
 
 
 class KubectlGetCertStatusKeywords(K8sBaseKeyword):
@@ -58,3 +67,21 @@ class KubectlGetCertStatusKeywords(K8sBaseKeyword):
             return cert_status == "True"
 
         validate_equals_with_retry(get_cert_status, is_ready, "Verify the certs status issued", timeout=600)
+
+    def get_certificates_with_extra_columns(self, namespace: str, columns_to_add: list) -> KubectlGetCertsOutput:
+        """Get certificates with extra spec/status columns appended.
+
+        Args:
+            namespace (str): Namespace to query.
+            columns_to_add (list): Friendly column names to add (e.g., ["algorithm", "size", "issuer", "revision"]).
+
+        Returns:
+            KubectlGetCertsOutput: Parsed certificates including the requested extra columns.
+        """
+        base_columns = "NAME:.metadata.name,READY:.status.conditions[0].status,SECRET:.spec.secretName,AGE:.metadata.creationTimestamp"
+        extra = ",".join(f"{name.upper()}:{CERT_EXTRA_COLUMNS[name]}" for name in columns_to_add if name in CERT_EXTRA_COLUMNS)
+        columns = f"{base_columns},{extra}" if extra else base_columns
+        cmd = self.k8s_config.export(f"kubectl get certificate -n {namespace} -o custom-columns={columns}")
+        output = self.ssh_connection.send(cmd)
+        self.validate_success_return_code(self.ssh_connection)
+        return KubectlGetCertsOutput(output)

@@ -1,3 +1,5 @@
+"""CurlKeywords keywords."""
+
 from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
 from keywords.base_keyword import BaseKeyword
@@ -37,3 +39,29 @@ class CurlKeywords(BaseKeyword):
         )
         self.validate_success_return_code(self.ssh_connection)
         return destination
+
+    def get_http_status_code(self, url: str, insecure: bool = True, cacert: str = None, user: str = None) -> str:
+        """Get HTTP response status code from a URL.
+
+        Args:
+            url (str): Target URL to check.
+            insecure (bool): Skip TLS verification (-k flag). Defaults to True.
+            cacert (str): Path to CA cert file for verification. Overrides insecure.
+            user (str): Username:password for basic auth.
+
+        Returns:
+            str: HTTP status code (e.g., "200", "401", "503").
+        """
+        flags = "-s -o /dev/null -w '%{http_code}'"
+        if cacert:
+            flags += f" --cacert {cacert}"
+        elif insecure:
+            flags += " -k"
+        if user:
+            flags += f" -u {user}"
+        cmd = f"curl {flags} {url}"
+        output = self.ssh_connection.send(cmd)
+        raw = "".join(output) if isinstance(output, list) else output
+        http_code = raw.strip().strip("'")[-3:]
+        get_logger().log_info(f"curl {url} -> HTTP {http_code}")
+        return http_code
