@@ -46,11 +46,42 @@ class KubectlGetPvcKeywords(K8sBaseKeyword):
             pvc_name_arg = pvc_name
         elif isinstance(pvc_name, list):
             pvc_name_arg = " ".join(pvc_name)
-        output = self.ssh_connection.send(
-            self.k8s_config.export(f"kubectl -o wide get pvc {pvc_name_arg} {ns_arg}")
-        )
+        output = self.ssh_connection.send(self.k8s_config.export(f"kubectl -o wide get pvc {pvc_name_arg} {ns_arg}"))
         self.validate_success_return_code(self.ssh_connection)
         return KubectlGetPvcsOutput(output)
+
+    def get_storage_class_from_pvcs(self, namespace: str, pvc_name_prefix: Optional[str] = None) -> Optional[str]:
+        """Get the StorageClass from existing PVCs in a namespace.
+
+        When an app is already applied, the PVC storageClassName is immutable.
+        This method returns the SC bound to the first matching PVC.
+
+        Note: If the namespace contains PVCs from unrelated apps, pass
+        pvc_name_prefix to filter to the correct PVCs. Without a prefix,
+        this takes the first PVC found in the namespace.
+
+        Args:
+            namespace (str): Namespace to query PVCs from.
+            pvc_name_prefix (Optional[str]): If provided, only consider PVCs
+                whose name starts with this prefix. Defaults to None.
+
+        Returns:
+            Optional[str]: The StorageClass name from the first matching PVC,
+                or None if no PVCs are found or none have a StorageClass.
+        """
+        pvcs_output = self.get_pvc(namespace=namespace)
+        pvcs = pvcs_output.get_pvcs()
+
+        if pvc_name_prefix:
+            pvcs = pvcs_output.get_pvcs_by_name_prefix(pvc_name_prefix)
+
+        if pvcs:
+            sc_from_pvc = pvcs[0].get_storageclass()
+            if sc_from_pvc:
+                get_logger().log_info(f"Detected StorageClass from existing PVC: {sc_from_pvc}")
+                return sc_from_pvc
+
+        return None
 
     def wait_for_pvcs_to_reach_status(
         self,
@@ -83,9 +114,7 @@ class KubectlGetPvcKeywords(K8sBaseKeyword):
         """
         pvc_status_timeout = time.time() + timeout
 
-        get_logger().log_info(
-            f"Waiting for pvcs {pvc_names} to reach {expected_status} status"
-        )
+        get_logger().log_info(f"Waiting for pvcs {pvc_names} to reach {expected_status} status")
 
         pending_pvcs = []
         if isinstance(pvc_names, str):
@@ -104,33 +133,20 @@ class KubectlGetPvcKeywords(K8sBaseKeyword):
             pvcs = pvcs_output.get_pvcs()
 
             for pvc_name in pending_pvcs[:]:
-                matching_pvcs = [
-                    p for p in pvcs if p.get_name().startswith(pvc_name)
-                ]
-                if matching_pvcs and all(
-                    p.get_status() in expected_status for p in matching_pvcs
-                ):
-                    get_logger().log_debug(
-                        f"pvc:{pvc_name} reached {expected_status} status"
-                    )
+                matching_pvcs = [p for p in pvcs if p.get_name().startswith(pvc_name)]
+                if matching_pvcs and all(p.get_status() in expected_status for p in matching_pvcs):
+                    get_logger().log_debug(f"pvc:{pvc_name} reached {expected_status} status")
                     pending_pvcs.remove(pvc_name)
 
             if not pending_pvcs:
-                get_logger().log_info(
-                    f"All pvcs:{pvc_names} reached {expected_status} status"
-                )
+                get_logger().log_info(f"All pvcs:{pvc_names} reached {expected_status} status")
                 return True
             else:
-                get_logger().log_debug(
-                    f"pvcs left to reach status: {pending_pvcs}"
-                )
+                get_logger().log_debug(f"pvcs left to reach status: {pending_pvcs}")
 
             time.sleep(poll_interval)
 
-        raise KeywordException(
-            f"pvcs {pending_pvcs} did not reach {expected_status} "
-            f"status within {timeout} seconds"
-        )
+        raise KeywordException(f"pvcs {pending_pvcs} did not reach {expected_status} " f"status within {timeout} seconds")
 
     def wait_for_pvc_to_be_deleted(
         self,
@@ -156,9 +172,7 @@ class KubectlGetPvcKeywords(K8sBaseKeyword):
 
         def is_pvc_deleted() -> bool:
             ns_arg = f"-n {namespace}" if namespace else ""
-            output = self.ssh_connection.send(
-                self.k8s_config.export(f"kubectl get pvc {pvc_name} {ns_arg}")
-            )
+            output = self.ssh_connection.send(self.k8s_config.export(f"kubectl get pvc {pvc_name} {ns_arg}"))
             return f'"{pvc_name}" not found' in output[0]
 
         validate_equals_with_retry(

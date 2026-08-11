@@ -104,6 +104,23 @@ class SystemApplicationRemoveKeywords(BaseKeyword):
 
         return delete_message
 
+    def system_application_remove_with_error(self, app_name: str) -> str:
+        """Remove application without force, allowing errors for negative testing.
+
+        Runs 'system application-remove' without --force and returns the raw
+        output without validating the return code. Used for negative tests
+        that expect the command to be rejected.
+
+        Args:
+            app_name (str): Application name.
+
+        Returns:
+            str: Raw CLI output (may contain error/rejection message).
+        """
+        cmd = source_openrc(f"system application-remove {app_name}")
+        output = self.ssh_connection.send(cmd)
+        return "\n".join(output) if isinstance(output, list) else output
+
     def cleanup_app_if_present(self, app_name: str, force_removal: bool = False, force_deletion: bool = False, timeout_in_seconds: int = -1, check_interval_in_seconds: int = -1) -> None:
         """
         Remove and delete an application if it exists, handling both applied and uploaded states.

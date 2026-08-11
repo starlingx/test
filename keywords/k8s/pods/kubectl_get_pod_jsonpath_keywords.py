@@ -46,6 +46,6 @@ class KubectlGetPodJsonpathKeywords(BaseKeyword):
         """
         jsonpath = "{..status.containerStatuses[].containerID}"
         output = self.get_pod_jsonpath_value(pod_name, jsonpath, namespace)
-        match = re.search(r'containerd://(.*)', output)
+        match = re.search(r"containerd://(.*)", output)
         validate_not_none(match, f"Cannot find containerd UUID in {output}")
         return match.group(1).strip()

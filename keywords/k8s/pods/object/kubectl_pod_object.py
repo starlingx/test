@@ -1,5 +1,6 @@
 import re
 
+
 class KubectlPodObject:
     """
     Class to hold attributes of a 'kubectl get pods' pod entry.
@@ -23,6 +24,7 @@ class KubectlPodObject:
         self.nominated_node = None
         self.readiness_gates = None
         self.labels = {}
+        self.images = []
 
     def get_name(self) -> str:
         """
@@ -147,9 +149,9 @@ class KubectlPodObject:
         pod_age = self.get_age()
         total_minutes = 0
 
-        days = re.search(r'(\d+)d', pod_age)
-        hours = re.search(r'(\d+)h', pod_age)
-        minutes = re.search(r'(\d+)m', pod_age)
+        days = re.search(r"(\d+)d", pod_age)
+        hours = re.search(r"(\d+)h", pod_age)
+        minutes = re.search(r"(\d+)m", pod_age)
 
         if days:
             total_minutes += int(days.group(1)) * 1440
@@ -279,6 +281,22 @@ class KubectlPodObject:
             str: Helm chart or empty string if not found.
         """
         return self.get_label("helm.sh/chart")
+
+    def set_images(self, images: list[str]) -> None:
+        """Setter for container images.
+
+        Args:
+            images (list[str]): List of container image strings.
+        """
+        self.images = images
+
+    def get_images(self) -> list[str]:
+        """Getter for container images.
+
+        Returns:
+            list[str]: List of container image strings.
+        """
+        return self.images
 
     def __str__(self) -> str:
         """

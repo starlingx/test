@@ -27,3 +27,18 @@ class KubectlGetCrdKeywords(K8sBaseKeyword):
         output = self.ssh_connection.send(self.k8s_config.export(cmd))
         self.validate_success_return_code(self.ssh_connection)
         return KubectlGetCrdOutput(output)
+
+    def get_crd(self, crd_name: str) -> KubectlGetCrdOutput:
+        """Get a single CRD with full details including status conditions.
+
+        Args:
+            crd_name (str): Full CRD name (e.g. 'prometheuses.monitoring.coreos.com').
+
+        Returns:
+            KubectlGetCrdOutput: Parsed output containing the CRD object with status.
+        """
+        cmd = f"kubectl get crd {crd_name} -o json"
+        output = self.ssh_connection.send(self.k8s_config.export(cmd))
+        self.validate_success_return_code(self.ssh_connection)
+        return KubectlGetCrdOutput(output, source="json")
+

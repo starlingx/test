@@ -108,6 +108,17 @@ class KubectlGetPvcsOutput:
         """
         return [pvc for pvc in self.kubectl_pvc if pvc.get_storageclass() == storageclass_name]
 
+    def get_pvcs_by_name_prefix(self, prefix: str) -> List[KubectlPvcObject]:
+        """Get PVCs whose name starts with the given prefix.
+
+        Args:
+            prefix (str): The name prefix to filter by.
+
+        Returns:
+            list[KubectlPvcObject]: List of PVCs with names starting with prefix.
+        """
+        return [pvc for pvc in self.kubectl_pvc if pvc.get_name().startswith(prefix)]
+
     def __str__(self) -> str:
         """Get string representation for logging.
 
