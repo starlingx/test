@@ -317,6 +317,7 @@ def _modify_controllers_kernel(request: FixtureRequest, kernel_value: str, expec
     # Process standby controller first; active controller requires a swact before locking.
     active_host = SystemHostListKeywords(ssh_connection).get_active_controller().get_host_name()
     controllers = sorted(controllers, key=lambda c: c.get_host_name() == active_host)
+    is_simplex = len(controllers) == 1
 
     for ctrl in controllers:
         hostname = ctrl.get_host_name()
@@ -325,8 +326,9 @@ def _modify_controllers_kernel(request: FixtureRequest, kernel_value: str, expec
         # by an interrupted modify/unlock sequence is always recovered.
         request.addfinalizer(lambda name=hostname: cyclictest_kw.ensure_host_unlocked(name))
 
-        # If this is the active controller, swact away first so it becomes standby.
-        if hostname == active_host:
+        # If this is the active controller on a DX lab, swact away first so it becomes standby.
+        # On Simplex, skip swact — lock the only controller directly.
+        if hostname == active_host and not is_simplex:
             get_logger().log_test_case_step(f"Swact away from {hostname} before locking")
             SystemHostSwactKeywords(ssh_connection).host_swact()
             ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
