@@ -1,7 +1,7 @@
 """Output parser for kubectl get tridentbackendconfig -o json."""
 
 import json
-from typing import List
+from typing import List, Optional
 
 from framework.exceptions.keyword_exception import KeywordException
 from framework.logging.automation_logger import get_logger
@@ -52,8 +52,12 @@ class KubectlGetTridentBackendConfigOutput:
             tbc_obj.set_namespace(metadata.get("namespace", ""))
             tbc_obj.set_storage_driver_name(spec.get("storageDriverName", ""))
             tbc_obj.set_backend_name(spec.get("backendName", ""))
+            tbc_obj.set_data_lif(spec.get("dataLIF", ""))
+            tbc_obj.set_svm(spec.get("svm", ""))
+            tbc_obj.set_nfs_mount_options(spec.get("nfsMountOptions", ""))
             tbc_obj.set_last_operation_status(status.get("lastOperationStatus", ""))
             tbc_obj.set_message(status.get("message", ""))
+            tbc_obj.set_phase(status.get("phase", ""))
 
             self._configs.append(tbc_obj)
 
@@ -97,3 +101,26 @@ class KubectlGetTridentBackendConfigOutput:
             bool: True if a healthy backend exists.
         """
         return len(self.get_healthy_configs_by_driver(driver_name)) > 0
+
+    def get_bound_nas_backend(self) -> Optional[KubectlTridentBackendConfigObject]:
+        """Get the first bound ontap-nas backend.
+
+        Returns:
+            Optional[KubectlTridentBackendConfigObject]: The bound NAS backend,
+                or None if no bound ontap-nas backend exists.
+        """
+        for config in self._configs:
+            if config.get_storage_driver_name() == "ontap-nas" and config.is_bound():
+                return config
+        return None
+
+    def get_bound_san_backends(self) -> List[KubectlTridentBackendConfigObject]:
+        """Get all bound ontap-san backends (iSCSI and FC).
+
+        Returns:
+            List[KubectlTridentBackendConfigObject]: List of bound SAN backends.
+        """
+        return [
+            c for c in self._configs
+            if c.get_storage_driver_name() in ("ontap-san", "ontap-san-fc") and c.is_bound()
+        ]
