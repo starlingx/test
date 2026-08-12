@@ -1,3 +1,5 @@
+from typing import Optional, Tuple
+
 from config.configuration_manager import ConfigurationManager
 from framework.ssh.ssh_connection import SSHConnection
 from keywords.base_keyword import BaseKeyword
@@ -42,7 +44,7 @@ class DCManagerSubcloudDeployKeywords(BaseKeyword):
         self.ssh_connection.send(source_openrc(cmd))
         self.validate_success_return_code(self.ssh_connection)
 
-    def dcmanager_subcloud_deploy_create(self, subcloud_name: str, wait_for_status: bool = True, release_id: str = None):
+    def dcmanager_subcloud_deploy_create(self, subcloud_name: str, wait_for_status: bool = True, release_id: Optional[str] = None):
         """Creates the subcloud using 'dcmanager subcloud deploy create'.
 
         Args:
@@ -61,9 +63,10 @@ class DCManagerSubcloudDeployKeywords(BaseKeyword):
 
         # Get the subcloud bootstrap address
         boot_add = sc_config.get_first_controller().get_ip()
-        release = "" if release_id is None else f"--release {release_id}"
         # Execute the command
-        cmd = f"dcmanager subcloud deploy create --bootstrap-address {boot_add} --bootstrap-values {bootstrap_file} --install-values {install_file} --bmc-password {sc_config.get_bm_password()} --deploy-config {deploy_file} {release}"
+        cmd = f"dcmanager subcloud deploy create --bootstrap-address {boot_add} --bootstrap-values {bootstrap_file} --install-values {install_file} --bmc-password {sc_config.get_bm_password()} --deploy-config {deploy_file}"
+        if release_id:
+            cmd += f" --release {release_id}"
         self.ssh_connection.send(source_openrc(cmd))
         self.validate_success_return_code(self.ssh_connection)
 
@@ -73,7 +76,7 @@ class DCManagerSubcloudDeployKeywords(BaseKeyword):
             dc_manager_sc_list_kw = DcManagerSubcloudListKeywords(self.ssh_connection)
             dc_manager_sc_list_kw.validate_subcloud_status(subcloud_name, success_status)
 
-    def dcmanager_subcloud_deploy_install(self, subcloud_name: str, wait_for_status: bool = True, release_id: str = None):
+    def dcmanager_subcloud_deploy_install(self, subcloud_name: str, wait_for_status: bool = True, release_id: Optional[str] = None):
         """Installs the subcloud using 'dcmanager subcloud deploy install'.
 
         Args:
@@ -89,9 +92,10 @@ class DCManagerSubcloudDeployKeywords(BaseKeyword):
         admin_creds = sc_config.get_admin_credentials()
         install_file = sc_assets.get_install_file()
 
-        release = "" if release_id is None else f"--release {release_id}"
         # Execute the command
-        cmd = f"dcmanager subcloud deploy install {subcloud_name} --sysadmin-password {admin_creds.get_password()} --bmc-password {sc_config.get_bm_password()} --install-values {install_file} {release}"
+        cmd = f"dcmanager subcloud deploy install {subcloud_name} --sysadmin-password {admin_creds.get_password()} --bmc-password {sc_config.get_bm_password()} --install-values {install_file}"
+        if release_id:
+            cmd += f" --release {release_id}"
         self.ssh_connection.send(source_openrc(cmd))
         self.validate_success_return_code(self.ssh_connection)
 
@@ -179,6 +183,48 @@ class DCManagerSubcloudDeployKeywords(BaseKeyword):
             success_status = "enroll-complete"
             dc_manager_sc_list_kw = DcManagerSubcloudListKeywords(self.ssh_connection)
             dc_manager_sc_list_kw.validate_subcloud_status(subcloud_name, success_status)
+
+    def dcmanager_subcloud_deploy_enroll_with_error(
+        self,
+        subcloud_name: str,
+        bootstrap_values: Optional[str] = None,
+        install_values: Optional[str] = None,
+        sysadmin_password: Optional[str] = None,
+        bmc_password: Optional[str] = None,
+        bootstrap_address: Optional[str] = None,
+    ) -> Tuple[str, int]:
+        """Runs 'dcmanager subcloud deploy enroll' and returns output and rc without asserting.
+
+        Used for negative testing where the command is expected to be rejected.
+        All parameters are optional to allow testing various missing-argument scenarios.
+
+        Args:
+            subcloud_name (str): Name of the subcloud to enroll.
+            bootstrap_values (Optional[str]): Path to bootstrap values file.
+            install_values (Optional[str]): Path to install values file.
+            sysadmin_password (Optional[str]): Sysadmin password for the subcloud.
+            bmc_password (Optional[str]): BMC password.
+            bootstrap_address (Optional[str]): Bootstrap address of the subcloud.
+
+        Returns:
+            tuple: (output_str, return_code_int).
+        """
+        cmd = f"dcmanager subcloud deploy enroll {subcloud_name}"
+        if sysadmin_password:
+            cmd += f" --sysadmin-password {sysadmin_password}"
+        if bootstrap_address:
+            cmd += f" --bootstrap-address {bootstrap_address}"
+        if bootstrap_values:
+            cmd += f" --bootstrap-values {bootstrap_values}"
+        if install_values:
+            cmd += f" --install-values {install_values}"
+        if bmc_password:
+            cmd += f" --bmc-password {bmc_password}"
+        output = self.ssh_connection.send(source_openrc(cmd))
+        rc = self.ssh_connection.get_return_code()
+        if isinstance(output, list):
+            output = "\n".join(str(line).strip() for line in output)
+        return output, rc
 
 
     def dcmanager_subcloud_deploy_resume(self, subcloud_name: str, wait_for_status: bool = True):

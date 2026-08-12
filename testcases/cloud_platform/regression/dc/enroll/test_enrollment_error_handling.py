@@ -16,6 +16,7 @@ from framework.ssh.ssh_connection import SSHConnection
 from framework.validation.validation import validate_equals, validate_not_equals, validate_str_contains
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_add_keywords import DcManagerSubcloudAddKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_delete_keywords import DcManagerSubcloudDeleteKeywords
+from keywords.cloud_platform.dcmanager.dcmanager_subcloud_deploy_keywords import DCManagerSubcloudDeployKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.files.file_keywords import FileKeywords
 
@@ -69,6 +70,11 @@ CLOUD_INIT_CONFIG_INVALID_TARBALL_ERROR = "cloud-init-config is not a valid .tar
 
 EMPTY_EXTRA_BOOT_PARAMS_ERROR = "The install value extra_boot_params must not be empty."
 
+NONEXISTENT_SUBCLOUD_NAME = "nonexistent-subcloud-99"
+
+DEPLOY_ENROLL_SUBCLOUD_NOT_FOUND_ERROR = "Subcloud not found"
+
+DEPLOY_ENROLL_NAME_MISMATCH_ERROR = "must match the current subcloud name"
 
 def _create_temp_files_with_missing_keys(system_controller_ssh: SSHConnection, source_file: str, temp_dir: str, scenarios: list) -> dict:
     """Copy a YAML file to temp dir and remove one required key per copy.
@@ -710,3 +716,107 @@ def test_enroll_rejects_empty_extra_boot_params(request: FixtureRequest):
     validate_not_equals(rc, 0, f"Command should be rejected (non-zero rc). Got rc={rc}. Output: {output}")
     validate_str_contains(output.lower(), GENERIC_DCMANAGER_ERROR, "Generic dcmanager error message present in output")
     validate_str_contains(output.lower(), EMPTY_EXTRA_BOOT_PARAMS_ERROR.lower(), "Error about empty extra_boot_params")
+
+
+@mark.p2
+@mark.lab_has_subcloud
+def test_deploy_enroll_rejects_nonexistent_subcloud(request: FixtureRequest):
+    """Verify deploy enroll is rejected when subcloud does not exist in dcmanager.
+
+    Preconditions:
+        - System controller is accessible.
+
+    Test Steps:
+        1. Run dcmanager subcloud deploy enroll with a fabricated subcloud name.
+        2. Validate command is rejected with 'Subcloud not found' error.
+
+    Expected Results:
+        - Non-zero exit code.
+        - Error output contains 'Subcloud not found'.
+        - No state change on the system.
+    """
+    system_controller_ssh = LabConnectionKeywords().get_active_controller_ssh()
+    lab_config = ConfigurationManager.get_lab_config()
+    subcloud_name = lab_config.get_subcloud_names()[0]
+    subcloud_obj = lab_config.get_subcloud(subcloud_name)
+    sysadmin_password = subcloud_obj.get_admin_credentials().get_password()
+
+    get_logger().log_test_case_step(f"Running deploy enroll on non-existent subcloud '{NONEXISTENT_SUBCLOUD_NAME}'")
+    output, rc = DCManagerSubcloudDeployKeywords(system_controller_ssh).dcmanager_subcloud_deploy_enroll_with_error(
+        NONEXISTENT_SUBCLOUD_NAME,
+        sysadmin_password=sysadmin_password,
+    )
+
+    validate_not_equals(rc, 0, f"Command should be rejected (non-zero rc). Got rc={rc}. Output: {output}")
+    validate_str_contains(output.lower(), DEPLOY_ENROLL_SUBCLOUD_NOT_FOUND_ERROR.lower(), "Error about subcloud not found")
+
+
+@mark.p2
+@mark.lab_has_subcloud
+def test_deploy_enroll_rejects_bootstrap_name_mismatch(request: FixtureRequest):
+    """Verify deploy enroll is rejected when bootstrap-values name doesn't match subcloud.
+
+    Creates a modified bootstrap-values file with a different name field
+    and attempts deploy enroll with it. dcmanager should reject the command
+    because the name in bootstrap-values must match the subcloud name.
+
+    Preconditions:
+        - Lab has at least one subcloud registered in dcmanager in a valid
+          deploy-enroll state (factory-restore-complete, enroll-failed,
+          pre-enroll-failed, pre-init-enroll-failed, or init-enroll-failed).
+        - Deployment assets available on the system controller.
+
+    Test Steps:
+        1. Verify subcloud is in a valid state for deploy enroll.
+        2. Create a temp copy of bootstrap-values with wrong name field.
+        3. Run dcmanager subcloud deploy enroll with the modified file.
+        4. Validate command is rejected with name mismatch error.
+
+    Expected Results:
+        - Non-zero exit code.
+        - Error output contains message about name mismatch.
+        - No subcloud state change.
+    """
+    system_controller_ssh = LabConnectionKeywords().get_active_controller_ssh()
+    deployment_assets_config = ConfigurationManager.get_deployment_assets_config()
+    lab_config = ConfigurationManager.get_lab_config()
+    subcloud_name = lab_config.get_subcloud_names()[0]
+    subcloud_obj = lab_config.get_subcloud(subcloud_name)
+
+    sc_assets = deployment_assets_config.get_subcloud_deployment_assets(subcloud_name)
+    bootstrap_values = sc_assets.get_bootstrap_file()
+    install_values = sc_assets.get_install_file()
+    sysadmin_password = subcloud_obj.get_admin_credentials().get_password()
+    bmc_password = subcloud_obj.get_bm_password() or sysadmin_password
+    bootstrap_address = subcloud_obj.get_first_controller().get_ip()
+
+    subcloud_dir = os.path.dirname(bootstrap_values)
+    temp_dir = f"{subcloud_dir}/temp"
+    base_name = os.path.basename(bootstrap_values)
+    modified_bootstrap = f"{temp_dir}/wrong_name_{base_name}"
+
+    def teardown():
+        get_logger().log_teardown_step(f"Remove temp directory {temp_dir}")
+        FileKeywords(system_controller_ssh).delete_directory(temp_dir)
+
+    request.addfinalizer(teardown)
+
+    get_logger().log_test_case_step("Creating bootstrap-values with mismatched name field")
+    file_kw = FileKeywords(system_controller_ssh)
+    file_kw.create_directory(temp_dir)
+    file_kw.copy_file(bootstrap_values, modified_bootstrap)
+    file_kw.replace_line_matching(modified_bootstrap, "^name:.*", "name: wrong-subcloud-name")
+
+    get_logger().log_test_case_step("Running deploy enroll with mismatched bootstrap name")
+    output, rc = DCManagerSubcloudDeployKeywords(system_controller_ssh).dcmanager_subcloud_deploy_enroll_with_error(
+        subcloud_name,
+        bootstrap_values=modified_bootstrap,
+        install_values=install_values,
+        sysadmin_password=sysadmin_password,
+        bmc_password=bmc_password,
+        bootstrap_address=bootstrap_address,
+    )
+
+    validate_not_equals(rc, 0, f"Command should be rejected (non-zero rc). Got rc={rc}. Output: {output}")
+    validate_str_contains(output.lower(), GENERIC_DCMANAGER_ERROR, "Generic dcmanager error message present in output")
+    validate_str_contains(output.lower(), DEPLOY_ENROLL_NAME_MISMATCH_ERROR.lower(), "Error about bootstrap name not matching subcloud name")
