@@ -2,17 +2,23 @@
 
 This module validates the dcmanager sw-deploy-strategy with --kube-upgrade flag,
 which performs a combined platform and Kubernetes upgrade on subclouds in a single
-orchestrated operation.
+orchestrated operation. It also covers prestage and snapshot scenarios.
 
-The --kube-upgrade flag instructs dcmanager to include a Kubernetes upgrade as part
-of the sw-deploy-strategy, eliminating the need for a separate kube-upgrade-strategy.
+Supported modes:
+    - Upgrade: --kube-upgrade [version] --release-id [release] --with-delete
+    - Upgrade with prestage: adds --with-prestage
+    - Upgrade with prestage + snapshot: adds --with-prestage --snapshot (no --with-delete)
 
 Requirements change: Combined P&K upgrade is supported on both simplex AND duplex
 subclouds (previously simplex-only).
 
 Test execution:
-    - test_combined_pk_sw_deploy_strategy_single_simplex_subcloud
-    - test_combined_pk_sw_deploy_strategy_single_duplex_subcloud
+    - test_combined_pk_sw_deploy_strategy_single_simplex_subcloud_n_release
+    - test_combined_pk_sw_deploy_strategy_single_duplex_subcloud_n_release
+    - test_combined_pk_sw_deploy_strategy_with_prestage_single_simplex_subcloud_n_release
+    - test_combined_pk_sw_deploy_strategy_with_prestage_single_duplex_subcloud_n_release
+    - test_combined_pk_sw_deploy_strategy_with_prestage_snapshot_single_simplex_subcloud_n_release
+    - test_combined_pk_sw_deploy_strategy_with_prestage_snapshot_single_duplex_subcloud_n_release
 
 Prerequisites:
     - System controller has N release deployed
@@ -90,81 +96,85 @@ def get_target_kube_version(ssh_connection: SSHConnection) -> str:
     return target
 
 
-def run_combined_pk_sw_deploy_strategy(system_controller_ssh: SSHConnection, subcloud_name: str, release: str, kube_version: str) -> None:
+def run_combined_pk_sw_deploy_strategy(
+    system_controller_ssh: SSHConnection,
+    subcloud_name: str,
+    release: str = None,
+    kube_version: str = None,
+    with_delete: bool = True,
+    with_prestage: bool = False,
+    snapshot: bool = False,
+) -> None:
     """Create, apply, and verify combined P&K sw-deploy-strategy for a subcloud.
+
+    Unified helper that handles all combined P&K strategy modes:
+        - Upgrade: provide release and kube_version
+        - Upgrade with prestage: set with_prestage=True
+        - Upgrade with prestage + snapshot: set with_prestage=True, snapshot=True
 
     Args:
         system_controller_ssh (SSHConnection): SSH connection to the system controller.
         subcloud_name (str): Name of the subcloud to target.
         release (str): Full release name to deploy (e.g. "WRCP-26.10").
         kube_version (str): Target Kubernetes version (e.g. "v1.29.2").
+        with_delete (bool): If True, adds --with-delete flag. Defaults to True.
+        with_prestage (bool): If True, adds --with-prestage flag.
+        snapshot (bool): If True, adds --snapshot flag.
     """
     strategy_keywords = DcmanagerSwDeployStrategy(system_controller_ssh)
 
-    get_logger().log_info(f"Creating combined P&K sw-deploy-strategy for subcloud {subcloud_name} with release {release} and kube-upgrade {kube_version}")
-    strategy_keywords.dcmanager_sw_deploy_strategy_create(
-        subcloud_name=subcloud_name,
-        release=release,
-        kube_upgrade=kube_version,
-        with_delete=True,
-    )
+    # Build description for logging
+    mode_parts = []
+    mode_parts.append(f"release={release}, kube-upgrade={kube_version}")
+    if with_prestage:
+        mode_parts.append("with-prestage")
+    if snapshot:
+        mode_parts.append("snapshot")
+    mode_desc = ", ".join(mode_parts)
 
-    get_logger().log_info("Applying combined P&K sw-deploy-strategy")
+    # Build create kwargs
+    create_kwargs = {
+        "subcloud_name": subcloud_name,
+        "with_delete": with_delete,
+        "snapshot": snapshot,
+        "release": release,
+        "kube_upgrade": kube_version,
+    }
+    if with_prestage:
+        create_kwargs["with_prestage"] = True
+        create_kwargs["sysadmin_password"] = ConfigurationManager.get_lab_config().get_admin_credentials().get_password()
+
+    # Create strategy
+    get_logger().log_info(f"Creating combined P&K sw-deploy-strategy for subcloud {subcloud_name} [{mode_desc}]")
+    strategy_keywords.dcmanager_sw_deploy_strategy_create(**create_kwargs)
+
+    # Apply the strategy
+    get_logger().log_info(f"Applying combined P&K sw-deploy-strategy [{mode_desc}]")
     strategy_keywords.dcmanager_sw_deploy_strategy_apply(target=subcloud_name)
 
     # Verify strategy step completed
-    strategy_status = DcmanagerStrategyStepKeywords(system_controller_ssh).get_dcmanager_strategy_step_show(subcloud_name).get_dcmanager_strategy_step_show().get_state()
-    validate_equals(strategy_status, "complete", f"Combined P&K strategy step completed for subcloud {subcloud_name}")
+    strategy_status = (
+        DcmanagerStrategyStepKeywords(system_controller_ssh)
+        .get_dcmanager_strategy_step_show(subcloud_name)
+        .get_dcmanager_strategy_step_show()
+        .get_state()
+    )
+    validate_equals(strategy_status, "complete", f"Combined P&K strategy step completed for subcloud {subcloud_name} [{mode_desc}]")
 
     # Verify subcloud deploy status is complete
-    subcloud = DcManagerSubcloudListKeywords(system_controller_ssh).get_dcmanager_subcloud_list().get_subcloud_by_name(subcloud_name)
-    validate_equals(subcloud.get_deploy_status(), "complete", f"Subcloud {subcloud_name} deploy status should be complete after combined P&K upgrade")
+    subcloud = (
+        DcManagerSubcloudListKeywords(system_controller_ssh)
+        .get_dcmanager_subcloud_list()
+        .get_subcloud_by_name(subcloud_name)
+    )
+    validate_equals(subcloud.get_deploy_status(), "complete", f"Subcloud {subcloud_name} deploy status should be complete [{mode_desc}]")
 
+    # Delete strategy
     get_logger().log_info("Deleting sw-deploy-strategy")
     strategy_keywords.dcmanager_sw_deploy_strategy_delete()
 
 
-def run_combined_pk_sw_deploy_strategy_with_prestage(system_controller_ssh: SSHConnection, subcloud_name: str, release: str, kube_version: str) -> None:
-    """Create, apply, and verify combined P&K sw-deploy-strategy with prestage for a subcloud.
-
-    Uses --with-prestage to perform prestage and combined P&K upgrade in a single
-    orchestrated operation, eliminating the need for a separate prestage step.
-
-    Args:
-        system_controller_ssh (SSHConnection): SSH connection to the system controller.
-        subcloud_name (str): Name of the subcloud to target.
-        release (str): Full release name to deploy (e.g. "WRCP-26.10").
-        kube_version (str): Target Kubernetes version (e.g. "v1.35.2").
-    """
-    strategy_keywords = DcmanagerSwDeployStrategy(system_controller_ssh)
-    sysadmin_password = ConfigurationManager.get_lab_config().get_admin_credentials().get_password()
-
-    get_logger().log_info(f"Creating combined P&K sw-deploy-strategy with prestage for subcloud {subcloud_name} with release {release} and kube-upgrade {kube_version}")
-    strategy_keywords.dcmanager_sw_deploy_strategy_create(
-        subcloud_name=subcloud_name,
-        release=release,
-        kube_upgrade=kube_version,
-        with_delete=True,
-        with_prestage=True,
-        sysadmin_password=sysadmin_password,
-    )
-
-    get_logger().log_info("Applying combined P&K sw-deploy-strategy with prestage")
-    strategy_keywords.dcmanager_sw_deploy_strategy_apply(target=subcloud_name)
-
-    # Verify strategy step completed
-    strategy_status = DcmanagerStrategyStepKeywords(system_controller_ssh).get_dcmanager_strategy_step_show(subcloud_name).get_dcmanager_strategy_step_show().get_state()
-    validate_equals(strategy_status, "complete", f"Combined P&K with prestage strategy step completed for subcloud {subcloud_name}")
-
-    # Verify subcloud deploy status is complete
-    subcloud = DcManagerSubcloudListKeywords(system_controller_ssh).get_dcmanager_subcloud_list().get_subcloud_by_name(subcloud_name)
-    validate_equals(subcloud.get_deploy_status(), "complete", f"Subcloud {subcloud_name} deploy status should be complete after combined P&K with prestage")
-
-    get_logger().log_info("Deleting sw-deploy-strategy")
-    strategy_keywords.dcmanager_sw_deploy_strategy_delete()
-
-
-# --- Combined P&K SW Deploy Strategy Tests ---
+# --- Combined P&K SW Deploy Strategy Upgrade Tests ---
 
 
 @mark.p1
@@ -312,7 +322,7 @@ def test_combined_pk_sw_deploy_strategy_with_prestage_single_simplex_subcloud_n_
 
     kube_version = get_target_kube_version(system_controller_ssh)
 
-    run_combined_pk_sw_deploy_strategy_with_prestage(system_controller_ssh, subcloud_name, release, kube_version)
+    run_combined_pk_sw_deploy_strategy(system_controller_ssh, subcloud_name, release, kube_version, with_prestage=True)
 
 
 @mark.p1
@@ -360,4 +370,105 @@ def test_combined_pk_sw_deploy_strategy_with_prestage_single_duplex_subcloud_n_r
 
     kube_version = get_target_kube_version(system_controller_ssh)
 
-    run_combined_pk_sw_deploy_strategy_with_prestage(system_controller_ssh, subcloud_name, release, kube_version)
+    run_combined_pk_sw_deploy_strategy(system_controller_ssh, subcloud_name, release, kube_version, with_prestage=True)
+
+
+# --- Combined P&K SW Deploy Strategy with Prestage + Snapshot Tests ---
+
+
+@mark.p1
+@mark.lab_has_subcloud
+@mark.subcloud_lab_is_simplex
+def test_combined_pk_sw_deploy_strategy_with_prestage_snapshot_single_simplex_subcloud_n_release(request):
+    """Verify combined P&K sw-deploy-strategy with --with-prestage --snapshot on a simplex subcloud.
+
+    Creates a sw-deploy-strategy with --kube-upgrade, --with-prestage, and --snapshot,
+    performing upgrade with snapshot, platform upgrade, and Kubernetes upgrade in a
+    single orchestrated operation on a simplex subcloud. The --snapshot flag instructs
+    the system to take a snapshot of the subcloud before applying the upgrade.
+
+    Preconditions:
+        - System controller has N release deployed
+        - Target K8s version is active on system controller
+        - Subcloud is online and out-of-sync
+
+    Setup:
+        - Pick eligible simplex subcloud
+        - Resolve target release and K8s version
+
+    Test Steps:
+        1. Resolve target N release from software list
+        2. Resolve target K8s version from kube-version-list (system controller active)
+        3. Create sw-deploy-strategy with --kube-upgrade --with-prestage --snapshot
+        4. Apply the strategy
+        5. Validate strategy step completes
+        6. Validate subcloud deploy status is complete
+
+    Teardown:
+        - Delete strategy if still present
+    """
+    system_controller_ssh, result = pick_subcloud_with_fallback(
+        availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
+        in_sync=False,
+        lab_type=LabTypeEnum.SIMPLEX,
+    )
+
+    subcloud_name = result.get_name()
+    request.addfinalizer(lambda: cleanup_strategy(system_controller_ssh))
+
+    n_load = str(CloudPlatformVersionManagerClass().get_sw_version())
+    release = get_highest_release_for_load(system_controller_ssh, n_load, state="deployed")
+    get_logger().log_info(f"Target N release resolved to: {release}")
+
+    kube_version = get_target_kube_version(system_controller_ssh)
+
+    run_combined_pk_sw_deploy_strategy(system_controller_ssh, subcloud_name, release, kube_version, with_prestage=True, with_delete=False, snapshot=True)
+
+
+@mark.p1
+@mark.lab_has_subcloud
+@mark.subcloud_lab_is_duplex
+def test_combined_pk_sw_deploy_strategy_with_prestage_snapshot_single_duplex_subcloud_n_release(request):
+    """Verify combined P&K sw-deploy-strategy with --with-prestage --snapshot on a duplex subcloud.
+
+    Creates a sw-deploy-strategy with --kube-upgrade, --with-prestage, and --snapshot,
+    performing upgrade with snapshot, platform upgrade, and Kubernetes upgrade in a
+    single orchestrated operation on a duplex subcloud. The --snapshot flag instructs
+    the system to take a snapshot of the subcloud before applying the upgrade.
+
+    Preconditions:
+        - System controller has N release deployed
+        - Target K8s version is active on system controller
+        - Subcloud is online and out-of-sync
+
+    Setup:
+        - Pick eligible duplex subcloud
+        - Resolve target release and K8s version
+
+    Test Steps:
+        1. Resolve target N release from software list
+        2. Resolve target K8s version from kube-version-list (system controller active)
+        3. Create sw-deploy-strategy with --kube-upgrade --with-prestage --snapshot
+        4. Apply the strategy
+        5. Validate strategy step completes
+        6. Validate subcloud deploy status is complete
+
+    Teardown:
+        - Delete strategy if still present
+    """
+    system_controller_ssh, result = pick_subcloud_with_fallback(
+        availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
+        in_sync=False,
+        lab_type=LabTypeEnum.DUPLEX,
+    )
+
+    subcloud_name = result.get_name()
+    request.addfinalizer(lambda: cleanup_strategy(system_controller_ssh))
+
+    n_load = str(CloudPlatformVersionManagerClass().get_sw_version())
+    release = get_highest_release_for_load(system_controller_ssh, n_load, state="deployed")
+    get_logger().log_info(f"Target N release resolved to: {release}")
+
+    kube_version = get_target_kube_version(system_controller_ssh)
+
+    run_combined_pk_sw_deploy_strategy(system_controller_ssh, subcloud_name, release, kube_version, with_prestage=True, with_delete=False, snapshot=True)
