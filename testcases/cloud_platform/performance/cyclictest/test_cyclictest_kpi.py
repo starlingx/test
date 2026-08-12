@@ -12,6 +12,7 @@ from keywords.cloud_platform.cyclictest.objects.cyclictest_kpi_helper_object imp
 from keywords.cloud_platform.cyclictest.objects.suitable_hypervisors_output import SuitableHypervisorsOutput
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.cloud_platform.system.application.system_application_apply_keywords import SystemApplicationApplyKeywords
+from keywords.cloud_platform.system.application.system_application_list_keywords import SystemApplicationListKeywords
 from keywords.cloud_platform.system.application.system_application_remove_keywords import SystemApplicationRemoveKeywords
 from keywords.cloud_platform.system.application.system_application_upload_keywords import SystemApplicationUploadKeywords
 from keywords.cloud_platform.system.helm.system_helm_override_keywords import SystemHelmOverrideKeywords
@@ -498,3 +499,61 @@ def test_kubernetes_power_manager_setup(request: FixtureRequest):
 
     SystemApplicationApplyKeywords(ssh).system_application_apply(KUBERNETES_POWER_MANAGER_APP)
     get_logger().log_info("Kubernetes power manager setup completed successfully")
+
+
+
+@mark.p2
+def test_kubernetes_power_manager_revert() -> None:
+    """Remove kubernetes-power-manager and node-feature-discovery from the lab.
+
+    Intended to run after test_kubernetes_power_manager_setup (and
+    test_per_core_configuration) to restore the lab to a clean state.
+    Each application is only removed and deleted if it is present; steps are
+    skipped gracefully when the application is already absent.
+
+    Test Steps:
+        1. Delete the kubernetes-power-manager helm override (intel-power namespace).
+        2. Remove power-management=enabled label from every controller
+           (lock -> label-remove -> unlock, waiting for healthy state after unlock).
+        3. Remove and delete kubernetes-power-manager (if present).
+        4. Remove and delete node-feature-discovery (if present).
+        5. Delete the C-state YAML file (if present).
+    """
+    ssh = LabConnectionKeywords().get_active_controller_ssh()
+    controllers = SystemHostListKeywords(ssh).get_controllers()
+    remove_kw = SystemApplicationRemoveKeywords(ssh)
+
+    get_logger().log_test_case_step("Delete kubernetes-power-manager helm override")
+    SystemHelmOverrideKeywords(ssh).delete_system_helm_override(
+        app_name=KUBERNETES_POWER_MANAGER_APP,
+        chart_name=KUBERNETES_POWER_MANAGER_APP,
+        namespace="intel-power",
+    )
+
+    get_logger().log_test_case_step("Remove power-management label from all controllers")
+    for ctrl in controllers:
+        hostname = ctrl.get_host_name()
+        get_logger().log_info(f"Removing power-management label from {hostname}")
+        SystemHostLabelKeywords(ssh).lock_host_remove_labels_and_unlock(
+            hostname,
+            [POWER_MANAGEMENT_LABEL_KEY],
+        )
+
+    get_logger().log_test_case_step(f"Remove and delete {KUBERNETES_POWER_MANAGER_APP}")
+    remove_kw.cleanup_app_if_present(
+        KUBERNETES_POWER_MANAGER_APP,
+        force_removal=True,
+        force_deletion=True,
+        timeout_in_seconds=600,
+    )
+
+    get_logger().log_test_case_step(f"Remove and delete {NODE_FEATURE_DISCOVERY_APP}")
+    remove_kw.cleanup_app_if_present(
+        NODE_FEATURE_DISCOVERY_APP,
+        force_removal=True,
+        force_deletion=True,
+        timeout_in_seconds=600,
+    )
+
+    get_logger().log_test_case_step(f"Delete C-state YAML file {CSTATE_YAML_FILE}")
+    FileKeywords(ssh).delete_file(CSTATE_YAML_FILE)
