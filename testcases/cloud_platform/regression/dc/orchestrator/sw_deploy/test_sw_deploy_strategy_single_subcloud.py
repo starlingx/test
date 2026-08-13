@@ -455,7 +455,7 @@ def test_sw_deploy_strategy_rollback_single_simplex_subcloud(request):
     """
     system_controller_ssh, result = pick_subcloud_with_fallback(
         availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
-        in_sync=True,
+        in_sync=False,
         lab_type=LabTypeEnum.SIMPLEX,
     )
 
@@ -464,7 +464,7 @@ def test_sw_deploy_strategy_rollback_single_simplex_subcloud(request):
 
     get_logger().log_info(f"Selected simplex subcloud for rollback: {subcloud_name}")
 
-    run_sw_deploy_strategy(system_controller_ssh, subcloud_name, rollback=True)
+    run_sw_deploy_strategy(system_controller_ssh, subcloud_name, rollback=True, with_delete=False)
 
 
 @mark.p1
@@ -497,7 +497,7 @@ def test_sw_deploy_strategy_rollback_single_duplex_subcloud(request):
     """
     system_controller_ssh, result = pick_subcloud_with_fallback(
         availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
-        in_sync=True,
+        in_sync=False,
         lab_type=LabTypeEnum.DUPLEX,
     )
 
@@ -506,4 +506,4 @@ def test_sw_deploy_strategy_rollback_single_duplex_subcloud(request):
 
     get_logger().log_info(f"Selected duplex subcloud for rollback: {subcloud_name}")
 
-    run_sw_deploy_strategy(system_controller_ssh, subcloud_name, rollback=True)
+    run_sw_deploy_strategy(system_controller_ssh, subcloud_name, rollback=True, with_delete=False)
