@@ -17,8 +17,8 @@ class StandaloneSessionOperation:
         self,
         run_id: int,
         lab_id: int,
-        session_info_id: int,
         tag: str,
+        session_info_id: Optional[int] = None,
         sys_type: Optional[str] = None,
         kubernetes_version: Optional[str] = None,
         ceph_version: Optional[str] = None,
@@ -30,8 +30,9 @@ class StandaloneSessionOperation:
         Args:
             run_id: Run ID from create_standalone_run.
             lab_id: execution_target_id of the lab.
-            session_info_id: Maps to a TestPlan's session_info_id.
             tag: Descriptive tag for the session.
+            session_info_id: Maps to a TestPlan's session_info_id.
+                Defaults to -1 if not provided.
             sys_type: System type (e.g. 'AIO-DX', 'Standard').
             kubernetes_version: K8s version.
             ceph_version: Ceph version.
@@ -46,6 +47,7 @@ class StandaloneSessionOperation:
         session_id = str(uuid.uuid4())
         created_at = datetime.now(timezone.utc).isoformat()
 
+        session_info_id = session_info_id if session_info_id is not None else -1
         sys_type_val = f"'{sys_type}'" if sys_type is not None else "NULL"
         k8s_val = f"'{kubernetes_version}'" if kubernetes_version is not None else "NULL"
         ceph_val = f"'{ceph_version}'" if ceph_version is not None else "NULL"
