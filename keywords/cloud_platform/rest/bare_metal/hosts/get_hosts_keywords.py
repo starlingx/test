@@ -32,3 +32,26 @@ class GetHostsKeywords(BaseKeyword):
         self.validate_success_status_code(response)
         system_host_show_output = SystemHostShowOutput(response)
         return system_host_show_output
+    def get_host_with_error(self, host_id):
+        """Get host with potentially invalid ID.
+
+        Args:
+            host_id: The host ID (may be invalid).
+
+        Returns:
+            RestResponse: The raw response for error validation.
+        """
+        response = CloudRestClient().get(f"{self.bare_metal_base_url}/ihosts/{host_id}")
+        return response
+
+    def get_host_no_auth(self, host_id):
+        """Get host without authentication.
+
+        Args:
+            host_id: The host UUID.
+
+        Returns:
+            RestResponse: The raw response for auth validation.
+        """
+        response = CloudRestClient().get(f"{self.bare_metal_base_url}/ihosts/{host_id}", auth=False)
+        return response
