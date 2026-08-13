@@ -22,18 +22,21 @@ class SystemPTPInstanceListOutput:
             system_ptp_instance_list_object = SystemPTPInstanceListObject()
             if 'uuid' in value:
                 system_ptp_instance_list_object.set_uuid(value['uuid'])
-            
+
             if 'name' in value:
                 system_ptp_instance_list_object.set_name(value['name'])
-            
+
             if 'service' in value:
                 system_ptp_instance_list_object.set_service(value['service'])
+
+            if 'state' in value:
+                system_ptp_instance_list_object.set_state(value['state'])
             self.system_ptp_instance_list_output.append(system_ptp_instance_list_object)
 
     def get_ptp_instance_list(self) -> list[SystemPTPInstanceListObject]:
         """
         Returns the parsed system ptp-instance-list object
-        
+
         Returns:
         """
         return self.system_ptp_instance_list_output

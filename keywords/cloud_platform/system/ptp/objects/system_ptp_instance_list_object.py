@@ -10,13 +10,14 @@ class SystemPTPInstanceListObject:
         self.uuid = None
         self.name = None
         self.service = None
+        self.state = None
 
     def set_uuid(self, uuid: str):
         """
         Setter for this ptp-instance-list uuid
         """
         self.uuid = uuid
-    
+
     def get_uuid(self) -> str:
         """
         Getter for this ptp-instance-list uuid
@@ -34,7 +35,7 @@ class SystemPTPInstanceListObject:
         Getter for this ptp-instance-list name
         """
         return self.name
-    
+
     def set_service(self, service: str):
         """
         Setter for this ptp-instance-list service
@@ -47,4 +48,18 @@ class SystemPTPInstanceListObject:
         """
         return self.service
 
+    def set_state(self, state: str):
+        """Setter for this ptp-instance-list state.
 
+        Args:
+            state (str): The state of the PTP instance (e.g. 'applied', 'applying').
+        """
+        self.state = state
+
+    def get_state(self) -> str:
+        """Getter for this ptp-instance-list state.
+
+        Returns:
+            str: The state of the PTP instance (e.g. 'applied', 'applying').
+        """
+        return self.state
