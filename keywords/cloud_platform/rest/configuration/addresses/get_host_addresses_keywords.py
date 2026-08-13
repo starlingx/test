@@ -1,3 +1,6 @@
+"""Keywords for retrieving host address information via REST API."""
+
+from framework.rest.rest_response import RestResponse
 from keywords.base_keyword import BaseKeyword
 from keywords.cloud_platform.rest.cloud_rest_client import CloudRestClient
 from keywords.cloud_platform.rest.configuration.addresses.objects.host_address_output import HostAddressOutput
@@ -24,3 +27,15 @@ class GetHostAddressesKeywords(BaseKeyword):
         self.validate_success_status_code(response)
         host_address_output = HostAddressOutput(response)
         return host_address_output
+
+    def get_host_addresses_with_error(self, host_id: str) -> RestResponse:
+        """Get host addresses with an invalid host ID expecting failure.
+
+        Args:
+            host_id (str): The invalid UUID to test error handling.
+
+        Returns:
+            RestResponse: The raw response for error validation.
+        """
+        response = CloudRestClient().get(f"{self.configuration_base_url}/ihosts/{host_id}/addresses")
+        return response
