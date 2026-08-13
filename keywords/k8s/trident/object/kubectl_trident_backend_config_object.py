@@ -12,6 +12,10 @@ class KubectlTridentBackendConfigObject:
         self._last_operation_status: str = ""
         self._message: str = ""
         self._backend_name: str = ""
+        self._phase: str = ""
+        self._data_lif: str = ""
+        self._svm: str = ""
+        self._nfs_mount_options: str = ""
 
     def get_name(self) -> str:
         """Get the TBC resource name.
@@ -109,6 +113,70 @@ class KubectlTridentBackendConfigObject:
         """
         self._backend_name = backend_name
 
+    def get_phase(self) -> str:
+        """Get the backend phase from status.
+
+        Returns:
+            str: Phase (e.g. 'Bound', 'Lost', '').
+        """
+        return self._phase
+
+    def set_phase(self, phase: str) -> None:
+        """Set the backend phase.
+
+        Args:
+            phase (str): Phase string.
+        """
+        self._phase = phase
+
+    def get_data_lif(self) -> str:
+        """Get the dataLIF address from spec.
+
+        Returns:
+            str: dataLIF (e.g. '10.82.159.3' or '[fdff:10:82:194::3]').
+        """
+        return self._data_lif
+
+    def set_data_lif(self, data_lif: str) -> None:
+        """Set the dataLIF address.
+
+        Args:
+            data_lif (str): dataLIF address.
+        """
+        self._data_lif = data_lif
+
+    def get_svm(self) -> str:
+        """Get the SVM name from spec.
+
+        Returns:
+            str: SVM name (e.g. 'my-cluster-svm0-nfs').
+        """
+        return self._svm
+
+    def set_svm(self, svm: str) -> None:
+        """Set the SVM name.
+
+        Args:
+            svm (str): SVM name.
+        """
+        self._svm = svm
+
+    def get_nfs_mount_options(self) -> str:
+        """Get the NFS mount options from spec.
+
+        Returns:
+            str: NFS mount options (e.g. 'proto=tcp6,vers=4').
+        """
+        return self._nfs_mount_options
+
+    def set_nfs_mount_options(self, nfs_mount_options: str) -> None:
+        """Set the NFS mount options.
+
+        Args:
+            nfs_mount_options (str): NFS mount options string.
+        """
+        self._nfs_mount_options = nfs_mount_options
+
     def is_healthy(self) -> bool:
         """Check if the backend is healthy (lastOperationStatus == Success).
 
@@ -116,6 +184,14 @@ class KubectlTridentBackendConfigObject:
             bool: True if backend is connected and healthy.
         """
         return self._last_operation_status == "Success"
+
+    def is_bound(self) -> bool:
+        """Check if the backend phase is Bound.
+
+        Returns:
+            bool: True if backend is in Bound phase.
+        """
+        return self._phase == "Bound"
 
     def __str__(self) -> str:
         """Human-readable representation.
@@ -126,5 +202,9 @@ class KubectlTridentBackendConfigObject:
         return (
             f"TridentBackendConfig(name={self._name}, "
             f"driver={self._storage_driver_name}, "
+            f"dataLIF={self._data_lif}, "
+            f"svm={self._svm}, "
+            f"nfsMountOptions={self._nfs_mount_options}, "
+            f"phase={self._phase}, "
             f"status={self._last_operation_status})"
         )
