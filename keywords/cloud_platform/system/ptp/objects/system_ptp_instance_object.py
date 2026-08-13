@@ -12,7 +12,7 @@ class SystemPTPInstanceObject:
         self.service = None
         self.hostnames = []
         self.parameters = []
-
+        self.state = None
 
     def set_uuid(self, uuid: str):
         """
@@ -73,5 +73,19 @@ class SystemPTPInstanceObject:
         Getter for this ptp-instance parameters
         """
         return self.parameters
-    
-    
+
+    def set_state(self, state: str):
+        """Setter for this ptp-instance state.
+
+        Args:
+            state (str): The state of the PTP instance (e.g. 'applied', 'applying').
+        """
+        self.state = state
+
+    def get_state(self) -> str:
+        """Getter for this ptp-instance state.
+
+        Returns:
+            str: The state of the PTP instance (e.g. 'applied', 'applying').
+        """
+        return self.state
