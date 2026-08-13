@@ -12,7 +12,6 @@ from keywords.cloud_platform.cyclictest.objects.cyclictest_kpi_helper_object imp
 from keywords.cloud_platform.cyclictest.objects.suitable_hypervisors_output import SuitableHypervisorsOutput
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.cloud_platform.system.application.system_application_apply_keywords import SystemApplicationApplyKeywords
-from keywords.cloud_platform.system.application.system_application_list_keywords import SystemApplicationListKeywords
 from keywords.cloud_platform.system.application.system_application_remove_keywords import SystemApplicationRemoveKeywords
 from keywords.cloud_platform.system.application.system_application_upload_keywords import SystemApplicationUploadKeywords
 from keywords.cloud_platform.system.helm.system_helm_override_keywords import SystemHelmOverrideKeywords
@@ -405,12 +404,10 @@ def test_modify_controllers_to_standard(request: FixtureRequest):
 
 
 @mark.p2
-@mark.lab_has_low_latency
-def test_kubernetes_power_manager_setup(request: FixtureRequest):
+def test_kubernetes_power_manager_setup():
     """Upload, apply and configure kubernetes-power-manager for C-state management.
 
     Preconditions:
-        - Lab is configured for low latency.
         - Helm application tarballs are present in the configured helm app base path.
         - Active controller has Application-isolated CPU cores.
 
@@ -426,28 +423,10 @@ def test_kubernetes_power_manager_setup(request: FixtureRequest):
         5. Create cstate-c1-enabled.yaml for isolated cores.
         6. Update helm override with C-state config.
         7. Remove node-feature-discovery and re-apply kubernetes-power-manager.
-
-    Teardown:
-        - Remove kubernetes-power-manager and node-feature-discovery.
-        - Remove power-management label from each controller.
-        - Delete C-state YAML file.
     """
     ssh = LabConnectionKeywords().get_active_controller_ssh()
     active_controller = SystemHostListKeywords(ssh).get_active_controller().get_host_name()
     controllers = SystemHostListKeywords(ssh).get_controllers()
-
-    def _teardown():
-        get_logger().log_teardown_step("Remove kubernetes-power-manager and node-feature-discovery")
-        SystemApplicationRemoveKeywords(ssh).cleanup_app_if_present(NODE_FEATURE_DISCOVERY_APP, force_removal=True)
-        SystemApplicationRemoveKeywords(ssh).cleanup_app_if_present(NODE_FEATURE_DISCOVERY_APP, force_removal=True)
-        for ctrl in controllers:
-            hostname = ctrl.get_host_name()
-            get_logger().log_teardown_step(f"Remove power-management label from {hostname}")
-            SystemHostLabelKeywords(ssh).lock_host_remove_labels_and_unlock(hostname, [POWER_MANAGEMENT_LABEL_KEY])
-        get_logger().log_teardown_step("Delete C-state YAML file")
-        FileKeywords(ssh).delete_file(CSTATE_YAML_FILE)
-
-    request.addfinalizer(_teardown)
 
     get_logger().log_test_case_step(f"Upload and apply {NODE_FEATURE_DISCOVERY_APP}")
     SystemApplicationUploadKeywords(ssh).system_application_upload_and_apply_app(
@@ -501,7 +480,6 @@ def test_kubernetes_power_manager_setup(request: FixtureRequest):
     get_logger().log_info("Kubernetes power manager setup completed successfully")
 
 
-
 @mark.p2
 def test_kubernetes_power_manager_revert() -> None:
     """Remove kubernetes-power-manager and node-feature-discovery from the lab.
@@ -538,22 +516,13 @@ def test_kubernetes_power_manager_revert() -> None:
             hostname,
             [POWER_MANAGEMENT_LABEL_KEY],
         )
-
-    get_logger().log_test_case_step(f"Remove and delete {KUBERNETES_POWER_MANAGER_APP}")
-    remove_kw.cleanup_app_if_present(
-        KUBERNETES_POWER_MANAGER_APP,
-        force_removal=True,
-        force_deletion=True,
-        timeout_in_seconds=600,
-    )
+        SystemHostLockKeywords(ssh).wait_for_host_unlocked(hostname)
 
     get_logger().log_test_case_step(f"Remove and delete {NODE_FEATURE_DISCOVERY_APP}")
-    remove_kw.cleanup_app_if_present(
-        NODE_FEATURE_DISCOVERY_APP,
-        force_removal=True,
-        force_deletion=True,
-        timeout_in_seconds=600,
-    )
+    remove_kw.cleanup_app_if_present(NODE_FEATURE_DISCOVERY_APP, force_removal=True, force_deletion=True, timeout_in_seconds=600, check_interval_in_seconds=10)
+
+    get_logger().log_test_case_step(f"Remove and delete {KUBERNETES_POWER_MANAGER_APP}")
+    remove_kw.cleanup_app_if_present(KUBERNETES_POWER_MANAGER_APP, force_removal=True, force_deletion=True, timeout_in_seconds=600, check_interval_in_seconds=10)
 
     get_logger().log_test_case_step(f"Delete C-state YAML file {CSTATE_YAML_FILE}")
     FileKeywords(ssh).delete_file(CSTATE_YAML_FILE)
