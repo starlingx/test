@@ -55,3 +55,28 @@ class GetFmKeywords(BaseKeyword):
         response = CloudRestClient().get(f"{self.fm_base_url}/event_suppression")
         self.validate_success_status_code(response)
         return FmEventSuppressionOutput(response)
+
+    def get_alarms_with_error(self, alarm_id: str):
+        """Get alarm with potentially invalid ID.
+
+        Args:
+            alarm_id (str): The alarm ID (may be invalid).
+
+        Returns:
+            RestResponse: The raw response for error validation.
+        """
+        from framework.rest.rest_response import RestResponse
+        response = CloudRestClient().get(f"{self.fm_base_url}/alarms/{alarm_id}")
+        return response
+
+    def get_alarms_no_auth(self, alarm_id: str):
+        """Get alarm without authentication.
+
+        Args:
+            alarm_id (str): The alarm ID.
+
+        Returns:
+            RestResponse: The raw response for auth validation.
+        """
+        response = CloudRestClient().get(f"{self.fm_base_url}/alarms/{alarm_id}", auth=False)
+        return response
