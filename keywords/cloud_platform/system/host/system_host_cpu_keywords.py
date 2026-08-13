@@ -79,3 +79,18 @@ class SystemHostCPUKeywords(BaseKeyword):
         system_host_cpu_output = SystemHostCPUShowOutput(output)
 
         return system_host_cpu_output
+
+    def system_host_cpu_max_frequency_modify(self, hostname: str, max_frequency_mhz: int) -> None:
+        """Set the maximum CPU frequency for a host.
+
+        Runs: system host-cpu-max-frequency-modify <hostname> <max_frequency_mhz>
+
+        The host must be locked for this change to take effect.
+
+        Args:
+            hostname (str): Host to modify.
+            max_frequency_mhz (int): Maximum CPU frequency in MHz.
+        """
+        cmd = source_openrc(f"system host-cpu-max-frequency-modify {hostname} {max_frequency_mhz}")
+        self.ssh_connection.send(cmd)
+        self.validate_success_return_code(self.ssh_connection)
