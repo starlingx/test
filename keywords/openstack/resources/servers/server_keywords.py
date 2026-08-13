@@ -6,7 +6,6 @@ from typing import List, Optional
 from framework.logging.automation_logger import get_logger
 from framework.validation.validation import validate_equals, validate_not_equals
 from keywords.base_keyword import BaseKeyword
-
 from keywords.openstack.connection.ace_openstack_connection import ACEOpenStackConnection
 from keywords.openstack.resources.flavors.flavor_keywords import FlavorKeywords
 from keywords.openstack.resources.images.image_keywords import ImageKeywords
@@ -63,11 +62,9 @@ class ServerKeywords(BaseKeyword):
         image_service = self.openstack_connection.get_image()
         network_service = self.openstack_connection.get_network()
 
-        boot_from_volume = block_device_mapping_v2 and any(
-            bdm.get("boot_index") == 0 for bdm in block_device_mapping_v2
-        )
+        boot_from_volume = block_device_mapping_v2 and any(bdm.get("boot_index") == 0 for bdm in block_device_mapping_v2)
+        image_id = ""
 
-        image_id = None
         if not boot_from_volume:
             if not image:
                 image_output = ImageKeywords(self.openstack_connection).list_images()
@@ -75,27 +72,23 @@ class ServerKeywords(BaseKeyword):
                 image = image_details.get_name()
             image_id = image_service.find_image(image).id
 
-        get_logger().log_info(
-            f"Creating server '{server_name}' (image={image}, flavor={flavor}, "
-            f"network={network}, az={availability_zone})"
-        )
+        get_logger().log_info(f"Creating server '{server_name}' (image={image}, flavor={flavor}, " f"network={network}, az={availability_zone})")
 
         flavor_id = compute.find_flavor(flavor).id
         network_id = network_service.find_network(network).id
-
-        kwargs = {
+        attrs = {
             "name": server_name,
             "flavor_id": flavor_id,
             "networks": [{"uuid": network_id}],
+            "image_id": image_id,
         }
-        if image_id is not None:
-            kwargs["image_id"] = image_id
-        if availability_zone is not None:
-            kwargs["availability_zone"] = availability_zone
-        if block_device_mapping_v2 is not None:
-            kwargs["block_device_mapping"] = block_device_mapping_v2
 
-        server = compute.create_server(**kwargs)
+        if availability_zone is not None:
+            attrs["availability_zone"] = availability_zone
+        if block_device_mapping_v2 is not None:
+            attrs["block_device_mapping"] = block_device_mapping_v2
+
+        server = compute.create_server(**attrs)
         return ServerListOutput([server.to_dict()])
 
     def get_server(self, server_name_or_id: str) -> ServerListOutput:
@@ -260,11 +253,13 @@ class ServerKeywords(BaseKeyword):
             server_output = self.get_server(server_id)
             server_obj = server_output.get_servers()[0]
             validate_equals(
-                server_obj.get_status(), "ACTIVE",
+                server_obj.get_status(),
+                "ACTIVE",
                 f"Server {server_obj.get_name()} is ACTIVE after evacuation",
             )
             validate_not_equals(
-                server_obj.get_host(), rebooted_host,
+                server_obj.get_host(),
+                rebooted_host,
                 f"Server {server_obj.get_name()} evacuated from {rebooted_host}",
             )
             get_logger().log_info(f"{server_obj.get_name()}: evacuated {rebooted_host} -> {server_obj.get_host()}")
@@ -281,9 +276,7 @@ class ServerKeywords(BaseKeyword):
         """
         compute = self.openstack_connection.get_compute()
         server = compute.find_server(server_name_or_id, ignore_missing=False)
-        get_logger().log_info(
-            f"Live-migrating server '{server_name_or_id}' to host '{destination_host or 'auto'}'"
-        )
+        get_logger().log_info(f"Live-migrating server '{server_name_or_id}' to host '{destination_host or 'auto'}'")
         compute.live_migrate_server(server.id, host=destination_host)
 
     def attach_interface(
@@ -346,4 +339,3 @@ class ServerKeywords(BaseKeyword):
         server = compute.find_server(server_name_or_id, ignore_missing=False)
         raw = [i.to_dict() for i in compute.server_interfaces(server.id)]
         return ServerInterfaceListOutput(raw)
-
