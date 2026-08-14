@@ -1,7 +1,7 @@
-"""Volume and snapshot CRUD keywords via OpenStack SDK."""
+"""Volume, snapshot, and volume type CRUD keywords via OpenStack SDK."""
 
 import time
-from typing import List, Optional
+from typing import Dict, Optional
 
 from framework.logging.automation_logger import get_logger
 from framework.validation.validation import validate_equals_with_retry
@@ -11,8 +11,9 @@ from keywords.openstack.resources.volumes.object.backup_list_output import Backu
 from keywords.openstack.resources.volumes.object.snapshot_list_output import SnapshotListOutput
 from keywords.openstack.resources.volumes.object.volume_list_output import VolumeListOutput
 
+
 class VolumeKeywords(BaseKeyword):
-    """CRUD operations for Cinder volumes and snapshots via OpenStack SDK."""
+    """CRUD operations for Cinder volumes, snapshots, and volume types via OpenStack SDK."""
 
     def __init__(self, openstack_connection: ACEOpenStackConnection):
         """Initialize VolumeKeywords.
@@ -24,13 +25,14 @@ class VolumeKeywords(BaseKeyword):
 
     # ── Volume CRUD ─────────────────────────────────────────────────
 
-    def create_volume(self, volume_name: str, size: int = 1, image: Optional[str] = None) -> VolumeListOutput:
+    def create_volume(self, volume_name: str, size: int = 1, image: Optional[str] = None, volume_type: Optional[str] = None) -> VolumeListOutput:
         """Create a volume.
 
         Args:
             volume_name (str): Volume name.
             size (int): Volume size in GB.
             image (Optional[str]): Image name or ID to create a bootable volume from.
+            volume_type (Optional[str]): Volume type name to assign.
 
         Returns:
             VolumeListOutput: Output containing the created volume.
@@ -38,11 +40,14 @@ class VolumeKeywords(BaseKeyword):
         image_ref = None
         if image:
             image_ref = self.openstack_connection.get_image().find_image(image).id
-        volume = self.openstack_connection.get_block_storage().create_volume(
-            name=volume_name,
-            size=size,
-            imageRef=image_ref,
-        )
+        kwargs = {
+            "name": volume_name,
+            "size": size,
+            "imageRef": image_ref,
+        }
+        if volume_type is not None:
+            kwargs["volume_type"] = volume_type
+        volume = self.openstack_connection.get_block_storage().create_volume(**kwargs)
         return VolumeListOutput([volume.to_dict()])
 
     def show_volume(self, volume_name_or_id: str) -> VolumeListOutput:
@@ -336,7 +341,7 @@ class VolumeKeywords(BaseKeyword):
 
     # ── Cleanup helpers (safe for teardown — never raise) ────────────
 
-    def cleanup_volume(self, volume_name_or_id: str, server_name: str = None) -> None:
+    def cleanup_volume(self, volume_name_or_id: str, server_name: Optional[str] = None) -> None:
         """Safely delete a volume if it exists. Detaches first if in-use.
 
         Args:
@@ -374,3 +379,65 @@ class VolumeKeywords(BaseKeyword):
             get_logger().log_info(f"Cleaned up backup: {backup_name_or_id}")
         except Exception as e:
             get_logger().log_warning(f"Backup cleanup failed for '{backup_name_or_id}': {e}")
+
+    # ── Volume Type CRUD ─────────────────────────────────────────────
+
+    def create_volume_type(self, name: str) -> None:
+        """Create a volume type.
+
+        Args:
+            name (str): Volume type name.
+        """
+        get_logger().log_info(f"Creating volume type '{name}'")
+        self.openstack_connection.get_block_storage().create_type(name=name)
+
+    def set_volume_type_extra_specs(self, type_name_or_id: str, specs: Dict[str, str]) -> None:
+        """Set extra-specs on a volume type.
+
+        Args:
+            type_name_or_id (str): Volume type name or ID.
+            specs (Dict[str, str]): Key-value pairs (e.g. {'multiattach': '<is> True'}).
+        """
+        storage = self.openstack_connection.get_block_storage()
+        volume_type = storage.find_type(type_name_or_id)
+        get_logger().log_info(f"Setting extra-specs on volume type '{type_name_or_id}': {specs}")
+        storage.post(f"/types/{volume_type.id}/extra_specs", json={"extra_specs": specs})
+
+    def delete_volume_type(self, name_or_id: str) -> None:
+        """Delete a volume type.
+
+        Args:
+            name_or_id (str): Volume type name or ID.
+        """
+        get_logger().log_info(f"Deleting volume type '{name_or_id}'")
+        storage = self.openstack_connection.get_block_storage()
+        volume_type = storage.find_type(name_or_id)
+        storage.delete_type(volume_type.id)
+
+    def find_volume_type(self, name: str) -> Optional[object]:
+        """Find a volume type by name.
+
+        Args:
+            name (str): Volume type name.
+
+        Returns:
+            Optional[object]: SDK volume type object, or None if not found.
+        """
+        return self.openstack_connection.get_block_storage().find_type(name, ignore_missing=True)
+
+    def cleanup_volume_type(self, name_or_id: str) -> None:
+        """Safely delete a volume type if it exists. Does not raise on failure.
+
+        Args:
+            name_or_id (str): Volume type name or ID.
+        """
+        storage = self.openstack_connection.get_block_storage()
+        volume_type = storage.find_type(name_or_id, ignore_missing=True)
+        if volume_type is None:
+            get_logger().log_info(f"Volume type '{name_or_id}' already gone, skipping cleanup")
+            return
+        try:
+            storage.delete_type(volume_type.id)
+            get_logger().log_info(f"Cleaned up volume type: {name_or_id}")
+        except Exception as e:
+            get_logger().log_warning(f"Volume type cleanup failed for '{name_or_id}': {e}")

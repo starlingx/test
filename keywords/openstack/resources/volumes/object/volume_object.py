@@ -21,6 +21,7 @@ class VolumeObject:
         self.updated_at = None
         self.attachments = None
         self.host = None
+        self.multiattach = None
 
     def set_id(self, volume_id: str) -> None:
         """Set the volume ID.
@@ -227,7 +228,7 @@ class VolumeObject:
             str: Human-readable volume summary.
         """
         return f"[ID: {self.get_id()}, Name: {self.get_name()}, Status: {self.get_status()}, Size: {self.get_size()}GB]"
-    
+
     def set_host(self, host: str) -> None:
         """Set the volume host (backend).
 
@@ -243,3 +244,19 @@ class VolumeObject:
             str: Volume host string.
         """
         return self.host
+
+    def set_multiattach(self, multiattach: bool) -> None:
+        """Set the multiattach flag.
+
+        Args:
+            multiattach (bool): Whether the volume supports multi-attach.
+        """
+        self.multiattach = multiattach
+
+    def get_multiattach(self) -> bool:
+        """Get the multiattach flag.
+
+        Returns:
+            bool: True if the volume supports multi-attach.
+        """
+        return self.multiattach

@@ -27,7 +27,8 @@ class VolumeListOutput:
             volume.set_created_at(raw.get("created_at", ""))
             volume.set_updated_at(raw.get("updated_at", ""))
             volume.set_attachments(raw.get("attachments", []))
-            volume.set_host(raw.get("host"))
+            volume.set_host(raw.get("host") or raw.get("os-vol-host-attr:host"))
+            volume.set_multiattach(raw.get("multiattach", raw.get("is_multiattach", False)))
             self._volumes.append(volume)
 
     def get_volumes(self) -> List[VolumeObject]:
