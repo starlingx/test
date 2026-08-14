@@ -670,12 +670,28 @@ def scan_hosts(lab_config: LabConfig, ssh_connection: SSHConnection) -> list[Nod
         if worker_count == 0 and storage_count == 0:
             lab_config.add_lab_capability("lab_is_duplex")
 
-    # Count compute (worker) nodes and add min_N capabilities.
+    # Count dedicated compute (worker personality) nodes and add min_N
+    # capabilities. These identify systems that have discrete compute-N nodes
+    # (compute-0, compute-1, ...), which tests that reference specific compute
+    # hosts by name depend on.
     compute_count = sum(1 for host in hosts if host.get_personality() == "worker")
     if compute_count >= 2:
         lab_config.add_lab_capability("lab_has_min_2_compute")
     if compute_count >= 3:
         lab_config.add_lab_capability("lab_has_min_3_compute")
+
+    # Count compute hypervisors (hosts running the worker subfunction) and add
+    # min_N worker capabilities. This includes dedicated worker nodes and
+    # all-in-one controllers that carry the "worker" subfunction, so duplex
+    # systems (two AIO controllers, zero dedicated workers) are reported as
+    # having two hypervisors. Tests that only need two hosts able to run VMs
+    # (for example live migration) should use these capabilities rather than
+    # lab_has_min_2_compute, which requires discrete compute-N nodes.
+    worker_count = sum(1 for host in hosts if host.get_personality() == "worker" or "worker" in (host.get_subfunctions() or []))
+    if worker_count >= 2:
+        lab_config.add_lab_capability("lab_has_min_2_workers")
+    if worker_count >= 3:
+        lab_config.add_lab_capability("lab_has_min_3_workers")
 
     # Look at the Capabilities of each host individually.
     for host in hosts:
