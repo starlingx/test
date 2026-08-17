@@ -63,18 +63,26 @@ class DcmanagerSwDeployStrategy(BaseKeyword):
 
         self.wait_sw_deployment(subcloud=target, expected_status="initial", is_group=is_group)
 
-    def dcmanager_sw_deploy_strategy_apply(self, target: str, is_group: bool = False):
+    def dcmanager_sw_deploy_strategy_apply(self, target: str, is_group: bool = False, wait_completion: bool = True):
         """
         Runs dcmanager sw-deploy-strategy apply command.
 
         Args:
             target (str): The subcloud name or group name.
             is_group (bool): Whether the target is a group or individual subcloud.
+            wait_completion (bool): If True, waits for the strategy step to reach 'complete',
+                failing fast if it reaches 'failed'. If False, only sends the apply command and
+                validates the return code, letting the caller poll the resulting state
+                (e.g. via DcmanagerStrategyStepKeywords.wait_for_strategy_step_state) — useful when
+                a 'failed' outcome is expected rather than an error condition.
         """
         command = source_openrc("dcmanager sw-deploy-strategy apply")
 
         self.ssh_connection.send(command)
         self.validate_success_return_code(self.ssh_connection)
+
+        if not wait_completion:
+            return
 
         deployment_timeout = self.usm_config.get_deployment_timeout_sec()
         poll_interval = self.usm_config.get_upload_poll_interval_sec()

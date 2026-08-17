@@ -67,7 +67,7 @@ def test_subcloud_prestage_with_images():
 
     # Apply the previously created strategy
     get_logger().log_info(f"Apply strategy for {subcloud_name}.")
-    DcmanagerSwDeployStrategy(central_ssh).dcmanager_sw_deploy_strategy_apply(subcloud_name=subcloud_name)
+    DcmanagerSwDeployStrategy(central_ssh).dcmanager_sw_deploy_strategy_apply(target=subcloud_name)
 
     strategy_status = DcmanagerStrategyStepKeywords(central_ssh).get_dcmanager_strategy_step_show(subcloud_name).get_dcmanager_strategy_step_show().get_state()
 
