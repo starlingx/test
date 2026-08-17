@@ -2,9 +2,6 @@ import time
 from typing import List
 
 import selenium
-from selenium import webdriver
-
-from config.configuration_manager import ConfigurationManager
 from framework.logging.automation_logger import get_logger
 from framework.web.action.web_action_click import WebActionClick
 from framework.web.action.web_action_click_js import WebActionClickJs
@@ -18,6 +15,9 @@ from framework.web.condition.web_condition_element_visible import WebConditionEl
 from framework.web.condition.web_condition_text_equals import WebConditionTextEquals
 from framework.web.web_action_executor import WebActionExecutor
 from framework.web.web_locator import WebLocator
+from selenium import webdriver
+
+from config.configuration_manager import ConfigurationManager
 
 
 class WebDriverCore:
@@ -278,6 +278,58 @@ class WebDriverCore:
         """
         is_condition = condition.is_condition_satisfied(self.driver)
         return is_condition
+
+    def wait_for_condition(self, conditions: List[WebCondition], timeout: int = 30) -> None:
+        """Wait until ALL conditions are satisfied, polling with progressive sleep.
+
+        This is a standalone polling wait that is NOT tied to any action. Use it
+        when a page object needs to wait for DOM state changes that happen as a
+        secondary effect (e.g., widget data loading after a navigation click has
+        already returned).
+
+        Args:
+            conditions (List[WebCondition]): Conditions that must ALL be satisfied.
+            timeout (int): Maximum seconds to wait. Defaults to 30.
+
+        Raises:
+            TimeoutError: If conditions are not all satisfied within timeout.
+        """
+        if not conditions:
+            return
+
+        progressive_sleep = 0.5
+        progressive_sleep_increment = 0.5
+        progressive_sleep_cap = 2.0
+        deadline = time.time() + timeout
+        max_attempts = max(1, int(timeout / progressive_sleep) + 10)
+
+        for _ in range(max_attempts):
+            all_satisfied = all(condition.is_condition_satisfied(self.driver) for condition in conditions)
+            if all_satisfied:
+                get_logger().log_debug(f"All {len(conditions)} condition(s) satisfied")
+                return
+
+            if time.time() >= deadline:
+                break
+
+            time.sleep(progressive_sleep)
+            progressive_sleep = min(progressive_sleep + progressive_sleep_increment, progressive_sleep_cap)
+
+        unsatisfied = [str(c) for c in conditions if not c.is_condition_satisfied(self.driver)]
+        raise TimeoutError(f"wait_for_condition timed out after {timeout}s. " f"Unsatisfied: {unsatisfied}")
+
+    def clear_text(self, locator: WebLocator) -> None:
+        """Clear text from an input field using select-all + delete.
+
+        Standard Selenium .clear() does not work reliably on React-managed
+        inputs. This method uses CTRL+A followed by DELETE which works
+        across all input types.
+
+        Args:
+            locator (WebLocator): The locator of the input element to clear.
+        """
+        self.send_keys(locator, selenium.webdriver.Keys.CONTROL + "a")
+        self.send_keys(locator, selenium.webdriver.Keys.DELETE)
 
     def switch_to_window(self, index: int) -> None:
         """
