@@ -430,10 +430,12 @@ def test_matching_tls_version_cipher_accepted(request):
     )
 
     get_logger().log_test_case_step("TLS 1.2 with TLS 1.2 cipher")
+    cert_type = tls_kw.detect_platform_cert_type(oam_host, oam_ep["port"], ep_ips.is_ipv6_lab())
+    tls12_cipher = TLS12_ECDSA_CIPHERS[0] if cert_type == "ecdsa" else TLS12_RSA_CIPHERS[0]
     tls_kw.verify_cipher_accepted(
         oam_host,
         oam_ep["port"],
-        ALLOWED_TLS12_CIPHERS[0],
+        tls12_cipher,
         oam_ep["name"],
         ep_ips.is_ipv6_lab(),
     )
@@ -489,8 +491,10 @@ def test_cipher_enforcement_on_key_endpoints(request):
     k8s_host = tls_kw.resolve_host(k8s_ep, ep_ips.get_oam_ip(), ep_ips.get_mgmt_ip())
 
     get_logger().log_test_case_step("Verifying allowed ciphers work")
-    tls_kw.verify_cipher_accepted(oam_host, oam_ep["port"], ALLOWED_TLS12_CIPHERS[0], oam_ep["name"], ep_ips.is_ipv6_lab())
-    tls_kw.verify_cipher_accepted(k8s_host, k8s_ep["port"], ALLOWED_TLS12_CIPHERS[0], k8s_ep["name"], ep_ips.is_ipv6_lab())
+    cert_type = tls_kw.detect_platform_cert_type(oam_host, oam_ep["port"], ep_ips.is_ipv6_lab())
+    tls12_cipher = TLS12_ECDSA_CIPHERS[0] if cert_type == "ecdsa" else TLS12_RSA_CIPHERS[0]
+    tls_kw.verify_cipher_accepted(oam_host, oam_ep["port"], tls12_cipher, oam_ep["name"], ep_ips.is_ipv6_lab())
+    tls_kw.verify_cipher_accepted(k8s_host, k8s_ep["port"], tls12_cipher, k8s_ep["name"], ep_ips.is_ipv6_lab())
 
     get_logger().log_test_case_step("Verifying disallowed ciphers rejected")
     for cipher in DISALLOWED_CIPHERS[:2]:
@@ -785,8 +789,13 @@ def test_delete_cipher_config_reverts_to_defaults(request):
     is_ipv6 = ep_ips.is_ipv6_lab()
 
     get_logger().log_test_case_step("Verifying default ciphers still accepted after delete")
-    tls_kw.verify_cipher_accepted(oam_ip, 5000, "ECDHE-RSA-AES256-GCM-SHA384", "Keystone", is_ipv6)
-    tls_kw.verify_cipher_accepted(oam_ip, 5000, "ECDHE-RSA-AES128-GCM-SHA256", "Keystone", is_ipv6)
+    cert_type = tls_kw.detect_platform_cert_type(oam_ip, 5000, is_ipv6)
+    if cert_type == "ecdsa":
+        tls_kw.verify_cipher_accepted(oam_ip, 5000, "ECDHE-ECDSA-AES256-GCM-SHA384", "Keystone", is_ipv6)
+        tls_kw.verify_cipher_accepted(oam_ip, 5000, "ECDHE-ECDSA-AES128-GCM-SHA256", "Keystone", is_ipv6)
+    else:
+        tls_kw.verify_cipher_accepted(oam_ip, 5000, "ECDHE-RSA-AES256-GCM-SHA384", "Keystone", is_ipv6)
+        tls_kw.verify_cipher_accepted(oam_ip, 5000, "ECDHE-RSA-AES128-GCM-SHA256", "Keystone", is_ipv6)
 
     # Step 4: Verify weak cipher still rejected
     get_logger().log_test_case_step("Verifying weak cipher still rejected after delete")
