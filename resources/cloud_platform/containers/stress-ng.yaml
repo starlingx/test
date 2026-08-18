@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: stress-ng
+  labels:
+    app: stress-ng
+spec:
+  containers:
+  - name: stress-ng
+    image: registry.local:9001/stress-ng
+    imagePullPolicy: IfNotPresent
+    args: ["--vm-bytes", "PLACEHOLDER", "--vm-keep", "-m", "1", "--timeout", "0"]
+  imagePullSecrets:
+  - name: local-secret
+
