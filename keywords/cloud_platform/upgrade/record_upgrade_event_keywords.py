@@ -1,9 +1,6 @@
-from datetime import datetime
-
-from framework.database.objects.test_case_result import TestCaseResult
-from framework.database.operations.test_case_result_operation import TestCaseResultOperation
 from framework.database.operations.upgrade_event_operation import UpgradeEventOperation
-from framework.runner.objects.RunResultsManager import RunResultsManager
+from framework.logging.automation_logger import get_logger
+from framework.runner.objects.run_context_manager import RunContextManager
 from keywords.base_keyword import BaseKeyword
 from keywords.cloud_platform.upgrade.objects.upgrade_event import UpgradeEvent
 
@@ -13,20 +10,21 @@ class RecordUpgradeEventKeywords(BaseKeyword):
     Keywords for recording upgrade events.
     """
 
-    def record_upgrade_event(self, event: UpgradeEvent):
+    def record_upgrade_event(self, event: UpgradeEvent) -> None:
         """
         Record upgrade event.
+
+        Upgrade events are keyed on the session, which the caller of the run supplies. A run
+        that was not given a session has nothing to attach the event to, so the event is
+        dropped rather than recorded against a placeholder.
 
         Args:
             event (UpgradeEvent): the upgrade event
 
         """
-        test_case_result_id = RunResultsManager.get_test_case_result_id()
-        if not test_case_result_id:
-            test_case_result = TestCaseResult(-1, "NOT_RUN", datetime.now(), datetime.now())
-            test_case_result_id = TestCaseResultOperation().create_test_case_result(test_case_result)
-            # update the singleton with the test result id so we don't create another one
-            if test_case_result_id:
-                RunResultsManager.set_test_case_result_id(test_case_result_id)
+        session_id = RunContextManager.get_session_id()
+        if not session_id:
+            get_logger().log_error(f"This run has no session id, so the upgrade event {event.get_event_name()} was not recorded.")
+            return
 
-        UpgradeEventOperation().create_upgrade_event(event, test_case_result_id)
+        UpgradeEventOperation().create_upgrade_event(event, session_id)

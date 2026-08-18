@@ -12,20 +12,20 @@ class UpgradeEventOperation:
     def __init__(self):
         self.database_operation_manager = DatabaseOperationManager()
 
-    def create_upgrade_event(self, upgrade_event: UpgradeEvent, test_case_result_id: int):
+    def create_upgrade_event(self, upgrade_event: UpgradeEvent, session_id: str):
         """
         Creates an upgrade event in the database
 
         Args:
             upgrade_event (UpgradeEvent): The upgrade event to create
-            test_case_result_id (int): the test case result id
+            session_id (str): the id of the session that the event belongs to
         """
         # fmt: off
         create_upgrade_event_query = (
-            "INSERT INTO upgrade_event (test_case_result_id, event_name, retry, operation, entity, "
+            "INSERT INTO upgrade_event (test_session_id, event_name, retry, operation, entity, "
             "is_upgrade, is_patch, timestamp, is_rollback, duration, from_version, to_version, "
             "snapshot, subcloud, build_id) "
-            f"VALUES ({test_case_result_id}, '{upgrade_event.event_name}', "
+            f"VALUES ('{session_id}', '{upgrade_event.event_name}', "
             f"{upgrade_event.retry}, '{upgrade_event.operation}', '{upgrade_event.entity}', "
             f"{upgrade_event.is_upgrade}, {upgrade_event.is_patch}, '{upgrade_event.timestamp}', "
             f"{upgrade_event.is_rollback}, {upgrade_event.duration}, '{upgrade_event.from_version}', "
@@ -37,24 +37,24 @@ class UpgradeEventOperation:
         if result:
             upgrade_event.set_upgrade_event_id(result[0][0])
 
-    def get_upgrade_events_by_test_case_result_id(self, test_case_result_id: int) -> list:
+    def get_upgrade_events_by_session_id(self, session_id: str) -> list[UpgradeEvent]:
         """
-        Gets upgrade events by test case result ID
+        Gets upgrade events by session id
 
         Args:
-            test_case_result_id (int): The test case result ID
+            session_id (str): the id of the session that the events belong to
 
         Returns:
-            list: List of UpgradeEvent objects
+            list[UpgradeEvent]: List of UpgradeEvent objects
         """
-        get_upgrade_events_query = "SELECT * FROM upgrade_event " f"WHERE test_case_result_id={test_case_result_id}"
+        get_upgrade_events_query = "SELECT * FROM upgrade_event " f"WHERE test_session_id='{session_id}'"
 
         results = self.database_operation_manager.execute_query(get_upgrade_events_query, RealDictCursor)
 
         upgrade_events = []
         if results:
             for result in results:
-                upgrade_event = UpgradeEvent(result["test_case_result_id"], result["event_name"], result["retry"], result["operation"], result["entity"], result["is_upgrade"], result["is_patch"])
+                upgrade_event = UpgradeEvent(result["event_name"], result["retry"], result["operation"], result["entity"], result["is_upgrade"], result["is_patch"])
                 upgrade_event.set_upgrade_event_id(result["upgrade_event_id"])
                 upgrade_event.timestamp = result["timestamp"]
                 upgrade_event.is_rollback = result["is_rollback"]

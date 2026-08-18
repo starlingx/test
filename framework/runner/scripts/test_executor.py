@@ -19,21 +19,27 @@ from framework.runner.objects.test_executor_summary import TestExecutorSummary
 from testcases.conftest import log_configuration
 
 
-def execute_test(test: TestCase, test_executor_summary: TestExecutorSummary, test_case_result_id: Optional[int] = None):
+def execute_test(test: TestCase, test_executor_summary: TestExecutorSummary, session_id: Optional[str] = None, jenkins_log_location: Optional[str] = None, repository: Optional[str] = None):
     """
     Executes a test case using pytest.
 
     Args:
         test (TestCase): The test case to execute.
         test_executor_summary (TestExecutorSummary): The test executor summary object.
-        test_case_result_id (Optional[int], optional): If provided, updates the specified test case result instead of creating a new one. Defaults to None.
+        session_id (Optional[str], optional): The session that the result of this test case belongs to. Defaults to None.
+        jenkins_log_location (Optional[str], optional): The URL of the jenkins job that started this run. Defaults to None.
+        repository (Optional[str], optional): The repository that owns this test case. Defaults to None.
 
     """
     result_collector = ResultCollector(test_executor_summary, test)
     pytest_args = ConfigurationManager.get_config_pytest_args()
     pytest_args.append(test.get_pytest_node_id())
-    if test_case_result_id:
-        pytest_args.append(f"--test_case_result_id={test_case_result_id}")
+    if session_id:
+        pytest_args.append(f"--session_id={session_id}")
+    if jenkins_log_location:
+        pytest_args.append(f"--jenkins_log_location={jenkins_log_location}")
+    if repository:
+        pytest_args.append(f"--repository={repository}")
 
     pytest.main(pytest_args, plugins=[result_collector])
 
@@ -82,7 +88,12 @@ def main():
         help="the test plan id of the tests to run",
     )
 
-    parser.add_option("--test_case_result_id", action="store", type="int", dest="test_case_result_id", help="the id for the testcase result")
+    parser.add_option("--test_case_result_id", action="store", type="int", dest="test_case_result_id", help="deprecated and ignored, the id for the testcase result")
+
+    parser.add_option("--session_id", action="store", type="str", dest="session_id", help="the id of the session that the results belong to")
+
+    parser.add_option("--jenkins_log_location", action="store", type="str", dest="jenkins_log_location", help="the URL of the jenkins job that started this run")
+    parser.add_option("--repository", action="store", type="str", dest="repository", help="the repository that owns the test cases of this run")
 
     configuration_locations_manager = ConfigurationFileLocationsManager()
     configuration_locations_manager.set_configs_from_options_parser(parser)
@@ -91,13 +102,16 @@ def main():
 
     options, args = parser.parse_args()
 
-    test_case_result_id = None
-    if options.test_case_result_id:
-        test_case_result_id = options.test_case_result_id
+    # A session id means the caller already knows which test cases it wants us to run and told
+    # us with --tests_location. Without one, this is a standalone run and the test cases come
+    # from the test plan in the database.
+    session_id = options.session_id
+    jenkins_log_location = options.jenkins_log_location
+    repository = options.repository
 
     test_capability_matcher = TestCapabilityMatcher(ConfigurationManager.get_lab_config())
 
-    if ConfigurationManager.get_database_config().use_database() and not test_case_result_id:
+    if ConfigurationManager.get_database_config().use_database() and not session_id:
         if not options.test_plan_id:
             raise "You must specify a --test_plan_id that points to the test plan to run from"
 
@@ -118,7 +132,7 @@ def main():
         test_executor_summary.append_tests_summary("Please review your lab configuration file.")
 
     for test in tests:
-        execute_test(test, test_executor_summary, test_case_result_id)
+        execute_test(test, test_executor_summary, session_id, jenkins_log_location, repository)
 
     log_summary(test_executor_summary)
 
