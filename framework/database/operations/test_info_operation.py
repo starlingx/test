@@ -13,18 +13,21 @@ class TestInfoOperation:
     def __init__(self):
         self.database_operation_manager = DatabaseOperationManager()
 
-    def get_info_test_id(self, test_name: str, test_suite: str) -> int:
+    def get_info_test_id(self, test_name: str, test_suite: str, repository: str = "ace") -> int:
         """
         This function will transform the test_name passed in into the equivalent test id.
         The method will return None if test id does not exist
         Args:
             test_name (str): is the name of the test.
             test_suite (str): is the suite of the test.
+            repository (str): the repository that owns the test. A database can hold tests
+                of the same name and suite from more than one repository, so this is needed
+                to make the lookup unambiguous.
         Returns:
             int: The id associated with the test.
         """
         # Get the test id from the database.
-        get_test_id_query = f"SELECT test_info_id FROM test_info where test_name='{test_name}' and test_suite='{test_suite}'"
+        get_test_id_query = f"SELECT test_info_id FROM test_info where test_name='{test_name}' and test_suite='{test_suite}' and repository='{repository}'"
 
         result = self.database_operation_manager.execute_query(get_test_id_query, cursor_factory=RealDictCursor)
         if result:
@@ -96,7 +99,9 @@ class TestInfoOperation:
 
         """
 
-        insert_query = f"INSERT INTO test_info (test_name, test_suite, priority, test_path, pytest_node_id, test_case_group_id, is_active) " f"VALUES('{testcase.get_test_name()}', '{testcase.get_test_suite()}', '{testcase.get_priority()}', " f"'{testcase.get_test_path()}', '{testcase.get_pytest_node_id()}', {testcase.get_test_case_group_id()}, " f"{testcase.is_testcase_active()}) RETURNING test_info_id"
+        # repository is set explicitly rather than relying on the column default, because the
+        # default differs between the databases that this code can be pointed at.
+        insert_query = f"INSERT INTO test_info (test_name, test_suite, priority, test_path, pytest_node_id, test_case_group_id, is_active, repository) " f"VALUES('{testcase.get_test_name()}', '{testcase.get_test_suite()}', '{testcase.get_priority()}', " f"'{testcase.get_test_path()}', '{testcase.get_pytest_node_id()}', {testcase.get_test_case_group_id()}, " f"{testcase.is_testcase_active()}, 'ace') RETURNING test_info_id"
 
         result = self.database_operation_manager.execute_query(insert_query, cursor_factory=RealDictCursor)
 
