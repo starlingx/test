@@ -62,6 +62,20 @@ class LabRuntimeConfigOperation:
         installed_apps_json = json.dumps(installed_apps) if installed_apps else '{}'
         extra_config_json = json.dumps(extra_config) if extra_config else '{}'
 
+        kernel_type = f"'{kernel_type}'" if kernel_type is not None else "NULL"
+        cstate_setting = f"'{cstate_setting}'" if cstate_setting is not None else "NULL"
+        pstate_setting = f"'{pstate_setting}'" if pstate_setting is not None else "NULL"
+        per_core_config = f"{per_core_config}" if per_core_config is not None else "NULL"
+        hyperthreading_enabled = f"{hyperthreading_enabled}" if hyperthreading_enabled is not None else "NULL"
+        cpu_platform_cores = f"{cpu_platform_cores}" if cpu_platform_cores is not None else "NULL"
+        cpu_application_cores = f"{cpu_application_cores}" if cpu_application_cores is not None else "NULL"
+        cpu_application_isolated_cores = f"{cpu_application_isolated_cores}" if cpu_application_isolated_cores is not None else "NULL"
+        hugepages_2m = f"{hugepages_2m}" if hugepages_2m is not None else "NULL"
+        hugepages_1g = f"{hugepages_1g}" if hugepages_1g is not None else "NULL"
+        network_latency_ms = f"{network_latency_ms}" if network_latency_ms is not None else "NULL"
+        bandwidth_mbps = f"{bandwidth_mbps}" if bandwidth_mbps is not None else "NULL"
+        runtime_software_logs = f"'{runtime_software_logs}'" if runtime_software_logs is not None else "NULL"
+
         insert_query = (
             "INSERT INTO lab_runtime_config ("
             "kernel_type, cstate_setting, pstate_setting, "

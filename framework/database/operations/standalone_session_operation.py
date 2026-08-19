@@ -18,11 +18,11 @@ class StandaloneSessionOperation:
         run_id: int,
         lab_id: int,
         tag: str,
+        lab_runtime_config_id: int,
         session_info_id: Optional[int] = None,
         sys_type: Optional[str] = None,
         kubernetes_version: Optional[str] = None,
         ceph_version: Optional[str] = None,
-        lab_runtime_config_id: Optional[int] = None,
     ) -> str:
         """
         Creates a standalone test session in the database.
@@ -48,10 +48,9 @@ class StandaloneSessionOperation:
         created_at = datetime.now(timezone.utc).isoformat()
 
         session_info_id = session_info_id if session_info_id is not None else -1
-        sys_type_val = f"'{sys_type}'" if sys_type is not None else "NULL"
-        k8s_val = f"'{kubernetes_version}'" if kubernetes_version is not None else "NULL"
-        ceph_val = f"'{ceph_version}'" if ceph_version is not None else "NULL"
-        lrc_val = f"{lab_runtime_config_id}" if lab_runtime_config_id is not None else "NULL"
+        sys_type = f"'{sys_type}'" if sys_type is not None else "NULL"
+        kubernetes_version = f"'{kubernetes_version}'" if kubernetes_version is not None else "NULL"
+        ceph_version = f"'{ceph_version}'" if ceph_version is not None else "NULL"
 
         insert_query = (
             "INSERT INTO test_session ("
@@ -60,8 +59,8 @@ class StandaloneSessionOperation:
             "lab_runtime_config_id, created_at"
             ") VALUES ("
             f"'{session_id}', {run_id}, {lab_id}, {session_info_id}, '{tag}', "
-            f"{sys_type_val}, {k8s_val}, {ceph_val}, "
-            f"{lrc_val}, '{created_at}'"
+            f"{sys_type}, {kubernetes_version}, {ceph_version}, "
+            f"{lab_runtime_config_id}, '{created_at}'"
             ") RETURNING id"
         )
 

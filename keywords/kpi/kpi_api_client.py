@@ -8,6 +8,7 @@ coordinating the underlying database operations.
 from typing import Any, Dict, Optional
 
 from framework.database.operations.kpi_measure_operation import KpiMeasureOperation
+from framework.database.operations.kpi_operation import KpiOperation
 from framework.database.operations.lab_runtime_config_operation import LabRuntimeConfigOperation
 from framework.database.operations.run_operation import RunOperation
 from framework.database.operations.standalone_session_operation import StandaloneSessionOperation
@@ -25,10 +26,55 @@ class KpiApiClient:
         """
         Initialize the KPI API client.
         """
+        self._kpi_operation = KpiOperation()
         self._lab_runtime_config_operation = LabRuntimeConfigOperation()
         self._run_operation = RunOperation()
         self._session_operation = StandaloneSessionOperation()
         self._measure_operation = KpiMeasureOperation()
+
+    def get_or_create_kpi(
+        self,
+        product: str,
+        kpi_category: str,
+        kpi_name: str,
+        kpi_node_role: str,
+        kpi_detail: str,
+        kpi_group: str,
+        kpi_unit: Optional[str] = None,
+        kpi_owner_team: Optional[str] = None,
+        kpi_description: Optional[str] = None,
+    ) -> int:
+        """
+        Get an existing KPI by its unique attributes, or create it if it doesn't exist.
+
+        Args:
+            product: Product name (e.g. 'WRCP').
+            kpi_category: Category (e.g. 'MTC', 'DC').
+            kpi_name: KPI name (e.g. 'cyclictest_latency').
+            kpi_node_role: Node role (e.g. 'controller-0').
+            kpi_detail: Detail/stat (e.g. 'avg', 'max', 'p99_9999').
+            kpi_group: Group (e.g. 'cyclictest', 'swact').
+            kpi_unit: Unit of measurement (e.g. 'ns', 's', '%').
+            kpi_owner_team: Owning team name.
+            kpi_description: Description of the KPI.
+
+        Returns:
+            int: The kpi_id.
+        """
+        get_logger().log_info(f"Getting or creating KPI '{kpi_name}' ({kpi_detail})")
+        kpi_id = self._kpi_operation.get_or_create_kpi(
+            product=product,
+            kpi_category=kpi_category,
+            kpi_name=kpi_name,
+            kpi_node_role=kpi_node_role,
+            kpi_detail=kpi_detail,
+            kpi_group=kpi_group,
+            kpi_unit=kpi_unit,
+            kpi_owner_team=kpi_owner_team,
+            kpi_description=kpi_description,
+        )
+        get_logger().log_info(f"KPI resolved to kpi_id: {kpi_id}")
+        return kpi_id
 
     def create_lab_runtime_config(
         self,
@@ -127,12 +173,12 @@ class KpiApiClient:
         self,
         run_id: int,
         lab_id: int,
-        session_info_id: int,
         tag: str,
+        lab_runtime_config_id: int,
+        session_info_id: int = -1,
         sys_type: Optional[str] = None,
         kubernetes_version: Optional[str] = None,
         ceph_version: Optional[str] = None,
-        lab_runtime_config_id: Optional[int] = None,
     ) -> str:
         """
         Create a standalone test session.
@@ -140,8 +186,8 @@ class KpiApiClient:
         Args:
             run_id: Run ID from create_standalone_run.
             lab_id: execution_target_id of the lab.
-            session_info_id: Maps to a TestPlan's session_info_id.
             tag: Descriptive tag for the session.
+            session_info_id: Maps to a TestPlan's session_info_id (defaults to -1).
             sys_type: System type (e.g. 'AIO-DX', 'Standard').
             kubernetes_version: K8s version.
             ceph_version: Ceph version.
@@ -152,11 +198,12 @@ class KpiApiClient:
         """
         get_logger().log_info(f"Creating standalone session (tag='{tag}')")
         session_id = self._session_operation.create_standalone_session(
-            run_id, lab_id, session_info_id, tag,
+            run_id, lab_id, tag,
+            lab_runtime_config_id=lab_runtime_config_id,
+            session_info_id=session_info_id,
             sys_type=sys_type,
             kubernetes_version=kubernetes_version,
             ceph_version=ceph_version,
-            lab_runtime_config_id=lab_runtime_config_id,
         )
         get_logger().log_info(f"Created session_id: {session_id}")
         return session_id
