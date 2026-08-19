@@ -395,3 +395,24 @@ class KubectlGetPodsKeywords(K8sBaseKeyword):
         if not uid:
             raise KeywordException(f"No pod found matching label {label} in namespace {namespace}")
         return uid
+
+    def get_pod_uid_by_name(self, pod_name: str, namespace: str = "default") -> str:
+        """Get the UID of a pod by its name.
+
+        Args:
+            pod_name (str): Name of the pod.
+            namespace (str): Namespace to search in. Defaults to 'default'.
+
+        Returns:
+            str: The UID of the pod.
+
+        Raises:
+            KeywordException: If the pod is not found.
+        """
+        cmd = f"kubectl get pod {pod_name} -n {namespace} -o jsonpath='{{.metadata.uid}}'"
+        output = self.ssh_connection.send(self.k8s_config.export(cmd))
+        self.validate_success_return_code(self.ssh_connection)
+        uid = output[0].strip() if isinstance(output, list) and output else str(output).strip()
+        if not uid:
+            raise KeywordException(f"Pod {pod_name} not found in namespace {namespace}")
+        return uid

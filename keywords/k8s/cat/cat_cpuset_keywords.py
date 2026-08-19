@@ -66,7 +66,7 @@ class CatCpuSetKeywords(BaseKeyword):
         # Final fallback: on cgroupv2 with cgroupns=private, /proc/self/cgroup returns just "0::/"
         # with no pod UID visible from inside the container. Use kubectl API to get the pod UID.
         logger.log_info(f"Could not extract pod UID from cgroup content '{cgroup_full_string.strip()}'. Falling back to kubectl API for pod {pod_name}.")
-        pod_uid = KubectlGetPodsKeywords(self.ssh_connection).get_pod_uid_by_label(f"app={pod_name}")
+        pod_uid = KubectlGetPodsKeywords(self.ssh_connection).get_pod_uid_by_name(pod_name)
         if pod_uid:
             logger.log_info(f"Got pod UID from kubectl API: {pod_uid}")
             return pod_uid
