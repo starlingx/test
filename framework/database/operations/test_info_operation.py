@@ -65,13 +65,20 @@ class TestInfoOperation:
         else:
             raise ValueError(f"There is no entry for test_info_id={test_info_id}")
 
-    def get_all_active_tests(self) -> list[TestCase]:
+    def get_all_active_tests(self, repository: str = None) -> list[TestCase]:
         """Gets all the active testcases in the db.
+
+        Args:
+            repository (str): Optional filter to only return tests belonging to
+                the specified repository. When None, returns all active tests.
 
         Returns:
             list[TestCase]: List of active testcases.
         """
-        test_case_info_query = "select * from test_info where is_active=true"
+        if repository:
+            test_case_info_query = f"select * from test_info where is_active=true and repository='{repository}'"
+        else:
+            test_case_info_query = "select * from test_info where is_active=true"
 
         results = self.database_operation_manager.execute_query(test_case_info_query, RealDictCursor)
 
@@ -84,6 +91,8 @@ class TestInfoOperation:
             test_info.set_test_info_id(result["test_info_id"])
             test_info.set_test_case_group_id(result["test_case_group_id"])
             test_info.set_is_active(result["is_active"])
+            if result.get("repository"):
+                test_info.set_repository(result["repository"])
 
             test_info_list.append(test_info)
         return test_info_list

@@ -31,7 +31,7 @@ class TestScannerUploader:
             if any(test.get_pytest_node_id().startswith(test_folder) for test_folder in self.test_folders):
                 filtered_test_cases.append(test)
 
-        tests_in_db = test_info_operation.get_all_active_tests()
+        tests_in_db = test_info_operation.get_all_active_tests(repository="ace")
 
         # get all tests in the repo, then compare with db list to get a list of tests that are not in the repo
         tests_not_in_repo = []
