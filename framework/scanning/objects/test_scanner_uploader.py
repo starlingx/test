@@ -11,22 +11,17 @@ from framework.pytest_plugins.collection_plugin import CollectionPlugin
 
 
 class TestScannerUploader:
-    """
-    Class for Scanning tests and uploading.
-    """
+    """Class for Scanning tests and uploading."""
 
     def __init__(self, test_folders: List[str]):
         self.test_folders = test_folders
 
     def scan_and_upload_tests(self, repo_root: str):
-        """
-        Scans the repo and uploads the new tests to the database.
+        """Scans the repo and uploads the new tests to the database.
 
         Args:
             repo_root (str): The full path to the root of the repo.
-
         """
-
         test_info_operation = TestInfoOperation()
         scanned_tests: List[TestCase] = self.scan_for_tests(repo_root)
 
@@ -50,7 +45,9 @@ class TestScannerUploader:
                 tests_not_in_repo.append(db_test)
 
         # mark all tests that do not appear in the repo as inactive
-        test_info_operation.set_tests_inactive(list(map(lambda inactive_test: inactive_test.get_test_info_id(), tests_not_in_repo)))
+        inactive_ids = list(map(lambda inactive_test: inactive_test.get_test_info_id(), tests_not_in_repo))
+        if inactive_ids:
+            test_info_operation.set_tests_inactive(inactive_ids)
 
         # Upload/Update the test cases in the database
         for test in filtered_test_cases:
@@ -69,28 +66,24 @@ class TestScannerUploader:
             self.update_active(database_testcase)
 
     def scan_for_tests(self, repo_root: str) -> List[TestCase]:
-        """
-        Scan for tests
+        """Scans for tests using pytest collection.
 
         Args:
             repo_root (str): The full path to the root of the repo.
 
         Returns:
-            List[TestCase]: list of Testcases
-
+            List[TestCase]: List of collected testcases.
         """
         collection_plugin = CollectionPlugin(repo_root)
         pytest.main(["--collect-only"], plugins=[collection_plugin])
         return collection_plugin.get_tests()
 
     def update_priority(self, test: TestCase, database_testcase: TestCase):
-        """
-        Checks the current priority of the test, if it's changed, update it
+        """Checks the current priority of the test, if it's changed, update it.
 
         Args:
-            test (TestCase): the Test in the Repo Scan
-            database_testcase (TestCase): the Test in the Database
-
+            test (TestCase): The test in the repo scan.
+            database_testcase (TestCase): The test in the database.
         """
         database_priority = database_testcase.get_priority()
         local_priority = test.get_priority()
@@ -99,12 +92,11 @@ class TestScannerUploader:
             test_info_operation.update_priority(database_testcase.get_test_info_id(), local_priority)
 
     def update_test_path(self, test: TestCase, database_testcase: TestCase):
-        """
-        Checks the current test_path of the test, if it's changed, update it
+        """Checks the current test_path of the test, if it's changed, update it.
 
         Args:
-            test (TestCase): the Test in the Repo Scan
-            database_testcase (TestCase): the Test in the Database
+            test (TestCase): The test in the repo scan.
+            database_testcase (TestCase): The test in the database.
         """
         database_test_path = database_testcase.get_test_path()
         actual_test_path = test.get_test_path().replace("\\", "/")
@@ -114,12 +106,11 @@ class TestScannerUploader:
             test_info_operation.update_test_path(database_testcase.get_test_info_id(), actual_test_path)
 
     def update_pytest_node_id(self, test: TestCase, database_testcase: TestCase):
-        """
-        Checks the current pytest_node_id of the test, if it's changed, update it
+        """Checks the current pytest_node_id of the test, if it's changed, update it.
 
         Args:
-            test (TestCase): the Test in the Repo Scan
-            database_testcase (TestCase): the Test in the Database
+            test (TestCase): The test in the repo scan.
+            database_testcase (TestCase): The test in the database.
         """
         current_pytest_node_id = database_testcase.get_pytest_node_id()
         if not current_pytest_node_id or current_pytest_node_id is not test.get_pytest_node_id():
@@ -127,12 +118,11 @@ class TestScannerUploader:
             test_info_operation.update_pytest_node_id(database_testcase.get_test_info_id(), test.get_pytest_node_id())
 
     def update_capability(self, test: TestCase, test_info_id: int):
-        """
-        Updates the test in the db with any capabilities it has
+        """Updates the test in the db with any capabilities it has.
 
         Args:
-            test (TestCase): the test
-            test_info_id (int): the id of the test to check.
+            test (TestCase): The test.
+            test_info_id (int): The id of the test to check.
         """
         capability_operation = CapabilityOperation()
         capability_test_operation = TestCapabilityOperation()
@@ -158,14 +148,12 @@ class TestScannerUploader:
         self.check_for_capabilities_to_remove(test_info_id, capability_markers)
 
     def check_for_capabilities_to_remove(self, test_info_id: int, capability_markers: [str]):
-        """
-        Checks for capabilities in the db that no longer exist on the test
+        """Checks for capabilities in the db that no longer exist on the test.
 
         Args:
-            test_info_id (int): the test_info_id
-            capability_markers ([str]): the capability markers on the test
+            test_info_id (int): The test_info_id.
+            capability_markers ([str]): The capability markers on the test.
         """
-
         # next we need to remove capabilities that are in the database but no longer on the test
         capability_test_operation = TestCapabilityOperation()
         db_capabilities = capability_test_operation.get_capabilities_for_test(test_info_id)
@@ -182,12 +170,10 @@ class TestScannerUploader:
             capability_test_operation.delete_capability_test(db_capability.get_capability_id(), test_info_id)
 
     def update_active(self, database_testcase: TestCase):
-        """
-        Sets the test to active if it's currently inactive
+        """Sets the test to active if it's currently inactive.
 
         Args:
-            database_testcase (TestCase): the Test in the Database
-
+            database_testcase (TestCase): The test in the database.
         """
         if not database_testcase.is_testcase_active():
             test_info_operation = TestInfoOperation()

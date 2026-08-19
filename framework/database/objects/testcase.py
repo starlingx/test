@@ -1,7 +1,5 @@
 class TestCase:
-    """
-    Class to hold testcase info
-    """
+    """Class to hold testcase info."""
 
     def __init__(self, test_name: str, test_suite: str, priority: str, test_path: str, pytest_node_id: str):
         self.test_name = test_name
@@ -15,138 +13,140 @@ class TestCase:
         self.test_case_group_id = -1
         self.is_active = True
         self.run_content_id = -1
+        self.repository = "ace"
 
     def get_test_name(self) -> str:
-        """
-        Getter for name
-        Returns: the name
+        """Gets the test name.
 
+        Returns:
+            str: The test name.
         """
         return self.test_name
 
     def get_test_suite(self) -> str:
-        """
-        Getter for test suite
-        Returns:
+        """Gets the test suite.
 
+        Returns:
+            str: The test suite.
         """
         return self.test_suite
 
     def get_priority(self) -> str:
-        """
-        Getter for priority
-        Returns:
+        """Gets the priority.
 
+        Returns:
+            str: The priority.
         """
         return self.priority
 
     def get_test_path(self) -> str:
-        """
-        Getter for execution location
-        Returns: the execution location
+        """Gets the test path.
 
+        Returns:
+            str: The test path.
         """
         return self.test_path
 
     def get_pytest_node_id(self) -> str:
-        """
-        Getter for pytest node id
-        Returns:
+        """Gets the pytest node id.
 
+        Returns:
+            str: The pytest node id.
         """
         return self.pytest_node_id
 
     def get_markers(self) -> [str]:
-        """
-        Getter for markers
-        Returns: the markers
+        """Gets the markers.
 
+        Returns:
+            [str]: The markers.
         """
         return self.markers
 
     def set_markers(self, markers: [str]):
-        """
-        Setter for markers
+        """Sets the markers.
+
         Args:
-            markers (): the markers
-
-        Returns:
-
+            markers ([str]): The markers.
         """
         self.markers = markers
 
     def get_test_info_id(self) -> int:
-        """
-        Getter for test info id
-        Returns:
+        """Gets the test info id.
 
+        Returns:
+            int: The test info id.
         """
         return self.test_info_id
 
     def set_test_info_id(self, test_info_id: int):
-        """
-        Setter for test info id
+        """Sets the test info id.
+
         Args:
-            test_info_id (): the test info id
-
-        Returns:
-
+            test_info_id (int): The test info id.
         """
         self.test_info_id = test_info_id
 
     def get_test_case_group_id(self) -> int:
-        """
-        Getter for test_case group id
-        Returns:
+        """Gets the test case group id.
 
+        Returns:
+            int: The test case group id.
         """
         return self.test_case_group_id
 
     def set_test_case_group_id(self, test_case_group_id: int):
-        """
-        Getter for test_case_group_id
+        """Sets the test case group id.
+
         Args:
-            test_case_group_id (): the test_case_group_id
-
-        Returns:
-
+            test_case_group_id (int): The test case group id.
         """
         self.test_case_group_id = test_case_group_id
 
     def is_testcase_active(self) -> bool:
-        """
-        Checks if test is active
-        Returns:
+        """Checks if the test is active.
 
+        Returns:
+            bool: True if the test is active.
         """
         return self.is_active
 
     def set_is_active(self, is_active: bool):
-        """
-        Setter for is active
+        """Sets the active status.
+
         Args:
-            is_active ():
-
-        Returns:
-
+            is_active (bool): The active status.
         """
         self.is_active = is_active
 
     def set_run_content_id(self, run_content_id: int):
-        """
-        Setter for run content id
+        """Sets the run content id.
+
         Args:
-            run_content_id (): the run content id
-
-        Returns:
-
+            run_content_id (int): The run content id.
         """
         self.run_content_id = run_content_id
 
     def get_run_content_id(self) -> int:
-        """
-        Getter for run content id
-        Returns:
+        """Gets the run content id.
 
+        Returns:
+            int: The run content id.
         """
         return self.run_content_id
+
+    def get_repository(self) -> str:
+        """Gets the repository name.
+
+        Returns:
+            str: The repository name.
+        """
+        return self.repository
+
+    def set_repository(self, repository: str):
+        """Sets the repository name.
+
+        Args:
+            repository (str): The repository name.
+        """
+        self.repository = repository
