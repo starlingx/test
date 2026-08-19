@@ -119,7 +119,7 @@ def deploy_subcloud_phased_with_registry_routes(ssh_connection: SSHConnection, s
         get_logger().log_info(f"Subcloud: {subcloud_name}, OAM IP: {subcloud_oam_ip}, NAT64 prefix: {nat64_prefix}, GW: {oam_gateway}, IF: {oam_interface}")
 
         get_logger().log_test_case_step(f"SSH to subcloud '{subcloud_name}' and add IPv6 route to external registry")
-        subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
+        subcloud_ssh = LabConnectionKeywords().get_subcloud_controller0_ssh(subcloud_name)
         subcloud_route_kw = IPRouteKeywords(subcloud_ssh)
         subcloud_route_kw.add_ipv6_route(nat64_prefix, oam_gateway, oam_interface, subcloud_oam_ip, password)
 
@@ -221,7 +221,7 @@ def test_deploy_single_subcloud_n_release_with_registry_routes(request: FixtureR
     manage_subcloud(ssh_connection, subcloud_name)
 
     get_logger().log_test_case_step(f"Validate subcloud '{subcloud_name}' health")
-    subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
+    subcloud_ssh = LabConnectionKeywords().get_subcloud_controller0_ssh(subcloud_name)
     HealthKeywords(subcloud_ssh).validate_healty_cluster()
 
 
@@ -278,7 +278,7 @@ def test_deploy_single_subcloud_n_minus_1_release_with_registry_routes(request: 
     manage_subcloud(ssh_connection, subcloud_name)
 
     get_logger().log_test_case_step(f"Validate subcloud '{subcloud_name}' health")
-    subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
+    subcloud_ssh = LabConnectionKeywords().get_subcloud_controller0_ssh(subcloud_name)
     HealthKeywords(subcloud_ssh).validate_healty_cluster()
 
 
@@ -335,5 +335,5 @@ def test_deploy_single_subcloud_n_minus_2_release_with_registry_routes(request: 
     manage_subcloud(ssh_connection, subcloud_name)
 
     get_logger().log_test_case_step(f"Validate subcloud '{subcloud_name}' health")
-    subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
+    subcloud_ssh = LabConnectionKeywords().get_subcloud_controller0_ssh(subcloud_name)
     HealthKeywords(subcloud_ssh).validate_healty_cluster()

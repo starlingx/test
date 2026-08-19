@@ -224,6 +224,46 @@ class LabConnectionKeywords(BaseKeyword):
 
         return connection
 
+    def get_subcloud_controller0_ssh(self, subcloud_name: str) -> SSHConnection:
+        """Gets an SSH connection to the subcloud's controller-0 using its dedicated OAM IP.
+
+        Use this instead of get_subcloud_ssh when the floating IP may not be active,
+        such as immediately after a fresh deploy on a duplex subcloud where only
+        controller-0 is up.
+
+        Args:
+            subcloud_name (str): The name of the subcloud.
+
+        Returns:
+            SSHConnection: SSH connection to controller-0 of the subcloud.
+
+        Raises:
+            ValueError: If the subcloud is not defined or has no controller-0 node.
+        """
+        lab_config = ConfigurationManager.get_lab_config()
+        subcloud_config: LabConfig = lab_config.get_subcloud(subcloud_name)
+
+        if not subcloud_config:
+            raise ValueError(f"There is no 'subcloud' node named {subcloud_name} defined in your config file.")
+
+        controller_0 = subcloud_config.get_node("controller-0")
+        if not controller_0:
+            raise ValueError(f"Subcloud '{subcloud_name}' has no controller-0 node defined in the config.")
+
+        jump_host_config = None
+        if lab_config.is_use_jump_server():
+            jump_host_config = lab_config.get_jump_host_configuration()
+
+        connection = SSHConnectionManager.create_ssh_connection(
+            controller_0.get_ip(),
+            lab_config.get_admin_credentials().get_user_name(),
+            lab_config.get_admin_credentials().get_password(),
+            ssh_port=lab_config.get_ssh_port(),
+            jump_host=jump_host_config,
+        )
+
+        return connection
+
     def get_subcloud_factory_ssh(self, subcloud_name: str) -> SSHConnection:
         """Gets an SSH connection to the subcloud using its factory IP and factory credentials.
 
