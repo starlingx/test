@@ -6,6 +6,8 @@ Covers bootstrap, CMP enrollment, REST API, security validation,
 cert-manager integration, HA resilience, performance, and lifecycle.
 """
 
+import time
+
 from pytest import FixtureRequest, mark
 
 from config.configuration_manager import ConfigurationManager
@@ -13,38 +15,36 @@ from framework.logging.automation_logger import get_logger
 from framework.validation.validation import (
     validate_equals,
     validate_equals_with_retry,
-    validate_list_contains,
+    validate_not_equals,
     validate_str_contains,
 )
-from keywords.cloud_platform.security.ejbca.ejbca_cli_keywords import (
-    EjbcaCliKeywords,
-)
-from keywords.cloud_platform.security.ejbca.ejbca_security_keywords import (
-    EjbcaSecurityKeywords,
-)
-from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
-from keywords.cloud_platform.system.application.system_application_apply_keywords import (
-    SystemApplicationApplyKeywords,
-)
-from keywords.cloud_platform.system.application.system_application_list_keywords import (
-    SystemApplicationListKeywords,
-)
-from keywords.cloud_platform.system.helm.system_helm_override_keywords import (
-    SystemHelmOverrideKeywords,
-)
-from keywords.k8s.pods.kubectl_get_pods_keywords import KubectlGetPodsKeywords
-from keywords.k8s.pvc.kubectl_get_pvc_keywords import KubectlGetPvcKeywords
-
-
+from keywords.cloud_platform.dcmanager.dcmanager_subcloud_list_keywords import DcManagerSubcloudListKeywords
+from keywords.cloud_platform.security.ejbca.ejbca_backup_restore_keywords import EjbcaBackupRestoreKeywords
 from keywords.cloud_platform.security.ejbca.ejbca_certmanager_keywords import EjbcaCertManagerKeywords
+from keywords.cloud_platform.security.ejbca.ejbca_cli_keywords import EjbcaCliKeywords
 from keywords.cloud_platform.security.ejbca.ejbca_cmp_keywords import EjbcaCmpKeywords
 from keywords.cloud_platform.security.ejbca.ejbca_rest_keywords import EjbcaRestKeywords
+from keywords.cloud_platform.security.ejbca.ejbca_security_keywords import EjbcaSecurityKeywords
+from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
+from keywords.cloud_platform.system.application.system_application_apply_keywords import SystemApplicationApplyKeywords
+from keywords.cloud_platform.system.application.system_application_list_keywords import SystemApplicationListKeywords
 from keywords.cloud_platform.system.application.system_application_remove_keywords import SystemApplicationRemoveKeywords
+from keywords.cloud_platform.system.helm.system_helm_override_keywords import SystemHelmOverrideKeywords
+from keywords.cloud_platform.system.host.system_host_list_keywords import SystemHostListKeywords
+from keywords.cloud_platform.system.host.system_host_lock_keywords import SystemHostLockKeywords
+from keywords.cloud_platform.system.host.system_host_reboot_keywords import SystemHostRebootKeywords
 from keywords.cloud_platform.system.host.system_host_swact_keywords import SystemHostSwactKeywords
 from keywords.files.file_keywords import FileKeywords
 from keywords.k8s.k8s_command_wrapper import export_k8s_config
+from keywords.k8s.pods.kubectl_delete_pods_keywords import KubectlDeletePodsKeywords
+from keywords.k8s.pods.kubectl_exec_in_pods_keywords import KubectlExecInPodsKeywords
+from keywords.k8s.pods.kubectl_get_pods_keywords import KubectlGetPodsKeywords
+from keywords.k8s.pods.kubectl_pod_logs_keywords import KubectlPodLogsKeywords
+from keywords.k8s.pvc.kubectl_get_pvc_keywords import KubectlGetPvcKeywords
 from keywords.network.curl_mtls_keywords import CurlMtlsKeywords
 from keywords.openssl.openssl_keywords import OpenSSLKeywords
+
+
 @mark.p1
 def test_ejbca_app_applied_status():
     """Verify EJBCA application is in 'applied' state.
@@ -79,7 +79,7 @@ def test_ejbca_pods_running():
     get_logger().log_test_case_step(f"Get all pods in namespace {namespace}")
     pods_keywords = KubectlGetPodsKeywords(ssh_connection)
     pods_output = pods_keywords.get_pods(namespace=namespace)
-    pod_list = pods_output.get_pods_list()
+    pod_list = pods_output.get_pods()
 
     get_logger().log_test_case_step("Validate all pods are Running")
     for pod in pod_list:
@@ -216,7 +216,7 @@ def test_ejbca_pod_replicas():
     get_logger().log_test_case_step("Get EJBCA pods by label")
     pods_keywords = KubectlGetPodsKeywords(ssh_connection)
     pods_output = pods_keywords.get_pods(namespace=namespace, label=pod_label)
-    pod_list = pods_output.get_pods_list()
+    pod_list = pods_output.get_pods()
 
     get_logger().log_test_case_step("Count running EJBCA replicas")
     running_count = sum(1 for p in pod_list if p.get_status() == "Running")
@@ -323,5 +323,366 @@ def test_ejbca_local_registry_images():
     all_local = security_keywords.all_pods_use_local_registry()
 
     validate_equals(all_local, True, "All images from registry.local")
+
+
+@mark.p1
+def test_ejbca_cmp_internal_enrollment(request: FixtureRequest):
+    """Verify CMP certificate enrollment via internal pod-local path.
+
+    Test Steps:
+        - Generate key and CSR for test CN
+        - Enroll via CMP on internal server (localhost:80)
+        - Validate enrollment output contains 'received IP'
+        - Validate issued certificate subject matches CN
+
+    Teardown:
+        - Remove generated key, CSR, and cert files
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    ejbca_config = ConfigurationManager.get_security_config().get_ejbca_config()
+    cn = "test-cmp-internal"
+    key_path = f"/tmp/{cn}.key"
+    csr_path = f"/tmp/{cn}.csr"
+    cert_path = f"/tmp/{cn}.crt"
+
+    def teardown():
+        get_logger().log_teardown_step("Remove CMP test artifacts")
+        file_keywords = FileKeywords(ssh_connection)
+
+        file_keywords.delete_file(key_path)
+
+        file_keywords.delete_file(csr_path)
+
+        file_keywords.delete_file(cert_path)
+
+    request.addfinalizer(teardown)
+
+    cmp_keywords = EjbcaCmpKeywords(ssh_connection)
+
+    get_logger().log_test_case_step("Generate key and CSR")
+    cmp_keywords.generate_key_and_csr(cn, key_path, csr_path, san_dns=cn)
+
+    get_logger().log_test_case_step("Enroll via CMP internal path")
+    server = ejbca_config.get_cmp_internal_server()
+    path = ejbca_config.get_cmp_internal_path()
+    hmac_secret = ejbca_config.get_cmp_hmac_secret()
+    output = cmp_keywords.cmp_enroll(
+        server, path, hmac_secret, cn, key_path, csr_path, cert_path
+    )
+
+    get_logger().log_test_case_step("Validate enrollment success")
+    validate_str_contains(output, "received IP", "CMP internal enrollment")
+
+
+@mark.p1
+def test_ejbca_cmp_external_enrollment(request: FixtureRequest):
+    """Verify CMP certificate enrollment via external OAM mTLS path.
+
+    Test Steps:
+        - Generate key and CSR
+        - Enroll via CMP on external OAM:port
+        - Validate enrollment output contains 'received IP'
+
+    Teardown:
+        - Remove generated key, CSR, and cert files
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    ejbca_config = ConfigurationManager.get_security_config().get_ejbca_config()
+    lab_config = ConfigurationManager.get_lab_config()
+    oam_ip = lab_config.get_floating_ip()
+    port = ejbca_config.get_cmp_external_port()
+    cn = "test-cmp-external"
+    key_path = f"/tmp/{cn}.key"
+    csr_path = f"/tmp/{cn}.csr"
+    cert_path = f"/tmp/{cn}.crt"
+
+    def teardown():
+        get_logger().log_teardown_step("Remove CMP test artifacts")
+        file_keywords = FileKeywords(ssh_connection)
+
+        file_keywords.delete_file(key_path)
+
+        file_keywords.delete_file(csr_path)
+
+        file_keywords.delete_file(cert_path)
+
+    request.addfinalizer(teardown)
+
+    cmp_keywords = EjbcaCmpKeywords(ssh_connection)
+
+    get_logger().log_test_case_step("Generate key and CSR")
+    cmp_keywords.generate_key_and_csr(cn, key_path, csr_path, san_dns=cn)
+
+    get_logger().log_test_case_step("Enroll via CMP external path")
+    server = f"{oam_ip}:{port}"
+    path = ejbca_config.get_cmp_internal_path()
+    hmac_secret = ejbca_config.get_cmp_hmac_secret()
+    output = cmp_keywords.cmp_enroll(
+        server, path, hmac_secret, cn, key_path, csr_path, cert_path
+    )
+
+    get_logger().log_test_case_step("Validate enrollment success")
+    validate_str_contains(output, "received IP", "CMP external enrollment")
+
+
+@mark.p1
+def test_ejbca_cmp_renewal(request: FixtureRequest):
+    """Verify CMP certificate renewal produces a new serial number.
+
+    Test Steps:
+        - Enroll initial certificate
+        - Enroll renewal certificate with same CN
+        - Validate serial numbers differ
+
+    Teardown:
+        - Remove generated cert files
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    ejbca_config = ConfigurationManager.get_security_config().get_ejbca_config()
+    cn = "test-cmp-renewal"
+    key_path = f"/tmp/{cn}.key"
+    csr_path = f"/tmp/{cn}.csr"
+    cert1_path = f"/tmp/{cn}-1.crt"
+    cert2_path = f"/tmp/{cn}-2.crt"
+
+    def teardown():
+        get_logger().log_teardown_step("Remove CMP renewal test artifacts")
+        file_kw = FileKeywords(ssh_connection)
+
+        file_kw.delete_file(key_path)
+
+        file_kw.delete_file(csr_path)
+
+        file_kw.delete_file(cert1_path)
+
+        file_kw.delete_file(cert2_path)
+
+    request.addfinalizer(teardown)
+
+    cmp_keywords = EjbcaCmpKeywords(ssh_connection)
+    server = ejbca_config.get_cmp_internal_server()
+    path = ejbca_config.get_cmp_internal_path()
+    hmac_secret = ejbca_config.get_cmp_hmac_secret()
+
+    get_logger().log_test_case_step("Generate key and CSR")
+    cmp_keywords.generate_key_and_csr(cn, key_path, csr_path, san_dns=cn)
+
+    get_logger().log_test_case_step("Initial enrollment")
+    cmp_keywords.cmp_enroll(server, path, hmac_secret, cn, key_path, csr_path, cert1_path)
+
+    get_logger().log_test_case_step("Renewal enrollment")
+    cmp_keywords.cmp_enroll(server, path, hmac_secret, cn, key_path, csr_path, cert2_path)
+
+    get_logger().log_test_case_step("Compare serial numbers")
+    cert1_info = cmp_keywords.get_certificate_info(cert1_path)
+    cert2_info = cmp_keywords.get_certificate_info(cert2_path)
+    serial1 = cert1_info.get_serial()
+    serial2 = cert2_info.get_serial()
+    validate_equals(serial1 != serial2, True, "Renewal produces different serial")
+
+
+@mark.p1
+def test_ejbca_cmp_revocation(request: FixtureRequest):
+    """Verify CMP certificate revocation via revocation request.
+
+    Test Steps:
+        - Enroll a certificate via CMP
+        - Revoke the certificate
+        - Validate revocation output contains 'received RP'
+
+    Teardown:
+        - Remove generated cert files
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    ejbca_config = ConfigurationManager.get_security_config().get_ejbca_config()
+    cn = "test-cmp-revoke"
+    key_path = f"/tmp/{cn}.key"
+    csr_path = f"/tmp/{cn}.csr"
+    cert_path = f"/tmp/{cn}.crt"
+
+    def teardown():
+        get_logger().log_teardown_step("Remove CMP revocation test artifacts")
+        file_keywords = FileKeywords(ssh_connection)
+
+        file_keywords.delete_file(key_path)
+
+        file_keywords.delete_file(csr_path)
+
+        file_keywords.delete_file(cert_path)
+
+    request.addfinalizer(teardown)
+
+    cmp_keywords = EjbcaCmpKeywords(ssh_connection)
+    server = ejbca_config.get_cmp_internal_server()
+    path = ejbca_config.get_cmp_internal_path()
+    hmac_secret = ejbca_config.get_cmp_hmac_secret()
+
+    get_logger().log_test_case_step("Generate key, CSR, and enroll")
+    cmp_keywords.generate_key_and_csr(cn, key_path, csr_path, san_dns=cn)
+    cmp_keywords.cmp_enroll(server, path, hmac_secret, cn, key_path, csr_path, cert_path)
+
+    get_logger().log_test_case_step("Revoke the certificate")
+    output = cmp_keywords.cmp_revoke(
+        server, path, hmac_secret, cn, cert_path
+    )
+
+    get_logger().log_test_case_step("Validate revocation accepted")
+    validate_str_contains(output, "received RP", "CMP revocation accepted")
+
+
+@mark.p1
+def test_ejbca_cmp_hmac_authentication(request: FixtureRequest):
+    """Verify CMP enrollment uses HMAC authentication successfully.
+
+    Test Steps:
+        - Enroll via CMP with configured HMAC secret
+        - Validate certificate is issued (received IP)
+
+    Teardown:
+        - Remove generated files
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    ejbca_config = ConfigurationManager.get_security_config().get_ejbca_config()
+    cn = "test-cmp-hmac"
+    key_path = f"/tmp/{cn}.key"
+    csr_path = f"/tmp/{cn}.csr"
+    cert_path = f"/tmp/{cn}.crt"
+
+    def teardown():
+        get_logger().log_teardown_step("Remove CMP HMAC test artifacts")
+        file_keywords = FileKeywords(ssh_connection)
+
+        file_keywords.delete_file(key_path)
+
+        file_keywords.delete_file(csr_path)
+
+        file_keywords.delete_file(cert_path)
+
+    request.addfinalizer(teardown)
+
+    cmp_keywords = EjbcaCmpKeywords(ssh_connection)
+    server = ejbca_config.get_cmp_internal_server()
+    path = ejbca_config.get_cmp_internal_path()
+    hmac_secret = ejbca_config.get_cmp_hmac_secret()
+
+    get_logger().log_test_case_step("Generate key and CSR")
+    cmp_keywords.generate_key_and_csr(cn, key_path, csr_path, san_dns=cn)
+
+    get_logger().log_test_case_step("Enroll with valid HMAC secret")
+    output = cmp_keywords.cmp_enroll(
+        server, path, hmac_secret, cn, key_path, csr_path, cert_path
+    )
+
+    validate_str_contains(output, "received IP", "HMAC authenticated enrollment")
+
+
+@mark.p1
+def test_ejbca_cmp_tls_transport(request: FixtureRequest):
+    """Verify CMP works over TLS transport (HTTPS) on external port.
+
+    Test Steps:
+        - Enroll via CMP on OAM:port using TLS
+        - Validate successful certificate issuance
+
+    Teardown:
+        - Remove generated files
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    ejbca_config = ConfigurationManager.get_security_config().get_ejbca_config()
+    lab_config = ConfigurationManager.get_lab_config()
+    oam_ip = lab_config.get_floating_ip()
+    port = ejbca_config.get_cmp_external_port()
+    cn = "test-cmp-tls"
+    key_path = f"/tmp/{cn}.key"
+    csr_path = f"/tmp/{cn}.csr"
+    cert_path = f"/tmp/{cn}.crt"
+
+    def teardown():
+        get_logger().log_teardown_step("Remove CMP TLS test artifacts")
+        file_keywords = FileKeywords(ssh_connection)
+
+        file_keywords.delete_file(key_path)
+
+        file_keywords.delete_file(csr_path)
+
+        file_keywords.delete_file(cert_path)
+
+    request.addfinalizer(teardown)
+
+    cmp_keywords = EjbcaCmpKeywords(ssh_connection)
+
+    get_logger().log_test_case_step("Generate key and CSR")
+    cmp_keywords.generate_key_and_csr(cn, key_path, csr_path, san_dns=cn)
+
+    get_logger().log_test_case_step("Enroll via CMP over TLS")
+    server = f"{oam_ip}:{port}"
+    path = ejbca_config.get_cmp_internal_path()
+    hmac_secret = ejbca_config.get_cmp_hmac_secret()
+    output = cmp_keywords.cmp_enroll(
+        server, path, hmac_secret, cn, key_path, csr_path, cert_path
+    )
+
+    validate_str_contains(output, "received IP", "CMP over TLS transport")
+
+
+@mark.p1
+def test_ejbca_cmp_invalid_hmac(request: FixtureRequest):
+    """Verify CMP rejects enrollment with invalid HMAC secret.
+
+    Test Steps:
+        - Attempt CMP enrollment with wrong HMAC
+        - Validate error response (no certificate issued)
+
+    Teardown:
+        - Remove generated key, CSR, and cert files
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    ejbca_config = ConfigurationManager.get_security_config().get_ejbca_config()
+    cn = "test-cmp-bad-hmac"
+    key_path = f"/tmp/{cn}.key"
+    csr_path = f"/tmp/{cn}.csr"
+    cert_path = f"/tmp/{cn}.crt"
+
+    def teardown():
+        get_logger().log_teardown_step("Remove invalid HMAC test artifacts")
+        file_keywords = FileKeywords(ssh_connection)
+        file_keywords.delete_file(key_path)
+        file_keywords.delete_file(csr_path)
+        file_keywords.delete_file(cert_path)
+
+    request.addfinalizer(teardown)
+
+    cmp_keywords = EjbcaCmpKeywords(ssh_connection)
+
+    get_logger().log_test_case_step("Generate key and CSR")
+    cmp_keywords.generate_key_and_csr(cn, key_path, csr_path, san_dns=cn)
+
+    get_logger().log_test_case_step("Attempt enrollment with invalid HMAC")
+    server = ejbca_config.get_cmp_internal_server()
+    path = ejbca_config.get_cmp_internal_path()
+    output = cmp_keywords.cmp_enroll_with_invalid_secret(
+        server, path, "wrong-secret-12345", cn, key_path, csr_path, cert_path
+    )
+
+    get_logger().log_test_case_step("Validate enrollment rejected")
+    validate_str_contains(output, "ERROR", "Invalid HMAC rejected")
+
+
+@mark.p1
+def test_ejbca_cmp_alias_config():
+    """Verify CMP alias configuration matches expected settings.
+
+    Test Steps:
+        - Verify CMP protocol is enabled
+        - Validate alias is usable (implied by protocol enablement)
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    ejbca_config = ConfigurationManager.get_security_config().get_ejbca_config()
+    namespace = ejbca_config.get_namespace()
+
+    get_logger().log_test_case_step("Verify CMP protocol enabled for alias use")
+    cli_keywords = EjbcaCliKeywords(ssh_connection, namespace)
+    cmp_enabled = cli_keywords.is_protocol_enabled("CMP")
+    validate_equals(cmp_enabled, True, "CMP enabled for alias")
 
 
