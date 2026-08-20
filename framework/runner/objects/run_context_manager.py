@@ -11,7 +11,6 @@ class RunContextManagerClass:
         self.session_id = None
         self.jenkins_log_location = None
         self.repository = "ace"
-        self.test_case_result_id = None
 
     def get_session_id(self) -> str:
         """
@@ -77,36 +76,6 @@ class RunContextManagerClass:
 
         """
         self.repository = repository
-
-    def get_test_case_result_id(self) -> int:
-        """
-        Getter for the test case result id.
-
-        Deprecated:
-            Results are now inserted when the test case ends, so the caller no longer
-            pre-creates a result row. This accessor is retained only so that a caller
-            passing the old option is not rejected. It will be removed.
-
-        Returns:
-            int: the test case result id, None if the run wasn't given one.
-
-        """
-        return self.test_case_result_id
-
-    def set_test_case_result_id(self, test_case_result_id: int):
-        """
-        Setter for the test case result id.
-
-        Deprecated:
-            Results are now inserted when the test case ends, so the caller no longer
-            pre-creates a result row. This accessor is retained only so that a caller
-            passing the old option is not rejected. It will be removed.
-
-        Args:
-            test_case_result_id (int): the test case result id.
-
-        """
-        self.test_case_result_id = test_case_result_id
 
 
 RunContextManager = RunContextManagerClass()

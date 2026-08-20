@@ -88,8 +88,6 @@ def main():
         help="the test plan id of the tests to run",
     )
 
-    parser.add_option("--test_case_result_id", action="store", type="int", dest="test_case_result_id", help="deprecated and ignored, the id for the testcase result")
-
     parser.add_option("--session_id", action="store", type="str", dest="session_id", help="the id of the session that the results belong to")
 
     parser.add_option("--jenkins_log_location", action="store", type="str", dest="jenkins_log_location", help="the URL of the jenkins job that started this run")

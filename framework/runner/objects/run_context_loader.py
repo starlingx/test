@@ -24,9 +24,6 @@ class RunContextLoader:
         safe_parser.add_option("--session_id", action="store", dest="session_id", help="the id of the session that the results belong to")
         safe_parser.add_option("--jenkins_log_location", action="store", dest="jenkins_log_location", help="the URL of the jenkins job that started this run")
         safe_parser.add_option("--repository", action="store", dest="repository", help="the repository that owns the test cases of this run")
-        # test_case_result_id is deprecated. It is accepted so that a caller passing it is not
-        # rejected, but nothing acts on it.
-        safe_parser.add_option("--test_case_result_id", action="store", dest="test_case_result_id", help="deprecated and ignored, the test case result id")
 
     @staticmethod
     def load_from_pytest_session(session: Any):
@@ -45,6 +42,3 @@ class RunContextLoader:
 
         if session.config.getoption("--repository"):
             RunContextManager.set_repository(session.config.getoption("--repository"))
-
-        if session.config.getoption("--test_case_result_id"):
-            RunContextManager.set_test_case_result_id(int(session.config.getoption("--test_case_result_id")))
