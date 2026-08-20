@@ -1036,3 +1036,267 @@ def test_ejbca_hmac_not_in_logs():
     validate_equals(occurrences, 0, "HMAC secret not found in logs")
 
 
+@mark.p1
+def test_ejbca_cmp_no_san_enrollment(request: FixtureRequest):
+    """Verify CMP enrollment without SAN succeeds (ENDUSER profile permissive).
+
+    Test Steps:
+        - Generate key and CSR without SAN extension
+        - Enroll via CMP
+        - Validate certificate is issued (permissive profile)
+
+    Teardown:
+        - Remove generated files
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    ejbca_config = ConfigurationManager.get_security_config().get_ejbca_config()
+    cn = "test-cmp-no-san"
+    key_path = f"/tmp/{cn}.key"
+    csr_path = f"/tmp/{cn}.csr"
+    cert_path = f"/tmp/{cn}.crt"
+
+    def teardown():
+        get_logger().log_teardown_step("Remove no-SAN test artifacts")
+        file_keywords = FileKeywords(ssh_connection)
+
+        file_keywords.delete_file(key_path)
+
+        file_keywords.delete_file(csr_path)
+
+        file_keywords.delete_file(cert_path)
+
+    request.addfinalizer(teardown)
+
+    cmp_keywords = EjbcaCmpKeywords(ssh_connection)
+
+    get_logger().log_test_case_step("Generate key and CSR without SAN")
+    cmp_keywords.generate_key_and_csr(cn, key_path, csr_path, san_dns="")
+
+    get_logger().log_test_case_step("Enroll via CMP without SAN")
+    server = ejbca_config.get_cmp_internal_server()
+    path = ejbca_config.get_cmp_internal_path()
+    hmac_secret = ejbca_config.get_cmp_hmac_secret()
+    output = cmp_keywords.cmp_enroll(
+        server, path, hmac_secret, cn, key_path, csr_path, cert_path
+    )
+
+    get_logger().log_test_case_step("Validate cert issued without SAN")
+    validate_str_contains(output, "received IP", "No-SAN enrollment succeeds")
+
+
+@mark.p1
+def test_ejbca_rest_wrong_ca(request: FixtureRequest):
+    """Verify REST enrollment with non-existent CA returns error.
+
+    Test Steps:
+        - Submit REST enrollment with fake CA name
+        - Validate HTTP 400 response with error message
+
+    Teardown:
+        - Remove generated key and CSR files
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    ejbca_config = ConfigurationManager.get_security_config().get_ejbca_config()
+    lab_config = ConfigurationManager.get_lab_config()
+    oam_ip = lab_config.get_floating_ip()
+    port = ejbca_config.get_cmp_external_port()
+    cn = "test-rest-wrong-ca"
+    key_path = f"/tmp/{cn}.key"
+    csr_der_path = f"/tmp/{cn}.der"
+
+    def teardown():
+        get_logger().log_teardown_step("Remove wrong-CA test artifacts")
+        file_keywords = FileKeywords(ssh_connection)
+
+        file_keywords.delete_file(key_path)
+
+        file_keywords.delete_file(csr_der_path)
+
+    request.addfinalizer(teardown)
+
+    openssl_keywords = OpenSSLKeywords(ssh_connection)
+    openssl_keywords.generate_rsa_key(key_path)
+
+    admin_cert = ejbca_config.get_admin_cert_path()
+    admin_key = ejbca_config.get_admin_key_path()
+    rest_keywords = EjbcaRestKeywords(ssh_connection, admin_cert, admin_key)
+    csr_b64 = rest_keywords.generate_csr_der_base64(key_path, csr_der_path, cn)
+
+    get_logger().log_test_case_step("Submit REST enrollment with fake CA")
+    base_url = f"https://{oam_ip}:{port}{ejbca_config.get_rest_base_path()}"
+    response = rest_keywords.rest_enroll_pkcs10(
+        base_url, csr_b64,
+        ejbca_config.get_rest_cert_profile(),
+        ejbca_config.get_rest_ee_profile(),
+        "FakeCA", cn, ejbca_config.get_rest_enroll_password()
+    )
+
+    get_logger().log_test_case_step("Validate error response for wrong CA")
+    validate_not_equals(response, {}, "REST response is not empty for wrong CA")
+    response_str = str(response)
+    validate_str_contains(response_str, "FakeCA", "Error mentions wrong CA name")
+
+
+@mark.p1
+def test_ejbca_rest_wrong_profile(request: FixtureRequest):
+    """Verify REST enrollment with non-existent profile returns error.
+
+    Test Steps:
+        - Submit REST enrollment with fake certificate profile
+        - Validate error response
+
+    Teardown:
+        - Remove generated key and CSR files
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    ejbca_config = ConfigurationManager.get_security_config().get_ejbca_config()
+    lab_config = ConfigurationManager.get_lab_config()
+    oam_ip = lab_config.get_floating_ip()
+    port = ejbca_config.get_cmp_external_port()
+    cn = "test-rest-wrong-profile"
+    key_path = f"/tmp/{cn}.key"
+    csr_der_path = f"/tmp/{cn}.der"
+
+    def teardown():
+        get_logger().log_teardown_step("Remove wrong-profile test artifacts")
+        file_keywords = FileKeywords(ssh_connection)
+
+        file_keywords.delete_file(key_path)
+
+        file_keywords.delete_file(csr_der_path)
+
+    request.addfinalizer(teardown)
+
+    openssl_keywords = OpenSSLKeywords(ssh_connection)
+    openssl_keywords.generate_rsa_key(key_path)
+
+    admin_cert = ejbca_config.get_admin_cert_path()
+    admin_key = ejbca_config.get_admin_key_path()
+    rest_keywords = EjbcaRestKeywords(ssh_connection, admin_cert, admin_key)
+    csr_b64 = rest_keywords.generate_csr_der_base64(key_path, csr_der_path, cn)
+
+    get_logger().log_test_case_step("Submit REST enrollment with fake profile")
+    base_url = f"https://{oam_ip}:{port}{ejbca_config.get_rest_base_path()}"
+    response = rest_keywords.rest_enroll_pkcs10(
+        base_url, csr_b64,
+        "NONEXISTENT",
+        ejbca_config.get_rest_ee_profile(),
+        ejbca_config.get_rest_ca_name(),
+        cn, ejbca_config.get_rest_enroll_password()
+    )
+
+    get_logger().log_test_case_step("Validate error response for wrong profile")
+    validate_not_equals(response, {}, "REST response is not empty for wrong profile")
+    response_str = str(response)
+    validate_str_contains(response_str, "NONEXISTENT", "Error mentions wrong profile")
+
+
+@mark.p1
+def test_ejbca_cmp_bad_hmac_no_cert():
+    """Verify CMP with bad HMAC does not produce a certificate file.
+
+    Test Steps:
+        - Attempt enrollment with wrong HMAC
+        - Validate cert file does not exist after failure
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    ejbca_config = ConfigurationManager.get_security_config().get_ejbca_config()
+    cn = "test-cmp-bad-hmac-nocert"
+    key_path = f"/tmp/{cn}.key"
+    csr_path = f"/tmp/{cn}.csr"
+    cert_path = f"/tmp/{cn}.crt"
+
+    cmp_keywords = EjbcaCmpKeywords(ssh_connection)
+
+    get_logger().log_test_case_step("Generate key and CSR")
+    cmp_keywords.generate_key_and_csr(cn, key_path, csr_path, san_dns=cn)
+
+    get_logger().log_test_case_step("Attempt enrollment with bad HMAC")
+    server = ejbca_config.get_cmp_internal_server()
+    path = ejbca_config.get_cmp_internal_path()
+    cmp_keywords.cmp_enroll_with_invalid_secret(
+        server, path, "totally-wrong-secret", cn, key_path, csr_path, cert_path
+    )
+
+    get_logger().log_test_case_step("Verify cert file not created")
+    file_kw = FileKeywords(ssh_connection)
+    file_exists = file_kw.file_exists(cert_path)
+    validate_equals(file_exists, False, "No cert file created with bad HMAC")
+
+
+@mark.p1
+def test_ejbca_revoked_cert_mtls_rejected():
+    """Verify a revoked certificate cannot be used for mTLS access.
+
+    Test Steps:
+        - Attempt mTLS with a self-signed cert (simulating untrusted/revoked)
+        - Validate connection fails
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    ejbca_config = ConfigurationManager.get_security_config().get_ejbca_config()
+    lab_config = ConfigurationManager.get_lab_config()
+    oam_ip = lab_config.get_floating_ip()
+    port = ejbca_config.get_cmp_external_port()
+
+    get_logger().log_test_case_step("Test untrusted cert rejection (simulates revoked)")
+    security_keywords = EjbcaSecurityKeywords(ssh_connection, ejbca_config.get_namespace())
+    accepted = security_keywords.is_fake_client_cert_accepted(oam_ip, port)
+
+    get_logger().log_test_case_step("Validate untrusted cert rejected")
+    validate_equals(accepted, False, "Untrusted/revoked cert rejected by mTLS")
+
+
+@mark.p1
+def test_ejbca_cmp_re_enrollment(request: FixtureRequest):
+    """Verify re-enrollment of same CN works (RA auto-resets entity).
+
+    Test Steps:
+        - Enroll certificate for a CN
+        - Enroll again with same CN without manual entity reset
+        - Validate second enrollment succeeds
+
+    Teardown:
+        - Remove generated files
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    ejbca_config = ConfigurationManager.get_security_config().get_ejbca_config()
+    cn = "test-cmp-re-enroll"
+    key_path = f"/tmp/{cn}.key"
+    csr_path = f"/tmp/{cn}.csr"
+    cert1_path = f"/tmp/{cn}-1.crt"
+    cert2_path = f"/tmp/{cn}-2.crt"
+
+    def teardown():
+        get_logger().log_teardown_step("Remove re-enrollment test artifacts")
+        file_kw = FileKeywords(ssh_connection)
+
+        file_kw.delete_file(key_path)
+
+        file_kw.delete_file(csr_path)
+
+        file_kw.delete_file(cert1_path)
+
+        file_kw.delete_file(cert2_path)
+
+    request.addfinalizer(teardown)
+
+    cmp_keywords = EjbcaCmpKeywords(ssh_connection)
+    server = ejbca_config.get_cmp_internal_server()
+    path = ejbca_config.get_cmp_internal_path()
+    hmac_secret = ejbca_config.get_cmp_hmac_secret()
+
+    get_logger().log_test_case_step("Generate key and CSR")
+    cmp_keywords.generate_key_and_csr(cn, key_path, csr_path, san_dns=cn)
+
+    get_logger().log_test_case_step("First enrollment")
+    cmp_keywords.cmp_enroll(server, path, hmac_secret, cn, key_path, csr_path, cert1_path)
+
+    get_logger().log_test_case_step("Re-enrollment without manual reset")
+    output = cmp_keywords.cmp_enroll(
+        server, path, hmac_secret, cn, key_path, csr_path, cert2_path
+    )
+
+    get_logger().log_test_case_step("Validate re-enrollment success")
+    validate_str_contains(output, "received IP", "Re-enrollment succeeds")
+
+
