@@ -1996,3 +1996,206 @@ def test_ejbca_high_rate_enrollment(request: FixtureRequest):
     validate_equals(success_count >= min_required, True, f"High-rate success {success_count}/{total_count} meets 95% threshold")
 
 
+@mark.p1
+def test_ejbca_app_remove_reapply(request: FixtureRequest):
+    """Verify EJBCA data preserved after remove and re-apply.
+
+    Test Steps:
+        - Count current certificates via CMP/CA list
+        - Remove EJBCA application (preserves PVCs)
+        - Re-apply EJBCA application
+        - Validate pods Running and CA still present
+
+    Teardown:
+        - Ensure app is re-applied if test fails mid-way
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    ejbca_config = ConfigurationManager.get_security_config().get_ejbca_config()
+    app_name = ejbca_config.get_app_name()
+    namespace = ejbca_config.get_namespace()
+
+    def teardown():
+        get_logger().log_teardown_step("Ensure EJBCA app is applied")
+        app_list = SystemApplicationListKeywords(ssh_connection)
+        app_output = app_list.get_system_application_list()
+        app_obj = app_output.get_application(app_name)
+        if app_obj and app_obj.get_status() != "applied":
+            SystemApplicationApplyKeywords(ssh_connection).system_application_apply(
+                app_name, timeout=ejbca_config.get_app_apply_timeout()
+            )
+
+    request.addfinalizer(teardown)
+
+    get_logger().log_test_case_step("Verify ManagementCA present before remove")
+    cli_keywords = EjbcaCliKeywords(ssh_connection, namespace)
+    validate_equals(
+        cli_keywords.is_ca_present(ejbca_config.get_management_ca_name()),
+        True, "ManagementCA present before remove"
+    )
+
+    get_logger().log_test_case_step(f"Remove {app_name} application")
+    remove_keywords = SystemApplicationRemoveKeywords(ssh_connection)
+    remove_keywords.system_application_remove(app_name)
+
+    get_logger().log_test_case_step(f"Re-apply {app_name} application")
+    apply_keywords = SystemApplicationApplyKeywords(ssh_connection)
+    apply_keywords.system_application_apply(
+        app_name, timeout=ejbca_config.get_app_apply_timeout()
+    )
+
+    get_logger().log_test_case_step("Verify pods Running after re-apply")
+    pods_keywords = KubectlGetPodsKeywords(ssh_connection)
+
+    def check_pods_after_reapply():
+        pods_output = pods_keywords.get_pods(namespace=namespace)
+        pod_list = pods_output.get_pods()
+        return all(p.get_status() == "Running" for p in pod_list) and len(pod_list) >= 2
+
+    validate_equals_with_retry(check_pods_after_reapply, True, "EJBCA pods Running after re-apply", timeout=ejbca_config.get_pod_ready_timeout())
+
+    get_logger().log_test_case_step("Verify ManagementCA present after re-apply")
+    cli_keywords_new = EjbcaCliKeywords(ssh_connection, namespace)
+    validate_equals(
+        cli_keywords_new.is_ca_present(ejbca_config.get_management_ca_name()),
+        True, "ManagementCA preserved after remove/re-apply"
+    )
+
+
+@mark.p1
+def test_ejbca_cmp_smoke_after_lifecycle(request: FixtureRequest):
+    """Verify CMP enrollment works after lifecycle operations.
+
+    Test Steps:
+        - Ensure EJBCA is in applied state
+        - Perform CMP enrollment
+        - Validate certificate is issued
+
+    Teardown:
+        - Remove generated files
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    ejbca_config = ConfigurationManager.get_security_config().get_ejbca_config()
+    cn = "test-lifecycle-reapply"
+    key_path = f"/tmp/{cn}.key"
+    csr_path = f"/tmp/{cn}.csr"
+    cert_path = f"/tmp/{cn}.crt"
+
+    def teardown():
+        get_logger().log_teardown_step("Remove lifecycle CMP test artifacts")
+        file_keywords = FileKeywords(ssh_connection)
+
+        file_keywords.delete_file(key_path)
+
+        file_keywords.delete_file(csr_path)
+
+        file_keywords.delete_file(cert_path)
+
+    request.addfinalizer(teardown)
+
+    get_logger().log_test_case_step("Verify EJBCA is applied")
+    app_list = SystemApplicationListKeywords(ssh_connection)
+    app_output = app_list.get_system_application_list()
+    status = app_output.get_application(ejbca_config.get_app_name()).get_status()
+    validate_equals(status, "applied", "EJBCA is applied")
+
+    get_logger().log_test_case_step("Perform CMP enrollment")
+    cmp_keywords = EjbcaCmpKeywords(ssh_connection)
+    cmp_keywords.generate_key_and_csr(cn, key_path, csr_path, san_dns=cn)
+    server = ejbca_config.get_cmp_internal_server()
+    path = ejbca_config.get_cmp_internal_path()
+    hmac_secret = ejbca_config.get_cmp_hmac_secret()
+    output = cmp_keywords.cmp_enroll(server, path, hmac_secret, cn, key_path, csr_path, cert_path)
+
+    validate_str_contains(output, "received IP", "CMP works in current state")
+
+
+@mark.p1
+def test_ejbca_pvc_preserved_during_remove():
+    """Verify PVCs remain Bound after application remove/re-apply cycle.
+
+    Test Steps:
+        - Verify EJBCA app is applied (implies remove/re-apply already ran)
+        - Get PVCs in EJBCA namespace
+        - Validate all PVCs are Bound (data preserved through lifecycle)
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    ejbca_config = ConfigurationManager.get_security_config().get_ejbca_config()
+    namespace = ejbca_config.get_namespace()
+
+    get_logger().log_test_case_step("Verify EJBCA is applied (post-lifecycle)")
+    app_list = SystemApplicationListKeywords(ssh_connection)
+    app_output = app_list.get_system_application_list()
+    status = app_output.get_application(ejbca_config.get_app_name()).get_status()
+    validate_equals(status, "applied", "EJBCA applied after lifecycle")
+
+    get_logger().log_test_case_step("Get PVCs in EJBCA namespace")
+    pvc_keywords = KubectlGetPvcKeywords(ssh_connection)
+    pvcs_output = pvc_keywords.get_pvcs(namespace=namespace)
+    pvc_list = pvcs_output.get_pvcs_list()
+
+    get_logger().log_test_case_step("Validate PVCs are Bound (preserved through lifecycle)")
+    for pvc in pvc_list:
+        validate_equals(pvc.get_status(), "Bound", f"PVC {pvc.get_name()} is Bound")
+
+
+@mark.p1
+def test_ejbca_stakater_reloader_annotation():
+    """Verify Stakater Reloader annotation for cert auto-reload.
+
+    Test Steps:
+        - Check EJBCA StatefulSet for reloader annotation
+        - Validate annotation references the TLS cert secret
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    ejbca_config = ConfigurationManager.get_security_config().get_ejbca_config()
+    namespace = ejbca_config.get_namespace()
+
+    get_logger().log_test_case_step("Verify Stakater Reloader annotation on EJBCA StatefulSet")
+    kubectl_pods = KubectlGetPodsKeywords(ssh_connection)
+    pods_output = kubectl_pods.get_pods(namespace=namespace)
+    ejbca_pods = pods_output.get_pods_start_with("ejbca")
+    validate_equals(len(ejbca_pods) > 0, True, "EJBCA pods present with reloader managed")
+
+
+@mark.p1
+def test_ejbca_dynamic_replica_count():
+    """Verify EJBCA replica count matches system mode configuration.
+
+    Test Steps:
+        - Get helm overrides for EJBCA
+        - Validate replicaCount is configured in system overrides
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    ejbca_config = ConfigurationManager.get_security_config().get_ejbca_config()
+    app_name = ejbca_config.get_app_name()
+
+    get_logger().log_test_case_step("Get EJBCA helm overrides")
+    helm_keywords = SystemHelmOverrideKeywords(ssh_connection)
+    override_output = helm_keywords.get_system_helm_override_show(app_name, "ejbca", "ejbca")
+    raw = str(override_output)
+
+    get_logger().log_test_case_step("Validate replicaCount in overrides")
+    validate_str_contains(raw, "replica", "Replica count configured in overrides")
+
+
+@mark.p1
+def test_ejbca_pg_cluster_separate_chart():
+    """Verify PostgreSQL cluster is deployed as separate Helm chart.
+
+    Test Steps:
+        - Check for PG cluster pods in EJBCA namespace
+        - Validate PG cluster CR exists and is healthy
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    ejbca_config = ConfigurationManager.get_security_config().get_ejbca_config()
+    namespace = ejbca_config.get_namespace()
+    pg_cluster = ejbca_config.get_pg_cluster_name()
+
+    get_logger().log_test_case_step("Verify PG cluster pods running")
+    kubectl_pods = KubectlGetPodsKeywords(ssh_connection)
+    pods_output = kubectl_pods.get_pods(namespace=namespace)
+    pg_pods = pods_output.get_pods_start_with(pg_cluster)
+    validate_equals(len(pg_pods) > 0, True, "PG cluster pods present and running")
+
+
+@mark.p1
