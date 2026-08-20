@@ -293,8 +293,8 @@ class SubcloudPickerKeywords(BaseKeyword):
         Args:
             load (Optional[str]): Raw filter value. ``None`` or an explicit
                 version is returned unchanged. The literal ``"N"`` is resolved
-                to the current system version. The literal ``"N-1"`` is
-                resolved against the version manager.
+                to the current system version. The literals ``"N-1"`` and
+                ``"N-2"`` are resolved against the version manager.
 
         Returns:
             Optional[str]: ``None`` when no load filter was requested, else
@@ -305,6 +305,8 @@ class SubcloudPickerKeywords(BaseKeyword):
             return None
         if load == "N":
             return self._version_mgr.get_sw_version().get_name()
+        if load == "N-2":
+            return self._version_mgr.get_second_last_major_release().get_name()
         if load != "N-1":
             return load
 

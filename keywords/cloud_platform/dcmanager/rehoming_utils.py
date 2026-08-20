@@ -42,8 +42,8 @@ def determine_rehome_direction(
         subcloud_name (str): Optional specific subcloud name. When provided, determines
             direction based on which cloud currently owns this subcloud.
         load (Optional[str]): Optional software version filter for batch mode.
-            Accepts "N-1" or an explicit version string. When provided, only
-            subclouds running the specified version are considered.
+            Accepts "N-1", "N-2", or an explicit version string. When provided,
+            only subclouds running the specified version are considered.
             direction based on which cloud currently owns this subcloud.
 
     Returns:
