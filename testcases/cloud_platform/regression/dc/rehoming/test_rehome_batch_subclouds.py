@@ -189,3 +189,85 @@ def test_rehome_subclouds_in_batch_n_minus_1_release():
         subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
         pods_after = count_pods_on_subcloud(subcloud_ssh)
         validate_equals(pods_before[subcloud_name], pods_after, f"Pod count on {subcloud_name} should be consistent before and after rehoming")
+
+
+@mark.p2
+@mark.lab_has_secondary_system_controller
+@mark.lab_has_subcloud
+def test_rehome_subclouds_in_batch_n_minus_2_release():
+    """Verify batch rehoming of all online N-2 release subclouds between two system controllers.
+
+    Rehomes all available online subclouds running the N-2 release from
+    the system controller that owns them to the peer system controller. All
+    migrate operations are triggered in parallel with the --release flag.
+
+    Preconditions:
+        - Lab has two system controllers (geo-redundant DC)
+        - At least one online subcloud on the N-2 release is present in config
+
+    Setup:
+        - Establish SSH connections to both system controllers
+        - Determine rehome direction (origin = controller with online N-2 subclouds)
+        - Ensure controller-0 is active on duplex subclouds
+        - Count pods on each subcloud before rehoming
+
+    Test Steps:
+        1. Rehome all selected N-2 subclouds in batch (parallel migrate + poll)
+        2. Verify each subcloud is healthy after rehoming
+        3. Verify pod count is consistent on each subcloud after rehoming
+
+    Teardown:
+        - None
+    """
+    cloud_a_ssh = LabConnectionKeywords().get_active_controller_ssh()
+    cloud_b_ssh = LabConnectionKeywords().get_secondary_active_controller_ssh()
+
+    # Resolve N-2 release version
+    n_minus_2_release = str(CloudPlatformVersionManagerClass().get_second_last_major_release())
+
+    origin_ssh, destination_ssh, selected_subcloud_names = determine_rehome_direction(cloud_a_ssh, cloud_b_ssh, load="N-2")
+
+    validate_not_equals(len(selected_subcloud_names), 0, "At least one online N-2 subcloud must be available for rehoming")
+    get_logger().log_info(f"N-2 subclouds selected for rehoming: {selected_subcloud_names}")
+
+    # Pre-rehome: ensure duplex subclouds have controller-0 active and count pods
+    pods_before = {}
+    lab_config = ConfigurationManager.get_lab_config()
+    for subcloud_name in selected_subcloud_names:
+        sc_config = lab_config.get_subcloud(subcloud_name)
+        subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
+
+        if sc_config.get_lab_type() == LabTypeEnum.DUPLEX.value:
+            get_logger().log_info(f"Ensuring controller-0 is active on duplex subcloud {subcloud_name}")
+            SystemHostSwactKeywords(subcloud_ssh).ensure_duplex_subcloud_c0_is_active(subcloud_name)
+
+        subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
+        get_logger().log_info(f"Counting pods on subcloud {subcloud_name} before rehoming")
+        pods_before[subcloud_name] = count_pods_on_subcloud(subcloud_ssh)
+
+    # Build batch descriptor and perform rehome with release flag
+    get_logger().log_test_case_step("Rehome all selected N-2 subclouds in batch")
+    deployment_assets_config = ConfigurationManager.get_deployment_assets_config()
+    subclouds_for_batch = []
+    for subcloud_name in selected_subcloud_names:
+        bootstrap = deployment_assets_config.get_subcloud_deployment_assets(subcloud_name).get_bootstrap_file()
+        install = deployment_assets_config.get_subcloud_deployment_assets(subcloud_name).get_install_file()
+        subclouds_for_batch.append({
+            "name": subcloud_name,
+            "bootstrap_values": bootstrap,
+            "install_values": install,
+        })
+
+    perform_batch_rehome_operation(origin_ssh, destination_ssh, subclouds_for_batch, release=n_minus_2_release)
+
+    # Post-rehome validations
+    get_logger().log_test_case_step("Verify N-2 subclouds are healthy after batch rehoming")
+    for subcloud_name in selected_subcloud_names:
+        get_logger().log_info(f"Validating subcloud {subcloud_name} is healthy after rehome")
+        verify_subcloud_healthy(destination_ssh, subcloud_name, check_sync=False)
+
+    get_logger().log_test_case_step("Verify pod counts are consistent after batch rehoming")
+    for subcloud_name in selected_subcloud_names:
+        subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
+        pods_after = count_pods_on_subcloud(subcloud_ssh)
+        validate_equals(pods_before[subcloud_name], pods_after, f"Pod count on {subcloud_name} should be consistent before and after rehoming")
