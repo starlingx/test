@@ -686,3 +686,219 @@ def test_ejbca_cmp_alias_config():
     validate_equals(cmp_enabled, True, "CMP enabled for alias")
 
 
+@mark.p1
+def test_ejbca_ocsp_endpoint():
+    """Verify OCSP responder endpoint is accessible.
+
+    Test Steps:
+        - Check OCSP protocol is enabled via EJBCA CLI
+        - Validate OCSP is reported as enabled
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    ejbca_config = ConfigurationManager.get_security_config().get_ejbca_config()
+    namespace = ejbca_config.get_namespace()
+
+    get_logger().log_test_case_step("Check OCSP protocol status")
+    cli_keywords = EjbcaCliKeywords(ssh_connection, namespace)
+    ocsp_enabled = cli_keywords.is_protocol_enabled("OCSP")
+
+    validate_equals(ocsp_enabled, True, "OCSP protocol enabled")
+
+
+@mark.p1
+def test_ejbca_rest_enrollment(request: FixtureRequest):
+    """Verify REST API certificate enrollment via pkcs10enroll.
+
+    Test Steps:
+        - Generate key and DER-encoded CSR
+        - Submit enrollment via REST API
+        - Validate response contains certificate data
+
+    Teardown:
+        - Remove generated key and CSR files
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    ejbca_config = ConfigurationManager.get_security_config().get_ejbca_config()
+    lab_config = ConfigurationManager.get_lab_config()
+    oam_ip = lab_config.get_floating_ip()
+    port = ejbca_config.get_cmp_external_port()
+    cn = "test-rest-enroll"
+    key_path = f"/tmp/{cn}.key"
+    csr_der_path = f"/tmp/{cn}.der"
+
+    def teardown():
+        get_logger().log_teardown_step("Remove REST enrollment test artifacts")
+        file_keywords = FileKeywords(ssh_connection)
+
+        file_keywords.delete_file(key_path)
+
+        file_keywords.delete_file(csr_der_path)
+
+    request.addfinalizer(teardown)
+
+    openssl_keywords = OpenSSLKeywords(ssh_connection)
+    openssl_keywords.generate_rsa_key(key_path)
+
+    get_logger().log_test_case_step("Generate DER CSR for REST enrollment")
+    admin_cert = ejbca_config.get_admin_cert_path()
+    admin_key = ejbca_config.get_admin_key_path()
+    rest_keywords = EjbcaRestKeywords(ssh_connection, admin_cert, admin_key)
+    csr_b64 = rest_keywords.generate_csr_der_base64(key_path, csr_der_path, cn)
+
+    get_logger().log_test_case_step("Submit REST pkcs10enroll")
+    base_url = f"https://{oam_ip}:{port}{ejbca_config.get_rest_base_path()}"
+    response = rest_keywords.rest_enroll_pkcs10(
+        base_url, csr_b64,
+        ejbca_config.get_rest_cert_profile(),
+        ejbca_config.get_rest_ee_profile(),
+        ejbca_config.get_rest_ca_name(),
+        cn, ejbca_config.get_rest_enroll_password()
+    )
+
+    get_logger().log_test_case_step("Validate enrollment response")
+    response_str = str(response)
+    validate_str_contains(response_str, "certificate", "REST enrollment returned certificate data")
+
+
+@mark.p1
+def test_ejbca_rest_revocation(request: FixtureRequest):
+    """Verify REST API certificate revocation.
+
+    Test Steps:
+        - Enroll a certificate via REST
+        - Revoke it via REST revocation endpoint
+        - Validate revocation status
+
+    Teardown:
+        - Remove generated key and CSR files
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    ejbca_config = ConfigurationManager.get_security_config().get_ejbca_config()
+    lab_config = ConfigurationManager.get_lab_config()
+    oam_ip = lab_config.get_floating_ip()
+    port = ejbca_config.get_cmp_external_port()
+    cn = "test-rest-revoke"
+    key_path = f"/tmp/{cn}.key"
+    csr_der_path = f"/tmp/{cn}.der"
+
+    def teardown():
+        get_logger().log_teardown_step("Remove REST revocation test artifacts")
+        file_keywords = FileKeywords(ssh_connection)
+
+        file_keywords.delete_file(key_path)
+
+        file_keywords.delete_file(csr_der_path)
+
+    request.addfinalizer(teardown)
+
+    openssl_keywords = OpenSSLKeywords(ssh_connection)
+    openssl_keywords.generate_rsa_key(key_path)
+
+    admin_cert = ejbca_config.get_admin_cert_path()
+    admin_key = ejbca_config.get_admin_key_path()
+    rest_keywords = EjbcaRestKeywords(ssh_connection, admin_cert, admin_key)
+    csr_b64 = rest_keywords.generate_csr_der_base64(key_path, csr_der_path, cn)
+
+    get_logger().log_test_case_step("Enroll certificate for revocation test")
+    base_url = f"https://{oam_ip}:{port}{ejbca_config.get_rest_base_path()}"
+    response = rest_keywords.rest_enroll_pkcs10(
+        base_url, csr_b64,
+        ejbca_config.get_rest_cert_profile(),
+        ejbca_config.get_rest_ee_profile(),
+        ejbca_config.get_rest_ca_name(),
+        cn, ejbca_config.get_rest_enroll_password()
+    )
+    validate_not_equals(response, {}, "REST enrollment for revocation test returned data")
+    serial_hex = response.get("serial_number", "")
+
+    get_logger().log_test_case_step("Revoke the certificate via REST")
+    issuer_dn = response.get("issuer_dn", "")
+    revoke_output = rest_keywords.rest_revoke_cert(
+        base_url, issuer_dn, serial_hex
+    )
+    raw_revoke = "\n".join(revoke_output) if isinstance(revoke_output, list) else revoke_output
+
+    get_logger().log_test_case_step("Validate revocation response")
+    validate_str_contains(raw_revoke, "revoked", "Certificate revoked via REST")
+
+
+@mark.p1
+def test_ejbca_rest_status():
+    """Verify REST API status endpoint returns OK.
+
+    Test Steps:
+        - Query EJBCA REST status endpoint
+        - Validate status is OK and version is returned
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    ejbca_config = ConfigurationManager.get_security_config().get_ejbca_config()
+    lab_config = ConfigurationManager.get_lab_config()
+    oam_ip = lab_config.get_floating_ip()
+    port = ejbca_config.get_cmp_external_port()
+
+    admin_cert = ejbca_config.get_admin_cert_path()
+    admin_key = ejbca_config.get_admin_key_path()
+    curl_keywords = CurlMtlsKeywords(ssh_connection, admin_cert, admin_key)
+
+    get_logger().log_test_case_step("Query REST status endpoint")
+    base_url = f"https://{oam_ip}:{port}{ejbca_config.get_rest_base_path()}"
+    status_code = curl_keywords.get_http_status_code(f"{base_url}/v1/ca")
+
+    get_logger().log_test_case_step("Validate HTTP 200 response")
+    validate_equals(status_code, "200", "REST status endpoint returns 200")
+
+
+@mark.p1
+def test_ejbca_rest_no_client_cert():
+    """Verify REST API rejects requests without client certificate.
+
+    Test Steps:
+        - Send curl request without client cert to REST endpoint
+        - Validate connection fails (TLS handshake error)
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    ejbca_config = ConfigurationManager.get_security_config().get_ejbca_config()
+    lab_config = ConfigurationManager.get_lab_config()
+    oam_ip = lab_config.get_floating_ip()
+    port = ejbca_config.get_cmp_external_port()
+
+    admin_cert = ejbca_config.get_admin_cert_path()
+    admin_key = ejbca_config.get_admin_key_path()
+    rest_keywords = EjbcaRestKeywords(ssh_connection, admin_cert, admin_key)
+
+    get_logger().log_test_case_step("Attempt REST request without client cert")
+    base_url = f"https://{oam_ip}:{port}{ejbca_config.get_rest_base_path()}"
+    rc = rest_keywords.rest_no_client_cert_rejected(f"{base_url}/v1/ca")
+
+    get_logger().log_test_case_step("Validate request is rejected")
+    validate_not_equals(rc, 0, "No client cert rejected by REST endpoint")
+
+
+@mark.p1
+def test_ejbca_rest_ca_listing():
+    """Verify REST API CA listing returns ManagementCA.
+
+    Test Steps:
+        - Query REST CA listing endpoint
+        - Validate ManagementCA is in the response
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    ejbca_config = ConfigurationManager.get_security_config().get_ejbca_config()
+    lab_config = ConfigurationManager.get_lab_config()
+    oam_ip = lab_config.get_floating_ip()
+    port = ejbca_config.get_cmp_external_port()
+
+    admin_cert = ejbca_config.get_admin_cert_path()
+    admin_key = ejbca_config.get_admin_key_path()
+    rest_keywords = EjbcaRestKeywords(ssh_connection, admin_cert, admin_key)
+
+    get_logger().log_test_case_step("List CAs via REST API")
+    base_url = f"https://{oam_ip}:{port}{ejbca_config.get_rest_base_path()}"
+    response = rest_keywords.rest_list_cas(base_url)
+
+    get_logger().log_test_case_step("Validate ManagementCA in response")
+    response_str = str(response)
+    management_ca = ejbca_config.get_management_ca_name()
+    validate_str_contains(response_str, management_ca, "ManagementCA in REST listing")
+
+
