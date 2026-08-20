@@ -215,7 +215,10 @@ class DcManagerSubcloudBackupKeywords(BaseKeyword):
         else:
             # Wait for backup to initiate to avoid false validation.
             self.wait_for_backup_status_complete(subcloud=subcloud, expected_status="backing-up", check_interval=2, timeout=30)
-            self.wait_for_backup_creation(con_ssh, path, subcloud)
+
+            if path:
+                ssh_connection = LabConnectionKeywords().get_subcloud_ssh(subcloud) if local_only else con_ssh
+                self.wait_for_backup_creation(ssh_connection, path, subcloud)
 
     def wait_for_backup_creation(
         self,
