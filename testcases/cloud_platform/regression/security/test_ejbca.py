@@ -1300,3 +1300,170 @@ def test_ejbca_cmp_re_enrollment(request: FixtureRequest):
     validate_str_contains(output, "received IP", "Re-enrollment succeeds")
 
 
+@mark.p1
+def test_ejbca_cluster_issuer_ready():
+    """Verify EJBCA cert-manager ClusterIssuer is in Ready state.
+
+    Test Steps:
+        - Query ClusterIssuer resource status
+        - Validate condition type is Ready
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    ejbca_config = ConfigurationManager.get_security_config().get_ejbca_config()
+
+    issuer_name = ejbca_config.get_cert_manager_cluster_issuer_name()
+    cert_mgr_keywords = EjbcaCertManagerKeywords(ssh_connection)
+
+    get_logger().log_test_case_step(f"Check ClusterIssuer {issuer_name} readiness")
+    is_ready = cert_mgr_keywords.is_cluster_issuer_ready(issuer_name)
+
+    validate_equals(is_ready, True, f"ClusterIssuer {issuer_name} is Ready")
+
+
+@mark.p1
+def test_ejbca_certmanager_certificate_issuance(request: FixtureRequest):
+    """Verify cert-manager can issue a certificate via EJBCA ClusterIssuer.
+
+    Test Steps:
+        - Create a Certificate CR referencing EJBCA ClusterIssuer
+        - Wait for Certificate to become Ready
+        - Validate TLS secret is created
+
+    Teardown:
+        - Delete Certificate CR and TLS secret
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    ejbca_config = ConfigurationManager.get_security_config().get_ejbca_config()
+    namespace = ejbca_config.get_namespace()
+    issuer_name = ejbca_config.get_cert_manager_cluster_issuer_name()
+    issuer_group = ejbca_config.get_cert_manager_issuer_group()
+    cert_name = "test-ejbca-cert-issue"
+    secret_name = f"{cert_name}-tls"
+
+    def teardown():
+        get_logger().log_teardown_step("Delete Certificate CR and secret")
+        cert_mgr_keywords.delete_certificate_cr(cert_name, namespace)
+        cert_mgr_keywords.delete_tls_secret(secret_name, namespace)
+
+    request.addfinalizer(teardown)
+
+    cert_mgr_keywords = EjbcaCertManagerKeywords(ssh_connection)
+
+    get_logger().log_test_case_step("Create Certificate CR via EJBCA issuer")
+    cert_mgr_keywords.create_certificate_cr(
+        cert_name, namespace, secret_name,
+        f"{cert_name}.local", issuer_name, issuer_group
+    )
+
+    get_logger().log_test_case_step("Wait for Certificate to become Ready")
+    is_ready = cert_mgr_keywords.wait_for_certificate_ready(cert_name, namespace)
+    validate_equals(is_ready, True, "Certificate CR became Ready")
+
+    get_logger().log_test_case_step("Validate TLS secret exists")
+    cert_data = cert_mgr_keywords.get_tls_secret_cert_data(secret_name, namespace)
+    validate_equals(len(cert_data) > 0, True, "TLS secret contains certificate data")
+
+
+@mark.p1
+def test_ejbca_certmanager_certificate_renewal(request: FixtureRequest):
+    """Verify cert-manager renews certificate when secret is deleted.
+
+    Test Steps:
+        - Create Certificate CR and wait for Ready
+        - Delete the TLS secret to trigger renewal
+        - Wait for new secret to appear
+        - Validate new certificate data differs from original
+
+    Teardown:
+        - Delete Certificate CR and TLS secret
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    ejbca_config = ConfigurationManager.get_security_config().get_ejbca_config()
+    namespace = ejbca_config.get_namespace()
+    issuer_name = ejbca_config.get_cert_manager_cluster_issuer_name()
+    issuer_group = ejbca_config.get_cert_manager_issuer_group()
+    cert_name = "test-ejbca-cert-renew"
+    secret_name = f"{cert_name}-tls"
+
+    def teardown():
+        get_logger().log_teardown_step("Delete renewal test Certificate CR and secret")
+        cert_mgr_keywords.delete_certificate_cr(cert_name, namespace)
+        cert_mgr_keywords.delete_tls_secret(secret_name, namespace)
+
+    request.addfinalizer(teardown)
+
+    cert_mgr_keywords = EjbcaCertManagerKeywords(ssh_connection)
+
+    get_logger().log_test_case_step("Create Certificate CR")
+    cert_mgr_keywords.create_certificate_cr(
+        cert_name, namespace, secret_name,
+        f"{cert_name}.local", issuer_name, issuer_group
+    )
+    cert_mgr_keywords.wait_for_certificate_ready(cert_name, namespace)
+
+    get_logger().log_test_case_step("Record original cert data")
+    original_data = cert_mgr_keywords.get_tls_secret_cert_data(secret_name, namespace)
+
+    get_logger().log_test_case_step("Delete TLS secret to trigger renewal")
+    cert_mgr_keywords.delete_tls_secret(secret_name, namespace)
+
+    get_logger().log_test_case_step("Wait for renewed secret")
+    renewed = cert_mgr_keywords.wait_for_secret_exists(secret_name, namespace)
+    validate_equals(renewed, True, "Renewed TLS secret appeared")
+
+    get_logger().log_test_case_step("Validate certificate data changed")
+    new_data = cert_mgr_keywords.get_tls_secret_cert_data(secret_name, namespace)
+    validate_equals(original_data != new_data, True, "Certificate renewed with new data")
+
+
+@mark.p1
+def test_ejbca_certmanager_multiple_certs(request: FixtureRequest):
+    """Verify cert-manager can issue multiple certificates concurrently.
+
+    Test Steps:
+        - Create 5 Certificate CRs via EJBCA ClusterIssuer
+        - Wait for all to become Ready
+        - Validate all 5 TLS secrets exist
+
+    Teardown:
+        - Delete all Certificate CRs and TLS secrets
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    ejbca_config = ConfigurationManager.get_security_config().get_ejbca_config()
+    namespace = ejbca_config.get_namespace()
+    issuer_name = ejbca_config.get_cert_manager_cluster_issuer_name()
+    issuer_group = ejbca_config.get_cert_manager_issuer_group()
+    cert_count = 5
+    cert_prefix = "test-ejbca-multi"
+
+    def teardown():
+        get_logger().log_teardown_step("Delete multiple cert test artifacts")
+        for i in range(cert_count):
+            name = f"{cert_prefix}-{i}"
+            cert_mgr_keywords.delete_certificate_cr(name, namespace)
+            cert_mgr_keywords.delete_tls_secret(f"{name}-tls", namespace)
+
+    request.addfinalizer(teardown)
+
+    cert_mgr_keywords = EjbcaCertManagerKeywords(ssh_connection)
+
+    get_logger().log_test_case_step(f"Create {cert_count} Certificate CRs")
+    for i in range(cert_count):
+        name = f"{cert_prefix}-{i}"
+        cert_mgr_keywords.create_certificate_cr(
+            name, namespace, f"{name}-tls",
+            f"{name}.local", issuer_name, issuer_group
+        )
+
+    get_logger().log_test_case_step("Wait for all certificates to become Ready")
+    ready_count = 0
+    for i in range(cert_count):
+        name = f"{cert_prefix}-{i}"
+        if cert_mgr_keywords.wait_for_certificate_ready(name, namespace, timeout=180):
+            ready_count += 1
+
+    get_logger().log_test_case_step("Validate all certificates Ready")
+    validate_equals(ready_count, cert_count, f"All {cert_count} certs Ready")
+
+
+@mark.p1
