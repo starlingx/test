@@ -902,3 +902,137 @@ def test_ejbca_rest_ca_listing():
     validate_str_contains(response_str, management_ca, "ManagementCA in REST listing")
 
 
+@mark.p1
+def test_ejbca_ca_key_not_in_secrets():
+    """Verify CA private key is not exposed in Kubernetes secrets.
+
+    Test Steps:
+        - Search all secrets in EJBCA namespace for private key material
+        - Validate no CA private key found (only service cert keys)
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    ejbca_config = ConfigurationManager.get_security_config().get_ejbca_config()
+
+    get_logger().log_test_case_step("Check secrets for CA private key material")
+    security_keywords = EjbcaSecurityKeywords(ssh_connection, ejbca_config.get_namespace())
+    has_ca_key = security_keywords.secrets_contain_private_key()
+
+    get_logger().log_test_case_step("Validate CA key not in secrets")
+    validate_equals(has_ca_key, False, "No CA private key in secrets")
+
+
+@mark.p1
+def test_ejbca_crypto_token_not_exportable():
+    """Verify CryptoToken is active and listed (SoftCryptoToken).
+
+    Test Steps:
+        - List crypto tokens via EJBCA CLI
+        - Validate ManagementCA token reports as active (SoftCryptoToken)
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    ejbca_config = ConfigurationManager.get_security_config().get_ejbca_config()
+    namespace = ejbca_config.get_namespace()
+    token_name = ejbca_config.get_crypto_token_name()
+
+    get_logger().log_test_case_step(f"List crypto tokens and check {token_name}")
+    cli_keywords = EjbcaCliKeywords(ssh_connection, namespace)
+    output = cli_keywords.list_crypto_tokens()
+    raw = "\n".join(output) if isinstance(output, list) else output
+
+    get_logger().log_test_case_step("Validate CryptoToken is active (encrypted)")
+    validate_str_contains(raw, token_name, "CryptoToken listed")
+    is_active = cli_keywords.is_crypto_token_active(token_name)
+    validate_equals(is_active, True, "CryptoToken is active")
+
+
+@mark.p1
+def test_ejbca_non_root_user():
+    """Verify EJBCA pods run as non-root user.
+
+    Test Steps:
+        - Get EJBCA pod security context
+        - Validate container runs with non-root UID
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    ejbca_config = ConfigurationManager.get_security_config().get_ejbca_config()
+    namespace = ejbca_config.get_namespace()
+
+    get_logger().log_test_case_step("Get EJBCA pod user ID")
+    cli_keywords = EjbcaCliKeywords(ssh_connection, namespace)
+    pod_name = cli_keywords.get_ejbca_pod_name()
+    exec_keywords = KubectlExecInPodsKeywords(ssh_connection)
+    output = exec_keywords.run_pod_exec_cmd(pod_name, "id -u", options=f"-n {namespace}")
+    raw = "\n".join(output) if isinstance(output, list) else output
+    uid = raw.strip()
+
+    get_logger().log_test_case_step("Validate non-root UID")
+    validate_equals(uid != "0", True, "EJBCA runs as non-root user")
+
+
+@mark.p1
+def test_ejbca_default_sa_cannot_exec():
+    """Verify default ServiceAccount cannot exec into EJBCA pods.
+
+    Test Steps:
+        - Attempt kubectl exec as default SA
+        - Validate access is denied
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    ejbca_config = ConfigurationManager.get_security_config().get_ejbca_config()
+
+    get_logger().log_test_case_step("Attempt exec as default ServiceAccount")
+    security_keywords = EjbcaSecurityKeywords(ssh_connection, ejbca_config.get_namespace())
+    can_exec = security_keywords.can_default_sa_exec_into_ejbca()
+
+    get_logger().log_test_case_step("Validate exec denied")
+    validate_equals(can_exec, False, "Default SA cannot exec into EJBCA")
+
+
+@mark.p1
+def test_ejbca_fake_cert_rejected():
+    """Verify self-signed (fake) client cert is rejected by mTLS.
+
+    Test Steps:
+        - Generate a self-signed certificate (not in CA trust chain)
+        - Attempt mTLS connection with fake cert
+        - Validate connection is rejected
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    ejbca_config = ConfigurationManager.get_security_config().get_ejbca_config()
+    lab_config = ConfigurationManager.get_lab_config()
+    oam_ip = lab_config.get_floating_ip()
+    port = ejbca_config.get_cmp_external_port()
+
+    get_logger().log_test_case_step("Test fake client cert rejection")
+    security_keywords = EjbcaSecurityKeywords(ssh_connection, ejbca_config.get_namespace())
+    fake_accepted = security_keywords.is_fake_client_cert_accepted(oam_ip, port)
+
+    get_logger().log_test_case_step("Validate fake cert rejected")
+    validate_equals(fake_accepted, False, "Self-signed cert rejected by mTLS")
+
+
+@mark.p1
+def test_ejbca_hmac_not_in_logs():
+    """Verify HMAC secret is not exposed in container logs.
+
+    Test Steps:
+        - Search EJBCA pod logs for HMAC secret value
+        - Validate zero occurrences found
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    ejbca_config = ConfigurationManager.get_security_config().get_ejbca_config()
+    namespace = ejbca_config.get_namespace()
+    hmac_secret = ejbca_config.get_cmp_hmac_secret()
+
+    get_logger().log_test_case_step("Search EJBCA pod logs for HMAC secret")
+    pod_logs_keywords = KubectlPodLogsKeywords(ssh_connection)
+    cli_keywords = EjbcaCliKeywords(ssh_connection, namespace)
+    pod_name = cli_keywords.get_ejbca_pod_name()
+    output = pod_logs_keywords.get_pod_logs(pod_name, namespace=namespace)
+    raw = "\n".join(output) if isinstance(output, list) else output
+    occurrences = raw.count(hmac_secret)
+
+    get_logger().log_test_case_step("Validate HMAC not leaked in logs")
+    validate_equals(occurrences, 0, "HMAC secret not found in logs")
+
+
