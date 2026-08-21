@@ -3,15 +3,20 @@
 Verifies /etc/containerd/config.toml has the correct SystemdCgroup setting.
 """
 
-from testcases.cloud_platform.functional.platform.cgroup.helper_cgroup import HelperCgroup
+from pytest import mark
+
+from keywords.cloud_platform.cgroup.cgroup_keywords import CgroupKeywords
+from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 
 
-def test_containerd_systemd_cgroup_matches_version():
+@mark.p2
+def test_containerd_systemd_cgroup_matches_version() -> None:
     """Verify containerd SystemdCgroup setting matches detected cgroup version.
 
     v1: SystemdCgroup = false
     v2: SystemdCgroup = true
     """
-    helper = HelperCgroup()
-    helper.setup_method()
-    helper.validate_containerd_config()
+    ssh = LabConnectionKeywords().get_active_controller_ssh()
+    cgroup_kw = CgroupKeywords(ssh)
+
+    cgroup_kw.validate_containerd_config()

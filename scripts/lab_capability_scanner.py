@@ -289,6 +289,8 @@ def has_linux_cpu_metrics(ssh_connection: SSHConnection) -> bool:
     return not any("Not Available" in s for s in output)
 
 
+
+
 def directory_exists_on_system_controller(ssh_connection: SSHConnection, directory_path: str) -> bool:
     """Check whether the given path is a directory on the system controller.
 
@@ -826,6 +828,7 @@ def scan_hosts(lab_config: LabConfig, ssh_connection: SSHConnection) -> list[Nod
         if has_linux_cpu_metrics(ssh_connection):
             node.append_node_capability("lab_has_linux_cpu_metrics")
             lab_config.add_lab_capability("lab_has_linux_cpu_metrics")
+
     return nodes
 
 
