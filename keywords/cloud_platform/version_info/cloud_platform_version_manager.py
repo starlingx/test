@@ -85,6 +85,14 @@ class CloudPlatformVersionManagerClass:
         """
         return CloudPlatformSoftwareVersion.STARLINGX_10_0
 
+    def get_third_last_major_release(self) -> ProductVersion:
+        """Get third-latest Product Version.
+
+        This function will return the third-latest Product Version defined in
+        CloudPlatformSoftwareVersion class.
+        """
+        return CloudPlatformSoftwareVersion.STARLINGX_9_0
+
     def is_trixie(self, ssh_connection: SSHConnection) -> bool:
         """Check if the system is running Debian Trixie (strongSwan 6.0).
 
