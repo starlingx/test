@@ -104,14 +104,16 @@ class USMKeywords(BaseKeyword):
         return output
 
     def upload_release(self, iso_path: str, sig_path: str, sudo: bool = False, os_region_name: str = "") -> SoftwareUploadOutput:
-        """
-        Upload a full software release using 'software upload'.
+        """Upload a full software release using 'software upload'.
 
         Args:
             iso_path (str): Absolute path to the .iso file.
             sig_path (str): Absolute path to the corresponding .sig file.
             sudo (bool): Option to pass the command with sudo.
-            os_region_name (str): Use Os region name option for upload if it is specified
+            os_region_name (str): Use Os region name option for upload if it is specified.
+
+        Returns:
+            SoftwareUploadOutput: Parsed output of the software upload command.
 
         Raises:
             KeywordException: On failure to upload.
@@ -491,15 +493,15 @@ class USMKeywords(BaseKeyword):
         output = output[-1] if output else ""
         return output
 
-    def system_deploy_init(self, release: str, kube_version: str = "", sudo: bool = False) -> str:
-        """Execute 'software system-deploy init <release> --kube-version <version>'.
+    def system_deploy_init(self, release: str, kube_upgrade: str = "", sudo: bool = False) -> str:
+        """Execute 'software system-deploy init <release> --kube-upgrade <version>'.
 
         Initializes a combined Platform & K8S upgrade by creating a system-deploy entity,
         taking an LVM snapshot, and raising the upgrade-in-progress alarm.
 
         Args:
             release (str): Target release ID (e.g., "wrcp-26.09.0").
-            kube_version (str): Target Kubernetes version (e.g., "v1.35.1").
+            kube_upgrade (str): Target Kubernetes version (e.g., "v1.35.1").
             sudo (bool): Flag to run as sudo.
 
         Returns:
@@ -509,10 +511,10 @@ class USMKeywords(BaseKeyword):
             KeywordException: If the command returns a non-zero exit code.
         """
         base_cmd = f"software system-deploy init {release}"
-        if kube_version:
-            base_cmd += f" --kube-version {kube_version}"
+        if kube_upgrade:
+            base_cmd += f" --kube-upgrade {kube_upgrade}"
         cmd = source_openrc(base_cmd)
-        get_logger().log_info(f"Executing system-deploy init: release={release}, kube_version={kube_version}")
+        get_logger().log_info(f"Executing system-deploy init: release={release}, kube_upgrade={kube_upgrade}")
         if sudo:
             output = self.ssh_connection.send_as_sudo(cmd)
         else:
