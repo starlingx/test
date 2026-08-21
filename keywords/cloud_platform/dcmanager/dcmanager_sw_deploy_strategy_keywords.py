@@ -24,7 +24,7 @@ class DcmanagerSwDeployStrategy(BaseKeyword):
         self.ssh_connection = ssh_connection
         self.usm_config = ConfigurationManager.get_usm_config()
 
-    def dcmanager_sw_deploy_strategy_create(self, subcloud_name: str = None, release: str = None, subcloud_group: str = None, with_delete: bool = False, delete_only: bool = False, rollback: bool = False, snapshot: bool = False, kube_upgrade: str = None, with_prestage: bool = False, sysadmin_password: str = None) -> str:
+    def dcmanager_sw_deploy_strategy_create(self, subcloud_name: str = None, release: str = None, subcloud_group: str = None, with_delete: bool = False, delete_only: bool = False, rollback: bool = False, snapshot: bool = False, kube_upgrade: str = None, with_prestage: bool = False, sysadmin_password: str = None, cleanup: bool = False) -> str:
         """
         Runs dcmanager sw-deploy-strategy create command.
 
@@ -39,6 +39,10 @@ class DcmanagerSwDeployStrategy(BaseKeyword):
             kube_upgrade (str): Target K8s version for combined P&K upgrade (e.g., 'v1.29.2').
             with_prestage (bool): If true, adds parameter --with-prestage (requires sysadmin_password).
             sysadmin_password (str): Sysadmin password for prestage (required when with_prestage is True).
+            cleanup (bool): If true, adds parameter --cleanup. Completes/cleans up a
+                sw-deploy that ended in a non-clean state (e.g. an aborted or failed
+                deploy), deleting the leftover kube-upgrade and system-deploy entities.
+                Not specific to auto-rollback.
 
         Returns:
             str: The joined stdout/stderr output of the create command.
@@ -54,6 +58,7 @@ class DcmanagerSwDeployStrategy(BaseKeyword):
             kube_upgrade=kube_upgrade,
             with_prestage=with_prestage,
             sysadmin_password=sysadmin_password,
+            cleanup=cleanup,
         )
 
         output = self.ssh_connection.send(command)
@@ -95,7 +100,7 @@ class DcmanagerSwDeployStrategy(BaseKeyword):
         get_logger().log_info(f"sw-deploy-strategy create rejected as expected: {rejected}")
         return "".join(output)
 
-    def _build_sw_deploy_strategy_create_command(self, subcloud_name: str = None, release: str = None, subcloud_group: str = None, with_delete: bool = False, delete_only: bool = False, rollback: bool = False, snapshot: bool = False, kube_upgrade: str = None, with_prestage: bool = False, sysadmin_password: str = None):
+    def _build_sw_deploy_strategy_create_command(self, subcloud_name: str = None, release: str = None, subcloud_group: str = None, with_delete: bool = False, delete_only: bool = False, rollback: bool = False, snapshot: bool = False, kube_upgrade: str = None, with_prestage: bool = False, sysadmin_password: str = None, cleanup: bool = False):
         """Build the dcmanager sw-deploy-strategy create command string and scope.
 
         Returns:
@@ -112,15 +117,29 @@ class DcmanagerSwDeployStrategy(BaseKeyword):
         kube_upgrade_arg = f"--kube-upgrade {kube_upgrade}" if kube_upgrade else ""
         prestage_arg = "--with-prestage" if with_prestage else ""
         sysadmin_password_arg = f"--sysadmin-password {sysadmin_password}" if sysadmin_password else ""
+        cleanup_arg = "--cleanup" if cleanup else ""
 
+        # Resolve the strategy scope. dcmanager sw-deploy-strategy create takes an
+        # OPTIONAL positional cloud_name: a single subcloud name targets that
+        # subcloud, --group targets a group, and omitting both creates a
+        # system-wide strategy across all eligible (managed/out-of-sync)
+        # subclouds. Only one of these should be set; never emit the literal
+        # string "None" as the positional argument.
         if subcloud_group:
-            command = source_openrc(f"dcmanager sw-deploy-strategy create --group {subcloud_group} {rollback} {snapshot} {release_id} {delete} {clean_up_delete} {kube_upgrade_arg} {prestage_arg} {sysadmin_password_arg}")
+            scope_arg = f"--group {subcloud_group}"
             target = subcloud_group
             is_group = True
-        else:
-            command = source_openrc(f"dcmanager sw-deploy-strategy create {subcloud_name} {rollback} {snapshot} {release_id} {delete} {clean_up_delete} {kube_upgrade_arg} {prestage_arg} {sysadmin_password_arg}")
+        elif subcloud_name:
+            scope_arg = subcloud_name
             target = subcloud_name
             is_group = False
+        else:
+            # System-wide strategy: no positional cloud_name, no --group.
+            scope_arg = ""
+            target = None
+            is_group = True
+
+        command = source_openrc(f"dcmanager sw-deploy-strategy create {scope_arg} {rollback} {snapshot} {release_id} {delete} {clean_up_delete} {kube_upgrade_arg} {prestage_arg} {sysadmin_password_arg} {cleanup_arg}")
 
         return command, target, is_group
 
@@ -154,6 +173,84 @@ class DcmanagerSwDeployStrategy(BaseKeyword):
             check_interval=poll_interval,
             is_group=is_group,
         )
+
+    def dcmanager_sw_deploy_strategy_abort(self) -> None:
+        """Runs dcmanager sw-deploy-strategy abort command.
+
+        Only issues the abort request and validates that the command was
+        accepted (success return code). It does NOT wait for the strategy to
+        settle - call wait_sw_deploy_strategy_abort() afterwards to poll the
+        strategy step until it reaches a terminal post-abort state.
+
+        Raises:
+            AssertionError: If the abort command does not return success.
+        """
+        get_logger().log_info("Aborting sw-deploy-strategy")
+        command = source_openrc("dcmanager sw-deploy-strategy abort")
+        self.ssh_connection.send(command)
+        self.validate_success_return_code(self.ssh_connection)
+
+    def wait_sw_deploy_strategy_abort(
+        self,
+        subcloud: str,
+        timeout: int = 1200,
+        check_interval: int = 30,
+        is_group: bool = False,
+    ) -> str:
+        """Wait for sw-deploy-strategy abort to settle.
+
+        Polls strategy-step state until it reaches a terminal state, then returns
+        that state for the caller to assert on. Terminal states considered here:
+
+            - 'aborted': the step was cancelled by the abort (typical for
+              queued/not-yet-executing subclouds).
+            - 'failed': the step ended in failure.
+            - 'complete': a step that was already executing when the abort was
+              issued is NOT interrupted mid-step and can run to completion (the
+              dcmanager abort cancels queued subclouds, not the in-flight VIM
+              strategy). This is a valid, expected outcome for the executing
+              subcloud, so it is treated as terminal here. Callers that require
+              the abort to have actually cancelled the step should assert on the
+              returned state rather than relying on this method to reject
+              'complete'.
+
+        Args:
+            subcloud (str): Subcloud name or group to monitor.
+            timeout (int): Maximum wait time in seconds (default 1200s / 20min).
+            check_interval (int): Polling interval in seconds.
+            is_group (bool): Whether the target is a group or individual subcloud.
+
+        Returns:
+            str: The terminal state reached by the strategy step.
+        """
+        terminal_states = ["aborted", "failed", "complete"]
+
+        def check_abort_state() -> bool:
+            if is_group:
+                strategy_steps = DcmanagerStrategyStepKeywords(self.ssh_connection).get_dcmanager_strategy_step_list()
+                steps = strategy_steps.get_dcmanager_strategy_step_list()
+                if not steps:
+                    return False
+                return all(step.get_state() in terminal_states for step in steps)
+            else:
+                state = DcmanagerStrategyStepKeywords(self.ssh_connection).get_dcmanager_strategy_step_show(subcloud).get_dcmanager_strategy_step_show().get_state()
+                get_logger().log_info(f"Strategy step state for {subcloud}: {state}")
+                return state in terminal_states
+
+        validate_equals_with_retry(
+            function_to_execute=check_abort_state,
+            expected_value=True,
+            validation_description=f"Waiting for sw-deploy-strategy abort to complete for {subcloud}.",
+            timeout=timeout,
+            polling_sleep_time=check_interval,
+        )
+
+        # Return the final state
+        if is_group:
+            steps = DcmanagerStrategyStepKeywords(self.ssh_connection).get_dcmanager_strategy_step_list().get_dcmanager_strategy_step_list()
+            return steps[0].get_state() if steps else "unknown"
+        else:
+            return DcmanagerStrategyStepKeywords(self.ssh_connection).get_dcmanager_strategy_step_show(subcloud).get_dcmanager_strategy_step_show().get_state()
 
     def check_sw_deploy_strategy_delete_output(self):
         """

@@ -28,6 +28,21 @@ class KubeUpgradeShowKeywords(BaseKeyword):
         self.validate_success_return_code(self.ssh_connection)
         return KubeUpgradeShowOutput(output)
 
+    def is_kube_upgrade_in_progress(self) -> bool:
+        """Reports whether a kubernetes upgrade is currently in progress.
+
+        Runs 'system kube-upgrade-show' and interprets the result. When no
+        upgrade exists the CLI prints "kubernetes upgrade is not in progress"
+        (and there is no table to parse), so this returns False in that case and
+        True when an upgrade record is present.
+
+        Returns:
+            bool: True if a kube-upgrade is in progress, False otherwise.
+        """
+        output = self.ssh_connection.send(source_openrc("system kube-upgrade-show"))
+        joined = "\n".join(output).lower()
+        return "kubernetes upgrade is not in progress" not in joined
+
     def wait_for_kube_upgrade_state(
         self,
         expected_state: str,
