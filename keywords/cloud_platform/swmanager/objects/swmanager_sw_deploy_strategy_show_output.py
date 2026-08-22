@@ -40,6 +40,7 @@ class SwManagerSwDeployStrategyShowOutput:
             self.swmanager_sw_deploy_strategy.set_current_phase_completion(sw_deploy_strat.get("current-phase-completion"))
             self.swmanager_sw_deploy_strategy.set_state(sw_deploy_strat.get("state"))
             self.swmanager_sw_deploy_strategy.set_inprogress(sw_deploy_strat.get("inprogress"))
+            self.swmanager_sw_deploy_strategy.set_build_reason(sw_deploy_strat.get("build-reason"))
         else:
             # Check if this is a connection error (empty dict) - if so, raise a more specific exception
             output_str = "".join(swmanager_sw_deploy)

@@ -60,18 +60,6 @@ _STEP_ORDER = [
 ]
 
 
-def _highest_kube_version(versions: list) -> str:
-    """Return the highest Kubernetes version using semantic comparison.
-
-    Args:
-        versions (list): List of version strings (e.g. ['v1.31.9', 'v1.31.10']).
-
-    Returns:
-        str: The highest version string.
-    """
-    return max(versions, key=lambda v: tuple(int(x) for x in v.lstrip("v").split(".")))
-
-
 def _get_control_plane_version(ssh_connection: SSHConnection, hostname: str) -> str:
     """Get the current control-plane version for a host.
 
@@ -164,15 +152,14 @@ def _abort_during_combined_upgrade_step(
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
 
     get_logger().log_setup_step("Get available software release")
-    software_list_output = SoftwareListKeywords(ssh_connection).get_software_list()
-    available_releases = software_list_output.get_release_name_by_state("available")
-    validate_not_equals(available_releases, [], "At least one release in 'available' state must exist")
-    target_platform_release = available_releases[0]
+    software_list = SoftwareListKeywords(ssh_connection).get_software_list()
+    available_release = software_list.get_release_name_by_state("available")
+    validate_not_equals(available_release, [], "At least one release in 'available' state must exist")
+    target_platform_release = available_release[0]
 
     get_logger().log_setup_step("Get highest available Kubernetes version")
     kube_version_output = SystemKubernetesListKeywords(ssh_connection).get_system_kube_version_list()
-    available_versions = kube_version_output.get_version_by_state("available")
-    target_kube_version = _highest_kube_version(available_versions)
+    target_kube_version = kube_version_output.get_highest_version_by_state("available")
     get_logger().log_info(f"Target: platform={target_platform_release}, kube={target_kube_version}")
 
     usm_keywords = USMKeywords(ssh_connection)

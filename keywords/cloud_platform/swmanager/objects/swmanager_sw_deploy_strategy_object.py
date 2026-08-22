@@ -21,6 +21,7 @@ class SwManagerSwDeployStrategyObject:
         self.current_phase_completion: Optional[str] = None
         self.state: Optional[str] = None
         self.inprogress: Optional[str] = None
+        self.build_reason: Optional[str] = None
 
     def set_strategy_uuid(self, strategy_uuid: str) -> None:
         """Sets the strategy_uuid of the sw-deploy-strategy."""
@@ -125,3 +126,11 @@ class SwManagerSwDeployStrategyObject:
     def get_inprogress(self) -> Optional[str]:
         """Gets the inprogress of the sw-deploy-strategy."""
         return self.inprogress
+
+    def set_build_reason(self, build_reason: str) -> None:
+        """Sets the build_reason of the sw-deploy-strategy."""
+        self.build_reason = build_reason
+
+    def get_build_reason(self) -> Optional[str]:
+        """Gets the build_reason of the sw-deploy-strategy."""
+        return self.build_reason
