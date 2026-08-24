@@ -2,7 +2,7 @@
 
 import time
 
-from pytest import mark
+from pytest import FixtureRequest, mark
 
 from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
@@ -10,11 +10,12 @@ from keywords.cloud_platform.dcmanager.dcmanager_subcloud_add_keywords import Dc
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_lifecycle_keywords import DcManagerSubcloudLifecycleKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_list_keywords import DcManagerSubcloudListKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_manager_keywords import DcManagerSubcloudManagerKeywords
+from keywords.cloud_platform.dcmanager.subcloud_deploy_config_sync_keywords import SubcloudDeployConfigSyncKeywords
 from keywords.cloud_platform.dcmanager.subcloud_picker_keywords import SubcloudPickerKeywords, pick_subcloud_with_fallback
 from keywords.cloud_platform.health.health_keywords import HealthKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.cloud_platform.sync_files.sync_deployment_assets import SyncDeploymentAssets
-from keywords.cloud_platform.version_info.cloud_platform_version_manager import CloudPlatformVersionManagerClass
+from keywords.cloud_platform.version_info.cloud_platform_version_manager import CloudPlatformVersionManager
 
 
 # --- Setup Helpers ---
@@ -122,7 +123,7 @@ def test_deploy_single_simplex_subcloud_n_release():
 
 @mark.p0
 @mark.subcloud_lab_is_simplex
-def test_deploy_single_simplex_subcloud_n_minus_1_release():
+def test_deploy_single_simplex_subcloud_n_minus_1_release(request: FixtureRequest):
     """Deploy a single simplex subcloud on N-1 release and validate health.
 
     Preconditions:
@@ -132,6 +133,7 @@ def test_deploy_single_simplex_subcloud_n_minus_1_release():
     Setup:
         - Sync deployment assets to standby controller
         - Find or free an undeployed subcloud
+        - Sync N-1 release configs into default path (if release folder exists)
 
     Test Steps:
         1. Deploy subcloud using dcmanager subcloud add with --release N-1
@@ -140,15 +142,28 @@ def test_deploy_single_simplex_subcloud_n_minus_1_release():
         4. Validate subcloud cluster health
 
     Teardown:
-        - None
+        - Restore N-release configs to default path
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
 
     get_logger().log_setup_step("Sync deployment assets")
     SyncDeploymentAssets(ssh_connection).sync_assets()
 
-    n_minus_1_release = str(CloudPlatformVersionManagerClass().get_last_major_release())
+    n_minus_1_release = str(CloudPlatformVersionManager.get_last_major_release())
+    n_release_version = str(CloudPlatformVersionManager.get_sw_version())
     subcloud_name = get_undeployed_subcloud_name()
+
+    get_logger().log_setup_step(f"Sync N-1 ({n_minus_1_release}) configs for '{subcloud_name}'")
+    config_sync_kw = SubcloudDeployConfigSyncKeywords(ssh_connection)
+    configs_swapped = config_sync_kw.sync_subcloud_configs_for_release(subcloud_name, n_minus_1_release, n_release_version)
+
+    if configs_swapped:
+        request.addfinalizer(
+            lambda: (
+                get_logger().log_teardown_step(f"Restore N-release configs for '{subcloud_name}'"),
+                config_sync_kw.restore_n_release_configs(subcloud_name, n_release_version),
+            )
+        )
 
     deploy_subcloud(ssh_connection, subcloud_name, release_id=n_minus_1_release)
     manage_subcloud(ssh_connection, subcloud_name)
@@ -204,7 +219,7 @@ def test_deploy_single_duplex_subcloud_n_release():
 
 @mark.p0
 @mark.subcloud_lab_is_duplex
-def test_deploy_single_duplex_subcloud_n_minus_1_release():
+def test_deploy_single_duplex_subcloud_n_minus_1_release(request: FixtureRequest):
     """Deploy a single duplex subcloud on N-1 release and validate health.
 
     Preconditions:
@@ -214,6 +229,7 @@ def test_deploy_single_duplex_subcloud_n_minus_1_release():
     Setup:
         - Sync deployment assets to standby controller
         - Find or free an undeployed subcloud
+        - Sync N-1 release configs into default path (if release folder exists)
 
     Test Steps:
         1. Deploy subcloud using dcmanager subcloud add with --release N-1
@@ -222,15 +238,28 @@ def test_deploy_single_duplex_subcloud_n_minus_1_release():
         4. Validate subcloud cluster health
 
     Teardown:
-        - None
+        - Restore N-release configs to default path
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
 
     get_logger().log_setup_step("Sync deployment assets")
     SyncDeploymentAssets(ssh_connection).sync_assets()
 
-    n_minus_1_release = str(CloudPlatformVersionManagerClass().get_last_major_release())
+    n_minus_1_release = str(CloudPlatformVersionManager.get_last_major_release())
+    n_release_version = str(CloudPlatformVersionManager.get_sw_version())
     subcloud_name = get_undeployed_subcloud_name()
+
+    get_logger().log_setup_step(f"Sync N-1 ({n_minus_1_release}) configs for '{subcloud_name}'")
+    config_sync_kw = SubcloudDeployConfigSyncKeywords(ssh_connection)
+    configs_swapped = config_sync_kw.sync_subcloud_configs_for_release(subcloud_name, n_minus_1_release, n_release_version)
+
+    if configs_swapped:
+        request.addfinalizer(
+            lambda: (
+                get_logger().log_teardown_step(f"Restore N-release configs for '{subcloud_name}'"),
+                config_sync_kw.restore_n_release_configs(subcloud_name, n_release_version),
+            )
+        )
 
     deploy_subcloud(ssh_connection, subcloud_name, release_id=n_minus_1_release)
     manage_subcloud(ssh_connection, subcloud_name)
@@ -245,7 +274,7 @@ def test_deploy_single_duplex_subcloud_n_minus_1_release():
 
 @mark.p0
 @mark.subcloud_lab_is_simplex
-def test_deploy_single_simplex_subcloud_n_minus_2_release():
+def test_deploy_single_simplex_subcloud_n_minus_2_release(request: FixtureRequest):
     """Deploy a single simplex subcloud on N-2 release and validate health.
 
     Preconditions:
@@ -255,6 +284,7 @@ def test_deploy_single_simplex_subcloud_n_minus_2_release():
     Setup:
         - Sync deployment assets to standby controller
         - Find or free an undeployed subcloud
+        - Sync N-2 release configs into default path (if release folder exists)
 
     Test Steps:
         1. Deploy subcloud using dcmanager subcloud add with --release N-2
@@ -263,15 +293,28 @@ def test_deploy_single_simplex_subcloud_n_minus_2_release():
         4. Validate subcloud cluster health
 
     Teardown:
-        - None
+        - Restore N-release configs to default path
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
 
     get_logger().log_setup_step("Sync deployment assets")
     SyncDeploymentAssets(ssh_connection).sync_assets()
 
-    n_minus_2_release = str(CloudPlatformVersionManagerClass().get_second_last_major_release())
+    n_minus_2_release = str(CloudPlatformVersionManager.get_second_last_major_release())
+    n_release_version = str(CloudPlatformVersionManager.get_sw_version())
     subcloud_name = get_undeployed_subcloud_name()
+
+    get_logger().log_setup_step(f"Sync N-2 ({n_minus_2_release}) configs for '{subcloud_name}'")
+    config_sync_kw = SubcloudDeployConfigSyncKeywords(ssh_connection)
+    configs_swapped = config_sync_kw.sync_subcloud_configs_for_release(subcloud_name, n_minus_2_release, n_release_version)
+
+    if configs_swapped:
+        request.addfinalizer(
+            lambda: (
+                get_logger().log_teardown_step(f"Restore N-release configs for '{subcloud_name}'"),
+                config_sync_kw.restore_n_release_configs(subcloud_name, n_release_version),
+            )
+        )
 
     deploy_subcloud(ssh_connection, subcloud_name, release_id=n_minus_2_release)
     manage_subcloud(ssh_connection, subcloud_name)
@@ -283,7 +326,7 @@ def test_deploy_single_simplex_subcloud_n_minus_2_release():
 
 @mark.p0
 @mark.subcloud_lab_is_duplex
-def test_deploy_single_duplex_subcloud_n_minus_2_release():
+def test_deploy_single_duplex_subcloud_n_minus_2_release(request: FixtureRequest):
     """Deploy a single duplex subcloud on N-2 release and validate health.
 
     Preconditions:
@@ -293,6 +336,7 @@ def test_deploy_single_duplex_subcloud_n_minus_2_release():
     Setup:
         - Sync deployment assets to standby controller
         - Find or free an undeployed subcloud
+        - Sync N-2 release configs into default path (if release folder exists)
 
     Test Steps:
         1. Deploy subcloud using dcmanager subcloud add with --release N-2
@@ -301,15 +345,28 @@ def test_deploy_single_duplex_subcloud_n_minus_2_release():
         4. Validate subcloud cluster health
 
     Teardown:
-        - None
+        - Restore N-release configs to default path
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
 
     get_logger().log_setup_step("Sync deployment assets")
     SyncDeploymentAssets(ssh_connection).sync_assets()
 
-    n_minus_2_release = str(CloudPlatformVersionManagerClass().get_second_last_major_release())
+    n_minus_2_release = str(CloudPlatformVersionManager.get_second_last_major_release())
+    n_release_version = str(CloudPlatformVersionManager.get_sw_version())
     subcloud_name = get_undeployed_subcloud_name()
+
+    get_logger().log_setup_step(f"Sync N-2 ({n_minus_2_release}) configs for '{subcloud_name}'")
+    config_sync_kw = SubcloudDeployConfigSyncKeywords(ssh_connection)
+    configs_swapped = config_sync_kw.sync_subcloud_configs_for_release(subcloud_name, n_minus_2_release, n_release_version)
+
+    if configs_swapped:
+        request.addfinalizer(
+            lambda: (
+                get_logger().log_teardown_step(f"Restore N-release configs for '{subcloud_name}'"),
+                config_sync_kw.restore_n_release_configs(subcloud_name, n_release_version),
+            )
+        )
 
     deploy_subcloud(ssh_connection, subcloud_name, release_id=n_minus_2_release)
     manage_subcloud(ssh_connection, subcloud_name)
