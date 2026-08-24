@@ -224,6 +224,250 @@ def test_rehome_single_simplex_subcloud_n_release():
     validate_equals(pods_before_rehome, pods_after_rehome, "Pod count should remain consistent after rehoming")
 
 
+@mark.p2
+@mark.subcloud_lab_is_duplex
+@mark.lab_has_secondary_system_controller
+def test_rehome_single_duplex_subcloud_n_minus_1_release():
+    """
+    Verify rehome of a single duplex subcloud running N-1 release.
+
+    Prerequisites:
+        - A healthy duplex subcloud running N-1 release must be online.
+        - Controller-0 must be the active controller on the subcloud.
+
+    Setup:
+        - Find a healthy duplex subcloud on N-1 release
+        - Determine rehome direction
+
+    Test Steps:
+        1. Count pods on subcloud before rehoming
+        2. Record floating addresses before rehome
+        3. Perform rehoming operation
+        4. Validate subcloud is healthy after rehome
+        5. Validate updated host route and floating addresses
+        6. Validate pod counts are the same before and after rehoming
+
+    Teardown:
+        - Ensure subcloud is managed on whichever cloud owns it
+    """
+    cloud_a_ssh = LabConnectionKeywords().get_active_controller_ssh()
+    cloud_b_ssh = LabConnectionKeywords().get_secondary_active_controller_ssh()
+
+    get_logger().log_info("Getting duplex subcloud on N-1 release")
+    origin_system_controller_ssh, result = pick_subcloud_with_fallback(
+        availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
+        load="N-1",
+        lab_type=LabTypeEnum.DUPLEX,
+    )
+
+    subcloud_name = result.get_name()
+    destination_system_controller_ssh = cloud_b_ssh if origin_system_controller_ssh.host == cloud_a_ssh.host else cloud_a_ssh
+
+    subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
+    SystemHostSwactKeywords(subcloud_ssh).ensure_duplex_subcloud_c0_is_active(subcloud_name)
+
+    deployment_assets_config = ConfigurationManager.get_deployment_assets_config()
+    subcloud_bootstrap_values = deployment_assets_config.get_subcloud_deployment_assets(subcloud_name).get_bootstrap_file()
+    subcloud_install_values = deployment_assets_config.get_subcloud_deployment_assets(subcloud_name).get_install_file()
+
+    get_logger().log_info("Counting pods before rehoming")
+    pods_before_rehome = count_pods_on_subcloud(subcloud_ssh)
+
+    sys_addrpool_output = SystemAddrpoolListKeywords(subcloud_ssh).get_system_addrpool_list()
+    mgmt_floating_address_before_rehome = sys_addrpool_output.get_system_controller_management_floating_address_from_subcloud()
+    oam_floating_address_before_rehome = sys_addrpool_output.get_system_controller_oam_floating_address_from_subcloud()
+
+    get_logger().log_info(f"Rehoming subcloud {subcloud_name} from origin to destination")
+    perform_rehome_operation(origin_system_controller_ssh, destination_system_controller_ssh, subcloud_name, subcloud_bootstrap_values, subcloud_install_values)
+
+    get_logger().log_info(f"Validating subcloud {subcloud_name} is healthy after rehome")
+    verify_subcloud_healthy(destination_system_controller_ssh, subcloud_name, check_sync=False)
+
+    get_logger().log_info("Validating updated host route and floating addresses after rehome")
+    validate_updated_host_route(destination_system_controller_ssh, subcloud_ssh, subcloud_name, mgmt_floating_address_before_rehome, oam_floating_address_before_rehome)
+
+    get_logger().log_info("Counting pods after rehoming")
+    pods_after_rehome = count_pods_on_subcloud(subcloud_ssh)
+    validate_equals(pods_before_rehome, pods_after_rehome, "Pod count should be the same before and after rehoming")
+
+
+@mark.p2
+@mark.subcloud_lab_is_simplex
+@mark.lab_has_secondary_system_controller
+def test_rehome_single_simplex_subcloud_n_minus_1_release():
+    """
+    Verify rehome of a single simplex subcloud running N-1 release.
+
+    Prerequisites:
+        - A healthy simplex subcloud running N-1 release must be online.
+
+    Setup:
+        - Find a healthy simplex subcloud on N-1 release
+        - Determine rehome direction
+
+    Test Steps:
+        1. Count pods and validate health before rehoming
+        2. Perform rehome operation
+        3. Validate subcloud is healthy after rehoming
+        4. Validate pod counts are the same before and after rehoming
+
+    Teardown:
+        - Ensure subcloud is managed on whichever cloud owns it
+    """
+    cloud_a_ssh = LabConnectionKeywords().get_active_controller_ssh()
+    cloud_b_ssh = LabConnectionKeywords().get_secondary_active_controller_ssh()
+
+    get_logger().log_info("Selecting healthy simplex subcloud on N-1 release for rehoming")
+    origin_system_controller_ssh, result = pick_subcloud_with_fallback(
+        availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
+        load="N-1",
+        lab_type=LabTypeEnum.SIMPLEX,
+    )
+
+    subcloud_name = result.get_name()
+    destination_system_controller_ssh = cloud_b_ssh if origin_system_controller_ssh.host == cloud_a_ssh.host else cloud_a_ssh
+
+    subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
+
+    deployment_assets_config = ConfigurationManager.get_deployment_assets_config()
+    subcloud_bootstrap_values = deployment_assets_config.get_subcloud_deployment_assets(subcloud_name).get_bootstrap_file()
+    subcloud_install_values = deployment_assets_config.get_subcloud_deployment_assets(subcloud_name).get_install_file()
+
+    get_logger().log_info("Validating subcloud health and counting pods before rehoming")
+    pods_before_rehome = count_pods_on_subcloud(subcloud_ssh)
+    HealthKeywords(subcloud_ssh).validate_healty_cluster()
+
+    get_logger().log_info(f"Rehoming subcloud {subcloud_name} to destination system controller")
+    perform_rehome_operation(origin_system_controller_ssh, destination_system_controller_ssh, subcloud_name, subcloud_bootstrap_values, subcloud_install_values)
+
+    get_logger().log_info("Validating subcloud health and counting pods after rehoming")
+    verify_subcloud_healthy(destination_system_controller_ssh, subcloud_name, check_sync=False)
+    pods_after_rehome = count_pods_on_subcloud(subcloud_ssh)
+    validate_equals(pods_before_rehome, pods_after_rehome, "Pod count should remain consistent after rehoming")
+
+
+@mark.p2
+@mark.subcloud_lab_is_duplex
+@mark.lab_has_secondary_system_controller
+def test_rehome_single_duplex_subcloud_n_minus_2_release():
+    """
+    Verify rehome of a single duplex subcloud running N-2 release.
+
+    Prerequisites:
+        - A healthy duplex subcloud running N-2 release must be online.
+        - Controller-0 must be the active controller on the subcloud.
+
+    Setup:
+        - Find a healthy duplex subcloud on N-2 release
+        - Determine rehome direction
+
+    Test Steps:
+        1. Count pods on subcloud before rehoming
+        2. Record floating addresses before rehome
+        3. Perform rehoming operation
+        4. Validate subcloud is healthy after rehome
+        5. Validate updated host route and floating addresses
+        6. Validate pod counts are the same before and after rehoming
+
+    Teardown:
+        - Ensure subcloud is managed on whichever cloud owns it
+    """
+    cloud_a_ssh = LabConnectionKeywords().get_active_controller_ssh()
+    cloud_b_ssh = LabConnectionKeywords().get_secondary_active_controller_ssh()
+
+    get_logger().log_info("Getting duplex subcloud on N-2 release")
+    origin_system_controller_ssh, result = pick_subcloud_with_fallback(
+        availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
+        load="N-2",
+        lab_type=LabTypeEnum.DUPLEX,
+    )
+
+    subcloud_name = result.get_name()
+    destination_system_controller_ssh = cloud_b_ssh if origin_system_controller_ssh.host == cloud_a_ssh.host else cloud_a_ssh
+
+    subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
+    SystemHostSwactKeywords(subcloud_ssh).ensure_duplex_subcloud_c0_is_active(subcloud_name)
+
+    deployment_assets_config = ConfigurationManager.get_deployment_assets_config()
+    subcloud_bootstrap_values = deployment_assets_config.get_subcloud_deployment_assets(subcloud_name).get_bootstrap_file()
+    subcloud_install_values = deployment_assets_config.get_subcloud_deployment_assets(subcloud_name).get_install_file()
+
+    get_logger().log_info("Counting pods before rehoming")
+    pods_before_rehome = count_pods_on_subcloud(subcloud_ssh)
+
+    sys_addrpool_output = SystemAddrpoolListKeywords(subcloud_ssh).get_system_addrpool_list()
+    mgmt_floating_address_before_rehome = sys_addrpool_output.get_system_controller_management_floating_address_from_subcloud()
+    oam_floating_address_before_rehome = sys_addrpool_output.get_system_controller_oam_floating_address_from_subcloud()
+
+    get_logger().log_info(f"Rehoming subcloud {subcloud_name} from origin to destination")
+    perform_rehome_operation(origin_system_controller_ssh, destination_system_controller_ssh, subcloud_name, subcloud_bootstrap_values, subcloud_install_values)
+
+    get_logger().log_info(f"Validating subcloud {subcloud_name} is healthy after rehome")
+    verify_subcloud_healthy(destination_system_controller_ssh, subcloud_name, check_sync=False)
+
+    get_logger().log_info("Validating updated host route and floating addresses after rehome")
+    validate_updated_host_route(destination_system_controller_ssh, subcloud_ssh, subcloud_name, mgmt_floating_address_before_rehome, oam_floating_address_before_rehome)
+
+    get_logger().log_info("Counting pods after rehoming")
+    pods_after_rehome = count_pods_on_subcloud(subcloud_ssh)
+    validate_equals(pods_before_rehome, pods_after_rehome, "Pod count should be the same before and after rehoming")
+
+
+@mark.p2
+@mark.subcloud_lab_is_simplex
+@mark.lab_has_secondary_system_controller
+def test_rehome_single_simplex_subcloud_n_minus_2_release():
+    """
+    Verify rehome of a single simplex subcloud running N-2 release.
+
+    Prerequisites:
+        - A healthy simplex subcloud running N-2 release must be online.
+
+    Setup:
+        - Find a healthy simplex subcloud on N-2 release
+        - Determine rehome direction
+
+    Test Steps:
+        1. Count pods and validate health before rehoming
+        2. Perform rehome operation
+        3. Validate subcloud is healthy after rehoming
+        4. Validate pod counts are the same before and after rehoming
+
+    Teardown:
+        - Ensure subcloud is managed on whichever cloud owns it
+    """
+    cloud_a_ssh = LabConnectionKeywords().get_active_controller_ssh()
+    cloud_b_ssh = LabConnectionKeywords().get_secondary_active_controller_ssh()
+
+    get_logger().log_info("Selecting healthy simplex subcloud on N-2 release for rehoming")
+    origin_system_controller_ssh, result = pick_subcloud_with_fallback(
+        availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
+        load="N-2",
+        lab_type=LabTypeEnum.SIMPLEX,
+    )
+
+    subcloud_name = result.get_name()
+    destination_system_controller_ssh = cloud_b_ssh if origin_system_controller_ssh.host == cloud_a_ssh.host else cloud_a_ssh
+
+    subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
+
+    deployment_assets_config = ConfigurationManager.get_deployment_assets_config()
+    subcloud_bootstrap_values = deployment_assets_config.get_subcloud_deployment_assets(subcloud_name).get_bootstrap_file()
+    subcloud_install_values = deployment_assets_config.get_subcloud_deployment_assets(subcloud_name).get_install_file()
+
+    get_logger().log_info("Validating subcloud health and counting pods before rehoming")
+    pods_before_rehome = count_pods_on_subcloud(subcloud_ssh)
+    HealthKeywords(subcloud_ssh).validate_healty_cluster()
+
+    get_logger().log_info(f"Rehoming subcloud {subcloud_name} to destination system controller")
+    perform_rehome_operation(origin_system_controller_ssh, destination_system_controller_ssh, subcloud_name, subcloud_bootstrap_values, subcloud_install_values)
+
+    get_logger().log_info("Validating subcloud health and counting pods after rehoming")
+    verify_subcloud_healthy(destination_system_controller_ssh, subcloud_name, check_sync=False)
+    pods_after_rehome = count_pods_on_subcloud(subcloud_ssh)
+    validate_equals(pods_before_rehome, pods_after_rehome, "Pod count should remain consistent after rehoming")
+
+
 # --- Negative Test Cases ---
 
 
