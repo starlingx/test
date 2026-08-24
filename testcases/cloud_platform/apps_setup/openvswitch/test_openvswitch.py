@@ -46,7 +46,7 @@ def test_ovs_agent_running():
 @mark.p0
 @mark.lab_has_ovs
 def test_ovs_bridge_configured():
-    """Verify OVS bridge exists with expected ports."""
+    """Verify OVS bridge exists with expected ports and reconcile status is true."""
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     ovs_kw = OpenvSwitchKeywords(ssh_connection)
     ovs_agent = ovs_kw.get_ovs_agent_pod()
@@ -63,6 +63,13 @@ def test_ovs_bridge_configured():
     expected_ports = ovs_config.get_ports()
     for port in expected_ports:
         validate_str_contains(ports, port, f"Port {port} should be on {bridge_name}")
+
+    get_logger().log_test_case_step("Verify OVSNodeConfig reconcile status is true")
+    namespace = ovs_config.get_namespace()
+    nodeconfigs = ovs_kw.get_ovs_crd_names("ovsnodeconfig", namespace)
+    validate_not_equals(len(nodeconfigs), 0, "OVSNodeConfig should exist")
+    reconcile_output = ovs_kw.get_ovsnodeconfig_reconcile_status(nodeconfigs[0], namespace)
+    validate_str_contains(reconcile_output, "true", "OVSNodeConfig RECONCILED should be true")
 
 
 @mark.p0
