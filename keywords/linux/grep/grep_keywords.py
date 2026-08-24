@@ -1,3 +1,5 @@
+"""Linux grep command keywords."""
+
 from typing import Optional
 
 from framework.ssh.ssh_connection import SSHConnection
@@ -8,7 +10,7 @@ class GrepKeywords(BaseKeyword):
     """Generic Grep command operations."""
 
     def __init__(self, ssh_connection: SSHConnection):
-        """Initialize find keywords.
+        """Initialize grep keywords.
 
         Args:
             ssh_connection (SSHConnection): SSH connection for grep operations.
@@ -43,3 +45,22 @@ class GrepKeywords(BaseKeyword):
             filtered_output = [line.strip().rstrip(":") for line in output if line.strip()]
             return filtered_output[0] if len(filtered_output) == 1 else filtered_output
         return output.strip().rstrip(":") if output and output.strip() else ""
+
+    def get_match_count(self, pattern: str, file_path: str) -> int:
+        """Count the number of lines matching a pattern in a file.
+
+        Runs: grep -c "<pattern>" <file_path> || true
+
+        Args:
+            pattern (str): Pattern to search for.
+            file_path (str): File path to search in.
+
+        Returns:
+            int: Number of matching lines (0 if no match or file not found).
+        """
+        cmd = f'grep -c "{pattern}" {file_path} || true'
+        output = self.ssh_connection.send(cmd)
+        result = output.strip() if isinstance(output, str) else output[0].strip()
+        if result.isdigit():
+            return int(result)
+        return 0

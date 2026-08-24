@@ -48,7 +48,7 @@ class FindKeywords(BaseKeyword):
             find_cmd += f" | grep -v {safe_exclude_pattern}"
         find_cmd += " | wc -l"
 
-        get_logger().log_info(f"DEBUG: Executing find command: {find_cmd}")
+        get_logger().log_info(f"Executing find command: {find_cmd}")
 
         result = self.ssh_connection.send(find_cmd)
         self.validate_success_return_code(self.ssh_connection)
@@ -84,3 +84,24 @@ class FindKeywords(BaseKeyword):
         if result and result[0].strip():
             return result[0].strip()
         return None
+
+    def is_file_modified_within(self, file_path: str, minutes: int) -> bool:
+        """Check if a file was modified within the specified number of minutes.
+
+        Runs: find <file_path> -mmin -<minutes>
+
+        Args:
+            file_path (str): Path to the file to check.
+            minutes (int): Number of minutes to check against.
+
+        Returns:
+            bool: True if file was modified within the specified minutes.
+        """
+        safe_file_path = shlex.quote(file_path)
+        find_cmd = f"find {safe_file_path} -mmin -{minutes} | wc -l"
+
+        # No validate_success_return_code: find returns 0 even if file
+        # does not exist (wc -l outputs "0"), so rc is always 0 here.
+        result = self.ssh_connection.send_as_sudo(find_cmd)
+        count_str = result[0].strip() if isinstance(result, list) else result.strip()
+        return count_str == "1"

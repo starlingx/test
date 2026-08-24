@@ -4,28 +4,25 @@ Verifies the system correctly reports its cgroup version and that the
 service parameter matches the runtime state.
 """
 
-import pytest
+from pytest import mark
 
 from framework.logging.automation_logger import get_logger
 from framework.validation.validation import validate_equals, validate_list_contains
-from testcases.cloud_platform.functional.platform.cgroup.helper_cgroup import (
+from keywords.cloud_platform.cgroup.cgroup_keywords import (
     CGROUP_V1,
     CGROUP_V2,
-    HelperCgroup,
+    CgroupKeywords,
 )
+from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 
 
-@pytest.fixture
-def cgroup_helper():
-    """Provide a configured HelperCgroup instance."""
-    helper = HelperCgroup()
-    helper.setup_method()
-    return helper
-
-
-def test_detect_cgroup_version(cgroup_helper) -> None:
+@mark.p2
+def test_detect_cgroup_version() -> None:
     """Verify cgroup filesystem type is either tmpfs (v1) or cgroup2fs (v2)."""
-    version = cgroup_helper.detect_cgroup_version()
+    ssh = LabConnectionKeywords().get_active_controller_ssh()
+    cgroup_kw = CgroupKeywords(ssh)
+
+    version = cgroup_kw.detect_cgroup_version()
     validate_list_contains(
         version,
         [CGROUP_V1, CGROUP_V2],
@@ -34,10 +31,14 @@ def test_detect_cgroup_version(cgroup_helper) -> None:
     get_logger().log_info(f"System is running cgroup {version}")
 
 
-def test_cgroup_service_parameter_matches_runtime(cgroup_helper) -> None:
+@mark.p2
+def test_cgroup_service_parameter_matches_runtime() -> None:
     """Verify cgroup_v2_enabled service parameter matches runtime state."""
-    version = cgroup_helper.detect_cgroup_version()
-    param_value = cgroup_helper.get_cgroup_service_parameter()
+    ssh = LabConnectionKeywords().get_active_controller_ssh()
+    cgroup_kw = CgroupKeywords(ssh)
+
+    version = cgroup_kw.detect_cgroup_version()
+    param_value = cgroup_kw.get_cgroup_service_parameter()
 
     if version == CGROUP_V2:
         validate_equals(
