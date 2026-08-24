@@ -100,6 +100,24 @@ class OpenSSLKeywords(BaseKeyword):
         if "OK" not in raw:
             raise KeywordException(f"Certificate chain verification failed for {cert_path}: {raw}")
 
+    def verify_certificate_against_ca(self, ca_cert_path: str, cert_path: str) -> None:
+        """Verify a certificate directly against its signing CA.
+
+        For a two-level chain with no intermediate. Use verify_cert_chain when an
+        intermediate CA is involved.
+
+        Args:
+            ca_cert_path (str): Path to the trusted CA PEM file.
+            cert_path (str): Path to the certificate to verify.
+
+        Raises:
+            KeywordException: If verification fails.
+        """
+        output = self.ssh_connection.send(f"openssl verify -CAfile {ca_cert_path} {cert_path}")
+        raw = "\n".join(output) if isinstance(output, list) else output
+        if "OK" not in raw:
+            raise KeywordException(f"Certificate {cert_path} does not verify against CA {ca_cert_path}: {raw}")
+
     def create_certificate(self, key: str = None, crt: str = None, sys_domain_name: str = None) -> None:
         """
         Creates an SSL certificate file for the Kubernetes dashboard secret.
