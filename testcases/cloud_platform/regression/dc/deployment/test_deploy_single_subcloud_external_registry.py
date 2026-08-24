@@ -37,11 +37,12 @@ from keywords.cloud_platform.dcmanager.dcmanager_subcloud_deploy_keywords import
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_lifecycle_keywords import DcManagerSubcloudLifecycleKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_list_keywords import DcManagerSubcloudListKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_manager_keywords import DcManagerSubcloudManagerKeywords
+from keywords.cloud_platform.dcmanager.subcloud_deploy_config_sync_keywords import SubcloudDeployConfigSyncKeywords
 from keywords.cloud_platform.dcmanager.subcloud_picker_keywords import SubcloudPickerKeywords, pick_subcloud_with_fallback
 from keywords.cloud_platform.health.health_keywords import HealthKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.cloud_platform.sync_files.sync_deployment_assets import SyncDeploymentAssets
-from keywords.cloud_platform.version_info.cloud_platform_version_manager import CloudPlatformVersionManagerClass
+from keywords.cloud_platform.version_info.cloud_platform_version_manager import CloudPlatformVersionManager
 from keywords.linux.ip.ip_route_keywords import IPRouteKeywords
 
 # Path to the central cloud's bootstrap values (used to source registry config)
@@ -239,6 +240,7 @@ def test_deploy_single_subcloud_n_minus_1_release_with_registry_routes(request: 
     Setup:
         - Sync deployment assets
         - Find or free an undeployed subcloud
+        - Sync N-1 release configs into default path (if release folder exists)
         - Backup and inject external registry into subcloud bootstrap values
 
     Test Steps:
@@ -252,6 +254,7 @@ def test_deploy_single_subcloud_n_minus_1_release_with_registry_routes(request: 
         8. Validate subcloud health
 
     Teardown:
+        - Restore N-release configs to default path
         - Restore original subcloud bootstrap values
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
@@ -262,6 +265,22 @@ def test_deploy_single_subcloud_n_minus_1_release_with_registry_routes(request: 
     get_logger().log_setup_step("Find or free an undeployed subcloud")
     subcloud_name = get_undeployed_subcloud_name()
 
+    n_minus_1_release = str(CloudPlatformVersionManager.get_last_major_release())
+    n_release_version = str(CloudPlatformVersionManager.get_sw_version())
+    get_logger().log_info(f"Target release: {n_minus_1_release}")
+
+    get_logger().log_setup_step(f"Sync N-1 ({n_minus_1_release}) configs for '{subcloud_name}'")
+    config_sync_kw = SubcloudDeployConfigSyncKeywords(ssh_connection)
+    configs_swapped = config_sync_kw.sync_subcloud_configs_for_release(subcloud_name, n_minus_1_release, n_release_version)
+
+    if configs_swapped:
+        request.addfinalizer(
+            lambda: (
+                get_logger().log_teardown_step(f"Restore N-release configs for '{subcloud_name}'"),
+                config_sync_kw.restore_n_release_configs(subcloud_name, n_release_version),
+            )
+        )
+
     get_logger().log_setup_step("Backup and inject external registry into subcloud bootstrap values")
     deployment_assets_config = ConfigurationManager.get_deployment_assets_config()
     sc_assets = deployment_assets_config.get_subcloud_deployment_assets(subcloud_name)
@@ -270,9 +289,6 @@ def test_deploy_single_subcloud_n_minus_1_release_with_registry_routes(request: 
     backup_file = bootstrap_values_kw.inject_central_registry_into_bootstrap(subcloud_name, CENTRAL_BOOTSTRAP_FILE, REGISTRY_FIELDS)
 
     request.addfinalizer(lambda: cleanup_subcloud_bootstrap(ssh_connection, backup_file, subcloud_bootstrap_file))
-
-    n_minus_1_release = str(CloudPlatformVersionManagerClass().get_last_major_release())
-    get_logger().log_info(f"Target release: {n_minus_1_release}")
 
     deploy_subcloud_phased_with_registry_routes(ssh_connection, subcloud_name, release_id=n_minus_1_release)
     manage_subcloud(ssh_connection, subcloud_name)
@@ -296,6 +312,7 @@ def test_deploy_single_subcloud_n_minus_2_release_with_registry_routes(request: 
     Setup:
         - Sync deployment assets
         - Find or free an undeployed subcloud
+        - Sync N-2 release configs into default path (if release folder exists)
         - Backup and inject external registry into subcloud bootstrap values
 
     Test Steps:
@@ -309,6 +326,7 @@ def test_deploy_single_subcloud_n_minus_2_release_with_registry_routes(request: 
         8. Validate subcloud health
 
     Teardown:
+        - Restore N-release configs to default path
         - Restore original subcloud bootstrap values
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
@@ -319,6 +337,22 @@ def test_deploy_single_subcloud_n_minus_2_release_with_registry_routes(request: 
     get_logger().log_setup_step("Find or free an undeployed subcloud")
     subcloud_name = get_undeployed_subcloud_name()
 
+    n_minus_2_release = str(CloudPlatformVersionManager.get_second_last_major_release())
+    n_release_version = str(CloudPlatformVersionManager.get_sw_version())
+    get_logger().log_info(f"Target release: {n_minus_2_release}")
+
+    get_logger().log_setup_step(f"Sync N-2 ({n_minus_2_release}) configs for '{subcloud_name}'")
+    config_sync_kw = SubcloudDeployConfigSyncKeywords(ssh_connection)
+    configs_swapped = config_sync_kw.sync_subcloud_configs_for_release(subcloud_name, n_minus_2_release, n_release_version)
+
+    if configs_swapped:
+        request.addfinalizer(
+            lambda: (
+                get_logger().log_teardown_step(f"Restore N-release configs for '{subcloud_name}'"),
+                config_sync_kw.restore_n_release_configs(subcloud_name, n_release_version),
+            )
+        )
+
     get_logger().log_setup_step("Backup and inject external registry into subcloud bootstrap values")
     deployment_assets_config = ConfigurationManager.get_deployment_assets_config()
     sc_assets = deployment_assets_config.get_subcloud_deployment_assets(subcloud_name)
@@ -327,9 +361,6 @@ def test_deploy_single_subcloud_n_minus_2_release_with_registry_routes(request: 
     backup_file = bootstrap_values_kw.inject_central_registry_into_bootstrap(subcloud_name, CENTRAL_BOOTSTRAP_FILE, REGISTRY_FIELDS)
 
     request.addfinalizer(lambda: cleanup_subcloud_bootstrap(ssh_connection, backup_file, subcloud_bootstrap_file))
-
-    n_minus_2_release = str(CloudPlatformVersionManagerClass().get_second_last_major_release())
-    get_logger().log_info(f"Target release: {n_minus_2_release}")
 
     deploy_subcloud_phased_with_registry_routes(ssh_connection, subcloud_name, release_id=n_minus_2_release)
     manage_subcloud(ssh_connection, subcloud_name)
