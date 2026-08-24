@@ -58,6 +58,25 @@ class HelmReleaseKeywords(BaseKeyword):
             timeout=timeout,
         )
 
+    def helm_upgrade_install(self, release_name: str, chart_path: str, namespace: str, create_namespace: bool = False) -> str:
+        """Run 'helm upgrade --install <release_name> <chart_path> -n <namespace>'.
+
+        Args:
+            release_name (str): Name of the helm release.
+            chart_path (str): Path to the chart archive or directory on the remote host.
+            namespace (str): Namespace to install the release into.
+            create_namespace (bool): If True, adds --create-namespace flag. Defaults to False.
+
+        Returns:
+            str: Output from helm upgrade --install.
+        """
+        cmd = f"helm upgrade --install {release_name} {chart_path} -n {namespace}"
+        if create_namespace:
+            cmd += " --create-namespace"
+        output = self.ssh_connection.send_as_sudo(source_openrc(cmd))
+        self.validate_success_return_code(self.ssh_connection)
+        return "\n".join(output) if isinstance(output, list) else str(output)
+
     def helm_uninstall(self, release_name: str, namespace: str) -> str:
         """Run 'helm uninstall <release_name> -n <namespace>'.
 

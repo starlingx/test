@@ -1,0 +1,116 @@
+# Unlock KPI Model for lpmptool
+#
+# This model defines the timing blocks used by lpmptool to profile the
+# host unlock sequence on StarlingX. It measures the duration of each phase
+# from lock/unlock initiation through full platform readiness.
+#
+# Block types:
+#   - "patterns" mode: Marks a timestamp event (no duration calculated)
+#   - "start/stop" pair mode: Measures elapsed time between two log patterns
+#
+# Variables:
+#   - {hostname}: Substituted at runtime with the target host name
+#
+# Fields:
+#   - label: Human-readable name for the phase
+#   - file: Log file(s) to search (supports glob wildcards)
+#   - start/stop: Log patterns marking phase boundaries
+#   - patterns: Single-event timestamp markers
+#   - max_time_delta: Maximum allowed seconds between start/stop (validation)
+#   - optional: If true, missing patterns won't cause failure
+#
+# Phases measured (in approximate sequence):
+#   1. LOCK HOST - Time to disable the host
+#   2. SHUTDOWN PHASE - From unlock action to system reboot
+#   3. POD DRAIN - Kubernetes pod eviction duration
+#   4. LAZY REBOOT - Deferred reboot window (optional)
+#   5. BLACKOUT PHASE - Hardware reboot (no logs available)
+#   6. OS: NETWORK CONFIG - Kernel boot to network online
+#   7. OS: PLATFORM SVC CONFIG - Kernel boot to multi-user target
+#   8. PLATFORM READY PHASE - Multi-user to host enabled-available
+#   9. K8s STARTUP PHASE - Kubelet start to pod recovery complete
+#  10. CSI Ready - Storage plugin registration
+#  11. Service availability - test-service-no-pvc / test-service-with-pvc
+#
+
+description: "Unlock KPI Model for lpmptool"
+
+settings:
+  max_time_delta: 600
+  block_time_tolerance: 10
+
+blocks:
+  - label: "LOCK HOST PATTERN"
+    file: ["mtcAgent.log*"]
+    patterns:
+      - "Info : {hostname} Lock Action"
+    max_time_delta: 2000
+
+  - label: "LOCK HOST"
+    file: ["mtcAgent.log*"]
+    start: "Info : {hostname} Lock Action"
+    stop: "Info : {hostname} Disable Complete"
+    max_time_delta: 20
+
+  - label: "SHUTDOWN PHASE"
+    file: ["mtcAgent.log*", "auth.log*"]
+    start: "Info : {hostname} Unlock Action"
+    stop: "notice System is rebooting"
+
+  - label: "POD DRAIN"
+    file: ["mtcAgent.log*"]
+    start: "{hostname} force pod drain script launched"
+    stop: "pods drained"
+
+  - label: "LAZY REBOOT"
+    file: ["mtcClient.log*"]
+    start: "lazy reboot command received"
+    stop: "failsafe reboot script launched"
+    optional: true
+
+  - label: "BLACKOUT PHASE"
+    file: ["auth.log*", "kern.log*"]
+    start: "notice System is rebooting"
+    stop: "Kernel command line:"
+
+  - label: "OS: NETWORK CONFIG PHASE"
+    file: ["kern.log*", "daemon.log*"]
+    start: "Kernel command line:"
+    stop: "Reached target .*Network is Online"
+    optional: true
+
+  - label: "OS: PLATFORM SVC CONFIG PHASE "
+    file: ["kern.log*", "daemon.log*"]
+    start: "Kernel command line:"
+    stop: "Reached target .*Multi-User System"
+    optional: true
+
+  - label: "PLATFORM READY PHASE"
+    file: ["daemon.log*", "mtcAgent.log*"]
+    start: "Reached target .*Multi-User System"
+    stop: "{hostname} unlocked-enabled-available"
+    optional: true
+
+  - label: "CSI Ready"
+    file: ["daemon.log*"]
+    start: "Started .*Kubernetes Kubelet Server"
+    stop: "kubernetes.io/csi: Register new plugin with name"
+    optional: true
+
+  - label: "test-service-no-pvc ready"
+    file: ["daemon.log*","availability-test-service.log*"]
+    start: "availability-test-service: /dest is available"
+    stop: "availability-test-service: Starting periodic write task"
+    optional: true
+
+  - label: "test-service-with-pvc ready"
+    file: ["daemon.log*", "availability-test-service-with-pvc.log*"]
+    start: "availability-test-service-with-pvc: /dest is available"
+    stop: "availability-test-service-with-pvc: Starting periodic write task"
+    optional: true
+
+  - label: "K8s STARTUP PHASE"
+    file: ["daemon.log*"]
+    start: "Started .*Kubernetes Kubelet Server"
+    stop: "k8s-pod-recovery.service: Succeeded."
+    optional: true
