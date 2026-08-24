@@ -42,6 +42,7 @@ class OranO2Keywords(BaseKeyword):
         remote_file = yaml_keywords.generate_yaml_file_from_template(
             template_path, replacement_dict, "smo-serviceaccount.yaml", "/tmp"
         )
+        KubectlFileApplyKeywords(self.ssh_connection).apply_resource_from_yaml(remote_file)
 
     def create_smo_secret(self, smo_secret: str = 'smo1-secret', smo_service_account: str = 'smo1') -> None:
         """Create SMO secret.
