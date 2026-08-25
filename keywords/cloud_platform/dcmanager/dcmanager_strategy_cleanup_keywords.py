@@ -4,6 +4,10 @@ from keywords.base_keyword import BaseKeyword
 from keywords.cloud_platform.command_wrappers import oidc_auth_wrap, source_openrc
 
 STRATEGY_NOT_FOUND_PATTERN = "doesn't exist"
+# A strategy that is actively applying cannot be deleted. Deletion is only valid
+# once the strategy is in a settled/terminal state (initial/complete/failed/
+# aborted). We must not force-delete a running strategy in teardown.
+STRATEGY_RUNNING_PATTERN = "cannot be deleted"
 
 
 class DcmanagerStrategyCleanupKeywords(BaseKeyword):
@@ -53,6 +57,12 @@ class DcmanagerStrategyCleanupKeywords(BaseKeyword):
 
         if STRATEGY_NOT_FOUND_PATTERN in output_str:
             get_logger().log_info(f"No {strategy_type}-strategy exists, nothing to delete")
+            return
+
+        if STRATEGY_RUNNING_PATTERN in output_str:
+            # The strategy is still applying. We deliberately do NOT abort or
+            # force-delete a running strategy; it is left to settle on its own.
+            get_logger().log_warning(f"{strategy_type}-strategy is still running and cannot be deleted; leaving it in place")
             return
 
         self.validate_success_return_code(self.ssh_connection)

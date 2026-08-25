@@ -24,7 +24,7 @@ class DcmanagerSwDeployStrategy(BaseKeyword):
         self.ssh_connection = ssh_connection
         self.usm_config = ConfigurationManager.get_usm_config()
 
-    def dcmanager_sw_deploy_strategy_create(self, subcloud_name: str = None, release: str = None, subcloud_group: str = None, with_delete: bool = False, delete_only: bool = False, rollback: bool = False, snapshot: bool = False, kube_upgrade: str = None, with_prestage: bool = False, sysadmin_password: str = None):
+    def dcmanager_sw_deploy_strategy_create(self, subcloud_name: str = None, release: str = None, subcloud_group: str = None, with_delete: bool = False, delete_only: bool = False, rollback: bool = False, snapshot: bool = False, kube_upgrade: str = None, with_prestage: bool = False, sysadmin_password: str = None) -> str:
         """
         Runs dcmanager sw-deploy-strategy create command.
 
@@ -39,6 +39,70 @@ class DcmanagerSwDeployStrategy(BaseKeyword):
             kube_upgrade (str): Target K8s version for combined P&K upgrade (e.g., 'v1.29.2').
             with_prestage (bool): If true, adds parameter --with-prestage (requires sysadmin_password).
             sysadmin_password (str): Sysadmin password for prestage (required when with_prestage is True).
+
+        Returns:
+            str: The joined stdout/stderr output of the create command.
+        """
+        command, target, is_group = self._build_sw_deploy_strategy_create_command(
+            subcloud_name=subcloud_name,
+            release=release,
+            subcloud_group=subcloud_group,
+            with_delete=with_delete,
+            delete_only=delete_only,
+            rollback=rollback,
+            snapshot=snapshot,
+            kube_upgrade=kube_upgrade,
+            with_prestage=with_prestage,
+            sysadmin_password=sysadmin_password,
+        )
+
+        output = self.ssh_connection.send(command)
+        self.validate_success_return_code(self.ssh_connection)
+
+        self.wait_sw_deployment(subcloud=target, expected_status="initial", is_group=is_group)
+        return "".join(output)
+
+    def dcmanager_sw_deploy_strategy_create_with_error(self, subcloud_name: str = None, release: str = None, subcloud_group: str = None, with_delete: bool = False, delete_only: bool = False, rollback: bool = False, snapshot: bool = False, kube_upgrade: str = None, with_prestage: bool = False, sysadmin_password: str = None) -> str:
+        """
+        Runs dcmanager sw-deploy-strategy create expecting the command to be rejected.
+
+        Used by negative tests where the create is expected to fail up front (e.g.
+        mutually-exclusive options like --rollback with --with-delete, or an
+        invalid release). Asserts a command-rejection return code instead of
+        success and does not wait for the 'initial' state.
+
+        Args: Same as dcmanager_sw_deploy_strategy_create.
+
+        Returns:
+            str: The joined stdout/stderr output of the rejected create command,
+                for validation of the error message.
+        """
+        command, _, _ = self._build_sw_deploy_strategy_create_command(
+            subcloud_name=subcloud_name,
+            release=release,
+            subcloud_group=subcloud_group,
+            with_delete=with_delete,
+            delete_only=delete_only,
+            rollback=rollback,
+            snapshot=snapshot,
+            kube_upgrade=kube_upgrade,
+            with_prestage=with_prestage,
+            sysadmin_password=sysadmin_password,
+        )
+
+        output = self.ssh_connection.send(command)
+        rejected = self.validate_cmd_rejection_return_code(self.ssh_connection)
+        get_logger().log_info(f"sw-deploy-strategy create rejected as expected: {rejected}")
+        return "".join(output)
+
+    def _build_sw_deploy_strategy_create_command(self, subcloud_name: str = None, release: str = None, subcloud_group: str = None, with_delete: bool = False, delete_only: bool = False, rollback: bool = False, snapshot: bool = False, kube_upgrade: str = None, with_prestage: bool = False, sysadmin_password: str = None):
+        """Build the dcmanager sw-deploy-strategy create command string and scope.
+
+        Returns:
+            tuple: (command, target, is_group) where command is the full
+                source_openrc-wrapped CLI string, target is the subcloud/group
+                name (or None for a system-wide strategy), and is_group indicates
+                whether the target is a group.
         """
         release_id = f"--release-id {release}" if release else ""
         delete = "--with-delete" if with_delete else ""
@@ -58,10 +122,7 @@ class DcmanagerSwDeployStrategy(BaseKeyword):
             target = subcloud_name
             is_group = False
 
-        self.ssh_connection.send(command)
-        self.validate_success_return_code(self.ssh_connection)
-
-        self.wait_sw_deployment(subcloud=target, expected_status="initial", is_group=is_group)
+        return command, target, is_group
 
     def dcmanager_sw_deploy_strategy_apply(self, target: str, is_group: bool = False, wait_completion: bool = True):
         """
