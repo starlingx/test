@@ -175,6 +175,22 @@ class OpenvSwitchKeywords(BaseKeyword):
         )
         return self._to_str(self.ssh_connection.send(cmd)).strip()
 
+    def get_ovsnodeconfig_reconcile_status(self, name: str, namespace: str = OVS_NAMESPACE) -> str:
+        """Get OVSNodeConfig reconcile status.
+
+        Args:
+            name: Name of the OVSNodeConfig resource (e.g. controller-0).
+            namespace: Namespace.
+
+        Returns:
+            str: Reconcile status string ('true' or 'false').
+        """
+        cmd = export_k8s_config(
+            f"kubectl get ovsnodeconfig {name} -n {namespace}"
+            " -o jsonpath='{.status.reconciled}'"
+        )
+        return self._to_str(self.ssh_connection.send(cmd)).strip()
+
     def get_ovsport_names(self) -> str:
         """Get all OVSPort CR names.
 
