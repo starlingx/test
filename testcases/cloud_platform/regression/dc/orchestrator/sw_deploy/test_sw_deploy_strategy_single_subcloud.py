@@ -4,7 +4,8 @@ from config.configuration_manager import ConfigurationManager
 from config.lab.objects.lab_type_enum import LabTypeEnum
 from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
-from framework.validation.validation import validate_equals
+from framework.validation.validation import validate_equals, validate_not_equals
+from keywords.cloud_platform.command_wrappers import source_openrc
 from keywords.cloud_platform.dcmanager.dcmanager_strategy_cleanup_keywords import DcmanagerStrategyCleanupKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_sw_deploy_strategy_keywords import DcmanagerSwDeployStrategy
 from keywords.cloud_platform.dcmanager.dcmanager_strategy_step_keywords import DcmanagerStrategyStepKeywords
@@ -15,6 +16,7 @@ from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKey
 from keywords.cloud_platform.system.kubernetes.kubernetes_version_list_keywords import SystemKubernetesListKeywords
 from keywords.cloud_platform.upgrade.software_list_keywords import SoftwareListKeywords
 from keywords.cloud_platform.version_info.cloud_platform_version_manager import CloudPlatformVersionManagerClass
+from keywords.files.file_keywords import FileKeywords
 
 
 # --- Helper Functions ---
@@ -507,3 +509,89 @@ def test_sw_deploy_strategy_rollback_single_duplex_subcloud(request):
     get_logger().log_info(f"Selected duplex subcloud for rollback: {subcloud_name}")
 
     run_sw_deploy_strategy(system_controller_ssh, subcloud_name, rollback=True, with_delete=False)
+
+
+# --- Test Escapes ---
+
+
+@mark.p1
+@mark.lab_has_subcloud
+def test_iso_mismatch(request):
+    """Verify sw-deploy-strategy precheck fails when the subcloud has no 'deployed' release (ISO level mismatch).
+
+    Simulates an ISO level mismatch between the system controller and a subcloud by
+    removing every 'deployed' release's metadata from the subcloud, leaving no release
+    in 'deployed' state. The upgrade orchestrator precheck is expected to reject the
+    sw-deploy-strategy in this condition.
+
+    Test Steps:
+        1. Check the subcloud's software list for releases in 'deployed' state. Move
+           the metadata file(s) for each one from /opt/software/metadata/deployed/ to
+           /home/sysadmin (moving all of them if more than one is found).
+        2. Verify via the software list keyword that no release remains in 'deployed'
+           state on the subcloud.
+        3. Create a sw-deploy-strategy targeting the subcloud.
+        4. Apply the strategy.
+        5. Verify the strategy fails.
+
+    Teardown:
+        - Restore the moved metadata file(s) back to /opt/software/metadata/deployed/
+        - Delete sw-deploy-strategy if still present
+    """
+    system_controller_ssh, result = pick_subcloud_with_fallback(
+        availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
+    )
+
+    subcloud_name = result.get_name()
+    subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
+    request.addfinalizer(lambda: cleanup_strategy(system_controller_ssh))
+
+    deployed_metadata_dir = "/opt/software/metadata/deployed"
+    home_dir = "/home/sysadmin"
+    file_keywords = FileKeywords(subcloud_ssh)
+
+    # Step 1: Check for 'deployed' releases and move their metadata out of the deployed dir.
+    get_logger().log_test_case_step(f"Checking subcloud {subcloud_name} for 'deployed' releases")
+    deployed_releases = SoftwareListKeywords(subcloud_ssh).get_software_list().get_release_name_by_state("deployed")
+    validate_not_equals(len(deployed_releases), 0, f"Subcloud {subcloud_name} must have at least one 'deployed' release to simulate the ISO mismatch.")
+    get_logger().log_info(f"Deployed releases found on {subcloud_name}: {deployed_releases}")
+
+    moved_files = []
+
+    def teardown():
+        get_logger().log_teardown_step(f"Restoring deployed release metadata on {subcloud_name}")
+        for release_name, metadata_file_name in moved_files:
+            moved_path = f"{home_dir}/{metadata_file_name}"
+            if file_keywords.file_exists(moved_path):
+                file_keywords.move_file(source=moved_path, destination=f"{deployed_metadata_dir}/", sudo=True)
+
+    request.addfinalizer(teardown)
+
+    for release_name in deployed_releases:
+        metadata_file_name = f"{release_name}-metadata.xml"
+        source_path = f"{deployed_metadata_dir}/{metadata_file_name}"
+        get_logger().log_info(f"Moving deployed metadata for release {release_name} to {home_dir}")
+        file_keywords.move_file(source=source_path, destination=home_dir, sudo=True)
+        moved_files.append((release_name, metadata_file_name))
+
+    # Step 2: Verify no release is in 'deployed' state on the subcloud.
+    get_logger().log_test_case_step(f"Validating no 'deployed' release remains on subcloud {subcloud_name}")
+    remaining_deployed_releases = SoftwareListKeywords(subcloud_ssh).get_software_list().get_release_name_by_state("deployed")
+    validate_equals(len(remaining_deployed_releases), 0, f"Subcloud {subcloud_name} should have no 'deployed' release after simulating the ISO mismatch.")
+
+    # Step 3: Create the sw-deploy-strategy.
+    n_load = str(CloudPlatformVersionManagerClass().get_sw_version())
+    release = get_highest_release_for_load(system_controller_ssh, n_load, state="deployed")
+    get_logger().log_test_case_step(f"Creating sw-deploy-strategy for subcloud {subcloud_name} targeting release {release}")
+    strategy_keywords = DcmanagerSwDeployStrategy(system_controller_ssh)
+    strategy_keywords.dcmanager_sw_deploy_strategy_create(subcloud_name=subcloud_name, release=release, with_delete=True)
+
+    # Step 4: Apply the strategy.
+    get_logger().log_test_case_step("Applying sw-deploy-strategy")
+    strategy_keywords.dcmanager_sw_deploy_strategy_apply(target=subcloud_name, wait_completion=False)
+
+    # Step 5: Verify the strategy failed.
+    get_logger().log_test_case_step(f"Validating sw-deploy-strategy failed for subcloud {subcloud_name}")
+    deployment_timeout = ConfigurationManager.get_usm_config().get_deployment_timeout_sec()
+    strategy_step = DcmanagerStrategyStepKeywords(system_controller_ssh).wait_for_strategy_step_state(subcloud_name, states=["complete", "failed"], timeout=deployment_timeout)
+    validate_equals(strategy_step.get_state(), "failed", f"sw-deploy-strategy should fail precheck for subcloud {subcloud_name} due to ISO level mismatch (no 'deployed' release).")
