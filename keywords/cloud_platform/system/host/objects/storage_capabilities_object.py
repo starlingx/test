@@ -5,6 +5,7 @@ class StorageCapabilities:
 
     def __init__(self):
         self.deployment_model = None
+        self.failure_domain = None
         self.replication: int = -1
         self.min_replication: int = -1
         self.has_long_running_operations: bool = False
@@ -68,6 +69,26 @@ class StorageCapabilities:
             str: deployment_model
         """
         return self.deployment_model
+
+    def set_failure_domain(self, failure_domain: str):
+        """
+        Setter for failure_domain
+
+        Args:
+            failure_domain (str): failure_domain (e.g. 'host', 'osd')
+
+        Returns: None
+        """
+        self.failure_domain = failure_domain
+
+    def get_failure_domain(self) -> str:
+        """
+        Getter for failure_domain
+
+        Returns:
+            str: failure_domain
+        """
+        return self.failure_domain
 
     def set_has_long_running_operations(self, has_long_running_operations: bool):
         """

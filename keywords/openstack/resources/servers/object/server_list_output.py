@@ -25,6 +25,10 @@ class ServerListOutput:
                 or raw.get("host")
                 or raw.get("compute_host", "")
             )
+            server.set_instance_name(
+                raw.get("OS-EXT-SRV-ATTR:instance_name")
+                or raw.get("instance_name", "")
+            )
             server.set_availability_zone(
                 raw.get("OS-EXT-AZ:availability_zone")
                 or raw.get("availability_zone", "")

@@ -157,6 +157,9 @@ class SystemStorageBackendObject:
         # Add space before "deployment_model"
         capabilities_output = re.sub(r"deploy", r" deploy", capabilities_output)
 
+        # Add space before "failure_domain"
+        capabilities_output = re.sub(r"failure_", r" failure_", capabilities_output)
+
         # Add space before "has_long_running_operations"
         capabilities_output = re.sub(r"has_long", r" has_long", capabilities_output)
 
@@ -176,6 +179,8 @@ class SystemStorageBackendObject:
                 self.capabilities.set_min_replication(int(value))
             elif key == "deployment_model":
                 self.capabilities.set_deployment_model(value)
+            elif key == "failure_domain":
+                self.capabilities.set_failure_domain(value)
             elif key == "has_long_running_operations":
                 self.capabilities.set_has_long_running_operations(value == "True")
             else:

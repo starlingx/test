@@ -10,6 +10,7 @@ class ServerObject:
         self.name = None
         self.status = None
         self.host = None
+        self.instance_name = None
         self.availability_zone = None
         self.flavor_id = None
         self.image_id = None
@@ -84,6 +85,22 @@ class ServerObject:
             str: Hostname of the compute node.
         """
         return self.host
+
+    def set_instance_name(self, instance_name: str) -> None:
+        """Set the libvirt instance name.
+
+        Args:
+            instance_name (str): Instance name (e.g. 'instance-00000042').
+        """
+        self.instance_name = instance_name
+
+    def get_instance_name(self) -> str:
+        """Get the libvirt instance name.
+
+        Returns:
+            str: Instance name (e.g. 'instance-00000042').
+        """
+        return self.instance_name
 
     def set_availability_zone(self, availability_zone: str) -> None:
         """Set the availability zone.
