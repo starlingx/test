@@ -1,6 +1,20 @@
 {
-  "iscsi_credentials": {
+  "credentials": {
     "user_name": "admin",
     "password": ""
+  },
+
+  "storage_network": {
+    "ip_address": "",
+    "interface_name": ""
+  },
+
+  // Lab specific storage array values. Populate these in a local override
+  // config file, do not commit real values to this repository.
+  "storage_array": {
+    "array_id": "",
+    "endpoint": "",
+    "nas_name": ""
   }
+  
 }

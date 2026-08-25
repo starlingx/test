@@ -1,8 +1,14 @@
 {
   // File used for unit testing.
-  
-  "iscsi_credentials": {
+
+  "credentials": {
     "user_name": "testuser",
     "password": "testpass"
+  },
+
+  "storage_array": {
+    "array_id": "PSxxxxxxxxxxxx",
+    "endpoint": "https://10.10.10.10/api/rest",
+    "nas_name": "NAS1"
   }
 }

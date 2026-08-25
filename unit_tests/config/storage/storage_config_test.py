@@ -14,8 +14,11 @@ def test_default_storage_config():
     default_config = configuration_manager.get_storage_config()
 
     assert default_config is not None, "Default storage config wasn't loaded successfully"
-    assert default_config.get_iscsi_credentials().get_user_name() == "admin", "Default iSCSI username should be admin"
-    assert default_config.get_iscsi_credentials().get_password() == "", "Default iSCSI password should be empty"
+    assert default_config.get_credentials().get_user_name() == "admin", "Default storage username should be admin"
+    assert default_config.get_credentials().get_password() == "", "Default storage password should be empty"
+    assert default_config.get_storage_array_id() == "", "Default storage array id should be empty"
+    assert default_config.get_storage_array_endpoint() == "", "Default storage array endpoint should be empty"
+    assert default_config.get_storage_array_nas_name() == "", "Default storage array nas name should be empty"
 
 
 def test_custom_storage_config():
@@ -31,5 +34,8 @@ def test_custom_storage_config():
 
     custom_config = configuration_manager.get_storage_config()
     assert custom_config is not None, "Custom storage config wasn't loaded successfully"
-    assert custom_config.get_iscsi_credentials().get_user_name() == "testuser", "The custom config username isn't loaded correctly"
-    assert custom_config.get_iscsi_credentials().get_password() == "testpass", "The custom config password isn't loaded correctly"
+    assert custom_config.get_credentials().get_user_name() == "testuser", "The custom config username isn't loaded correctly"
+    assert custom_config.get_credentials().get_password() == "testpass", "The custom config password isn't loaded correctly"
+    assert custom_config.get_storage_array_id() == "PSxxxxxxxxxxxx", "The custom config storage array id isn't loaded correctly"
+    assert custom_config.get_storage_array_endpoint() == "https://10.10.10.10/api/rest", "The custom config storage array endpoint isn't loaded correctly"
+    assert custom_config.get_storage_array_nas_name() == "NAS1", "The custom config storage array nas name isn't loaded correctly"
