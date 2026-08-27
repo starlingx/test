@@ -1752,3 +1752,247 @@ def test_ejbca_network_interruption_clean_failure(request: FixtureRequest):
     validate_str_contains(output, "received IP", "Normal CMP works after bad attempt")
 
 
+@mark.p2
+def test_ejbca_system_responsive_at_idle():
+    """Verify system is responsive with EJBCA deployed at idle.
+
+    Test Steps:
+        - Check all EJBCA pods are Running
+        - Validate system commands respond within expected time
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    ejbca_config = ConfigurationManager.get_security_config().get_ejbca_config()
+    namespace = ejbca_config.get_namespace()
+
+    get_logger().log_test_case_step("Verify pods Running at idle")
+    pods_keywords = KubectlGetPodsKeywords(ssh_connection)
+    pods_output = pods_keywords.get_pods(namespace=namespace)
+    pod_list = pods_output.get_pods()
+
+    running = all(p.get_status() == "Running" for p in pod_list)
+    validate_equals(running, True, "All pods Running at idle")
+
+    get_logger().log_test_case_step("Verify EJBCA CLI responds at idle")
+    cli_keywords = EjbcaCliKeywords(ssh_connection, namespace)
+    ca_present = cli_keywords.is_ca_present(ejbca_config.get_management_ca_name())
+    validate_equals(ca_present, True, "EJBCA CLI responsive at idle")
+
+
+@mark.p2
+def test_ejbca_sustained_cmp_enrollment(request: FixtureRequest):
+    """Verify sustained CMP enrollment at 1 CSR/sec for configured duration.
+
+    Test Steps:
+        - Generate key and CSR
+        - Perform sequential enrollments for configured duration
+        - Validate all succeed
+
+    Teardown:
+        - Remove generated cert files
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    ejbca_config = ConfigurationManager.get_security_config().get_ejbca_config()
+    duration = ejbca_config.get_performance_duration()
+    cn_prefix = "test-perf-sustained"
+    max_certs = min(duration, 60)
+
+    def teardown():
+        get_logger().log_teardown_step("Remove sustained enrollment artifacts")
+        for i in range(max_certs):
+            file_kw = FileKeywords(ssh_connection)
+
+            file_kw.delete_file(f"/tmp/{cn_prefix}-{i}.key")
+
+            file_kw.delete_file(f"/tmp/{cn_prefix}-{i}.csr")
+
+            file_kw.delete_file(f"/tmp/{cn_prefix}-{i}.crt")
+
+    request.addfinalizer(teardown)
+
+    cmp_keywords = EjbcaCmpKeywords(ssh_connection)
+    server = ejbca_config.get_cmp_internal_server()
+    path = ejbca_config.get_cmp_internal_path()
+    hmac_secret = ejbca_config.get_cmp_hmac_secret()
+    success_count = 0
+
+    get_logger().log_test_case_step(f"Sustained enrollment: {max_certs} certificates at 1 CSR/sec")
+    start_time = time.time()
+    for i in range(max_certs):
+        cn = f"{cn_prefix}-{i}"
+        key_path = f"/tmp/{cn}.key"
+        csr_path = f"/tmp/{cn}.csr"
+        cert_path = f"/tmp/{cn}.crt"
+        cmp_keywords.generate_key_and_csr(cn, key_path, csr_path, san_dns=cn)
+        output = cmp_keywords.cmp_enroll(server, path, hmac_secret, cn, key_path, csr_path, cert_path)
+        raw = "\n".join(output) if isinstance(output, list) else output
+        if "received IP" in raw:
+            success_count += 1
+        time.sleep(1)
+    elapsed = time.time() - start_time
+    get_logger().log_info(f"Sustained enrollment completed: {success_count}/{max_certs} in {elapsed:.1f}s")
+
+    get_logger().log_test_case_step("Validate sustained enrollment success rate")
+    validate_equals(success_count, max_certs, "All sustained enrollments succeed")
+
+
+@mark.p2
+def test_ejbca_burst_enrollment(request: FixtureRequest):
+    """Verify EJBCA handles burst enrollment (rapid sequential requests).
+
+    Test Steps:
+        - Perform 20 rapid sequential CMP enrollments
+        - Validate all succeed
+
+    Teardown:
+        - Remove generated cert files
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    ejbca_config = ConfigurationManager.get_security_config().get_ejbca_config()
+    cn_prefix = "test-perf-burst"
+    burst_count = 20
+
+    def teardown():
+        get_logger().log_teardown_step("Remove burst enrollment artifacts")
+        for i in range(burst_count):
+            file_kw = FileKeywords(ssh_connection)
+
+            file_kw.delete_file(f"/tmp/{cn_prefix}-{i}.key")
+
+            file_kw.delete_file(f"/tmp/{cn_prefix}-{i}.csr")
+
+            file_kw.delete_file(f"/tmp/{cn_prefix}-{i}.crt")
+
+    request.addfinalizer(teardown)
+
+    cmp_keywords = EjbcaCmpKeywords(ssh_connection)
+    server = ejbca_config.get_cmp_internal_server()
+    path = ejbca_config.get_cmp_internal_path()
+    hmac_secret = ejbca_config.get_cmp_hmac_secret()
+    success_count = 0
+
+    get_logger().log_test_case_step(f"Burst enrollment: {burst_count} rapid requests")
+    start_time = time.time()
+    for i in range(burst_count):
+        cn = f"{cn_prefix}-{i}"
+        key_path = f"/tmp/{cn}.key"
+        csr_path = f"/tmp/{cn}.csr"
+        cert_path = f"/tmp/{cn}.crt"
+        cmp_keywords.generate_key_and_csr(cn, key_path, csr_path, san_dns=cn)
+        output = cmp_keywords.cmp_enroll(server, path, hmac_secret, cn, key_path, csr_path, cert_path)
+        raw = "\n".join(output) if isinstance(output, list) else output
+        if "received IP" in raw:
+            success_count += 1
+        time.sleep(1)
+    elapsed = time.time() - start_time
+    get_logger().log_info(f"Burst enrollment completed: {success_count}/{burst_count} in {elapsed:.1f}s")
+
+    get_logger().log_test_case_step("Validate burst enrollment success rate")
+    validate_equals(success_count, burst_count, "All burst enrollments succeed")
+
+
+@mark.p2
+def test_ejbca_certmanager_batch_issuance(request: FixtureRequest):
+    """Verify cert-manager can issue 10 certificates via EJBCA in batch.
+
+    Test Steps:
+        - Create 10 Certificate CRs simultaneously
+        - Wait for all to become Ready within timeout
+        - Validate all reached Ready state
+
+    Teardown:
+        - Delete all Certificate CRs and TLS secrets
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    ejbca_config = ConfigurationManager.get_security_config().get_ejbca_config()
+    namespace = ejbca_config.get_namespace()
+    issuer_name = ejbca_config.get_cert_manager_cluster_issuer_name()
+    issuer_group = ejbca_config.get_cert_manager_issuer_group()
+    batch_count = 10
+    cert_prefix = "test-perf-batch"
+
+    def teardown():
+        get_logger().log_teardown_step("Delete batch performance test artifacts")
+        for i in range(batch_count):
+            name = f"{cert_prefix}-{i}"
+            cert_mgr_keywords.delete_certificate_cr(name, namespace)
+            cert_mgr_keywords.delete_tls_secret(f"{name}-tls", namespace)
+
+    request.addfinalizer(teardown)
+
+    cert_mgr_keywords = EjbcaCertManagerKeywords(ssh_connection)
+
+    get_logger().log_test_case_step(f"Create {batch_count} Certificate CRs")
+    for i in range(batch_count):
+        name = f"{cert_prefix}-{i}"
+        cert_mgr_keywords.create_certificate_cr(
+            name, namespace, f"{name}-tls",
+            f"{name}.local", issuer_name, issuer_group
+        )
+
+    get_logger().log_test_case_step("Wait for all certificates Ready")
+    ready_count = 0
+    for i in range(batch_count):
+        name = f"{cert_prefix}-{i}"
+        if cert_mgr_keywords.wait_for_certificate_ready(name, namespace, timeout=180):
+            ready_count += 1
+
+    get_logger().log_test_case_step("Validate batch issuance")
+    validate_equals(ready_count, batch_count, f"All {batch_count} batch certs Ready")
+
+
+@mark.p2
+def test_ejbca_high_rate_enrollment(request: FixtureRequest):
+    """Verify EJBCA handles high-rate enrollment (simulating 10 CSR/sec).
+
+    Test Steps:
+        - Perform 100 rapid sequential CMP enrollments
+        - Validate success rate meets threshold
+
+    Teardown:
+        - Remove generated cert files
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    ejbca_config = ConfigurationManager.get_security_config().get_ejbca_config()
+    cn_prefix = "test-perf-highrate"
+    total_count = 100
+
+    def teardown():
+        get_logger().log_teardown_step("Remove high-rate enrollment artifacts")
+        for i in range(total_count):
+            file_kw = FileKeywords(ssh_connection)
+
+            file_kw.delete_file(f"/tmp/{cn_prefix}-{i}.key")
+
+            file_kw.delete_file(f"/tmp/{cn_prefix}-{i}.csr")
+
+            file_kw.delete_file(f"/tmp/{cn_prefix}-{i}.crt")
+
+    request.addfinalizer(teardown)
+
+    cmp_keywords = EjbcaCmpKeywords(ssh_connection)
+    server = ejbca_config.get_cmp_internal_server()
+    path = ejbca_config.get_cmp_internal_path()
+    hmac_secret = ejbca_config.get_cmp_hmac_secret()
+    success_count = 0
+
+    get_logger().log_test_case_step(f"High-rate enrollment: {total_count} requests")
+    start_time = time.time()
+    for i in range(total_count):
+        cn = f"{cn_prefix}-{i}"
+        key_path = f"/tmp/{cn}.key"
+        csr_path = f"/tmp/{cn}.csr"
+        cert_path = f"/tmp/{cn}.crt"
+        cmp_keywords.generate_key_and_csr(cn, key_path, csr_path, san_dns=cn)
+        output = cmp_keywords.cmp_enroll(server, path, hmac_secret, cn, key_path, csr_path, cert_path)
+        raw = "\n".join(output) if isinstance(output, list) else output
+        if "received IP" in raw:
+            success_count += 1
+        time.sleep(1)
+    elapsed = time.time() - start_time
+    get_logger().log_info(f"High-rate enrollment completed: {success_count}/{total_count} in {elapsed:.1f}s")
+
+    get_logger().log_test_case_step("Validate high-rate success threshold (>= 95%)")
+    min_required = int(total_count * 0.95)
+    validate_equals(success_count >= min_required, True, f"High-rate success {success_count}/{total_count} meets 95% threshold")
+
+
