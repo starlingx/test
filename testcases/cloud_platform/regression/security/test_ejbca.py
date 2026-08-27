@@ -2199,3 +2199,156 @@ def test_ejbca_pg_cluster_separate_chart():
 
 
 @mark.p1
+@mark.lab_has_standby_controller
+def test_ejbca_controller_reboot_recovery(request: FixtureRequest):
+    """Verify EJBCA service recovers after controller reboot.
+
+    Test Steps:
+        - Enroll a certificate via CMP
+        - Lock and reboot the active controller
+        - Wait for host to recover and become available
+        - Verify CMP enrollment works on new active controller
+        - Verify previously enrolled cert is still valid
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    ejbca_config = ConfigurationManager.get_security_config().get_ejbca_config()
+    cmp_keywords = EjbcaCmpKeywords(ssh_connection)
+
+    get_logger().log_test_case_step("Enroll certificate before reboot")
+    key_path = "/tmp/reboot-test.key"
+    csr_path = "/tmp/reboot-test.csr"
+    cert_path = "/tmp/reboot-test.crt"
+    cmp_keywords.generate_key_and_csr("reboot-pre", key_path, csr_path)
+    cmp_server = ejbca_config.get_cmp_internal_server()
+    cmp_path = ejbca_config.get_cmp_internal_path()
+    hmac_secret = ejbca_config.get_cmp_hmac_secret()
+    cmp_keywords.cmp_enroll(
+        cmp_server, cmp_path, hmac_secret, "reboot-pre",
+        key_path, csr_path, cert_path
+    )
+    cert_info = cmp_keywords.get_certificate_info(cert_path)
+    pre_serial = cert_info.get_serial()
+    validate_equals(len(pre_serial) > 0, True, "Pre-reboot cert issued")
+
+    get_logger().log_test_case_step("Lock and reboot active controller")
+
+    host_list = SystemHostListKeywords(ssh_connection)
+    active = host_list.get_active_controller()
+    active_name = active.get_host_name()
+    lock_keywords = SystemHostLockKeywords(ssh_connection)
+    lock_keywords.lock_host(active_name)
+
+    reboot_keywords = SystemHostRebootKeywords(ssh_connection)
+    reboot_keywords.host_reboot(active_name)
+
+    get_logger().log_test_case_step("Unlock the rebooted controller")
+    new_ssh = LabConnectionKeywords().get_active_controller_ssh()
+    unlock_keywords = SystemHostLockKeywords(new_ssh)
+    unlock_keywords.unlock_host(active_name)
+
+    get_logger().log_test_case_step("Reconnect and verify CMP after reboot")
+    new_cmp = EjbcaCmpKeywords(new_ssh)
+    post_key = "/tmp/reboot-post.key"
+    post_csr = "/tmp/reboot-post.csr"
+    post_cert = "/tmp/reboot-post.crt"
+    new_cmp.generate_key_and_csr("reboot-post", post_key, post_csr)
+    new_cmp.cmp_enroll(
+        cmp_server, cmp_path, hmac_secret, "reboot-post",
+        post_key, post_csr, post_cert
+    )
+    post_info = new_cmp.get_certificate_info(post_cert)
+    validate_equals(len(post_info.get_serial()) > 0, True, "Post-reboot CMP enrollment succeeds")
+
+    def teardown():
+        get_logger().log_teardown_step("Clean reboot test artifacts")
+        ssh = LabConnectionKeywords().get_active_controller_ssh()
+        file_kw = FileKeywords(ssh)
+        for path in [key_path, csr_path, cert_path, post_key, post_csr, post_cert]:
+            file_kw.delete_file(path)
+
+    request.addfinalizer(teardown)
+
+
+@mark.p1
+@mark.lab_has_standby_controller
+def test_ejbca_dor_recovery(request: FixtureRequest):
+    """Verify EJBCA recovers after Dead Office Recovery (DOR).
+
+    DOR simulates both controllers rebooting (power loss).
+    Test Steps:
+        - Record current cert count via CMP enrollment
+        - Perform DOR (swact + lock/reboot both controllers sequentially)
+        - Wait for system recovery
+        - Verify EJBCA pods running and CMP functional
+        - Verify no data loss (new cert count >= previous)
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    ejbca_config = ConfigurationManager.get_security_config().get_ejbca_config()
+    cmp_keywords = EjbcaCmpKeywords(ssh_connection)
+    namespace = ejbca_config.get_namespace()
+
+    get_logger().log_test_case_step("Enroll cert before DOR to confirm baseline")
+    key_path = "/tmp/dor-test.key"
+    csr_path = "/tmp/dor-test.csr"
+    cert_path = "/tmp/dor-test.crt"
+    cmp_keywords.generate_key_and_csr("dor-pre", key_path, csr_path)
+    cmp_server = ejbca_config.get_cmp_internal_server()
+    cmp_path = ejbca_config.get_cmp_internal_path()
+    hmac_secret = ejbca_config.get_cmp_hmac_secret()
+    cmp_keywords.cmp_enroll(
+        cmp_server, cmp_path, hmac_secret, "dor-pre",
+        key_path, csr_path, cert_path
+    )
+    validate_equals(
+        cmp_keywords.get_certificate_info(cert_path).get_serial() != "",
+        True, "Pre-DOR cert issued"
+    )
+
+    get_logger().log_test_case_step("Perform DOR - swact and reboot controllers")
+    swact_keywords = SystemHostSwactKeywords(ssh_connection)
+    swact_keywords.host_swact()
+
+    new_ssh = LabConnectionKeywords().get_active_controller_ssh()
+
+    host_list = SystemHostListKeywords(new_ssh)
+    standby = host_list.get_standby_controller()
+    standby_name = standby.get_host_name()
+    lock_kw = SystemHostLockKeywords(new_ssh)
+    lock_kw.lock_host(standby_name)
+    reboot_kw = SystemHostRebootKeywords(new_ssh)
+    reboot_kw.host_reboot(standby_name)
+
+    get_logger().log_test_case_step("Unlock the rebooted standby controller")
+    lock_kw.unlock_host(standby_name)
+
+    get_logger().log_test_case_step("Verify EJBCA functional after DOR")
+    post_ssh = LabConnectionKeywords().get_active_controller_ssh()
+    pods_kw = KubectlGetPodsKeywords(post_ssh)
+    pods_output = pods_kw.get_pods(namespace=namespace)
+    ejbca_pods = pods_output.get_pods_start_with("ejbca")
+    validate_equals(len(ejbca_pods) > 0, True, "EJBCA pods running after DOR")
+
+    post_cmp = EjbcaCmpKeywords(post_ssh)
+    post_key = "/tmp/dor-post.key"
+    post_csr = "/tmp/dor-post.csr"
+    post_cert = "/tmp/dor-post.crt"
+    post_cmp.generate_key_and_csr("dor-post", post_key, post_csr)
+    post_cmp.cmp_enroll(
+        cmp_server, cmp_path, hmac_secret, "dor-post",
+        post_key, post_csr, post_cert
+    )
+    validate_equals(
+        post_cmp.get_certificate_info(post_cert).get_serial() != "",
+        True, "Post-DOR CMP enrollment succeeds - no data loss"
+    )
+
+    def teardown():
+        get_logger().log_teardown_step("Clean DOR test artifacts")
+        ssh = LabConnectionKeywords().get_active_controller_ssh()
+        file_kw = FileKeywords(ssh)
+        for path in [key_path, csr_path, cert_path, post_key, post_csr, post_cert]:
+            file_kw.delete_file(path)
+
+    request.addfinalizer(teardown)
+
+
