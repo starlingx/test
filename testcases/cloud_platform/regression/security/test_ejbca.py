@@ -1467,3 +1467,288 @@ def test_ejbca_certmanager_multiple_certs(request: FixtureRequest):
 
 
 @mark.p1
+@mark.lab_has_standby_controller
+def test_ejbca_pod_kill_recovery(request: FixtureRequest):
+    """Verify EJBCA pod recovers after being killed.
+
+    Test Steps:
+        - Delete an EJBCA pod to simulate failure
+        - Wait for pod to restart and reach Running state
+        - Validate CMP enrollment works after recovery
+
+    Teardown:
+        - Remove CMP test artifacts
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    ejbca_config = ConfigurationManager.get_security_config().get_ejbca_config()
+    namespace = ejbca_config.get_namespace()
+    cn = "test-ha-pod-kill"
+    key_path = f"/tmp/{cn}.key"
+    csr_path = f"/tmp/{cn}.csr"
+    cert_path = f"/tmp/{cn}.crt"
+
+    def teardown():
+        get_logger().log_teardown_step("Remove HA pod kill test artifacts")
+        file_keywords = FileKeywords(ssh_connection)
+
+        file_keywords.delete_file(key_path)
+
+        file_keywords.delete_file(csr_path)
+
+        file_keywords.delete_file(cert_path)
+
+    request.addfinalizer(teardown)
+
+    cli_keywords = EjbcaCliKeywords(ssh_connection, namespace)
+    pod_name = cli_keywords.get_ejbca_pod_name()
+
+    get_logger().log_test_case_step(f"Delete EJBCA pod {pod_name}")
+    delete_pods_keywords = KubectlDeletePodsKeywords(ssh_connection)
+    delete_pods_keywords.delete_pod(pod_name, namespace=namespace)
+
+    get_logger().log_test_case_step("Wait for pod recovery")
+    pods_keywords = KubectlGetPodsKeywords(ssh_connection)
+    pod_ready_timeout = ejbca_config.get_pod_ready_timeout()
+
+    def check_pods_running():
+        pods_output = pods_keywords.get_pods(namespace=namespace, label=ejbca_config.get_ejbca_pod_label())
+        pod_list = pods_output.get_pods()
+        return all(p.get_status() == "Running" for p in pod_list) and len(pod_list) >= 1
+
+    validate_equals_with_retry(check_pods_running, True, "EJBCA pods Running after recovery", timeout=pod_ready_timeout)
+
+    get_logger().log_test_case_step("Validate CMP works after recovery")
+    cmp_keywords = EjbcaCmpKeywords(ssh_connection)
+    cmp_keywords.generate_key_and_csr(cn, key_path, csr_path, san_dns=cn)
+    server = ejbca_config.get_cmp_internal_server()
+    path = ejbca_config.get_cmp_internal_path()
+    hmac_secret = ejbca_config.get_cmp_hmac_secret()
+    output = cmp_keywords.cmp_enroll(server, path, hmac_secret, cn, key_path, csr_path, cert_path)
+    validate_str_contains(output, "received IP", "CMP works after pod kill")
+
+
+@mark.p1
+@mark.lab_has_standby_controller
+def test_ejbca_pg_failover_recovery(request: FixtureRequest):
+    """Verify EJBCA recovers after PostgreSQL primary failover.
+
+    Test Steps:
+        - Delete PG primary pod to trigger failover
+        - Wait for EJBCA to reconnect
+        - Validate CMP enrollment works after failover
+
+    Teardown:
+        - Remove CMP test artifacts
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    ejbca_config = ConfigurationManager.get_security_config().get_ejbca_config()
+    namespace = ejbca_config.get_namespace()
+    pg_cluster = ejbca_config.get_pg_cluster_name()
+    cn = "test-ha-pg-failover"
+    key_path = f"/tmp/{cn}.key"
+    csr_path = f"/tmp/{cn}.csr"
+    cert_path = f"/tmp/{cn}.crt"
+
+    def teardown():
+        get_logger().log_teardown_step("Remove PG failover test artifacts")
+        file_keywords = FileKeywords(ssh_connection)
+
+        file_keywords.delete_file(key_path)
+
+        file_keywords.delete_file(csr_path)
+
+        file_keywords.delete_file(cert_path)
+
+    request.addfinalizer(teardown)
+
+    get_logger().log_test_case_step("Delete PG primary pod to trigger failover")
+    delete_pods_keywords = KubectlDeletePodsKeywords(ssh_connection)
+    delete_pods_keywords.delete_pod(f"{pg_cluster}-1", namespace=namespace)
+
+    get_logger().log_test_case_step("Wait for PG failover and EJBCA reconnection")
+    pg_timeout = ejbca_config.get_pg_failover_timeout()
+    pods_keywords = KubectlGetPodsKeywords(ssh_connection)
+
+    def check_pg_ready():
+        pods_output = pods_keywords.get_pods(namespace=namespace)
+        pg_pods = pods_output.get_pods_start_with(pg_cluster)
+        running = [p for p in pg_pods if p.get_status() == "Running"]
+        return len(running) >= 1
+
+    validate_equals_with_retry(check_pg_ready, True, "PG pods Running after failover", timeout=pg_timeout)
+
+    get_logger().log_test_case_step("Validate CMP after PG failover")
+    cmp_keywords = EjbcaCmpKeywords(ssh_connection)
+    cmp_keywords.generate_key_and_csr(cn, key_path, csr_path, san_dns=cn)
+    server = ejbca_config.get_cmp_internal_server()
+    path = ejbca_config.get_cmp_internal_path()
+    hmac_secret = ejbca_config.get_cmp_hmac_secret()
+    output = cmp_keywords.cmp_enroll(server, path, hmac_secret, cn, key_path, csr_path, cert_path)
+    validate_str_contains(output, "received IP", "CMP works after PG failover")
+
+
+@mark.p1
+@mark.lab_has_standby_controller
+def test_ejbca_controller_swact(request: FixtureRequest):
+    """Verify EJBCA survives controller swact.
+
+    Test Steps:
+        - Perform controller swact
+        - Wait for EJBCA pods to be Running
+        - Validate CMP enrollment works after swact
+
+    Teardown:
+        - Remove CMP test artifacts
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    ejbca_config = ConfigurationManager.get_security_config().get_ejbca_config()
+    namespace = ejbca_config.get_namespace()
+    cn = "test-ha-swact"
+    key_path = f"/tmp/{cn}.key"
+    csr_path = f"/tmp/{cn}.csr"
+    cert_path = f"/tmp/{cn}.crt"
+
+    def teardown():
+        get_logger().log_teardown_step("Remove swact test artifacts")
+        new_ssh = LabConnectionKeywords().get_active_controller_ssh()
+        file_keywords = FileKeywords(new_ssh)
+        file_keywords.delete_file(key_path)
+        file_keywords.delete_file(csr_path)
+        file_keywords.delete_file(cert_path)
+
+    request.addfinalizer(teardown)
+
+    get_logger().log_test_case_step("Perform controller swact")
+    swact_keywords = SystemHostSwactKeywords(ssh_connection)
+    swact_keywords.host_swact()
+
+    get_logger().log_test_case_step("Reconnect to new active controller")
+    new_ssh = LabConnectionKeywords().get_active_controller_ssh()
+    swact_timeout = ejbca_config.get_swact_recovery_timeout()
+
+    get_logger().log_test_case_step("Wait for EJBCA pods Running after swact")
+    pods_keywords = KubectlGetPodsKeywords(new_ssh)
+
+    def check_ejbca_after_swact():
+        pods_output = pods_keywords.get_pods(namespace=namespace, label=ejbca_config.get_ejbca_pod_label())
+        pod_list = pods_output.get_pods()
+        return all(p.get_status() == "Running" for p in pod_list) and len(pod_list) >= 1
+
+    validate_equals_with_retry(check_ejbca_after_swact, True, "EJBCA pods Running after swact", timeout=swact_timeout)
+
+    get_logger().log_test_case_step("Validate CMP after swact")
+    cmp_keywords = EjbcaCmpKeywords(new_ssh)
+    cmp_keywords.generate_key_and_csr(cn, key_path, csr_path, san_dns=cn)
+    server = ejbca_config.get_cmp_internal_server()
+    path = ejbca_config.get_cmp_internal_path()
+    hmac_secret = ejbca_config.get_cmp_hmac_secret()
+    output = cmp_keywords.cmp_enroll(server, path, hmac_secret, cn, key_path, csr_path, cert_path)
+    validate_str_contains(output, "received IP", "CMP works after swact")
+
+
+@mark.p1
+@mark.lab_has_standby_controller
+def test_ejbca_enrollment_during_activity(request: FixtureRequest):
+    """Verify continuous enrollment works during normal operation.
+
+    Test Steps:
+        - Perform 10 CMP enrollments sequentially
+        - Validate all succeed
+
+    Teardown:
+        - Remove generated cert files
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    ejbca_config = ConfigurationManager.get_security_config().get_ejbca_config()
+    cn_prefix = "test-ha-activity"
+    enroll_count = 10
+
+    def teardown():
+        get_logger().log_teardown_step("Remove activity test artifacts")
+        for i in range(enroll_count):
+            file_kw = FileKeywords(ssh_connection)
+
+            file_kw.delete_file(f"/tmp/{cn_prefix}-{i}.key")
+
+            file_kw.delete_file(f"/tmp/{cn_prefix}-{i}.csr")
+
+            file_kw.delete_file(f"/tmp/{cn_prefix}-{i}.crt")
+
+    request.addfinalizer(teardown)
+
+    cmp_keywords = EjbcaCmpKeywords(ssh_connection)
+    server = ejbca_config.get_cmp_internal_server()
+    path = ejbca_config.get_cmp_internal_path()
+    hmac_secret = ejbca_config.get_cmp_hmac_secret()
+    success_count = 0
+
+    get_logger().log_test_case_step(f"Perform {enroll_count} sequential CMP enrollments")
+    for i in range(enroll_count):
+        cn = f"{cn_prefix}-{i}"
+        key_path = f"/tmp/{cn}.key"
+        csr_path = f"/tmp/{cn}.csr"
+        cert_path = f"/tmp/{cn}.crt"
+        cmp_keywords.generate_key_and_csr(cn, key_path, csr_path, san_dns=cn)
+        output = cmp_keywords.cmp_enroll(server, path, hmac_secret, cn, key_path, csr_path, cert_path)
+        raw = "\n".join(output) if isinstance(output, list) else output
+        if "received IP" in raw:
+            success_count += 1
+
+    get_logger().log_test_case_step("Validate all enrollments succeeded")
+    validate_equals(success_count, enroll_count, "All sequential enrollments succeed")
+
+
+@mark.p1
+@mark.lab_has_standby_controller
+def test_ejbca_network_interruption_clean_failure(request: FixtureRequest):
+    """Verify CMP fails cleanly with unreachable server.
+
+    Test Steps:
+        - Attempt CMP enrollment to non-existent server
+        - Validate clean error (connection refused)
+        - Validate normal enrollment still works
+
+    Teardown:
+        - Remove generated files
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    ejbca_config = ConfigurationManager.get_security_config().get_ejbca_config()
+    cn = "test-ha-network"
+    key_path = f"/tmp/{cn}.key"
+    csr_path = f"/tmp/{cn}.csr"
+    cert_bad = f"/tmp/{cn}-bad.crt"
+    cert_good = f"/tmp/{cn}-good.crt"
+
+    def teardown():
+        get_logger().log_teardown_step("Remove network test artifacts")
+        file_kw = FileKeywords(ssh_connection)
+
+        file_kw.delete_file(key_path)
+
+        file_kw.delete_file(csr_path)
+
+        file_kw.delete_file(cert_bad)
+
+        file_kw.delete_file(cert_good)
+
+    request.addfinalizer(teardown)
+
+    cmp_keywords = EjbcaCmpKeywords(ssh_connection)
+    path = ejbca_config.get_cmp_internal_path()
+    hmac_secret = ejbca_config.get_cmp_hmac_secret()
+
+    get_logger().log_test_case_step("Generate key and CSR")
+    cmp_keywords.generate_key_and_csr(cn, key_path, csr_path, san_dns=cn)
+
+    get_logger().log_test_case_step("Attempt enrollment to unreachable server")
+    bad_output = cmp_keywords.cmp_enroll_with_invalid_secret(
+        "localhost:9999", path, hmac_secret, cn, key_path, csr_path, cert_bad
+    )
+    validate_str_contains(bad_output, "refused", "Connection refused for bad server")
+
+    get_logger().log_test_case_step("Validate normal enrollment still works")
+    server = ejbca_config.get_cmp_internal_server()
+    output = cmp_keywords.cmp_enroll(server, path, hmac_secret, cn, key_path, csr_path, cert_good)
+    validate_str_contains(output, "received IP", "Normal CMP works after bad attempt")
+
+
