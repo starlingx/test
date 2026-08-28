@@ -6,10 +6,12 @@ import pytest
 from unit_tests.framework.web.mock_web_condition import MockWebCondition
 
 # Reduced sleep constants for fast test execution while still exercising
-# the real polling/sleep logic. Production uses 0.5/0.5/2.0.
-_TEST_SLEEP_BASE = 0.1
-_TEST_SLEEP_INCREMENT = 0.1
-_TEST_SLEEP_CAP = 0.4
+# the real polling/sleep logic. Production uses 0.5/0.5/2.0; these are scaled
+# down 50x so the full test module runs in well under a second while still
+# proving progressive backoff, increment growth, and cap enforcement.
+_TEST_SLEEP_BASE = 0.01
+_TEST_SLEEP_INCREMENT = 0.01
+_TEST_SLEEP_CAP = 0.04
 
 
 class MockWebDriverCore:
@@ -77,8 +79,8 @@ class TestWaitForCondition:
         start = time.time()
         core.wait_for_condition([condition], timeout=10)
         elapsed = time.time() - start
-        # After 2 fails: sleep 0.1 + sleep 0.2 = 0.3s minimum
-        assert elapsed >= 0.25
+        # After 2 fails: sleep 0.01 + sleep 0.02 = 0.03s minimum
+        assert elapsed >= 0.025
         assert elapsed < 1.0
 
     def test_condition_timeout_raises(self):
@@ -86,7 +88,7 @@ class TestWaitForCondition:
         core = MockWebDriverCore()
         condition = MockWebCondition(number_of_expected_fails=9999)
         with pytest.raises(TimeoutError, match="wait_for_condition timed out"):
-            core.wait_for_condition([condition], timeout=0.5)
+            core.wait_for_condition([condition], timeout=0.05)
 
     def test_multiple_conditions_all_must_pass(self):
         """All conditions must be satisfied -- AND logic."""
@@ -96,8 +98,8 @@ class TestWaitForCondition:
         start = time.time()
         core.wait_for_condition([cond_a, cond_b], timeout=5)
         elapsed = time.time() - start
-        # cond_b fails once -> at least one sleep of 0.1s
-        assert elapsed >= 0.08
+        # cond_b fails once -> at least one sleep of 0.01s
+        assert elapsed >= 0.008
 
     def test_multiple_conditions_timeout_if_one_never_passes(self):
         """If any condition never passes, TimeoutError is raised."""
@@ -105,7 +107,7 @@ class TestWaitForCondition:
         cond_a = MockWebCondition(number_of_expected_fails=0)
         cond_b = MockWebCondition(number_of_expected_fails=9999)
         with pytest.raises(TimeoutError, match="MockCondition"):
-            core.wait_for_condition([cond_a, cond_b], timeout=0.5)
+            core.wait_for_condition([cond_a, cond_b], timeout=0.05)
 
     def test_progressive_sleep_caps_at_maximum(self):
         """Progressive sleep should cap at maximum, not grow indefinitely."""
@@ -115,9 +117,11 @@ class TestWaitForCondition:
         start = time.time()
         core.wait_for_condition([condition], timeout=30)
         elapsed = time.time() - start
-        # Sleeps: 0.1 + 0.2 + 0.3 + 0.4 + 0.4 + 0.4 = 1.8s expected
-        assert elapsed >= 1.6
-        assert elapsed < 3.0
+        # Sleeps: 0.01 + 0.02 + 0.03 + 0.04 + 0.04 + 0.04 = 0.18s expected.
+        # The last two sleeps stay at 0.04 (the cap), proving the increment
+        # does not grow past _TEST_SLEEP_CAP.
+        assert elapsed >= 0.16
+        assert elapsed < 0.5
 
     def test_timeout_zero_is_single_check(self):
         """Timeout of 0 should check once and raise if not satisfied."""
