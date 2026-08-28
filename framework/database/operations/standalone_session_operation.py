@@ -21,8 +21,6 @@ class StandaloneSessionOperation:
         lab_runtime_config_id: int,
         session_info_id: Optional[int] = None,
         sys_type: Optional[str] = None,
-        kubernetes_version: Optional[str] = None,
-        ceph_version: Optional[str] = None,
     ) -> str:
         """
         Creates a standalone test session in the database.
@@ -34,8 +32,6 @@ class StandaloneSessionOperation:
             session_info_id: Maps to a TestPlan's session_info_id.
                 Defaults to -1 if not provided.
             sys_type: System type (e.g. 'AIO-DX', 'Standard').
-            kubernetes_version: K8s version.
-            ceph_version: Ceph version.
             lab_runtime_config_id: ID from create_lab_runtime_config.
 
         Returns:
@@ -49,17 +45,15 @@ class StandaloneSessionOperation:
 
         session_info_id = session_info_id if session_info_id is not None else -1
         sys_type = f"'{sys_type}'" if sys_type is not None else "NULL"
-        kubernetes_version = f"'{kubernetes_version}'" if kubernetes_version is not None else "NULL"
-        ceph_version = f"'{ceph_version}'" if ceph_version is not None else "NULL"
 
         insert_query = (
             "INSERT INTO test_session ("
             "id, run_id, lab_id, session_info_id, tag, "
-            "sys_type, kubernetes_version, ceph_version, "
+            "sys_type, "
             "lab_runtime_config_id, created_at"
             ") VALUES ("
             f"'{session_id}', {run_id}, {lab_id}, {session_info_id}, '{tag}', "
-            f"{sys_type}, {kubernetes_version}, {ceph_version}, "
+            f"{sys_type}, "
             f"{lab_runtime_config_id}, '{created_at}'"
             ") RETURNING id"
         )

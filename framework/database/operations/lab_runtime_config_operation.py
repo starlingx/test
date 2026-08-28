@@ -29,7 +29,6 @@ class LabRuntimeConfigOperation:
         host_labels: Optional[Dict[str, Any]] = None,
         installed_apps: Optional[Dict[str, Any]] = None,
         extra_config: Optional[Dict[str, Any]] = None,
-        runtime_software_logs: Optional[str] = None,
     ) -> int:
         """
         Creates a lab_runtime_config record in the database.
@@ -50,7 +49,6 @@ class LabRuntimeConfigOperation:
             host_labels: Per-host labels dict.
             installed_apps: Installed apps dict.
             extra_config: Additional configuration data.
-            runtime_software_logs: Log collection setting.
 
         Returns:
             int: The lab_runtime_config_id.
@@ -74,7 +72,6 @@ class LabRuntimeConfigOperation:
         hugepages_1g = f"{hugepages_1g}" if hugepages_1g is not None else "NULL"
         network_latency_ms = f"{network_latency_ms}" if network_latency_ms is not None else "NULL"
         bandwidth_mbps = f"{bandwidth_mbps}" if bandwidth_mbps is not None else "NULL"
-        runtime_software_logs = f"'{runtime_software_logs}'" if runtime_software_logs is not None else "NULL"
 
         insert_query = (
             "INSERT INTO lab_runtime_config ("
@@ -83,16 +80,14 @@ class LabRuntimeConfigOperation:
             "cpu_platform_cores, cpu_application_cores, cpu_application_isolated_cores, "
             "hugepages_2m, hugepages_1g, "
             "network_latency_ms, bandwidth_mbps, "
-            "host_labels, installed_apps, extra_config, "
-            "runtime_software_logs"
+            "host_labels, installed_apps, extra_config"
             ") VALUES ("
-            f"'{kernel_type}', '{cstate_setting}', '{pstate_setting}', "
+            f"{kernel_type}, {cstate_setting}, {pstate_setting}, "
             f"{per_core_config}, {hyperthreading_enabled}, "
             f"{cpu_platform_cores}, {cpu_application_cores}, {cpu_application_isolated_cores}, "
             f"{hugepages_2m}, {hugepages_1g}, "
             f"{network_latency_ms}, {bandwidth_mbps}, "
-            f"'{host_labels_json}', '{installed_apps_json}', '{extra_config_json}', "
-            f"'{runtime_software_logs}'"
+            f"'{host_labels_json}', '{installed_apps_json}', '{extra_config_json}'"
             ") RETURNING lab_runtime_config_id"
         )
 

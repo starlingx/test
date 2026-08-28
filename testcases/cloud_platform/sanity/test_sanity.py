@@ -7,6 +7,8 @@ from tabulate import tabulate
 
 from config.configuration_manager import ConfigurationManager
 from config.lab.objects.node import Node
+from framework.database.objects.kpi import Kpi
+from framework.database.objects.kpi_measure import KpiMeasure
 from framework.logging.automation_logger import get_logger
 from framework.resources.resource_finder import get_stx_resource_path
 from framework.ssh.secure_transfer_file.secure_transfer_file import SecureTransferFile
@@ -55,6 +57,7 @@ from keywords.k8s.pods.object.kubectl_get_pods_output import KubectlGetPodsOutpu
 from keywords.k8s.secret.kubectl_create_secret_keywords import KubectlCreateSecretsKeywords
 from keywords.k8s.service.kubectl_delete_service_keywords import KubectlDeleteServiceKeywords
 from keywords.k8s.service.kubectl_get_service_keywords import KubectlGetServiceKeywords
+from keywords.kpi.kpi_recorder_keywords import KpiRecorderKeywords
 from keywords.kpi.log_pattern_kpi_keywords import LogPatternKpiKeywords
 from keywords.kpi.unlock_kpi_blocks import UnlockKpiBlocks
 from keywords.linux.date.date_keywords import DateKeywords
@@ -83,6 +86,57 @@ def save_unlock_kpi_to_database(results: list, hostname: str) -> None:
     kpi_keywords = LogPatternKpiKeywords(ssh_connection=None)
     kpi_results = kpi_keywords.parse_results(results, hostname)
     kpi_keywords.save_to_database(kpi_results, software_version=software_version)
+
+
+def record_unlock_kpi_measures(results: list, hostname: str) -> None:
+    """Record unlock KPI measurements via KpiRecorderKeywords.
+
+    Builds KpiMeasure objects from the parsed unlock timings and delegates all
+    persistence to the framework-level KpiRecorderKeywords. The existing
+    upgrade_event functionality is preserved separately.
+
+    Args:
+        results (list): KPI timing results (List[str]) from calculate_kpi.
+        hostname (str): Hostname of the unlocked host.
+    """
+    if not results:
+        return
+
+    software_version = CloudPlatformVersionManager.get_sw_version().get_name()
+    lab_name = ConfigurationManager.get_lab_config().get_lab_name()
+
+    kpi_results = LogPatternKpiKeywords(ssh_connection=None).parse_results(results, hostname)
+    if not kpi_results:
+        get_logger().log_info("No unlock KPI phases were parsed, nothing to record")
+        return
+
+    kpi_measures = []
+    for result in kpi_results:
+        kpi = Kpi(
+            product="WRCP",
+            kpi_category="Sanity",
+            kpi_name=result.get_label().lower().replace(" ", "-"),
+            kpi_node_role=hostname,
+            kpi_detail="duration",
+            kpi_group="lock_unlock",
+            kpi_unit="s",
+            kpi_description=result.get_label(),
+        )
+        kpi_measures.append(
+            KpiMeasure(
+                kpi=kpi,
+                kpi_value=result.get_duration_seconds(),
+                kpi_measure_details={
+                    "hostname": hostname,
+                    "software_version": software_version,
+                    "phase": result.get_label(),
+                    "lab_name": lab_name,
+                },
+                notes=f"Lock/unlock KPI for {hostname} on {software_version}",
+            )
+        )
+
+    KpiRecorderKeywords().record_kpi_measures(kpi_measures)
 
 
 @mark.p0
@@ -218,6 +272,7 @@ def test_lock_unlock_simplex():
         # Save KPI data to database if record_kpi is enabled in USM config
         if ConfigurationManager.get_usm_config().get_record_kpi():
             save_unlock_kpi_to_database(results, active_controller.get_host_name())
+            record_unlock_kpi_measures(results, active_controller.get_host_name())
     else:
         get_logger().log_info("No timing patterns found in logs")
 
@@ -260,6 +315,7 @@ def test_lock_unlock_standby_controller():
         # Save KPI data to database if record_kpi is enabled in USM config
         if ConfigurationManager.get_usm_config().get_record_kpi():
             save_unlock_kpi_to_database(results, standby_controller.get_host_name())
+            record_unlock_kpi_measures(results, standby_controller.get_host_name())
     else:
         get_logger().log_info("No timing patterns found in logs")
 
@@ -304,6 +360,7 @@ def test_lock_unlock_compute():
         # Save KPI data to database if record_kpi is enabled in USM config
         if ConfigurationManager.get_usm_config().get_record_kpi():
             save_unlock_kpi_to_database(results, computes[0].get_host_name())
+            record_unlock_kpi_measures(results, computes[0].get_host_name())
     else:
         get_logger().log_info("No timing patterns found in logs")
 

@@ -93,7 +93,6 @@ class KpiApiClient:
         host_labels: Optional[Dict[str, Any]] = None,
         installed_apps: Optional[Dict[str, Any]] = None,
         extra_config: Optional[Dict[str, Any]] = None,
-        runtime_software_logs: Optional[str] = None,
     ) -> int:
         """
         Register a lab runtime configuration.
@@ -114,7 +113,6 @@ class KpiApiClient:
             host_labels: Per-host labels dict.
             installed_apps: Installed apps dict.
             extra_config: Additional configuration data.
-            runtime_software_logs: Log collection setting.
 
         Returns:
             int: The lab_runtime_config_id.
@@ -136,7 +134,6 @@ class KpiApiClient:
             host_labels=host_labels,
             installed_apps=installed_apps,
             extra_config=extra_config,
-            runtime_software_logs=runtime_software_logs,
         )
         get_logger().log_info(f"Created lab_runtime_config_id: {config_id}")
         return config_id
@@ -177,8 +174,6 @@ class KpiApiClient:
         lab_runtime_config_id: int,
         session_info_id: int = -1,
         sys_type: Optional[str] = None,
-        kubernetes_version: Optional[str] = None,
-        ceph_version: Optional[str] = None,
     ) -> str:
         """
         Create a standalone test session.
@@ -189,8 +184,6 @@ class KpiApiClient:
             tag: Descriptive tag for the session.
             session_info_id: Maps to a TestPlan's session_info_id (defaults to -1).
             sys_type: System type (e.g. 'AIO-DX', 'Standard').
-            kubernetes_version: K8s version.
-            ceph_version: Ceph version.
             lab_runtime_config_id: ID from create_lab_runtime_config.
 
         Returns:
@@ -202,8 +195,6 @@ class KpiApiClient:
             lab_runtime_config_id=lab_runtime_config_id,
             session_info_id=session_info_id,
             sys_type=sys_type,
-            kubernetes_version=kubernetes_version,
-            ceph_version=ceph_version,
         )
         get_logger().log_info(f"Created session_id: {session_id}")
         return session_id
