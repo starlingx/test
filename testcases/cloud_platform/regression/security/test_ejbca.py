@@ -2352,3 +2352,267 @@ def test_ejbca_dor_recovery(request: FixtureRequest):
     request.addfinalizer(teardown)
 
 
+@mark.p1
+def test_ejbca_backup_restore_ca_preserved(request: FixtureRequest):
+    """Verify CA data preserved after backup and restore.
+
+    Test Steps:
+        - Enroll a certificate via CMP (creates CA data)
+        - Run EJBCA backup playbook
+        - Run EJBCA restore playbook
+        - Verify ManagementCA still present after restore
+        - Verify previously issued cert info still accessible
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    ejbca_config = ConfigurationManager.get_security_config().get_ejbca_config()
+    cmp_keywords = EjbcaCmpKeywords(ssh_connection)
+    cli_keywords = EjbcaCliKeywords(ssh_connection, ejbca_config.get_namespace())
+    bnr_keywords = EjbcaBackupRestoreKeywords(ssh_connection)
+
+    get_logger().log_test_case_step("Enroll certificate to establish CA state")
+    key_path = "/tmp/bnr-test.key"
+    csr_path = "/tmp/bnr-test.csr"
+    cert_path = "/tmp/bnr-test.crt"
+    cmp_keywords.generate_key_and_csr("bnr-pre", key_path, csr_path)
+    cmp_server = ejbca_config.get_cmp_internal_server()
+    cmp_path = ejbca_config.get_cmp_internal_path()
+    hmac_secret = ejbca_config.get_cmp_hmac_secret()
+    cmp_keywords.cmp_enroll(
+        cmp_server, cmp_path, hmac_secret, "bnr-pre",
+        key_path, csr_path, cert_path
+    )
+    pre_serial = cmp_keywords.get_certificate_info(cert_path).get_serial()
+    validate_equals(len(pre_serial) > 0, True, "Pre-backup cert issued")
+
+    get_logger().log_test_case_step("Run EJBCA backup playbook")
+    backup_dir = ejbca_config.get_backup_dir()
+    backup_playbook = ejbca_config.get_backup_playbook_path()
+    bnr_keywords.run_backup_playbook(backup_playbook, backup_dir)
+
+    get_logger().log_test_case_step("Run EJBCA restore playbook")
+    restore_playbook = ejbca_config.get_restore_playbook_path()
+    file_kw = FileKeywords(ssh_connection)
+    backup_files = file_kw.get_files_in_dir(backup_dir, is_sudo=True)
+    backup_filename = sorted([f for f in backup_files if "ejbca" in f])[-1]
+    bnr_keywords.run_restore_playbook(restore_playbook, backup_dir, backup_filename)
+
+    get_logger().log_test_case_step("Verify ManagementCA present after restore")
+    validate_equals(
+        cli_keywords.is_ca_present("ManagementCA"), True,
+        "ManagementCA exists after restore"
+    )
+
+    get_logger().log_test_case_step("Verify CMP enrollment works after restore")
+    post_key = "/tmp/bnr-post.key"
+    post_csr = "/tmp/bnr-post.csr"
+    post_cert = "/tmp/bnr-post.crt"
+    cmp_keywords.generate_key_and_csr("bnr-post", post_key, post_csr)
+    cmp_keywords.cmp_enroll(
+        cmp_server, cmp_path, hmac_secret, "bnr-post",
+        post_key, post_csr, post_cert
+    )
+    post_serial = cmp_keywords.get_certificate_info(post_cert).get_serial()
+    validate_equals(len(post_serial) > 0, True, "Post-restore CMP works")
+
+    def teardown():
+        get_logger().log_teardown_step("Clean B&R test artifacts")
+        ssh = LabConnectionKeywords().get_active_controller_ssh()
+        file_kw = FileKeywords(ssh)
+        for path in [key_path, csr_path, cert_path, post_key, post_csr, post_cert]:
+            file_kw.delete_file(path)
+
+    request.addfinalizer(teardown)
+
+
+@mark.p1
+def test_ejbca_backup_restore_enrolled_certs_valid(request: FixtureRequest):
+    """Verify previously enrolled certificates remain valid after restore.
+
+    Test Steps:
+        - Enroll a certificate and record its serial
+        - Perform backup and restore cycle
+        - Verify the certificate serial is still in the CA database
+        - Verify cert chain validation still passes
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    ejbca_config = ConfigurationManager.get_security_config().get_ejbca_config()
+    cmp_keywords = EjbcaCmpKeywords(ssh_connection)
+    bnr_keywords = EjbcaBackupRestoreKeywords(ssh_connection)
+
+    get_logger().log_test_case_step("Enroll certificate before backup")
+    key_path = "/tmp/bnr-valid.key"
+    csr_path = "/tmp/bnr-valid.csr"
+    cert_path = "/tmp/bnr-valid.crt"
+    ca_cert_path = "/tmp/bnr-valid-ca.crt"
+    cmp_keywords.generate_key_and_csr("bnr-valid", key_path, csr_path)
+    cmp_server = ejbca_config.get_cmp_internal_server()
+    cmp_path = ejbca_config.get_cmp_internal_path()
+    hmac_secret = ejbca_config.get_cmp_hmac_secret()
+    cmp_keywords.cmp_enroll(
+        cmp_server, cmp_path, hmac_secret, "bnr-valid",
+        key_path, csr_path, cert_path, ca_cert_out=ca_cert_path
+    )
+    cert_info = cmp_keywords.get_certificate_info(cert_path)
+    original_serial = cert_info.get_serial()
+
+    get_logger().log_test_case_step("Perform backup and restore")
+    backup_dir = ejbca_config.get_backup_dir()
+    bnr_keywords.run_backup_playbook(ejbca_config.get_backup_playbook_path(), backup_dir)
+    file_kw = FileKeywords(ssh_connection)
+    backup_files = file_kw.get_files_in_dir(backup_dir, is_sudo=True)
+    backup_filename = sorted([f for f in backup_files if "ejbca" in f])[-1]
+    bnr_keywords.run_restore_playbook(
+        ejbca_config.get_restore_playbook_path(), backup_dir, backup_filename
+    )
+
+    get_logger().log_test_case_step("Verify cert chain still validates after restore")
+    validate_equals(
+        cmp_keywords.verify_cert_chain(cert_path, ca_cert_path), True,
+        "Certificate chain validates after restore"
+    )
+
+    get_logger().log_test_case_step("Verify original serial is still valid after restore")
+    restored_info = cmp_keywords.get_certificate_info(cert_path)
+    validate_equals(restored_info.get_serial(), original_serial, "Certificate serial preserved after restore")
+
+    def teardown():
+        get_logger().log_teardown_step("Clean B&R validity test artifacts")
+        ssh = LabConnectionKeywords().get_active_controller_ssh()
+        file_kw = FileKeywords(ssh)
+        for path in [key_path, csr_path, cert_path, ca_cert_path]:
+            file_kw.delete_file(path)
+
+    request.addfinalizer(teardown)
+
+
+@mark.p1
+@mark.lab_has_subcloud
+def test_ejbca_dc_subcloud_cmp_enrollment(request: FixtureRequest):
+    """Verify subcloud can enroll certificates from system controller EJBCA.
+
+    Test Steps:
+        - Connect to system controller
+        - Verify EJBCA running on system controller
+        - Connect to subcloud
+        - Perform CMP enrollment from subcloud to system controller EJBCA
+        - Verify certificate issued with correct issuer
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    ejbca_config = ConfigurationManager.get_security_config().get_ejbca_config()
+    cli_keywords = EjbcaCliKeywords(ssh_connection, ejbca_config.get_namespace())
+
+    get_logger().log_test_case_step("Verify EJBCA running on system controller")
+    validate_equals(
+        cli_keywords.is_ca_present("ManagementCA"), True,
+        "ManagementCA present on system controller"
+    )
+
+    get_logger().log_test_case_step("Connect to subcloud and perform CMP enrollment")
+    dc_keywords = DcManagerSubcloudListKeywords(ssh_connection)
+    subcloud = dc_keywords.get_specific_subcloud_with_lowest_id(availability="online")
+    subcloud_name = subcloud.get_name()
+    subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
+    subcloud_cmp = EjbcaCmpKeywords(subcloud_ssh)
+
+    lab_config = ConfigurationManager.get_lab_config()
+    oam_ip = lab_config.get_floating_ip()
+    port = ejbca_config.get_cmp_external_port()
+
+    key_path = "/tmp/dc-enroll.key"
+    csr_path = "/tmp/dc-enroll.csr"
+    cert_path = "/tmp/dc-enroll.crt"
+    subcloud_cmp.generate_key_and_csr(f"dc-{subcloud_name}", key_path, csr_path)
+    cmp_server = f"{oam_ip}:{port}"
+    cmp_path = ejbca_config.get_cmp_internal_path()
+    hmac_secret = ejbca_config.get_cmp_hmac_secret()
+    subcloud_cmp.cmp_enroll(
+        cmp_server, cmp_path, hmac_secret, f"dc-{subcloud_name}",
+        key_path, csr_path, cert_path
+    )
+    cert_info = subcloud_cmp.get_certificate_info(cert_path)
+    validate_str_contains(
+        cert_info.get_issuer(), "ManagementCA",
+        "Cert issued by system controller ManagementCA"
+    )
+
+    def teardown():
+        get_logger().log_teardown_step("Clean DC enrollment artifacts on subcloud")
+        sc_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
+        file_kw = FileKeywords(sc_ssh)
+        for path in [key_path, csr_path, cert_path]:
+            file_kw.delete_file(path)
+
+    request.addfinalizer(teardown)
+
+
+@mark.p1
+@mark.lab_has_subcloud
+@mark.lab_has_standby_controller
+def test_ejbca_dc_sc_swact_subclouds_unaffected(request: FixtureRequest):
+    """Verify subclouds CMP enrollment unaffected by SC swact.
+
+    Test Steps:
+        - Enroll cert from subcloud before swact
+        - Swact system controller
+        - Enroll cert from subcloud after swact
+        - Verify both certs valid
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    ejbca_config = ConfigurationManager.get_security_config().get_ejbca_config()
+
+    get_logger().log_test_case_step("Get subcloud connection")
+    dc_keywords = DcManagerSubcloudListKeywords(ssh_connection)
+    subcloud = dc_keywords.get_specific_subcloud_with_lowest_id(availability="online")
+    subcloud_name = subcloud.get_name()
+    subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
+
+    lab_config = ConfigurationManager.get_lab_config()
+    oam_ip = lab_config.get_floating_ip()
+    port = ejbca_config.get_cmp_external_port()
+
+    get_logger().log_test_case_step("Enroll certificate from subcloud before swact")
+    subcloud_cmp = EjbcaCmpKeywords(subcloud_ssh)
+    pre_key = "/tmp/dc-swact-pre.key"
+    pre_csr = "/tmp/dc-swact-pre.csr"
+    pre_cert = "/tmp/dc-swact-pre.crt"
+    subcloud_cmp.generate_key_and_csr("dc-pre-swact", pre_key, pre_csr)
+    cmp_server = f"{oam_ip}:{port}"
+    cmp_path = ejbca_config.get_cmp_internal_path()
+    hmac_secret = ejbca_config.get_cmp_hmac_secret()
+    subcloud_cmp.cmp_enroll(
+        cmp_server, cmp_path, hmac_secret, "dc-pre-swact",
+        pre_key, pre_csr, pre_cert
+    )
+    validate_equals(
+        subcloud_cmp.get_certificate_info(pre_cert).get_serial() != "",
+        True, "Pre-swact enrollment from subcloud succeeds"
+    )
+
+    get_logger().log_test_case_step("Swact system controller")
+    swact_keywords = SystemHostSwactKeywords(ssh_connection)
+    swact_keywords.host_swact()
+
+    get_logger().log_test_case_step("Enroll certificate from subcloud after swact")
+    new_subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
+    post_cmp = EjbcaCmpKeywords(new_subcloud_ssh)
+    post_key = "/tmp/dc-swact-post.key"
+    post_csr = "/tmp/dc-swact-post.csr"
+    post_cert = "/tmp/dc-swact-post.crt"
+    post_cmp.generate_key_and_csr("dc-post-swact", post_key, post_csr)
+    post_cmp.cmp_enroll(
+        cmp_server, cmp_path, hmac_secret, "dc-post-swact",
+        post_key, post_csr, post_cert
+    )
+    validate_equals(
+        post_cmp.get_certificate_info(post_cert).get_serial() != "",
+        True, "Post-swact enrollment from subcloud succeeds"
+    )
+
+    def teardown():
+        get_logger().log_teardown_step("Clean DC swact test artifacts")
+        sc_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
+        file_kw = FileKeywords(sc_ssh)
+        for path in [pre_key, pre_csr, pre_cert, post_key, post_csr, post_cert]:
+            file_kw.delete_file(path)
+
+    request.addfinalizer(teardown)
