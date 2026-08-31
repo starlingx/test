@@ -1,3 +1,4 @@
+from framework.exceptions.keyword_exception import KeywordException
 from framework.rest.rest_response import RestResponse
 from keywords.cloud_platform.system.host.objects.system_host_if_object import SystemHostInterfaceObject
 from keywords.cloud_platform.system.system_table_parser import SystemTableParser
@@ -51,7 +52,9 @@ class SystemHostInterfaceOutput:
             elif "iftype" in value:  # value in Rest field
                 system_host_interface_object.set_type(value["iftype"])
 
-            if "vlan_id" in value:
+            if "vlan id" in value:
+                system_host_interface_object.set_vlan_id(value["vlan id"])
+            elif "vlan_id" in value:  # value in Rest field
                 system_host_interface_object.set_vlan_id(value["vlan_id"])
 
             if "ports" in value:
@@ -129,3 +132,20 @@ class SystemHostInterfaceOutput:
             list[SystemHostInterfaceObject]: List of interfaces matching the specified class.
         """
         return list(filter(lambda item: item.get_if_class() == if_class, self.system_host_interfaces))
+
+    def get_interface_by_name(self, name: str) -> SystemHostInterfaceObject:
+        """Get the interface with the given name.
+
+        Args:
+            name (str): The interface name to look for (e.g. 'mgmt0', 'oam0', 'cluster0').
+
+        Returns:
+            SystemHostInterfaceObject: The interface matching the specified name.
+
+        Raises:
+            KeywordException: If no interface with the given name is found.
+        """
+        for interface in self.system_host_interfaces:
+            if interface.get_name() == name:
+                return interface
+        raise KeywordException(f"No interface named '{name}' was found in the host interface list.")

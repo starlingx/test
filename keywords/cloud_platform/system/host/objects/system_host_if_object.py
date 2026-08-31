@@ -1,6 +1,6 @@
 class SystemHostInterfaceObject:
-    """
-    This class represents a Network Interface as an object.
+    """Represents a Network Interface as an object.
+
     This is typically a line in the system host-if-list output table.
     """
 
@@ -122,3 +122,19 @@ class SystemHostInterfaceObject:
         Getter for this network interface's attributes
         """
         return self.attributes
+
+    def get_kernel_device_name(self) -> str:
+        """
+        Get the Linux kernel device name for this interface.
+
+        The StarlingX interface name (e.g. 'mgmt0', 'oam0') is a logical name and
+        is not the actual kernel device. When the interface is a VLAN, the kernel
+        device is 'vlan<vlan_id>' (e.g. 'vlan41'). For other types, the kernel
+        device name matches the StarlingX interface name.
+
+        Returns:
+            str: The kernel device name usable with 'ip link set dev <name>'.
+        """
+        if self.type == "vlan":
+            return f"vlan{self.vlan_id}"
+        return self.name

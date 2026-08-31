@@ -7,11 +7,13 @@ from keywords.cloud_platform.fault_management.alarms.alarm_list_keywords import 
 from keywords.cloud_platform.fault_management.alarms.objects.alarm_list_output import AlarmListOutput
 from keywords.cloud_platform.health.health_keywords import HealthKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
+from keywords.cloud_platform.system.host.system_host_if_keywords import SystemHostInterfaceKeywords
 from keywords.cloud_platform.system.host.system_host_list_keywords import SystemHostListKeywords
 from keywords.cloud_platform.system.host.system_host_lock_keywords import SystemHostLockKeywords
 from keywords.cloud_platform.system.host.system_host_reboot_keywords import SystemHostRebootKeywords
 from keywords.cloud_platform.system.host.system_host_reinstall_keywords import SystemHostReinstallKeywords
 from keywords.cloud_platform.system.host.system_host_swact_keywords import SystemHostSwactKeywords
+from keywords.linux.ip.ip_keywords import IPKeywords
 from keywords.server.power_keywords import PowerKeywords
 
 
@@ -155,3 +157,63 @@ def test_reinstall_standby_host():
 
     get_logger().log_test_case_step("Checking storage backend health after reinstall.")
     ceph_status_keywords.wait_for_ceph_health_status(expect_health_status=True)
+
+
+@mark.p2
+@mark.lab_has_standby_controller
+def test_verify_ceph_recovery_after_one_mgmt_interface_is_down():
+    """
+    Verify ceph recovery after one mgmt interface is brought down on the standby controller.
+
+    Test Steps:
+        - Check the hosts are healthy
+        - Get the initial active alarms
+        - Get the mgmt interface of the standby controller
+        - Bring down the mgmt interface on the standby controller
+        - Verify ceph health is not okay while interface is down
+        - Bring up the mgmt interface on the standby controller
+        - Wait for ceph health to recover
+        - Verify no new alarms are present after recovery
+
+    Args: None
+    """
+
+    active_ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    system_host_list_keywords = SystemHostListKeywords(active_ssh_connection)
+    standby_controller = system_host_list_keywords.get_standby_controller().get_host_name()
+    standby_ssh_connection = LabConnectionKeywords().get_ssh_for_hostname(standby_controller)
+    health_keywords = HealthKeywords(active_ssh_connection)
+    system_host_if_keywords = SystemHostInterfaceKeywords(active_ssh_connection)
+    ceph_status_keywords = CephStatusKeywords(active_ssh_connection)
+    ip_keywords = IPKeywords(standby_ssh_connection)
+
+    get_logger().log_test_case_step("Check the hosts healthy")
+    health_keywords.validate_hosts_health()
+
+    get_logger().log_test_case_step("Get the initial active alarms")
+    alarm_list_keywords = AlarmListKeywords(active_ssh_connection)
+    initial_alarms = alarm_list_keywords.get_alarm_list().get_alarms()
+
+    get_logger().log_test_case_step(f"Get the mgmt interface of standby controller {standby_controller}")
+    interface_output = system_host_if_keywords.get_system_host_interface_list(standby_controller)
+    mgmt_device_name = interface_output.get_interface_by_name("mgmt0").get_kernel_device_name()
+
+    get_logger().log_test_case_step(f"Bring down mgmt interface {mgmt_device_name} on {standby_controller}")
+    ip_keywords.set_ip_port_state(mgmt_device_name, "down")
+    interface_state = ip_keywords.ip_link_show_interface(mgmt_device_name).get_interface().get_state()
+    validate_equals(interface_state, "DOWN", f"mgmt interface {mgmt_device_name} should be DOWN")
+
+    get_logger().log_test_case_step("Checking ceph health is not okay after mgmt interface is down")
+    ceph_status_keywords.wait_for_ceph_health_status(expect_health_status=False, timeout=300)
+
+    get_logger().log_test_case_step(f"Bring up mgmt interface {mgmt_device_name} on {standby_controller}")
+    ip_keywords.set_ip_port_state(mgmt_device_name, "up")
+    interface_state = ip_keywords.ip_link_show_interface(mgmt_device_name).get_interface().get_state()
+    validate_equals(interface_state, "UP", f"mgmt interface {mgmt_device_name} should be UP")
+
+    get_logger().log_test_case_step("Waiting for ceph health to recover after mgmt interface is back up")
+    ceph_status_keywords.wait_for_ceph_health_status(expect_health_status=True, timeout=1800)
+
+    get_logger().log_test_case_step("Verifying no new alarms remain after recovery")
+    alarm_list_keywords.set_timeout_in_seconds(1200)
+    alarm_list_keywords.wait_for_all_alarms_cleared_excluding(excluded_alarms=initial_alarms, stable_checks=3, tolerate_query_failure=True)
