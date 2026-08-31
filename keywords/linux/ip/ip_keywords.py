@@ -17,16 +17,17 @@ class IPKeywords(BaseKeyword):
     def __init__(self, ssh_connection: SSHConnection):
         self.ssh_connection = ssh_connection
 
-    def ip_link_show_interface(self, interface_name) -> IPLinkShowOutput:
+    def ip_link_show_interface(self, interface_name: str) -> IPLinkShowOutput:
         """
-        IP link show command for the given interface name
+        IP link show command for the given interface name.
+
         Args:
-            interface_name (): the interface name
+            interface_name (str): the interface name.
 
         Returns:
-
+            IPLinkShowOutput: the parsed output of the 'ip link show' command.
         """
-        output = self.ssh_connection.send(f'ip link show {interface_name}')
+        output = self.ssh_connection.send(f"ip link show {interface_name}")
         self.validate_success_return_code(self.ssh_connection)
         ip_link_show_output = IPLinkShowOutput(output)
 
@@ -34,26 +35,26 @@ class IPKeywords(BaseKeyword):
 
     def get_ip_address_from_pod(self, pod_name: str, interface_name: str) -> str:
         """
-        Gets the ipaddress from the given interface in the pod
+        Gets the ip address from the given interface in the pod.
+
         Args:
-            pod_name (): the name of the pod
-            interface_name (): the interface name
+            pod_name (str): the name of the pod.
+            interface_name (str): the interface name.
 
         Returns:
-
+            str: the global ip address assigned to the given interface.
         """
-
         lab_config = ConfigurationManager.get_lab_config()
 
-        ip_designation = ''
+        ip_designation = ""
         if lab_config.is_ipv6():
-            ip_designation = '-6'
+            ip_designation = "-6"
 
         exec_in_pod = KubectlExecInPodsKeywords(self.ssh_connection)
-        output = exec_in_pod.run_pod_exec_cmd(pod_name, f'ip {ip_designation} addr list')
+        output = exec_in_pod.run_pod_exec_cmd(pod_name, f"ip {ip_designation} addr list")
 
         # output is a list, need to put as a string and remove return characters
-        output_str = ' '.join(output).replace('\n', '')
+        output_str = " ".join(output).replace("\n", "")
 
         # Given the below output form, find the global ip for the interface given. i.e. for interface net1 we want
         # the ip address: 2626:1::8e22:765f:6121:eb59
@@ -71,34 +72,32 @@ class IPKeywords(BaseKeyword):
         # inet6 fe80::e057:9cff:fe60:f650/64 scope link
         # valid_lft forever preferred_lft forever
 
-        reg_exp = f"{interface_name}: .*inet.* (\S+).*\/.*global"
-        match = re.search(fr"{reg_exp}", output_str)
+        reg_exp = rf"{interface_name}: .*inet.* (\S+).*\/.*global"
+        match = re.search(reg_exp, output_str)
 
         if match:
             ip = match.group(1)
         else:
-            raise KeywordException(f'unable to find the ip address for pod {pod_name} and interface {interface_name}')
+            raise KeywordException(f"unable to find the ip address for pod {pod_name} and interface {interface_name}")
         return ip
 
     def add_route_in_pod(self, pod_name: str, interface_name: str):
         """
-        Adds the route in the pod for the given interface
+        Adds the route in the pod for the given interface.
+
         Args:
-            pod_name (): the name of the pod
-            interface_name (): the interface name
-
-        Returns:
-
+            pod_name (str): the name of the pod.
+            interface_name (str): the interface name.
         """
         lab_config = ConfigurationManager.get_lab_config()
 
         if lab_config.is_ipv6():
-            route = '2626:1::/64'  # this is currently a hardcoded value we should use in all test cases
+            route = "2626:1::/64"  # this is currently a hardcoded value we should use in all test cases
         else:
-            route = '192.168.1.0/24'  # this is currently a hardcoded value we should use in all test cases
+            route = "192.168.1.0/24"  # this is currently a hardcoded value we should use in all test cases
 
         exec_in_pod = KubectlExecInPodsKeywords(self.ssh_connection)
-        exec_in_pod.run_pod_exec_cmd(pod_name, f'ip route add {route} dev {interface_name}')
+        exec_in_pod.run_pod_exec_cmd(pod_name, f"ip route add {route} dev {interface_name}")
 
     def get_ip_br_addr(self) -> IPBrAddrOutput:
         """
@@ -111,21 +110,30 @@ class IPKeywords(BaseKeyword):
             the 'ip -br addr' command.
 
         """
-        output = self.ssh_connection.send('ip -br addr')
+        output = self.ssh_connection.send("ip -br addr")
         self.validate_success_return_code(self.ssh_connection)
         ip_br_addr_output = IPBrAddrOutput(output)
 
         return ip_br_addr_output
 
-    def set_ip_port_state(self, port: str, state: str = 'up'):
+    def set_ip_port_state(self, port: str, state: str = "up"):
         """
-        sets a ip specific port state UP or DOWN as specified via ip link cmd
+        Sets an ip specific port state UP or DOWN as specified via ip link cmd.
 
         Args:
-            port : port to set
-            state: state to set port (up or down)
-
-        Returns:
+            port (str): port to set.
+            state (str): state to set port (up or down).
         """
         self.ssh_connection.send_as_sudo(f"ip link set dev {port} {state}")
+        self.validate_success_return_code(self.ssh_connection)
+
+    def set_ip_addr(self, ip: str, interface: str):
+        """
+        Sets an ip address by adding it to a network interface.
+
+        Args:
+            ip (str): ip address with CIDR notation to add (e.g. '10.11.1.253/24').
+            interface (str): network interface to add the ip address to (e.g. 'enp81s0f2').
+        """
+        self.ssh_connection.send_as_sudo(f"ip addr add {ip} dev {interface}")
         self.validate_success_return_code(self.ssh_connection)
