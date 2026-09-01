@@ -69,6 +69,10 @@ class AppConfig:
         if "rook_ceph_app_name" in app_dict:
             self.rook_ceph_app_name = app_dict["rook_ceph_app_name"]
 
+        self.dell_storage_app_name = "dell-storage"
+        if "dell_storage_app_name" in app_dict:
+            self.dell_storage_app_name = app_dict["dell_storage_app_name"]
+
         self.rook_ceph_app_tarball = "fake_path"
         if "rook_ceph_app_tarball" in app_dict:
             self.rook_ceph_app_tarball = app_dict["rook_ceph_app_tarball"]
@@ -248,6 +252,16 @@ class AppConfig:
 
         """
         return self.rook_ceph_app_name
+
+    def get_dell_storage_app_name(self) -> str:
+        """
+        Getter for dell-storage app name.
+
+        Returns:
+            str: the dell-storage app name
+
+        """
+        return self.dell_storage_app_name
 
     def get_rook_ceph_app_tarball(self) -> str:
         """
