@@ -96,7 +96,7 @@ class KeycloakCliKeywords(BaseKeyword):
         self.container_keywords.exec_in_container(self.container_name, cmd)
         get_logger().log_info(f"Updated realm '{realm}': {' '.join(settings)}")
 
-    def create_confidential_client(self, client_id: str, realm: str = "master") -> str:
+    def create_confidential_client(self, client_id: str, realm: str = "master", client_secret: str = None) -> str:
         """Create a confidential client that supports the client_credentials grant.
 
         Enables service accounts and direct access grants so the client can obtain
@@ -105,6 +105,10 @@ class KeycloakCliKeywords(BaseKeyword):
         Args:
             client_id (str): The clientId to create.
             realm (str): Realm to create the client in. Defaults to "master".
+            client_secret (str): Secret to assign to the client. Supply a known
+                value so that consumers can be configured ahead of time; Keycloak
+                otherwise generates a different secret on every creation. Defaults
+                to None, which leaves the generated secret in place.
 
         Returns:
             str: The internal UUID of the created client, needed to read its secret.
@@ -112,7 +116,22 @@ class KeycloakCliKeywords(BaseKeyword):
         cmd = f"{self.KCADM} create clients -r {shlex.quote(realm)} -s clientId={shlex.quote(client_id)} -s enabled=true -s clientAuthenticatorType=client-secret -s publicClient=false -s standardFlowEnabled=true -s directAccessGrantsEnabled=true -s serviceAccountsEnabled=true"
         self.container_keywords.exec_in_container(self.container_name, cmd)
         get_logger().log_info(f"Created confidential client '{client_id}' in realm '{realm}'")
-        return self.get_client_uuid(client_id, realm)
+        client_uuid = self.get_client_uuid(client_id, realm)
+        if client_secret:
+            self.set_client_secret(client_uuid, client_secret, realm)
+        return client_uuid
+
+    def set_client_secret(self, client_uuid: str, client_secret: str, realm: str = "master") -> None:
+        """Set a client's secret to a known value.
+
+        Args:
+            client_uuid (str): Internal UUID of the client (not the clientId).
+            client_secret (str): The secret to assign.
+            realm (str): Realm containing the client. Defaults to "master".
+        """
+        cmd = f"{self.KCADM} update clients/{shlex.quote(client_uuid)} -r {shlex.quote(realm)} -s secret={shlex.quote(client_secret)}"
+        self.container_keywords.exec_in_container(self.container_name, cmd)
+        get_logger().log_info(f"Set secret for client uuid '{client_uuid}'")
 
     def get_client_uuid(self, client_id: str, realm: str = "master") -> str:
         """Get the internal UUID of a client from its clientId.
