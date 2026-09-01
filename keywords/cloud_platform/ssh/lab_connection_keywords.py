@@ -231,6 +231,13 @@ class LabConnectionKeywords(BaseKeyword):
         such as immediately after a fresh deploy on a duplex subcloud where only
         controller-0 is up.
 
+        Connects via proxy through the SC (and optionally a jump server):
+        - With jump server: test runner -> jump server -> SC -> subcloud
+        - Without jump server: test runner -> SC -> subcloud
+
+        This is needed because the jump server (or test runner) may not have a
+        direct route to the subcloud's OAM IP (only the SC does).
+
         Args:
             subcloud_name (str): The name of the subcloud.
 
@@ -254,12 +261,14 @@ class LabConnectionKeywords(BaseKeyword):
         if lab_config.is_use_jump_server():
             jump_host_config = lab_config.get_jump_host_configuration()
 
-        connection = SSHConnectionManager.create_ssh_connection(
-            controller_0.get_ip(),
-            lab_config.get_admin_credentials().get_user_name(),
-            lab_config.get_admin_credentials().get_password(),
-            ssh_port=lab_config.get_ssh_port(),
-            jump_host=jump_host_config,
+        connection = SSHConnectionManager.create_proxy_ssh_connection(
+            target_host=controller_0.get_ip(),
+            target_username=lab_config.get_admin_credentials().get_user_name(),
+            target_password=lab_config.get_admin_credentials().get_password(),
+            first_jump_host=jump_host_config,
+            second_jump_host=lab_config.get_floating_ip(),
+            second_jump_username=lab_config.get_admin_credentials().get_user_name(),
+            second_jump_password=lab_config.get_admin_credentials().get_password(),
         )
 
         return connection
