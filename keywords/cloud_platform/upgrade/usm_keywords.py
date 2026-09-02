@@ -278,6 +278,37 @@ class USMKeywords(BaseKeyword):
         output = output[-1] if output else ""
         return output
 
+    def deploy_start_with_error(self, targets: str = "", sudo: bool = False) -> str:
+        """Execute 'software deploy start' expecting a rejection error.
+
+        Sends the command and validates a non-zero return code, returning
+        the raw output for error message validation in negative tests.
+
+        Args:
+            targets (str): Space-separated targets string. If empty, resolved from config.
+            sudo (bool): Flag to check if it needs to be run as sudo.
+
+        Returns:
+            str: Raw command output containing the error message.
+        """
+        if not targets:
+            metapackages = self.usm_config.get_metapackages()
+            release_ids = self.usm_config.get_to_release_ids()
+            if isinstance(metapackages, list):
+                targets = " ".join(metapackages)
+            else:
+                targets = release_ids[0] if release_ids else ""
+        timeout = self.usm_config.get_deploy_start_timeout_sec()
+        snapshot_flag = " --options snapshot=true" if self.usm_config.get_snapshot() else ""
+        base_cmd = f"software deploy start{snapshot_flag} {targets}"
+        cmd = source_openrc(base_cmd)
+        if sudo:
+            output = self.ssh_connection.send_as_sudo(cmd, command_timeout=timeout, reconnect_timeout=timeout)
+        else:
+            output = self.ssh_connection.send(cmd, command_timeout=timeout, reconnect_timeout=timeout, get_pty=True)
+        self.validate_cmd_rejection_return_code(self.ssh_connection)
+        return "\n".join(line.strip() for line in output if line.strip())
+
     def wait_for_deploy_state(self, expected_deploy_state: str, timeout: int = 6000) -> bool:
         """
         Method to wait for desired state in deploy show
@@ -522,6 +553,32 @@ class USMKeywords(BaseKeyword):
         self.validate_success_return_code(self.ssh_connection)
         output = [line.strip() for line in output if line.strip()]
         return "\n".join(output)
+
+    def system_deploy_init_with_error(self, release: str, kube_upgrade: str = "", sudo: bool = False) -> str:
+        """Execute 'software system-deploy init' expecting a rejection error.
+
+        Sends the command and validates a non-zero return code, returning
+        the raw output for error message validation in negative tests.
+
+        Args:
+            release (str): Target release ID (e.g., "starlingx-26.10.0").
+            kube_upgrade (str): Target Kubernetes version (e.g., "v1.35.7").
+            sudo (bool): Flag to run as sudo.
+
+        Returns:
+            str: Raw command output containing the error message.
+        """
+        base_cmd = f"software system-deploy init {release}"
+        if kube_upgrade:
+            base_cmd += f" --kube-upgrade {kube_upgrade}"
+        cmd = source_openrc(base_cmd)
+        get_logger().log_info(f"Executing system-deploy init (expecting error): release={release}, kube_upgrade={kube_upgrade}")
+        if sudo:
+            output = self.ssh_connection.send_as_sudo(cmd)
+        else:
+            output = self.ssh_connection.send(cmd, get_pty=True)
+        self.validate_cmd_rejection_return_code(self.ssh_connection)
+        return "\n".join(line.strip() for line in output if line.strip())
 
     def system_deploy_show(self, sudo: bool = False) -> str:
         """Execute 'software system-deploy show'.

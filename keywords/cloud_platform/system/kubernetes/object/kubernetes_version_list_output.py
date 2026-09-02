@@ -67,6 +67,66 @@ class KubernetesVersionListOutput:
         return self.get_version_by_state("active")[0]
 
     @staticmethod
+    def version_key(version: str) -> tuple:
+        """Return a numeric tuple key for semantic version comparison.
+
+        Converts a version string into a tuple of integers so versions
+        compare numerically rather than lexicographically (e.g. 'v1.31.10'
+        is correctly greater than 'v1.31.9').
+
+        Args:
+            version (str): Version string (e.g. 'v1.31.10').
+
+        Returns:
+            tuple: Tuple of integers (e.g. (1, 31, 10)).
+        """
+        return tuple(int(part) for part in version.lstrip("v").split("."))
+
+    def get_highest_kubernetes_version(self) -> str:
+        """Get the highest Kubernetes version across all versions (semantic comparison).
+
+        Returns:
+            str: The highest version string (e.g. 'v1.35.2').
+
+        Raises:
+            KeywordException: If no versions are present.
+        """
+        all_versions = self.get_kubernetes_version()
+        if not all_versions:
+            raise KeywordException("No Kubernetes versions were found.")
+        return max(all_versions, key=self.version_key)
+
+    def get_highest_version_by_state(self, state: str) -> str:
+        """Get the highest Kubernetes version in the given state (semantic comparison).
+
+        Args:
+            state (str): The desired version state (e.g. 'available').
+
+        Returns:
+            str: The highest version string in that state.
+
+        Raises:
+            KeywordException: If no version with the given state is found.
+        """
+        return max(self.get_version_by_state(state), key=self.version_key)
+
+    def get_highest_version_lower_than_active(self) -> str:
+        """Get the highest Kubernetes version numerically lower than the active one.
+
+        Returns:
+            str: The highest version below the active version (e.g. 'v1.30.6').
+
+        Raises:
+            KeywordException: If no version lower than the active version exists.
+        """
+        active_version = self.get_active_kubernetes_version()
+        active_key = self.version_key(active_version)
+        lower_versions = [v for v in self.get_kubernetes_version() if self.version_key(v) < active_key]
+        if not lower_versions:
+            raise KeywordException(f"No Kubernetes version lower than {active_version} was found.")
+        return max(lower_versions, key=self.version_key)
+
+    @staticmethod
     def is_valid_output(value: Dict[str, str]) -> bool:
         """
         Checks if the output contains all the required fields.
