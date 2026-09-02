@@ -37,3 +37,13 @@ class OpenStackCredentialsKeywords(BaseKeyword):
         output = self.ssh_connection.send(source_openrc("echo $OS_USERNAME"))
         self.validate_success_return_code(self.ssh_connection)
         return output[0].strip()
+
+    def get_openstack_auth_url(self) -> str:
+        """Get the OpenStack authentication URL from openrc.
+
+        Returns:
+            str: The Keystone authentication URL.
+        """
+        output = self.ssh_connection.send(source_openrc("echo $OS_AUTH_URL"))
+        self.validate_success_return_code(self.ssh_connection)
+        return output[0].strip()
