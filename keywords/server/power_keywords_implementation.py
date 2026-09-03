@@ -58,9 +58,7 @@ class PowerKeywordsImplementation:
         """
         IPMIToolChassisPowerKeywords(self.ssh_connection, host_name).power_on()
         if not self.is_powered_on(host_name):
-            raise KeywordException(
-                f"Power on host failed. Reason(s): {self._last_power_on_failure_reason}"
-            )
+            raise KeywordException(f"Power on host failed. Reason(s): {self._last_power_on_failure_reason}")
         return True
 
     def _get_mtc_agent_uptime_seconds(self) -> int | None:
@@ -105,17 +103,11 @@ class PowerKeywordsImplementation:
         while time.time() < deadline:
             uptime = self._get_mtc_agent_uptime_seconds()
             if uptime is not None and uptime >= MTC_AGENT_MIN_UPTIME_SECONDS:
-                get_logger().log_info(
-                    f"mtcAgent has been running for {uptime}s "
-                    f"(>= {MTC_AGENT_MIN_UPTIME_SECONDS}s required). Proceeding."
-                )
+                get_logger().log_info(f"mtcAgent has been running for {uptime}s " f"(>= {MTC_AGENT_MIN_UPTIME_SECONDS}s required). Proceeding.")
                 return True
             time.sleep(5)
 
-        get_logger().log_info(
-            f"mtcAgent did not reach {MTC_AGENT_MIN_UPTIME_SECONDS}s uptime "
-            f"within {timeout}s timeout."
-        )
+        get_logger().log_info(f"mtcAgent did not reach {MTC_AGENT_MIN_UPTIME_SECONDS}s uptime " f"within {timeout}s timeout.")
         return False
 
     def is_powered_on(self, host_name: str, power_on_wait_timeout: int = 1800) -> bool:
@@ -161,26 +153,18 @@ class PowerKeywordsImplementation:
                 if is_alarms_list_ok:
                     get_logger().log_info("There are no critical failure alarms.")
                 else:
-                    get_logger().log_info(
-                        f"Blocking alarm(s) still active: {', '.join(blocking_alarms)}. "
-                        "Waiting for them to clear."
-                    )
+                    get_logger().log_info(f"Blocking alarm(s) still active: {', '.join(blocking_alarms)}. " "Waiting for them to clear.")
 
                 # Exit the loop once all conditions are met.
                 if is_host_list_ok and is_alarms_list_ok and is_power_on:
                     # Wait for mtcAgent to be ready before declaring success
                     if not self._wait_for_mtc_agent_ready():
-                        get_logger().log_info(
-                            "mtcAgent is not ready yet. Continuing to wait."
-                        )
+                        get_logger().log_info("mtcAgent is not ready yet. Continuing to wait.")
                         continue
                     return True
 
             except Exception:
-                get_logger().log_info(
-                    f"Found an exception when checking the health of the system. "
-                    f"Trying again after {refresh_time} seconds."
-                )
+                get_logger().log_info(f"Found an exception when checking the health of the system. " f"Trying again after {refresh_time} seconds.")
 
             time.sleep(refresh_time)
 
@@ -191,23 +175,52 @@ class PowerKeywordsImplementation:
         if not is_host_list_ok:
             failure_details.append("host is not in a healthy state")
         if not is_alarms_list_ok:
-            failure_details.append(
-                f"blocking alarm(s) active: {', '.join(blocking_alarms)}"
-            )
+            failure_details.append(f"blocking alarm(s) active: {', '.join(blocking_alarms)}")
         if is_power_on and is_host_list_ok and is_alarms_list_ok:
-            failure_details.append(
-                f"mtcAgent did not reach {MTC_AGENT_MIN_UPTIME_SECONDS}s uptime"
-            )
+            failure_details.append(f"mtcAgent did not reach {MTC_AGENT_MIN_UPTIME_SECONDS}s uptime")
 
-        self._last_power_on_failure_reason = (
-            "; ".join(failure_details) if failure_details else "unknown cause"
-        )
-        get_logger().log_info(
-            f"Power on timed out for host '{host_name}'. "
-            f"Failed condition(s): {self._last_power_on_failure_reason}."
-        )
+        self._last_power_on_failure_reason = "; ".join(failure_details) if failure_details else "unknown cause"
+        get_logger().log_info(f"Power on timed out for host '{host_name}'. " f"Failed condition(s): {self._last_power_on_failure_reason}.")
 
         return False
+
+    def power_on_from_localhost(self, host_name: str, ignore_error: bool = False) -> int:
+        """Power on the host by running ``ipmitool`` locally against its BMC.
+
+        The IPMI command runs on the machine executing the automation
+        (localhost) rather than over the SSH connection. This is required
+        for simplex labs, where the only controller's SSH session dies
+        when it is powered off.
+
+        Args:
+            host_name (str): The name of the host whose BMC to target.
+            ignore_error (bool): When False (default), a non-zero ipmitool
+                return code raises a KeywordException. When True, it is
+                logged and returned without raising.
+
+        Returns:
+            int: The ipmitool process return code (0 on success).
+        """
+        return IPMIToolChassisPowerKeywords(self.ssh_connection, host_name).power_on_from_localhost(host_name, ignore_error=ignore_error)
+
+    def power_off_from_localhost(self, host_name: str, ignore_error: bool = False) -> int:
+        """Power off the host by running ``ipmitool`` locally against its BMC.
+
+        The IPMI command runs on the machine executing the automation
+        (localhost) rather than over the SSH connection. This is required
+        for simplex labs, where the only controller's SSH session dies
+        when it is powered off.
+
+        Args:
+            host_name (str): The name of the host whose BMC to target.
+            ignore_error (bool): When False (default), a non-zero ipmitool
+                return code raises a KeywordException. When True, it is
+                logged and returned without raising.
+
+        Returns:
+            int: The ipmitool process return code (0 on success).
+        """
+        return IPMIToolChassisPowerKeywords(self.ssh_connection, host_name).power_off_from_localhost(host_name, ignore_error=ignore_error)
 
     def power_off(self, host_name: str) -> bool:
         """Power off the host.
