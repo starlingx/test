@@ -1,0 +1,28 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: rbd-writer-pod
+spec:
+  containers:
+    - name: writer
+      image: busybox:1.37
+      command:
+        - /bin/sh
+        - -c
+        - |
+          i=0
+          while :; do
+            date
+            dd if=/dev/urandom of=/data/foo bs=1M count=233 conv=fsync
+            i=$((i+1))
+            echo "$i" > /data/write_count
+            sleep 10
+          done
+      volumeMounts:
+        - name: mypvc
+          mountPath: /data
+  volumes:
+    - name: mypvc
+      persistentVolumeClaim:
+        claimName: rbd-writer-pvc
+        readOnly: false

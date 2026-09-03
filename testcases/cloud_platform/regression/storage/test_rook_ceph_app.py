@@ -24,6 +24,8 @@ from keywords.cloud_platform.system.host.system_host_lock_keywords import System
 from keywords.cloud_platform.system.host.system_host_power_keywords import SystemHostPowerKeywords
 from keywords.cloud_platform.system.host.system_host_stor_keywords import SystemHostStorageKeywords
 from keywords.files.file_keywords import FileKeywords
+from keywords.k8s.continuous_write.kubectl_continuous_write_keywords import KubectlContinuousWriteKeywords
+from keywords.k8s.pods.kubectl_get_pods_keywords import KubectlGetPodsKeywords
 from keywords.linux.mount.mount_keywords import MountKeywords
 
 ROOK_CEPH_APP_NAME = "rook-ceph"
@@ -391,10 +393,14 @@ def test_update_rook_ceph_app(request: FixtureRequest):
 @mark.lab_has_standby_controller
 def test_rook_ceph_power_off_power_on(request: FixtureRequest):
     """
-    Test case: Power off/on a controller and verify rook-ceph recovers.
+    Test case: Power off/on a controller and verify rook-ceph recovers while
+    pods keep continuously writing to CephFS and RBD volumes.
 
     Test Steps:
         - Check ceph health is HEALTH_OK
+        - Start continuous-write pods on CephFS (RWX) and RBD (RWO) volumes,
+          pinned to the active controller so they stay up during the power cycle
+        - Record each pod's write-cycle count before the power cycle
         - Lock the standby controller
         - Power off the locked controller
         - Wait for host availability to be 'power-off'
@@ -403,6 +409,8 @@ def test_rook_ceph_power_off_power_on(request: FixtureRequest):
         - Unlock the controller
         - Wait for host to be unlocked and available
         - Check ceph health is HEALTH_OK
+        - Verify each writer pod is still Running and its write-cycle count
+          advanced (i.e. it kept/resumed writing after the power cycle)
 
     Args:
         request (FixtureRequest): pytest request fixture for test setup and teardown
@@ -412,12 +420,29 @@ def test_rook_ceph_power_off_power_on(request: FixtureRequest):
     system_host_lock_keywords = SystemHostLockKeywords(active_ssh_connection)
     system_host_power_keywords = SystemHostPowerKeywords(active_ssh_connection)
     system_host_list_keywords = SystemHostListKeywords(active_ssh_connection)
+    kubectl_get_pods_keywords = KubectlGetPodsKeywords(active_ssh_connection)
+    continuous_write_keywords = KubectlContinuousWriteKeywords(active_ssh_connection)
 
     get_logger().log_test_case_step("Check rook-ceph health before power off.")
     ceph_status_keywords.wait_for_ceph_health_status(expect_health_status=True)
 
+    active_controller = system_host_list_keywords.get_active_controller()
+    active_host_name = active_controller.get_host_name()
     standby = system_host_list_keywords.get_standby_controller()
     host_name = standby.get_host_name()
+    get_logger().log_info(f"Active controller (writer pods pinned here): {active_host_name}; standby to power-cycle: {host_name}")
+
+    writer_pods = {}
+    for storage_type in ["cephfs", "rbd"]:
+        get_logger().log_test_case_step(f"Start {storage_type} continuous-write pod on {active_host_name}.")
+        pod_name, pvc_name = continuous_write_keywords.start_continuous_write_pod(storage_type, node_name=active_host_name)
+        writer_pods[storage_type] = pod_name
+        request.addfinalizer(lambda p=pod_name, v=pvc_name: continuous_write_keywords.cleanup_continuous_write_pod(p, v))
+
+    counts_before = {}
+    for storage_type, pod_name in writer_pods.items():
+        counts_before[storage_type] = continuous_write_keywords.wait_for_write_progress(pod_name, previous_count=0)
+        get_logger().log_info(f"{pod_name} write-cycle count before power cycle: {counts_before[storage_type]}")
 
     get_logger().log_test_case_step(f"Lock {host_name}.")
     system_host_lock_keywords.lock_host(host_name)
@@ -434,6 +459,14 @@ def test_rook_ceph_power_off_power_on(request: FixtureRequest):
 
     get_logger().log_test_case_step("Check rook-ceph health after power on.")
     ceph_status_keywords.wait_for_ceph_health_status(expect_health_status=True)
+
+    for storage_type, pod_name in writer_pods.items():
+        get_logger().log_test_case_step(f"Verify {pod_name} is still Running after power cycle.")
+        kubectl_get_pods_keywords.wait_for_pod_status(pod_name, "Running")
+
+        get_logger().log_test_case_step(f"Verify {pod_name} kept writing after power cycle.")
+        count_after = continuous_write_keywords.wait_for_write_progress(pod_name, previous_count=counts_before[storage_type])
+        get_logger().log_info(f"{pod_name} write-cycle count after power cycle: {count_after}")
 
 
 @mark.p2
