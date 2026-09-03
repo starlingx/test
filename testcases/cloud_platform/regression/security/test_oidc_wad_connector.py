@@ -7,7 +7,7 @@ service-parameter CLI, and verifies access-denied scenarios for WAD users.
 
 import time
 
-from pytest import mark
+from pytest import FixtureRequest, mark
 
 from config.configuration_manager import ConfigurationManager
 from framework.logging.automation_logger import get_logger
@@ -16,6 +16,7 @@ from framework.validation.validation import validate_equals
 from keywords.cloud_platform.command_wrappers import source_openrc
 from keywords.cloud_platform.security.oidc.dex_connector_keywords import DexConnectorKeywords
 from keywords.cloud_platform.security.oidc.object.oidc_token_claims_object import OidcTokenClaimsObject
+from keywords.cloud_platform.security.oidc.oidc_auth_keywords import OidcAuthKeywords
 from keywords.cloud_platform.security.oidc.wad_connector_keywords import WadConnectorKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.files.file_keywords import FileKeywords
@@ -37,18 +38,28 @@ def _get_wad_connector_config():
     return _load_dex_config().get_wad_connector()
 
 
-def _authenticate_wad_user(ssh_connection: SSHConnection, username: str, password: str) -> None:
+def _authenticate_wad_user(ssh_connection: SSHConnection, username: str, password: str, request: FixtureRequest = None) -> None:
     """Authenticate WAD user via oidc-auth from the admin SSH session.
 
     WAD users don't have Linux accounts on the controller (unlike local LDAP),
     so we authenticate from the admin session using the -u flag to specify the
     WAD username. The resulting token is cached in the admin user's kubeconfig.
 
+    This overwrites sysadmin's ~/.kube/config with an OIDC token. When ``request``
+    is provided, a teardown finalizer is registered to restore ~/.kube/config to
+    /etc/kubernetes/admin.conf, so later tests (including the CGCS framework,
+    which relies on the default kubeconfig) don't hit "Please enter Username:"
+    once the token expires.
+
     Args:
         ssh_connection (SSHConnection): Existing admin SSH connection.
         username (str): WAD username (sAMAccountName).
         password (str): WAD user password.
+        request (FixtureRequest, optional): Pytest request used to register the
+            kubeconfig-restore finalizer. Strongly recommended.
     """
+    if request is not None:
+        request.addfinalizer(OidcAuthKeywords(ssh_connection).restore_admin_kubeconfig)
     get_logger().log_info(f"Authenticating WAD user '{username}' via oidc-auth on admin session")
     ssh_connection.send("rm -rf ~/.kube && mkdir -p ~/.kube")
     ssh_connection.send("kubeconfig-setup")
@@ -142,7 +153,7 @@ def test_wad_corrected_email_attr_mapping(request):
     )
 
     get_logger().log_info("Authenticating WAD user and decoding token")
-    _authenticate_wad_user(ssh_connection, wad_user.get_username(), wad_user.get_password())
+    _authenticate_wad_user(ssh_connection, wad_user.get_username(), wad_user.get_password(), request=request)
     claims = _decode_id_token(ssh_connection)
 
     # userPrincipalName format is username@domain (e.g., pvtest1@wad-1.cumulus.wrs.com)
@@ -183,7 +194,7 @@ def test_wad_username_and_name_attr_mapping(request):
     )
 
     get_logger().log_info("Authenticating WAD user and decoding token")
-    _authenticate_wad_user(ssh_connection, wad_user.get_username(), wad_user.get_password())
+    _authenticate_wad_user(ssh_connection, wad_user.get_username(), wad_user.get_password(), request=request)
     claims = _decode_id_token(ssh_connection)
 
     validate_equals(claims.get_preferred_username(), wad_user.get_username(), "Token preferred_username should match WAD sAMAccountName")
@@ -237,7 +248,7 @@ def test_wad_access_with_preferred_username_claim(request):
     crb_keywords.create_clusterrolebinding_for_user(wad_user.get_crb_name(), "cluster-admin", f"{oidc_issuer}#{wad_user.get_username()}")
 
     get_logger().log_info("Authenticate WAD user, verify kubectl")
-    _authenticate_wad_user(ssh_connection, wad_user.get_username(), wad_user.get_password())
+    _authenticate_wad_user(ssh_connection, wad_user.get_username(), wad_user.get_password(), request=request)
     _verify_kubectl_and_stx_access(ssh_connection, expect_success=True)
 
 
@@ -281,7 +292,7 @@ def test_wad_access_with_email_claim(request):
     crb_keywords.create_clusterrolebinding_for_user(wad_user.get_crb_name(), "cluster-admin", expected_email)
 
     get_logger().log_info("Authenticate WAD user, verify kubectl with email CRB")
-    _authenticate_wad_user(ssh_connection, wad_user.get_username(), wad_user.get_password())
+    _authenticate_wad_user(ssh_connection, wad_user.get_username(), wad_user.get_password(), request=request)
     _verify_kubectl_and_stx_access(ssh_connection, expect_success=True)
 
 
@@ -304,6 +315,11 @@ def test_wad_access_denied_no_mail_with_email_claim(request):
     wad_user = _get_wad_test_user_config()
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     wad_keywords = WadConnectorKeywords(ssh_connection)
+
+    # Register kubeconfig restore as its OWN finalizer, BEFORE any poisoning below,
+    # and independently of other cleanup — so a failure at any stage (or in another
+    # cleanup step) still restores ~/.kube/config.
+    request.addfinalizer(OidcAuthKeywords(ssh_connection).restore_admin_kubeconfig)
 
     def cleanup():
         ssh = LabConnectionKeywords().get_active_controller_ssh()
@@ -403,7 +419,7 @@ def test_username_collision_across_ldap_and_wad(request):
     crb_keywords.create_clusterrolebinding_for_user(crb_name, "cluster-admin", f"{oidc_issuer}#{wad_user.get_username()}")
 
     get_logger().log_info("Auth WAD user — access succeeds via issuer-prefixed username CRB")
-    _authenticate_wad_user(ssh_connection, wad_user.get_username(), wad_user.get_password())
+    _authenticate_wad_user(ssh_connection, wad_user.get_username(), wad_user.get_password(), request=request)
     _verify_kubectl_and_stx_access(ssh_connection, expect_success=True)
 
 
@@ -454,5 +470,5 @@ def test_dc_wad_oidc_on_system_controller(request):
     crb_keywords.create_clusterrolebinding_for_user(wad_user.get_crb_name(), "cluster-admin", f"{oidc_issuer}#{wad_user.get_username()}")
 
     get_logger().log_info("Verifying WAD OIDC access on System Controller")
-    _authenticate_wad_user(ssh_connection, wad_user.get_username(), wad_user.get_password())
+    _authenticate_wad_user(ssh_connection, wad_user.get_username(), wad_user.get_password(), request=request)
     _verify_kubectl_and_stx_access(ssh_connection, expect_success=True)

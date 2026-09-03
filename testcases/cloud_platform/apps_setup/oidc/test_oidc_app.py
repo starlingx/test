@@ -35,9 +35,7 @@ from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKey
 from keywords.cloud_platform.system.addrpool.system_addrpool_list_keywords import SystemAddrpoolListKeywords
 from keywords.files.file_keywords import FileKeywords
 from keywords.files.yaml_keywords import YamlKeywords
-from keywords.k8s.clusterrolebinding.kubectl_create_clusterrolebinding_keywords import (
-    KubectlCreateClusterRoleBindingKeywords,
-)
+from keywords.k8s.clusterrolebinding.kubectl_create_clusterrolebinding_keywords import KubectlCreateClusterRoleBindingKeywords
 from keywords.k8s.pods.kubectl_get_pods_keywords import KubectlGetPodsKeywords
 from keywords.k8s.secret.kubectl_get_secret_keywords import KubectlGetSecretsKeywords
 from keywords.linux.keyring.keyring_keywords import KeyringKeywords
@@ -234,6 +232,11 @@ def test_oidc_wad_pre(request):
     wad_user = dex_config.get_wad_test_user()
     oidc_issuer = _get_oidc_issuer(oam_ip)
 
+    # oidc-auth below overwrites sysadmin's ~/.kube/config with an OIDC token.
+    # Restore the admin context on teardown so later tests (incl. CGCS) don't
+    # hit "Please enter Username:" once the token expires.
+    request.addfinalizer(oidc_auth.restore_admin_kubeconfig)
+
     get_logger().log_test_case_step("Applying WAD connector override")
     wad_keywords = WadConnectorKeywords(ssh_connection)
     wad_keywords.apply_wad_override(
@@ -260,6 +263,11 @@ def test_oidc_wad_post(request):
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     wad_user = dex_config.get_wad_test_user()
     oidc_auth = OidcAuthKeywords(ssh_connection)
+
+    # Restore kubeconfig as its own finalizer, registered before poisoning and
+    # independent of other cleanup, so it runs even if the test fails at any
+    # stage or another cleanup step raises.
+    request.addfinalizer(OidcAuthKeywords(ssh_connection).restore_admin_kubeconfig)
 
     def cleanup():
         ssh = LabConnectionKeywords().get_active_controller_ssh()

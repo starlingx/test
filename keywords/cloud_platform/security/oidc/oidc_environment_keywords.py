@@ -11,6 +11,7 @@ from framework.resources.resource_finder import get_stx_resource_path
 from framework.ssh.ssh_connection import SSHConnection
 from framework.validation.validation import validate_equals
 from keywords.base_keyword import BaseKeyword
+from keywords.cloud_platform.security.oidc.oidc_auth_keywords import OidcAuthKeywords
 from keywords.cloud_platform.security.remote_cli.object.remote_cli_oidc_setup_output import RemoteCliOidcSetupOutput
 from keywords.cloud_platform.system.application.system_application_apply_keywords import SystemApplicationApplyKeywords
 from keywords.cloud_platform.system.helm.system_helm_override_keywords import SystemHelmOverrideKeywords
@@ -225,7 +226,7 @@ class OidcEnvironmentKeywords(BaseKeyword):
         self.ssh_connection.send("export KUBECONFIG=/etc/kubernetes/admin.conf;kubectl delete clusterrolebinding wrcp-admin-binding --ignore-not-found")
 
         get_logger().log_teardown_step("Restoring default kubeconfig")
-        self.ssh_connection.send("sudo cp /etc/kubernetes/admin.conf /home/sysadmin/.kube/config && sudo chown sysadmin:sys_protected /home/sysadmin/.kube/config")
+        OidcAuthKeywords(self.ssh_connection).restore_admin_kubeconfig()
 
         get_logger().log_teardown_step("Removing OIDC working directory")
         security_config = ConfigurationManager.get_security_config()
@@ -363,7 +364,7 @@ class OidcEnvironmentKeywords(BaseKeyword):
         self.kubectl_crb.delete_clusterrolebinding(crb_binding_name)
 
         get_logger().log_info("Cleanup: restoring default kubeconfig")
-        self.ssh_connection.send("sudo cp /etc/kubernetes/admin.conf /home/sysadmin/.kube/config && sudo chown sysadmin:sys_protected /home/sysadmin/.kube/config")
+        OidcAuthKeywords(self.ssh_connection).restore_admin_kubeconfig()
 
         get_logger().log_info("Cleanup: removing OIDC working directory")
         security_config = ConfigurationManager.get_security_config()

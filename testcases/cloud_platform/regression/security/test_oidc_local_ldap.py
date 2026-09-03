@@ -17,6 +17,7 @@ from framework.ssh.ssh_connection_manager import SSHConnectionManager
 from framework.validation.validation import validate_equals, validate_equals_with_retry
 from keywords.cloud_platform.command_wrappers import source_openrc
 from keywords.cloud_platform.security.oidc.dex_connector_keywords import DexConnectorKeywords
+from keywords.cloud_platform.security.oidc.oidc_auth_keywords import OidcAuthKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.cloud_platform.system.addrpool.system_addrpool_list_keywords import SystemAddrpoolListKeywords
 from keywords.cloud_platform.system.host.system_host_list_keywords import SystemHostListKeywords
@@ -746,6 +747,11 @@ def test_email_identity_isolation_across_ldap_and_wad(request):
 
     oam_ip = lab_config.get_floating_ip()
     crb_name = "email-isolation-crb"
+
+    # Register kubeconfig restore as its OWN finalizer, BEFORE any poisoning, and
+    # independently of the other cleanup steps — so a failure at any stage (or in
+    # another cleanup step) still restores ~/.kube/config.
+    request.addfinalizer(OidcAuthKeywords(ssh_connection).restore_admin_kubeconfig)
 
     def cleanup():
         ssh = LabConnectionKeywords().get_active_controller_ssh()
