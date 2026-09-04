@@ -137,6 +137,53 @@ def record_unlock_kpi_measures(results: list, hostname: str) -> None:
     KpiRecorderKeywords().record_kpi_measures(kpi_measures)
 
 
+def get_unhealthy_pod_names(ssh_connection: SSHConnection, healthy_statuses: list) -> set:
+    """Get the set of pod names that are not in a healthy status.
+
+    Args:
+        ssh_connection (SSHConnection): SSH connection to the active controller.
+        healthy_statuses (list): Statuses considered healthy (e.g. ["Running", "Succeeded", "Completed"]).
+
+    Returns:
+        set: Names of pods whose current status is not in healthy_statuses.
+    """
+    pods = KubectlGetPodsKeywords(ssh_connection).get_pods_all_namespaces().get_pods()
+    return {pod.get_name() for pod in pods if pod.get_status() not in healthy_statuses}
+
+
+def wait_for_pods_healthy_excluding(ssh_connection: SSHConnection, healthy_statuses: list, excluded_pods: set, timeout: int = 900, poll_interval: int = 15) -> None:
+    """Wait until all pods reach a healthy status, ignoring a set of excluded pods.
+
+    Pods listed in excluded_pods (typically ones that were already unhealthy before
+    the operation under test) are not considered when deciding whether to keep waiting.
+
+    Args:
+        ssh_connection (SSHConnection): SSH connection to the active controller.
+        healthy_statuses (list): Statuses considered healthy (e.g. ["Running", "Succeeded", "Completed"]).
+        excluded_pods (set): Pod names to ignore while waiting.
+        timeout (int): Maximum time in seconds to wait. Defaults to 900.
+        poll_interval (int): Seconds between polls. Defaults to 15.
+
+    Raises:
+        TimeoutError: If non-excluded pods do not become healthy within the timeout.
+    """
+    excluded_pods = excluded_pods or set()
+    end_time = time.time() + timeout
+
+    while time.time() < end_time:
+        pods = KubectlGetPodsKeywords(ssh_connection).get_pods_all_namespaces().get_pods()
+        not_ready = [pod.get_name() for pod in pods if pod.get_status() not in healthy_statuses and pod.get_name() not in excluded_pods]
+
+        if not not_ready:
+            get_logger().log_info("All pods (excluding pre-existing unhealthy pods) reached a healthy status")
+            return
+
+        get_logger().log_info(f"Waiting on pods to become healthy: {sorted(not_ready)}")
+        time.sleep(poll_interval)
+
+    raise TimeoutError(f"Pods did not reach a healthy status within {timeout}s (excluding pre-existing unhealthy pods {sorted(excluded_pods)})")
+
+
 @mark.p0
 def test_check_alarms():
     """
@@ -249,6 +296,15 @@ def test_lock_unlock_simplex():
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     active_controller = SystemHostListKeywords(ssh_connection).get_active_controller()
 
+    healthy_statuses = ["Running", "Succeeded", "Completed"]
+
+    # Snapshot pods that are already unhealthy BEFORE the lock/unlock. These are
+    # pre-existing problems unrelated to the unlock, so we exclude them from the
+    # post-unlock wait to avoid a spurious timeout on a pod that was already broken.
+    pre_existing_bad_pods = get_unhealthy_pod_names(ssh_connection, healthy_statuses)
+    if pre_existing_bad_pods:
+        get_logger().log_warning(f"Pods already unhealthy before lock/unlock (will be excluded from post-unlock wait): {sorted(pre_existing_bad_pods)}")
+
     # Capture start time from remote system BEFORE lock operation
     start_time_str = DateKeywords(ssh_connection).get_current_datetime()
     get_logger().log_info(f"Using start_time for KPI search: {start_time_str}")
@@ -258,6 +314,14 @@ def test_lock_unlock_simplex():
 
     unlock_success = SystemHostLockKeywords(ssh_connection).unlock_host(active_controller.get_host_name())
     assert unlock_success, "Controller was not unlocked successfully."
+
+    # Wait for all pods to reach a healthy state before calculating KPIs. The host
+    # reports unlocked-enabled-available well before pods finish recovering, so this
+    # gate ensures the unlock log sequence (e.g. k8s-pod-recovery) is complete before
+    # LPMP parses the logs. Pods that were already unhealthy before the unlock are
+    # excluded so they don't block the wait.
+    get_logger().log_info("Waiting for all pods to be healthy before calculating unlock KPIs")
+    wait_for_pods_healthy_excluding(ssh_connection, healthy_statuses, pre_existing_bad_pods, timeout=900)
 
     kpi_keywords = LogPatternKpiKeywords(ssh_connection)
 
