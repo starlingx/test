@@ -3,7 +3,6 @@
 import json
 from typing import List, Optional
 
-from framework.exceptions.keyword_exception import KeywordException
 from framework.logging.automation_logger import get_logger
 from keywords.k8s.trident.object.kubectl_trident_backend_config_object import KubectlTridentBackendConfigObject
 
@@ -52,9 +51,11 @@ class KubectlGetTridentBackendConfigOutput:
             tbc_obj.set_namespace(metadata.get("namespace", ""))
             tbc_obj.set_storage_driver_name(spec.get("storageDriverName", ""))
             tbc_obj.set_backend_name(spec.get("backendName", ""))
+            tbc_obj.set_management_lif(spec.get("managementLIF", ""))
             tbc_obj.set_data_lif(spec.get("dataLIF", ""))
             tbc_obj.set_svm(spec.get("svm", ""))
             tbc_obj.set_nfs_mount_options(spec.get("nfsMountOptions", ""))
+            tbc_obj.set_credentials_secret_name(spec.get("credentials", {}).get("name", ""))
             tbc_obj.set_last_operation_status(status.get("lastOperationStatus", ""))
             tbc_obj.set_message(status.get("message", ""))
             tbc_obj.set_phase(status.get("phase", ""))

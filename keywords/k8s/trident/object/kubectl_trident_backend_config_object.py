@@ -13,9 +13,11 @@ class KubectlTridentBackendConfigObject:
         self._message: str = ""
         self._backend_name: str = ""
         self._phase: str = ""
+        self._management_lif: str = ""
         self._data_lif: str = ""
         self._svm: str = ""
         self._nfs_mount_options: str = ""
+        self._credentials_secret_name: str = ""
 
     def get_name(self) -> str:
         """Get the TBC resource name.
@@ -129,6 +131,22 @@ class KubectlTridentBackendConfigObject:
         """
         self._phase = phase
 
+    def get_management_lif(self) -> str:
+        """Get the managementLIF address from spec.
+
+        Returns:
+            str: managementLIF (e.g. '10.82.159.2' or '[fdff:10:82:194::2]').
+        """
+        return self._management_lif
+
+    def set_management_lif(self, management_lif: str) -> None:
+        """Set the managementLIF address.
+
+        Args:
+            management_lif (str): managementLIF address.
+        """
+        self._management_lif = management_lif
+
     def get_data_lif(self) -> str:
         """Get the dataLIF address from spec.
 
@@ -177,6 +195,25 @@ class KubectlTridentBackendConfigObject:
         """
         self._nfs_mount_options = nfs_mount_options
 
+    def get_credentials_secret_name(self) -> str:
+        """Get the credentials secret name from spec.
+
+        The secret lives in the same namespace as this TridentBackendConfig
+        and holds the backend login/password used by the ESB secretRef.
+
+        Returns:
+            str: Secret name (e.g. 'backend-secret'), or '' if unset.
+        """
+        return self._credentials_secret_name
+
+    def set_credentials_secret_name(self, credentials_secret_name: str) -> None:
+        """Set the credentials secret name.
+
+        Args:
+            credentials_secret_name (str): Secret name from spec.credentials.name.
+        """
+        self._credentials_secret_name = credentials_secret_name
+
     def is_healthy(self) -> bool:
         """Check if the backend is healthy (lastOperationStatus == Success).
 
@@ -202,9 +239,11 @@ class KubectlTridentBackendConfigObject:
         return (
             f"TridentBackendConfig(name={self._name}, "
             f"driver={self._storage_driver_name}, "
+            f"managementLIF={self._management_lif}, "
             f"dataLIF={self._data_lif}, "
             f"svm={self._svm}, "
             f"nfsMountOptions={self._nfs_mount_options}, "
+            f"credentialsSecret={self._credentials_secret_name}, "
             f"phase={self._phase}, "
             f"status={self._last_operation_status})"
         )
