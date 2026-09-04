@@ -85,28 +85,68 @@ class AlarmListKeywords(BaseKeyword):
         alarm_ids = ", ".join([alarm.get_alarm_id() for alarm in alarms])
         raise TimeoutError(f"The alarms with the following IDs: {alarm_ids} could not be cleared within {self.get_timeout_in_seconds()} seconds.")
 
-    def wait_for_all_alarms_cleared_excluding(self, excluded_alarm_ids: list[str]) -> None:
-        """Wait for all alarms to be cleared except those with IDs in the exclusion list.
+    def wait_for_all_alarms_cleared_excluding(self, excluded_alarm_ids: list[str] = None, excluded_alarms: list[AlarmListObject] = None, stable_checks: int = 1, tolerate_query_failure: bool = False) -> None:
+        """Wait for all alarms to be cleared except the ones excluded.
+
+        Alarms can be excluded in two complementary ways:
+        - 'excluded_alarm_ids': ignore any alarm whose alarm ID is in this list
+          (e.g. ['900.007']). Matches on the alarm ID only.
+        - 'excluded_alarms': ignore any alarm equal to one in this list. Equality
+          uses the full alarm identity (alarm_id + severity + entity_id via
+          AlarmListObject.__eq__). Pass a snapshot of the alarms that were already
+          active before an operation so only alarms that appeared afterwards are
+          waited on. This correctly still waits on a new alarm whose type already
+          existed on a different entity or at a different severity.
 
         Args:
-            excluded_alarm_ids (list[str]): Alarm IDs to ignore (e.g. ['900.007']).
+            excluded_alarm_ids (list[str]): Alarm IDs to ignore (e.g. ['900.007']). Defaults to none.
+            excluded_alarms (list[AlarmListObject]): Full alarm objects to ignore, matched by
+                alarm_id + severity + entity_id. Defaults to none.
+            stable_checks (int): Number of consecutive clean polls required before returning. Defaults to 1
+                (return as soon as the alarms are first seen cleared). Use a higher value to absorb flapping
+                alarms (e.g. 100.101 platform CPU threshold) that briefly re-raise while the platform is
+                still recovering.
+            tolerate_query_failure (bool): If True, an alarm query that fails (e.g. while Keystone is
+                restarting and the platform is temporarily unavailable) is treated as "not ready yet" and
+                retried instead of aborting the wait. Defaults to False (the exception propagates).
 
         Raises:
             TimeoutError: If non-excluded alarms are not cleared within the timeout.
         """
+        excluded_alarm_ids = excluded_alarm_ids if excluded_alarm_ids is not None else []
+        excluded_alarms = excluded_alarms if excluded_alarms is not None else []
         now = time.time()
         end_time = now + self.get_timeout_in_seconds()
+        alarms = None
+        consecutive_clean = 0
         while now < end_time:
-            alarms = [a for a in self.alarm_list() if a.get_alarm_id() not in excluded_alarm_ids]
+            # During recovery the platform services (e.g. Keystone) may be briefly
+            # unavailable, making 'fm alarm-list' fail. Treat that as "not ready yet"
+            # and keep polling instead of aborting the wait.
+            try:
+                alarms = [alarm for alarm in self.alarm_list() if alarm.get_alarm_id() not in excluded_alarm_ids and alarm not in excluded_alarms]
+            except Exception as alarm_query_error:
+                if not tolerate_query_failure:
+                    raise
+                get_logger().log_info(f"Could not query alarms yet (platform may still be recovering): {alarm_query_error}. Retrying.")
+                consecutive_clean = 0
+                time.sleep(self.get_check_interval_in_seconds())
+                now = time.time()
+                continue
             if not alarms:
-                get_logger().log_info(f"All alarms cleared (excluding {excluded_alarm_ids}).")
-                return
-            alarm_ids = ", ".join([a.get_alarm_id() for a in alarms])
-            get_logger().log_info(f"Active alarms (excluding {excluded_alarm_ids}): {alarm_ids}. Remaining time: {(end_time - now):.3f}s.")
+                consecutive_clean += 1
+                get_logger().log_info(f"All alarms cleared (excluding {excluded_alarm_ids}) ({consecutive_clean}/{stable_checks} stable checks).")
+                if consecutive_clean >= stable_checks:
+                    get_logger().log_info(f"All alarms cleared (excluding {excluded_alarm_ids}) and stable.")
+                    return
+            else:
+                consecutive_clean = 0
+                alarm_ids = ", ".join([alarm.get_alarm_id() for alarm in alarms])
+                get_logger().log_info(f"Active alarms (excluding {excluded_alarm_ids}): {alarm_ids}. Remaining time: {(end_time - now):.3f}s.")
             time.sleep(self.get_check_interval_in_seconds())
             now = time.time()
-        alarm_ids = ", ".join([a.get_alarm_id() for a in alarms])
-        raise TimeoutError(f"Alarms {alarm_ids} not cleared within {self.get_timeout_in_seconds()}s.")
+        remaining = ", ".join([alarm.get_alarm_id() for alarm in alarms]) if alarms else "unknown (alarm query kept failing)"
+        raise TimeoutError(f"Alarms {remaining} not cleared within {self.get_timeout_in_seconds()}s.")
 
     def wait_for_alarms_cleared(self, alarms: list[AlarmListObject]) -> None:
         """
