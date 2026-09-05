@@ -155,6 +155,17 @@ class SwManagerKubeUpgradeStrategyKeywords(BaseKeyword):
         self.validate_success_return_code(self.ssh_connection)
         return output
 
+    def get_apply_result(self) -> str:
+        """Get the current apply-result of the Kubernetes upgrade strategy.
+
+        A zero-argument getter suitable for polling helpers (e.g.
+        KubeUpgradeFaultInjectionKeywords.kill_process_until_state).
+
+        Returns:
+            str: The strategy's current apply-result (e.g. 'failed', 'timed-out', 'aborted').
+        """
+        return self.show_kube_upgrade_strategy().get_swmanager_kube_upgrade_strategy_show().get_apply_result()
+
     def verify_no_kube_upgrade_strategy_available(self) -> bool:
         """Verify that no Kubernetes upgrade strategy is available.
 

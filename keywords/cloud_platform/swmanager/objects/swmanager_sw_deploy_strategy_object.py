@@ -22,6 +22,8 @@ class SwManagerSwDeployStrategyObject:
         self.state: Optional[str] = None
         self.inprogress: Optional[str] = None
         self.build_reason: Optional[str] = None
+        self.apply_result: Optional[str] = None
+        self.apply_reason: Optional[str] = None
 
     def set_strategy_uuid(self, strategy_uuid: str) -> None:
         """Sets the strategy_uuid of the sw-deploy-strategy."""
@@ -162,3 +164,19 @@ class SwManagerSwDeployStrategyObject:
             bool: True if current-stage contains stage_name, False otherwise.
         """
         return self.current_stage is not None and stage_name in self.current_stage
+
+    def set_apply_result(self, apply_result: str) -> None:
+        """Sets the apply_result of the sw-deploy-strategy."""
+        self.apply_result = apply_result
+
+    def get_apply_result(self) -> Optional[str]:
+        """Gets the apply_result of the sw-deploy-strategy."""
+        return self.apply_result
+
+    def set_apply_reason(self, apply_reason: str) -> None:
+        """Sets the apply_reason of the sw-deploy-strategy."""
+        self.apply_reason = apply_reason
+
+    def get_apply_reason(self) -> Optional[str]:
+        """Gets the apply_reason of the sw-deploy-strategy."""
+        return self.apply_reason
