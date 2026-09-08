@@ -1,3 +1,5 @@
+"""Module for the 'kubectl get pods' keywords."""
+
 import json
 import time
 
@@ -10,9 +12,7 @@ from keywords.k8s.pods.object.kubectl_get_pods_output import KubectlGetPodsOutpu
 
 
 class KubectlGetPodsKeywords(K8sBaseKeyword):
-    """
-    Class for 'kubectl get pods' keywords
-    """
+    """Class for 'kubectl get pods' keywords."""
 
     def __init__(self, ssh_connection: SSHConnection, kubeconfig_path: str = None):
         """
@@ -25,7 +25,7 @@ class KubectlGetPodsKeywords(K8sBaseKeyword):
         super().__init__(ssh_connection, kubeconfig_path)
 
     def get_pods(self, namespace: str = None, label: str = None) -> KubectlGetPodsOutput:
-        """Gets the k8s pods that are available using '-o wide'.
+        """Get the k8s pods that are available using '-o wide'.
 
         Args:
             namespace (str, optional): The namespace to search for pods. If None, it will search in all namespaces.
@@ -112,7 +112,7 @@ class KubectlGetPodsKeywords(K8sBaseKeyword):
 
     def get_unhealthy_pods(self) -> KubectlGetPodsOutput:
         """
-        Get the k8s pods that are unhealthy
+        Get the k8s pods that are unhealthy.
 
         Returns:
             KubectlGetPodsOutput: An object containing the parsed output of the command.
@@ -168,10 +168,9 @@ class KubectlGetPodsKeywords(K8sBaseKeyword):
 
     def wait_for_all_pods_status(self, expected_statuses: list[str], timeout: int = 600) -> bool:
         """
-        Wait for all pods to be in the given status(s)
+        Wait for all pods to be in the given status(s).
 
         Args:
-
             expected_statuses (list[str]): list of expected statuses ex. ['Completed' , 'Running']
             timeout (int): the amount of time in seconds to wait
 
@@ -348,13 +347,17 @@ class KubectlGetPodsKeywords(K8sBaseKeyword):
             timeout=timeout,
         )
 
-    def wait_for_pods_to_be_deleted(self, namespace: str, poll_interval: int = 10, timeout: int = 180) -> None:
-        """Wait for all pods in a namespace to be deleted.
+    def wait_for_pods_to_be_deleted(self, namespace: str, pod_names: list = None, poll_interval: int = 10, timeout: int = 180) -> None:
+        """Wait for pods to be deleted within timeout.
 
-        Monitors pods in a given namespace and waits for them to be deleted.
+        If 'pod_names' is provided, waits for those specific pods (matched by name prefix) to be
+        deleted from the namespace. If 'pod_names' is None, waits for ALL pods in the namespace to
+        be deleted (i.e. the namespace becomes empty).
 
         Args:
             namespace (str): Kubernetes namespace to search in.
+            pod_names (list, optional): List of specific pod names (prefixes) to wait for. If None,
+                waits for the whole namespace to be empty. Defaults to None.
             poll_interval (int): Time in seconds between status checks. Defaults to 10.
             timeout (int): Maximum time in seconds to wait. Defaults to 180.
 
@@ -362,14 +365,18 @@ class KubectlGetPodsKeywords(K8sBaseKeyword):
             TimeoutError: If pods still exist within timeout.
         """
 
-        def is_name_space_pods_deleted() -> bool:
-            output = self.ssh_connection.send(self.k8s_config.export(f"kubectl get pods -n {namespace}"))
-            return f"No resources found in {namespace} namespace" in output[0]
+        def are_pods_deleted() -> bool:
+            if pod_names is None:
+                output = self.ssh_connection.send(self.k8s_config.export(f"kubectl get pods -n {namespace}"))
+                return f"No resources found in {namespace} namespace" in output[0]
+
+            current_pod_names = [pod.get_name() for pod in self.get_pods(namespace).get_pods()]
+            return not any(current.startswith(expected) for expected in pod_names for current in current_pod_names)
 
         validate_equals_with_retry(
-            function_to_execute=is_name_space_pods_deleted,
+            function_to_execute=are_pods_deleted,
             expected_value=True,
-            validation_description="The namespace pods were deleted",
+            validation_description=f"The pods {pod_names if pod_names else f'in namespace {namespace}'} were deleted",
             timeout=timeout,
             polling_sleep_time=poll_interval,
         )

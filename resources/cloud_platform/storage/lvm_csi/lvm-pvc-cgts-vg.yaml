@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: lvm-pvc-cgts-vg
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: cgts-vg
+  resources:
+    requests:
+      storage: 1Gi

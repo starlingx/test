@@ -1,0 +1,26 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: lvm-pod-cgts-vg
+spec:
+  shareProcessNamespace: true
+  restartPolicy: Always
+  containers:
+    - name: lvm-pod-cgts-vg
+      image: busybox:1.37
+      command:
+        - /bin/sh
+        - -c
+        - |
+          dd if=/dev/urandom of=/mnt1/foo bs=1M count=233 conv=fsync
+          while :; do
+            date
+            sleep 10
+          done
+      volumeMounts:
+        - mountPath: /mnt1
+          name: pvc1
+  volumes:
+    - name: pvc1
+      persistentVolumeClaim:
+        claimName: lvm-pvc-cgts-vg

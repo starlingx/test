@@ -364,6 +364,63 @@ def validate_greater_than(observed_value: int, baseline_value: int, validation_d
         raise Exception("Validation Failed")
 
 
+def validate_greater_than_with_retry(
+    function_to_execute: Callable[[], Any],
+    baseline_value: Any,
+    validation_description: str,
+    timeout: int = 30,
+    polling_sleep_time: int = 5,
+) -> Any:
+    """Validate that function_to_execute returns a value greater than baseline_value within timeout.
+
+    Repeatedly calls function_to_execute until the result is greater than baseline_value.
+    Supports ValidationResponse for returning a different value than the one being validated.
+
+    Args:
+        function_to_execute (Callable[[], Any]): The function to be executed repeatedly.
+        baseline_value (Any): The value the observed value must exceed.
+        validation_description (str): Description of this validation for logging purposes.
+        timeout (int): The maximum time (in seconds) to wait for the value to exceed the baseline.
+        polling_sleep_time (int): The interval of time to wait between calls to function_to_execute.
+
+    Returns:
+        Any: The observed value (or value_to_return from ValidationResponse) once it exceeds baseline_value.
+
+    Raises:
+        TimeoutError: If the timeout is reached and the value still does not exceed baseline_value.
+
+    """
+    get_logger().log_info(f"Attempting Validation - {validation_description}")
+    end_time = time.time() + timeout
+
+    while True:
+
+        # Execute the function and unwrap ValidationResponse if returned.
+        result = function_to_execute()
+        if isinstance(result, ValidationResponse):
+            value_to_validate = result.get_value_to_validate()
+            value_to_return = result.get_value_to_return()
+        else:
+            value_to_validate = result
+            value_to_return = result
+
+        # Success: observed value exceeds the baseline.
+        if value_to_validate > baseline_value:
+            get_logger().log_info(f"Validation Successful - {validation_description}")
+            return value_to_return
+        else:
+            get_logger().log_info("Validation Failed")
+            get_logger().log_info(f"Baseline: {baseline_value}")
+            get_logger().log_info(f"Observed: {value_to_validate}")
+
+            # Retry if time remains, otherwise raise timeout.
+            if time.time() < end_time:
+                get_logger().log_info(f"Retrying in {polling_sleep_time}s")
+                sleep(polling_sleep_time)
+            else:
+                raise TimeoutError(f"Timeout performing validation - {validation_description}")
+
+
 def validate_none(observed_value: Any, validation_description: str) -> None:
     """
     This function will validate if the observed value is none.
