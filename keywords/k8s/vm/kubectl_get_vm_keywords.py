@@ -30,6 +30,48 @@ class KubectlGetVmKeywords(K8sBaseKeyword):
         self.validate_success_return_code(self.ssh_connection)
         return output[0] if output else ""
 
+    def get_vm_cpu_field(self, vm_name: str, field: str, namespace: str = "default") -> str:
+        """Get a CPU topology field from the VM domain spec using kubectl.
+
+        Reads spec.template.spec.domain.cpu.<field> (for example 'cores',
+        'sockets' or 'threads') so callers can confirm a resize applied.
+
+        Args:
+            vm_name (str): Name of the VM.
+            field (str): CPU topology field under spec.template.spec.domain.cpu
+                (e.g. 'cores', 'sockets', 'threads'). Any domain.cpu.* key is
+                valid, so no allowlist is enforced.
+            namespace (str): Namespace of the VM. Defaults to 'default'.
+
+        Returns:
+            str: The CPU field value as a string. An unset field returns an
+                empty string; an unknown or misspelled field also returns an
+                empty string (jsonpath yields no match), so callers cannot tell
+                the two apart from the return value alone.
+        """
+        cmd = f"kubectl get vm {vm_name} -n {namespace} -o jsonpath='{{.spec.template.spec.domain.cpu.{field}}}'"
+        output = self.ssh_connection.send(self.k8s_config.export(cmd))
+        self.validate_success_return_code(self.ssh_connection)
+        return output[0] if output else ""
+
+    def get_vm_memory(self, vm_name: str, namespace: str = "default") -> str:
+        """Get the VM memory request from the domain spec using kubectl.
+
+        Reads spec.template.spec.domain.resources.requests.memory so callers can
+        confirm a memory resize applied.
+
+        Args:
+            vm_name (str): Name of the VM.
+            namespace (str): Namespace of the VM. Defaults to 'default'.
+
+        Returns:
+            str: The memory request value (e.g. '4Gi'), or empty string if unset.
+        """
+        cmd = f"kubectl get vm {vm_name} -n {namespace} -o jsonpath='{{.spec.template.spec.domain.resources.requests.memory}}'"
+        output = self.ssh_connection.send(self.k8s_config.export(cmd))
+        self.validate_success_return_code(self.ssh_connection)
+        return output[0] if output else ""
+
     def wait_for_vm_status(self, vm_name: str, expected_status: str = "Running", namespace: str = "default", timeout: int = 60, poll_interval: int = 5) -> None:
         """Wait for VM to reach expected status.
 
