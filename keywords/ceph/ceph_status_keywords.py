@@ -1,3 +1,4 @@
+from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
 from framework.validation.validation import validate_equals_with_retry
 from keywords.base_keyword import BaseKeyword
@@ -42,9 +43,16 @@ class CephStatusKeywords(BaseKeyword):
         """
 
         def get_ceph_health_status():
-            output = self.ssh_connection.send("ceph -s")
-            ceph_status_output = CephStatusOutput(output)
-            return ceph_status_output.is_ceph_healthy()
+            # While the platform is temporarily unavailable during a fault-injection /
+            # recovery scenario, 'ceph -s' may fail or return an unparseable output.
+            # Treat that as "not healthy" and keep polling instead of aborting the wait.
+            try:
+                output = self.ssh_connection.send("ceph -s")
+                ceph_status_output = CephStatusOutput(output)
+                return ceph_status_output.is_ceph_healthy()
+            except Exception as ceph_status_error:
+                get_logger().log_info(f"Could not determine ceph health yet (platform may still be recovering): {ceph_status_error}. Treating ceph as not healthy.")
+                return False
 
         msg = f"Current ceph health status should match expected status:{expect_health_status}"
         validate_equals_with_retry(get_ceph_health_status, expect_health_status, msg, timeout=timeout)
