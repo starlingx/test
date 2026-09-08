@@ -15,7 +15,7 @@ class SwManagerSwDeployStrategyCreateConfig:
         keywords.get_sw_deploy_strategy_create(config)
     """
 
-    def __init__(self, release: str, delete: bool = False, snapshot: bool = False, rollback: bool = False, controller_apply_type: str = None, storage_apply_type: str = None, worker_apply_type: str = None, instance_action: str = None, alarm_restrictions: str = None, max_parallel_worker_hosts: int = None, kube_upgrade: str = None) -> None:
+    def __init__(self, release: str, delete: bool = False, snapshot: bool = False, rollback: bool = False, pre_upgrade_deploy: bool = False, controller_apply_type: str = None, storage_apply_type: str = None, worker_apply_type: str = None, instance_action: str = None, alarm_restrictions: str = None, max_parallel_worker_hosts: int = None, kube_upgrade: str = None) -> None:
         """Initializes SwManagerSwDeployStrategyCreateConfig.
 
         Args:
@@ -23,6 +23,7 @@ class SwManagerSwDeployStrategyCreateConfig:
             delete (bool): If True, delete existing strategy before creating new one.
             snapshot (bool): If True, create snapshot before deployment.
             rollback (bool): If True, create rollback strategy instead of deployment.
+            pre_upgrade_deploy (bool): If True, pass --pre-upgrade-deploy flag to deploy strategy create.
             controller_apply_type (str): How to apply to controllers ('serial', 'ignore').
             storage_apply_type (str): How to apply to storage nodes ('serial', 'parallel', 'ignore').
             worker_apply_type (str): How to apply to worker nodes ('serial', 'parallel', 'ignore').
@@ -36,6 +37,7 @@ class SwManagerSwDeployStrategyCreateConfig:
         self.delete = delete  # Delete existing strategy flag
         self.snapshot = snapshot  # Create snapshot flag
         self.rollback = rollback  # Rollback strategy flag
+        self.pre_upgrade_deploy = pre_upgrade_deploy  # Pre-upgrade-deploy flag
 
         # Node-specific apply strategies
         self.controller_apply_type = controller_apply_type  # Controller update strategy
@@ -68,6 +70,8 @@ class SwManagerSwDeployStrategyCreateConfig:
             args.append("--snapshot")
         if self.rollback:
             args.append("--rollback")
+        if self.pre_upgrade_deploy:
+            args.append("--pre-upgrade-deploy")
 
         # Node apply type parameters - add if specified
         if self.controller_apply_type:
