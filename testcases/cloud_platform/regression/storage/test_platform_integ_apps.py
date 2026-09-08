@@ -180,15 +180,27 @@ def test_rollback_platform_integ_app(request: FixtureRequest):
 
     def teardown():
         get_logger().log_teardown_step("Test- Teardown: Check if restore needed")
+
+        # An update/rollback that is interrupted (e.g. aborted) leaves the app in the
+        # transient 'recovering' state, and sysinv rejects abort/remove/apply while
+        # recovering. Wait for the app to settle into a terminal state before acting.
+        get_logger().log_teardown_step("Wait for platform-integ-apps to leave transient state")
+        SystemApplicationListKeywords(active_ssh_connection).validate_app_status_in_list(platform_integ_apps_name, ["applied", "apply-failed", "uploaded"], timeout=3600, polling_sleep_time=30)
+
         # Check current version on system
         current_app_info = SystemApplicationShowKeywords(active_ssh_connection).get_system_application_show(platform_integ_apps_name)
         system_version = current_app_info.get_system_application_object().get_version()
 
         if system_version != current_version:
             get_logger().log_teardown_step("Restoring original platform-integ-apps version")
-            # Remove the rolled back version
+            # Remove the rolled back version. platform-integ-apps is a platform-managed
+            # storage app, so a non-forced remove can be rejected by the CLI (rc=1). Force
+            # the removal and allow enough time for the ceph/rbd resources to be torn down
+            # so teardown is reliable.
             system_application_remove_input = SystemApplicationRemoveInput()
             system_application_remove_input.set_app_name(platform_integ_apps_name)
+            system_application_remove_input.set_force_removal(True)
+            system_application_remove_input.set_timeout_in_seconds(300)
             SystemApplicationRemoveKeywords(active_ssh_connection).system_application_remove(system_application_remove_input)
 
             # Delete the rolled back version
@@ -274,15 +286,27 @@ def test_update_platform_integ_app(request: FixtureRequest):
 
     def teardown():
         get_logger().log_teardown_step("Test- Teardown: Check if restore needed")
+
+        # An update/rollback that is interrupted (e.g. aborted) leaves the app in the
+        # transient 'recovering' state, and sysinv rejects abort/remove/apply while
+        # recovering. Wait for the app to settle into a terminal state before acting.
+        get_logger().log_teardown_step("Wait for platform-integ-apps to leave transient state")
+        SystemApplicationListKeywords(active_ssh_connection).validate_app_status_in_list(platform_integ_apps_name, ["applied", "apply-failed", "uploaded"], timeout=3600, polling_sleep_time=30)
+
         # Check current version on system
         current_app_info = SystemApplicationShowKeywords(active_ssh_connection).get_system_application_show(platform_integ_apps_name)
         system_version = current_app_info.get_system_application_object().get_version()
 
         if system_version != current_version:
             get_logger().log_teardown_step("Restoring original platform-integ-apps version")
-            # Remove the rolled back version
+
+            # platform-integ-apps is a platform-managed storage app with dependents, so a
+            # non-forced remove is rejected by the CLI (rc=1). Force the removal and allow
+            # enough time for the ceph/rbd resources to be torn down so teardown is reliable.
             system_application_remove_input = SystemApplicationRemoveInput()
             system_application_remove_input.set_app_name(platform_integ_apps_name)
+            system_application_remove_input.set_force_removal(True)
+            system_application_remove_input.set_timeout_in_seconds(300)
             SystemApplicationRemoveKeywords(active_ssh_connection).system_application_remove(system_application_remove_input)
 
             # Delete the rolled back version
@@ -350,7 +374,7 @@ def test_update_platform_integ_app(request: FixtureRequest):
     system_application_update_input = SystemApplicationUpdateInput()
     system_application_update_input.set_app_name(platform_integ_apps_name)
     system_application_update_input.set_tar_file_path(f"{app_config.get_base_application_path()}{tarball_filename}")
-    system_application_update_input.set_timeout_in_seconds(120)
+    system_application_update_input.set_timeout_in_seconds(220)
     SystemApplicationUpdateKeywords(active_ssh_connection).system_application_update(system_application_update_input)
 
     # Verify the application version has changed (rollback)
