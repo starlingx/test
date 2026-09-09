@@ -39,6 +39,7 @@ class LabConnectionKeywords(BaseKeyword):
 
         return connection
 
+
     def get_standby_controller_ssh(self) -> SSHConnection:
         """
         Gets the standby controller ssh

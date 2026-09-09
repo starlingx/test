@@ -1,5 +1,9 @@
+import subprocess
 from typing import Optional, Type
 
+from config.configuration_manager import ConfigurationManager
+from framework.exceptions.keyword_exception import KeywordException
+from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
 from keywords.base_keyword import BaseKeyword
 from keywords.server.power_keywords_implementation import PowerKeywordsImplementation
@@ -90,6 +94,44 @@ class PowerKeywords(BaseKeyword):
         """
         return self.implementation.is_powered_on(host_name, power_on_wait_timeout)
 
+    def power_on_from_localhost(self, host_name: str, ignore_error: bool = False) -> int:
+        """Power on the host by running ``ipmitool`` locally against its BMC.
+
+        Runs the IPMI command on the machine executing the automation
+        (localhost) rather than over the SSH connection. Required for
+        simplex labs, where the only controller's SSH session dies when
+        it is powered off.
+
+        Args:
+            host_name (str): The name of the host whose BMC to target.
+            ignore_error (bool): When False (default), a non-zero ipmitool
+                return code raises a KeywordException. When True, it is
+                logged and returned without raising.
+
+        Returns:
+            int: The ipmitool process return code (0 on success).
+        """
+        return self.implementation.power_on_from_localhost(host_name, ignore_error=ignore_error)
+
+    def power_off_from_localhost(self, host_name: str, ignore_error: bool = False) -> int:
+        """Power off the host by running ``ipmitool`` locally against its BMC.
+
+        Runs the IPMI command on the machine executing the automation
+        (localhost) rather than over the SSH connection. Required for
+        simplex labs, where the only controller's SSH session dies when
+        it is powered off.
+
+        Args:
+            host_name (str): The name of the host whose BMC to target.
+            ignore_error (bool): When False (default), a non-zero ipmitool
+                return code raises a KeywordException. When True, it is
+                logged and returned without raising.
+
+        Returns:
+            int: The ipmitool process return code (0 on success).
+        """
+        return self.implementation.power_off_from_localhost(host_name, ignore_error=ignore_error)
+
     def power_off(self, host_name: str) -> bool:
         """Power off the host.
 
@@ -143,3 +185,4 @@ class PowerKeywords(BaseKeyword):
             bool: True if the boot device was successfully set to PXE.
         """
         return self.implementation.set_boot_device_pxe(host_name)
+

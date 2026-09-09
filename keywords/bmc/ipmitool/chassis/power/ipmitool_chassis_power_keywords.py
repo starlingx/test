@@ -1,7 +1,9 @@
 import ipaddress
+import subprocess
 import time
 
 from config.configuration_manager import ConfigurationManager
+from framework.exceptions.keyword_exception import KeywordException
 from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
 from keywords.base_keyword import BaseKeyword
@@ -35,7 +37,7 @@ class IPMIToolChassisPowerKeywords(BaseKeyword):
             except ValueError:
                 raise ValueError(f"Invalid BMC IP address format: {self.bm_ip}")
 
-    def _send_power_command(self, bm_ip: str, bm_username: str, bm_password: str, action: str):
+    def _send_power_command(self, bm_ip: str, bm_username: str, bm_password: str, action: str) -> None:
         """Sends an IPMI chassis power command with retry on session failure.
 
         BMC IPMI sessions can intermittently fail with
@@ -53,6 +55,9 @@ class IPMIToolChassisPowerKeywords(BaseKeyword):
             bm_username (str): Username for BMC
             bm_password (str): Password for BMC
             action (str): Power action (off, on, cycle)
+
+        Returns:
+            None:
         """
         command = f"ipmitool -I lanplus -H {bm_ip} -U {bm_username} -P {bm_password} chassis power {action}"
 
@@ -69,23 +74,14 @@ class IPMIToolChassisPowerKeywords(BaseKeyword):
             # Policy). Treat as non-fatal; the caller's is_powered_on()
             # poll will handle the wait.
             if action == "on" and _IPMI_NOT_SUPPORTED_IN_PRESENT_STATE in output_str.lower():
-                get_logger().log_info(
-                    "IPMI chassis power on rejected: 'Command not supported in present state'. "
-                    "BMC is likely already transitioning to power-on. "
-                    "Deferring to is_powered_on() wait loop."
-                )
+                get_logger().log_info("IPMI chassis power on rejected: 'Command not supported in present state'. " "BMC is likely already transitioning to power-on. " "Deferring to is_powered_on() wait loop.")
                 return
 
             if attempt < _IPMI_POWER_CMD_MAX_RETRIES - 1:
-                get_logger().log_info(
-                    f"IPMI chassis power {action} failed (attempt {attempt + 1}/{_IPMI_POWER_CMD_MAX_RETRIES}). "
-                    f"Retrying in {_IPMI_POWER_CMD_RETRY_DELAY_SECONDS}s..."
-                )
+                get_logger().log_info(f"IPMI chassis power {action} failed (attempt {attempt + 1}/{_IPMI_POWER_CMD_MAX_RETRIES}). " f"Retrying in {_IPMI_POWER_CMD_RETRY_DELAY_SECONDS}s...")
                 time.sleep(_IPMI_POWER_CMD_RETRY_DELAY_SECONDS)
             else:
-                get_logger().log_info(
-                    f"IPMI chassis power {action} failed after {_IPMI_POWER_CMD_MAX_RETRIES} attempts."
-                )
+                get_logger().log_info(f"IPMI chassis power {action} failed after {_IPMI_POWER_CMD_MAX_RETRIES} attempts.")
 
         self.validate_success_return_code(self.ssh_connection)
 
@@ -124,3 +120,83 @@ class IPMIToolChassisPowerKeywords(BaseKeyword):
     def power_cycle(self):
         """Powers off/on the host"""
         self._send_power_command(self.bm_ip, self.bm_username, self.bm_password, "cycle")
+
+    def power_off_from_localhost(self, host_name: str, ignore_error: bool = False) -> int:
+        """Run ``ipmitool chassis power off`` locally against a host's BMC.
+
+        The IPMI command is executed on the machine running the automation
+        (localhost) rather than over an SSH connection. This is required for
+        power operations on a simplex lab, where the only controller's SSH
+        session dies when it is powered off, so a command issued over that
+        connection would never reach the BMC. The BMC connection details are
+        read from the lab configuration for the given host.
+
+        Args:
+            host_name (str): The name of the host whose BMC to target
+                (e.g. "controller-0").
+            ignore_error (bool): When False (default), a non-zero ipmitool
+                return code raises a KeywordException. When True, the
+                non-zero return code is logged and returned to the caller
+                without raising.
+
+        Returns:
+            int: The ipmitool process return code (0 on success).
+
+        Raises:
+            KeywordException: If ipmitool returns a non-zero code and
+                ``ignore_error`` is False.
+        """
+        lab_config = ConfigurationManager.get_lab_config()
+        node = lab_config.get_node(host_name)
+        bm_ip = node.get_bm_ip()
+        bm_username = node.get_bm_username()
+        bm_password = node.get_bm_password() or lab_config.get_bm_password()
+
+        cmd = ["ipmitool", "-I", "lanplus", "-H", bm_ip, "-U", bm_username, "-P", bm_password, "chassis", "power", "off"]
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        get_logger().log_info(f"ipmitool chassis power off for {host_name} ({bm_ip}) " f"rc={result.returncode} out={result.stdout.strip()} err={result.stderr.strip()}")
+
+        if result.returncode != 0 and not ignore_error:
+            raise KeywordException(f"ipmitool chassis power off for {host_name} ({bm_ip}) failed with return code {result.returncode}: {result.stderr.strip()}")
+
+        return result.returncode
+
+    def power_on_from_localhost(self, host_name: str, ignore_error: bool = False) -> int:
+        """Run ``ipmitool chassis power on`` locally against a host's BMC.
+
+        The IPMI command is executed on the machine running the automation
+        (localhost) rather than over an SSH connection. This is required for
+        power operations on a simplex lab, where the only controller's SSH
+        session dies when it is powered off, so a command issued over that
+        connection would never reach the BMC. The BMC connection details are
+        read from the lab configuration for the given host.
+
+        Args:
+            host_name (str): The name of the host whose BMC to target
+                (e.g. "controller-0").
+            ignore_error (bool): When False (default), a non-zero ipmitool
+                return code raises a KeywordException. When True, the
+                non-zero return code is logged and returned to the caller
+                without raising.
+
+        Returns:
+            int: The ipmitool process return code (0 on success).
+
+        Raises:
+            KeywordException: If ipmitool returns a non-zero code and
+                ``ignore_error`` is False.
+        """
+        lab_config = ConfigurationManager.get_lab_config()
+        node = lab_config.get_node(host_name)
+        bm_ip = node.get_bm_ip()
+        bm_username = node.get_bm_username()
+        bm_password = node.get_bm_password() or lab_config.get_bm_password()
+
+        cmd = ["ipmitool", "-I", "lanplus", "-H", bm_ip, "-U", bm_username, "-P", bm_password, "chassis", "power", "on"]
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        get_logger().log_info(f"ipmitool chassis power on for {host_name} ({bm_ip}) " f"rc={result.returncode} out={result.stdout.strip()} err={result.stderr.strip()}")
+
+        if result.returncode != 0 and not ignore_error:
+            raise KeywordException(f"ipmitool chassis power on for {host_name} ({bm_ip}) failed with return code {result.returncode}: {result.stderr.strip()}")
+
+        return result.returncode

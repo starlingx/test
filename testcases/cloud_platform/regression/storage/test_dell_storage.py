@@ -1,3 +1,5 @@
+from time import sleep
+
 from pytest import mark
 
 from config.configuration_manager import ConfigurationManager
@@ -5,6 +7,7 @@ from framework.logging.automation_logger import get_logger
 from framework.resources.resource_finder import get_stx_resource_path
 from framework.ssh.ssh_connection import SSHConnection
 from framework.validation.validation import validate_equals, validate_equals_with_retry
+from keywords.bmc.ipmitool.chassis.power.ipmitool_chassis_power_keywords import IPMIToolChassisPowerKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.cloud_platform.system.application.object.system_application_delete_input import SystemApplicationDeleteInput
 from keywords.cloud_platform.system.application.object.system_application_status_enum import SystemApplicationStatusEnum
@@ -167,6 +170,30 @@ def common_verify_dell_app_status_iscsi_sx(ssh_connection, dell_storage_app_stat
 
         get_logger().log_test_case_step(f"Apply {dell_storage_app_name}.")
         SystemApplicationApplyKeywords(ssh_connection).system_application_apply(dell_storage_app_name)
+
+
+def verify_file_created_on_pod_exists(ssh_connection: SSHConnection, namespace: str, pod_name: str):
+    """
+    Verify that the test.txt file previously created still exists inside the pod.
+
+
+    Test Steps:
+        - Connect to the powerstoretest-0 pod
+        - Verify if the test.txt file created on the dell-storage test pod is present on the pvc.
+
+    Args:
+        ssh_connection (SSHConnection): the ssh connection to the active controller.
+        namespace (str): the namespace the pod runs in.
+        pod_name (str): the name of the pod to check.
+    """
+    get_logger().log_test_case_step(f"Connect to the powerstoretest-0 pod {pod_name}")
+    kubectl_exec_in_pods = KubectlExecInPodsKeywords(ssh_connection)
+    options = f"-it -n {namespace}"
+    cmd = "bash -c 'test -f /data0/test.txt'"
+
+    get_logger().log_test_case_step(f"Verify if the test.txt file created on the dell-storage test pod is present on the pvc. {pod_name}")
+    kubectl_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
+    validate_equals(ssh_connection.get_return_code(), 0, f"test.txt is on {pod_name} pod.")
 
 
 def make_sure_dell_storage_application_applied():
@@ -599,10 +626,7 @@ def test_node_reboot_with_pvc_pod_dell_storage_iscsi(request):
     kubeclt_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
     validate_equals(ssh_connection.get_return_code(), 0, f"sync pod {pod_name} success")
 
-    get_logger().log_info("Check if test.txt exists")
-    cmd = "bash -c 'test -f /data0/test.txt'"
-    kubeclt_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
-    validate_equals(ssh_connection.get_return_code(), 0, f"Access to {pod_name} pod success")
+    verify_file_created_on_pod_exists(ssh_connection, namespace, pod_name)
 
     get_logger().log_test_case_step("Reboot the controller-0 node through the sudo reboot command")
     host_list_keywords = SystemHostListKeywords(ssh_connection)
@@ -621,11 +645,13 @@ def test_node_reboot_with_pvc_pod_dell_storage_iscsi(request):
     get_logger().log_test_case_step("Connect to the LAB and make sure that the dell-storage pods are up and running")
     verify_dell_storage_pods_are_running(ssh_connection)
 
-    kubectl_exec_in_pods = KubectlExecInPodsKeywords(ssh_connection)
-    options = f"-it -n {namespace}"
-    cmd = "bash -c 'test -f /data0/test.txt'"
-    kubectl_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
-    validate_equals(ssh_connection.get_return_code(), 0, f"test.txt is on {pod_name} pod.")
+    get_logger().log_test_case_step("Make sure that the test PVC and POD are still running.")
+    cmd = "bash -c 'sync'"
+    kubeclt_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
+    validate_equals(ssh_connection.get_return_code(), 0, f"sync pod {pod_name} success")
+
+    get_logger().log_test_case_step("Make sure that the file created before the reboot is still saved in the test pod.")
+    verify_file_created_on_pod_exists(ssh_connection, namespace, pod_name)
 
 
 @mark.p2
@@ -719,9 +745,7 @@ def test_node_reboot_with_pvc_pod_dell_storage_nfs(request):
     validate_equals(ssh_connection.get_return_code(), 0, f"sync pod {pod_name} success")
 
     get_logger().log_info("Check if test.txt exists")
-    cmd = "bash -c 'test -f /data0/test.txt'"
-    kubeclt_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
-    validate_equals(ssh_connection.get_return_code(), 0, f"Access to {pod_name} pod success")
+    verify_file_created_on_pod_exists(ssh_connection, namespace, pod_name)
 
     get_logger().log_test_case_step("Reboot the controller-0 node through the sudo reboot command")
     host_list_keywords = SystemHostListKeywords(ssh_connection)
@@ -739,12 +763,15 @@ def test_node_reboot_with_pvc_pod_dell_storage_nfs(request):
 
     get_logger().log_test_case_step("Connect to the LAB and make sure that the dell-storage pods are up and running")
     verify_dell_storage_pods_are_running(ssh_connection)
+    validate_equals(ssh_connection.get_return_code(), 0, f"sync pod {pod_name} success")
 
-    kubectl_exec_in_pods = KubectlExecInPodsKeywords(ssh_connection)
-    options = f"-it -n {namespace}"
-    cmd = "bash -c 'test -f /data0/test.txt'"
-    kubectl_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
-    validate_equals(ssh_connection.get_return_code(), 0, f"test.txt is on {pod_name} pod.")
+    get_logger().log_test_case_step("Make sure that the test PVC and POD are still running.")
+    cmd = "bash -c 'sync'"
+    kubeclt_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
+    validate_equals(ssh_connection.get_return_code(), 0, f"sync pod {pod_name} success")
+
+    get_logger().log_test_case_step("Make sure that the file created before the reboot is still saved in the test pod.")
+    verify_file_created_on_pod_exists(ssh_connection, namespace, pod_name)
 
 
 @mark.p2
@@ -861,11 +888,13 @@ def test_lock_unlock_node_with_pvc_pod_dell_storage_iscsi(request):
     get_logger().log_test_case_step("Connect to the LAB and make sure that the dell-storage pods are up and running")
     verify_dell_storage_pods_are_running(ssh_connection)
 
-    kubectl_exec_in_pods = KubectlExecInPodsKeywords(ssh_connection)
-    options = f"-it -n {namespace}"
-    cmd = "bash -c 'test -f /data0/test.txt'"
-    kubectl_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
-    validate_equals(ssh_connection.get_return_code(), 0, f"test.txt is on {pod_name} pod.")
+    get_logger().log_test_case_step("Make sure that the test PVC and POD are still running.")
+    cmd = "bash -c 'sync'"
+    kubeclt_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
+    validate_equals(ssh_connection.get_return_code(), 0, f"sync pod {pod_name} success")
+
+    get_logger().log_test_case_step("Make sure that the file created before the reboot is still saved in the test pod.")
+    verify_file_created_on_pod_exists(ssh_connection, namespace, pod_name)
 
 
 @mark.p2
@@ -961,9 +990,7 @@ def test_lock_unlock_node_with_pvc_pod_dell_storage_nfs(request):
     validate_equals(ssh_connection.get_return_code(), 0, f"sync pod {pod_name} success")
 
     get_logger().log_info("Check if test.txt exists")
-    cmd = "bash -c 'test -f /data0/test.txt'"
-    kubeclt_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
-    validate_equals(ssh_connection.get_return_code(), 0, f"Access to {pod_name} pod success")
+    verify_file_created_on_pod_exists(ssh_connection, namespace, pod_name)
 
     host_lock_keywords = SystemHostLockKeywords(ssh_connection)
     get_logger().log_test_case_step("Lock controller-0 node")
@@ -983,8 +1010,295 @@ def test_lock_unlock_node_with_pvc_pod_dell_storage_nfs(request):
     get_logger().log_test_case_step("Connect to the LAB and make sure that the dell-storage pods are up and running")
     verify_dell_storage_pods_are_running(ssh_connection)
 
-    kubectl_exec_in_pods = KubectlExecInPodsKeywords(ssh_connection)
+    get_logger().log_test_case_step("Make sure that the test PVC and POD are still running.")
+    cmd = "bash -c 'sync'"
+    kubeclt_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
+    validate_equals(ssh_connection.get_return_code(), 0, f"sync pod {pod_name} success")
+
+    get_logger().log_test_case_step("Make sure that the test PVC and POD are still running.")
+    cmd = "bash -c 'sync'"
+    kubeclt_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
+    validate_equals(ssh_connection.get_return_code(), 0, f"sync pod {pod_name} success")
+
+    get_logger().log_test_case_step("Make sure that the file created before the reboot is still saved in the test pod.")
+    verify_file_created_on_pod_exists(ssh_connection, namespace, pod_name)
+
+
+@mark.p2
+@mark.lab_is_simplex
+@mark.lab_dell_storage
+def test_power_off_node_with_pvc_pod_dell_storage_iscsi(request):
+    """
+    Test case: This Test case is to test dell storage resiliency after rebooting
+
+    Test Steps:
+        - Check if dell-storage was uploaded. Uploading dell-storage app. If it's already applied, remove it.
+        - Check current dell-storage app status.
+        - Create powerstoreOverrides.yaml file to use as user-overrides (ISCSI)
+        - Set up the storage network from DM
+        - Update user-overrides for CSI-Powerstore chart.
+        - Apply dell-storage.
+        - Check if all pods are running.
+        - Create dell storage PVC and pod
+        - Write a test.txt file on test pod
+        - pod sync
+        - Power Off controller-0 through IPMITOOLS
+        - Wait for some time (2 minutes)
+        - Power On controller-0 through IPMITOOLS
+        - Wait for the controller-0 to be up and running again
+        - Connect to the LAB and make sure that the dell-storage pods are up and running
+        - Make sure that the test PVC and POD are still running.
+        - Make sure that the file created before powering off is still saved in the test pod.
+
+    Teardown:
+        - Remove test stuff.
+    """
+
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    namespace = "dell-storage"
+    dell_storage_app_name = "dell-storage"
+    chart_name = "csi-powerstore"
+
+    # IPMI commands must run on a host that stays reachable while controller-0
+    # is powered off. On a simplex lab the controller's own SSH session dies
+    # with the node, so a power-on issued over it never reaches the BMC. The
+    # jump host stays up and can route to the BMC network.
+    bmc_ssh_connection = LabConnectionKeywords().get_jump_host_ssh()
+
+    def verify_dell_storage_pods_are_running(ssh_connection):
+        pod_prefix = "csi-powerstore"
+        get_pod_obj = KubectlGetPodsKeywords(ssh_connection)
+        pod_names = get_pod_obj.get_pods(namespace=namespace).get_unique_pod_matching_prefix(starts_with=pod_prefix)
+        pod_status = get_pod_obj.wait_for_pod_status(pod_names, "Running", namespace)
+        validate_equals(pod_status, True, f"Verify {pod_prefix} pods are running")
+
+        get_pod_obj = KubectlGetPodsKeywords(ssh_connection)
+        pod_status = get_pod_obj.wait_for_pod_status(pod_name, "Running", namespace)
+        validate_equals(pod_status, True, f"Verify {pod_name} pod is running")
+
+    def teardown():
+        """Power controller-0 back on, wait for it to recover, and remove the test pod resources."""
+        power_chassis = IPMIToolChassisPowerKeywords(bmc_ssh_connection, "controller-0")
+        power_chassis.power_on()
+
+        ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+        host_lock_keywords = SystemHostLockKeywords(ssh_connection)
+        host_lock_keywords.wait_for_host_unlocked("controller-0", unlock_wait_timeout=3200)
+
+        get_logger().log_teardown_step("Clean up the test pod resources.")
+        KubectlFileDeleteKeywords(ssh_connection).delete_resources("/home/sysadmin/dell-storage-test-pod.yaml", ignore_not_found=True)
+
+    request.addfinalizer(common_dell_storage_teardown)
+    request.addfinalizer(teardown)
+
+    get_logger().log_test_case_step(f"Check {dell_storage_app_name} app status.")
+    system_applications = SystemApplicationListKeywords(ssh_connection).get_system_application_list()
+    dell_storage_app_status = system_applications.get_application(dell_storage_app_name).get_status()
+    get_logger().log_info(f"{dell_storage_app_name} application is: {dell_storage_app_status}")
+
+    common_verify_dell_app_status_iscsi_sx(ssh_connection, dell_storage_app_status, namespace, dell_storage_app_name, chart_name)
+
+    test_pod_yaml = "dell-storage-test-pod.yaml"
+    dell_storage_files = [test_pod_yaml]
+    for file_name in dell_storage_files:
+        local_path = get_stx_resource_path(f"resources/cloud_platform/storage/dell_storage/{file_name}")
+        remote_yaml_path = f"/home/sysadmin/{file_name}"
+        FileKeywords(ssh_connection).upload_file(local_path, remote_yaml_path, overwrite=True)
+
+    make_sure_dell_storage_application_applied()
+    get_logger().log_test_case_step("Check if all dell-storage pods are running")
+
+    get_logger().log_test_case_step("Create resources test pod via yaml")
+    yaml_path = "/home/sysadmin/dell-storage-test-pod.yaml"
+    kubectl_create_pods_keyword = KubectlCreatePodsKeywords(ssh_connection)
+    kubectl_create_pods_keyword.create_from_yaml(yaml_path)
+
+    pod_name = "powerstoretest-0"
+    get_logger().log_test_case_step(f"Check if test {pod_name} pod is running")
+    verify_dell_storage_pods_are_running(ssh_connection)
+
+    get_logger().log_test_case_step(f"Creating text.txt file inside of {pod_name} pod")
+    kubeclt_exec_in_pods = KubectlExecInPodsKeywords(ssh_connection)
     options = f"-it -n {namespace}"
-    cmd = "bash -c 'test -f /data0/test.txt'"
-    kubectl_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
-    validate_equals(ssh_connection.get_return_code(), 0, f"test.txt is on {pod_name} pod.")
+    cmd = "bash -c 'touch /data0/test.txt'"
+    kubeclt_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
+    validate_equals(ssh_connection.get_return_code(), 0, f"Write to {pod_name} pod success")
+
+    get_logger().log_info("sync pod")
+    cmd = "bash -c 'sync'"
+    kubeclt_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
+    validate_equals(ssh_connection.get_return_code(), 0, f"sync pod {pod_name} success")
+
+    get_logger().log_info("Check if test.txt exists")
+    verify_file_created_on_pod_exists(ssh_connection, namespace, pod_name)
+
+    get_logger().log_test_case_step("sync pod")
+    get_logger().log_info("sync pod")
+    cmd = "bash -c 'sync'"
+    kubeclt_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
+    validate_equals(ssh_connection.get_return_code(), 0, f"sync pod {pod_name} success")
+
+    get_logger().log_test_case_step("Power Off controller-0 through IPMITOOLS ")
+    power_chassis = IPMIToolChassisPowerKeywords(bmc_ssh_connection, "controller-0")
+    power_chassis.power_off()
+    validate_equals(bmc_ssh_connection.get_return_code(), 0, "controller-0 IPMI power off command was not accepted by the BMC")
+
+    get_logger().log_test_case_step("Wait for some time (2 minutes)")
+    sleep(120)
+
+    get_logger().log_test_case_step("Power on controller-0 through IPMITOOLS ")
+    power_chassis = IPMIToolChassisPowerKeywords(bmc_ssh_connection, "controller-0")
+    power_chassis.power_on()
+    validate_equals(bmc_ssh_connection.get_return_code(), 0, "controller-0 IPMI power on command was not accepted by the BMC")
+
+    get_logger().log_test_case_step("Make sure that the node comes up again")
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    host_lock_keywords = SystemHostLockKeywords(ssh_connection)
+    host_back = host_lock_keywords.wait_for_host_unlocked("controller-0", unlock_wait_timeout=3200)
+    validate_equals(host_back, True, "controller-0 did not come back online after Powering Off and then Powering On")
+
+    get_logger().log_test_case_step("Connect to the LAB and make sure that the dell-storage pods are up and running")
+    verify_dell_storage_pods_are_running(ssh_connection)
+
+    get_logger().log_test_case_step("Make sure that the file created before powering off is still saved in the test pod.")
+    verify_file_created_on_pod_exists(ssh_connection, namespace, pod_name)
+
+
+@mark.p2
+@mark.lab_is_simplex
+@mark.lab_dell_storage
+def test_power_off_node_with_pvc_pod_dell_storage_nfs(request):
+    """
+    Test case: This Test case is to test dell storage resiliency after rebooting
+
+    Test Steps:
+        - Check if dell-storage was uploaded. Uploading dell-storage app. If it's already applied, remove it.
+        - Check current dell-storage app status.
+        - Create powerstoreOverrides.yaml file to use as user-overrides (NFS)
+        - Set up the storage network from DM
+        - Update user-overrides for CSI-Powerstore chart.
+        - Apply dell-storage.
+        - Check if all pods are running.
+        - Create dell storage PVC and pod
+        - Write a test.txt file on test pod
+        - pod sync
+        - Power Off controller-0 through IPMITOOLS
+        - Wait for some time (2 minutes)
+        - Power On controller-0 through IPMITOOLS
+        - Wait for the controller-0 to be up and running again
+        - Connect to the LAB and make sure that the dell-storage pods are up and running
+        - Make sure that the test PVC and POD are still running.
+        - Make sure that the file created before powering off is still saved in the test pod.
+
+    Teardown:
+        - Remove test stuff.
+    """
+
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    namespace = "dell-storage"
+    dell_storage_app_name = "dell-storage"
+    chart_name = "csi-powerstore"
+
+    # IPMI commands must run on a host that stays reachable while controller-0
+    # is powered off. On a simplex lab the controller's own SSH session dies
+    # with the node, so a power-on issued over it never reaches the BMC. The
+    # jump host stays up and can route to the BMC network.
+    bmc_ssh_connection = LabConnectionKeywords().get_jump_host_ssh()
+
+    def verify_dell_storage_pods_are_running(ssh_connection):
+        pod_prefix = "csi-powerstore"
+        get_pod_obj = KubectlGetPodsKeywords(ssh_connection)
+        pod_names = get_pod_obj.get_pods(namespace=namespace).get_unique_pod_matching_prefix(starts_with=pod_prefix)
+        pod_status = get_pod_obj.wait_for_pod_status(pod_names, "Running", namespace)
+        validate_equals(pod_status, True, f"Verify {pod_prefix} pods are running")
+
+        get_pod_obj = KubectlGetPodsKeywords(ssh_connection)
+        pod_status = get_pod_obj.wait_for_pod_status(pod_name, "Running", namespace)
+        validate_equals(pod_status, True, f"Verify {pod_name} pod is running")
+
+    def teardown():
+        """Power controller-0 back on, wait for it to recover, and remove the test pod resources."""
+        power_chassis = IPMIToolChassisPowerKeywords(bmc_ssh_connection, "controller-0")
+        power_chassis.power_on()
+
+        ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+        host_lock_keywords = SystemHostLockKeywords(ssh_connection)
+        host_lock_keywords.wait_for_host_unlocked("controller-0", unlock_wait_timeout=3200)
+
+        get_logger().log_teardown_step("Clean up the test pod resources.")
+        KubectlFileDeleteKeywords(ssh_connection).delete_resources("/home/sysadmin/dell-storage-test-nfs-pod.yaml", ignore_not_found=True)
+
+    request.addfinalizer(common_dell_storage_teardown)
+    request.addfinalizer(teardown)
+
+    get_logger().log_test_case_step(f"Check {dell_storage_app_name} app status.")
+    system_applications = SystemApplicationListKeywords(ssh_connection).get_system_application_list()
+    dell_storage_app_status = system_applications.get_application(dell_storage_app_name).get_status()
+    get_logger().log_info(f"{dell_storage_app_name} application is: {dell_storage_app_status}")
+
+    common_verify_dell_app_status_nfs_sx(ssh_connection, dell_storage_app_status, namespace, dell_storage_app_name, chart_name)
+
+    test_pod_yaml = "dell-storage-test-nfs-pod.yaml"
+    dell_storage_files = [test_pod_yaml]
+    for file_name in dell_storage_files:
+        local_path = get_stx_resource_path(f"resources/cloud_platform/storage/dell_storage/{file_name}")
+        remote_yaml_path = f"/home/sysadmin/{file_name}"
+        FileKeywords(ssh_connection).upload_file(local_path, remote_yaml_path, overwrite=True)
+
+    make_sure_dell_storage_application_applied()
+    get_logger().log_test_case_step("Check if all dell-storage pods are running")
+
+    get_logger().log_test_case_step("Create resources test pod via yaml")
+    yaml_path = "/home/sysadmin/dell-storage-test-nfs-pod.yaml"
+    kubectl_create_pods_keyword = KubectlCreatePodsKeywords(ssh_connection)
+    kubectl_create_pods_keyword.create_from_yaml(yaml_path)
+
+    pod_name = "powerstoretest-0"
+    get_logger().log_test_case_step(f"Check if test {pod_name} pod is running")
+    verify_dell_storage_pods_are_running(ssh_connection)
+
+    get_logger().log_test_case_step(f"Creating text.txt file inside of {pod_name} pod")
+    kubeclt_exec_in_pods = KubectlExecInPodsKeywords(ssh_connection)
+    options = f"-it -n {namespace}"
+    cmd = "bash -c 'touch /data0/test.txt'"
+    kubeclt_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
+    validate_equals(ssh_connection.get_return_code(), 0, f"Write to {pod_name} pod success")
+
+    get_logger().log_info("sync pod")
+    cmd = "bash -c 'sync'"
+    kubeclt_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
+    validate_equals(ssh_connection.get_return_code(), 0, f"sync pod {pod_name} success")
+
+    get_logger().log_info("Check if test.txt exists")
+    verify_file_created_on_pod_exists(ssh_connection, namespace, pod_name)
+
+    get_logger().log_test_case_step("sync pod")
+    get_logger().log_info("sync pod")
+    cmd = "bash -c 'sync'"
+    kubeclt_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
+    validate_equals(ssh_connection.get_return_code(), 0, f"sync pod {pod_name} success")
+
+    get_logger().log_test_case_step("Power Off controller-0 through IPMITOOLS ")
+    power_chassis = IPMIToolChassisPowerKeywords(bmc_ssh_connection, "controller-0")
+    power_chassis.power_off()
+    validate_equals(bmc_ssh_connection.get_return_code(), 0, "controller-0 IPMI power off command was not accepted by the BMC")
+
+    get_logger().log_test_case_step("Wait for some time (2 minutes)")
+    sleep(120)
+
+    get_logger().log_test_case_step("Power on controller-0 through IPMITOOLS ")
+    power_chassis = IPMIToolChassisPowerKeywords(bmc_ssh_connection, "controller-0")
+    power_chassis.power_on()
+    validate_equals(bmc_ssh_connection.get_return_code(), 0, "controller-0 IPMI power on command was not accepted by the BMC")
+
+    get_logger().log_test_case_step("Make sure that the node comes up again")
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    host_lock_keywords = SystemHostLockKeywords(ssh_connection)
+    host_back = host_lock_keywords.wait_for_host_unlocked("controller-0", unlock_wait_timeout=3200)
+    validate_equals(host_back, True, "controller-0 did not come back online after Powering Off and then Powering On")
+
+    get_logger().log_test_case_step("Connect to the LAB and make sure that the dell-storage pods are up and running")
+    verify_dell_storage_pods_are_running(ssh_connection)
+
+    get_logger().log_test_case_step("Make sure that the file created before powering off is still saved in the test pod.")
+    verify_file_created_on_pod_exists(ssh_connection, namespace, pod_name)
