@@ -1,5 +1,6 @@
 import re
 
+from framework.logging.automation_logger import get_logger
 from keywords.ceph.object.ceph_status_cluster_output import CephClusterOutput
 from keywords.ceph.object.ceph_status_data_output import CephDataOutput
 from keywords.ceph.object.ceph_status_io_output import CephIOOutput
@@ -139,21 +140,35 @@ class CephStatusOutput:
         """
         Check whether ceph is healthy
 
+        If the 'ceph -s' output has no parseable health status (e.g. "The rook toolbox
+        is not running." during recovery), ceph is treated as NOT healthy (returns False)
+        instead of raising, so polling callers keep retrying.
+
         Args: None
 
         Returns:
             bool:
             If ceph health is ok, return True
-            If ceph health is not ok, return False
+            If ceph health is not ok, or the health status could not be determined, return False
 
         """
+        # The cluster section may be missing when 'ceph -s' did not return a parseable
+        # status (e.g. "The rook toolbox is not running."). Treat that as not healthy.
+        if self.ceph_cluster_output is None or self.ceph_cluster_output.get_ceph_cluster_object() is None:
+            get_logger().log_info("Ceph cluster status is not available yet (ceph -s returned no parseable status). Treating ceph as not healthy.")
+            return False
+
         ceph_health_status_msg = self.ceph_cluster_output.get_ceph_cluster_object().get_health()
+        if not ceph_health_status_msg:
+            get_logger().log_info("Ceph health status is empty (ceph -s returned no health line). Treating ceph as not healthy.")
+            return False
+
         if "HEALTH_OK" in ceph_health_status_msg:
             return True
-        elif "HEALTH_WARN" in ceph_health_status_msg:
+        elif "HEALTH_WARN" in ceph_health_status_msg or "HEALTH_ERR" in ceph_health_status_msg:
             return False
         else:
-            raise ValueError("Ceph health status msg should content either HEALTH_OK or HEALTH_WARN")
+            raise ValueError(f"Ceph health status msg should contain HEALTH_OK, HEALTH_WARN or HEALTH_ERR. Got: {ceph_health_status_msg}")
 
     def get_ceph_osd_count(self) -> int:
         """
