@@ -5,6 +5,7 @@ from framework.ssh.ssh_connection import SSHConnection
 from keywords.base_keyword import BaseKeyword
 from keywords.cloud_platform.command_wrappers import source_openrc
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_list_keywords import DcManagerSubcloudListKeywords
+from keywords.server.power_keywords import PowerKeywords
 
 
 class DcManagerSubcloudAddKeywords(BaseKeyword):
@@ -43,6 +44,12 @@ class DcManagerSubcloudAddKeywords(BaseKeyword):
         boot_add = sc_config.get_floating_ip()
         admin_creds = sc_config.get_admin_credentials()
         release = "" if release_id is None else f"--release {release_id}"
+
+        # For a duplex subcloud, the controllers must be powered off before add
+        # reimages controller-0. Enforce this out-of-band via BMC regardless of
+        # the subcloud's reported state.
+        PowerKeywords(self.ssh_connection).power_off_subcloud(subcloud_name)
+
         # Execute the command
         cmd = f"dcmanager subcloud add --bootstrap-address {boot_add} --bootstrap-values {bootstrap_file} --deploy-config {deploy_file} --sysadmin-password {admin_creds.get_password()} --bmc-password {sc_config.get_bm_password()} --install-values {install_file} {release}"
         self.ssh_connection.send(source_openrc(cmd))

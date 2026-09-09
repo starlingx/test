@@ -125,6 +125,14 @@ class PowerKeywords(BaseKeyword):
         """
         self.implementation.power_cycle(host_name)
 
+    def power_off_subcloud(self, subcloud_name: str) -> None:
+        """Power off all controllers of a subcloud via BMC.
+
+        Args:
+            subcloud_name (str): The name of the subcloud whose controllers are powered off.
+        """
+        self.implementation.power_off_subcloud(subcloud_name)
+
     def set_boot_device_pxe(self, host_name: str) -> bool:
         """Set the next boot device of the host to PXE (network boot).
 

@@ -6,6 +6,7 @@ from keywords.base_keyword import BaseKeyword
 from keywords.cloud_platform.command_wrappers import source_openrc
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_list_keywords import DcManagerSubcloudListKeywords
 from keywords.cloud_platform.dcmanager.objects.dcmanager_subcloud_deploy_show_output import DcManagerSubcloudDeployShowOutput
+from keywords.server.power_keywords import PowerKeywords
 
 
 class DCManagerSubcloudDeployKeywords(BaseKeyword):
@@ -91,6 +92,11 @@ class DCManagerSubcloudDeployKeywords(BaseKeyword):
 
         admin_creds = sc_config.get_admin_credentials()
         install_file = sc_assets.get_install_file()
+
+        # For a duplex subcloud, the controllers must be powered off before install
+        # reimages controller-0. Enforce this out-of-band via BMC regardless of
+        # the subcloud's reported state.
+        PowerKeywords(self.ssh_connection).power_off_subcloud(subcloud_name)
 
         # Execute the command
         cmd = f"dcmanager subcloud deploy install {subcloud_name} --sysadmin-password {admin_creds.get_password()} --bmc-password {sc_config.get_bm_password()} --install-values {install_file}"
