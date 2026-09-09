@@ -45,6 +45,22 @@ class KubectlGetVmiKeywords(K8sBaseKeyword):
         self.validate_success_return_code(self.ssh_connection)
         return output[0] if output else ""
 
+    def is_vmi_present(self, vmi_name: str, namespace: str = "default") -> bool:
+        """Check whether a VMI exists.
+
+        Args:
+            vmi_name (str): Name of the VMI.
+            namespace (str): Namespace of the VMI. Defaults to 'default'.
+
+        Returns:
+            bool: True if the VMI exists, False otherwise.
+        """
+        # 'kubectl get vmi' exits non-zero when the VMI does not exist, so the
+        # return code alone tells us whether it is present without asserting.
+        cmd = f"kubectl get vmi {vmi_name} -n {namespace}"
+        self.ssh_connection.send(self.k8s_config.export(cmd))
+        return self.ssh_connection.get_return_code() == 0
+
     def get_vmi_status(self, vmi_name: str, namespace: str = "default") -> str:
         """Get VMI phase using kubectl.
 
