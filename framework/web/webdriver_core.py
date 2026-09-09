@@ -227,6 +227,79 @@ class WebDriverCore:
         """
         return self.driver.current_url
 
+    def navigate_back(self) -> None:
+        """
+        Navigate the browser back one entry in its history (equivalent to the browser Back button).
+
+        Returns: None
+
+        """
+        get_logger().log_debug("Navigating browser back one history entry")
+        self.driver.back()
+
+    def navigate_forward(self) -> None:
+        """
+        Navigate the browser forward one entry in its history (equivalent to the browser Forward button).
+
+        Returns: None
+
+        """
+        get_logger().log_debug("Navigating browser forward one history entry")
+        self.driver.forward()
+
+    def get_current_window_handle(self) -> str:
+        """
+        Get the handle of the currently focused browser window/tab.
+
+        Returns:
+            str: The current window handle.
+
+        """
+        return self.driver.current_window_handle
+
+    def get_window_handle_count(self) -> int:
+        """
+        Get the number of open browser windows/tabs.
+
+        Useful as the baseline for WebConditionNewWindowOpened before triggering a window.open action.
+
+        Returns:
+            int: The number of open window handles.
+
+        """
+        return len(self.driver.window_handles)
+
+    def switch_to_latest_window(self) -> None:
+        """
+        Switch the browser focus to the most recently opened window/tab (the last handle).
+
+        Returns: None
+
+        """
+        self.driver.switch_to.window(self.driver.window_handles[-1])
+
+    def switch_to_window_handle(self, handle: str) -> None:
+        """
+        Switch the browser focus to the window/tab with the given handle.
+
+        Args:
+            handle (str): The window handle to switch to.
+
+        Returns: None
+
+        """
+        self.driver.switch_to.window(handle)
+
+    def close_current_tab_and_switch_to_first(self) -> None:
+        """
+        Close the currently focused browser tab and switch focus to the first tab.
+
+        Returns: None
+
+        """
+        self.driver.close()
+        self.driver.switch_to.window(self.driver.window_handles[0])
+
     def get_attribute(self, locator: WebLocator, attribute_name: str, conditions: List[WebCondition] = []) -> str:
         """
         Gets the value of the specified attribute from the element.
