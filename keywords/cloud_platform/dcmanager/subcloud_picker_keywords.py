@@ -59,6 +59,7 @@ class SubcloudPickerKeywords(BaseKeyword):
         lab_type: Optional[LabTypeEnum] = None,
         present_in_config: bool = True,
         multiple_releases: str = None,
+        backup_status: Optional[str] = None,
     ) -> SubcloudPickResult:
         """Return the lowest-id subcloud satisfying every supplied filter.
 
@@ -87,6 +88,10 @@ class SubcloudPickerKeywords(BaseKeyword):
                 ``"available"``, ``"deployed"``). When provided, ``software
                 list`` is run on each surviving candidate subcloud and only
                 subclouds with at least one release in this state are kept.
+            backup_status (Optional[str]): Required backup status from
+                ``dcmanager subcloud list`` (e.g. ``"complete-central"``,
+                ``"complete-local"``). When None (default), backup status is
+                not checked.
 
         Returns:
             SubcloudPickResult: The selected subcloud.
@@ -103,6 +108,7 @@ class SubcloudPickerKeywords(BaseKeyword):
             lab_type=lab_type,
             present_in_config=present_in_config,
             multiple_releases=multiple_releases,
+            backup_status=backup_status,
         )
         return results[0]
 
@@ -116,6 +122,7 @@ class SubcloudPickerKeywords(BaseKeyword):
         lab_type: Optional[LabTypeEnum] = None,
         present_in_config: bool = True,
         multiple_releases: str = None,
+        backup_status: Optional[str] = None,
     ) -> List[SubcloudPickResult]:
         """Return all subclouds satisfying every supplied filter, ordered by id.
 
@@ -127,6 +134,7 @@ class SubcloudPickerKeywords(BaseKeyword):
             lab_type: see ``pick_one``.
             present_in_config: see ``pick_one``.
             multiple_releases: see ``pick_one``.
+            backup_status: see ``pick_one``.
 
         Returns:
             List[SubcloudPickResult]: Selected subclouds, sorted by numeric
@@ -144,6 +152,7 @@ class SubcloudPickerKeywords(BaseKeyword):
                 lab_type=lab_type,
                 present_in_config=present_in_config,
                 multiple_releases=multiple_releases,
+                backup_status=backup_status,
             )
         )
 
@@ -157,6 +166,7 @@ class SubcloudPickerKeywords(BaseKeyword):
         lab_type: Optional[LabTypeEnum],
         present_in_config: bool,
         multiple_releases: str = None,
+        backup_status: Optional[str] = None,
     ) -> List[SubcloudPickResult]:
         """Run the full filter pipeline. See ``pick_one``/``pick_all``."""
         self.validate_argument(
@@ -167,6 +177,7 @@ class SubcloudPickerKeywords(BaseKeyword):
             lab_type=lab_type,
             present_in_config=present_in_config,
             multiple_releases=multiple_releases,
+            backup_status=backup_status,
         )
         load_resolved = self._resolve_load(load)
         if in_sync is True:
@@ -184,6 +195,7 @@ class SubcloudPickerKeywords(BaseKeyword):
             "lab_type": lab_type.value if lab_type is not None else None,
             "present_in_config": present_in_config,
             "multiple_releases": multiple_releases,
+            "backup_status": backup_status,
         }
         get_logger().log_info(f"SubcloudPickerKeywords: applied filters: {filter_set}")
 
@@ -204,6 +216,7 @@ class SubcloudPickerKeywords(BaseKeyword):
             lab_type=lab_type,
             present_in_config=present_in_config,
             configured_names=configured_names,
+            backup_status=backup_status,
         )
 
         if load_resolved is not None:
@@ -236,6 +249,7 @@ class SubcloudPickerKeywords(BaseKeyword):
         lab_type: Optional[LabTypeEnum],
         present_in_config: bool,
         multiple_releases: Optional[str] = None,
+        backup_status: Optional[str] = None,
     ) -> None:
         """Reject invalid parameter types before any SSH activity occurs."""
         if management_status is not None and not isinstance(management_status, DcManagerSubcloudListManagementEnum):
@@ -285,6 +299,15 @@ class SubcloudPickerKeywords(BaseKeyword):
         if isinstance(multiple_releases, str) and multiple_releases == "":
             raise KeywordException(
                 "SubcloudPickerKeywords: invalid parameter 'multiple_releases': must be None or a non-empty software release state."
+            )
+        if backup_status is not None and not isinstance(backup_status, str):
+            raise KeywordException(
+                "SubcloudPickerKeywords: invalid parameter 'backup_status': "
+                f"expected None or str, received {type(backup_status).__name__} ({backup_status!r})."
+            )
+        if isinstance(backup_status, str) and backup_status == "":
+            raise KeywordException(
+                "SubcloudPickerKeywords: invalid parameter 'backup_status': must be None or a non-empty backup status string."
             )
 
     def _resolve_load(self, load: Optional[str]) -> Optional[str]:
@@ -340,6 +363,7 @@ class SubcloudPickerKeywords(BaseKeyword):
         lab_type: Optional[LabTypeEnum],
         present_in_config: bool,
         configured_names: Optional[List[str]],
+        backup_status: Optional[str] = None,
     ) -> Tuple[List[Tuple[DcManagerSubcloudListObject, Optional[DcManagerSubcloudShowObject]]], List[Tuple[str, str]]]:
         """Apply the filters that only require ``dcmanager subcloud list``.
 
@@ -380,6 +404,14 @@ class SubcloudPickerKeywords(BaseKeyword):
                     (
                         name,
                         f"sync={sc.get_sync()} (expected {expected_sync})",
+                    )
+                )
+                continue
+            if backup_status is not None and sc.get_backup_status() != backup_status:
+                rejections.append(
+                    (
+                        name,
+                        f"backup_status={sc.get_backup_status()} (expected {backup_status})",
                     )
                 )
                 continue
@@ -580,6 +612,7 @@ def pick_subcloud_with_fallback(
     lab_type: Optional[LabTypeEnum] = None,
     present_in_config: bool = True,
     multiple_releases: str = None,
+    backup_status: Optional[str] = None,
 ) -> Tuple[SSHConnection, "SubcloudPickResult"]:
     """Pick a subcloud with automatic fallback to secondary system controller.
 
@@ -599,6 +632,7 @@ def pick_subcloud_with_fallback(
         lab_type (Optional[LabTypeEnum]): Lab type filter (SIMPLEX, DUPLEX).
         present_in_config (bool): Whether subcloud must be in lab config.
         multiple_releases (str): If defined, it will search for an another release available.
+        backup_status (Optional[str]): Backup status filter (e.g. "complete-central", "complete-local").
 
     Returns:
         Tuple[SSHConnection, SubcloudPickResult]: The SSH connection to the system
@@ -618,7 +652,8 @@ def pick_subcloud_with_fallback(
             load=load,
             lab_type=lab_type,
             present_in_config=present_in_config,
-            multiple_releases=multiple_releases
+            multiple_releases=multiple_releases,
+            backup_status=backup_status,
         )
         return system_controller_ssh, result
     except KeywordException:
@@ -635,5 +670,6 @@ def pick_subcloud_with_fallback(
             lab_type=lab_type,
             present_in_config=present_in_config,
             multiple_releases=multiple_releases,
+            backup_status=backup_status,
         )
         return system_controller_ssh, result

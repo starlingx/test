@@ -1,6 +1,12 @@
+from typing import List, Tuple
+
+from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
+from framework.validation.validation import validate_equals
 from keywords.base_keyword import BaseKeyword
 from keywords.cloud_platform.command_wrappers import source_openrc
+from keywords.cloud_platform.dcmanager.dcmanager_subcloud_update_keywords import DcManagerSubcloudUpdateKeywords
+from keywords.cloud_platform.dcmanager.objects.dcmanger_subcloud_list_availability_enum import DcManagerSubcloudListAvailabilityEnum
 from keywords.cloud_platform.dcmanager.objects.dcmanager_subcloud_group_list_subcloud_output import (
     DcmanagerSubcloudGroupListSubcloudOutput,
 )
@@ -10,6 +16,9 @@ from keywords.cloud_platform.dcmanager.objects.dcmanager_subcloud_group_output i
 from keywords.cloud_platform.dcmanager.objects.dcmanager_subcloud_group_show_output import (
     DcmanagerSubcloudGroupShowOutput,
 )
+from keywords.cloud_platform.dcmanager.subcloud_picker_keywords import SubcloudPickerKeywords, pick_subcloud_with_fallback
+
+DEFAULT_GROUP_NAME = "Default"
 
 
 class DcmanagerSubcloudGroupKeywords(BaseKeyword):
@@ -112,3 +121,54 @@ class DcmanagerSubcloudGroupKeywords(BaseKeyword):
         output = self.ssh_connection.send(command)
         self.validate_success_return_code(self.ssh_connection)
         return DcmanagerSubcloudGroupListSubcloudOutput(output)
+
+    def dcmanager_subcloud_group_add_with_subclouds(self, group_name: str, subcloud_names: List[str]) -> None:
+        """Add a subcloud group and assign the given subclouds to it.
+
+        Args:
+            group_name (str): Name of the group to create.
+            subcloud_names (List[str]): Subclouds to assign to the group.
+        """
+        get_logger().log_info(f"Create subcloud group '{group_name}'")
+        self.dcmanager_subcloud_group_add(group_name=group_name)
+
+        for subcloud_name in subcloud_names:
+            get_logger().log_info(f"Assign subcloud '{subcloud_name}' to group '{group_name}'")
+            DcManagerSubcloudUpdateKeywords(self.ssh_connection).dcmanager_subcloud_update(subcloud_name=subcloud_name, update_attr="group", update_value=group_name)
+
+        assigned = sorted([sc.get_name() for sc in self.get_dcmanager_subcloud_group_list_subclouds(group_name).get_dcmanager_subcloud_group_list_subclouds()])
+        validate_equals(assigned, sorted(subcloud_names), f"Subclouds assigned to group '{group_name}'")
+
+    def dcmanager_subcloud_group_delete_and_reset(self, group_name: str, subcloud_names: List[str]) -> None:
+        """Reset subclouds to the Default group and delete the given group.
+
+        Args:
+            group_name (str): Name of the group to delete.
+            subcloud_names (List[str]): Subclouds to move back to the Default group.
+        """
+        for subcloud_name in subcloud_names:
+            get_logger().log_teardown_step(f"Reset subcloud '{subcloud_name}' to '{DEFAULT_GROUP_NAME}' group")
+            DcManagerSubcloudUpdateKeywords(self.ssh_connection).dcmanager_subcloud_update(subcloud_name=subcloud_name, update_attr="group", update_value=DEFAULT_GROUP_NAME)
+
+        get_logger().log_teardown_step(f"Delete subcloud group '{group_name}'")
+        self.dcmanager_subcloud_group_delete(group_name)
+
+    @staticmethod
+    def dcmanager_subcloud_group_build_from_load(load: str, group_name: str) -> Tuple[SSHConnection, List[str]]:
+        """Select online subclouds matching a load and create a group from them.
+
+        Picks all online subclouds running the given load (with secondary system
+        controller fallback), then creates the group and assigns those members.
+
+        Args:
+            load (str): Software version filter ("N", "N-1", "N-2").
+            group_name (str): Name of the group to create.
+
+        Returns:
+            Tuple[SSHConnection, List[str]]: The system controller SSH connection
+                owning the members and the sorted member subcloud names.
+        """
+        system_controller_ssh, _ = pick_subcloud_with_fallback(availability=DcManagerSubcloudListAvailabilityEnum.ONLINE, load=load)
+        members = sorted([result.get_name() for result in SubcloudPickerKeywords(system_controller_ssh).pick_all(availability=DcManagerSubcloudListAvailabilityEnum.ONLINE, load=load)])
+        DcmanagerSubcloudGroupKeywords(system_controller_ssh).dcmanager_subcloud_group_add_with_subclouds(group_name, members)
+        return system_controller_ssh, members
