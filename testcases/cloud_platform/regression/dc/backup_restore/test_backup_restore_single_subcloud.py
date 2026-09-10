@@ -1,26 +1,25 @@
-"""DC Subcloud Backup Restore tests.
+"""DC Subcloud Backup Restore - Single Subcloud tests.
 
-Verifies restore of a subcloud backup from central and local storage for single
-subclouds and subcloud groups, across simplex and duplex topologies and
-active/N-1/N-2 loads. Covers install and no-install restores, restore-values
-overrides, auto-restore, factory-restore, and restores executed from the standby
-system controller. Duplex members are powered off automatically by the restore
-keyword before an install-based restore.
+Verifies restore of a single subcloud backup from central and local storage,
+across simplex and duplex topologies and active/N-1/N-2 loads. Covers install
+and no-install restores, restore-values overrides, auto-restore, factory-restore,
+and restores executed from the standby system controller. Duplex subclouds are
+powered off automatically by the restore keyword before an install-based restore.
+Each restore is followed by a manage and a subcloud cluster health check.
 
 Prerequisites:
     - System controller accessible (--lab_config_file)
     - A backup must already exist for the target subcloud (produced by the
       corresponding backup-create tests)
     - At least one managed, online subcloud matching the target release/topology
-    - At least two subclouds for the group tests
 
 Run with:
-    pytest starlingx/testcases/cloud_platform/regression/dc/backup_restore/test_backup_restore.py \
+    pytest starlingx/testcases/cloud_platform/regression/dc/backup_restore/test_backup_restore_single_subcloud.py \
         --lab_config_file=<LAB_CONFIG> -v
 
 Markers:
     - @mark.subcloud_lab_is_simplex / _is_duplex: topology gating
-    - @mark.lab_has_subcloud / @mark.lab_has_min_2_subclouds: subcloud requirements
+    - @mark.lab_has_subcloud: requires at least one subcloud
 """
 
 from pytest import mark
@@ -29,7 +28,6 @@ from config.lab.objects.lab_type_enum import LabTypeEnum
 from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_backup_keywords import DcManagerSubcloudBackupKeywords
-from keywords.cloud_platform.dcmanager.dcmanager_subcloud_group_keywords import DcmanagerSubcloudGroupKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_manager_keywords import DcManagerSubcloudManagerKeywords
 from keywords.cloud_platform.dcmanager.objects.dcmanger_subcloud_list_availability_enum import DcManagerSubcloudListAvailabilityEnum
 from keywords.cloud_platform.dcmanager.subcloud_picker_keywords import pick_subcloud_with_fallback
@@ -38,8 +36,6 @@ from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKey
 from keywords.cloud_platform.system.host.system_host_swact_keywords import SystemHostSwactKeywords
 from keywords.cloud_platform.version_info.cloud_platform_version_manager import CloudPlatformVersionManagerClass
 from keywords.files.file_keywords import FileKeywords
-
-TEST_GROUP_NAME = "TestGroup"
 
 
 # --- Post-Restore Helpers ---
@@ -645,42 +641,3 @@ def test_backup_restore_local_single_simplex_subcloud_n_minus_2_release_from_sys
     backup_release = str(CloudPlatformVersionManagerClass().get_second_last_major_release())
     DcManagerSubcloudBackupKeywords(system_controller_ssh).restore_local_backup(result.get_name(), backup_release)
     manage_and_validate_health(system_controller_ssh, result.get_name())
-
-
-# --- Group Restore ---
-
-
-@mark.p2
-@mark.lab_has_min_2_subclouds
-def test_restore_group_central_backup(request):
-    """Restore a subcloud group from central backups running N release.
-
-    Test Steps:
-        1. Select online subclouds running N release and assign them to a group
-        2. Restore the group from central backups and verify all members complete
-
-    Teardown:
-        - Reset members to Default group and delete the test group
-    """
-    system_controller_ssh, members = DcmanagerSubcloudGroupKeywords.dcmanager_subcloud_group_build_from_load("N", TEST_GROUP_NAME)
-    backup_release = str(CloudPlatformVersionManagerClass().get_sw_version())
-    request.addfinalizer(lambda: DcmanagerSubcloudGroupKeywords(system_controller_ssh).dcmanager_subcloud_group_delete_and_reset(TEST_GROUP_NAME, members))
-    DcManagerSubcloudBackupKeywords(system_controller_ssh).restore_group_central_backup(TEST_GROUP_NAME, members, backup_release)
-
-
-@mark.p2
-@mark.lab_has_min_2_subclouds
-def test_restore_group_local_backup(request):
-    """Restore a subcloud group from local backups running N release.
-
-    Test Steps:
-        1. Select online subclouds running N release and assign them to a group
-        2. Restore the group from local backups and verify all members complete
-
-    Teardown:
-        - Reset members to Default group and delete the test group
-    """
-    system_controller_ssh, members = DcmanagerSubcloudGroupKeywords.dcmanager_subcloud_group_build_from_load("N", TEST_GROUP_NAME)
-    backup_release = str(CloudPlatformVersionManagerClass().get_sw_version())
-    request.addfinalizer(lambda: DcmanagerSubcloudGroupKeywords(system_controller_ssh).dcmanager_subcloud_group_delete_and_reset(TEST_GROUP_NAME, members))
-    DcManagerSubcloudBackupKeywords(system_controller_ssh).restore_group_local_backup(TEST_GROUP_NAME, members, backup_release)
