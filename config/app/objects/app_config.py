@@ -18,6 +18,11 @@ class AppConfig:
         self.platform_integ_app_tarball = app_dict["platform_integ_app_tarball"]
         self.metrics_server_app_tarball = app_dict["metrics_server_app_tarball"]
         self.metrics_server_app_tarball_n2 = "fake_path"
+
+        self.dell_storage_app_tarball = "fake_path"
+        if "dell_storage_app_tarball" in app_dict:
+            self.dell_storage_app_tarball = app_dict["dell_storage_app_tarball"]
+
         if "metrics_server_app_tarball_n2" in app_dict:
             self.metrics_server_app_tarball_n2 = app_dict["metrics_server_app_tarball_n2"]
 
@@ -57,6 +62,10 @@ class AppConfig:
         if "platform_integ_apps_app_name" in app_dict:
             self.platform_integ_apps_app_name = app_dict["platform_integ_apps_app_name"]
 
+        self.dell_storage_app_name = "dell-storage"
+        if "dell_storage_app_name" in app_dict:
+            self.dell_storage_app_name = app_dict["dell_storage_app_name"]
+
         self.sriov_fec_operator_app_name = "sriov-fec-operator"
         if "sriov_fec_operator_app_name" in app_dict:
             self.sriov_fec_operator_app_name = app_dict["sriov_fec_operator_app_name"]
@@ -68,10 +77,6 @@ class AppConfig:
         self.rook_ceph_app_name = "rook-ceph"
         if "rook_ceph_app_name" in app_dict:
             self.rook_ceph_app_name = app_dict["rook_ceph_app_name"]
-
-        self.dell_storage_app_name = "dell-storage"
-        if "dell_storage_app_name" in app_dict:
-            self.dell_storage_app_name = app_dict["dell_storage_app_name"]
 
         self.rook_ceph_app_tarball = "fake_path"
         if "rook_ceph_app_tarball" in app_dict:
@@ -203,6 +208,16 @@ class AppConfig:
         """
         return self.platform_integ_app_tarball
 
+    def get_dell_storage_app_tarball(self) -> str:
+        """
+        Getter for dell-storage app tarball
+
+        Returns:
+            str: the dell-storage app tarball
+
+        """
+        return self.dell_storage_app_tarball
+
     def get_metrics_server_app_tarball(self) -> str:
         """
         Getter for metrics server app tarball
@@ -252,16 +267,6 @@ class AppConfig:
 
         """
         return self.rook_ceph_app_name
-
-    def get_dell_storage_app_name(self) -> str:
-        """
-        Getter for dell-storage app name.
-
-        Returns:
-            str: the dell-storage app name
-
-        """
-        return self.dell_storage_app_name
 
     def get_rook_ceph_app_tarball(self) -> str:
         """
