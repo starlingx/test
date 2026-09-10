@@ -16,6 +16,7 @@ from config.rest_api.objects.rest_api_config import RestAPIConfig
 from config.security.objects.security_config import SecurityConfig
 from config.snmp.objects.snmp_config import SNMPConfig
 from config.storage.objects.storage_config import StorageConfig
+from config.app_upgrade_compat.objects.app_upgrade_compat_config import AppUpgradeCompatConfig
 from config.usm.objects.usm_config import USMConfig
 from config.web.objects.web_config import WebConfig
 from framework.resources.resource_finder import get_stx_resource_path
@@ -40,6 +41,7 @@ class ConfigurationManagerClass:
         self.security_config: SecurityConfig = None
         self.snmp_config: SNMPConfig = None
         self.usm_config: USMConfig = None
+        self.app_upgrade_compat_config: AppUpgradeCompatConfig = None
         self.app_config: AppConfig = None
         self.configuration_locations_manager = None
         self.openstack_config: OpenstackConfig = None
@@ -146,6 +148,10 @@ class ConfigurationManagerClass:
         if not kubernetes_upgrade_config_file:
             kubernetes_upgrade_config_file = get_stx_resource_path("config/kubernetes_upgrade/files/default.json5")
 
+        app_upgrade_compat_config_file = config_file_locations.get_app_upgrade_compat_config_file()
+        if not app_upgrade_compat_config_file:
+            app_upgrade_compat_config_file = get_stx_resource_path("config/app_upgrade_compat/files/default.json5")
+
         cyclictest_config_file = config_file_locations.get_cyclictest_config_file()
         if not cyclictest_config_file:
             cyclictest_config_file = get_stx_resource_path("config/cyclictest/files/default.json5")
@@ -170,6 +176,7 @@ class ConfigurationManagerClass:
                 self.kof_config = KofConfig(kof_config_file)
                 self.backup_restore_config = BackupRestoreConfig(backup_restore_config_file)
                 self.kubernetes_upgrade_config = KubernetesUpgradeConfig(kubernetes_upgrade_config_file)
+                self.app_upgrade_compat_config = AppUpgradeCompatConfig(app_upgrade_compat_config_file)
                 self.cyclictest_config = CyclictestConfig(cyclictest_config_file)
                 self.loaded = True
             except FileNotFoundError as e:
@@ -353,6 +360,16 @@ class ConfigurationManagerClass:
 
         """
         return self.kubernetes_upgrade_config
+
+    def get_app_upgrade_compat_config(self) -> AppUpgradeCompatConfig:
+        """
+        Getter for application upgrade compatibility config
+
+        Returns:
+            AppUpgradeCompatConfig: the application upgrade compatibility config
+
+        """
+        return self.app_upgrade_compat_config
 
     def get_cyclictest_config(self) -> CyclictestConfig:
         """

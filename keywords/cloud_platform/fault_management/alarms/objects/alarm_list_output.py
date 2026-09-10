@@ -47,6 +47,26 @@ class AlarmListOutput:
         """
         return [alarm.get_alarm_id() for alarm in self.alarms]
 
+    def get_alarms_excluding(self, excluded_alarm_ids: list[str] = None) -> list[AlarmListObject]:
+        """
+        Return the alarms whose alarm ID is not in the excluded list.
+
+        Callers that need to know whether anything is wrong usually have a set of alarms that are
+        expected in their situation and must not count: an open software deploy raises alarms by
+        design, and a host that has just been unlocked reports its configuration as out of date.
+        Filtering here keeps that decision with the alarm data instead of repeating a comprehension
+        in every caller.
+
+        Args:
+            excluded_alarm_ids (list[str]): Alarm IDs to leave out, for example ['900.007'].
+                Defaults to excluding nothing, which returns every alarm.
+
+        Returns:
+            list[AlarmListObject]: The alarms that were not excluded.
+        """
+        excluded = set(excluded_alarm_ids or [])
+        return [alarm for alarm in self.alarms if str(alarm.get_alarm_id()) not in excluded]
+
     @staticmethod
     def is_new_alarm_id_since(alarm_ids_before: list[str], alarm_ids_after: list[str]) -> bool:
         """

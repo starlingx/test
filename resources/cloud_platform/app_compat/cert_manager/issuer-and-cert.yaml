@@ -1,0 +1,27 @@
+# cert-manager issuance check: self-signed Issuer + Certificate.
+# The functional truth for cert-manager is that it actually issues a certificate. A self-signed
+# Issuer needs no external CA, ACME or network, so this is deterministic and has no CNI, registry
+# or hardware dependency. Namespace and object names are templated per phase so the check can run
+# several times in one test.
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: {{ issuer_name }}
+  namespace: {{ namespace }}
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ cert_name }}
+  namespace: {{ namespace }}
+spec:
+  secretName: {{ secret_name }}
+  issuerRef:
+    name: {{ issuer_name }}
+    kind: Issuer
+  commonName: stxtest.local
+  dnsNames:
+    - stxtest.local
+  duration: 24h0m0s

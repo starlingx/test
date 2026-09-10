@@ -419,6 +419,87 @@ class USMKeywords(BaseKeyword):
         output = output[-1] if output else ""
         return output
 
+    def _send_deploy_command(self, base_cmd: str, timeout: int, sudo: bool) -> str:
+        """Run a 'software deploy' command and return its last non-empty output line.
+
+        The recovery verbs below all follow the same shape: source openrc, send with or without
+        sudo using the configured timeout, assert the return code, then reduce the output to its
+        final line. Keeping that in one place means the individual verbs read as just their
+        command and their timeout.
+
+        Args:
+            base_cmd (str): the command to run, e.g. "software deploy abort".
+            timeout (int): command and reconnect timeout in seconds.
+            sudo (bool): flag to check if it needs to be run as sudo.
+
+        Returns:
+            str: the last non-empty line of the command output, or "" when there is none.
+        """
+        cmd = source_openrc(base_cmd)
+        if sudo:
+            output = self.ssh_connection.send_as_sudo(cmd, command_timeout=timeout, reconnect_timeout=timeout)
+        else:
+            output = self.ssh_connection.send(cmd, command_timeout=timeout, reconnect_timeout=timeout, get_pty=True)
+        self.validate_success_return_code(self.ssh_connection)
+        output = [line.strip() for line in output if line.strip()]
+        return output[-1] if output else ""
+
+    def software_deploy_abort(self, sudo: bool = False) -> str:
+        """
+        This method executes the command 'software deploy abort'.
+
+        Transitions a deploy in 'deploy-activate-done' to 'deploy-activate-rollback-pending'
+        (also flips From/To release in 'software deploy show'). This is the required first step
+        of a post-activate rollback (abort -> activate-rollback -> host-rollback -> delete);
+        'software deploy activate-rollback' is rejected unless the state is
+        activate-rollback-pending. Verified on hardware.
+
+        Args:
+            sudo (bool): flag to check if it needs to be run as sudo.
+
+        Returns:
+            str: software deploy abort output
+        """
+        timeout = self.usm_config.get_deploy_activate_timeout_sec()
+        return self._send_deploy_command("software deploy abort", timeout, sudo)
+
+    def software_deploy_activate_rollback(self, sudo: bool = False) -> str:
+        """
+        This method executes the command 'software deploy activate-rollback'.
+
+        Undoes an activation as part of a post-activate rollback. Requires the deploy to be in
+        'deploy-activate-rollback-pending' first (see software_deploy_abort); transitions through
+        'deploy-activate-rollback' to 'deploy-activate-rollback-done', after which hosts are
+        rolled back per host. Verified on hardware.
+
+        Args:
+            sudo (bool): flag to check if it needs to be run as sudo.
+
+        Returns:
+            str: software deploy activate-rollback output
+        """
+        timeout = self.usm_config.get_deploy_activate_timeout_sec()
+        return self._send_deploy_command("software deploy activate-rollback", timeout, sudo)
+
+    def software_deploy_host_rollback(self, host: str, sudo: bool = False) -> str:
+        """
+        This method executes the command 'software deploy host-rollback <host>'.
+
+        Rolls back a single host to the from-release after activate-rollback. The host must be
+        locked first (and, if it is the active controller, swacted off first). Hosts are rolled
+        back standby-first; when all reach rollback-deployed the deploy reaches
+        'deploy-host-rollback-done'. Verified on hardware.
+
+        Args:
+            host (str): host to be rolled back.
+            sudo (bool): flag to check if it needs to be run as sudo.
+
+        Returns:
+            str: software deploy host-rollback output
+        """
+        timeout = self.usm_config.get_deploy_host_timeout_sec()
+        return self._send_deploy_command(f"software deploy host-rollback {host}", timeout, sudo)
+
     def active_controller_host_upgrade(self) -> SystemHostObject:
         """
         This method returns the active controller host object for upgrade flows.

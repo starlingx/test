@@ -14,6 +14,7 @@ def test_default_usm_config():
     default_config = configuration_manager.get_usm_config()
     assert default_config is not None, "Default usm config wasn't loaded successfully"
     assert default_config.get_iso_path() == "/opt/software/starlingx.iso", "ISO path was incorrect"
+    assert default_config.get_app_applied_timeout_sec() == 2400, "Application applied timeout was incorrect"
 
 
 def test_custom_usm_config():

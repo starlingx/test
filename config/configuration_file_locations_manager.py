@@ -29,6 +29,7 @@ class ConfigurationFileLocationsManager:
         self.kof_config_file = None
         self.backup_restore_config_file = None
         self.kubernetes_upgrade_config_file = None
+        self.app_upgrade_compat_config_file = None
         self.cyclictest_config_file = None
 
     def set_configs_from_pytest_args(self, session: Session):
@@ -598,6 +599,25 @@ class ConfigurationFileLocationsManager:
             str: the kubernetes upgrade config file
         """
         return self.kubernetes_upgrade_config_file
+
+    def set_app_upgrade_compat_config_file(self, app_upgrade_compat_config_file: str):
+        """
+        Setter for application upgrade compatibility config file
+
+        Args:
+            app_upgrade_compat_config_file (str): the application upgrade compatibility config file
+
+        """
+        self.app_upgrade_compat_config_file = app_upgrade_compat_config_file
+
+    def get_app_upgrade_compat_config_file(self) -> str:
+        """
+        Getter for application upgrade compatibility config file
+
+        Returns:
+            str: the application upgrade compatibility config file
+        """
+        return self.app_upgrade_compat_config_file
 
     def set_cyclictest_config_file(self, cyclictest_config_file: str):
         """
