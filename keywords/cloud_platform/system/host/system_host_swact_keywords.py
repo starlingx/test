@@ -111,6 +111,27 @@ class SystemHostSwactKeywords(BaseKeyword):
 
         return False
 
+    def ensure_controller_is_active(self, target_controller: str) -> None:
+        """Ensure the given controller is the active controller, swacting if needed.
+
+        No-op when the target controller is already active. Otherwise a swact is
+        performed and the switchover is confirmed before returning. Works for any
+        two-controller system reachable through this SSH connection - system
+        controller, standalone system, or subcloud.
+
+        Args:
+            target_controller (str): Host name that must end up active (e.g. "controller-0").
+        """
+        active_controller = SystemHostListKeywords(self.ssh_connection).get_active_controller()
+        standby_controller = SystemHostListKeywords(self.ssh_connection).get_standby_controller()
+        if active_controller.get_host_name() == target_controller:
+            get_logger().log_info(f"{target_controller} is already the active controller, no swact needed")
+            return
+
+        get_logger().log_info(f"Swacting to make {target_controller} the active controller")
+        self.host_swact()
+        self.wait_for_swact(active_controller, standby_controller)
+
     def ensure_duplex_subcloud_c0_is_active(self, subcloud_name: str) -> None:
         """
         Swact a Duplex subcloud in case controller-1 is the active one.
