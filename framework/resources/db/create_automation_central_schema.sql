@@ -363,7 +363,6 @@ CREATE TABLE public.kpi_measure (
     kpi_id integer NOT NULL,
     kpi_baseline_id integer,
     kpi_value double precision NOT NULL,
-    exec_id uuid,
     is_displayed boolean DEFAULT true NOT NULL,
     test_case_result_id integer,
     session_id uuid,
