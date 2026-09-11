@@ -1,7 +1,10 @@
 import time
 
+from framework.exceptions.keyword_exception import KeywordException
+from framework.exceptions.validation_failure_error import ValidationFailureError
 from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
+from framework.validation.validation import validate_equals_with_retry
 from keywords.base_keyword import BaseKeyword
 from keywords.cloud_platform.command_wrappers import source_openrc
 from keywords.cloud_platform.swmanager.objects.swmanager_sw_deploy_strategy_create_config import SwManagerSwDeployStrategyCreateConfig
@@ -190,6 +193,68 @@ class SwManagerSwDeployStrategyKeywords(BaseKeyword):
                 time.sleep(retry_interval)
 
         return False
+
+    def wait_for_step(self, step_name: str, timeout: int = 1800) -> bool:
+        """Waits for the sw-deploy-strategy to reach a given orchestration step or stage.
+
+        Polls 'sw-deploy-strategy show' until the strategy is at ``step_name`` (matched
+        against current-step and current-stage), or the timeout elapses. A terminal
+        failure state ends the wait early.
+
+        Args:
+            step_name (str): The current-step or current-stage value to wait for.
+            timeout (int): The maximum time to wait in seconds.
+
+        Returns:
+            bool: True if the step/stage is reached, False on timeout or terminal failure.
+        """
+        reached_status = "reached"
+        waiting_status = "waiting"
+        terminal_failure_states = ["abort-failed", "apply-failed", "build-failed"]
+
+        def get_step_status() -> str:
+            """Fetches the strategy once and reports its progress toward step_name.
+
+            A transient connection/token error (expected while hosts reboot) is
+            reported as ``waiting`` so polling continues; other errors propagate.
+
+            Returns:
+                str: ``reached`` if at step_name, the terminal failure state if
+                failed, otherwise ``waiting``.
+            """
+            try:
+                strategy = self.get_sw_deploy_strategy_show(timeout=120).get_swmanager_sw_deploy_strategy_show()
+            except KeywordException as e:
+                if "connection error or temporary issue" in str(e).lower():
+                    get_logger().log_info(f"Transient connection issue while polling for step '{step_name}', treating as not-yet-reached and continuing to poll")
+                    return waiting_status
+                raise
+
+            current_state = strategy.get_state()
+            get_logger().log_info(f"Current stage: {strategy.get_current_stage()}, step: {strategy.get_current_step()} (state: {current_state}), waiting for: {step_name}")
+
+            if strategy.is_at_step(step_name) or strategy.is_at_stage(step_name):
+                return reached_status
+            if current_state in terminal_failure_states:
+                return current_state
+            return waiting_status
+
+        try:
+            validate_equals_with_retry(
+                get_step_status,
+                reached_status,
+                f"sw-deploy-strategy reaches step '{step_name}'",
+                timeout=timeout,
+                polling_sleep_time=5,
+                failure_values=terminal_failure_states,
+            )
+            return True
+        except ValidationFailureError:
+            get_logger().log_error(f"Strategy reached a terminal failure state before step '{step_name}'")
+            return False
+        except TimeoutError:
+            get_logger().log_error(f"Timed out after {timeout}s waiting for step '{step_name}'")
+            return False
 
     def is_delete_completed(self, output: list) -> bool:
         """Checks if delete operation is completed based on output.
