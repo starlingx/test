@@ -38,6 +38,7 @@ class USMConfig:
         self.remote_username = usm_dict.get("remote_username", "")
         self.remote_password = usm_dict.get("remote_password", "")
         self.snapshot = usm_dict.get("snapshot", False)
+        self.pre_upgrade_deploy = usm_dict.get("pre_upgrade_deploy", False)
         self.rollback = usm_dict.get("rollback", False)
         self.deploy_delete = usm_dict.get("deploy_delete", False)
         self.record_kpi = usm_dict.get("record_kpi", False)
@@ -335,6 +336,22 @@ class USMConfig:
             value (bool): True if snapshot enabled, False otherwise.
         """
         self.snapshot = value
+
+    def get_pre_upgrade_deploy(self) -> bool:
+        """Check if pre-upgrade-deploy flag is enabled.
+
+        Returns:
+            bool: True if pre-upgrade-deploy enabled, False otherwise.
+        """
+        return self.pre_upgrade_deploy
+
+    def set_pre_upgrade_deploy(self, value: bool) -> None:
+        """Set if pre-upgrade-deploy flag is enabled.
+
+        Args:
+            value (bool): True if pre-upgrade-deploy enabled, False otherwise.
+        """
+        self.pre_upgrade_deploy = value
 
     def get_rollback(self) -> bool:
         """Check if rollback is enabled.

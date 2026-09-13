@@ -267,7 +267,8 @@ class USMKeywords(BaseKeyword):
                 targets = release_ids[0] if release_ids else ""
         timeout = self.usm_config.get_deploy_start_timeout_sec()
         snapshot_flag = " --options snapshot=true" if self.usm_config.get_snapshot() else ""
-        base_cmd = f"software deploy start{snapshot_flag} {targets}"
+        pre_upgrade_deploy_flag = " --pre-upgrade-deploy" if self.usm_config.get_pre_upgrade_deploy() else ""
+        base_cmd = f"software deploy start{snapshot_flag}{pre_upgrade_deploy_flag} {targets}"
         cmd = source_openrc(base_cmd)
         if sudo:
             output = self.ssh_connection.send_as_sudo(cmd, command_timeout=timeout, reconnect_timeout=timeout)

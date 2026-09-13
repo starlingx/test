@@ -44,7 +44,8 @@ class SoftwareDeployPrecheckKeywords(BaseKeyword):
         """
         get_logger().log_info(f"Prechecking deploy software: {targets or '(selected metapackages)'}")
         snapshot_flag = " --options snapshot=true" if self.usm_config.get_snapshot() else ""
-        base_cmd = f"software deploy precheck{snapshot_flag} {targets}".strip()
+        pre_upgrade_deploy_flag = " --pre-upgrade-deploy" if self.usm_config.get_pre_upgrade_deploy() else ""
+        base_cmd = f"software deploy precheck{snapshot_flag}{pre_upgrade_deploy_flag} {targets}".strip()
         cmd = source_openrc(base_cmd)
         timeout = self.usm_config.get_precheck_timeout_sec()
 
