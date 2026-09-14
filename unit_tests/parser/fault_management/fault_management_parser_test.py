@@ -20,6 +20,18 @@ alarm_output_error = [
     '+----------+---------------------------+------------------------------------+----------+----------------------------+\n',
 ]
 
+# Four alarms whose IDs differ, so an exclusion can be seen to drop the right ones and keep the rest.
+alarm_output_many = [
+    '+----------+---------------------------+------------------------------------+----------+----------------------------+\n',
+    '| Alarm ID | Reason Text               | Entity ID                          | Severity | Time Stamp                 |\n',
+    '+----------+---------------------------+------------------------------------+----------+----------------------------+\n',
+    '| 250.001  | Configuration is out-of-d | host=controller-0                  | major    | 2026-09-11T11:20:52.071247 |\n',
+    '| 750.002  | Application Apply Failure | k8s_application=sriov-fec-operator | major    | 2026-09-11T11:21:52.071247 |\n',
+    '| 900.001  | Patching operation in pro | host=controller-0                  | minor    | 2026-09-11T11:22:52.071247 |\n',
+    '| 100.114  | NTP address is not reacha | host=controller-0.ntp              | minor    | 2026-09-11T11:23:52.071247 |\n',
+    '+----------+---------------------------+------------------------------------+----------+----------------------------+\n',
+]
+
 
 def test_fault_management_parser():
     """
@@ -86,3 +98,39 @@ def test_alarm_list_error():
         assert False, "There should be an exception when we parse the output."
     except KeywordException as e:
         assert e.args[0] == 'Number of headers and values do not match'
+
+
+def test_get_alarms_excluding_drops_the_listed_ids():
+    """
+    Tests that get_alarms_excluding returns only the alarms whose IDs were not excluded.
+    """
+    alarms = AlarmListOutput(alarm_output_many).get_alarms_excluding(['250.001', '900.001'])
+
+    assert [alarm.get_alarm_id() for alarm in alarms] == ['750.002', '100.114']
+
+
+def test_get_alarms_excluding_nothing_returns_every_alarm():
+    """
+    Tests that an empty exclusion list is not treated as "exclude everything".
+    """
+    alarms_output = AlarmListOutput(alarm_output_many)
+
+    assert len(alarms_output.get_alarms_excluding([])) == len(alarms_output.get_alarms())
+
+
+def test_get_alarms_excluding_defaults_to_excluding_nothing():
+    """
+    Tests that the argument is optional, so a caller that has nothing to exclude can omit it.
+    """
+    alarms_output = AlarmListOutput(alarm_output_many)
+
+    assert len(alarms_output.get_alarms_excluding()) == len(alarms_output.get_alarms())
+
+
+def test_get_alarms_excluding_an_absent_id_changes_nothing():
+    """
+    Tests that excluding an ID that is not raised is not an error and drops nothing.
+    """
+    alarms_output = AlarmListOutput(alarm_output_many)
+
+    assert len(alarms_output.get_alarms_excluding(['800.999'])) == len(alarms_output.get_alarms())

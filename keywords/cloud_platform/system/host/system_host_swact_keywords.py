@@ -150,3 +150,35 @@ class SystemHostSwactKeywords(BaseKeyword):
             if subcloud_active_controller.get_host_name() == "controller-1":
                 self.host_swact()
                 self.wait_for_swact(subcloud_active_controller, subcloud_standby_controller)
+
+    def swact_if_active(self, host: str) -> bool:
+        """
+        Swact away from the host if it is the active controller, and wait for the swact to settle.
+
+        A lock issued before the swact has fully completed races the role switch, so this waits
+        rather than returning as soon as the swact is accepted.
+
+        A single-controller system has no standby: get_standby_controller() raises there, the sole
+        controller cannot be swacted, and the deploy state machine locks it directly. So when there
+        is no standby the swact is skipped, which matches what the platform does on an all-in-one
+        simplex system.
+
+        Args:
+            host(str): the hostname about to be locked.
+
+        Returns:
+            bool: True when a swact was performed, False when none was needed or possible.
+
+        """
+        host_list = SystemHostListKeywords(self.ssh_connection)
+        if not host_list.is_active_controller(host):
+            return False
+        try:
+            standby = host_list.get_standby_controller()
+        except KeywordException:
+            get_logger().log_info(f"{host} is the active controller but no standby exists; skipping swact")
+            return False
+        active = host_list.get_active_controller()
+        self.host_swact()
+        self.wait_for_swact(active, standby)
+        return True

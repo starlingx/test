@@ -55,6 +55,7 @@ class USMConfig:
         self.deploy_host_timeout_sec = usm_dict.get("deploy_host_timeout_sec", 1800)
         self.deploy_activate_timeout_sec = usm_dict.get("deploy_activate_timeout_sec", 600)
         self.deploy_complete_timeout_sec = usm_dict.get("deploy_complete_timeout_sec", 900)
+        self.app_applied_timeout_sec = usm_dict.get("app_applied_timeout_sec", 2400)
         self.subcloud_group = usm_dict.get("subcloud_group", "Default")
         self.subcloud_name = usm_dict.get("subcloud_name", "None")
         self.max_parallel_subclouds = usm_dict.get("max_parallel_subclouds", "None")
@@ -690,6 +691,26 @@ class USMConfig:
             value (int): Maximum seconds to wait for software deploy complete to finish.
         """
         self.deploy_complete_timeout_sec = value
+
+    def get_app_applied_timeout_sec(self) -> int:
+        """Get timeout duration for a platform application to reach 'applied'.
+
+        Longer than the 300s default used at baseline because 'software deploy activate'
+        re-applies the platform applications, so an application can stay in 'applying' for
+        considerably more than five minutes without anything being wrong.
+
+        Returns:
+            int: Maximum seconds to wait for an application to report 'applied'.
+        """
+        return self.app_applied_timeout_sec
+
+    def set_app_applied_timeout_sec(self, value: int) -> None:
+        """Set timeout duration for a platform application to reach 'applied'.
+
+        Args:
+            value (int): Maximum seconds to wait for an application to report 'applied'.
+        """
+        self.app_applied_timeout_sec = value
 
     def get_license_server(self) -> str:
         """Get the server address where the license file is located.

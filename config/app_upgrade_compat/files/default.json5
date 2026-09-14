@@ -1,0 +1,24 @@
+{
+  // Release data for the application platform-upgrade compatibility tests.
+  //
+  // Data only. The test cases hold the steps and the assertions; nothing here decides what a test
+  // does, which probe it runs, or which phases it exercises. A test reads the release it is
+  // upgrading to, and the application version to expect on a given release, and nothing else.
+  //
+  // Versions are matched by containment, so keep them at the release prefix. Pinning a build
+  // suffix such as "26.03-90" fails a baseline check whenever a lab is reinstalled from a newer
+  // respin, before any upgrade work has started.
+  "to_version": "26.10",
+  "applications": {
+    "cert-manager": {
+      "app_name": "cert-manager",
+      "namespace": "cert-manager",
+      "versions": { "25.09": "25.09-", "26.03": "26.03-", "26.10": "26.10-" },
+    },
+    "portieris": {
+      "app_name": "portieris",
+      "namespace": "portieris",
+      "versions": { "25.09": "25.09-", "26.03": "26.03-", "26.10": "26.10-" },
+    },
+  },
+}

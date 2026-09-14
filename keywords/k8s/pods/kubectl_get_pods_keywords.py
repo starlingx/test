@@ -124,6 +124,49 @@ class KubectlGetPodsKeywords(K8sBaseKeyword):
 
         return pods_list_output
 
+    def get_pods_with_retry(self, reader=None, timeout: int = 60, poll_interval: int = 10) -> KubectlGetPodsOutput:
+        """
+        Return a pod read, retrying the read itself when it fails transiently.
+
+        A pod read is a single kubectl query whose return code the framework asserts with no retry.
+        Immediately after 'software deploy activate' the platform re-applies its own applications:
+        pods are being created and deleted, and the query has been observed to return non-zero in
+        that window and then succeed unchanged moments later. Retrying the read distinguishes "the
+        cluster was busy" from a genuine problem, which is the question the caller is asking.
+
+        Only the read is retried, not an assertion: a successful read is returned immediately and
+        the caller decides what it means. The window is short on purpose - a cluster that cannot
+        list pods for a minute is a real problem worth reporting rather than waiting out.
+
+        Args:
+            reader (callable): the read to perform, returning a KubectlGetPodsOutput. Defaults to
+                get_unhealthy_pods, the read this retry was introduced for.
+            timeout (int): seconds to keep retrying before giving up.
+            poll_interval (int): seconds to wait between attempts.
+
+        Returns:
+            KubectlGetPodsOutput: the output object from the first successful read.
+
+        Raises:
+            KeywordException: when every attempt within the window fails.
+        """
+        if reader is None:
+            reader = self.get_unhealthy_pods
+
+        deadline = time.time() + timeout
+        last_error = None
+        while time.time() < deadline:
+            try:
+                return reader()
+            except Exception as read_error:  # noqa: BLE001 - any read failure is worth one more try
+                last_error = read_error
+                get_logger().log_info(
+                    f"Reading the pod list failed ({read_error}); retrying in {poll_interval}s"
+                )
+                time.sleep(poll_interval)
+
+        raise KeywordException(f"Could not read the pod list: {last_error}")
+
     def wait_for_pod_max_age(self, pod_name: str, max_age: int, namespace: str = None, timeout: int = 600, check_interval: int = 20) -> bool:
         """
         Wait for the pod to be in a certain max_age.

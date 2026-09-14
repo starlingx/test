@@ -1,3 +1,4 @@
+from config.configuration_manager import ConfigurationManager
 from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
 from framework.validation.validation import validate_equals_with_retry
@@ -6,6 +7,7 @@ from keywords.cloud_platform.command_wrappers import source_openrc
 from keywords.cloud_platform.system.application.object.system_application_output import SystemApplicationOutput
 from keywords.cloud_platform.system.application.object.system_application_status_enum import SystemApplicationStatusEnum
 from keywords.cloud_platform.system.application.system_application_list_keywords import SystemApplicationListKeywords
+from keywords.cloud_platform.system.application.system_application_show_keywords import SystemApplicationShowKeywords
 from keywords.k8s.pods.kubectl_get_pods_keywords import KubectlGetPodsKeywords
 from keywords.python.string import String
 
@@ -159,3 +161,35 @@ class SystemApplicationApplyKeywords(BaseKeyword):
             application = system_application_list_keywords.get_system_application_list().get_application(app_name)
             return application.get_status() == SystemApplicationStatusEnum.APPLIED.value or application.get_status() == SystemApplicationStatusEnum.APPLY_FAILED.value
         return False
+
+    def wait_for_applied(self, app_name: str, timeout: int = None) -> None:
+        """
+        Wait for an application to reach 'applied', allowing for a post-activate auto-update.
+
+        system_application_apply(wait_for_applied=True) waits after issuing an apply, but nothing
+        waits for an application the platform is re-applying by itself: 'software deploy activate'
+        re-applies the platform applications, and a large one can take considerably longer than the
+        300s default that validate_app_status uses. This polls the reported status with a budget
+        long enough for that post-activate re-apply, so a run is not failed for being merely still
+        in progress.
+
+        Args:
+            app_name(str): the platform application name.
+            timeout(int): seconds to wait; defaults to the USM config's application applied timeout.
+
+        """
+        if timeout is None:
+            timeout = ConfigurationManager.get_usm_config().get_app_applied_timeout_sec()
+
+        show = SystemApplicationShowKeywords(self.ssh_connection)
+
+        def _status() -> str:
+            return show.get_system_application_show(app_name).get_system_application_object().get_status()
+
+        validate_equals_with_retry(
+            _status,
+            "applied",
+            f"Application '{app_name}' status is 'applied'",
+            timeout=timeout,
+            polling_sleep_time=30,
+        )

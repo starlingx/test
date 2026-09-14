@@ -57,6 +57,22 @@ class SystemHostListKeywords(BaseKeyword):
 
         return active_controller
 
+    def is_active_controller(self, host: str) -> bool:
+        """
+        Return True when the named host is currently the active controller.
+
+        The platform refuses to lock an active controller ("Can not lock an active controller"),
+        so a deploy has to know this before locking anything.
+
+        Args:
+            host(str): the hostname to check.
+
+        Returns:
+            bool: True when the host is the active controller.
+
+        """
+        return self.get_active_controller().get_host_name() == host
+
     def get_controllers(self) -> [SystemHostObject]:
         """
         Gets all controllers
