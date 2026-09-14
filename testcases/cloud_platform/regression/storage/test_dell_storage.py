@@ -13,12 +13,14 @@ from keywords.cloud_platform.linux.ostree_keywords import OstreeKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.cloud_platform.system.application.object.system_application_delete_input import SystemApplicationDeleteInput
 from keywords.cloud_platform.system.application.object.system_application_status_enum import SystemApplicationStatusEnum
+from keywords.cloud_platform.system.application.object.system_application_update_input import SystemApplicationUpdateInput
 from keywords.cloud_platform.system.application.system_application_abort_keywords import SystemApplicationAbortKeywords
 from keywords.cloud_platform.system.application.system_application_apply_keywords import SystemApplicationApplyKeywords
 from keywords.cloud_platform.system.application.system_application_delete_keywords import SystemApplicationDeleteKeywords
 from keywords.cloud_platform.system.application.system_application_list_keywords import SystemApplicationListKeywords
 from keywords.cloud_platform.system.application.system_application_remove_keywords import SystemApplicationRemoveInput, SystemApplicationRemoveKeywords
 from keywords.cloud_platform.system.application.system_application_show_keywords import SystemApplicationShowKeywords
+from keywords.cloud_platform.system.application.system_application_update_keywords import SystemApplicationUpdateKeywords
 from keywords.cloud_platform.system.application.system_application_upload_keywords import SystemApplicationUploadInput, SystemApplicationUploadKeywords
 from keywords.cloud_platform.system.helm.system_helm_chart_attribute_modify_keywords import SystemHelmChartAttributeModifyKeywords
 from keywords.cloud_platform.system.helm.system_helm_override_keywords import SystemHelmOverrideKeywords
@@ -174,6 +176,19 @@ def common_verify_dell_app_status_iscsi_sx(ssh_connection, dell_storage_app_stat
 
         get_logger().log_test_case_step(f"Apply {dell_storage_app_name}.")
         SystemApplicationApplyKeywords(ssh_connection).system_application_apply(dell_storage_app_name)
+
+
+def refresh_os_tree_keywords(ssh_connection: SSHConnection):
+    """Toggle the ostree lock so the new tarball version is picked up in the database.
+
+    Runs 'sudo touch /ostree/lock' followed by 'sudo rm -f /ostree/lock'.
+
+    Args:
+        ssh_connection (SSHConnection): SSH connection to the active controller.
+    """
+    ostree_keywords = OstreeKeywords(ssh_connection)
+    ostree_keywords.create_ostree_lock()
+    ostree_keywords.remove_ostree_lock()
 
 
 def verify_file_created_on_pod_exists(ssh_connection: SSHConnection, namespace: str, pod_name: str):
@@ -1689,6 +1704,228 @@ def test_auto_downgrade_dell_storage_nfs(request: FixtureRequest):
     ostree_keywords.create_ostree_lock()
     ostree_keywords.remove_ostree_lock()
 
+    get_logger().log_test_case_step("Make sure that the dell-storage application is applied after the downgrade")
+    validate_equals_with_retry(
+        lambda: SystemApplicationListKeywords(ssh_connection).get_system_application_list().get_application(dell_storage_app_name).get_status(),
+        "applied",
+        f"{dell_storage_app_name} applied status validation",
+        timeout=300,
+    )
+
+    rollback_app_info = SystemApplicationShowKeywords(ssh_connection).get_system_application_show(dell_storage_app_name)
+    rollback_app_status = rollback_app_info.get_system_application_object().get_status()
+    validate_equals(rollback_app_status, SystemApplicationStatusEnum.APPLIED.value, "dell-storage application should be applied after downgrade")
+
+    get_logger().log_test_case_step("Verify dell-storage app version has changed after rollback")
+    rollback_version = rollback_app_info.get_system_application_object().get_version()
+    validate_not_equals(current_version, rollback_version, "Application version should have changed after rollback")
+
+
+@mark.p2
+@mark.lab_is_simplex
+@mark.lab_dell_storage
+def test_manual_downgrade_dell_storage_iscsi(request: FixtureRequest):
+    """
+    Manually downgrade dell-storage application. Function for ISCSI protocol.
+
+    Test Steps:
+        - Check dell-storage app status.
+        - Remove tarball from application base path
+        - Copy tarball from /home/sysadmin to application base path
+        - Create resources test pod via yaml
+        - Check if test powerstoretest-0 pod is running
+        - Creating text.txt file inside of powerstoretest-0 pod
+        - Check if test.txt exists
+        - Execute system application-update with the tarball filename to update the dell-storage app
+        - Make sure that the dell-storage application is applied after the downgrade
+        - Verify dell-storage app version has changed after rollback
+
+    Args:
+        request (FixtureRequest): pytest request fixture for test setup and teardown
+    """
+
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    namespace = "dell-storage"
+    dell_storage_app_name = "dell-storage"
+    chart_name = "csi-powerstore"
+
+    def verify_dell_storage_pods_are_running(ssh_connection):
+        pod_prefix = "csi-powerstore"
+        get_pod_obj = KubectlGetPodsKeywords(ssh_connection)
+        pod_names = get_pod_obj.get_pods(namespace=namespace).get_unique_pod_matching_prefix(starts_with=pod_prefix)
+        pod_status = get_pod_obj.wait_for_pod_status(pod_names, "Running", namespace)
+        validate_equals(pod_status, True, f"Verify {pod_prefix} pods are running")
+
+        get_pod_obj = KubectlGetPodsKeywords(ssh_connection)
+        pod_status = get_pod_obj.wait_for_pod_status(pod_name, "Running", namespace)
+        validate_equals(pod_status, True, f"Verify {pod_name} pod is running")
+
+    def teardown():
+        ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+        host_lock_keywords = SystemHostLockKeywords(ssh_connection)
+        host_lock_keywords.wait_for_host_unlocked("controller-0", unlock_wait_timeout=3200)
+
+        get_logger().log_teardown_step("Clean up the test pod resources.")
+        KubectlFileDeleteKeywords(ssh_connection).delete_resources("/home/sysadmin/dell-storage-test-pod.yaml", ignore_not_found=True)
+
+        get_logger().log_teardown_step("Test- Teardown: Check if restore needed")
+
+        # An update/rollback that is interrupted (e.g. aborted) leaves the app in the
+        # transient 'recovering' state, and sysinv rejects abort/remove/apply while
+        # recovering. Wait for the app to settle into a terminal state before acting.
+        get_logger().log_teardown_step("Wait for dell-storage to leave transient state")
+        SystemApplicationListKeywords(ssh_connection).validate_app_status_in_list(dell_storage_app_name, ["applied", "apply-failed", "uploaded"], timeout=3600, polling_sleep_time=30)
+
+        # Check current version on system
+        current_app_info = SystemApplicationShowKeywords(ssh_connection).get_system_application_show(dell_storage_app_name)
+        system_version = current_app_info.get_system_application_object().get_version()
+
+        if system_version != current_version:
+            get_logger().log_teardown_step("Restoring original dell-storage version")
+
+            base_application_path = app_config.get_base_application_path()
+
+            # Capture the rolled-back version before wiping the app so its tarball can be cleaned up.
+            rollback_app_info = SystemApplicationShowKeywords(ssh_connection).get_system_application_show(dell_storage_app_name)
+            rollback_version = rollback_app_info.get_system_application_object().get_version()
+
+            # Wipe dell-storage completely: remove the release (if applied) and delete the
+            # app entry. Force both so a failed/transient state can't block the cleanup.
+            get_logger().log_teardown_step("Wipe dell-storage application (remove + delete)")
+            SystemApplicationRemoveKeywords(ssh_connection).cleanup_app_if_present(dell_storage_app_name, force_removal=True, force_deletion=True, timeout_in_seconds=300)
+            validate_equals(
+                SystemApplicationListKeywords(ssh_connection).is_app_present(dell_storage_app_name),
+                False,
+                f"{dell_storage_app_name} fully wiped before restore",
+            )
+
+            # Remove the rolled-back version tarball from the application base path.
+            FileKeywords(ssh_connection).delete_file(f"{base_application_path}dell-storage-{rollback_version}.tgz")
+
+            # Restore the original dell-storage version (e.g. 26.10) that was moved
+            # to /home/sysadmin before the rollback. Reference the exact tarball by
+            # the recorded original version so the correct file is restored.
+            original_tarball = f"dell-storage-{current_version}.tgz"
+
+            # Move the original version tarball from /home/sysadmin back to base_application_path
+            get_logger().log_teardown_step("Move original tarball to base application path")
+            FileKeywords(ssh_connection).move_file(f"/home/sysadmin/{original_tarball}", base_application_path, sudo=True)
+
+            refresh_os_tree_keywords(ssh_connection)
+
+            # Upload original version. 'system application-upload' expects a single
+            # concrete file path, not a glob.
+            try:
+                system_application_upload_input = SystemApplicationUploadInput()
+                system_application_upload_input.set_app_name(dell_storage_app_name)
+                system_application_upload_input.set_tar_file_path(f"{base_application_path}{original_tarball}")
+                SystemApplicationUploadKeywords(ssh_connection).system_application_upload(system_application_upload_input)
+                system_applications = SystemApplicationListKeywords(ssh_connection).get_system_application_list()
+                dell_storage_app_status = system_applications.get_application(dell_storage_app_name).get_status()
+            except Exception as e:
+                system_applications = SystemApplicationListKeywords(ssh_connection).get_system_application_list()
+                dell_storage_app_status = system_applications.get_application(dell_storage_app_name).get_status()
+                print(f"dell-storage is already uploaded {e}")
+
+            dell_storage_app_status = validate_equals_with_retry(
+                lambda: SystemApplicationListKeywords(ssh_connection).get_system_application_list().get_application(dell_storage_app_name).get_status(),
+                "uploaded",
+                f"{dell_storage_app_name} upload status validation",
+                timeout=300,
+            )
+
+            # Apply original version
+            common_verify_dell_app_status_iscsi_sx(ssh_connection, dell_storage_app_status, namespace, dell_storage_app_name, chart_name)
+
+        else:
+            get_logger().log_teardown_step("No restore needed - version unchanged")
+            # Copy original tarball from /home/sysadmin to base_application_path
+            get_logger().log_teardown_step("Move original tarball to base application path")
+            FileKeywords(ssh_connection).move_file("/home/sysadmin/dell-storage*.tgz", app_config.get_base_application_path(), sudo=True)
+
+            # Move rollback tarball from base_application_path to /home/sysadmin
+            get_logger().log_teardown_step("Move rollback tarball to /home/sysadmin")
+            FileKeywords(ssh_connection).move_file(app_config.get_base_application_path() + tarball_filename, "/home/sysadmin/", sudo=True)
+
+    request.addfinalizer(teardown)
+
+    get_logger().log_test_case_step(f"Check {dell_storage_app_name} app status.")
+    system_applications = SystemApplicationListKeywords(ssh_connection).get_system_application_list()
+    dell_storage_app_status = system_applications.get_application(dell_storage_app_name).get_status()
+    get_logger().log_info(f"{dell_storage_app_name} application is: {dell_storage_app_status}")
+
+    common_verify_dell_app_status_iscsi_sx(ssh_connection, dell_storage_app_status, namespace, dell_storage_app_name, chart_name)
+
+    # Record current version before rollback
+    get_logger().log_test_case_step("Record current dell-storage app version")
+    current_app_info = SystemApplicationShowKeywords(ssh_connection).get_system_application_show(dell_storage_app_name)
+    current_version = current_app_info.get_system_application_object().get_version()
+
+    # Validate tarball version differs from installed version
+    app_config = ConfigurationManager.get_app_config()
+    tarball_filename = app_config.get_dell_storage_app_tarball().split("/")[-1]
+    tarball_version = re.search(r"dell-storage-(.+)\.tgz", tarball_filename).group(1)
+    validate_not_equals(current_version, tarball_version, "Tarball version must differ from installed version")
+
+    # Transfer tarball from local machine to /home/sysadmin
+    get_logger().log_test_case_step("Transfer rollback tarball from local machine to /home/sysadmin")
+    app_config = ConfigurationManager.get_app_config()
+    tarball_filename = app_config.get_dell_storage_app_tarball().split("/")[-1]
+    temp_remote_path = f"/home/sysadmin/{tarball_filename}"
+    FileKeywords(ssh_connection).upload_file(app_config.get_dell_storage_app_tarball(), temp_remote_path)
+
+    # Mount /usr to be able to write the tarball
+    get_logger().log_test_case_step("Mount /usr with read-write permissions")
+    MountKeywords(ssh_connection).remount_read_write("/usr")
+
+    # Copy dell-storage*.tgz from base_application_path to /home/sysadmin
+    get_logger().log_test_case_step("Remove tarball from application base path")
+    FileKeywords(ssh_connection).move_file(f"{app_config.get_base_application_path()}dell-storage*.tgz", "/home/sysadmin/", sudo=True)
+
+    # Copy tarball from /home/sysadmin to base_application_path
+    get_logger().log_test_case_step("Copy tarball from /home/sysadmin to application base path")
+    FileKeywords(ssh_connection).move_file(temp_remote_path, app_config.get_base_application_path(), sudo=True)
+
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+
+    test_pod_yaml = "dell-storage-test-pod.yaml"
+    dell_storage_files = [test_pod_yaml]
+    for file_name in dell_storage_files:
+        local_path = get_stx_resource_path(f"resources/cloud_platform/storage/dell_storage/{file_name}")
+        remote_yaml_path = f"/home/sysadmin/{file_name}"
+        FileKeywords(ssh_connection).upload_file(local_path, remote_yaml_path, overwrite=True)
+
+    get_logger().log_test_case_step("Create resources test pod via yaml")
+    yaml_path = "/home/sysadmin/dell-storage-test-pod.yaml"
+    kubectl_create_pods_keyword = KubectlCreatePodsKeywords(ssh_connection)
+    kubectl_create_pods_keyword.create_from_yaml(yaml_path)
+
+    pod_name = "powerstoretest-0"
+    get_logger().log_test_case_step(f"Check if test {pod_name} pod is running")
+    verify_dell_storage_pods_are_running(ssh_connection)
+
+    get_logger().log_test_case_step(f"Creating text.txt file inside of {pod_name} pod")
+    kubeclt_exec_in_pods = KubectlExecInPodsKeywords(ssh_connection)
+    options = f"-it -n {namespace}"
+    cmd = "bash -c 'touch /data0/test.txt'"
+    kubeclt_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
+    validate_equals(ssh_connection.get_return_code(), 0, f"Write to {pod_name} pod success")
+
+    get_logger().log_info("sync pod")
+    cmd = "bash -c 'sync'"
+    kubeclt_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
+    validate_equals(ssh_connection.get_return_code(), 0, f"sync pod {pod_name} success")
+
+    get_logger().log_info("Check if test.txt exists")
+    verify_file_created_on_pod_exists(ssh_connection, namespace, pod_name)
+
+    # Manually downgrade dell-storage with the tarball via 'system application-update'
+    get_logger().log_test_case_step("Manually update dell-storage with tarball via system application-update")
+    system_application_update_input = SystemApplicationUpdateInput()
+    system_application_update_input.set_app_name(dell_storage_app_name)
+    system_application_update_input.set_tar_file_path(f"{app_config.get_base_application_path()}{tarball_filename}")
+    system_application_update_input.set_timeout_in_seconds(1800)
+    SystemApplicationUpdateKeywords(ssh_connection).system_application_update(system_application_update_input)
 
     get_logger().log_test_case_step("Make sure that the dell-storage application is applied after the downgrade")
     validate_equals_with_retry(
@@ -1697,6 +1934,228 @@ def test_auto_downgrade_dell_storage_nfs(request: FixtureRequest):
         f"{dell_storage_app_name} applied status validation",
         timeout=300,
     )
+
+    rollback_app_info = SystemApplicationShowKeywords(ssh_connection).get_system_application_show(dell_storage_app_name)
+    rollback_version = rollback_app_info.get_system_application_object().get_version()
+    rollback_app_status = rollback_app_info.get_system_application_object().get_status()
+    validate_equals(rollback_app_status, SystemApplicationStatusEnum.APPLIED.value, "dell-storage application should be applied after downgrade")
+
+    get_logger().log_test_case_step("Verify dell-storage app version has changed after rollback")
+    validate_not_equals(current_version, rollback_version, "Application version should have changed after rollback")
+
+
+
+@mark.p2
+@mark.lab_is_simplex
+@mark.lab_dell_storage
+def test_manual_downgrade_dell_storage_nfs(request: FixtureRequest):
+    """
+    Manually downgrade dell-storage application. Function for NFS protocol.
+
+    Test Steps:
+        - Check dell-storage app status.
+        - Remove tarball from application base path
+        - Copy tarball from /home/sysadmin to application base path
+        - Execute system application-update with the tarball filename to update the dell-storage app
+        - Make sure that the dell-storage application is applied after the downgrade
+        - Verify dell-storage app version has changed after rollback
+
+    Args:
+        request (FixtureRequest): pytest request fixture for test setup and teardown
+    """
+
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    namespace = "dell-storage"
+    dell_storage_app_name = "dell-storage"
+    chart_name = "csi-powerstore"
+
+    def verify_dell_storage_pods_are_running(ssh_connection):
+        pod_prefix = "csi-powerstore"
+        get_pod_obj = KubectlGetPodsKeywords(ssh_connection)
+        pod_names = get_pod_obj.get_pods(namespace=namespace).get_unique_pod_matching_prefix(starts_with=pod_prefix)
+        pod_status = get_pod_obj.wait_for_pod_status(pod_names, "Running", namespace)
+        validate_equals(pod_status, True, f"Verify {pod_prefix} pods are running")
+
+        get_pod_obj = KubectlGetPodsKeywords(ssh_connection)
+        pod_status = get_pod_obj.wait_for_pod_status(pod_name, "Running", namespace)
+        validate_equals(pod_status, True, f"Verify {pod_name} pod is running")
+
+    def teardown():
+        ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+        host_lock_keywords = SystemHostLockKeywords(ssh_connection)
+        host_lock_keywords.wait_for_host_unlocked("controller-0", unlock_wait_timeout=3200)
+
+        get_logger().log_teardown_step("Clean up the test pod resources.")
+        KubectlFileDeleteKeywords(ssh_connection).delete_resources("/home/sysadmin/dell-storage-test-nfs-pod.yaml", ignore_not_found=True)
+
+        get_logger().log_teardown_step("Test- Teardown: Check if restore needed")
+
+        # An update/rollback that is interrupted (e.g. aborted) leaves the app in the
+        # transient 'recovering' state, and sysinv rejects abort/remove/apply while
+        # recovering. Wait for the app to settle into a terminal state before acting.
+        get_logger().log_teardown_step("Wait for dell-storage to leave transient state")
+        SystemApplicationListKeywords(ssh_connection).validate_app_status_in_list(dell_storage_app_name, ["applied", "apply-failed", "uploaded"], timeout=3600, polling_sleep_time=30)
+
+        # Check current version on system
+        current_app_info = SystemApplicationShowKeywords(ssh_connection).get_system_application_show(dell_storage_app_name)
+        system_version = current_app_info.get_system_application_object().get_version()
+
+        if system_version != current_version:
+            get_logger().log_teardown_step("Restoring original dell-storage version")
+
+            base_application_path = app_config.get_base_application_path()
+
+            # Capture the rolled-back version before wiping the app so its tarball can be cleaned up.
+            rollback_app_info = SystemApplicationShowKeywords(ssh_connection).get_system_application_show(dell_storage_app_name)
+            rollback_version = rollback_app_info.get_system_application_object().get_version()
+
+            # Wipe dell-storage completely: remove the release (if applied) and delete the
+            # app entry. Force both so a failed/transient state can't block the cleanup.
+            get_logger().log_teardown_step("Wipe dell-storage application (remove + delete)")
+            SystemApplicationRemoveKeywords(ssh_connection).cleanup_app_if_present(dell_storage_app_name, force_removal=True, force_deletion=True, timeout_in_seconds=300)
+            validate_equals(
+                SystemApplicationListKeywords(ssh_connection).is_app_present(dell_storage_app_name),
+                False,
+                f"{dell_storage_app_name} fully wiped before restore",
+            )
+
+            # Remove the rolled-back version tarball from the application base path.
+            FileKeywords(ssh_connection).delete_file(f"{base_application_path}dell-storage-{rollback_version}.tgz")
+
+            # Restore the original dell-storage version (e.g. 26.10) that was moved
+            # to /home/sysadmin before the rollback. Reference the exact tarball by
+            # the recorded original version so the correct file is restored.
+            original_tarball = f"dell-storage-{current_version}.tgz"
+
+            # Move the original version tarball from /home/sysadmin back to base_application_path
+            get_logger().log_teardown_step("Move original tarball to base application path")
+            FileKeywords(ssh_connection).move_file(f"/home/sysadmin/{original_tarball}", base_application_path, sudo=True)
+
+            refresh_os_tree_keywords(ssh_connection)
+
+            # Upload original version. 'system application-upload' expects a single
+            # concrete file path, not a glob.
+            try:
+                system_application_upload_input = SystemApplicationUploadInput()
+                system_application_upload_input.set_app_name(dell_storage_app_name)
+                system_application_upload_input.set_tar_file_path(f"{base_application_path}{original_tarball}")
+                SystemApplicationUploadKeywords(ssh_connection).system_application_upload(system_application_upload_input)
+                system_applications = SystemApplicationListKeywords(ssh_connection).get_system_application_list()
+                dell_storage_app_status = system_applications.get_application(dell_storage_app_name).get_status()
+            except Exception as e:
+                system_applications = SystemApplicationListKeywords(ssh_connection).get_system_application_list()
+                dell_storage_app_status = system_applications.get_application(dell_storage_app_name).get_status()
+                print(f"dell-storage is already uploaded {e}")
+
+            dell_storage_app_status = validate_equals_with_retry(
+                lambda: SystemApplicationListKeywords(ssh_connection).get_system_application_list().get_application(dell_storage_app_name).get_status(),
+                "uploaded",
+                f"{dell_storage_app_name} upload status validation",
+                timeout=300,
+            )
+
+            # Apply original version
+            common_verify_dell_app_status_nfs_sx(ssh_connection, dell_storage_app_status, namespace, dell_storage_app_name, chart_name)
+
+        else:
+            get_logger().log_teardown_step("No restore needed - version unchanged")
+            # Copy original tarball from /home/sysadmin to base_application_path
+            get_logger().log_teardown_step("Move original tarball to base application path")
+            FileKeywords(ssh_connection).move_file("/home/sysadmin/dell-storage*.tgz", app_config.get_base_application_path(), sudo=True)
+
+            # Move rollback tarball from base_application_path to /home/sysadmin
+            get_logger().log_teardown_step("Move rollback tarball to /home/sysadmin")
+            FileKeywords(ssh_connection).move_file(app_config.get_base_application_path() + tarball_filename, "/home/sysadmin/", sudo=True)
+
+    request.addfinalizer(teardown)
+
+    get_logger().log_test_case_step(f"Check {dell_storage_app_name} app status.")
+    system_applications = SystemApplicationListKeywords(ssh_connection).get_system_application_list()
+    dell_storage_app_status = system_applications.get_application(dell_storage_app_name).get_status()
+    get_logger().log_info(f"{dell_storage_app_name} application is: {dell_storage_app_status}")
+
+    common_verify_dell_app_status_nfs_sx(ssh_connection, dell_storage_app_status, namespace, dell_storage_app_name, chart_name)
+
+    # Record current version before rollback
+    get_logger().log_test_case_step("Record current dell-storage app version")
+    current_app_info = SystemApplicationShowKeywords(ssh_connection).get_system_application_show(dell_storage_app_name)
+    current_version = current_app_info.get_system_application_object().get_version()
+
+    # Validate tarball version differs from installed version
+    app_config = ConfigurationManager.get_app_config()
+    tarball_filename = app_config.get_dell_storage_app_tarball().split("/")[-1]
+    tarball_version = re.search(r"dell-storage-(.+)\.tgz", tarball_filename).group(1)
+    validate_not_equals(current_version, tarball_version, "Tarball version must differ from installed version")
+
+    # Transfer tarball from local machine to /home/sysadmin
+    get_logger().log_test_case_step("Transfer rollback tarball from local machine to /home/sysadmin")
+    app_config = ConfigurationManager.get_app_config()
+    tarball_filename = app_config.get_dell_storage_app_tarball().split("/")[-1]
+    temp_remote_path = f"/home/sysadmin/{tarball_filename}"
+    FileKeywords(ssh_connection).upload_file(app_config.get_dell_storage_app_tarball(), temp_remote_path)
+
+    # Mount /usr to be able to write the tarball
+    get_logger().log_test_case_step("Mount /usr with read-write permissions")
+    MountKeywords(ssh_connection).remount_read_write("/usr")
+
+    # Copy dell-storage*.tgz from base_application_path to /home/sysadmin
+    get_logger().log_test_case_step("Remove tarball from application base path")
+    FileKeywords(ssh_connection).move_file(f"{app_config.get_base_application_path()}dell-storage*.tgz", "/home/sysadmin/", sudo=True)
+
+    # Copy tarball from /home/sysadmin to base_application_path
+    get_logger().log_test_case_step("Copy tarball from /home/sysadmin to application base path")
+    FileKeywords(ssh_connection).move_file(temp_remote_path, app_config.get_base_application_path(), sudo=True)
+
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+
+    test_pod_yaml = "dell-storage-test-nfs-pod.yaml"
+    dell_storage_files = [test_pod_yaml]
+    for file_name in dell_storage_files:
+        local_path = get_stx_resource_path(f"resources/cloud_platform/storage/dell_storage/{file_name}")
+        remote_yaml_path = f"/home/sysadmin/{file_name}"
+        FileKeywords(ssh_connection).upload_file(local_path, remote_yaml_path, overwrite=True)
+
+    get_logger().log_test_case_step("Create resources test pod via yaml")
+    yaml_path = "/home/sysadmin/dell-storage-test-nfs-pod.yaml"
+    kubectl_create_pods_keyword = KubectlCreatePodsKeywords(ssh_connection)
+    kubectl_create_pods_keyword.create_from_yaml(yaml_path)
+
+    pod_name = "powerstoretest-0"
+    get_logger().log_test_case_step(f"Check if test {pod_name} pod is running")
+    verify_dell_storage_pods_are_running(ssh_connection)
+
+    get_logger().log_test_case_step(f"Creating text.txt file inside of {pod_name} pod")
+    kubeclt_exec_in_pods = KubectlExecInPodsKeywords(ssh_connection)
+    options = f"-it -n {namespace}"
+    cmd = "bash -c 'touch /data0/test.txt'"
+    kubeclt_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
+    validate_equals(ssh_connection.get_return_code(), 0, f"Write to {pod_name} pod success")
+
+    get_logger().log_info("sync pod")
+    cmd = "bash -c 'sync'"
+    kubeclt_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
+    validate_equals(ssh_connection.get_return_code(), 0, f"sync pod {pod_name} success")
+
+    get_logger().log_info("Check if test.txt exists")
+    verify_file_created_on_pod_exists(ssh_connection, namespace, pod_name)
+
+    # Manually downgrade dell-storage with the tarball via 'system application-update'
+    get_logger().log_test_case_step("Manually update dell-storage with tarball via system application-update")
+    system_application_update_input = SystemApplicationUpdateInput()
+    system_application_update_input.set_app_name(dell_storage_app_name)
+    system_application_update_input.set_tar_file_path(f"{app_config.get_base_application_path()}{tarball_filename}")
+    system_application_update_input.set_timeout_in_seconds(1800)
+    SystemApplicationUpdateKeywords(ssh_connection).system_application_update(system_application_update_input)
+
+    get_logger().log_test_case_step("Make sure that the dell-storage application is applied after the downgrade")
+    validate_equals_with_retry(
+        lambda: SystemApplicationListKeywords(ssh_connection).get_system_application_list().get_application(dell_storage_app_name).get_status(),
+        "applied",
+        f"{dell_storage_app_name} applied status validation",
+        timeout=300,
+    )
+
+    refresh_os_tree_keywords(ssh_connection)
 
     rollback_app_info = SystemApplicationShowKeywords(ssh_connection).get_system_application_show(dell_storage_app_name)
     rollback_app_status = rollback_app_info.get_system_application_object().get_status()
