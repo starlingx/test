@@ -1,4 +1,6 @@
+from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
+from keywords.files.file_keywords import FileKeywords
 from keywords.k8s.k8s_base_keyword import K8sBaseKeyword
 
 
@@ -28,6 +30,14 @@ class KubectlFileDeleteKeywords(K8sBaseKeyword):
         Returns:
             str: The output.
         """
+        # 'kubectl delete -f' fails with a non-zero return code when the manifest file
+        # itself is missing. '--ignore-not-found' only ignores absent Kubernetes
+        # resources, not an absent '-f' file. When the caller asked to ignore
+        # not-found, treat a missing manifest file as nothing-to-delete.
+        if ignore_not_found and not FileKeywords(self.ssh_connection).file_exists(file_path):
+            get_logger().log_info(f"Manifest file {file_path} does not exist, skipping delete (ignore_not_found=True).")
+            return ""
+
         cmd = f"kubectl delete -f {file_path}"
 
         if not validate:

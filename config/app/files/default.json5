@@ -9,7 +9,8 @@
   metrics_server_app_tarball: "fake_path",
   metrics_server_app_tarball_n2: "fake_path",
   rook_ceph_app_tarball: "fake_path",
-
+  dell_storage_app_tarball: "fake_path",
+  dell_storage_rollback_version: "",
   // Application tarball used for OIDC upload/write tests
   oidc_test_app_tarball: "auditd",
 
@@ -26,7 +27,6 @@
   //  platform_integ_apps_app_name: "",
   //  sriov_fec_operator_app_name: "",
   //  rook_ceph_app_name: "",
-  //  dell_storage_app_name: "",
   //  ptp_notification_app_name: "",
   //  nginx_ingress_controller_name: "",
   //  cert_manager_name: "",
