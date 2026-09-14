@@ -17,6 +17,7 @@ class WebConfig:
         web_dict = json5.load(json_data)
         self.run_headless = web_dict['run_headless']
         self.start_maximized = web_dict['start-maximized']
+        self.window_size = web_dict['window_size']
 
     def get_run_headless(self) -> bool:
         """
@@ -34,3 +35,15 @@ class WebConfig:
         """
         return self.start_maximized
 
+    def get_window_size(self) -> str:
+        """
+        Getter for window_size; the browser window size as "WIDTH,HEIGHT".
+
+        Required for headless runs, where the browser otherwise defaults to an
+        800x600 viewport and renders responsive layouts differently.
+
+        Returns:
+            str: Window size as "WIDTH,HEIGHT" (e.g. "1920,1080").
+
+        """
+        return self.window_size

@@ -32,9 +32,12 @@ class WebDriverCore:
         """
         chrome_options = selenium.webdriver.chrome.options.Options()
         chrome_options.add_argument("--ignore-certificate-errors")
-        if ConfigurationManager.get_web_config().get_run_headless():
+        web_config = ConfigurationManager.get_web_config()
+        if web_config.get_run_headless():
             chrome_options.add_argument("--headless")
-        if ConfigurationManager.get_web_config().get_start_maximized():
+            if web_config.get_window_size():
+                chrome_options.add_argument(f"--window-size={web_config.get_window_size()}")
+        if web_config.get_start_maximized():
             chrome_options.add_argument("--start-maximized")
         self.driver = webdriver.Chrome(options=chrome_options)
 
