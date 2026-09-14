@@ -2,5 +2,8 @@
 	// Set to true if we want to run web tests in headless mode. If set to false, the browser will be launched to run the UI tests.
 	"run_headless": true,
 	"start-maximized": true,
+	// Browser window size as "WIDTH,HEIGHT". Applied to the browser on startup.
+	// This is required for headless runs: headless Chrome ignores start-maximized
+	"window_size": "1920,1080",
 
 }
