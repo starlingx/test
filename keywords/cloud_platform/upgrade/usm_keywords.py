@@ -9,6 +9,7 @@ from keywords.base_keyword import BaseKeyword
 from keywords.cloud_platform.command_wrappers import source_openrc
 from keywords.cloud_platform.system.host.objects.system_host_object import SystemHostObject
 from keywords.cloud_platform.system.host.system_host_list_keywords import SystemHostListKeywords
+from keywords.cloud_platform.system.host.system_host_lock_keywords import SystemHostLockKeywords
 from keywords.cloud_platform.upgrade.objects.software_upload_output import SoftwareUploadOutput
 from keywords.cloud_platform.upgrade.software_deploy_host_list_keywords import SoftwareDeployHostListKeywords
 from keywords.cloud_platform.upgrade.software_deploy_show_keywords import SoftwareDeployShowKeywords
@@ -220,6 +221,105 @@ class USMKeywords(BaseKeyword):
         self.validate_success_return_code(self.ssh_connection)
         output = "".join(output)
         return output
+
+    def software_deploy_abort(self, sudo: bool = False, validate_success: bool = True) -> str:
+        """
+        Execute the command 'software deploy abort'.
+
+        Transitions an in-progress deploy toward rollback:
+            - from host-done                    -> 'host-rollback'
+            - from activate-done                -> 'activate-rollback-pending'
+        Abort is REJECTED from the 'activate' (in-progress) state, so callers
+        that expect a rejection should pass validate_success=False and inspect
+        the returned output.
+
+        Args:
+            sudo (bool): flag to check if it needs to be run as sudo.
+            validate_success (bool): when True (default) assert the command
+                succeeded; set False when a rejection is expected.
+
+        Returns:
+            str: software deploy abort output.
+        """
+        timeout = self.usm_config.get_deploy_delete_timeout_sec()
+        base_cmd = "software deploy abort"
+        cmd = source_openrc(base_cmd)
+        if sudo:
+            output = self.ssh_connection.send_as_sudo(cmd, command_timeout=timeout, reconnect_timeout=timeout)
+        else:
+            output = self.ssh_connection.send(cmd, command_timeout=timeout, reconnect_timeout=timeout, get_pty=True)
+        if validate_success:
+            self.validate_success_return_code(self.ssh_connection)
+        return "".join(output)
+
+    def software_deploy_activate_rollback(self, sudo: bool = False) -> str:
+        """
+        Execute the command 'software deploy activate-rollback'.
+
+        Reverses activation after an abort from 'activate-done'
+        (activate-rollback-pending -> proceeds toward host-rollback).
+
+        Args:
+            sudo (bool): flag to check if it needs to be run as sudo.
+
+        Returns:
+            str: software deploy activate-rollback output.
+        """
+        timeout = self.usm_config.get_deploy_activate_timeout_sec()
+        base_cmd = "software deploy activate-rollback"
+        cmd = source_openrc(base_cmd)
+        if sudo:
+            output = self.ssh_connection.send_as_sudo(cmd, command_timeout=timeout, reconnect_timeout=timeout)
+        else:
+            output = self.ssh_connection.send(cmd, command_timeout=timeout, reconnect_timeout=timeout, get_pty=True)
+        self.validate_success_return_code(self.ssh_connection)
+        return "".join(output)
+
+    def software_deploy_host_rollback(self, host: str, sudo: bool = False, lock_unlock: bool = False, exclude_alarm_ids: list[str] = None) -> str:
+        """
+        Execute the command 'software deploy host-rollback <host>'.
+
+        Reboot-required patches / upgrades need the host locked before the
+        rollback and unlocked afterwards (the unlock reboots it into N-1). In
+        service patches do not require any lock/unlock. The caller controls this
+        via 'lock_unlock':
+
+        - lock_unlock=False (default): run only 'software deploy host-rollback
+          <host>'. Use for in-service patches, or when the caller manages the
+          host lock/unlock itself.
+        - lock_unlock=True: system host-lock <host> -> software deploy
+          host-rollback <host> -> system host-unlock <host> (host reboots into
+          N-1). Use for reboot-required patches / upgrades.
+
+        Args:
+            host (str): host to roll back.
+            sudo (bool): flag to check if it needs to be run as sudo.
+            lock_unlock (bool): when True, lock the host before and unlock it
+                after the rollback (reboot-required flow).
+            exclude_alarm_ids (list[str]): alarm IDs to ignore on unlock; only
+                used when lock_unlock is True.
+
+        Returns:
+            str: software deploy host-rollback output.
+        """
+        lock_keywords = SystemHostLockKeywords(self.ssh_connection) if lock_unlock else None
+        if lock_unlock:
+            lock_keywords.lock_host(host)
+
+        timeout = self.usm_config.get_deploy_host_timeout_sec()
+        base_cmd = f"software deploy host-rollback {host}"
+        cmd = source_openrc(base_cmd)
+        if sudo:
+            output = self.ssh_connection.send_as_sudo(cmd, command_timeout=timeout, reconnect_timeout=timeout)
+        else:
+            output = self.ssh_connection.send(cmd, command_timeout=timeout, reconnect_timeout=timeout, get_pty=True)
+        self.validate_success_return_code(self.ssh_connection)
+        output = [line.strip() for line in output if line.strip()]
+
+        if lock_unlock:
+            lock_keywords.unlock_host(host, exclude_alarm_ids=exclude_alarm_ids)
+
+        return output[-1] if output else ""
 
     def software_delete(self, release: str, sudo: bool = False) -> str:
         """
@@ -500,7 +600,7 @@ class USMKeywords(BaseKeyword):
         taking an LVM snapshot, and raising the upgrade-in-progress alarm.
 
         Args:
-            release (str): Target release ID (e.g., "wrcp-26.09.0").
+            release (str): Target release ID (e.g., "starlingx-26.09.0").
             kube_upgrade (str): Target Kubernetes version (e.g., "v1.35.1").
             sudo (bool): Flag to run as sudo.
 
