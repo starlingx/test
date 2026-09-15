@@ -23,6 +23,7 @@ class KubectlExecInPodsKeywords(K8sBaseKeyword):
         pod_name: str,
         cmd: str,
         options: str = "",
+        ignore_error: bool = False,
     ) -> str:
         """
         Executes the given command in the pod
@@ -31,6 +32,9 @@ class KubectlExecInPodsKeywords(K8sBaseKeyword):
             pod_name (str): the name of the pod
             cmd (str): the cmd to execute
             options (str): options
+            ignore_error (bool): when False (default), a non-zero return code raises via
+                validate_success_return_code. When True, the return code is not asserted, so
+                callers can inspect it themselves (e.g. to retry transient exec failures).
 
         Returns:
             str: the output
@@ -39,7 +43,8 @@ class KubectlExecInPodsKeywords(K8sBaseKeyword):
         kubectl_cmd = f"kubectl exec {options} {pod_name} -- {cmd}"
 
         output = self.ssh_connection.send(self.k8s_config.export(kubectl_cmd))
-        self.validate_success_return_code(self.ssh_connection)
+        if not ignore_error:
+            self.validate_success_return_code(self.ssh_connection)
 
         return output
 
