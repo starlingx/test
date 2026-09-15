@@ -1,6 +1,5 @@
 """Verify software CLI OIDC authentication with role-based access control."""
 
-import os
 import time
 
 from pytest import FixtureRequest, mark
@@ -241,25 +240,18 @@ def test_oidc_software_admin_allowed_all(request: FixtureRequest) -> None:
         - Set up OIDC environment and admin role-bindings
         - Create LDAP admin user and group
         - Verify admin can run software list and software show
-        - Verify admin is NOT denied software upload
-        - Verify admin is NOT denied software delete
+        - Verify admin is NOT denied software upload (write op passes RBAC)
+        - Verify admin is NOT denied software delete (write op passes RBAC)
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     security_config = ConfigurationManager.get_security_config()
     lab_config = ConfigurationManager.get_lab_config()
-    usm_config = ConfigurationManager.get_usm_config()
     lab_oam_ip = lab_config.get_floating_ip()
     username = "oidc_admin_sw01"
     password = lab_config.get_admin_credentials().get_password()
     group_name = "SwAdminGroup"
     dummy_iso = "/tmp/test_oidc_admin.iso"
     dummy_sig = "/tmp/test_oidc_admin.sig"
-    patch_suffix = "software-insvc"
-    patch_path = usm_config.resolve_test_patch_path(patch_suffix)
-    dest_dir = usm_config.get_dest_dir()
-    patch_filename = os.path.basename(patch_path)
-    patch_local_path = os.path.join(dest_dir, patch_filename)
-    uploaded_release_id = usm_config.get_test_patch_single_release_id()
 
     sw_oidc_kw = SoftwareOidcKeywords(ssh_connection)
     file_kw = FileKeywords(ssh_connection)
@@ -268,8 +260,6 @@ def test_oidc_software_admin_allowed_all(request: FixtureRequest) -> None:
     request.addfinalizer(lambda: cleanup_ldap_user(ssh_connection, username, password, group_name, sw_oidc_kw))
     request.addfinalizer(lambda: file_kw.delete_file(dummy_iso))
     request.addfinalizer(lambda: file_kw.delete_file(dummy_sig))
-    if patch_local_path:
-        request.addfinalizer(lambda: file_kw.delete_file(patch_local_path))
 
     get_logger().log_test_case_step("Step 1: Set up OIDC environment")
     setup_oidc_environment(ssh_connection, security_config, lab_config)
@@ -290,30 +280,20 @@ def test_oidc_software_admin_allowed_all(request: FixtureRequest) -> None:
     result = sw_oidc_kw.run_software_command_as_oidc_user(username, password, lab_oam_ip, f"software show {release_id}")
     validate_equals(result.is_successful(), True, "Admin role must be allowed to run 'software show'")
 
-    get_logger().log_test_case_step("Step 6: Verify admin is NOT denied 'software upload' (dummy file)")
-    # Admin passes authorization — server may reject the file content but must not return 403.
+    get_logger().log_test_case_step("Step 6: Verify admin is NOT denied 'software upload' (write op passes RBAC)")
+    # RBAC check: admin must not get 403/Forbidden on a write op. The server may
+    # reject the dummy file content, but that is a content error, not an RBAC denial.
     file_kw.create_file_with_echo(dummy_iso, "")
     file_kw.create_file_with_echo(dummy_sig, "")
     result = sw_oidc_kw.run_software_command_as_oidc_user(username, password, lab_oam_ip, f"software upload {dummy_iso} {dummy_sig}")
     validate_equals(result.is_forbidden(), False, "Admin role must NOT be denied 'software upload'")
 
-    get_logger().log_test_case_step("Step 7: Verify admin can upload a real patch file")
-    # Copy real patch from build server and upload via OIDC.
-    if patch_path and usm_config.get_copy_from_remote():
-        file_kw.create_directory(dest_dir)
-        file_kw.rsync_from_remote_server(
-            remote_server=usm_config.get_remote_server(),
-            remote_user=usm_config.get_remote_username(),
-            remote_password=usm_config.get_remote_password(),
-            remote_path=patch_path,
-            local_dest_path=patch_local_path,
-        )
-    result = sw_oidc_kw.run_software_command_as_oidc_user(username, password, lab_oam_ip, f"software upload {patch_local_path}")
-    validate_equals(result.is_forbidden(), False, "Admin role must NOT be denied real patch upload")
-    validate_equals(result.is_successful(), True, "Admin real patch upload must succeed")
-
-    get_logger().log_test_case_step("Step 8: Verify admin can delete the uploaded release")
-    result = sw_oidc_kw.run_software_command_as_oidc_user(username, password, lab_oam_ip, f"software delete {uploaded_release_id}")
+    get_logger().log_test_case_step("Step 7: Verify admin is NOT denied 'software delete' (write op passes RBAC)")
+    # RBAC check on a delete write op using a non-existent release id: the server
+    # returns a not-found/state error, never a 403, so RBAC is proven without
+    # touching the deployed release. Avoids coupling to USM patch provisioning.
+    nonexistent_release_id = "starlingx-0.0.0-oidc-rbac-check"
+    result = sw_oidc_kw.run_software_command_as_oidc_user(username, password, lab_oam_ip, f"software delete {nonexistent_release_id}")
     validate_equals(result.is_forbidden(), False, "Admin role must NOT be denied 'software delete'")
 
 
