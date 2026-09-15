@@ -208,6 +208,7 @@ class SubcloudDeployConfigSyncKeywords(BaseKeyword):
             return
 
         get_logger().log_info(f"Copying configs from '{release_subcloud_dir}' to '{default_subcloud_dir}'")
+        self.file_kw.create_directory(default_subcloud_dir)
         for file_name in files_to_copy:
             self.file_kw.copy_file(f"{release_subcloud_dir}/{file_name}", f"{default_subcloud_dir}/{file_name}")
         get_logger().log_info(f"Release {release_version} configs now in default path '{default_subcloud_dir}'")
@@ -240,6 +241,7 @@ class SubcloudDeployConfigSyncKeywords(BaseKeyword):
             return
 
         get_logger().log_info(f"Restoring N-release configs from '{backup_dir}' to '{default_subcloud_dir}'")
+        self.file_kw.create_directory(default_subcloud_dir)
         for file_name in files_to_restore:
             self.file_kw.copy_file(f"{backup_dir}/{file_name}", f"{default_subcloud_dir}/{file_name}")
         get_logger().log_info(f"N-release ({n_release_version}) configs restored to '{default_subcloud_dir}'")
