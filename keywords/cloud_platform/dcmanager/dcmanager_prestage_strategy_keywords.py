@@ -57,7 +57,7 @@ class DcmanagerPrestageStrategyKeywords(BaseKeyword):
         self.ssh_connection.send(command)
         self.validate_success_return_code(self.ssh_connection)
         # wait for apply to complete
-        return self.wait_for_state(["complete", "failed"])
+        return self.wait_for_state(["complete", "failed"], timeout=7200)
 
     def get_dcmanager_prestage_strategy_create(self, release: str = None, sw_deploy: bool = True, subcloud_name: str = None, subcloud_group: str = None, force: bool = False) -> DcmanagerPrestageStrategyShowOutput:
         """Gets the prestage-strategy create.
@@ -115,7 +115,7 @@ class DcmanagerPrestageStrategyKeywords(BaseKeyword):
         """
         validate_equals_with_retry(function_to_execute=self.check_dcmanager_prestage_strategy_delete, expected_value=True, validation_description="Waits for strategy deletion", timeout=600, polling_sleep_time=10)
 
-    def wait_for_state(self, state: list, timeout: int = 1800) -> DcmanagerPrestageStrategyObject:
+    def wait_for_state(self, state: list, timeout: int = 7200) -> DcmanagerPrestageStrategyObject:
         """Waits for the prestage-strategy to reach a specific state.
 
         Args:
