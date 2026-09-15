@@ -8,8 +8,6 @@ from framework.logging.automation_logger import get_logger
 from framework.resources.resource_finder import get_stx_resource_path
 from framework.ssh.ssh_connection import SSHConnection
 from framework.validation.validation import validate_equals, validate_equals_with_retry, validate_not_equals
-from keywords.bmc.ipmitool.chassis.power.ipmitool_chassis_power_keywords import IPMIToolChassisPowerKeywords
-from keywords.cloud_platform.linux.ostree_keywords import OstreeKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.cloud_platform.system.application.object.system_application_delete_input import SystemApplicationDeleteInput
 from keywords.cloud_platform.system.application.object.system_application_status_enum import SystemApplicationStatusEnum
@@ -37,6 +35,8 @@ from keywords.k8s.pods.kubectl_get_pods_keywords import KubectlGetPodsKeywords
 from keywords.k8s.volumesnapshots.kubectl_get_volumesnapshots_keywords import KubectlGetVolumesnapshotsKeywords
 from keywords.linux.ip.ip_keywords import IPKeywords
 from keywords.linux.mount.mount_keywords import MountKeywords
+from keywords.ostree.ostree_keywords import OstreeKeywords
+from keywords.server.power_keywords import PowerKeywords
 
 
 def delete_dell_storage_test_pod_resources(ssh_connection: SSHConnection, remote_yaml_path: str) -> None:
@@ -187,32 +187,45 @@ def refresh_os_tree_keywords(ssh_connection: SSHConnection):
         ssh_connection (SSHConnection): SSH connection to the active controller.
     """
     ostree_keywords = OstreeKeywords(ssh_connection)
-    ostree_keywords.create_ostree_lock()
-    ostree_keywords.remove_ostree_lock()
+    ostree_keywords.ostree_update()
 
 
-def verify_file_created_on_pod_exists(ssh_connection: SSHConnection, namespace: str, pod_name: str):
+def verify_file_created_on_pod_exists(ssh_connection: SSHConnection, namespace: str, pod_name: str, timeout: int = 600, poll_interval: int = 15):
     """
     Verify that the test.txt file previously created still exists inside the pod.
 
+    After a power-off/on cycle the StatefulSet pod is torn down and recreated. There is a
+    window where the pod name is reported Running but 'kubectl exec' still fails transiently
+    with "pod does not exist" (the sandbox is not ready to be exec'd into yet). A single exec
+    races against that window, so the exec is polled: any transient exec failure is retried,
+    and the file is considered present only once the exec succeeds with return code 0.
 
     Test Steps:
-        - Connect to the powerstoretest-0 pod
-        - Verify if the test.txt file created on the dell-storage test pod is present on the pvc.
+        - Wait for the pod to be Running so it can be exec'd into.
+        - Poll 'test -f /data0/test.txt' inside the pod until it succeeds or the timeout elapses.
 
     Args:
         ssh_connection (SSHConnection): the ssh connection to the active controller.
         namespace (str): the namespace the pod runs in.
         pod_name (str): the name of the pod to check.
+        timeout (int): maximum time in seconds to wait for the file check to succeed.
+        poll_interval (int): time in seconds between exec attempts.
     """
-    get_logger().log_test_case_step(f"Connect to the powerstoretest-0 pod {pod_name}")
+    get_logger().log_test_case_step(f"Wait for pod {pod_name} to be Running before exec")
+    KubectlGetPodsKeywords(ssh_connection).wait_for_pod_status(pod_name, "Running", namespace, timeout=timeout)
+
     kubectl_exec_in_pods = KubectlExecInPodsKeywords(ssh_connection)
     options = f"-it -n {namespace}"
     cmd = "bash -c 'test -f /data0/test.txt'"
 
     get_logger().log_test_case_step(f"Verify if the test.txt file created on the dell-storage test pod is present on the pvc. {pod_name}")
-    kubectl_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
-    validate_equals(ssh_connection.get_return_code(), 0, f"test.txt is on {pod_name} pod.")
+    validate_equals_with_retry(
+        function_to_execute=lambda: (kubectl_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options, ignore_error=True), ssh_connection.get_return_code())[1],
+        expected_value=0,
+        validation_description=f"test.txt is on {pod_name} pod.",
+        timeout=timeout,
+        polling_sleep_time=poll_interval,
+    )
 
 
 def make_sure_dell_storage_application_applied():
@@ -294,6 +307,10 @@ def common_dell_storage_teardown():
     if dell_storage_app_status != SystemApplicationStatusEnum.UPLOADED.value:
         get_logger().log_teardown_step("Remove dell-storage application")
         system_application_remove_input.set_app_name(dell_storage_app_name)
+        # Removing dell-storage (unmounting PVCs and terminating csi-powerstore pods)
+        # takes well over the 60s default, so use a generous timeout to avoid a
+        # spurious teardown TimeoutError while the removal is still in progress.
+        system_application_remove_input.set_timeout_in_seconds(1800)
         SystemApplicationRemoveKeywords(ssh_connection).system_application_remove(system_application_remove_input)
     else:
         get_logger().log_info(f"Dell-storage already in uploaded state: {dell_storage_app_status}")
@@ -1078,11 +1095,11 @@ def test_power_off_node_with_pvc_pod_dell_storage_iscsi(request):
     dell_storage_app_name = "dell-storage"
     chart_name = "csi-powerstore"
 
-    # IPMI commands must run on a host that stays reachable while controller-0
-    # is powered off. On a simplex lab the controller's own SSH session dies
-    # with the node, so a power-on issued over it never reaches the BMC. The
-    # jump host stays up and can route to the BMC network.
-    bmc_ssh_connection = LabConnectionKeywords().get_jump_host_ssh()
+    # IPMI commands are executed locally (on the machine running the
+    # automation) rather than over an SSH connection. On a simplex lab the
+    # controller's own SSH session dies with the node, so a power-on issued
+    # over it never reaches the BMC.
+    power_chassis = PowerKeywords(None)
 
     def verify_dell_storage_pods_are_running(ssh_connection):
         pod_prefix = "csi-powerstore"
@@ -1097,8 +1114,7 @@ def test_power_off_node_with_pvc_pod_dell_storage_iscsi(request):
 
     def teardown():
         """Power controller-0 back on, wait for it to recover, and remove the test pod resources."""
-        power_chassis = IPMIToolChassisPowerKeywords(bmc_ssh_connection, "controller-0")
-        power_chassis.power_on()
+        power_chassis.power_on_from_localhost("controller-0", ignore_error=True)
 
         ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
         host_lock_keywords = SystemHostLockKeywords(ssh_connection)
@@ -1158,17 +1174,15 @@ def test_power_off_node_with_pvc_pod_dell_storage_iscsi(request):
     validate_equals(ssh_connection.get_return_code(), 0, f"sync pod {pod_name} success")
 
     get_logger().log_test_case_step("Power Off controller-0 through IPMITOOLS ")
-    power_chassis = IPMIToolChassisPowerKeywords(bmc_ssh_connection, "controller-0")
-    power_chassis.power_off()
-    validate_equals(bmc_ssh_connection.get_return_code(), 0, "controller-0 IPMI power off command was not accepted by the BMC")
+    power_off_rc = power_chassis.power_off_from_localhost("controller-0", ignore_error=True)
+    validate_equals(power_off_rc, 0, "controller-0 IPMI power off command was not accepted by the BMC")
 
     get_logger().log_test_case_step("Wait for some time (2 minutes)")
     sleep(120)
 
     get_logger().log_test_case_step("Power on controller-0 through IPMITOOLS ")
-    power_chassis = IPMIToolChassisPowerKeywords(bmc_ssh_connection, "controller-0")
-    power_chassis.power_on()
-    validate_equals(bmc_ssh_connection.get_return_code(), 0, "controller-0 IPMI power on command was not accepted by the BMC")
+    power_on_rc = power_chassis.power_on_from_localhost("controller-0", ignore_error=True)
+    validate_equals(power_on_rc, 0, "controller-0 IPMI power on command was not accepted by the BMC")
 
     get_logger().log_test_case_step("Make sure that the node comes up again")
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
@@ -1218,11 +1232,11 @@ def test_power_off_node_with_pvc_pod_dell_storage_nfs(request):
     dell_storage_app_name = "dell-storage"
     chart_name = "csi-powerstore"
 
-    # IPMI commands must run on a host that stays reachable while controller-0
-    # is powered off. On a simplex lab the controller's own SSH session dies
-    # with the node, so a power-on issued over it never reaches the BMC. The
-    # jump host stays up and can route to the BMC network.
-    bmc_ssh_connection = LabConnectionKeywords().get_jump_host_ssh()
+    # IPMI commands are executed locally (on the machine running the
+    # automation) rather than over an SSH connection. On a simplex lab the
+    # controller's own SSH session dies with the node, so a power-on issued
+    # over it never reaches the BMC.
+    power_chassis = PowerKeywords(None)
 
     def verify_dell_storage_pods_are_running(ssh_connection):
         pod_prefix = "csi-powerstore"
@@ -1237,8 +1251,7 @@ def test_power_off_node_with_pvc_pod_dell_storage_nfs(request):
 
     def teardown():
         """Power controller-0 back on, wait for it to recover, and remove the test pod resources."""
-        power_chassis = IPMIToolChassisPowerKeywords(bmc_ssh_connection, "controller-0")
-        power_chassis.power_on()
+        power_chassis.power_on_from_localhost("controller-0", ignore_error=True)
 
         ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
         host_lock_keywords = SystemHostLockKeywords(ssh_connection)
@@ -1298,17 +1311,15 @@ def test_power_off_node_with_pvc_pod_dell_storage_nfs(request):
     validate_equals(ssh_connection.get_return_code(), 0, f"sync pod {pod_name} success")
 
     get_logger().log_test_case_step("Power Off controller-0 through IPMITOOLS ")
-    power_chassis = IPMIToolChassisPowerKeywords(bmc_ssh_connection, "controller-0")
-    power_chassis.power_off()
-    validate_equals(bmc_ssh_connection.get_return_code(), 0, "controller-0 IPMI power off command was not accepted by the BMC")
+    power_off_rc = power_chassis.power_off_from_localhost("controller-0", ignore_error=True)
+    validate_equals(power_off_rc, 0, "controller-0 IPMI power off command was not accepted by the BMC")
 
     get_logger().log_test_case_step("Wait for some time (2 minutes)")
     sleep(120)
 
     get_logger().log_test_case_step("Power on controller-0 through IPMITOOLS ")
-    power_chassis = IPMIToolChassisPowerKeywords(bmc_ssh_connection, "controller-0")
-    power_chassis.power_on()
-    validate_equals(bmc_ssh_connection.get_return_code(), 0, "controller-0 IPMI power on command was not accepted by the BMC")
+    power_on_rc = power_chassis.power_on_from_localhost("controller-0", ignore_error=True)
+    validate_equals(power_on_rc, 0, "controller-0 IPMI power on command was not accepted by the BMC")
 
     get_logger().log_test_case_step("Make sure that the node comes up again")
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
@@ -1394,10 +1405,14 @@ def test_auto_downgrade_dell_storage_iscsi(request: FixtureRequest):
             # app entry. Force both so a failed/transient state can't block the cleanup.
             get_logger().log_teardown_step("Wipe dell-storage application (remove + delete)")
             SystemApplicationRemoveKeywords(ssh_connection).cleanup_app_if_present(dell_storage_app_name, force_removal=True, force_deletion=True, timeout_in_seconds=300)
-            validate_equals(
-                SystemApplicationListKeywords(ssh_connection).is_app_present(dell_storage_app_name),
+            # 'system application-delete' returns as soon as the CLI is accepted, but
+            # sysinv removes the app entry asynchronously, so poll until it is gone
+            # instead of checking once (which races the delete and fails spuriously).
+            validate_equals_with_retry(
+                lambda: SystemApplicationListKeywords(ssh_connection).is_app_present(dell_storage_app_name),
                 False,
                 f"{dell_storage_app_name} fully wiped before restore",
+                timeout=300,
             )
 
             # Remove the rolled-back version tarball from the application base path.
@@ -1412,9 +1427,7 @@ def test_auto_downgrade_dell_storage_iscsi(request: FixtureRequest):
             get_logger().log_teardown_step("Move original tarball to base application path")
             FileKeywords(ssh_connection).move_file(f"/home/sysadmin/{original_tarball}", base_application_path, sudo=True)
 
-            ostree_keywords = OstreeKeywords(ssh_connection)
-            ostree_keywords.create_ostree_lock()
-            ostree_keywords.remove_ostree_lock()
+            refresh_os_tree_keywords(ssh_connection)
 
             # Upload original version. 'system application-upload' expects a single
             # concrete file path, not a glob.
@@ -1450,9 +1463,7 @@ def test_auto_downgrade_dell_storage_iscsi(request: FixtureRequest):
             get_logger().log_teardown_step("Move rollback tarball to /home/sysadmin")
             FileKeywords(ssh_connection).move_file(app_config.get_base_application_path() + tarball_filename, "/home/sysadmin/", sudo=True)
 
-        ostree_keywords = OstreeKeywords(ssh_connection)
-        ostree_keywords.create_ostree_lock()
-        ostree_keywords.remove_ostree_lock()
+        refresh_os_tree_keywords(ssh_connection)
 
     request.addfinalizer(teardown)
 
@@ -1528,8 +1539,14 @@ def test_auto_downgrade_dell_storage_iscsi(request: FixtureRequest):
     verify_file_created_on_pod_exists(ssh_connection, namespace, pod_name)
 
     get_logger().log_test_case_step("Execute the command sudo touch /ostree/lock && sudo rm -f /ostree/lock to make sure the new tarball version is updated in the database")
-    ostree_keywords.create_ostree_lock()
-    ostree_keywords.remove_ostree_lock()
+    ostree_keywords.ostree_update()
+
+    validate_equals_with_retry(
+        lambda: SystemApplicationListKeywords(ssh_connection).get_system_application_list().get_application(dell_storage_app_name).get_status(),
+        "updating",
+        f"{dell_storage_app_name} applied status validation",
+        timeout=300,
+    )
 
     get_logger().log_test_case_step("Make sure that the dell-storage application is applied after the downgrade")
     validate_equals_with_retry(
@@ -1573,6 +1590,17 @@ def test_auto_downgrade_dell_storage_nfs(request: FixtureRequest):
     dell_storage_app_name = "dell-storage"
     chart_name = "csi-powerstore"
 
+    def verify_dell_storage_pods_are_running(ssh_connection):
+        pod_prefix = "csi-powerstore"
+        get_pod_obj = KubectlGetPodsKeywords(ssh_connection)
+        pod_names = get_pod_obj.get_pods(namespace=namespace).get_unique_pod_matching_prefix(starts_with=pod_prefix)
+        pod_status = get_pod_obj.wait_for_pod_status(pod_names, "Running", namespace)
+        validate_equals(pod_status, True, f"Verify {pod_prefix} pods are running")
+
+        get_pod_obj = KubectlGetPodsKeywords(ssh_connection)
+        pod_status = get_pod_obj.wait_for_pod_status(pod_name, "Running", namespace)
+        validate_equals(pod_status, True, f"Verify {pod_name} pod is running")
+
     def teardown():
         ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
         host_lock_keywords = SystemHostLockKeywords(ssh_connection)
@@ -1606,10 +1634,14 @@ def test_auto_downgrade_dell_storage_nfs(request: FixtureRequest):
             # app entry. Force both so a failed/transient state can't block the cleanup.
             get_logger().log_teardown_step("Wipe dell-storage application (remove + delete)")
             SystemApplicationRemoveKeywords(ssh_connection).cleanup_app_if_present(dell_storage_app_name, force_removal=True, force_deletion=True, timeout_in_seconds=300)
-            validate_equals(
-                SystemApplicationListKeywords(ssh_connection).is_app_present(dell_storage_app_name),
+            # 'system application-delete' returns as soon as the CLI is accepted, but
+            # sysinv removes the app entry asynchronously, so poll until it is gone
+            # instead of checking once (which races the delete and fails spuriously).
+            validate_equals_with_retry(
+                lambda: SystemApplicationListKeywords(ssh_connection).is_app_present(dell_storage_app_name),
                 False,
                 f"{dell_storage_app_name} fully wiped before restore",
+                timeout=300,
             )
 
             # Remove the rolled-back version tarball from the application base path.
@@ -1624,9 +1656,7 @@ def test_auto_downgrade_dell_storage_nfs(request: FixtureRequest):
             get_logger().log_teardown_step("Move original tarball to base application path")
             FileKeywords(ssh_connection).move_file(f"/home/sysadmin/{original_tarball}", base_application_path, sudo=True)
 
-            ostree_keywords = OstreeKeywords(ssh_connection)
-            ostree_keywords.create_ostree_lock()
-            ostree_keywords.remove_ostree_lock()
+            refresh_os_tree_keywords(ssh_connection)
 
             # Upload original version. 'system application-upload' expects a single
             # concrete file path, not a glob.
@@ -1654,9 +1684,7 @@ def test_auto_downgrade_dell_storage_nfs(request: FixtureRequest):
             get_logger().log_teardown_step("Move rollback tarball to /home/sysadmin")
             FileKeywords(ssh_connection).move_file(app_config.get_base_application_path() + tarball_filename, "/home/sysadmin/", sudo=True)
 
-        ostree_keywords = OstreeKeywords(ssh_connection)
-        ostree_keywords.create_ostree_lock()
-        ostree_keywords.remove_ostree_lock()
+        refresh_os_tree_keywords(ssh_connection)
 
     request.addfinalizer(teardown)
 
@@ -1700,9 +1728,46 @@ def test_auto_downgrade_dell_storage_nfs(request: FixtureRequest):
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     ostree_keywords = OstreeKeywords(ssh_connection)
 
+    test_pod_yaml = "dell-storage-test-nfs-pod.yaml"
+    dell_storage_files = [test_pod_yaml]
+    for file_name in dell_storage_files:
+        local_path = get_stx_resource_path(f"resources/cloud_platform/storage/dell_storage/{file_name}")
+        remote_yaml_path = f"/home/sysadmin/{file_name}"
+        FileKeywords(ssh_connection).upload_file(local_path, remote_yaml_path, overwrite=True)
+
+    get_logger().log_test_case_step("Create resources test pod via yaml")
+    yaml_path = "/home/sysadmin/dell-storage-test-nfs-pod.yaml"
+    kubectl_create_pods_keyword = KubectlCreatePodsKeywords(ssh_connection)
+    kubectl_create_pods_keyword.create_from_yaml(yaml_path)
+
+    pod_name = "powerstoretest-0"
+    get_logger().log_test_case_step(f"Check if test {pod_name} pod is running")
+    verify_dell_storage_pods_are_running(ssh_connection)
+
+    get_logger().log_test_case_step(f"Creating text.txt file inside of {pod_name} pod")
+    kubeclt_exec_in_pods = KubectlExecInPodsKeywords(ssh_connection)
+    options = f"-it -n {namespace}"
+    cmd = "bash -c 'touch /data0/test.txt'"
+    kubeclt_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
+    validate_equals(ssh_connection.get_return_code(), 0, f"Write to {pod_name} pod success")
+
+    get_logger().log_info("sync pod")
+    cmd = "bash -c 'sync'"
+    kubeclt_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
+    validate_equals(ssh_connection.get_return_code(), 0, f"sync pod {pod_name} success")
+
+    get_logger().log_info("Check if test.txt exists")
+    verify_file_created_on_pod_exists(ssh_connection, namespace, pod_name)
+
     get_logger().log_test_case_step("Execute the command sudo touch /ostree/lock && sudo rm -f /ostree/lock to make sure the new tarball version is updated in the database")
-    ostree_keywords.create_ostree_lock()
-    ostree_keywords.remove_ostree_lock()
+    ostree_keywords.ostree_update()
+
+    validate_equals_with_retry(
+        lambda: SystemApplicationListKeywords(ssh_connection).get_system_application_list().get_application(dell_storage_app_name).get_status(),
+        "updating",
+        f"{dell_storage_app_name} applied status validation",
+        timeout=300,
+    )
 
     get_logger().log_test_case_step("Make sure that the dell-storage application is applied after the downgrade")
     validate_equals_with_retry(
@@ -1719,6 +1784,9 @@ def test_auto_downgrade_dell_storage_nfs(request: FixtureRequest):
     get_logger().log_test_case_step("Verify dell-storage app version has changed after rollback")
     rollback_version = rollback_app_info.get_system_application_object().get_version()
     validate_not_equals(current_version, rollback_version, "Application version should have changed after rollback")
+
+    get_logger().log_info("Check if test.txt exists")
+    verify_file_created_on_pod_exists(ssh_connection, namespace, pod_name)
 
 
 @mark.p2
@@ -1792,12 +1860,11 @@ def test_manual_downgrade_dell_storage_iscsi(request: FixtureRequest):
             # Wipe dell-storage completely: remove the release (if applied) and delete the
             # app entry. Force both so a failed/transient state can't block the cleanup.
             get_logger().log_teardown_step("Wipe dell-storage application (remove + delete)")
-            SystemApplicationRemoveKeywords(ssh_connection).cleanup_app_if_present(dell_storage_app_name, force_removal=True, force_deletion=True, timeout_in_seconds=300)
-            validate_equals(
-                SystemApplicationListKeywords(ssh_connection).is_app_present(dell_storage_app_name),
-                False,
-                f"{dell_storage_app_name} fully wiped before restore",
-            )
+            SystemApplicationRemoveKeywords(ssh_connection).cleanup_app_if_present(dell_storage_app_name, force_removal=True, force_deletion=True, timeout_in_seconds=200)
+            # 'system application-delete' returns as soon as the CLI is accepted, but
+            # sysinv removes the app entry asynchronously, so poll until it is gone
+            # instead of checking once (which races the delete and fails spuriously).
+            validate_equals_with_retry(lambda: SystemApplicationListKeywords(ssh_connection).is_app_present(dell_storage_app_name), False, f"{dell_storage_app_name} fully wiped before restore", timeout=300)
 
             # Remove the rolled-back version tarball from the application base path.
             FileKeywords(ssh_connection).delete_file(f"{base_application_path}dell-storage-{rollback_version}.tgz")
@@ -1944,7 +2011,6 @@ def test_manual_downgrade_dell_storage_iscsi(request: FixtureRequest):
     validate_not_equals(current_version, rollback_version, "Application version should have changed after rollback")
 
 
-
 @mark.p2
 @mark.lab_is_simplex
 @mark.lab_dell_storage
@@ -2013,10 +2079,14 @@ def test_manual_downgrade_dell_storage_nfs(request: FixtureRequest):
             # app entry. Force both so a failed/transient state can't block the cleanup.
             get_logger().log_teardown_step("Wipe dell-storage application (remove + delete)")
             SystemApplicationRemoveKeywords(ssh_connection).cleanup_app_if_present(dell_storage_app_name, force_removal=True, force_deletion=True, timeout_in_seconds=300)
-            validate_equals(
-                SystemApplicationListKeywords(ssh_connection).is_app_present(dell_storage_app_name),
+            # 'system application-delete' returns as soon as the CLI is accepted, but
+            # sysinv removes the app entry asynchronously, so poll until it is gone
+            # instead of checking once (which races the delete and fails spuriously).
+            validate_equals_with_retry(
+                lambda: SystemApplicationListKeywords(ssh_connection).is_app_present(dell_storage_app_name),
                 False,
                 f"{dell_storage_app_name} fully wiped before restore",
+                timeout=300,
             )
 
             # Remove the rolled-back version tarball from the application base path.
