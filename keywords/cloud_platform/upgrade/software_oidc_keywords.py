@@ -73,6 +73,29 @@ class SoftwareOidcKeywords(BaseKeyword):
 
         return self.ldap_ssh
 
+    def refresh_oidc_token(self, password: str) -> None:
+        """Trigger an OIDC token refresh on the current authenticated session.
+
+        Re-runs oidc-auth on the existing LDAP session, which drives the
+        oidc-login (kubelogin) plugin to exchange the cached refresh token
+        for a new ID token and write it back to ~/.kube/config. Used to
+        exercise the refresh-token flow after the ID token has expired.
+
+        Args:
+            password (str): Password for OIDC authentication.
+
+        Raises:
+            KeywordException: If no authenticated session exists or oidc-auth fails.
+        """
+        if not self.ldap_ssh:
+            raise KeywordException("No authenticated OIDC session to refresh")
+
+        get_logger().log_info(f"Refreshing OIDC token for {self.authenticated_user}")
+        output = self.ldap_ssh.send(f"oidc-auth -p {password}")
+        raw = "\n".join(output) if isinstance(output, list) else output
+        if "Login succeeded" not in raw:
+            raise KeywordException(f"oidc-auth refresh failed for user {self.authenticated_user}: {raw[:200]}")
+
     def build_software_command(self, software_command: str) -> str:
         """Build the full software command with OIDC auth type.
 
