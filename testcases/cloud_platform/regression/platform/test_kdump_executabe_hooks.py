@@ -52,8 +52,8 @@ def test_kdump_excecutable_hooks(request):
     pre_hook_success_msg = "Pre-hook executed successfully"
     post_hook_success_msg = "Post-hook executed successfully"
 
-    pre_hook_success_content = f'#!/bin/sh\necho "\$(date) : {pre_hook_success_msg}" >> {kdump_log_path}\nexit 0'
-    post_hook_success_content = f'#!/bin/sh\necho "\$(date) : {post_hook_success_msg}" >> {kdump_log_path}\nexit 0'
+    pre_hook_success_content = f'#!/bin/sh\necho "$(date) : {pre_hook_success_msg}" >> {kdump_log_path}\nexit 0'
+    post_hook_success_content = f'#!/bin/sh\necho "$(date) : {post_hook_success_msg}" >> {kdump_log_path}\nexit 0'
 
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     active_controller = SystemHostListKeywords(ssh_connection).get_active_controller()
@@ -74,9 +74,12 @@ def test_kdump_excecutable_hooks(request):
 
     # Get current timestamp for comparison
     current_time = DateKeywords(ssh_connection).get_current_epochtime()
+    pre_uptime_of_host = SystemHostListKeywords(ssh_connection).get_uptime(active_controller_host_name)
+
     get_logger().log_info(f"time stamp before Trigger kernel crash {current_time}")
 
-    pre_uptime_of_host = SystemHostListKeywords(ssh_connection).get_uptime(active_controller_host_name)
+    # Sync filesystem to ensure hook scripts are written to disk before crash
+    FileKeywords(ssh_connection).sync_files()
 
     get_logger().log_info("Trigger kernel crash")
     KernelKeywords(ssh_connection).trigger_kernel_crash()
@@ -86,10 +89,13 @@ def test_kdump_excecutable_hooks(request):
     validate_equals(is_reboot_successful, True, "crash reboot")
 
     get_logger().log_info("verify kdump file generated after kernel crash")
+    file_exists = False
     core_files = FileKeywords(ssh_connection).get_files_in_dir(kdump_path)
     for core_file in core_files:
         if "core" in core_file:
             file_exists = FileKeywords(ssh_connection).file_exists(f"{kdump_path}/{core_file}")
+            if file_exists:
+                break
 
     validate_equals(file_exists, True, "kdump file created")
 
@@ -134,10 +140,10 @@ def test_kdump_successful_and_failed_excecutable_hooks(request):
     pre_hook_fail_msg = "Pre-hook execution failed"
     post_hook_fail_msg = "Post-hook execution failed"
 
-    pre_hook_success_content = f'#!/bin/sh\necho "\$(date) : {pre_hook_success_msg}" >> {kdump_log_path}\nexit 0'
-    post_hook_success_content = f'#!/bin/sh\necho "\$(date) : {post_hook_success_msg}" >> {kdump_log_path}\nexit 0'
-    pre_hook_fail_content = f'#!/bin/sh\necho "\$(date) : {pre_hook_fail_msg}" >> {kdump_log_path}\nexit 1'
-    post_hook_fail_content = f'#!/bin/sh\necho "\$(date) : {post_hook_fail_msg}" >> {kdump_log_path}\nexit 1'
+    pre_hook_success_content = f'#!/bin/sh\necho "$(date) : {pre_hook_success_msg}" >> {kdump_log_path}\nexit 0'
+    post_hook_success_content = f'#!/bin/sh\necho "$(date) : {post_hook_success_msg}" >> {kdump_log_path}\nexit 0'
+    pre_hook_fail_content = f'#!/bin/sh\necho "$(date) : {pre_hook_fail_msg}" >> {kdump_log_path}\nexit 1'
+    post_hook_fail_content = f'#!/bin/sh\necho "$(date) : {post_hook_fail_msg}" >> {kdump_log_path}\nexit 1'
 
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     active_controller = SystemHostListKeywords(ssh_connection).get_active_controller()
@@ -165,6 +171,9 @@ def test_kdump_successful_and_failed_excecutable_hooks(request):
 
     pre_uptime_of_host = SystemHostListKeywords(ssh_connection).get_uptime(active_controller_host_name)
 
+    # Sync filesystem to ensure hook scripts are written to disk before crash
+    FileKeywords(ssh_connection).sync_files()
+
     get_logger().log_info("Trigger kernel crash")
     KernelKeywords(ssh_connection).trigger_kernel_crash()
 
@@ -173,10 +182,13 @@ def test_kdump_successful_and_failed_excecutable_hooks(request):
     validate_equals(is_reboot_successful, True, "crash reboot")
 
     get_logger().log_info("verify kdump file generated after kernel crash")
+    file_exists = False
     core_files = FileKeywords(ssh_connection).get_files_in_dir(kdump_path)
     for core_file in core_files:
         if "core" in core_file:
             file_exists = FileKeywords(ssh_connection).file_exists(f"{kdump_path}/{core_file}")
+            if file_exists:
+                break
 
     validate_equals(file_exists, True, "kdump file created")
 
@@ -225,10 +237,10 @@ def test_kdump_excecutable_hooks_with_standby_controller(request):
     pre_hook_fail_msg = "Pre-hook execution failed"
     post_hook_fail_msg = "Post-hook execution failed"
 
-    pre_hook_success_content = f'#!/bin/sh\necho "\$(date) : {pre_hook_success_msg}" >> {kdump_log_path}\nexit 0'
-    post_hook_success_content = f'#!/bin/sh\necho "\$(date) : {post_hook_success_msg}" >> {kdump_log_path}\nexit 0'
-    pre_hook_fail_content = f'#!/bin/sh\necho "\$(date) : {pre_hook_fail_msg}" >> {kdump_log_path}\nexit 1'
-    post_hook_fail_content = f'#!/bin/sh\necho "\$(date) : {post_hook_fail_msg}" >> {kdump_log_path}\nexit 1'
+    pre_hook_success_content = f'#!/bin/sh\necho "$(date) : {pre_hook_success_msg}" >> {kdump_log_path}\nexit 0'
+    post_hook_success_content = f'#!/bin/sh\necho "$(date) : {post_hook_success_msg}" >> {kdump_log_path}\nexit 0'
+    pre_hook_fail_content = f'#!/bin/sh\necho "$(date) : {pre_hook_fail_msg}" >> {kdump_log_path}\nexit 1'
+    post_hook_fail_content = f'#!/bin/sh\necho "$(date) : {post_hook_fail_msg}" >> {kdump_log_path}\nexit 1'
 
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     standby_ssh_connection = LabConnectionKeywords().get_standby_controller_ssh()
@@ -263,6 +275,9 @@ def test_kdump_excecutable_hooks_with_standby_controller(request):
     pre_uptime_of_host = SystemHostListKeywords(ssh_connection).get_uptime(active_controller_host_name)
     pre_uptime_standby_host = SystemHostListKeywords(ssh_connection).get_uptime(standby_controller_host_name)
 
+    # Sync filesystem to ensure hook scripts are written to disk before crash
+    FileKeywords(ssh_connection).sync_files()
+
     get_logger().log_info("Trigger kernel crash")
     KernelKeywords(ssh_connection).trigger_kernel_crash()
 
@@ -274,10 +289,13 @@ def test_kdump_excecutable_hooks_with_standby_controller(request):
     validate_equals(swact_success, True, "Controller Swact")
 
     get_logger().log_info("verify kdump file generated after kernel crash")
+    file_exists = False
     core_files = FileKeywords(ssh_connection).get_files_in_dir(kdump_path)
     for core_file in core_files:
         if "core" in core_file:
             file_exists = FileKeywords(ssh_connection).file_exists(f"{kdump_path}/{core_file}")
+            if file_exists:
+                break
 
     validate_equals(file_exists, True, "kdump file created")
 
@@ -316,6 +334,9 @@ def test_kdump_excecutable_hooks_with_standby_controller(request):
 
     # pre_uptime_of_host = SystemHostListKeywords(ssh_connection).get_uptime("controller-1")
 
+    # Sync filesystem to ensure hook scripts are written to disk before crash
+    FileKeywords(standby_ssh_connection).sync_files()
+
     get_logger().log_info("Trigger kernel crash")
     KernelKeywords(standby_ssh_connection).trigger_kernel_crash()
 
@@ -324,10 +345,13 @@ def test_kdump_excecutable_hooks_with_standby_controller(request):
     validate_equals(is_reboot_successful, True, "crash reboot")
 
     get_logger().log_info("verify kdump file generated after kernel crash")
+    file_exists = False
     core_files = FileKeywords(standby_ssh_connection).get_files_in_dir(kdump_path)
     for core_file in core_files:
         if "core" in core_file:
             file_exists = FileKeywords(standby_ssh_connection).file_exists(f"{kdump_path}/{core_file}")
+            if file_exists:
+                break
 
     validate_equals(file_exists, True, "kdump file created")
 
@@ -373,10 +397,10 @@ def test_kdump_excecutable_hooks_compute_host(request):
     pre_hook_fail_msg = "Pre-hook execution failed"
     post_hook_fail_msg = "Post-hook execution failed"
 
-    pre_hook_success_content = f'#!/bin/sh\necho "\$(date) : {pre_hook_success_msg}" >> {kdump_log_path}\nexit 0'
-    post_hook_success_content = f'#!/bin/sh\necho "\$(date) : {post_hook_success_msg}" >> {kdump_log_path}\nexit 0'
-    pre_hook_fail_content = f'#!/bin/sh\necho "\$(date) : {pre_hook_fail_msg}" >> {kdump_log_path}\nexit 1'
-    post_hook_fail_content = f'#!/bin/sh\necho "\$(date) : {post_hook_fail_msg}" >> {kdump_log_path}\nexit 1'
+    pre_hook_success_content = f'#!/bin/sh\necho "$(date) : {pre_hook_success_msg}" >> {kdump_log_path}\nexit 0'
+    post_hook_success_content = f'#!/bin/sh\necho "$(date) : {post_hook_success_msg}" >> {kdump_log_path}\nexit 0'
+    pre_hook_fail_content = f'#!/bin/sh\necho "$(date) : {pre_hook_fail_msg}" >> {kdump_log_path}\nexit 1'
+    post_hook_fail_content = f'#!/bin/sh\necho "$(date) : {post_hook_fail_msg}" >> {kdump_log_path}\nexit 1'
 
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     computes = SystemHostListKeywords(ssh_connection).get_computes()
@@ -468,10 +492,10 @@ def test_kdump_excecutable_hooks_storage_host(request):
     pre_hook_fail_msg = "Pre-hook execution failed"
     post_hook_fail_msg = "Post-hook execution failed"
 
-    pre_hook_success_content = f'#!/bin/sh\necho "\$(date) : {pre_hook_success_msg}" >> {kdump_log_path}\nexit 0'
-    post_hook_success_content = f'#!/bin/sh\necho "\$(date) : {post_hook_success_msg}" >> {kdump_log_path}\nexit 0'
-    pre_hook_fail_content = f'#!/bin/sh\necho "\$(date) : {pre_hook_fail_msg}" >> {kdump_log_path}\nexit 1'
-    post_hook_fail_content = f'#!/bin/sh\necho "\$(date) : {post_hook_fail_msg}" >> {kdump_log_path}\nexit 1'
+    pre_hook_success_content = f'#!/bin/sh\necho "$(date) : {pre_hook_success_msg}" >> {kdump_log_path}\nexit 0'
+    post_hook_success_content = f'#!/bin/sh\necho "$(date) : {post_hook_success_msg}" >> {kdump_log_path}\nexit 0'
+    pre_hook_fail_content = f'#!/bin/sh\necho "$(date) : {pre_hook_fail_msg}" >> {kdump_log_path}\nexit 1'
+    post_hook_fail_content = f'#!/bin/sh\necho "$(date) : {post_hook_fail_msg}" >> {kdump_log_path}\nexit 1'
 
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     storages = SystemHostListKeywords(ssh_connection).get_storages()
