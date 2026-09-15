@@ -1,3 +1,5 @@
+from typing import Optional
+
 from framework.ssh.ssh_connection import SSHConnection
 from framework.validation.validation import validate_equals_with_retry
 from keywords.k8s.k8s_base_keyword import K8sBaseKeyword
@@ -34,7 +36,7 @@ class KubectlFileApplyKeywords(K8sBaseKeyword):
         self.ssh_connection.send(self.k8s_config.export(cmd))
         self.validate_success_return_code(self.ssh_connection)
 
-    def apply_resource_from_yaml_with_retry(self, yaml_file: str, timeout: int = 60, poll_interval: int = 5) -> None:
+    def apply_resource_from_yaml_with_retry(self, yaml_file: str, namespace: Optional[str] = None, timeout: int = 60, poll_interval: int = 5) -> None:
         """Apply a Kubernetes resource, retrying on transient failures.
 
         Useful when an admission webhook (e.g. the KubeVirt virt-api mutator) may
@@ -43,20 +45,26 @@ class KubectlFileApplyKeywords(K8sBaseKeyword):
 
         Args:
             yaml_file (str): The path to the YAML file containing the resource definition.
+            namespace (str, optional): Namespace to apply the resource into. Applied via
+                '-n <namespace>' so resources without an explicit metadata.namespace land
+                there. If None, kubectl uses the resource's own namespace or 'default'.
             timeout (int): Maximum time to wait in seconds. Defaults to 60.
             poll_interval (int): Time between retries in seconds. Defaults to 5.
 
         Raises:
             TimeoutError: If the apply does not succeed within the timeout.
         """
+        namespace_flag = f" -n {namespace}" if namespace else ""
+        cmd = f"kubectl apply{namespace_flag} -f {yaml_file}"
+
         def _apply_return_code() -> int:
-            self.ssh_connection.send(self.k8s_config.export(f"kubectl apply -f {yaml_file}"))
+            self.ssh_connection.send(self.k8s_config.export(cmd))
             return self.ssh_connection.get_return_code()
 
         validate_equals_with_retry(
             function_to_execute=_apply_return_code,
             expected_value=0,
-            validation_description=f"kubectl apply -f {yaml_file} to succeed",
+            validation_description=f"{cmd} to succeed",
             timeout=timeout,
             polling_sleep_time=poll_interval,
         )
