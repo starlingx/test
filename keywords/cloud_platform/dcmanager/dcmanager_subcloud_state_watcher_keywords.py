@@ -6,6 +6,7 @@ from typing import List, Optional
 from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
 from keywords.base_keyword import BaseKeyword
+from keywords.cloud_platform.dcmanager.dcmanager_strategy_step_keywords import DcmanagerStrategyStepKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_list_keywords import DcManagerSubcloudListKeywords
 
 # Deploy operation in-progress states (dcmanager subcloud add / deploy)
@@ -26,6 +27,15 @@ RESTORE_IN_PROGRESS_STATES = ["pre-install", "installing", "restoring"]
 # Prestage operation in-progress states (dcmanager subcloud prestage)
 PRESTAGE_IN_PROGRESS_STATES = ["prestaging-packages", "prestaging-images", "prestaging"]
 
+# Strategy-step in-progress states (dcmanager strategy-step list). Shared by the
+# orchestrated strategies (sw-deploy-strategy, kube-upgrade-strategy,
+# prestage-strategy): a step is "initial" once queued and "applying" while it
+# runs, before reaching the terminal "complete"/"failed" state.
+STRATEGY_STEP_IN_PROGRESS_STATES = ["initial", "applying"]
+
+# Strategy-step terminal success state.
+STRATEGY_STEP_COMPLETE_STATE = "complete"
+
 
 class DcManagerSubcloudStateWatcherKeywords(BaseKeyword):
     """Watches subclouds transition through states until completion or failure.
@@ -45,6 +55,7 @@ class DcManagerSubcloudStateWatcherKeywords(BaseKeyword):
         """
         self.ssh_connection = ssh_connection
         self._list_kw = DcManagerSubcloudListKeywords(ssh_connection)
+        self._strategy_step_kw = DcmanagerStrategyStepKeywords(ssh_connection)
 
     def watch_subclouds(
         self,
@@ -170,6 +181,111 @@ class DcManagerSubcloudStateWatcherKeywords(BaseKeyword):
             polling_interval=polling_interval,
         )
 
+    def watch_strategy_steps(
+        self,
+        subcloud_names: List[str],
+        in_progress_states: Optional[List[str]] = None,
+        complete_state: str = STRATEGY_STEP_COMPLETE_STATE,
+        failed_states: Optional[List[str]] = None,
+        timeout: int = 4800,
+        polling_interval: int = 30,
+    ) -> None:
+        """Watch dcmanager strategy-step progress until all watched subclouds complete or fail.
+
+        Polls ``dcmanager strategy-step list`` at the specified interval and
+        monitors the per-subcloud step state. Continues polling while any watched
+        subcloud's step is in an in-progress state, and raises on failure or
+        timeout. This is the strategy-step analogue of ``watch_subclouds`` and is
+        shared by the orchestrated strategies (sw-deploy-strategy,
+        kube-upgrade-strategy, prestage-strategy), which all expose the same
+        step-state model.
+
+        Args:
+            subcloud_names (List[str]): Names of subclouds (strategy-step "cloud"
+                entries) to watch.
+            in_progress_states (Optional[List[str]]): States indicating the step
+                is still running. Defaults to STRATEGY_STEP_IN_PROGRESS_STATES
+                (["initial", "applying"]).
+            complete_state (str): Target state indicating success. Defaults to
+                "complete".
+            failed_states (Optional[List[str]]): States indicating failure. If
+                None, any state containing "failed" is treated as a failure.
+            timeout (int): Maximum seconds to wait for all subclouds. Defaults to 4800.
+            polling_interval (int): Seconds between polls. Defaults to 30.
+
+        Raises:
+            ValueError: If subcloud_names is empty.
+            TimeoutError: If not all subclouds reach a terminal state within timeout.
+            Exception: If any subcloud's strategy step reaches a failed state.
+        """
+        if not subcloud_names:
+            raise ValueError("subcloud_names must not be empty.")
+
+        if in_progress_states is None:
+            in_progress_states = STRATEGY_STEP_IN_PROGRESS_STATES
+
+        pending = set(subcloud_names)
+        completed = []
+        failed = []
+        end_time = time.time() + timeout
+
+        get_logger().log_info(f"Watching strategy steps for {len(subcloud_names)} subcloud(s) to reach '{complete_state}'")
+        get_logger().log_info(f"In-progress states: {in_progress_states}")
+
+        while pending and time.time() < end_time:
+            step_states = self._get_strategy_step_states()
+            finished_this_round = []
+
+            for sc_name in pending:
+                # A step may not have been created yet for this subcloud; keep waiting.
+                if sc_name not in step_states:
+                    continue
+
+                current_state = step_states[sc_name]
+
+                if current_state == complete_state:
+                    get_logger().log_info(f"Subcloud '{sc_name}' strategy step reached '{complete_state}'")
+                    completed.append(sc_name)
+                    finished_this_round.append(sc_name)
+                elif self._is_failed_state(current_state, failed_states):
+                    get_logger().log_info(f"Subcloud '{sc_name}' strategy step entered failed state: '{current_state}'")
+                    failed.append((sc_name, current_state))
+                    finished_this_round.append(sc_name)
+                elif current_state not in in_progress_states:
+                    get_logger().log_info(f"Subcloud '{sc_name}' strategy step in unexpected state: '{current_state}'")
+                    failed.append((sc_name, current_state))
+                    finished_this_round.append(sc_name)
+
+            for sc_name in finished_this_round:
+                pending.remove(sc_name)
+
+            if pending:
+                self._log_strategy_step_summary(step_states, pending, len(completed), failed)
+                time.sleep(polling_interval)
+
+        if pending:
+            msg = f"Timed out waiting for strategy steps to reach '{complete_state}'. Still pending: {sorted(pending)}"
+            get_logger().log_error(msg)
+            raise TimeoutError(msg)
+
+        if failed:
+            failed_summary = ", ".join([f"{name} ({state})" for name, state in failed])
+            msg = f"Strategy steps failed: {failed_summary}"
+            get_logger().log_error(msg)
+            raise Exception(msg)
+
+        get_logger().log_info(f"All {len(completed)} subcloud(s) strategy steps reached '{complete_state}'")
+
+    def _get_strategy_step_states(self) -> dict:
+        """Poll ``dcmanager strategy-step list`` and map each subcloud to its step state.
+
+        Returns:
+            dict: Mapping of subcloud name (strategy-step "cloud") to its current
+                step state. Subclouds without a step entry are simply absent.
+        """
+        step_list = self._strategy_step_kw.get_dcmanager_strategy_step_list().get_dcmanager_strategy_step_list()
+        return {step.get_cloud(): step.get_state() for step in step_list}
+
     @staticmethod
     def _get_field_value(sc_obj: object, field_to_watch: str) -> str:
         """Get the value of the specified field from a subcloud list object.
@@ -236,6 +352,39 @@ class DcManagerSubcloudStateWatcherKeywords(BaseKeyword):
 
         total = len(pending) + completed_count + len(failed)
         summary_lines = [f"Operation: In-progress | Total: {total}"]
+        if completed_count > 0:
+            summary_lines.append(f"  completed = {completed_count}")
+        for state, count in sorted(state_counts.items()):
+            summary_lines.append(f"  {state} = {count}")
+
+        get_logger().log_info("\n".join(summary_lines))
+
+    @staticmethod
+    def _log_strategy_step_summary(step_states: dict, pending: set, completed_count: int, failed: list) -> None:
+        """Log an aggregated status summary of the watched strategy steps.
+
+        Mirrors _log_status_summary but sources state from the strategy-step
+        state map rather than the subcloud list output.
+
+        Args:
+            step_states (dict): Mapping of subcloud name to current step state.
+            pending (set): Set of subcloud names still being watched.
+            completed_count (int): Number of subclouds whose step already completed.
+            failed (list): List of (name, state) tuples for failed subclouds.
+        """
+        state_counts = {}
+        for sc_name in sorted(pending):
+            if sc_name in step_states:
+                state = step_states[sc_name]
+                state_counts[state] = state_counts.get(state, 0) + 1
+            else:
+                state_counts["(no step yet)"] = state_counts.get("(no step yet)", 0) + 1
+
+        for _, fail_state in failed:
+            state_counts[fail_state] = state_counts.get(fail_state, 0) + 1
+
+        total = len(pending) + completed_count + len(failed)
+        summary_lines = [f"Strategy steps: In-progress | Total: {total}"]
         if completed_count > 0:
             summary_lines.append(f"  completed = {completed_count}")
         for state, count in sorted(state_counts.items()):
