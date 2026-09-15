@@ -827,7 +827,7 @@ def test_bootstrap_default_oidc_username_claim():
     Test Steps:
         - Query oidc-username-claim service parameter
         - Verify value is 'preferred_username'
-        - Verify dex helm overrides have corrected emailAttr/nameAttr
+        - Verify dex helm overrides have the bootstrap default emailAttr/nameAttr
     """
     config = _load_dex_config()
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
@@ -837,9 +837,11 @@ def test_bootstrap_default_oidc_username_claim():
     current_claim = dex_keywords.get_oidc_username_claim()
     validate_equals(current_claim, config.get_oidc_username_claim().get_default(), "Default oidc-username-claim should be 'preferred_username'")
 
-    get_logger().log_info("Verifying corrected emailAttr in helm overrides")
+    get_logger().log_info("Verifying bootstrap default emailAttr/nameAttr in helm overrides")
     dex_keywords.helm_override_keywords.verify_helm_user_override(config.get_local_ldap().get_email_attr(), config.get_oidc_app_name(), "dex", config.get_namespace())
-    dex_keywords.helm_override_keywords.verify_helm_user_override(config.get_local_ldap().get_name_attr(), config.get_oidc_app_name(), "dex", config.get_namespace())
+    # Bootstrap ships userSearch.nameAttr=cn (get_bootstrap_name_attr), NOT the
+    # recommended gecos mapping (get_name_attr) that the attr-mapping tests apply.
+    dex_keywords.helm_override_keywords.verify_helm_user_override(config.get_local_ldap().get_bootstrap_name_attr(), config.get_oidc_app_name(), "dex", config.get_namespace())
 
 
 # =============================================================================

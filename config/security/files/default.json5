@@ -236,7 +236,12 @@
         "local_ldap": {
             "email_attr": "mail",
             "username_attr": "uid",
-            "name_attr": "gecos"
+            "name_attr": "gecos",
+            // Out-of-box bootstrap default for userSearch.nameAttr shipped by
+            // oidc-auth-apps lifecycle (_configure_dex_override). Distinct from
+            // "name_attr" (gecos) which is the recommended mapping the attr-mapping
+            // tests explicitly apply. The bootstrap validation test checks this.
+            "bootstrap_name_attr": "cn"
         },
         "wad_connector": {
             "email_attr": "mail",
