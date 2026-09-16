@@ -172,3 +172,29 @@ class DcmanagerSubcloudGroupKeywords(BaseKeyword):
         members = sorted([result.get_name() for result in SubcloudPickerKeywords(system_controller_ssh).pick_all(availability=DcManagerSubcloudListAvailabilityEnum.ONLINE, load=load)])
         DcmanagerSubcloudGroupKeywords(system_controller_ssh).dcmanager_subcloud_group_add_with_subclouds(group_name, members)
         return system_controller_ssh, members
+
+    @staticmethod
+    def dcmanager_subcloud_group_build(group_name: str, in_sync: bool = False) -> Tuple[SSHConnection, List[str]]:
+        """Select online subclouds and create a group from them, without any release filter.
+
+        Picks all online subclouds (with secondary system controller fallback),
+        regardless of the release they run, then creates the group and assigns
+        those members. Mirrors the single-subcloud picker usage
+        (``availability=ONLINE, in_sync=False``): members are chosen by
+        availability and sync state only, so the group operation acts on
+        whatever release the subclouds happen to run.
+
+        Args:
+            group_name (str): Name of the group to create.
+            in_sync (bool): When False (default), only out-of-sync subclouds
+                are selected (they have something to reconcile). Set to None
+                via the picker to skip the sync check entirely.
+
+        Returns:
+            Tuple[SSHConnection, List[str]]: The system controller SSH connection
+                owning the members and the sorted member subcloud names.
+        """
+        system_controller_ssh, _ = pick_subcloud_with_fallback(availability=DcManagerSubcloudListAvailabilityEnum.ONLINE, in_sync=in_sync)
+        members = sorted([result.get_name() for result in SubcloudPickerKeywords(system_controller_ssh).pick_all(availability=DcManagerSubcloudListAvailabilityEnum.ONLINE, in_sync=in_sync)])
+        DcmanagerSubcloudGroupKeywords(system_controller_ssh).dcmanager_subcloud_group_add_with_subclouds(group_name, members)
+        return system_controller_ssh, members
