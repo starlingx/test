@@ -10,6 +10,7 @@ from config.kof.objects.kof_config import KofConfig
 from config.kubernetes_upgrade.objects.kubernetes_upgrade_config import KubernetesUpgradeConfig
 from config.lab.objects.lab_config import LabConfig
 from config.logger.objects.logger_config import LoggerConfig
+from config.o2ims.objects.o2ims_config import O2imsConfig
 from config.openstack.objects.openstack_config import OpenstackConfig
 from config.ptp.objects.ptp_config import PTPConfig
 from config.rest_api.objects.rest_api_config import RestAPIConfig
@@ -48,6 +49,7 @@ class ConfigurationManagerClass:
         self.backup_restore_config: BackupRestoreConfig = None
         self.kubernetes_upgrade_config: KubernetesUpgradeConfig = None
         self.cyclictest_config: CyclictestConfig = None
+        self.o2ims_config: O2imsConfig = None
 
     def is_config_loaded(self) -> bool:
         """
@@ -150,6 +152,10 @@ class ConfigurationManagerClass:
         if not cyclictest_config_file:
             cyclictest_config_file = get_stx_resource_path("config/cyclictest/files/default.json5")
 
+        o2ims_config_file = config_file_locations.get_o2ims_config_file()
+        if not o2ims_config_file:
+            o2ims_config_file = get_stx_resource_path("config/o2ims/files/default.json5")
+
         if not self.loaded:
             try:
                 self.lab_config = LabConfig(lab_config_file)
@@ -171,6 +177,7 @@ class ConfigurationManagerClass:
                 self.backup_restore_config = BackupRestoreConfig(backup_restore_config_file)
                 self.kubernetes_upgrade_config = KubernetesUpgradeConfig(kubernetes_upgrade_config_file)
                 self.cyclictest_config = CyclictestConfig(cyclictest_config_file)
+                self.o2ims_config = O2imsConfig(o2ims_config_file)
                 self.loaded = True
             except FileNotFoundError as e:
                 print(f"Unable to load the config using file: {str(e.filename)} ")
@@ -363,6 +370,15 @@ class ConfigurationManagerClass:
         """
         return self.cyclictest_config
 
+    def get_o2ims_config(self) -> O2imsConfig:
+        """
+        Getter for O2 IMS config.
+
+        Returns:
+            O2imsConfig: the O2 IMS config
+        """
+        return self.o2ims_config
+
     def get_config_pytest_args(self) -> [str]:
         """
         Returns the configuration file locations as pytest args.
@@ -410,6 +426,8 @@ class ConfigurationManagerClass:
             pytest_config_args.append(f"--kubernetes_upgrade_config_file={self.configuration_locations_manager.get_kubernetes_upgrade_config_file()}")
         if self.configuration_locations_manager.cyclictest_config_file:
             pytest_config_args.append(f"--cyclictest_config_file={self.configuration_locations_manager.get_cyclictest_config_file()}")
+        if self.configuration_locations_manager.o2ims_config_file:
+            pytest_config_args.append(f"--o2ims_config_file={self.configuration_locations_manager.get_o2ims_config_file()}")
 
         return pytest_config_args
 

@@ -174,82 +174,87 @@ class SSHTunnelRestClient:
         """
         return self._rewrite_url(url), None
 
-    def get(self, url: str, headers: dict | list | None = None) -> RestResponse:
+    def get(self, url: str, headers: dict | list | None = None, cert: tuple[str, str] | None = None) -> RestResponse:
         """Run a GET request through the paramiko port forwarder.
 
         Args:
             url (str): The URL to GET.
             headers (dict | list | None): Optional request headers.
+            cert (tuple[str, str] | None): Client certificate as a (cert_path, key_path) pair for mutual TLS. Defaults to None.
 
         Returns:
             RestResponse: The response.
         """
         headers_dict = self._normalize_headers(headers)
         modified_url = self._rewrite_url(url)
-        response = requests.get(modified_url, headers=headers_dict, verify=False)
+        response = requests.get(modified_url, headers=headers_dict, verify=False, cert=cert)
         return RestResponse(response)
 
-    def post(self, url: str, data: str | bytes | dict, headers: dict | list | None) -> RestResponse:
+    def post(self, url: str, data: str | bytes | dict, headers: dict | list | None, cert: tuple[str, str] | None = None) -> RestResponse:
         """Run a POST request through the paramiko port forwarder.
 
         Args:
             url (str): The URL to POST to.
             data (str | bytes | dict): The request body.
             headers (dict | list | None): Request headers.
+            cert (tuple[str, str] | None): Client certificate as a (cert_path, key_path) pair for mutual TLS. Defaults to None.
 
         Returns:
             RestResponse: The response.
         """
         headers_dict = self._normalize_headers(headers)
         modified_url = self._rewrite_url(url)
-        response = requests.post(modified_url, headers=headers_dict, data=data, verify=False)
+        response = requests.post(modified_url, headers=headers_dict, data=data, verify=False, cert=cert)
         return RestResponse(response)
 
-    def delete(self, url: str, headers: dict | list | None = None) -> RestResponse:
+    def delete(self, url: str, headers: dict | list | None = None, cert: tuple[str, str] | None = None) -> RestResponse:
         """Run a DELETE request through the paramiko port forwarder.
 
         Args:
             url (str): The URL to DELETE.
             headers (dict | list | None): Optional request headers.
+            cert (tuple[str, str] | None): Client certificate as a (cert_path, key_path) pair for mutual TLS. Defaults to None.
 
         Returns:
             RestResponse: The response.
         """
         headers_dict = self._normalize_headers(headers)
         modified_url = self._rewrite_url(url)
-        response = requests.delete(modified_url, headers=headers_dict, verify=False)
+        response = requests.delete(modified_url, headers=headers_dict, verify=False, cert=cert)
         return RestResponse(response)
 
-    def patch(self, url: str, data: dict | str | None = None, headers: dict | list | None = None) -> RestResponse:
+    def patch(self, url: str, data: dict | str | None = None, headers: dict | list | None = None, cert: tuple[str, str] | None = None) -> RestResponse:
         """Run a PATCH request through the paramiko port forwarder.
 
         Args:
             url (str): The URL to PATCH.
             data (dict | str | None): The request body.
             headers (dict | list | None): Optional request headers.
+            cert (tuple[str, str] | None): Client certificate as a (cert_path, key_path) pair for mutual TLS. Defaults to None.
 
         Returns:
             RestResponse: The response.
         """
         headers_dict = self._normalize_headers(headers)
         modified_url = self._rewrite_url(url)
-        response = requests.patch(modified_url, headers=headers_dict, json=data, verify=False)
+        response = requests.patch(modified_url, headers=headers_dict, json=data, verify=False, cert=cert)
         return RestResponse(response)
 
-    def put(self, url: str, data: dict | str | None = None, headers: dict | list | None = None) -> RestResponse:
+    def put(self, url: str, data: dict | str | None = None, headers: dict | list | None = None, cert: tuple[str, str] | None = None) -> RestResponse:
         """Run a PUT request through the paramiko port forwarder.
 
         Args:
             url (str): The URL to PUT.
             data (dict | str | None): The request body.
             headers (dict | list | None): Optional request headers.
+            cert (tuple[str, str] | None): Client certificate as a (cert_path, key_path) pair for mutual TLS. Defaults to None.
 
         Returns:
             RestResponse: The response.
         """
         headers_dict = self._normalize_headers(headers)
         modified_url = self._rewrite_url(url)
-        response = requests.put(modified_url, headers=headers_dict, json=data, verify=False)
+        response = requests.put(modified_url, headers=headers_dict, json=data, verify=False, cert=cert)
         return RestResponse(response)
 
     def close(self) -> None:

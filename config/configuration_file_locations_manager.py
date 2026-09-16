@@ -30,6 +30,7 @@ class ConfigurationFileLocationsManager:
         self.backup_restore_config_file = None
         self.kubernetes_upgrade_config_file = None
         self.cyclictest_config_file = None
+        self.o2ims_config_file = None
 
     def set_configs_from_pytest_args(self, session: Session):
         """
@@ -114,6 +115,10 @@ class ConfigurationFileLocationsManager:
         cyclictest_config_file = session.config.getoption("--cyclictest_config_file")
         if cyclictest_config_file:
             self.set_cyclictest_config_file(cyclictest_config_file)
+
+        o2ims_config_file = session.config.getoption("--o2ims_config_file")
+        if o2ims_config_file:
+            self.set_o2ims_config_file(o2ims_config_file)
 
     def set_configs_from_options_parser(self, parser: OptionParser = None):
         """
@@ -207,6 +212,10 @@ class ConfigurationFileLocationsManager:
         if cyclictest_config_file:
             self.set_cyclictest_config_file(cyclictest_config_file)
 
+        o2ims_config_file = options.o2ims_config_file
+        if o2ims_config_file:
+            self.set_o2ims_config_file(o2ims_config_file)
+
     @staticmethod
     def add_options(safe_parser: SafeOptionParser):
         """
@@ -235,6 +244,7 @@ class ConfigurationFileLocationsManager:
         safe_parser.add_option("--backup_restore_config_file", action="store", dest="backup_restore_config_file", help="The backup and restore config file")
         safe_parser.add_option("--kubernetes_upgrade_config_file", action="store", dest="kubernetes_upgrade_config_file", help="The Kubernetes upgrade config file")
         safe_parser.add_option("--cyclictest_config_file", action="store", dest="cyclictest_config_file", help="The cyclictest config file")
+        safe_parser.add_option("--o2ims_config_file", action="store", dest="o2ims_config_file", help="The O2 IMS config file")
 
     def set_lab_config_file(self, lab_config_file: str):
         """
@@ -617,3 +627,22 @@ class ConfigurationFileLocationsManager:
             str: the cyclictest config file
         """
         return self.cyclictest_config_file
+
+    def set_o2ims_config_file(self, o2ims_config_file: str):
+        """
+        Setter for O2 IMS config file
+
+        Args:
+            o2ims_config_file (str): the O2 IMS config file
+
+        """
+        self.o2ims_config_file = o2ims_config_file
+
+    def get_o2ims_config_file(self) -> str:
+        """
+        Getter for O2 IMS config file
+
+        Returns:
+            str: the O2 IMS config file
+        """
+        return self.o2ims_config_file
