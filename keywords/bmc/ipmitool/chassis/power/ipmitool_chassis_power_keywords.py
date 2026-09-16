@@ -44,9 +44,10 @@ class IPMIToolChassisPowerKeywords(BaseKeyword):
         "Unable to establish IPMI v2 / RMCP+ session". This method
         retries the command before giving up.
 
-        For "power on", if the BMC rejects with "Command not supported
-        in present state" (e.g., Power Restore Policy is already bringing
-        the chassis up), the error is treated as non-fatal. The caller's
+        For "power on" and "power off", if the BMC rejects with "Command
+        not supported in present state" the desired terminal state is
+        already reached (the chassis is already on, or already off), so the
+        error is treated as non-fatal. For power on, the caller's
         is_powered_on() poll will wait for the chassis to finish powering
         on by itself.
 
@@ -69,12 +70,14 @@ class IPMIToolChassisPowerKeywords(BaseKeyword):
 
             output_str = output if isinstance(output, str) else "\n".join(output)
 
-            # "Command not supported in present state" during power-on
-            # means the BMC is already transitioning (e.g., Power Restore
-            # Policy). Treat as non-fatal; the caller's is_powered_on()
-            # poll will handle the wait.
-            if action == "on" and _IPMI_NOT_SUPPORTED_IN_PRESENT_STATE in output_str.lower():
-                get_logger().log_info("IPMI chassis power on rejected: 'Command not supported in present state'. " "BMC is likely already transitioning to power-on. " "Deferring to is_powered_on() wait loop.")
+            # "Command not supported in present state" means the chassis is
+            # already in the requested terminal state. On power-on the BMC is
+            # already transitioning up (e.g., Power Restore Policy); on
+            # power-off the chassis is already off. Either way the desired
+            # state is reached, so treat it as non-fatal. For power-on the
+            # caller's is_powered_on() poll will handle the wait.
+            if action in ("on", "off") and _IPMI_NOT_SUPPORTED_IN_PRESENT_STATE in output_str.lower():
+                get_logger().log_info(f"IPMI chassis power {action} rejected: 'Command not supported in present state'. Chassis is already in the requested state. Treating as non-fatal.")
                 return
 
             if attempt < _IPMI_POWER_CMD_MAX_RETRIES - 1:
