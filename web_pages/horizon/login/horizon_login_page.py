@@ -97,10 +97,16 @@ class HorizonLoginPage(BasePage):
     def logout(self) -> None:
         """Logout from Horizon by navigating to the logout URL.
 
-        Uses the Horizon URL from the lab configuration to construct
-        the logout endpoint.
+        Derives the base URL from the current browser URL (scheme + host) so
+        logout targets the exact host the session is on, matching the host used
+        to log in. This reuses the same approach as switch_project and avoids
+        relying on the configured Horizon URL, which may reference a different
+        host or an unbracketed IPv6 literal that the browser rejects as an
+        invalid argument.
         """
-        base_url = ConfigurationManager.get_lab_config().get_horizon_url().rstrip("/")
+        current_url = self.driver.get_current_url()
+        base_parts = current_url.split("/")
+        base_url = f"{base_parts[0]}//{base_parts[2]}"
         logout_url = f"{base_url}/auth/logout/"
         self.driver.navigate_to_url(logout_url)
 
