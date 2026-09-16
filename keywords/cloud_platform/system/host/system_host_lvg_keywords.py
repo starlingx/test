@@ -71,6 +71,45 @@ class SystemHostLvgKeywords(BaseKeyword):
         system_host_lvg_output = SystemHostLvgShowOutput(output)
         return system_host_lvg_output
 
+    def system_host_lvg_add(self, host_id: str, lvg_name: str, lvm_function: str = None, lvm_type: str = None) -> SystemHostLvgShowOutput:
+        """
+        Run 'system host-lvg-add' to create a new local volume group on a host.
+
+        Some volume group names (e.g. 'lvm-provisioner') are only accepted when the LVM function and
+        type are supplied at creation time, so 'lvm_function' and 'lvm_type' can be passed to add the
+        '-f' and '-t' options.
+
+        Args:
+            host_id (str): name or id of the host (e.g. 'controller-0').
+            lvg_name (str): name of the local volume group to create (e.g. 'lvm-provisioner').
+            lvm_function (str): optional LVM function to assign at creation (e.g. 'lvm-csi'). Defaults to none.
+            lvm_type (str): optional LVM type to assign at creation (e.g. 'thin'). Defaults to none.
+
+        Returns:
+            SystemHostLvgShowOutput: object representing the created lvg.
+        """
+        command = f"system host-lvg-add {host_id} {lvg_name}"
+        if lvm_function is not None:
+            command += f" -f {lvm_function}"
+        if lvm_type is not None:
+            command += f" -t {lvm_type}"
+        output = self.ssh_connection.send(source_openrc(command))
+        self.validate_success_return_code(self.ssh_connection)
+        system_host_lvg_output = SystemHostLvgShowOutput(output)
+        return system_host_lvg_output
+
+    def system_host_lvg_delete(self, host_id: str, lvg_name: str) -> None:
+        """
+        Run 'system host-lvg-delete' to remove a local volume group from a host.
+
+        Args:
+            host_id (str): name or id of the host (e.g. 'controller-0').
+            lvg_name (str): name or uuid of the local volume group to delete (e.g. 'lvm-provisioner').
+        """
+        command = source_openrc(f"system host-lvg-delete {host_id} {lvg_name}")
+        self.ssh_connection.send(command)
+        self.validate_success_return_code(self.ssh_connection)
+
     def wait_for_thin_cur_lv_zero(self, host_id: str, lvg_name: str, timeout: int = 300, polling_interval: int = 10) -> None:
         """
         Wait until 'system host-lvg-show' reports 'thin_cur_lv' as 0 for the given volume group.

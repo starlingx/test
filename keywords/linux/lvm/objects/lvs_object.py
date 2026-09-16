@@ -138,6 +138,24 @@ class LvsObject:
         """
         return self.lsize
 
+    def get_lsize_gib(self) -> float:
+        """
+        Get the LV size in gibibytes as a float.
+
+        The 'lvs' command reports sizes such as '9.76g' or '<9.74g' (the '<' marks an approximate
+        value). This strips the leading comparator and the trailing 'g' unit and returns the number.
+
+        Returns:
+            float: the LV size in GiB, or 0.0 if it cannot be parsed.
+        """
+        if not self.lsize:
+            return 0.0
+        cleaned = self.lsize.strip().lstrip("<>").rstrip("gG")
+        try:
+            return float(cleaned)
+        except ValueError:
+            return 0.0
+
     def set_pool(self, pool: str):
         """
         Setter for the pool this LV belongs to.

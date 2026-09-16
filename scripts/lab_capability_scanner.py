@@ -31,6 +31,7 @@ from keywords.cloud_platform.rest.bare_metal.hosts.get_hosts_cpus_keywords impor
 from keywords.cloud_platform.rest.bare_metal.hosts.get_hosts_keywords import GetHostsKeywords
 from keywords.cloud_platform.rest.bare_metal.memory.get_host_memory_keywords import GetHostMemoryKeywords
 from keywords.cloud_platform.rest.bare_metal.ports.get_host_ports_keywords import GetHostPortsKeywords
+from keywords.cloud_platform.rest.bare_metal.pvs.get_host_pvs_keywords import GetHostPvsKeywords
 from keywords.cloud_platform.rest.configuration.addresses.get_host_addresses_keywords import GetHostAddressesKeywords
 from keywords.cloud_platform.rest.configuration.devices.system_host_device_keywords import GetHostDevicesKeywords
 from keywords.cloud_platform.rest.configuration.interfaces.get_interfaces_keywords import GetInterfacesKeywords
@@ -273,6 +274,7 @@ def has_dsa_device(ssh_connection: SSHConnection) -> bool:
     dsa_patterns = ("11fb", "0b25")
     return lspci_keywords.has_pci_device(dsa_patterns)
 
+
 def has_linux_cpu_metrics(ssh_connection: SSHConnection) -> bool:
     """Verify:
 
@@ -287,8 +289,6 @@ def has_linux_cpu_metrics(ssh_connection: SSHConnection) -> bool:
     """
     output = ssh_connection.send(cmd="cpupower frequency-info")
     return not any("Not Available" in s for s in output)
-
-
 
 
 def directory_exists_on_system_controller(ssh_connection: SSHConnection, directory_path: str) -> bool:
@@ -329,9 +329,7 @@ def directory_exists_on_system_controller(ssh_connection: SSHConnection, directo
         get_logger().log_info(f"Directory '{directory_path}' exists on system controller: False")
         return False
 
-    get_logger().log_warning(
-        f"Unexpected return code '{return_code}' while checking directory '{directory_path}' on system controller; treating as not existing"
-    )
+    get_logger().log_warning(f"Unexpected return code '{return_code}' while checking directory '{directory_path}' on system controller; treating as not existing")
     return False
 
 
@@ -495,10 +493,7 @@ def populate_subcloud_factory_credentials(
     bmc_password = install_values.get("bmc_password")
 
     if not factory_ip or not bmc_username:
-        get_logger().log_warning(
-            f"install_values file '{install_values_path}' is missing 'bootstrap_address' or 'bmc_username'; "
-            "factory data will not be added to the subcloud config."
-        )
+        get_logger().log_warning(f"install_values file '{install_values_path}' is missing 'bootstrap_address' or 'bmc_username'; " "factory data will not be added to the subcloud config.")
         _clear_subcloud_factory_data(subcloud, reason=f"install values file '{install_values_path}' is missing required keys")
         return False
 
@@ -506,10 +501,7 @@ def populate_subcloud_factory_credentials(
     password_value = "" if bmc_password is None else str(bmc_password)
     subcloud.set_factory_credentials(Credentials({"user_name": str(bmc_username), "password": password_value}))
     if not password_value:
-        get_logger().log_warning(
-            f"install_values file '{install_values_path}' has no 'bmc_password'; "
-            f"factory_credentials.password for subcloud '{subcloud.get_lab_name()}' will be empty."
-        )
+        get_logger().log_warning(f"install_values file '{install_values_path}' has no 'bmc_password'; " f"factory_credentials.password for subcloud '{subcloud.get_lab_name()}' will be empty.")
     get_logger().log_info(f"Added factory data for subcloud '{subcloud.get_lab_name()}' from '{install_values_path}'.")
     return True
 
@@ -528,9 +520,7 @@ def _clear_subcloud_factory_data(subcloud: LabConfig, reason: str) -> None:
     """
     if subcloud.get_factory_ip() is None and subcloud.get_factory_credentials() is None:
         return
-    get_logger().log_info(
-        f"Clearing stale factory data from subcloud '{subcloud.get_lab_name()}' config ({reason})."
-    )
+    get_logger().log_info(f"Clearing stale factory data from subcloud '{subcloud.get_lab_name()}' config ({reason}).")
     subcloud.set_factory_ip(None)
     subcloud.set_factory_credentials(None)
 
@@ -721,6 +711,7 @@ def scan_hosts(lab_config: LabConfig, ssh_connection: SSHConnection) -> list[Nod
         host_memory_output = GetHostMemoryKeywords().get_memory(host_uuid)
         host_storage_output = GetStorageKeywords().get_storage(host_uuid)
         host_disk_output = GetHostDisksKeywords().get_disks(host_uuid)
+        host_pv_output = GetHostPvsKeywords().get_host_pvs(host_uuid)
 
         # Parse the data to define the lab's capabilities.
         if is_sriov(host_interface_list_output):
@@ -787,6 +778,11 @@ def scan_hosts(lab_config: LabConfig, ssh_connection: SSHConnection) -> list[Nod
         if host_disk_output.has_minimum_disk_space_in_gb(30):
             node.append_node_capability("lab_has_min_space_30G")
             lab_config.add_lab_capability("lab_has_min_space_30G")
+
+        used_disk_uuids = set(host_storage_output.get_host_all_osd_idisk_uuid()) | set(host_pv_output.get_all_pv_disk_uuids())
+        if host_disk_output.has_free_disk(used_disk_uuids):
+            node.append_node_capability("lab_has_free_disk")
+            lab_config.add_lab_capability("lab_has_free_disk")
 
         if host_cpu_output.has_minimum_number_processors(2):
             node.append_node_capability("lab_has_processor_min_2")
@@ -1011,6 +1007,16 @@ def is_ceph() -> bool:
     """
     backends = GetStorageBackendKeywords().get_storage_backends()
     return backends.is_backend_configured("ceph")
+
+
+def is_lvm() -> bool:
+    """Checks if the lab has the lvm (lvm-store) storage backend configured.
+
+    Returns:
+        bool: True if the lab is using the lvm storage backend, False otherwise.
+    """
+    backends = GetStorageBackendKeywords().get_storage_backends()
+    return backends.is_backend_configured("lvm")
 
 
 def scan_storage_capabilities(lab_config: LabConfig) -> None:
@@ -1270,6 +1276,10 @@ if __name__ == "__main__":
     # check if the lab is using ceph
     if is_ceph():
         lab_config.add_lab_capability("lab_has_ceph")
+
+    # check if the lab has the lvm storage backend configured
+    if is_lvm():
+        lab_config.add_lab_capability("lab_has_lvm")
 
     # check storage capabilities from StorageClass and TridentBackendConfig
     scan_storage_capabilities(lab_config)
