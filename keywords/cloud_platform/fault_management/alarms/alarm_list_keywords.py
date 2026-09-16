@@ -1,3 +1,4 @@
+import math
 import re
 import time
 
@@ -51,7 +52,7 @@ class AlarmListKeywords(BaseKeyword):
         """
         return self.get_alarm_list().get_alarms()
 
-    def wait_for_all_alarms_cleared(self, dwell_seconds: int = 60, transient_alarm_ids: list[str] = None) -> None:
+    def wait_for_all_alarms_cleared(self, dwell_seconds: int = 60, required_consecutive_clears: int = None, transient_alarm_ids: list[str] = None) -> None:
         """Wait for all alarms to be cleared and to stay cleared for a stable dwell window.
 
         A single empty 'fm alarm-list' sample is not treated as steady state. The alarm list must
@@ -70,6 +71,11 @@ class AlarmListKeywords(BaseKeyword):
         Args:
             dwell_seconds (int): Minimum time in seconds the alarm list must stay clear before success
                 is declared. Defaults to 60.
+            required_consecutive_clears (int): Number of consecutive clear polls required before success
+                is declared. When None (default), it is derived from the dwell window and the poll
+                interval as ceil(dwell_seconds / get_check_interval_in_seconds()), so the stability gate
+                and the dwell window agree. Passed through to wait_for_all_alarms_cleared_excluding() as
+                'stable_checks'.
             transient_alarm_ids (list[str]): Optional allowlist of alarm IDs treated as still-reconciling
                 rather than hard alarms. Alarms whose ID is in this list do not block or reset the dwell
                 window. Defaults to none (every alarm is treated as blocking).
@@ -80,10 +86,18 @@ class AlarmListKeywords(BaseKeyword):
             TimeoutError: if the alarms can not be cleared and remain clear for the dwell window within
                 the period defined by the get_timeout_in_seconds() seconds.
         """
+        # When the caller does not specify a consecutive-clear count, derive it from the dwell window
+        # and the poll interval so both stability gates express the same requirement.
+        if required_consecutive_clears is None:
+            check_interval = self.get_check_interval_in_seconds()
+            required_consecutive_clears = math.ceil(dwell_seconds / check_interval) if check_interval else 1
+
         # Delegate to the unified debounced implementation. 'transient_alarm_ids' are treated as
-        # still-reconciling (excluded). The dwell window alone governs stability now.
+        # still-reconciling (excluded). Both the dwell window and the consecutive-clear count govern
+        # stability; wait_for_all_alarms_cleared_excluding() takes the stricter of the two.
         self.wait_for_all_alarms_cleared_excluding(
             excluded_alarm_ids=transient_alarm_ids if transient_alarm_ids is not None else [],
+            stable_checks=required_consecutive_clears,
             dwell_seconds=dwell_seconds,
         )
 

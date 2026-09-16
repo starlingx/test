@@ -218,6 +218,16 @@ class AppConfig:
         """
         return self.dell_storage_app_tarball
 
+    def get_dell_storage_app_tarball_rollback(self) -> str:
+        """
+        Getter for dell-storage app rollback tarball
+
+        Returns:
+            str: the dell-storage app rollback tarball
+
+        """
+        return self.dell_storage_app_tarball_rollback
+
     def get_metrics_server_app_tarball(self) -> str:
         """
         Getter for metrics server app tarball
