@@ -898,7 +898,10 @@ class USMConfig:
     def resolve_test_patch_path(self, suffix: str) -> str:
         """Resolve the full patch file path for a given suffix.
 
-        Constructs the path as: {base_dir}/{prefix}-{suffix}.patch
+        Constructs the path as: {base_dir}/{prefix}-{actual_suffix}.patch, where
+        actual_suffix is the value from the optional "suffix_map" if present.
+        The suffix_map allows config-only remapping when patch names change
+        between releases (e.g. the 26.10 patch set renames several suffixes).
 
         Args:
             suffix (str): Patch type suffix (e.g., "logmgmt-rr", "logmgmt-insvc").
@@ -913,7 +916,10 @@ class USMConfig:
             raise ValueError("test_patches section not configured")
         base_dir = self.test_patches.get("base_dir", "")
         prefix = self.test_patches.get("prefix", "")
-        return f"{base_dir}/{prefix}-{suffix}.patch"
+        # Check for suffix mapping (allows config-only remapping when patch names change)
+        suffix_map = self.test_patches.get("suffix_map", {})
+        actual_suffix = suffix_map.get(suffix, suffix)
+        return f"{base_dir}/{prefix}-{actual_suffix}.patch"
 
     def resolve_dependent_patch_paths(self) -> list[str]:
         """Resolve full paths for all dependent patches.
