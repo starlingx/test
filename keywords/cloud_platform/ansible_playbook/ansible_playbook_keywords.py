@@ -1,3 +1,5 @@
+import shlex
+
 from config.configuration_manager import ConfigurationManager
 from framework.logging.automation_logger import get_logger
 from keywords.base_keyword import BaseKeyword
@@ -75,3 +77,36 @@ class AnsiblePlaybookKeywords(BaseKeyword):
         get_logger().log_info("get ansible playbook restore output")
         restore_output = AnsiblePlaybookBackUpRestoreOutput(cmd_out)
         return restore_output.validate_ansible_playbook_backup_restore_result()
+
+    def get_latest_platform_backup_tarball(self, backup_dir: str) -> str:
+        """Return the full path of the most recent platform backup tarball.
+
+        Lists the directory one entry per line (``ls -1t``) and matches
+        ``*_platform_backup_*.tgz`` in Python. Shell glob expansion is avoided
+        because it does not expand reliably through the non-interactive sudo
+        exec path, and a plain ``ls`` of a directory can place multiple names on
+        one line, breaking substring matching.
+
+        Args:
+            backup_dir (str): Directory that holds the platform backup tarballs.
+
+        Returns:
+            str: Absolute path to the latest platform backup tarball, or an empty
+            string if no matching tarball exists.
+        """
+        output = self.ssh_connection.send_as_sudo_non_interactive(f"ls -1t {shlex.quote(backup_dir)}")
+        for line in output:
+            candidate = line.strip()
+            if candidate.endswith(".tgz") and "_platform_backup_" in candidate:
+                return f"{backup_dir}/{candidate}"
+        return ""
+
+    def delete_platform_backup_tarball(self, backup_tarball_path: str) -> None:
+        """Delete a specific platform backup tarball.
+
+        Args:
+            backup_tarball_path (str): Absolute path to the tarball to delete.
+        """
+        if not backup_tarball_path:
+            return
+        self.ssh_connection.send_as_sudo_non_interactive(f"rm -f {shlex.quote(backup_tarball_path)}")

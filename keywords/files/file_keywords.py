@@ -271,17 +271,32 @@ class FileKeywords(BaseKeyword):
             grep_arg = f"| grep {grep_pattern}"
         return self.ssh_connection.send(f"sed -n '/{start}/,/{end}/p' {file_path} {grep_arg}")
 
-    def find_in_tgz(self, file_path: str, grep_pattern: str) -> int:
+    def find_in_tgz(self, file_path: str, grep_pattern: str, is_sudo: bool = False) -> int:
         """
         Searches for a string in tgz file
 
         Args:
             file_path (str): The absolute path to the file.
             grep_pattern (str): Pattern to be searched.
+            is_sudo (bool): Read the tarball with sudo. Required when the tarball
+                lives under a root-only directory (e.g. /opt/dc-vault/backups).
+                Defaults to False.
 
         Returns:
             int: Number of matches found.
         """
+        if is_sudo:
+            # Wrap the whole pipeline in `bash -c` so it runs under a single sudo;
+            # otherwise only `tar` is elevated and sudo's password prompt leaks
+            # into the pipe and corrupts the count.
+            pipeline = f"tar -tf {shlex.quote(file_path)} | grep {shlex.quote(grep_pattern)} | wc -l"
+            output = self.ssh_connection.send_as_sudo_non_interactive(f"bash -c {shlex.quote(pipeline)}")
+            for line in output:
+                stripped = line.strip()
+                if stripped.isdigit():
+                    return int(stripped)
+            return 0
+
         matches = int(self.ssh_connection.send(f"tar -tf {file_path} | grep {grep_pattern} | wc -l")[0].strip("\n"))
         return matches
 
