@@ -13,6 +13,7 @@ class DexConnectorAttrs:
         self._email_attr = attrs_dict.get("email_attr", "")
         self._username_attr = attrs_dict.get("username_attr", "")
         self._name_attr = attrs_dict.get("name_attr", "")
+        self._bootstrap_name_attr = attrs_dict.get("bootstrap_name_attr", "")
 
     def get_email_attr(self) -> str:
         """Get emailAttr mapping value.
@@ -37,3 +38,15 @@ class DexConnectorAttrs:
             str: Name attribute name.
         """
         return self._name_attr
+
+    def get_bootstrap_name_attr(self) -> str:
+        """Get the out-of-box bootstrap userSearch.nameAttr value.
+
+        This is the nameAttr shipped by the oidc-auth-apps lifecycle default
+        connector, which differs from get_name_attr() (the recommended mapping
+        applied explicitly by the attribute-mapping tests).
+
+        Returns:
+            str: Bootstrap default name attribute (e.g. 'cn').
+        """
+        return self._bootstrap_name_attr
