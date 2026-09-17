@@ -37,7 +37,7 @@ def test_kdump_file_creation_after_kernel_crash(request):
             file_exists_post_deletion = FileKeywords(ssh_connection).delete_file(f"{kdump_path}/{core_file}")
             validate_equals(file_exists_post_deletion, False, "Old core file deletion")
 
-    pre_uptime_of_host = SystemHostListKeywords(ssh_connection).get_uptime("controller-0")
+    pre_uptime_of_host = SystemHostListKeywords(ssh_connection).get_uptime(active_controller_host_name)
 
     get_logger().log_info("Trigger kernel crash")
     KernelKeywords(ssh_connection).trigger_kernel_crash()
@@ -47,9 +47,12 @@ def test_kdump_file_creation_after_kernel_crash(request):
     validate_equals(is_reboot_successful, True, "crash reboot")
 
     get_logger().log_info("verify kdump file generated after kernel crash")
+    file_exists = False
     core_files = FileKeywords(ssh_connection).get_files_in_dir(kdump_path)
     for core_file in core_files:
         if "core" in core_file:
             file_exists = FileKeywords(ssh_connection).file_exists(f"{kdump_path}/{core_file}")
+            if file_exists:
+                break
 
     validate_equals(file_exists, True, "kdump file created")
