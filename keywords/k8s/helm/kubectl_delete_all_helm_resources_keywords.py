@@ -34,14 +34,36 @@ class KubectlDeleteAllHelmResourcesKeywords(BaseKeyword):
         """
         self.ssh_connection = ssh_connection
 
-    def delete_all_helm_releases(self, namespace: str) -> None:
-        """Delete all HelmReleases in a namespace.
+    def clear_helm_release_finalizers(self, namespace: str) -> None:
+        """Remove finalizers from all HelmReleases in a namespace.
+
+        HelmReleases carry a finalizer that blocks deletion until the
+        controller finishes reconciling. When a release is stuck mid-action
+        (for example an install that never completes), a plain delete blocks
+        indefinitely. Clearing the finalizers first lets the subsequent delete
+        complete instead of hanging.
 
         Args:
             namespace (str): Target namespace.
         """
+        get_logger().log_info(f"Clearing HelmRelease finalizers in namespace {namespace}")
+        get_names_cmd = f"kubectl get helmrelease -n {namespace} -o name --ignore-not-found=true"
+        patch_cmd = f"xargs -r -I {{}} kubectl patch {{}} -n {namespace} --type=merge -p '{{\"metadata\":{{\"finalizers\":[]}}}}'"
+        self.ssh_connection.send(export_k8s_config(f"{get_names_cmd} | {patch_cmd}"))
+        self.validate_success_return_code(self.ssh_connection)
+
+    def delete_all_helm_releases(self, namespace: str) -> None:
+        """Delete all HelmReleases in a namespace.
+
+        Finalizers are cleared first and the delete uses --wait=false so it
+        does not block on a release that is stuck reconciling.
+
+        Args:
+            namespace (str): Target namespace.
+        """
+        self.clear_helm_release_finalizers(namespace)
         get_logger().log_info(f"Deleting all HelmReleases in namespace {namespace}")
-        self.ssh_connection.send(export_k8s_config(f"kubectl delete helmrelease --all -n {namespace} --ignore-not-found=true"))
+        self.ssh_connection.send(export_k8s_config(f"kubectl delete helmrelease --all -n {namespace} --ignore-not-found=true --wait=false"))
         self.validate_success_return_code(self.ssh_connection)
 
     def delete_all_helm_charts(self, namespace: str) -> None:
@@ -51,7 +73,7 @@ class KubectlDeleteAllHelmResourcesKeywords(BaseKeyword):
             namespace (str): Target namespace.
         """
         get_logger().log_info(f"Deleting all HelmCharts in namespace {namespace}")
-        self.ssh_connection.send(export_k8s_config(f"kubectl delete helmchart --all -n {namespace} --ignore-not-found=true"))
+        self.ssh_connection.send(export_k8s_config(f"kubectl delete helmchart --all -n {namespace} --ignore-not-found=true --wait=false"))
         self.validate_success_return_code(self.ssh_connection)
 
     def delete_all_helm_repositories(self, namespace: str) -> None:
@@ -61,7 +83,7 @@ class KubectlDeleteAllHelmResourcesKeywords(BaseKeyword):
             namespace (str): Target namespace.
         """
         get_logger().log_info(f"Deleting all HelmRepositories in namespace {namespace}")
-        self.ssh_connection.send(export_k8s_config(f"kubectl delete helmrepository --all -n {namespace} --ignore-not-found=true"))
+        self.ssh_connection.send(export_k8s_config(f"kubectl delete helmrepository --all -n {namespace} --ignore-not-found=true --wait=false"))
         self.validate_success_return_code(self.ssh_connection)
 
     def delete_all_helm_resources(self, namespace: str) -> None:
