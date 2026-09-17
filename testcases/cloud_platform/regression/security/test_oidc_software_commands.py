@@ -723,7 +723,10 @@ def test_oidc_software_refresh_token(request: FixtureRequest) -> None:
     )
 
     get_logger().log_test_case_step("Step 7: Verify software list succeeds via refresh token")
-    # Client should auto-refresh the expired ID token using the refresh token
+    # ID token has expired. Trigger an OIDC refresh (re-run oidc-auth), which drives
+    # the oidc-login plugin to exchange the cached refresh token for a new ID token
+    # in kubeconfig, then verify the software command succeeds with the refreshed token.
+    sw_oidc_kw.refresh_oidc_token(password)
     result = sw_oidc_kw.run_software_command_as_oidc_user(username, password, lab_oam_ip, "software list")
     validate_equals(result.is_successful(), True, "software list must succeed after token refresh")
 
