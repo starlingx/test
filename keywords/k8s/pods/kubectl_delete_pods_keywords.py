@@ -34,13 +34,19 @@ class KubectlDeletePodsKeywords(K8sBaseKeyword):
 
         return output
 
-    def cleanup_pod(self, pod_name: str, namespace: str = None) -> int:
+    def cleanup_pod(self, pod_name: str, namespace: str = None, force: bool = False, grace_period: int = None) -> int:
         """For use in cleanup as it doesn't automatically fail the test.
 
-        Deletes the pod
+        Deletes the pod. By default performs a graceful delete; set force=True
+        (optionally with grace_period=0) to force-delete a pod that is stuck
+        Terminating so it releases its resources (e.g. an attached volume)
+        immediately.
+
         Args:
             pod_name (str): the pod
             namespace (str): the namespace
+            force (bool): if True, add --force to the delete command
+            grace_period (int): if set, add --grace-period=<value> (e.g. 0)
 
         Returns:
             int: the output
@@ -49,7 +55,11 @@ class KubectlDeletePodsKeywords(K8sBaseKeyword):
         if namespace:
             arg_namespace = f"-n {namespace}"
 
-        self.ssh_connection.send(self.k8s_config.export(f"kubectl {arg_namespace} delete pod {pod_name}"))
+        force_arg = "--force" if force else ""
+        grace_arg = f"--grace-period={grace_period}" if grace_period is not None else ""
+
+        cmd = f"kubectl {arg_namespace} delete pod {pod_name} {force_arg} {grace_arg}".split()
+        self.ssh_connection.send(self.k8s_config.export(" ".join(cmd)))
         rc = self.ssh_connection.get_return_code()
         if rc != 0:
             get_logger().log_error(f"Pod {pod_name} failed to delete")
