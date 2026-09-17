@@ -36,9 +36,14 @@ class BootstrapValuesKeywords(BaseKeyword):
             dict: Parsed YAML content as a dictionary.
 
         Raises:
+            FileNotFoundError: If the file does not exist on the remote host.
             ValueError: If the file content cannot be parsed as valid YAML.
         """
-        output = FileKeywords(self.ssh_connection).read_file(file_path)
+        file_kw = FileKeywords(self.ssh_connection)
+        if not file_kw.file_exists(file_path):
+            raise FileNotFoundError(f"Remote YAML file does not exist: '{file_path}'")
+
+        output = file_kw.read_file(file_path)
         content = "\n".join(output)
 
         try:
