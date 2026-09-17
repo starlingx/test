@@ -49,16 +49,16 @@ class HealthKeywords(BaseKeyword):
         # alarm can clear before health-query reports current configurations, so check this too.
         self.validate_system_health()
 
-    def validate_system_health(self, timeout: int = 180, polling_sleep_time: int = 15):
+    def validate_system_health(self, timeout: int = 600, polling_sleep_time: int = 15):
         """Wait for 'system health-query' to report all checks OK.
 
         Polls 'system health-query' until every check passes. This catches conditions the alarm list
         does not reflect - notably "All hosts have current configurations" can still be Fail (host
-        out-of-date config) after the corresponding alarm has already cleared. No dwell is used; a
-        single fully-OK result is sufficient.
+        out-of-date config) after the corresponding alarm has already cleared, and can take several
+        minutes to reconcile. No dwell is used; a single fully-OK result is sufficient.
 
         Args:
-            timeout (int): Maximum time in seconds to wait for all checks to pass. Defaults to 180.
+            timeout (int): Maximum time in seconds to wait for all checks to pass. Defaults to 600.
             polling_sleep_time (int): Seconds between polls. Defaults to 15.
         """
         health_query_keywords = SystemHealthQueryKeywords(self.ssh_connection)
