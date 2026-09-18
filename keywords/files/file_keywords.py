@@ -221,6 +221,43 @@ class FileKeywords(BaseKeyword):
         sftp_client = self.ssh_connection.get_sftp_client()
         return sftp_client.listdir(file_dir)
 
+    def get_directory_size_kb(self, directory_path: str, exclude_dirs: Optional[list[str]] = None, is_sudo: bool = True) -> int:
+        """Return the apparent size of a directory in KiB using ``du -sk``.
+
+        Optionally applies one or more ``--exclude`` patterns, mirroring how the
+        platform backup playbook estimates the size of the directories it will
+        archive. This lets a test independently reconcile the size the playbook
+        reports for a directory (e.g. ``/opt/dc-vault``) against the directory's
+        real size with the same exclusions applied.
+
+        Args:
+            directory_path (str): Absolute path of the directory to measure.
+            exclude_dirs (Optional[list[str]]): Paths/patterns to pass as ``--exclude``. Defaults to None.
+            is_sudo (bool): Run ``du`` with sudo (required for root-owned paths such
+                as ``/opt/dc-vault``). Defaults to True.
+
+        Returns:
+            int: Directory size in KiB (the first column of ``du -sk``).
+
+        Raises:
+            KeywordException: If the ``du`` output cannot be parsed into an integer.
+        """
+        exclude_args = ""
+        if exclude_dirs:
+            exclude_args = " " + " ".join(f"--exclude {shlex.quote(pattern)}" for pattern in exclude_dirs)
+        command = f"du -sk {shlex.quote(directory_path)}{exclude_args} | awk 'NR==1{{print $1}}'"
+
+        if is_sudo:
+            output = self.ssh_connection.send_as_sudo_non_interactive(f"bash -c {shlex.quote(command)}")
+        else:
+            output = self.ssh_connection.send(command)
+
+        for line in output:
+            stripped = line.strip()
+            if stripped.isdigit():
+                return int(stripped)
+        raise KeywordException(f"Could not parse directory size from du output for [{directory_path}]: {output}")
+
     def read_large_file(self, file_name: str, grep_pattern: str = None) -> list[str]:
         """
         Function to read large files and filter.
