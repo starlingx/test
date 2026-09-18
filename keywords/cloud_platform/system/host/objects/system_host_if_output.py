@@ -149,3 +149,20 @@ class SystemHostInterfaceOutput:
             if interface.get_name() == name:
                 return interface
         raise KeywordException(f"No interface named '{name}' was found in the host interface list.")
+
+    def get_interface_by_port(self, port: str) -> SystemHostInterfaceObject:
+        """Get the interface whose ports list contains the given physical port.
+
+        Args:
+            port (str): The physical port name (e.g. 'enp0s8').
+
+        Returns:
+            SystemHostInterfaceObject: The interface using the specified port.
+
+        Raises:
+            KeywordException: If no interface using the given port is found.
+        """
+        for interface in self.system_host_interfaces:
+            if port in interface.get_ports():
+                return interface
+        raise KeywordException(f"No interface using port '{port}' was found in the host interface list.")
