@@ -9,9 +9,13 @@ to upstream SDK shape changes.
 
 from typing import Optional
 
+from openstack.exceptions import NotFoundException
+
 from framework.logging.automation_logger import get_logger
 from keywords.base_keyword import BaseKeyword
 from keywords.openstack.connection.ace_openstack_connection import ACEOpenStackConnection
+from keywords.openstack.resources.networks.object.floating_ip_list_output import FloatingIpListOutput
+from keywords.openstack.resources.networks.object.floating_ip_object import FloatingIpObject
 from keywords.openstack.resources.networks.object.network_list_output import NetworkListOutput
 from keywords.openstack.resources.networks.object.network_object import NetworkObject
 from keywords.openstack.resources.networks.object.port_list_output import PortListOutput
@@ -391,6 +395,86 @@ class NetworkKeywords(BaseKeyword):
         net_service = self.openstack_connection.get_network()
         port = net_service.find_port(port_name_or_id, ignore_missing=False)
         net_service.delete_port(port.id)
+
+    # ── Floating IP CRUD ────────────────────────────────────────────
+
+    def create_floating_ip(self, external_network_id: str) -> FloatingIpObject:
+        """Allocate a floating IP from an external network.
+
+        Args:
+            external_network_id (str): External (provider) network UUID to
+                allocate the floating IP from.
+
+        Returns:
+            FloatingIpObject: Parsed floating-IP object.
+        """
+        get_logger().log_info(f"Creating floating IP on external network '{external_network_id}'")
+        floating_ip = self.openstack_connection.get_network().create_ip(floating_network_id=external_network_id)
+        return FloatingIpListOutput([floating_ip.to_dict()]).get_floating_ips()[0]
+
+    def associate_floating_ip_to_port(self, floating_ip_id: str, port_id: str) -> FloatingIpObject:
+        """Associate a floating IP with a Neutron port.
+
+        Args:
+            floating_ip_id (str): Floating IP UUID.
+            port_id (str): Port UUID to bind the floating IP to.
+
+        Returns:
+            FloatingIpObject: Parsed updated floating-IP object.
+        """
+        get_logger().log_info(f"Associating floating IP '{floating_ip_id}' with port '{port_id}'")
+        updated = self.openstack_connection.get_network().update_ip(floating_ip_id, port_id=port_id)
+        return FloatingIpListOutput([updated.to_dict()]).get_floating_ips()[0]
+
+    def associate_floating_ip_to_port_if_routable(self, floating_ip_id: str, port_id: str) -> bool:
+        """Associate a floating IP with a port, tolerating an unroutable subnet.
+
+        Neutron rejects the association with a ``NotFoundException`` carrying
+        "External network ... is not reachable from subnet ..." when there is no
+        routable L3 path from the port's tenant subnet to the external network
+        (for example a flat/VLAN provider network with no shared router path).
+        That is a lab-topology limitation rather than an error, so this keyword
+        returns ``False`` in that specific case and ``True`` on success. Any
+        other error propagates. Encapsulating the expected rejection here keeps
+        callers free of raw SDK exception handling.
+
+        Args:
+            floating_ip_id (str): Floating IP UUID.
+            port_id (str): Port UUID to bind the floating IP to.
+
+        Returns:
+            bool: True if the floating IP was associated, False if the external
+            network is not routable to the port's subnet.
+        """
+        try:
+            self.openstack_connection.get_network().update_ip(floating_ip_id, port_id=port_id)
+        except NotFoundException as exc:
+            if "not reachable from subnet" not in str(exc):
+                raise
+            get_logger().log_info(f"Floating IP '{floating_ip_id}' not routable to port '{port_id}' subnet: {exc}")
+            return False
+        return True
+
+    def show_floating_ip(self, floating_ip_id: str) -> FloatingIpObject:
+        """Show floating-IP details.
+
+        Args:
+            floating_ip_id (str): Floating IP UUID.
+
+        Returns:
+            FloatingIpObject: Parsed floating-IP object.
+        """
+        floating_ip = self.openstack_connection.get_network().find_ip(floating_ip_id, ignore_missing=False)
+        return FloatingIpListOutput([floating_ip.to_dict()]).get_floating_ips()[0]
+
+    def delete_floating_ip(self, floating_ip_id: str) -> None:
+        """Delete a floating IP if it exists, best-effort.
+
+        Args:
+            floating_ip_id (str): Floating IP UUID.
+        """
+        get_logger().log_info(f"Deleting floating IP '{floating_ip_id}'")
+        self.openstack_connection.get_network().delete_ip(floating_ip_id, ignore_missing=True)
 
     # ── Discovery ───────────────────────────────────────────────────
 

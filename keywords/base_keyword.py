@@ -57,12 +57,20 @@ class BaseKeyword:
 
         return "?UNKNOWN?"
 
-    def on_every_keyword(self, name: str, *args: Any, **kwargs: Any):
+    def on_every_keyword(self, name: str, /, *args: Any, **kwargs: Any):
         """
         Hook executed whenever a keyword function is invoked.
 
         This function is a hook that gets called any time a Keyword function is invoked.
         It will log information about the keyword and the parameters passed in.
+
+        The keyword name is a positional-only parameter (declared before the ``/``)
+        so a wrapped keyword invoked with its own ``name=`` keyword argument (for
+        example ``list_security_groups(name=...)``) does not collide with this
+        hook's first parameter. Without the positional-only marker such a call
+        raised ``TypeError: on_every_keyword() got multiple values for argument
+        'name'``, which forced callers to bypass the keyword and issue raw SDK
+        calls.
 
         Args:
             name (str): The name of the function being called.
