@@ -199,3 +199,29 @@ class ProjectKeywords(BaseKeyword):
         identity.assign_project_role_to_user(
             project=project.id, user=user.id, role=role_name
         )
+
+    def get_user_role_names(self, project_id: str, user_id: str) -> List[str]:
+        """Get the names of the roles a user holds on a project.
+
+        Resolves the user's role assignments on the project through the
+        identity service and returns the role names, so callers consume typed
+        role names instead of decoding the raw SDK assignment shape themselves.
+
+        Args:
+            project_id (str): Project UUID.
+            user_id (str): User UUID.
+
+        Returns:
+            List[str]: Role names the user holds on the project (may be empty).
+        """
+        identity = self.openstack_connection.get_identity()
+        role_names: List[str] = []
+        for assignment in identity.role_assignments(project_id=project_id, user_id=user_id):
+            role_reference = getattr(assignment, "role", {}) or {}
+            role_id = role_reference.get("id")
+            if not role_id:
+                continue
+            role = identity.get_role(role_id)
+            if role is not None:
+                role_names.append(role.name)
+        return role_names
