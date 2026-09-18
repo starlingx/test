@@ -89,3 +89,17 @@ class SystemHostDiskOutput:
             uuids.append(item.get_uuid())
 
         return uuids
+
+    def has_free_disk(self, used_disk_uuids: set) -> bool:
+        """Check whether the host has at least one disk not in the used set.
+
+        A disk is considered free when its uuid is not already consumed as a physical volume
+        (LVG) or as a Ceph OSD. Callers pass the set of used disk uuids to exclude.
+
+        Args:
+            used_disk_uuids (set): The uuids of disks already used as a PV or OSD.
+
+        Returns:
+            bool: True if at least one disk uuid is not in used_disk_uuids, False otherwise.
+        """
+        return any(item.get_uuid() not in used_disk_uuids for item in self.system_host_disks)

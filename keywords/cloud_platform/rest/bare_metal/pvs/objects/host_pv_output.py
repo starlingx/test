@@ -23,6 +23,8 @@ class HostPvOutput:
                 obj.set_pv_state(pv["pv_state"])
             if pv.get("pv_type"):
                 obj.set_pv_type(pv["pv_type"])
+            if pv.get("disk_or_part_uuid"):
+                obj.set_disk_or_part_uuid(pv["disk_or_part_uuid"])
             self.pv_objects.append(obj)
 
     def get_pv_objects(self) -> list[HostPvObject]:
@@ -32,3 +34,11 @@ class HostPvOutput:
             list[HostPvObject]: List of PV objects.
         """
         return self.pv_objects
+
+    def get_all_pv_disk_uuids(self) -> list[str]:
+        """Get the disk/partition UUIDs backing all physical volumes.
+
+        Returns:
+            list[str]: The disk_or_part_uuid of each PV (excluding any that are unset).
+        """
+        return [pv.get_disk_or_part_uuid() for pv in self.pv_objects if pv.get_disk_or_part_uuid()]

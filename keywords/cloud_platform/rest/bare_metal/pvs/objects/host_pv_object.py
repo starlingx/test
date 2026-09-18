@@ -9,6 +9,7 @@ class HostPvObject:
         self.uuid: str = None
         self.pv_state: str = None
         self.pv_type: str = None
+        self.disk_or_part_uuid: str = None
 
     def set_uuid(self, uuid: str):
         """Set the UUID.
@@ -57,3 +58,19 @@ class HostPvObject:
             str: The physical volume type.
         """
         return self.pv_type
+
+    def set_disk_or_part_uuid(self, disk_or_part_uuid: str):
+        """Set the disk or partition UUID backing this PV.
+
+        Args:
+            disk_or_part_uuid (str): The UUID of the disk or partition backing the PV.
+        """
+        self.disk_or_part_uuid = disk_or_part_uuid
+
+    def get_disk_or_part_uuid(self) -> str:
+        """Get the disk or partition UUID backing this PV.
+
+        Returns:
+            str: The UUID of the disk or partition backing the PV.
+        """
+        return self.disk_or_part_uuid
