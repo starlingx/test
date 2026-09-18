@@ -1,4 +1,8 @@
+from typing import List
+
+from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
+from framework.validation.validation import validate_list_contains_with_retry
 from keywords.base_keyword import BaseKeyword
 from keywords.cloud_platform.command_wrappers import source_openrc
 from keywords.cloud_platform.system.host.objects.system_host_object import SystemHostObject
@@ -133,6 +137,32 @@ class SystemHostListKeywords(BaseKeyword):
         uptime = system_host_output.get_host(host_name).get_uptime()
 
         return uptime
+
+    def wait_for_host_availability(self, host_name: str, target_states: List[str], timeout: int = 600, polling_sleep_time: int = 15) -> None:
+        """Wait for a host to reach one of the target availability states.
+
+        Polls 'system host-list' until the named host reports an availability
+        value contained in target_states, failing on timeout so the wait points
+        at the failure on the spot rather than returning a value the caller must
+        remember to assert on.
+
+        Args:
+            host_name (str): the name of the host to poll
+            target_states (List[str]): acceptable availability values (e.g. ["available"])
+            timeout (int): maximum number of seconds to wait
+            polling_sleep_time (int): number of seconds to sleep between polls
+
+        Raises:
+            TimeoutError: if the host does not reach one of the target states
+                within the timeout.
+        """
+
+        def get_availability() -> str:
+            availability = self.get_system_host_list().get_host(host_name).get_availability()
+            get_logger().log_info(f"Host '{host_name}' availability is '{availability}', waiting for one of {target_states}")
+            return availability
+
+        validate_list_contains_with_retry(get_availability, target_states, f"Host '{host_name}' reached one of availability states {target_states}", timeout=timeout, polling_sleep_time=polling_sleep_time)
 
     def get_system_host_with_extra_column(self, columns_to_add: [str]) -> SystemHostOutput:
         """
