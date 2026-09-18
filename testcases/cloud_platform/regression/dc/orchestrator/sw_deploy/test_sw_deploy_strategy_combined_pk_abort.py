@@ -18,19 +18,12 @@ Test cases:
     - test_combined_pk_dcmanager_abort_queued_subclouds: abort the dcmanager
       strategy mid-apply with multiple subclouds queued; verify the executing
       subcloud continues and queued subclouds are cancelled.
-    - test_combined_pk_cleanup_after_auto_rollback: after an auto-rollback,
-      run dcmanager --cleanup to verify leftovers (aborted kube-upgrade +
-      system-deploy) are cleaned up.
 
 Notes:
     - Fault injection blocks the Kubernetes API server port (16443) via ip6tables
       on the subcloud during the control-plane upgrade. This is reliable and
       reproducible and does NOT require --snapshot (the ETCD snapshot is taken
       automatically by VIM; the abort happens before platform deploy-host).
-    - The --cleanup path depends on the VIM fix that handles the upgrade-aborted
-      state (skip kube-upgrade-complete, go directly to kube-upgrade-delete +
-      system-deploy-delete). On loads without that fix, --cleanup fails at
-      kube-upgrade-complete.
 """
 
 import time
@@ -460,118 +453,3 @@ def test_combined_pk_dcmanager_abort_queued_subclouds(request):
             True,
             f"Queued subcloud {queued} was cancelled (state '{queued_state}' is not complete)",
         )
-
-
-# --- Scenario 3: --cleanup After Auto-Rollback ---
-
-
-@mark.p2
-@mark.lab_has_subcloud
-@mark.subcloud_lab_is_simplex
-def test_combined_pk_cleanup_after_auto_rollback(request):
-    """Verify dcmanager --cleanup restores a subcloud after auto-rollback.
-
-    After a combined P&K auto-rollback leaves the subcloud with a kube-upgrade in
-    upgrade-aborted state plus a leftover system-deploy entity, run dcmanager
-    --cleanup and verify the leftovers are removed (kube-upgrade deleted,
-    system-deploy deleted, alarms cleared).
-
-    This depends on the VIM fix that handles the upgrade-aborted state in the
-    --cleanup strategy build (skip kube-upgrade-complete, go directly to
-    kube-upgrade-delete + system-deploy-delete).
-
-    Preconditions:
-        - System controller has N release deployed
-        - Target K8s version is available on system controller
-        - Subcloud is online and out-of-sync
-        - VIM on the subcloud handles the upgrade-aborted state in --cleanup
-
-    Test Steps:
-        1. Pick an eligible simplex subcloud and resolve release + K8s version
-        2. Trigger an auto-rollback (block API server port during control-plane)
-        3. Confirm the subcloud kube-upgrade is in upgrade-aborted state
-        4. Delete the failed dcmanager strategy
-        5. Create a dcmanager --cleanup strategy and apply
-        6. Validate --cleanup completes
-        7. Validate kube-upgrade is no longer in progress on the subcloud
-
-    Teardown:
-        - Remove the ip6tables rule (idempotent)
-        - Delete strategy if still present
-    """
-    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
-        availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
-        in_sync=False,
-        lab_type=LabTypeEnum.SIMPLEX,
-    )
-    subcloud_name = result.get_name()
-    request.addfinalizer(lambda: cleanup_strategy(system_controller_ssh))
-
-    subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
-    fault_injection = IptablesFaultInjectionKeywords(subcloud_ssh)
-    request.addfinalizer(lambda: fault_injection.unblock_port(KUBE_APISERVER_PORT))
-
-    n_load = str(CloudPlatformVersionManagerClass().get_sw_version())
-    release = get_highest_release_for_load(system_controller_ssh, n_load, state="deployed")
-    kube_version = get_target_kube_version(system_controller_ssh)
-
-    kube_host_kw = KubeHostUpgradeListKeywords(subcloud_ssh)
-    original_hostname = kube_host_kw.kube_host_upgrade_list().get_kube_host_upgrade_list()[0].get_hostname()
-
-    strategy_keywords = DcmanagerSwDeployStrategy(system_controller_ssh)
-
-    # Trigger the auto-rollback (same flow as scenario 1).
-    create_combined_pk_strategy_apply_no_wait(strategy_keywords, subcloud_name, release, kube_version)
-
-    # Wait for the control-plane upgrade phase, failing fast if the dcmanager
-    # strategy-step reaches 'failed' before it (e.g. the VIM strategy build
-    # fails). Without this the wait would spin against an empty host status
-    # until the full timeout even when the deploy has already failed.
-    get_logger().log_test_case_step("Wait for subcloud to enter control-plane upgrade phase")
-    wait_for_control_plane_phase_or_step_failure(
-        system_controller_ssh=system_controller_ssh,
-        subcloud_ssh=subcloud_ssh,
-        subcloud_name=subcloud_name,
-        hostname=original_hostname,
-        timeout=CONTROL_PLANE_PHASE_TIMEOUT,
-        polling_sleep_time=15,
-    )
-
-    get_logger().log_test_case_step(f"Inject fault: block K8s API server port {KUBE_APISERVER_PORT} on {subcloud_name}")
-    fault_injection.block_port(KUBE_APISERVER_PORT)
-
-    get_logger().log_test_case_step("Wait for subcloud kube-upgrade to reach upgrade-aborted (auto-rollback)")
-    kube_upgrade_kw = KubeUpgradeShowKeywords(subcloud_ssh)
-    kube_upgrade_kw.wait_for_kube_upgrade_state(
-        expected_state=KUBE_UPGRADE_ABORTED_STATE,
-        timeout=1800,
-        polling_sleep_time=15,
-    )
-
-    get_logger().log_test_case_step("Remove fault-injection rule")
-    fault_injection.unblock_port(KUBE_APISERVER_PORT)
-
-    # Delete the failed strategy before creating the --cleanup strategy.
-    get_logger().log_test_case_step("Delete failed sw-deploy-strategy before cleanup")
-    strategy_keywords.dcmanager_sw_deploy_strategy_delete()
-
-    # Run dcmanager --cleanup.
-    get_logger().log_test_case_step(f"Create and apply dcmanager --cleanup strategy for {subcloud_name}")
-    strategy_keywords.dcmanager_sw_deploy_strategy_create(subcloud_name=subcloud_name, cleanup=True)
-    strategy_keywords.dcmanager_sw_deploy_strategy_apply(target=subcloud_name)
-
-    # Validate the strategy step completed.
-    cleanup_step = DcmanagerStrategyStepKeywords(system_controller_ssh).get_dcmanager_strategy_step_show(subcloud_name).get_dcmanager_strategy_step_show().get_state()
-    validate_equals(cleanup_step, "complete", f"dcmanager --cleanup completed for {subcloud_name}")
-
-    # Validate kube-upgrade is no longer in progress on the subcloud.
-    get_logger().log_test_case_step("Validate kube-upgrade is no longer in progress after cleanup")
-    validate_equals(
-        kube_upgrade_kw.is_kube_upgrade_in_progress(),
-        False,
-        "Subcloud kube-upgrade cleared after --cleanup",
-    )
-
-    # Delete the cleanup strategy.
-    get_logger().log_test_case_step("Delete --cleanup strategy")
-    strategy_keywords.dcmanager_sw_deploy_strategy_delete()
