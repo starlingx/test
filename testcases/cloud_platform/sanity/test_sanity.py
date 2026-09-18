@@ -1,9 +1,7 @@
 import time
-from datetime import datetime, timedelta
 from typing import Any
 
 from pytest import mark
-from tabulate import tabulate
 
 from config.configuration_manager import ConfigurationManager
 from config.lab.objects.node import Node
@@ -27,7 +25,6 @@ from keywords.cloud_platform.fault_management.alarms.alarm_list_keywords import 
 from keywords.cloud_platform.fault_management.fm_client_cli.fm_client_cli_keywords import FaultManagementClientCLIKeywords
 from keywords.cloud_platform.fault_management.fm_client_cli.object.fm_client_cli_object import FaultManagementClientCLIObject
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
-from keywords.cloud_platform.version_info.cloud_platform_version_manager import CloudPlatformVersionManager
 from keywords.cloud_platform.system.application.object.system_application_delete_input import SystemApplicationDeleteInput
 from keywords.cloud_platform.system.application.object.system_application_remove_input import SystemApplicationRemoveInput
 from keywords.cloud_platform.system.application.object.system_application_status_enum import SystemApplicationStatusEnum
@@ -45,6 +42,7 @@ from keywords.cloud_platform.system.host.system_host_swact_keywords import Syste
 from keywords.cloud_platform.system.modify.system_modify_keywords import SystemModifyKeywords
 from keywords.cloud_platform.system.show.system_show_keywords import SystemShowKeywords
 from keywords.cloud_platform.system.storage.system_storage_backend_keywords import SystemStorageBackendKeywords
+from keywords.cloud_platform.version_info.cloud_platform_version_manager import CloudPlatformVersionManager
 from keywords.docker.images.docker_load_image_keywords import DockerLoadImageKeywords
 from keywords.files.file_keywords import FileKeywords
 from keywords.k8s.deployments.kubectl_delete_deployments_keywords import KubectlDeleteDeploymentsKeywords
@@ -183,6 +181,7 @@ def test_check_all_pods_healthy():
 
 
 @mark.p0
+@mark.lab_has_ceph
 def test_platform_integ_apps_applied():
     """
     Test to validate platform integ apps have been applied
