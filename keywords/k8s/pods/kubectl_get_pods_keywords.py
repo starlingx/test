@@ -97,6 +97,30 @@ class KubectlGetPodsKeywords(K8sBaseKeyword):
 
         return pods_list_output
 
+    def get_pods_json_no_validation(self, namespace: str = None) -> KubectlGetPodsOutput:
+        """Get the k8s pods in JSON format without failing on a non-zero return code.
+
+        JSON counterpart of :meth:`get_pods_no_validation`. Returns the parsed
+        pods (with owner references and richer data than the table form), or
+        None when the command fails (for example the kube-apiserver is
+        transiently unavailable during a recovery window), so callers can poll
+        without raising.
+
+        Args:
+            namespace (str, optional): The namespace to search for pods.
+                If None, it will search in all namespaces.
+
+        Returns:
+            KubectlGetPodsOutput: Parsed pod output with source="json", or None
+            if the command returned a non-zero exit code.
+        """
+        ns_arg = f"-n {namespace}" if namespace else "--all-namespaces"
+        output = self.ssh_connection.send(self.k8s_config.export(f"kubectl get pods {ns_arg} -o json"))
+        rc = self.ssh_connection.get_return_code()
+        if rc != 0:
+            return None
+        return KubectlGetPodsOutput(output, source="json")
+
     def get_pods_all_namespaces(self) -> KubectlGetPodsOutput:
         """
         Get the k8s pods that are available using '-o wide' for all namespaces.
