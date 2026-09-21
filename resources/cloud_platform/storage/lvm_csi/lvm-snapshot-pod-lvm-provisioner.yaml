@@ -1,0 +1,37 @@
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: lvm-snap-pvc-lvm-provisioner
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: lvm-provisioner
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: lvm-snap-pod-lvm-provisioner
+spec:
+  restartPolicy: Always
+  containers:
+    - name: lvm-snap-pod-lvm-provisioner
+      image: busybox:1.37
+      command:
+        - /bin/sh
+        - -c
+        - |
+          while :; do
+            date
+            sleep 10
+          done
+      volumeMounts:
+        - mountPath: /mnt1
+          name: pvc1
+  volumes:
+    - name: pvc1
+      persistentVolumeClaim:
+        claimName: lvm-snap-pvc-lvm-provisioner

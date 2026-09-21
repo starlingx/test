@@ -40,6 +40,8 @@ from keywords.cloud_platform.rest.configuration.storage.get_storage_keywords imp
 from keywords.cloud_platform.rest.configuration.system.get_system_keywords import GetSystemKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.cloud_platform.system.host.objects.system_host_if_output import SystemHostInterfaceOutput
+from keywords.cloud_platform.system.host.system_host_list_keywords import SystemHostListKeywords
+from keywords.cloud_platform.system.host.system_host_lvg_keywords import SystemHostLvgKeywords
 from keywords.cloud_platform.system.oam.objects.system_oam_show_output import SystemOamShowOutput
 from keywords.cloud_platform.system.oam.system_oam_show_keywords import SystemOamShowKeywords
 from keywords.k8s.storageclass.kubectl_get_storageclass_keywords import KubectlGetStorageclassKeywords
@@ -1019,6 +1021,53 @@ def is_lvm() -> bool:
     return backends.is_backend_configured("lvm")
 
 
+def is_lvm_thin_dedicated() -> bool:
+    """Checks if the lab has lvm-csi thin provisioning on a dedicated volume group (lvm-provisioner).
+
+    Requires the 'lvm' storage backend to be configured and a dedicated 'lvm-provisioner' local
+    volume group provisioned with the lvm-csi function and thin type on the active controller.
+
+    Returns:
+        bool: True if the lab has a dedicated lvm-csi thin volume group, False otherwise.
+    """
+    backends = GetStorageBackendKeywords().get_storage_backends()
+    if not backends.is_backend_configured("lvm"):
+        return False
+
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    active_controller = SystemHostListKeywords(ssh_connection).get_active_controller().get_host_name()
+    system_host_lvg_keywords = SystemHostLvgKeywords(ssh_connection)
+
+    # The dedicated volume group is only present when a spare disk was provisioned for lvm-csi.
+    lvg_names = [lvg.get_lvg_name() for lvg in system_host_lvg_keywords.get_system_host_lvg_list(active_controller).get_system_host_lvg()]
+    if "lvm-provisioner" not in lvg_names:
+        return False
+
+    lvg = system_host_lvg_keywords.get_system_host_lvg_show(active_controller, "lvm-provisioner").get_system_host_lvg()
+    return lvg.get_state() == "provisioned" and lvg.get_lvm_function() == "lvm-csi" and lvg.get_lvm_type() == "thin"
+
+
+def is_lvm_thin_cgts_vg() -> bool:
+    """Checks if the lab has lvm-csi thin provisioning on the shared cgts-vg volume group.
+
+    Requires the 'lvm' storage backend to be configured and the 'cgts-vg' local volume group
+    provisioned with the lvm-csi function and thin type on the active controller.
+
+    Returns:
+        bool: True if the lab has cgts-vg configured for lvm-csi thin, False otherwise.
+    """
+    backends = GetStorageBackendKeywords().get_storage_backends()
+    if not backends.is_backend_configured("lvm"):
+        return False
+
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    active_controller = SystemHostListKeywords(ssh_connection).get_active_controller().get_host_name()
+    system_host_lvg_keywords = SystemHostLvgKeywords(ssh_connection)
+
+    lvg = system_host_lvg_keywords.get_system_host_lvg_show(active_controller, "cgts-vg").get_system_host_lvg()
+    return lvg.get_state() == "provisioned" and lvg.get_lvm_function() == "lvm-csi" and lvg.get_lvm_type() == "thin"
+
+
 def scan_storage_capabilities(lab_config: LabConfig) -> None:
     """Scan StorageClasses and TridentBackendConfigs to determine storage capabilities.
 
@@ -1280,6 +1329,14 @@ if __name__ == "__main__":
     # check if the lab has the lvm storage backend configured
     if is_lvm():
         lab_config.add_lab_capability("lab_has_lvm")
+
+    # check if the lab has lvm-csi thin provisioning on the shared cgts-vg volume group
+    if is_lvm_thin_cgts_vg():
+        lab_config.add_lab_capability("lab_has_lvm_thin_cgts_vg")
+
+    # check if the lab has lvm-csi thin provisioning on a dedicated volume group
+    if is_lvm_thin_dedicated():
+        lab_config.add_lab_capability("lab_has_lvm_thin_dedicated")
 
     # check storage capabilities from StorageClass and TridentBackendConfig
     scan_storage_capabilities(lab_config)

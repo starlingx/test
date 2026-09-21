@@ -1,0 +1,41 @@
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: lvm-snap-restore-pvc-cgts-vg
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: cgts-vg
+  dataSource:
+    name: lvmcsi-pvc-snapshot
+    kind: VolumeSnapshot
+    apiGroup: snapshot.storage.k8s.io
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: lvm-snap-restore-pod-cgts-vg
+spec:
+  restartPolicy: Always
+  containers:
+    - name: lvm-snap-restore-pod-cgts-vg
+      image: busybox:1.37
+      command:
+        - /bin/sh
+        - -c
+        - |
+          while :; do
+            date
+            sleep 10
+          done
+      volumeMounts:
+        - mountPath: /mnt1
+          name: pvc1
+  volumes:
+    - name: pvc1
+      persistentVolumeClaim:
+        claimName: lvm-snap-restore-pvc-cgts-vg

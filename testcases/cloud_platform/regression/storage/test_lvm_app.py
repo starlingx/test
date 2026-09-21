@@ -17,10 +17,13 @@ from keywords.cloud_platform.system.host.system_host_lvg_keywords import SystemH
 from keywords.cloud_platform.system.host.system_host_pv_keywords import SystemHostPvKeywords
 from keywords.cloud_platform.system.storage.system_storage_backend_keywords import SystemStorageBackendKeywords
 from keywords.files.file_keywords import FileKeywords
+from keywords.k8s.files.kubectl_file_apply_keywords import KubectlFileApplyKeywords
 from keywords.k8s.files.kubectl_file_delete_keywords import KubectlFileDeleteKeywords
 from keywords.k8s.pods.kubectl_apply_pods_keywords import KubectlApplyPodsKeywords
+from keywords.k8s.pods.kubectl_exec_in_pods_keywords import KubectlExecInPodsKeywords
 from keywords.k8s.pods.kubectl_get_pods_keywords import KubectlGetPodsKeywords
 from keywords.k8s.pvc.kubectl_get_pvc_keywords import KubectlGetPvcKeywords
+from keywords.k8s.volumesnapshots.kubectl_get_volumesnapshots_keywords import KubectlGetVolumesnapshotsKeywords
 from keywords.linux.lvm.lvs_keywords import LvsKeywords
 
 # Common constants, shared by all lvm-csi scenarios (cgts-vg and dedicated VG).
@@ -54,6 +57,53 @@ DEDICATED_WORKLOAD = {
     "pod_name": "lvm-pod-lvm-provisioner",
     "pod_resource": "resources/cloud_platform/storage/lvm_csi/lvm-pod-lvm-provisioner.yaml",
     "pod_yaml_path": f"{REMOTE_DIR}/lvm-pod-lvm-provisioner.yaml",
+}
+
+# Constants specific to the create-and-restore snapshot scenario (lvm-csi thin).
+# The lvm-csi (TopoLVM) VolumeSnapshotClass shared by both the cgts-vg and the dedicated scenarios.
+LVM_CSI_SNAPSHOT_CLASS = "lvmcsi-snapshot"
+# The file written to the source PVC and expected to survive into the restored PVC.
+SNAPSHOT_TEST_FILE = "/mnt1/test.txt"
+
+# --- Snapshot workload for the shared cgts-vg (thin) storage class ---
+# Source PVC/Pod (persistent workload: keeps a file instead of deleting it, unlike CGTS_VG_WORKLOAD).
+CGTS_VG_SNAPSHOT_SOURCE_WORKLOAD = {
+    "pvc_name": "lvm-snap-pvc-cgts-vg",
+    "pod_name": "lvm-snap-pod-cgts-vg",
+    "resource": "resources/cloud_platform/storage/lvm_csi/lvm-snapshot-pod-cgts-vg.yaml",
+    "yaml_path": f"{REMOTE_DIR}/lvm-snapshot-pod-cgts-vg.yaml",
+}
+# VolumeSnapshotClass + VolumeSnapshot manifest.
+CGTS_VG_SNAPSHOT_WORKLOAD = {
+    "snapshot_name": "lvmcsi-pvc-snapshot",
+    "resource": "resources/cloud_platform/storage/lvm_csi/lvm-csi-snapshot-cgts-vg.yaml",
+    "yaml_path": f"{REMOTE_DIR}/lvm-csi-snapshot-cgts-vg.yaml",
+}
+# Restore PVC/Pod (PVC created from the VolumeSnapshot dataSource).
+CGTS_VG_SNAPSHOT_RESTORE_WORKLOAD = {
+    "pvc_name": "lvm-snap-restore-pvc-cgts-vg",
+    "pod_name": "lvm-snap-restore-pod-cgts-vg",
+    "resource": "resources/cloud_platform/storage/lvm_csi/lvm-snapshot-restore-pod-cgts-vg.yaml",
+    "yaml_path": f"{REMOTE_DIR}/lvm-snapshot-restore-pod-cgts-vg.yaml",
+}
+
+# --- Snapshot workload for the dedicated (lvm-provisioner, thin) storage class ---
+DEDICATED_SNAPSHOT_SOURCE_WORKLOAD = {
+    "pvc_name": "lvm-snap-pvc-lvm-provisioner",
+    "pod_name": "lvm-snap-pod-lvm-provisioner",
+    "resource": "resources/cloud_platform/storage/lvm_csi/lvm-snapshot-pod-lvm-provisioner.yaml",
+    "yaml_path": f"{REMOTE_DIR}/lvm-snapshot-pod-lvm-provisioner.yaml",
+}
+DEDICATED_SNAPSHOT_WORKLOAD = {
+    "snapshot_name": "lvmcsi-pvc-snapshot-dedicated",
+    "resource": "resources/cloud_platform/storage/lvm_csi/lvm-csi-snapshot-lvm-provisioner.yaml",
+    "yaml_path": f"{REMOTE_DIR}/lvm-csi-snapshot-lvm-provisioner.yaml",
+}
+DEDICATED_SNAPSHOT_RESTORE_WORKLOAD = {
+    "pvc_name": "lvm-snap-restore-pvc-lvm-provisioner",
+    "pod_name": "lvm-snap-restore-pod-lvm-provisioner",
+    "resource": "resources/cloud_platform/storage/lvm_csi/lvm-snapshot-restore-pod-lvm-provisioner.yaml",
+    "yaml_path": f"{REMOTE_DIR}/lvm-snapshot-restore-pod-lvm-provisioner.yaml",
 }
 
 
@@ -215,6 +265,155 @@ def _verify_no_new_alarms(ssh_connection: SSHConnection, alarms_before: list):
     get_logger().log_test_case_step("Verify no new alarms appeared during the test.")
     alarm_list_keywords = AlarmListKeywords(ssh_connection)
     alarm_list_keywords.set_timeout_in_seconds(300)
+    alarm_list_keywords.wait_for_all_alarms_cleared_excluding(excluded_alarms=alarms_before, stable_checks=3, tolerate_query_failure=True)
+
+
+def _create_and_restore_snapshot(ssh_connection: SSHConnection, source_workload: dict, snapshot_workload: dict, restore_workload: dict):
+    """
+    Create a snapshot of an lvm-csi thin PVC and restore it into a new PVC/Pod.
+
+    Mirrors the dell-storage snapshot flow on the lvm-csi (TopoLVM) thin storage class. Works for both
+    the shared cgts-vg and the dedicated (lvm-provisioner) storage classes depending on the workloads
+    passed in:
+    - Upload the snapshot workload manifests (source Pod/PVC, VolumeSnapshotClass/VolumeSnapshot, restore Pod/PVC)
+    - Create the source PVC and Pod and verify the Pod is Running and the PVC is Bound
+    - Write a test file to the source PVC and sync it, then verify the file exists
+    - Create the VolumeSnapshotClass and VolumeSnapshot and wait for the snapshot to be ready to use
+    - Create the restore PVC (from the snapshot dataSource) and Pod, verify the Pod is Running and the PVC is Bound
+    - Verify the test file written to the source PVC is present in the restored Pod
+
+    Args:
+        ssh_connection (SSHConnection): the active controller SSH connection.
+        source_workload (dict): source PVC/Pod workload (keys 'pvc_name', 'pod_name', 'resource', 'yaml_path').
+        snapshot_workload (dict): VolumeSnapshotClass/VolumeSnapshot manifest (keys 'snapshot_name', 'resource', 'yaml_path').
+        restore_workload (dict): restore PVC/Pod workload (keys 'pvc_name', 'pod_name', 'resource', 'yaml_path').
+    """
+    file_keywords = FileKeywords(ssh_connection)
+    kubectl_apply_file_keywords = KubectlFileApplyKeywords(ssh_connection)
+    kubectl_get_pods_keywords = KubectlGetPodsKeywords(ssh_connection)
+    kubectl_get_pvc_keywords = KubectlGetPvcKeywords(ssh_connection)
+    kubectl_exec_keywords = KubectlExecInPodsKeywords(ssh_connection)
+    volumesnapshots_keywords = KubectlGetVolumesnapshotsKeywords(ssh_connection)
+    snapshot_name = snapshot_workload["snapshot_name"]
+    source_pod = source_workload["pod_name"]
+    restore_pod = restore_workload["pod_name"]
+
+    get_logger().log_test_case_step("Upload the snapshot workload manifests to the active controller.")
+    for workload in (source_workload, snapshot_workload, restore_workload):
+        file_keywords.upload_file(get_stx_resource_path(workload["resource"]), workload["yaml_path"], overwrite=True)
+
+    get_logger().log_test_case_step("Create the source PVC and Pod on the lvm-csi thin storage class.")
+    kubectl_apply_file_keywords.apply_resource_from_yaml(source_workload["yaml_path"])
+
+    get_logger().log_test_case_step("Verify the source Pod is Running and the source PVC is Bound.")
+    kubectl_get_pods_keywords.wait_for_pods_to_reach_status("Running", pod_names=[source_workload["pod_name"]], namespace="default", timeout=300)
+    kubectl_get_pvc_keywords.wait_for_pvcs_to_reach_status("Bound", pvc_names=[source_workload["pvc_name"]], namespace="default", timeout=300)
+
+    get_logger().log_test_case_step(f"Write '{SNAPSHOT_TEST_FILE}' to the source Pod '{source_pod}' and sync.")
+    kubectl_exec_keywords.run_pod_exec_cmd(source_pod, f"sh -c 'echo lvm-csi-snapshot-data > {SNAPSHOT_TEST_FILE}'")
+    kubectl_exec_keywords.run_pod_exec_cmd(source_pod, "sh -c 'sync'")
+
+    get_logger().log_test_case_step(f"Verify '{SNAPSHOT_TEST_FILE}' exists on the source Pod '{source_pod}'.")
+    kubectl_exec_keywords.run_pod_exec_cmd(source_pod, f"sh -c 'test -f {SNAPSHOT_TEST_FILE}'")
+    validate_equals(ssh_connection.get_return_code(), 0, f"'{SNAPSHOT_TEST_FILE}' should exist on the source Pod.")
+
+    get_logger().log_test_case_step(f"Create the VolumeSnapshotClass '{LVM_CSI_SNAPSHOT_CLASS}' and VolumeSnapshot '{snapshot_name}'.")
+    kubectl_apply_file_keywords.apply_resource_from_yaml(snapshot_workload["yaml_path"])
+
+    get_logger().log_test_case_step(f"Wait for the VolumeSnapshot '{snapshot_name}' to be ready to use.")
+    snapshot_ready = volumesnapshots_keywords.wait_for_volumesnapshot_status(snapshot_name, "true", namespace="default")
+    validate_equals(snapshot_ready, True, f"VolumeSnapshot '{snapshot_name}' should be ready to use.")
+
+    get_logger().log_test_case_step("Create the restore PVC (from the snapshot) and Pod.")
+    kubectl_apply_file_keywords.apply_resource_from_yaml(restore_workload["yaml_path"])
+
+    get_logger().log_test_case_step("Verify the restore Pod is Running and the restore PVC is Bound.")
+    kubectl_get_pods_keywords.wait_for_pods_to_reach_status("Running", pod_names=[restore_workload["pod_name"]], namespace="default", timeout=300)
+    kubectl_get_pvc_keywords.wait_for_pvcs_to_reach_status("Bound", pvc_names=[restore_workload["pvc_name"]], namespace="default", timeout=300)
+
+    get_logger().log_test_case_step(f"Verify the restored file '{SNAPSHOT_TEST_FILE}' is present in the restore Pod '{restore_pod}'.")
+    kubectl_exec_keywords.run_pod_exec_cmd(restore_pod, f"sh -c 'test -f {SNAPSHOT_TEST_FILE}'")
+    validate_equals(ssh_connection.get_return_code(), 0, f"'{SNAPSHOT_TEST_FILE}' should be present in the restored Pod (snapshot restored).")
+
+
+def _setup_lvm_csi_snapshot() -> list:
+    """
+    Verify the lvm-csi (TopoLVM) thin provisioning is already applied on the lab.
+
+    This scenario does NOT add or apply lvm-csi; it assumes the lab already has it configured. The
+    lvm-csi thin volume group (cgts-vg or the dedicated lvm-provisioner) is guaranteed by the test's
+    capability mark (lab_has_lvm_thin_cgts_vg / lab_has_lvm_thin_dedicated), so this setup only
+    validates the remaining runtime state and fails (via validate_equals) if any check is not met:
+
+    - Validate that all hosts are healthy
+    - Validate the 'lvm-csi' application is already 'applied'
+    - Validate the 'lvmcsi-pool' thin pool exists on the active controller
+    - Capture a snapshot of the active alarms
+
+    Returns:
+        list: the snapshot of active alarms captured before the test.
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    health_keywords = HealthKeywords(ssh_connection)
+    application_show_keywords = SystemApplicationShowKeywords(ssh_connection)
+    lvs_keywords = LvsKeywords(ssh_connection)
+    alarm_list_keywords = AlarmListKeywords(ssh_connection)
+    active_controller = SystemHostListKeywords(ssh_connection).get_active_controller().get_host_name()
+
+    get_logger().log_setup_step("Validating that all hosts are healthy")
+    health_keywords.validate_hosts_health()
+
+    get_logger().log_setup_step(f"Validate the '{LVM_CSI_APP}' application is already 'applied'")
+    app_status = application_show_keywords.get_system_application_show(LVM_CSI_APP).get_system_application_object().get_status()
+    validate_equals(app_status, "applied", f"'{LVM_CSI_APP}' application should be 'applied' on the lab.")
+
+    get_logger().log_setup_step(f"Validate the '{LVM_CSI_POOL}' thin pool exists on {active_controller}")
+    lvmcsi_pool = lvs_keywords.get_lvs().get_logical_volume(LVM_CSI_POOL)
+    validate_equals(lvmcsi_pool.is_thin_pool(), True, f"'{LVM_CSI_POOL}' should be a thin pool.")
+
+    get_logger().log_setup_step("Capture a snapshot of the active alarms")
+    alarms_before = alarm_list_keywords.alarm_list()
+
+    return alarms_before
+
+
+def _teardown_lvm_csi_snapshot_resources(ssh_connection: SSHConnection, alarms_before: list, source_workload: dict, snapshot_workload: dict, restore_workload: dict):
+    """
+    Delete only the create-and-restore snapshot resources (leave the lvm-csi setup untouched).
+
+    This scenario does not configure lvm-csi, so it must not remove it. It deletes the restore
+    Pod/PVC, the VolumeSnapshot/VolumeSnapshotClass and the source Pod/PVC (plus their manifest
+    files), confirms the Pods and PVCs are gone, and verifies no new alarms remain.
+
+    Args:
+        ssh_connection (SSHConnection): the active controller SSH connection.
+        alarms_before (list): the snapshot of active alarms captured during setup.
+        source_workload (dict): source PVC/Pod workload used by the test.
+        snapshot_workload (dict): VolumeSnapshotClass/VolumeSnapshot manifest used by the test.
+        restore_workload (dict): restore PVC/Pod workload used by the test.
+    """
+    kubectl_file_delete_keywords = KubectlFileDeleteKeywords(ssh_connection)
+    file_keywords = FileKeywords(ssh_connection)
+    kubectl_get_pods_keywords = KubectlGetPodsKeywords(ssh_connection)
+    kubectl_get_pvc_keywords = KubectlGetPvcKeywords(ssh_connection)
+    alarm_list_keywords = AlarmListKeywords(ssh_connection)
+
+    # Delete in reverse dependency order: restore workload, then snapshot, then source workload.
+    # (the snapshot cannot be deleted while the restore PVC still references it, and the source PVC
+    # cannot be deleted while the snapshot references it.)
+    for workload in (restore_workload, snapshot_workload, source_workload):
+        yaml_path = workload["yaml_path"]
+        if file_keywords.file_exists(yaml_path):
+            get_logger().log_teardown_step(f"Delete the resources defined by '{yaml_path}'.")
+            kubectl_file_delete_keywords.delete_resources(yaml_path, ignore_not_found=True)
+            file_keywords.delete_file(yaml_path)
+
+    get_logger().log_teardown_step("Confirm the snapshot source and restore Pods and PVCs are deleted.")
+    kubectl_get_pods_keywords.wait_for_pods_to_be_deleted(namespace="default", pod_names=[restore_workload["pod_name"], source_workload["pod_name"]])
+    kubectl_get_pvc_keywords.wait_for_pvc_to_be_deleted(restore_workload["pvc_name"], namespace="default")
+    kubectl_get_pvc_keywords.wait_for_pvc_to_be_deleted(source_workload["pvc_name"], namespace="default")
+
+    get_logger().log_teardown_step("Verify no new alarms remain after the revert.")
     alarm_list_keywords.wait_for_all_alarms_cleared_excluding(excluded_alarms=alarms_before, stable_checks=3, tolerate_query_failure=True)
 
 
@@ -918,4 +1117,279 @@ def test_lvm_csi_dedicated_thick_vg_compute(request):
     _verify_topolvm_pods_running(ssh_connection)
     _create_and_verify_pvc_and_pod(ssh_connection, DEDICATED_WORKLOAD)
     _verify_dedicated_thick_lv_provisioned(ssh_connection)
+    _verify_no_new_alarms(ssh_connection, alarms_before)
+
+
+@mark.p2
+@mark.lab_has_lvm_thin_cgts_vg
+@mark.lab_is_simplex
+def test_lvm_csi_thin_snapshot_cgts_vg_sx(request):
+    """
+    Validate lvm-csi thin create-and-restore snapshot on the shared cgts-vg on AIO-SX.
+
+    This scenario assumes lvm-csi thin is ALREADY configured on the lab. It does not add the 'lvm'
+    backend or apply the 'lvm-csi' application; it only verifies the required state (and skips if not
+    configured).
+
+    Setup:
+        - Validate that all hosts are healthy
+        - Validate the 'lvm' storage backend is already configured
+        - Validate the 'lvm-csi' application is already 'applied'
+        - Validate the cgts-vg has the lvm-csi thin function and the 'lvmcsi-pool' thin pool exists
+        - Capture a snapshot of the active alarms
+
+    Test Steps:
+        - Create the source PVC/Pod on the cgts-vg (thin) storage class
+        - Write a test file to the source PVC, sync it and verify it exists
+        - Create the VolumeSnapshotClass and VolumeSnapshot and wait for the snapshot to be ready
+        - Create the restore PVC (from the snapshot) and Pod, verify the Pod is Running and the PVC is Bound
+        - Verify the test file is present in the restored Pod
+        - Verify no new alarms appeared during the test
+
+    Teardown:
+        - Delete the restore Pod/PVC, the VolumeSnapshot/VolumeSnapshotClass and the source Pod/PVC (and manifest files)
+        - Verify no new alarms remain after the revert
+        - The lvm-csi setup (backend, cgts-vg function, application) is left untouched
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+
+    alarms_before = _setup_lvm_csi_snapshot()
+
+    # Register the teardown only after setup passed (setup is validation-only, nothing to revert if it fails).
+    def teardown():
+        _teardown_lvm_csi_snapshot_resources(ssh_connection, alarms_before, CGTS_VG_SNAPSHOT_SOURCE_WORKLOAD, CGTS_VG_SNAPSHOT_WORKLOAD, CGTS_VG_SNAPSHOT_RESTORE_WORKLOAD)
+
+    request.addfinalizer(teardown)
+
+    _create_and_restore_snapshot(ssh_connection, CGTS_VG_SNAPSHOT_SOURCE_WORKLOAD, CGTS_VG_SNAPSHOT_WORKLOAD, CGTS_VG_SNAPSHOT_RESTORE_WORKLOAD)
+    _verify_no_new_alarms(ssh_connection, alarms_before)
+
+
+@mark.p2
+@mark.lab_has_lvm_thin_cgts_vg
+@mark.lab_is_duplex
+def test_lvm_csi_thin_snapshot_cgts_vg_dx(request):
+    """
+    Validate lvm-csi thin create-and-restore snapshot on the shared cgts-vg on AIO-DX.
+
+    This scenario assumes lvm-csi thin is ALREADY configured on the lab. It does not add the 'lvm'
+    backend or apply the 'lvm-csi' application; it only verifies the required state (and skips if not
+    configured).
+
+    Setup:
+        - Validate that all hosts are healthy
+        - Validate the 'lvm' storage backend is already configured
+        - Validate the 'lvm-csi' application is already 'applied'
+        - Validate the cgts-vg has the lvm-csi thin function and the 'lvmcsi-pool' thin pool exists
+        - Capture a snapshot of the active alarms
+
+    Test Steps:
+        - Verify the topolvm-system pods are Running (including topolvm-scheduler)
+        - Create the source PVC/Pod on the cgts-vg (thin) storage class
+        - Write a test file to the source PVC, sync it and verify it exists
+        - Create the VolumeSnapshotClass and VolumeSnapshot and wait for the snapshot to be ready
+        - Create the restore PVC (from the snapshot) and Pod, verify the Pod is Running and the PVC is Bound
+        - Verify the test file is present in the restored Pod
+        - Verify no new alarms appeared during the test
+
+    Teardown:
+        - Delete the restore Pod/PVC, the VolumeSnapshot/VolumeSnapshotClass and the source Pod/PVC (and manifest files)
+        - Verify no new alarms remain after the revert
+        - The lvm-csi setup (backend, cgts-vg function, application) is left untouched
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+
+    alarms_before = _setup_lvm_csi_snapshot()
+
+    # Register the teardown only after setup passed (setup is validation-only, nothing to revert if it fails).
+    def teardown():
+        _teardown_lvm_csi_snapshot_resources(ssh_connection, alarms_before, CGTS_VG_SNAPSHOT_SOURCE_WORKLOAD, CGTS_VG_SNAPSHOT_WORKLOAD, CGTS_VG_SNAPSHOT_RESTORE_WORKLOAD)
+
+    request.addfinalizer(teardown)
+
+    _verify_topolvm_pods_running(ssh_connection)
+    _create_and_restore_snapshot(ssh_connection, CGTS_VG_SNAPSHOT_SOURCE_WORKLOAD, CGTS_VG_SNAPSHOT_WORKLOAD, CGTS_VG_SNAPSHOT_RESTORE_WORKLOAD)
+    _verify_no_new_alarms(ssh_connection, alarms_before)
+
+
+@mark.p2
+@mark.lab_has_lvm_thin_cgts_vg
+@mark.lab_has_compute
+def test_lvm_csi_thin_snapshot_cgts_vg_compute(request):
+    """
+    Validate lvm-csi thin create-and-restore snapshot on the shared cgts-vg on a lab with compute.
+
+    This scenario assumes lvm-csi thin is ALREADY configured on the lab. It does not add the 'lvm'
+    backend or apply the 'lvm-csi' application; it only verifies the required state (and skips if not
+    configured).
+
+    Setup:
+        - Validate that all hosts are healthy
+        - Validate the 'lvm' storage backend is already configured
+        - Validate the 'lvm-csi' application is already 'applied'
+        - Validate the cgts-vg has the lvm-csi thin function and the 'lvmcsi-pool' thin pool exists
+        - Capture a snapshot of the active alarms
+
+    Test Steps:
+        - Verify the topolvm-system pods are Running (including topolvm-scheduler)
+        - Create the source PVC/Pod on the cgts-vg (thin) storage class
+        - Write a test file to the source PVC, sync it and verify it exists
+        - Create the VolumeSnapshotClass and VolumeSnapshot and wait for the snapshot to be ready
+        - Create the restore PVC (from the snapshot) and Pod, verify the Pod is Running and the PVC is Bound
+        - Verify the test file is present in the restored Pod
+        - Verify no new alarms appeared during the test
+
+    Teardown:
+        - Delete the restore Pod/PVC, the VolumeSnapshot/VolumeSnapshotClass and the source Pod/PVC (and manifest files)
+        - Verify no new alarms remain after the revert
+        - The lvm-csi setup (backend, cgts-vg function, application) is left untouched
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+
+    alarms_before = _setup_lvm_csi_snapshot()
+
+    # Register the teardown only after setup passed (setup is validation-only, nothing to revert if it fails).
+    def teardown():
+        _teardown_lvm_csi_snapshot_resources(ssh_connection, alarms_before, CGTS_VG_SNAPSHOT_SOURCE_WORKLOAD, CGTS_VG_SNAPSHOT_WORKLOAD, CGTS_VG_SNAPSHOT_RESTORE_WORKLOAD)
+
+    request.addfinalizer(teardown)
+
+    _verify_topolvm_pods_running(ssh_connection)
+    _create_and_restore_snapshot(ssh_connection, CGTS_VG_SNAPSHOT_SOURCE_WORKLOAD, CGTS_VG_SNAPSHOT_WORKLOAD, CGTS_VG_SNAPSHOT_RESTORE_WORKLOAD)
+    _verify_no_new_alarms(ssh_connection, alarms_before)
+
+
+@mark.p2
+@mark.lab_has_lvm_thin_dedicated
+@mark.lab_is_simplex
+def test_lvm_csi_thin_snapshot_dedicated_vg_sx(request):
+    """
+    Validate lvm-csi thin create-and-restore snapshot on the dedicated (lvm-provisioner) VG on AIO-SX.
+
+    This scenario assumes lvm-csi thin is ALREADY configured on the lab with a dedicated
+    'lvm-provisioner' volume group. It does not add the 'lvm' backend or apply the 'lvm-csi'
+    application; it only verifies the required state (and fails if not configured).
+
+    Setup:
+        - Validate that all hosts are healthy
+        - Validate the 'lvm-csi' application is already 'applied'
+        - Validate the lvm-provisioner VG has a provisioned lvm-csi thin disk and the 'lvmcsi-pool' thin pool exists
+        - Capture a snapshot of the active alarms
+
+    Test Steps:
+        - Create the source PVC/Pod on the dedicated (lvm-provisioner, thin) storage class
+        - Write a test file to the source PVC, sync it and verify it exists
+        - Create the VolumeSnapshotClass and VolumeSnapshot and wait for the snapshot to be ready
+        - Create the restore PVC (from the snapshot) and Pod, verify the Pod is Running and the PVC is Bound
+        - Verify the test file is present in the restored Pod
+        - Verify no new alarms appeared during the test
+
+    Teardown:
+        - Delete the restore Pod/PVC, the VolumeSnapshot/VolumeSnapshotClass and the source Pod/PVC (and manifest files)
+        - Verify no new alarms remain after the revert
+        - The lvm-csi setup (backend, lvm-provisioner VG, application) is left untouched
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+
+    alarms_before = _setup_lvm_csi_snapshot()
+
+    # Register the teardown only after setup passed (setup is validation-only, nothing to revert if it fails).
+    def teardown():
+        _teardown_lvm_csi_snapshot_resources(ssh_connection, alarms_before, DEDICATED_SNAPSHOT_SOURCE_WORKLOAD, DEDICATED_SNAPSHOT_WORKLOAD, DEDICATED_SNAPSHOT_RESTORE_WORKLOAD)
+
+    request.addfinalizer(teardown)
+
+    _create_and_restore_snapshot(ssh_connection, DEDICATED_SNAPSHOT_SOURCE_WORKLOAD, DEDICATED_SNAPSHOT_WORKLOAD, DEDICATED_SNAPSHOT_RESTORE_WORKLOAD)
+    _verify_no_new_alarms(ssh_connection, alarms_before)
+
+
+@mark.p2
+@mark.lab_has_lvm_thin_dedicated
+@mark.lab_is_duplex
+def test_lvm_csi_thin_snapshot_dedicated_vg_dx(request):
+    """
+    Validate lvm-csi thin create-and-restore snapshot on the dedicated (lvm-provisioner) VG on AIO-DX.
+
+    This scenario assumes lvm-csi thin is ALREADY configured on the lab with a dedicated
+    'lvm-provisioner' volume group. It does not add the 'lvm' backend or apply the 'lvm-csi'
+    application; it only verifies the required state (and fails if not configured).
+
+    Setup:
+        - Validate that all hosts are healthy
+        - Validate the 'lvm-csi' application is already 'applied'
+        - Validate the lvm-provisioner VG has a provisioned lvm-csi thin disk and the 'lvmcsi-pool' thin pool exists
+        - Capture a snapshot of the active alarms
+
+    Test Steps:
+        - Verify the topolvm-system pods are Running (including topolvm-scheduler)
+        - Create the source PVC/Pod on the dedicated (lvm-provisioner, thin) storage class
+        - Write a test file to the source PVC, sync it and verify it exists
+        - Create the VolumeSnapshotClass and VolumeSnapshot and wait for the snapshot to be ready
+        - Create the restore PVC (from the snapshot) and Pod, verify the Pod is Running and the PVC is Bound
+        - Verify the test file is present in the restored Pod
+        - Verify no new alarms appeared during the test
+
+    Teardown:
+        - Delete the restore Pod/PVC, the VolumeSnapshot/VolumeSnapshotClass and the source Pod/PVC (and manifest files)
+        - Verify no new alarms remain after the revert
+        - The lvm-csi setup (backend, lvm-provisioner VG, application) is left untouched
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+
+    alarms_before = _setup_lvm_csi_snapshot()
+
+    # Register the teardown only after setup passed (setup is validation-only, nothing to revert if it fails).
+    def teardown():
+        _teardown_lvm_csi_snapshot_resources(ssh_connection, alarms_before, DEDICATED_SNAPSHOT_SOURCE_WORKLOAD, DEDICATED_SNAPSHOT_WORKLOAD, DEDICATED_SNAPSHOT_RESTORE_WORKLOAD)
+
+    request.addfinalizer(teardown)
+
+    _verify_topolvm_pods_running(ssh_connection)
+    _create_and_restore_snapshot(ssh_connection, DEDICATED_SNAPSHOT_SOURCE_WORKLOAD, DEDICATED_SNAPSHOT_WORKLOAD, DEDICATED_SNAPSHOT_RESTORE_WORKLOAD)
+    _verify_no_new_alarms(ssh_connection, alarms_before)
+
+
+@mark.p2
+@mark.lab_has_lvm_thin_dedicated
+@mark.lab_has_compute
+def test_lvm_csi_thin_snapshot_dedicated_vg_compute(request):
+    """
+    Validate lvm-csi thin create-and-restore snapshot on the dedicated (lvm-provisioner) VG on a lab with compute.
+
+    This scenario assumes lvm-csi thin is ALREADY configured on the lab with a dedicated
+    'lvm-provisioner' volume group. It does not add the 'lvm' backend or apply the 'lvm-csi'
+    application; it only verifies the required state (and fails if not configured).
+
+    Setup:
+        - Validate that all hosts are healthy
+        - Validate the 'lvm-csi' application is already 'applied'
+        - Validate the lvm-provisioner VG has a provisioned lvm-csi thin disk and the 'lvmcsi-pool' thin pool exists
+        - Capture a snapshot of the active alarms
+
+    Test Steps:
+        - Verify the topolvm-system pods are Running (including topolvm-scheduler)
+        - Create the source PVC/Pod on the dedicated (lvm-provisioner, thin) storage class
+        - Write a test file to the source PVC, sync it and verify it exists
+        - Create the VolumeSnapshotClass and VolumeSnapshot and wait for the snapshot to be ready
+        - Create the restore PVC (from the snapshot) and Pod, verify the Pod is Running and the PVC is Bound
+        - Verify the test file is present in the restored Pod
+        - Verify no new alarms appeared during the test
+
+    Teardown:
+        - Delete the restore Pod/PVC, the VolumeSnapshot/VolumeSnapshotClass and the source Pod/PVC (and manifest files)
+        - Verify no new alarms remain after the revert
+        - The lvm-csi setup (backend, lvm-provisioner VG, application) is left untouched
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+
+    alarms_before = _setup_lvm_csi_snapshot()
+
+    # Register the teardown only after setup passed (setup is validation-only, nothing to revert if it fails).
+    def teardown():
+        _teardown_lvm_csi_snapshot_resources(ssh_connection, alarms_before, DEDICATED_SNAPSHOT_SOURCE_WORKLOAD, DEDICATED_SNAPSHOT_WORKLOAD, DEDICATED_SNAPSHOT_RESTORE_WORKLOAD)
+
+    request.addfinalizer(teardown)
+
+    _verify_topolvm_pods_running(ssh_connection)
+    _create_and_restore_snapshot(ssh_connection, DEDICATED_SNAPSHOT_SOURCE_WORKLOAD, DEDICATED_SNAPSHOT_WORKLOAD, DEDICATED_SNAPSHOT_RESTORE_WORKLOAD)
     _verify_no_new_alarms(ssh_connection, alarms_before)
