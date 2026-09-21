@@ -1,0 +1,42 @@
+// ============================================================================
+// Default O2 IMS Configuration for StarlingX Test
+// ============================================================================
+//
+// The environment contract shared between the O2 bring-up and the O2 IMS API
+// tests. Values here match the defaults the bring-up establishes, so the
+// bring-up and the API tests agree on the same environment without any CLI
+// override.
+//
+// Usage:
+//   python framework/runner/scripts/test_executor.py \
+//     --tests_location=testcases/cloud_platform/apps_setup/o_ran_o2/ \
+//     --lab_config_file=config/lab/files/<lab_config>.json5 \
+//     --o2ims_config_file=config/o2ims/files/default.json5
+//
+// The client secret is intentionally absent: it is read live from the token
+// issuer at run time and never stored in a committed configuration file.
+//
+// ============================================================================
+
+{
+  // Port the OAuth2 token issuer listens on, as seen on the controller.
+  "issuer_port": 28080,
+
+  // Realm the OAuth2 client is configured in.
+  "realm": "master",
+
+  // clientId used for the client_credentials grant.
+  "client_id": "o2ims-test-client",
+
+  // Directory on the test runner holding the client certificate material
+  // (client-cert.pem, client-key.pem, my-root-ca-cert.pem).
+  "cert_dir": "~/o2ims_certificates",
+
+  // Port the O2 IMS API is served on.
+  "served_port": 30205,
+
+  // Admin credentials for administering the token issuer (reading the client
+  // secret). These match the bring-up's issuer admin bootstrap credentials.
+  "issuer_admin_user": "admin",
+  "issuer_admin_password": "admin",
+}

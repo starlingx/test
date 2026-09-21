@@ -1,6 +1,5 @@
 import os
 import uuid
-from base64 import b64encode
 
 from config.configuration_manager import ConfigurationManager
 from framework.logging.automation_logger import get_logger
@@ -9,19 +8,44 @@ from framework.ssh.ssh_connection import SSHConnection
 from framework.validation.validation import validate_greater_than
 from keywords.base_keyword import BaseKeyword
 from keywords.cloud_platform.openstack.openstack_credentials_keywords import OpenStackCredentialsKeywords
+from keywords.cloud_platform.security.keycloak.keycloak_cli_keywords import KeycloakCliKeywords
 from keywords.cloud_platform.system.application.system_application_apply_keywords import SystemApplicationApplyKeywords
+from keywords.cloud_platform.system.application.system_application_upload_keywords import SystemApplicationUploadInput, SystemApplicationUploadKeywords
 from keywords.cloud_platform.system.helm.system_helm_override_keywords import SystemHelmOverrideKeywords
+from keywords.docker.container.docker_container_keywords import DockerContainerKeywords
 from keywords.files.file_keywords import FileKeywords
 from keywords.files.yaml_keywords import YamlKeywords
 from keywords.k8s.files.kubectl_file_apply_keywords import KubectlFileApplyKeywords
 from keywords.k8s.pods.kubectl_exec_in_pods_keywords import KubectlExecInPodsKeywords
+from keywords.k8s.pods.kubectl_get_pods_keywords import KubectlGetPodsKeywords
+from keywords.k8s.rollout.kubectl_rollout_restart_keywords import KubectlRolloutRestartKeywords
 from keywords.k8s.secret.kubectl_get_secret_keywords import KubectlGetSecretsKeywords
+from keywords.linux.ls.ls_keywords import LsKeywords
 from keywords.openssl.openssl_keywords import OpenSSLKeywords
 
 # One of the downloaded certificate files is a private key, so the directory and
 # its contents are restricted to the owning user rather than left to the umask.
 DIRECTORY_MODE_OWNER_ONLY = 0o700
 FILE_MODE_OWNER_ONLY = 0o600
+
+# The application, the namespace it deploys into, and the name prefix of its API
+# pod. Shared with the keywords that verify the deployed environment, so the
+# checks look at the same namespace and pod the deployment creates.
+APP_NAME = "oran-o2"
+APP_NAMESPACE = "oran-o2"
+APP_CHART_GLOB = "/usr/local/share/applications/helm/*oran*"
+O2_POD_PREFIX = "o2api"
+
+# The OAuth2 provider runs as a container in the host network namespace. The port
+# comes from the O2 IMS config: the platform already serves on 8080, and
+# published-port mapping does not take effect on all hosts.
+OAUTH2_CONTAINER_NAME = "o2ims-oauth2-provider"
+OAUTH2_IMAGE = "quay.io/keycloak/keycloak:26.7.0"
+# Long enough that a full suite run does not expire the token mid-run.
+OAUTH2_TOKEN_LIFESPAN_SECONDS = 3600
+
+SMO_SERVICE_ACCOUNT = "smo1"
+SMO_SECRET = "smo1-secret"
 
 
 class OranO2Keywords(BaseKeyword):
@@ -34,6 +58,107 @@ class OranO2Keywords(BaseKeyword):
             ssh_connection (SSHConnection): SSH connection to active controller.
         """
         self.ssh_connection = ssh_connection
+
+    def deploy_o2_environment(self, local_certificate_directory: str) -> None:
+        """Deploy oran-o2 configured so its O2 IMS API can be called.
+
+        Performs the provisioning only: starts and configures the OAuth2 token
+        issuer, uploads the application, creates the SMO service account and
+        secret, generates the certificate material, writes the application
+        configuration carrying the issuer's public key, applies the helm override
+        supplying the client-validation CA, restarts the deployment so the new
+        configuration takes effect, waits for the rollout to settle, and downloads
+        the client certificate material to the test runner.
+
+        Verifying the result is deliberately left to the caller, so a test can
+        assert on the deployed state while a lazy setup path can reuse the same
+        provisioning.
+
+        A pre-existing issuer is removed rather than reused: its realm signing key
+        would not match the key this deployment writes into the application
+        configuration. Recreating it is therefore why the whole auth chain, not
+        just the container, is reconfigured on every call.
+
+        The issuer is not torn down afterwards. The O2 API validates Bearer tokens
+        on every request, so removing the issuer would leave a deployment no client
+        can authenticate against.
+
+        Args:
+            local_certificate_directory (str): Directory on the test runner to
+                write the client certificate material into.
+        """
+        o2ims_config = ConfigurationManager.get_o2ims_config()
+        oauth2_port = o2ims_config.get_issuer_port()
+        oauth2_realm = o2ims_config.get_realm()
+        oauth2_client_id = o2ims_config.get_client_id()
+        oauth2_url = f"http://localhost:{oauth2_port}"
+
+        container_keywords = DockerContainerKeywords(self.ssh_connection)
+        keycloak_keywords = KeycloakCliKeywords(self.ssh_connection, OAUTH2_CONTAINER_NAME, oauth2_url)
+
+        get_logger().log_info("Starting the OAuth2 provider container")
+        container_keywords.cleanup_container(OAUTH2_CONTAINER_NAME)
+        container_keywords.run_container(
+            image=OAUTH2_IMAGE,
+            container_name=OAUTH2_CONTAINER_NAME,
+            use_host_network=True,
+            environment={
+                "KC_HTTP_PORT": str(oauth2_port),
+                "KC_BOOTSTRAP_ADMIN_USERNAME": o2ims_config.get_issuer_admin_user(),
+                "KC_BOOTSTRAP_ADMIN_PASSWORD": o2ims_config.get_issuer_admin_password(),
+            },
+            command="start-dev",
+        )
+        container_keywords.wait_for_container_running(OAUTH2_CONTAINER_NAME)
+        keycloak_keywords.wait_for_keycloak_ready(realm=oauth2_realm)
+
+        get_logger().log_info("Configuring the OAuth2 realm and client")
+        keycloak_keywords.login_as_admin(o2ims_config.get_issuer_admin_user(), o2ims_config.get_issuer_admin_password(), realm=oauth2_realm)
+        keycloak_keywords.update_realm(realm=oauth2_realm, ssl_required="NONE", access_token_lifespan=OAUTH2_TOKEN_LIFESPAN_SECONDS)
+        keycloak_keywords.create_confidential_client(oauth2_client_id, realm=oauth2_realm)
+        # Only readable once the realm is serving, so this must follow wait_for_keycloak_ready.
+        realm_public_key = keycloak_keywords.get_realm_public_key(realm=oauth2_realm)
+
+        self._upload_application()
+
+        get_logger().log_info("Creating the SMO service account and secret")
+        self.create_smo_service_account(SMO_SERVICE_ACCOUNT)
+        smo_token = self.create_smo_secret(SMO_SECRET, SMO_SERVICE_ACCOUNT)
+
+        self.create_certificates()
+
+        # Every value must be fully resolved here: the configuration is mounted into
+        # the pod verbatim and nothing expands shell-style placeholders.
+        self.create_app_config_file(
+            smo_register_url="http://127.0.0.1",
+            smo_token_data=smo_token,
+            oauth2_public_key=realm_public_key,
+        )
+
+        # tls=True supplies the client-validation CA. Without it the API server
+        # rejects every client during the TLS handshake.
+        self.apply_helm_override(tls=True)
+
+        get_logger().log_info("Restarting the deployment so the new configuration takes effect")
+        KubectlRolloutRestartKeywords(self.ssh_connection).rollout_restart_deployment(APP_NAMESPACE)
+        KubectlGetPodsKeywords(self.ssh_connection).wait_for_pods_to_reach_status(expected_status=["Running", "Completed"], namespace=APP_NAMESPACE)
+
+        self.download_client_certificates(local_certificate_directory)
+        get_logger().log_info(f"O2 IMS environment deployed. Client certificates in {local_certificate_directory}, OAuth2 client '{oauth2_client_id}' on {oauth2_url}")
+
+    def _upload_application(self) -> None:
+        """Upload the oran-o2 application package unless it is already uploaded."""
+        upload_keywords = SystemApplicationUploadKeywords(self.ssh_connection)
+        if upload_keywords.is_already_uploaded(APP_NAME):
+            get_logger().log_info(f"Application '{APP_NAME}' already uploaded")
+            return
+        tar_file_path = LsKeywords(self.ssh_connection).get_first_matching_file(APP_CHART_GLOB)
+        get_logger().log_info(f"Uploading application '{APP_NAME}' from: {tar_file_path}")
+        upload_input = SystemApplicationUploadInput()
+        upload_input.set_app_name(APP_NAME)
+        upload_input.set_tar_file_path(tar_file_path)
+        upload_input.set_force(True)
+        upload_keywords.system_application_upload(upload_input)
 
     def create_smo_service_account(self, smo_service_account: str = "smo1") -> None:
         """Create the SMO service account, role and role binding.
@@ -81,8 +206,8 @@ class OranO2Keywords(BaseKeyword):
             str: The base64-encoded service account token.
         """
         # base64=False keeps the token base64-encoded, the form app.conf consumes.
-        # The sibling call in regression/applications/test_o_ran_o2.py decodes it
-        # because it uses the token directly.
+        # Callers that use the token directly rather than writing it into app.conf
+        # must decode it themselves.
         token = KubectlGetSecretsKeywords(self.ssh_connection).get_secret_with_custom_output(smo_secret, namespace, "jsonpath", "'{.data.token}'", base64=False).strip()
         validate_greater_than(len(token), 0, "SMO token retrieved")
         get_logger().log_info(f"Retrieved SMO token from secret '{smo_secret}' ({len(token)} chars)")
@@ -186,10 +311,13 @@ class OranO2Keywords(BaseKeyword):
 
         Args:
             local_directory (str): Local directory to write the certificates into.
-                Created if it does not already exist.
+                A leading '~' is expanded. Created if it does not already exist.
         """
         get_logger().log_info(f"Downloading client certificates to {local_directory}")
-        target_directory = local_directory.rstrip("/")
+        # Expanded here rather than relying on the caller: the configured directory
+        # is '~/o2ims_certificates', and os.makedirs would otherwise create a
+        # directory literally named '~' in the working directory.
+        target_directory = os.path.expanduser(local_directory).rstrip("/")
         os.makedirs(target_directory, mode=DIRECTORY_MODE_OWNER_ONLY, exist_ok=True)
         # makedirs does not alter an existing directory, so apply the mode either way.
         os.chmod(target_directory, DIRECTORY_MODE_OWNER_ONLY)
@@ -207,18 +335,6 @@ class OranO2Keywords(BaseKeyword):
             get_logger().log_info(f"Downloaded {remote_name} as {local_name}")
         get_logger().log_info(f"Certificate directory {target_directory} and its contents restricted to the owning user")
 
-    def _get_remote_file_base64(self, remote_path: str) -> str:
-        """Get base64-encoded content of a remote file.
-
-        Args:
-            remote_path (str): Path to the remote file.
-
-        Returns:
-            str: Base64-encoded content of the file.
-        """
-        content = "".join(FileKeywords(self.ssh_connection).read_file(remote_path))
-        return b64encode(content.encode()).decode()
-
     def apply_helm_override(self, tls: bool = False) -> None:
         """Apply the helm override and deploy the application.
 
@@ -235,13 +351,14 @@ class OranO2Keywords(BaseKeyword):
         """
         get_logger().log_info(f"Applying helm override (tls={tls})")
         template_file = "o2service-override-with-tls.yaml.j2" if tls else "o2service-override-no-tls.yaml.j2"
+        file_keywords = FileKeywords(self.ssh_connection)
         replacement_dict = {
-            "application_config": self._get_remote_file_base64("/tmp/app.conf"),
-            "server_cert": self._get_remote_file_base64("/tmp/cert/my-server-cert.pem"),
-            "server_key": self._get_remote_file_base64("/tmp/cert/my-server-key.pem"),
+            "application_config": file_keywords.read_file_as_base64("/tmp/app.conf"),
+            "server_cert": file_keywords.read_file_as_base64("/tmp/cert/my-server-cert.pem"),
+            "server_key": file_keywords.read_file_as_base64("/tmp/cert/my-server-key.pem"),
         }
         if tls:
-            replacement_dict["smo_ca_cert"] = self._get_remote_file_base64("/tmp/cert/my-root-ca-cert.pem")
+            replacement_dict["smo_ca_cert"] = file_keywords.read_file_as_base64("/tmp/cert/my-root-ca-cert.pem")
         override_file = YamlKeywords(self.ssh_connection).generate_yaml_file_from_template(
             get_stx_resource_path(f"resources/cloud_platform/applications/o_ran/{template_file}"),
             replacement_dict,

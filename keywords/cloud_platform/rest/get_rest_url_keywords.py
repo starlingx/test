@@ -15,6 +15,16 @@ class GetRestUrlKeywords(BaseKeyword):
         if lab_config.is_ipv6():
             self.base_url = f"https://[{lab_config.get_floating_ip()}]"
 
+    def get_base_url(self) -> str:
+        """Return the scheme and host of the lab's REST endpoints, without a port.
+
+        IPv6 addresses are bracketed so a port can be appended safely.
+
+        Returns:
+            str: The base URL, e.g. https://<floating_ip> or https://[<floating_ip>].
+        """
+        return self.base_url
+
     def get_keystone_url(self) -> str:
         """Return the keystone url.
 
