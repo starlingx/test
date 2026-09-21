@@ -18,6 +18,8 @@ class KubectlPodObject:
         self.ready = None
         self.status = None
         self.restarts = None
+        self.restart_count = None
+        self.init_restart_count = None
         self.age = None
         self.ip = None
         self.node = None
@@ -120,6 +122,108 @@ class KubectlPodObject:
             str: Restarts value.
         """
         return self.restarts
+
+    def set_restart_count(self, count: int) -> None:
+        """
+        Setter for the app-container restart count.
+
+        Args:
+            count (int): Restart count summed across the pod's app (regular)
+                containers, i.e. status.containerStatuses[].restartCount.
+                Excludes init containers (see set_init_restart_count).
+        """
+        self.restart_count = count
+
+    def get_restart_count(self) -> int:
+        """
+        Getter for the app-container restart count.
+
+        Summed from status.containerStatuses[].restartCount - the pod's app
+        (regular) containers, i.e. the long-running workload. An app-container
+        restart means the running workload crashed and was restarted (OOM,
+        liveness-probe failure, panic) - steady-state instability. Init-container
+        restarts are tracked separately via get_init_restart_count(); init
+        containers run once at startup and cannot restart again while the pod
+        lives, so their count is startup history, not steady-state stability.
+        This is the lifetime count of the current pod object; recreating the pod
+        resets it to 0.
+
+        Note: this is a defensive backstop for callers iterating a
+        KubectlGetPodsOutput directly. The deliberate interface is
+        KubectlGetPodsKeywords.get_pod_restart_count(), which sources the value
+        via JSON regardless of how any snapshot was built.
+
+        Returns:
+            int: App-container restart count.
+
+        Raises:
+            ValueError: If the count was not populated (pod parsed from table
+                source). Build the snapshot from JSON, e.g. via
+                KubectlGetPodsKeywords.get_pods_json().
+        """
+        if self.restart_count is None:
+            raise ValueError(f"Restart count is not available for pod '{self.name}' parsed from table source; build the snapshot from JSON (e.g. get_pods_json()) or use KubectlGetPodsKeywords.get_pod_restart_count().")
+        return self.restart_count
+
+    def set_init_restart_count(self, count: int) -> None:
+        """
+        Setter for the init-container restart count.
+
+        Args:
+            count (int): Restart count summed across the pod's init containers,
+                i.e. status.initContainerStatuses[].restartCount.
+        """
+        self.init_restart_count = count
+
+    def get_init_restart_count(self) -> int:
+        """
+        Getter for the init-container restart count.
+
+        Summed from status.initContainerStatuses[].restartCount. Init containers
+        run once at pod startup (dependency waits, migrations, image-pull
+        retries), then never again while the pod lives, so this reflects
+        startup-time retries rather than steady-state stability.
+
+        Returns:
+            int: Init-container restart count.
+
+        Raises:
+            ValueError: If the count was not populated (pod parsed from table
+                source). Build the snapshot from JSON, e.g. via
+                KubectlGetPodsKeywords.get_pods_json().
+        """
+        if self.init_restart_count is None:
+            raise ValueError(f"Init restart count is not available for pod '{self.name}' parsed from table source; build the snapshot from JSON (e.g. get_pods_json()).")
+        return self.init_restart_count
+
+    def get_total_restart_count(self, include_init: bool = False) -> int:
+        """
+        Get this pod's total restart count: app (regular) containers, optionally plus init.
+
+        Combines the two per-container-type counts this object already holds. By
+        default returns app-container restarts only (steady-state instability);
+        set include_init=True to also add init-container restarts (startup
+        history - image-pull retries, dependency waits). See get_restart_count()
+        and get_init_restart_count() for the meaning of each and the
+        pod-recreation caveat (the count resets to 0 when the pod object is
+        replaced).
+
+        Args:
+            include_init (bool): Also add init-container restarts. Defaults to False.
+
+        Returns:
+            int: App-container restart count, plus init-container restarts when
+                include_init is True.
+
+        Raises:
+            ValueError: If the counts were not populated (pod parsed from table
+                source). Build the snapshot from JSON, e.g. via
+                KubectlGetPodsKeywords.get_pods_json().
+        """
+        count = self.get_restart_count()
+        if include_init:
+            count += self.get_init_restart_count()
+        return count
 
     def set_age(self, age: str) -> None:
         """

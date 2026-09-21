@@ -121,6 +121,18 @@ class KubectlGetPodsOutput:
         total_count = len(container_statuses) if container_statuses else len(containers)
         pod.set_ready(f"{ready_count}/{total_count}")
 
+        # Restart counts: app (regular) and init containers tracked separately.
+        # Init containers run once at startup, so their count is startup history
+        # rather than steady-state stability. A pod whose containers have not
+        # started yet (e.g. Pending) has no containerStatuses and sums to 0
+        # (empty sum); a crash-looping pod HAS started and its restart count is
+        # summed correctly. restartCount is a required field on a container
+        # status per the k8s API, so it is read directly - a missing key means
+        # malformed input and should fail loud rather than silently count 0.
+        init_container_statuses = status_data.get("initContainerStatuses", [])
+        pod.set_restart_count(sum(cs["restartCount"] for cs in container_statuses))
+        pod.set_init_restart_count(sum(cs["restartCount"] for cs in init_container_statuses))
+
         return pod
 
     def get_pod(self, pod_name: str) -> KubectlPodObject:

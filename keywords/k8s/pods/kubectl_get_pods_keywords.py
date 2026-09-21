@@ -466,3 +466,62 @@ class KubectlGetPodsKeywords(K8sBaseKeyword):
         if not uid:
             raise KeywordException(f"Pod {pod_name} not found in namespace {namespace}")
         return uid
+
+    def get_pod_restart_count(self, pod_name: str, namespace: str, include_init: bool = False) -> int:
+        """Get the container restart count for a single pod.
+
+        Reads the restart count from the pod's JSON status via get_pods_json(),
+        which correctly accounts for restarts. The table RESTARTS column is not
+        used because parsing display text is fragile (e.g. "2 (5m ago)") and
+        column position varies with output flags.
+
+        By default only app (regular) containers are counted
+        (status.containerStatuses) - the long-running workload, whose restart
+        means "the workload crashed and was restarted" (steady-state
+        instability). Init containers (status.initContainerStatuses) run once at
+        pod startup and cannot restart again while the pod lives, so their count
+        is startup history (image-pull retries, dependency waits), not
+        steady-state stability - not usually what a running-pod stability check
+        wants. Set include_init=True when startup retries or pod recreation are
+        relevant.
+
+        Precondition - the count is meaningful only once the pod's containers
+        have started at least once. This reads the restart count as it exists
+        now; it does NOT assert the pod is healthy. A pod whose containers have
+        not started yet (Pending or ContainerCreating) has no containerStatuses
+        and reports 0 - that 0 means "nothing has started", not "stable". Note
+        this is distinct from a crashing pod: a CrashLoopBackOff pod HAS started
+        (its phase is Running) and its climbing restart count is reported
+        correctly - that is the signal a stability check wants, so such pods
+        should be measured, not skipped. The only misleading case is the
+        not-yet-started pod. When using the result as a baseline/after signal,
+        ensure the containers have come up first (e.g. via a wait/ready keyword)
+        so a not-yet-started 0 does not mask a later restart. Readiness is
+        deliberately left out of this keyword to keep it single-purpose and
+        composable with an explicit wait step.
+
+        This value matches the RESTARTS column of 'kubectl get pods' (the count,
+        without the "(Nm ago)" suffix), which is scoped to the CURRENT pod's
+        lifetime and resets to 0 when the pod is recreated - a rollout, eviction,
+        reschedule, or node drain replaces the pod object (new name/UID, AGE
+        resets) and the count starts over. A baseline/after comparison is
+        therefore only valid across the SAME pod object: if the pod may be
+        recreated during the measured window, also compare pod identity (name or
+        UID, e.g. via get_pod_uid_by_name), otherwise a recreation's reset to 0
+        can read as fewer restarts and mask a pod replacement - a worse event
+        than a container restart - as an apparent improvement.
+
+        Args:
+            pod_name (str): Name of the pod.
+            namespace (str): Namespace the pod is in (required - no default, so
+                the caller states intent and avoids a wrong-namespace miss).
+            include_init (bool): Also add init-container restarts. Defaults to False.
+
+        Returns:
+            int: Restart count across the pod's app containers (plus init
+                containers when include_init is True).
+
+        Raises:
+            KeywordException: If the pod is not found in the namespace.
+        """
+        return self.get_pods_json(namespace).get_pod(pod_name).get_total_restart_count(include_init)
