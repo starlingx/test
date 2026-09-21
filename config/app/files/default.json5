@@ -10,7 +10,7 @@
   metrics_server_app_tarball_n2: "fake_path",
   rook_ceph_app_tarball: "fake_path",
   dell_storage_app_tarball: "fake_path",
-  dell_storage_rollback_version: "",
+  dell_storage_app_tarball_rollback: "fake_path",
   // Application tarball used for OIDC upload/write tests
   oidc_test_app_tarball: "auditd",
 
@@ -32,3 +32,8 @@
   //  cert_manager_name: "",
 
 }
+
+
+
+
+
