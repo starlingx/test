@@ -27,6 +27,8 @@ class KubectlPodObject:
         self.readiness_gates = None
         self.labels = {}
         self.images = []
+        self.owner_name = None
+        self.owner_kind = None
 
     def get_name(self) -> str:
         """
@@ -385,6 +387,46 @@ class KubectlPodObject:
             str: Helm chart or empty string if not found.
         """
         return self.get_label("helm.sh/chart")
+
+    def set_owner_name(self, owner_name: str) -> None:
+        """Setter for the controlling owner's name.
+
+        Args:
+            owner_name (str): Name of the controlling owner (for example the
+                ReplicaSet or DaemonSet that manages this pod).
+        """
+        self.owner_name = owner_name
+
+    def get_owner_name(self) -> str:
+        """Getter for the controlling owner's name.
+
+        Only populated from the JSON source (``metadata.ownerReferences``);
+        the table source does not expose owner references.
+
+        Returns:
+            str: The owner name, or None if not populated.
+        """
+        return self.owner_name
+
+    def set_owner_kind(self, owner_kind: str) -> None:
+        """Setter for the controlling owner's kind.
+
+        Args:
+            owner_kind (str): Kind of the controlling owner (for example
+                'ReplicaSet', 'DaemonSet', or 'StatefulSet').
+        """
+        self.owner_kind = owner_kind
+
+    def get_owner_kind(self) -> str:
+        """Getter for the controlling owner's kind.
+
+        Only populated from the JSON source (``metadata.ownerReferences``);
+        the table source does not expose owner references.
+
+        Returns:
+            str: The owner kind, or None if not populated.
+        """
+        return self.owner_kind
 
     def set_images(self, images: list[str]) -> None:
         """Setter for container images.

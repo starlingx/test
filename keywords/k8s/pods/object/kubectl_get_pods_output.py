@@ -110,6 +110,17 @@ class KubectlGetPodsOutput:
         pod.set_ip(status_data.get("podIP"))
         pod.set_node(spec.get("nodeName"))
 
+        # Controlling owner (ReplicaSet/DaemonSet/StatefulSet/Job) identifies
+        # the workload this pod belongs to, so callers can group replicas of
+        # the same workload together.
+        owner_references = metadata.get("ownerReferences", [])
+        controller_owner = next((owner for owner in owner_references if owner.get("controller")), None)
+        if controller_owner is None and owner_references:
+            controller_owner = owner_references[0]
+        if controller_owner is not None:
+            pod.set_owner_name(controller_owner.get("name"))
+            pod.set_owner_kind(controller_owner.get("kind"))
+
         # Extract container images
         containers = spec.get("containers", [])
         images = [c.get("image", "") for c in containers if c.get("image")]
