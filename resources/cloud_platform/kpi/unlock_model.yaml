@@ -40,7 +40,7 @@ description: "Key performance indicators for host unlock — start/stop duration
 
 settings:
     max_time_delta: 600
-    block_time_tolerance: 10
+    block_time_tolerance: 20
 
 blocks:
   #  - label: "LOCK HOST PATTERN"

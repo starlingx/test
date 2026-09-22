@@ -57,6 +57,7 @@ from keywords.k8s.service.kubectl_delete_service_keywords import KubectlDeleteSe
 from keywords.k8s.service.kubectl_get_service_keywords import KubectlGetServiceKeywords
 from keywords.kpi.kpi_recorder_keywords import KpiRecorderKeywords
 from keywords.kpi.log_pattern_kpi_keywords import LogPatternKpiKeywords
+from keywords.kpi.lpmptool_kpi_keywords import LpmptoolKpiKeywords
 from keywords.kpi.unlock_kpi_blocks import UnlockKpiBlocks
 from keywords.linux.date.date_keywords import DateKeywords
 from keywords.linux.tar.tar_keywords import TarKeywords
@@ -289,8 +290,9 @@ def test_lock_unlock_simplex():
         - connect to simplex controller
         - run 'system host-lock' and wait for lock to complete
         - run 'system host-unlock' and wait for unlock to complete successfully
-        - calculate detailed unlock KPIs using log pattern matching
-        - generate profile.timing and CSV output
+        - wait for all pods (excluding pre-existing unhealthy ones) to be healthy
+        - install the native lpmptool and run it on the lab to calculate unlock KPIs
+        - parse and optionally record the KPI results
 
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
@@ -323,10 +325,12 @@ def test_lock_unlock_simplex():
     get_logger().log_info("Waiting for all pods to be healthy before calculating unlock KPIs")
     wait_for_pods_healthy_excluding(ssh_connection, healthy_statuses, pre_existing_bad_pods, timeout=900)
 
-    kpi_keywords = LogPatternKpiKeywords(ssh_connection)
+    # Use the native lpmptool on the lab: install the .deb, upload the unlock model,
+    # and run lpmptool on-host to profile the unlock sequence.
+    kpi_keywords = LpmptoolKpiKeywords(ssh_connection)
 
-    get_logger().log_info("=== Calculating Unlock KPIs ===")
-    results, csv_results = kpi_keywords.calculate_kpi(hostname=active_controller.get_host_name(), blocks=UnlockKpiBlocks.active_controller_unlock_kpi_blocks(), start_date=start_time_str, loops=1, pair_mode=True, output_file="/tmp/unlock_profile.timing", csv_file="/tmp/unlock_profile.csv")
+    get_logger().log_info("=== Calculating Unlock KPIs (native lpmptool) ===")
+    results = kpi_keywords.setup_and_calculate_kpi(start_time=start_time_str, loops=1)
 
     if results:
         kpi_keywords.parse_and_display_results(results)
