@@ -6,13 +6,13 @@ from framework.resources.resource_finder import get_stx_resource_path
 from framework.ssh.ssh_connection import SSHConnection
 from framework.ssh.ssh_connection_manager import SSHConnectionManager
 from framework.validation.validation import validate_equals, validate_greater_than
+from keywords.cloud_platform.applications.power_metrics_keywords import PowerMetricsKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.cloud_platform.system.application.object.system_application_status_enum import SystemApplicationStatusEnum
 from keywords.cloud_platform.system.application.system_application_apply_keywords import SystemApplicationApplyKeywords
 from keywords.cloud_platform.system.application.system_application_delete_keywords import SystemApplicationDeleteInput, SystemApplicationDeleteKeywords
 from keywords.cloud_platform.system.application.system_application_list_keywords import SystemApplicationListKeywords
 from keywords.cloud_platform.system.application.system_application_remove_keywords import SystemApplicationRemoveInput, SystemApplicationRemoveKeywords
-from keywords.cloud_platform.system.application.system_application_upload_keywords import SystemApplicationUploadInput, SystemApplicationUploadKeywords
 from keywords.cloud_platform.system.helm.system_helm_override_keywords import SystemHelmOverrideKeywords
 from keywords.cloud_platform.system.host.system_host_label_keywords import SystemHostLabelKeywords
 from keywords.files.file_keywords import FileKeywords
@@ -65,23 +65,8 @@ class HelperPowerMetrics:
 
         self.logger.log_setup_step(f"Installing {self.app_name} application")
         base_path = app_config.get_base_application_path()
-        system_host_label_keywords = SystemHostLabelKeywords(self.ssh_connection)
-
-        self.logger.log_setup_step("Assigning power-metrics=enabled labels to all nodes")
-        for node in lab_config.get_nodes():
-            if not system_host_label_keywords.get_system_host_label_list(node.get_name()).get_label_value("power-metrics"):
-                system_host_label_keywords.system_host_label_assign(node.get_name(), "power-metrics=enabled")
-
-        system_applications = SystemApplicationListKeywords(self.ssh_connection).get_system_application_list()
-        if not system_applications.is_in_application_list(self.app_name):
-            self.logger.log_setup_step(f"Uploading {self.app_name} application")
-            system_application_upload_input = SystemApplicationUploadInput()
-            system_application_upload_input.set_app_name(self.app_name)
-            system_application_upload_input.set_tar_file_path(f"{base_path}{self.app_name}*.tgz")
-            SystemApplicationUploadKeywords(self.ssh_connection).system_application_upload(system_application_upload_input)
-
-        self.logger.log_setup_step(f"Applying {self.app_name} application")
-        apply_keywords.system_application_apply(self.app_name)
+        node_names = [node.get_name() for node in lab_config.get_nodes()]
+        PowerMetricsKeywords(self.ssh_connection).ensure_power_metrics_applied(self.app_name, base_path, node_names)
 
     def teardown_method(self):
         """Remove and delete power-metrics application and remove labels from all nodes."""
@@ -140,13 +125,7 @@ class HelperPowerMetrics:
 
     def wait_for_telegraf_running(self, timeout=300):
         """Wait for telegraf pods to reach Running status."""
-        self.logger.log_info(f"Waiting for telegraf pods to be Running (timeout={timeout}s)...")
-        self.kubectl_pods.wait_for_pods_to_reach_status(
-            expected_status="Running",
-            pod_names=["telegraf"],
-            namespace=POWER_METRICS_NAMESPACE,
-            timeout=timeout,
-        )
+        PowerMetricsKeywords(self.ssh_connection).wait_for_telegraf_running(timeout=timeout)
 
     def wait_for_cadvisor_running(self, timeout=300):
         """Wait for cadvisor pods to reach Running status."""
@@ -239,4 +218,3 @@ class HelperPowerMetrics:
         self.helm.delete_system_helm_override(self.app_name, chart_name, POWER_METRICS_NAMESPACE)
         SystemApplicationApplyKeywords(self.ssh_connection).system_application_apply(self.app_name)
         self.wait_for_telegraf_running()
-
