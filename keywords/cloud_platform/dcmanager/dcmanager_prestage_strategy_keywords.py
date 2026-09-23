@@ -47,15 +47,26 @@ class DcmanagerPrestageStrategyKeywords(BaseKeyword):
         self.validate_success_return_code(self.ssh_connection)
         return output
 
-    def get_dcmanager_prestage_strategy_apply(self) -> DcmanagerPrestageStrategyObject:
+    def get_dcmanager_prestage_strategy_apply(self, wait_completion: bool = True) -> DcmanagerPrestageStrategyObject:
         """Gets the prestage-strategy apply.
 
+        Args:
+            wait_completion (bool): If True (default), waits for the strategy to
+                reach 'complete'/'failed' before returning. If False, only sends
+                the apply and validates the return code, letting the caller poll
+                per-subcloud progress (e.g. via
+                DcManagerSubcloudStateWatcherKeywords.watch_strategy_steps) -
+                useful for group operations that watch all members.
+
         Returns:
-            DcmanagerPrestageStrategyObject: An object containing details of the prestage strategy.
+            DcmanagerPrestageStrategyObject: The strategy show object once
+                complete/failed, or None when wait_completion is False.
         """
         command = self._wrap_command("dcmanager prestage-strategy apply")
         self.ssh_connection.send(command)
         self.validate_success_return_code(self.ssh_connection)
+        if not wait_completion:
+            return None
         # wait for apply to complete
         return self.wait_for_state(["complete", "failed"], timeout=7200)
 

@@ -86,9 +86,17 @@ class DcmanagerKubeRootcaUpdateStrategyKeywords(BaseKeyword):
 
         return DcmanagerKubeRootcaUpdateStrategyShowOutput(output)
 
-    def dcmanager_kube_rootca_update_strategy_apply(self) -> DcmanagerKubeRootcaUpdateStrategyShowOutput:
+    def dcmanager_kube_rootca_update_strategy_apply(self, wait_completion: bool = True) -> DcmanagerKubeRootcaUpdateStrategyShowOutput:
         """
         Apply kube-rootca-update-strategy
+
+        Args:
+            wait_completion (bool): If True (default), waits for the strategy step
+                to reach 'complete' before returning. If False, only sends the
+                apply and validates the return code, letting the caller poll
+                per-subcloud progress (e.g. via
+                DcManagerSubcloudStateWatcherKeywords.watch_strategy_steps) -
+                useful for group operations that watch all members.
 
         Returns:
             DcmanagerKubeRootcaUpdateStrategyShowOutput: An object containing details of the kubernetes strategy .
@@ -97,7 +105,8 @@ class DcmanagerKubeRootcaUpdateStrategyKeywords(BaseKeyword):
 
         output = self.ssh_connection.send(source_openrc(cmd))
         self.validate_success_return_code(self.ssh_connection)
-        self.wait_kube_upgrade(expected_status="complete", check_interval=60, timeout=3600)
+        if wait_completion:
+            self.wait_kube_upgrade(expected_status="complete", check_interval=60, timeout=3600)
 
         return DcmanagerKubeRootcaUpdateStrategyShowOutput(output)
 
