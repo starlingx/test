@@ -23,6 +23,10 @@ class AppConfig:
         if "dell_storage_app_tarball" in app_dict:
             self.dell_storage_app_tarball = app_dict["dell_storage_app_tarball"]
 
+        self.dell_storage_app_tarball_rollback = "fake_path"
+        if "dell_storage_app_tarball_rollback" in app_dict:
+            self.dell_storage_app_tarball_rollback = app_dict["dell_storage_app_tarball_rollback"]
+
         if "metrics_server_app_tarball_n2" in app_dict:
             self.metrics_server_app_tarball_n2 = app_dict["metrics_server_app_tarball_n2"]
 
@@ -207,6 +211,16 @@ class AppConfig:
 
         """
         return self.platform_integ_app_tarball
+
+    def get_dell_storage_app_name(self) -> str:
+        """
+        Getter for get_dell_storage_app_name
+
+        Returns:
+            str: the get_dell_storage_app_name
+
+        """
+        return self.dell_storage_app_name
 
     def get_dell_storage_app_tarball(self) -> str:
         """
