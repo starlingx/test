@@ -8,6 +8,8 @@ from framework.ssh.ssh_connection import SSHConnection
 from framework.validation.validation import validate_equals, validate_equals_with_retry
 from keywords.base_keyword import BaseKeyword
 from keywords.cloud_platform.command_wrappers import oidc_auth_wrap, source_openrc
+from keywords.cloud_platform.dcmanager.dcmanager_subcloud_list_keywords import DcManagerSubcloudListKeywords
+from keywords.cloud_platform.dcmanager.dcmanager_subcloud_manager_keywords import DcManagerSubcloudManagerKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_show_keywords import DcManagerSubcloudShowKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_state_watcher_keywords import BACKUP_IN_PROGRESS_STATES, RESTORE_IN_PROGRESS_STATES, DcManagerSubcloudStateWatcherKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
@@ -720,6 +722,24 @@ class DcManagerSubcloudBackupKeywords(BaseKeyword):
             get_logger().log_info(f"Powering off duplex subcloud '{subcloud_name}' controllers before install-based restore")
             PowerKeywords(self.ssh_connection).power_off_subcloud(subcloud_name)
 
+    def _unmanage_subcloud_for_restore(self, subcloud_name: str) -> None:
+        """Unmanage a subcloud before a restore if it is currently managed.
+
+        The 'dcmanager subcloud-backup restore' operation requires the subcloud to
+        be unmanaged and in a valid deploy state. Subclouds selected for restore are
+        online and managed, so unmanage them first. Idempotent - a no-op if the
+        subcloud is already unmanaged.
+
+        Args:
+            subcloud_name (str): Subcloud to unmanage before restore.
+        """
+        management_state = DcManagerSubcloudListKeywords(self.ssh_connection).get_dcmanager_subcloud_list().get_subcloud_by_name(subcloud_name).get_management()
+        if management_state == "managed":
+            get_logger().log_info(f"Unmanaging subcloud '{subcloud_name}' before restore")
+            DcManagerSubcloudManagerKeywords(self.ssh_connection).get_dcmanager_subcloud_unmanage(subcloud_name, timeout=60)
+        else:
+            get_logger().log_info(f"Subcloud '{subcloud_name}' is already '{management_state}', skipping unmanage before restore")
+
     def create_central_backup(self, subcloud_name: str, backup_values: bool = False) -> None:
         """Create a subcloud backup on central storage and wait for completion.
 
@@ -814,6 +834,7 @@ class DcManagerSubcloudBackupKeywords(BaseKeyword):
             with_install (bool): If True, reinstall before restoring. Defaults to True.
         """
         password = self._get_subcloud_password(subcloud_name)
+        self._unmanage_subcloud_for_restore(subcloud_name)
         self._power_off_if_duplex_install(subcloud_name, with_install)
         get_logger().log_info(f"Restore central backup (release {release}) for subcloud '{subcloud_name}'")
         self.restore_subcloud_backup(password, self.ssh_connection, subcloud=subcloud_name, with_install=with_install, release=release, restore_values_path=override_values, wait=False)
@@ -834,6 +855,7 @@ class DcManagerSubcloudBackupKeywords(BaseKeyword):
             with_install (bool): If True, reinstall before restoring. Defaults to True.
         """
         password = self._get_subcloud_password(subcloud_name)
+        self._unmanage_subcloud_for_restore(subcloud_name)
         self._power_off_if_duplex_install(subcloud_name, with_install)
         get_logger().log_info(f"Restore local backup (release {release}) for subcloud '{subcloud_name}'")
         self.restore_subcloud_backup(password, self.ssh_connection, subcloud=subcloud_name, local_only=True, with_install=with_install, release=release, restore_values_path=override_values, wait=False)
@@ -848,6 +870,7 @@ class DcManagerSubcloudBackupKeywords(BaseKeyword):
             release (str): Release of the backup to restore.
         """
         password = self._get_subcloud_password(subcloud_name)
+        self._unmanage_subcloud_for_restore(subcloud_name)
         self._power_off_if_duplex_install(subcloud_name, with_install=True)
         get_logger().log_info(f"Auto-restore central backup (release {release}) for subcloud '{subcloud_name}'")
         self.restore_subcloud_backup(password, self.ssh_connection, subcloud=subcloud_name, with_install=True, release=release, auto_restore=True, wait=False)
@@ -862,6 +885,7 @@ class DcManagerSubcloudBackupKeywords(BaseKeyword):
             release (str): Release of the backup to restore.
         """
         password = self._get_subcloud_password(subcloud_name)
+        self._unmanage_subcloud_for_restore(subcloud_name)
         self._power_off_if_duplex_install(subcloud_name, with_install=True)
         get_logger().log_info(f"Auto-restore local backup (release {release}) for subcloud '{subcloud_name}'")
         self.restore_subcloud_backup(password, self.ssh_connection, subcloud=subcloud_name, local_only=True, with_install=True, release=release, auto_restore=True, wait=False)
@@ -875,6 +899,7 @@ class DcManagerSubcloudBackupKeywords(BaseKeyword):
             subcloud_name (str): Subcloud to restore.
         """
         password = self._get_subcloud_password(subcloud_name)
+        self._unmanage_subcloud_for_restore(subcloud_name)
         get_logger().log_info(f"Factory-restore backup for subcloud '{subcloud_name}'")
         self.restore_subcloud_backup(password, self.ssh_connection, subcloud=subcloud_name, factory=True)
 
@@ -893,6 +918,7 @@ class DcManagerSubcloudBackupKeywords(BaseKeyword):
         """
         password = self._get_subcloud_password(subcloud_names[0])
         for subcloud_name in subcloud_names:
+            self._unmanage_subcloud_for_restore(subcloud_name)
             self._power_off_if_duplex_install(subcloud_name, with_install)
         get_logger().log_info(f"Restore central backup (release {release}) for subcloud group '{group_name}'")
         self.restore_subcloud_backup(password, self.ssh_connection, group=group_name, subcloud_list=subcloud_names, release=release, with_install=with_install, wait=False)
@@ -914,6 +940,7 @@ class DcManagerSubcloudBackupKeywords(BaseKeyword):
         """
         password = self._get_subcloud_password(subcloud_names[0])
         for subcloud_name in subcloud_names:
+            self._unmanage_subcloud_for_restore(subcloud_name)
             self._power_off_if_duplex_install(subcloud_name, with_install)
         get_logger().log_info(f"Restore local backup (release {release}) for subcloud group '{group_name}'")
         self.restore_subcloud_backup(password, self.ssh_connection, group=group_name, subcloud_list=subcloud_names, local_only=True, release=release, with_install=with_install, wait=False)
