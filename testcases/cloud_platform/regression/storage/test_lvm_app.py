@@ -7,8 +7,12 @@ from framework.validation.validation import validate_equals, validate_equals_wit
 from keywords.cloud_platform.fault_management.alarms.alarm_list_keywords import AlarmListKeywords
 from keywords.cloud_platform.health.health_keywords import HealthKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
+from keywords.cloud_platform.system.application.object.system_application_delete_input import SystemApplicationDeleteInput
 from keywords.cloud_platform.system.application.object.system_application_remove_input import SystemApplicationRemoveInput
+from keywords.cloud_platform.system.application.system_application_abort_keywords import SystemApplicationAbortKeywords
 from keywords.cloud_platform.system.application.system_application_apply_keywords import SystemApplicationApplyKeywords
+from keywords.cloud_platform.system.application.system_application_delete_keywords import SystemApplicationDeleteKeywords
+from keywords.cloud_platform.system.application.system_application_list_keywords import SystemApplicationListKeywords
 from keywords.cloud_platform.system.application.system_application_remove_keywords import SystemApplicationRemoveKeywords
 from keywords.cloud_platform.system.application.system_application_show_keywords import SystemApplicationShowKeywords
 from keywords.cloud_platform.system.host.system_host_disk_keywords import SystemHostDiskKeywords
@@ -1393,3 +1397,207 @@ def test_lvm_csi_thin_snapshot_dedicated_vg_compute(request):
     _verify_topolvm_pods_running(ssh_connection)
     _create_and_restore_snapshot(ssh_connection, DEDICATED_SNAPSHOT_SOURCE_WORKLOAD, DEDICATED_SNAPSHOT_WORKLOAD, DEDICATED_SNAPSHOT_RESTORE_WORKLOAD)
     _verify_no_new_alarms(ssh_connection, alarms_before)
+
+
+@mark.p2
+@mark.lab_has_lvm
+def test_lvm_csi_force_remove_auto_apply(request):
+    """
+    Validate that force-removing lvm-csi triggers an automatic re-apply.
+
+    This scenario requires the 'lvm' storage backend to be configured (lab_has_lvm capability) and
+    assumes lvm-csi is already applied. It does not add or apply lvm-csi manually. Because the
+    lvm-csi function is still assigned to a local volume group, sysinv detects that the application
+    should be applied and re-applies it automatically after the forced removal (no manual
+    'system application-apply' is issued).
+
+    Setup:
+        - Validate that all hosts are healthy
+        - Validate the 'lvm-csi' application is already 'applied'
+        - Validate the 'lvmcsi-pool' thin pool exists on the active controller
+        - Capture a snapshot of the active alarms
+
+    Test Steps:
+        - Capture the 'lvm-csi' updated_at timestamp
+        - Force-remove the 'lvm-csi' application
+        - Verify sysinv automatically re-applies it (status 'applied', progress 'completed', updated_at changed)
+        - Verify the 'lvmcsi-pool' thin pool exists again after the automatic re-apply
+        - Verify no new alarms appeared during the test
+
+    Teardown:
+        - Verify no new alarms remain (the lvm-csi setup is left applied, as it was before the test)
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    application_show_keywords = SystemApplicationShowKeywords(ssh_connection)
+    system_application_remove_keywords = SystemApplicationRemoveKeywords(ssh_connection)
+    lvs_keywords = LvsKeywords(ssh_connection)
+    active_controller = SystemHostListKeywords(ssh_connection).get_active_controller().get_host_name()
+
+    alarms_before = _setup_lvm_csi_snapshot()
+
+    def teardown():
+        _verify_no_new_alarms(ssh_connection, alarms_before)
+
+    request.addfinalizer(teardown)
+
+    get_logger().log_test_case_step(f"Capture the '{LVM_CSI_APP}' updated_at timestamp before the removal.")
+    updated_at_before = application_show_keywords.get_system_application_show(LVM_CSI_APP).get_system_application_object().get_updated_at()
+
+    get_logger().log_test_case_step(f"Force-remove the '{LVM_CSI_APP}' application.")
+    remove_input = SystemApplicationRemoveInput()
+    remove_input.set_app_name(LVM_CSI_APP)
+    remove_input.set_force_removal(True)
+    system_application_remove_keywords.system_application_remove(remove_input)
+
+    get_logger().log_test_case_step(f"Verify sysinv automatically re-applies '{LVM_CSI_APP}' (the lvm-csi function is still assigned to a volume group).")
+    application_show_keywords.validate_app_updated_at_changed(LVM_CSI_APP, updated_at_before)
+    application_show_keywords.validate_app_progress_contains(LVM_CSI_APP, "completed")
+    application_show_keywords.validate_app_status(LVM_CSI_APP, "applied")
+
+    get_logger().log_test_case_step(f"Verify the '{LVM_CSI_POOL}' thin pool exists after the automatic re-apply on {active_controller}.")
+    lvmcsi_pool = lvs_keywords.get_lvs().get_logical_volume(LVM_CSI_POOL)
+    validate_equals(lvmcsi_pool.is_thin_pool(), True, f"'{LVM_CSI_POOL}' should be a thin pool after the automatic re-apply.")
+
+    _verify_no_new_alarms(ssh_connection, alarms_before)
+
+
+@mark.p2
+@mark.lab_has_lvm_thin_cgts_vg
+def test_lvm_csi_delete_app(request):
+    """
+    Validate that deleting the platform-managed lvm-csi application is self-healed by sysinv.
+
+    This scenario requires lvm-csi thin on the shared cgts-vg (lab_has_lvm_thin_cgts_vg capability).
+    lvm-csi is a platform-managed application with desired_state 'applied' (its metadata also lists
+    'remove' as a forbidden manual operation). Because of that, the periodic sysinv app-operations
+    audit re-uploads any missing managed app (auto uploading missing platform managed apps) and then
+    re-applies it to reach its desired state - this happens regardless of the cgts-vg lvm-csi
+    function assignment. This test force-removes and deletes lvm-csi and then verifies sysinv
+    automatically brings it back (re-upload -> re-apply), leaving the lab in its original state.
+
+    Setup:
+        - Validate that all hosts are healthy
+        - Validate the 'lvm-csi' application is already 'applied'
+        - Validate the 'lvmcsi-pool' thin pool exists on the active controller
+        - Capture a snapshot of the active alarms
+
+    Test Steps:
+        - Force-remove the 'lvm-csi' application (applied -> uploaded)
+        - Delete the 'lvm-csi' application (it briefly leaves the application list)
+        - Verify sysinv automatically re-uploads the application (it reappears in the list)
+        - Verify sysinv automatically re-applies it (status back to 'applied')
+        - Verify the 'lvmcsi-pool' thin pool exists again after the automatic re-apply
+
+    Teardown:
+        - Wait for the 'lvm-csi' application to be 'applied' (apply manually as a fallback)
+        - Verify no new alarms remain (the lvm-csi setup is left applied, as it was before the test)
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    application_list_keywords = SystemApplicationListKeywords(ssh_connection)
+    system_application_remove_keywords = SystemApplicationRemoveKeywords(ssh_connection)
+    system_application_delete_keywords = SystemApplicationDeleteKeywords(ssh_connection)
+    system_application_apply_keywords = SystemApplicationApplyKeywords(ssh_connection)
+    lvs_keywords = LvsKeywords(ssh_connection)
+    active_controller = SystemHostListKeywords(ssh_connection).get_active_controller().get_host_name()
+
+    alarms_before = _setup_lvm_csi_snapshot()
+
+    def teardown():
+        # sysinv self-heals the managed app; apply manually only as a fallback if it did not re-apply.
+        get_logger().log_teardown_step(f"Wait for '{LVM_CSI_APP}' to be re-applied (auto-apply, with a manual apply fallback).")
+        observed_status = application_list_keywords.validate_app_status_in_list(LVM_CSI_APP, ["applied", "uploaded"], timeout=600, polling_sleep_time=20)
+        if observed_status == "uploaded":
+            get_logger().log_teardown_step(f"'{LVM_CSI_APP}' did not auto-apply; applying it manually.")
+            system_application_apply_keywords.system_application_apply(app_name=LVM_CSI_APP)
+            application_list_keywords.validate_app_status(LVM_CSI_APP, "applied", timeout=600, polling_sleep_time=20)
+
+        _verify_no_new_alarms(ssh_connection, alarms_before)
+
+    request.addfinalizer(teardown)
+
+    get_logger().log_test_case_step(f"Force-remove the '{LVM_CSI_APP}' application and wait for it to reach 'uploaded'.")
+    remove_input = SystemApplicationRemoveInput()
+    remove_input.set_app_name(LVM_CSI_APP)
+    remove_input.set_force_removal(True)
+    system_application_remove_keywords.system_application_remove(remove_input)
+    application_list_keywords.validate_app_status(LVM_CSI_APP, "uploaded", timeout=600, polling_sleep_time=1)
+
+    get_logger().log_test_case_step(f"Delete the '{LVM_CSI_APP}' application.")
+    delete_input = SystemApplicationDeleteInput()
+    delete_input.set_app_name(LVM_CSI_APP)
+    delete_input.set_force_deletion(False)
+    delete_msg = system_application_delete_keywords.get_system_application_delete(delete_input)
+    validate_equals(delete_msg, f"Application {LVM_CSI_APP} deleted.\n", "Application deletion message validation")
+
+    # lvm-csi is platform-managed with desired_state 'applied', so the sysinv audit re-uploads the
+    # missing app (~40s) and re-applies it automatically; no manual upload/apply is issued here.
+    get_logger().log_test_case_step(f"Verify sysinv automatically re-uploads the deleted '{LVM_CSI_APP}' application (it reappears in the list).")
+    validate_equals_with_retry(lambda: application_list_keywords.is_app_present(LVM_CSI_APP), True, f"'{LVM_CSI_APP}' should be re-uploaded automatically by sysinv", timeout=600, polling_sleep_time=10)
+
+    get_logger().log_test_case_step(f"Verify sysinv automatically re-applies '{LVM_CSI_APP}' (status back to 'applied').")
+    application_list_keywords.validate_app_status(LVM_CSI_APP, "applied", timeout=600, polling_sleep_time=20)
+
+    get_logger().log_test_case_step(f"Verify the '{LVM_CSI_POOL}' thin pool exists after the automatic re-apply on {active_controller}.")
+    lvmcsi_pool = lvs_keywords.get_lvs().get_logical_volume(LVM_CSI_POOL)
+    validate_equals(lvmcsi_pool.is_thin_pool(), True, f"'{LVM_CSI_POOL}' should be a thin pool after the automatic re-apply.")
+
+
+@mark.p2
+@mark.lab_has_lvm_thin_cgts_vg
+def test_lvm_csi_abort_apply(request):
+    """
+    Validate aborting an in-progress lvm-csi apply.
+
+    This scenario requires lvm-csi thin on the shared cgts-vg (lab_has_lvm_thin_cgts_vg capability).
+    It re-applies the already-applied lvm-csi application and immediately aborts it while the apply
+    is in progress ('applying'), then verifies the abort is honored: the application ends in
+    'apply-failed' with progress 'operation aborted by user'. sysinv only auto-recovers after a
+    300s interval, so the aborted state is stable long enough to validate. The teardown recovers the
+    application (manual apply) so the lab ends in its original 'applied' state.
+
+    Setup:
+        - Validate that all hosts are healthy
+        - Validate the 'lvm-csi' application is already 'applied'
+        - Validate the 'lvmcsi-pool' thin pool exists on the active controller
+        - Capture a snapshot of the active alarms
+
+    Test Steps:
+        - Re-apply the 'lvm-csi' application and immediately abort it (apply && abort)
+        - Verify the application ends in 'apply-failed' (the apply was aborted)
+        - Verify the apply progress reports the operation was aborted by the user
+
+    Teardown:
+        - Recover the 'lvm-csi' application (manual apply) back to 'applied'
+        - Verify no new alarms remain (the lvm-csi setup is left applied, as it was before the test)
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    application_show_keywords = SystemApplicationShowKeywords(ssh_connection)
+    application_list_keywords = SystemApplicationListKeywords(ssh_connection)
+    system_application_abort_keywords = SystemApplicationAbortKeywords(ssh_connection)
+    system_application_apply_keywords = SystemApplicationApplyKeywords(ssh_connection)
+
+    alarms_before = _setup_lvm_csi_snapshot()
+
+    def teardown():
+        # Recover the aborted app back to its original 'applied' state (sysinv would eventually
+        # auto-recover after 300s, but apply it manually so the lab is restored promptly).
+        get_logger().log_teardown_step(f"Recover '{LVM_CSI_APP}' back to 'applied' (manual apply).")
+        if application_list_keywords.get_system_application_list().get_application(LVM_CSI_APP).get_status() != "applied":
+            system_application_apply_keywords.system_application_apply(app_name=LVM_CSI_APP)
+        application_list_keywords.validate_app_status(LVM_CSI_APP, "applied", timeout=600, polling_sleep_time=20)
+
+        _verify_no_new_alarms(ssh_connection, alarms_before)
+
+    request.addfinalizer(teardown)
+
+    # Run 'application-apply && application-abort' back to back so the abort lands while the apply is
+    # in progress ('applying'); the apply can complete quickly, so they must be issued closely.
+    get_logger().log_test_case_step(f"Re-apply the '{LVM_CSI_APP}' application and immediately abort it.")
+    system_application_abort_keywords.system_application_apply_and_abort(LVM_CSI_APP)
+
+    get_logger().log_test_case_step(f"Verify the '{LVM_CSI_APP}' apply was aborted (status 'apply-failed').")
+    application_list_keywords.validate_app_status(LVM_CSI_APP, "apply-failed", timeout=600, polling_sleep_time=5)
+
+    get_logger().log_test_case_step(f"Verify the '{LVM_CSI_APP}' apply progress reports the operation was aborted by the user.")
+    apply_progress = application_show_keywords.get_system_application_show(LVM_CSI_APP).get_system_application_object().get_progress()
+    validate_equals(apply_progress, "operation aborted by user", f"'{LVM_CSI_APP}' apply should report it was aborted by the user.")
