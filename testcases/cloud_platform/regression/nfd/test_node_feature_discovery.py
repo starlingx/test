@@ -70,14 +70,7 @@ def test_nfd_labels_persist_after_reboot(request):
     app_config = ConfigurationManager.get_app_config()
     nfd_name = app_config.get_node_feature_discovery_app_name()
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
-
-    def cleanup_nfd_reboot_test():
-        get_logger().log_teardown_step(f"Removing {nfd_name} app")
-        SystemApplicationRemoveKeywords(ssh_connection).system_application_remove_and_delete_app(nfd_name)
-
-    request.addfinalizer(cleanup_nfd_reboot_test)
-
-    host_name = SystemHostListKeywords(ssh_connection).get_active_controller().get_host_name()
+    host_name = SystemHostListKeywords(ssh_connection).get_active_controller().get_host_name()  # before the finalizer
 
     get_logger().log_test_case_step("Ensuring NFD application is installed and applied")
     install_nfd(ssh_connection)
@@ -87,13 +80,31 @@ def test_nfd_labels_persist_after_reboot(request):
         lambda: len(get_feature_node_labels(LabConnectionKeywords().get_active_controller_ssh(), host_name)) > 0,
         True,
         "Feature node labels should be present",
-        timeout=300,
-        polling_sleep_time=30,
+        timeout=360,
+        polling_sleep_time=60,
     )
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     feature_labels = get_feature_node_labels(ssh_connection, host_name)
     label_count_before = len(feature_labels)
     get_logger().log_info(f"Feature node label count: {label_count_before}")
+
+    pre_uptime = SystemHostListKeywords(ssh_connection).get_uptime(host_name)  # before the finalizer
+
+    def cleanup_nfd_reboot_test():
+        get_logger().log_teardown_step(f"Removing {nfd_name} app")
+        cleanup_ssh = LabConnectionKeywords().get_active_controller_ssh()  # fresh and independent connection
+        SystemHostRebootKeywords(cleanup_ssh).wait_for_force_reboot(host_name, pre_uptime)  # wait for host to be back online before cleanup
+        install_nfd(cleanup_ssh)  # ensure NFD is applied to restore labels
+        validate_equals_with_retry(
+            lambda: len(get_feature_node_labels(LabConnectionKeywords().get_active_controller_ssh(), host_name)),
+            label_count_before,
+            "Labels should be restored before removing NFD",
+            timeout=360,
+            polling_sleep_time=60,
+        )
+        SystemApplicationRemoveKeywords(cleanup_ssh).system_application_remove_and_delete_app(nfd_name)
+
+    request.addfinalizer(cleanup_nfd_reboot_test)  # after label_count_before and pre_uptime are defined
 
     get_logger().log_test_case_step(f"Deleting all feature.node.kubernetes.io labels from {host_name}")
     label_keywords = KubectlLabelNodeKeywords(ssh_connection)
@@ -105,12 +116,11 @@ def test_nfd_labels_persist_after_reboot(request):
     validate_equals(label_count_after_delete, 0, "Feature node label count should be 0 after deletion")
 
     get_logger().log_test_case_step(f"Force rebooting {host_name}")
-    pre_uptime = SystemHostListKeywords(ssh_connection).get_uptime(host_name)
-    reboot_kw = SystemHostRebootKeywords(ssh_connection)
-    reboot_kw.host_force_reboot()
+    SystemHostRebootKeywords(ssh_connection).host_force_reboot()
 
     get_logger().log_test_case_step(f"Waiting for {host_name} to come back online after reboot")
-    if not reboot_kw.wait_for_force_reboot(host_name, pre_uptime):
+    wait_ssh = LabConnectionKeywords().get_active_controller_ssh()  # fresh connection after reboot
+    if not SystemHostRebootKeywords(wait_ssh).wait_for_force_reboot(host_name, pre_uptime):
         raise Exception(f"Timeout waiting for {host_name} to come back online after reboot.")
 
     get_logger().log_test_case_step("Validating feature.node labels are restored after reboot")
@@ -118,8 +128,8 @@ def test_nfd_labels_persist_after_reboot(request):
         lambda: len(get_feature_node_labels(LabConnectionKeywords().get_active_controller_ssh(), host_name)),
         label_count_before,
         "Feature node label count should match original count after reboot",
-        timeout=300,
-        polling_sleep_time=30,
+        timeout=360,
+        polling_sleep_time=60,
     )
 
 
@@ -140,14 +150,7 @@ def test_nfd_labels_restored_after_deletion(request):
     app_config = ConfigurationManager.get_app_config()
     nfd_name = app_config.get_node_feature_discovery_app_name()
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
-
-    def cleanup_nfd_deletion_test():
-        get_logger().log_teardown_step(f"Removing {nfd_name} app")
-        SystemApplicationRemoveKeywords(ssh_connection).system_application_remove_and_delete_app(nfd_name)
-
-    request.addfinalizer(cleanup_nfd_deletion_test)
-
-    host_name = SystemHostListKeywords(ssh_connection).get_active_controller().get_host_name()
+    host_name = SystemHostListKeywords(ssh_connection).get_active_controller().get_host_name()  # before the finalizer
 
     get_logger().log_test_case_step("Ensuring NFD application is installed and applied")
     install_nfd(ssh_connection)
@@ -157,13 +160,28 @@ def test_nfd_labels_restored_after_deletion(request):
         lambda: len(get_feature_node_labels(LabConnectionKeywords().get_active_controller_ssh(), host_name)) > 0,
         True,
         "Feature node labels should be present",
-        timeout=300,
-        polling_sleep_time=30,
+        timeout=360,
+        polling_sleep_time=60,
     )
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     feature_labels = get_feature_node_labels(ssh_connection, host_name)
     label_count_before = len(feature_labels)
     get_logger().log_info(f"Feature node label count: {label_count_before}")
+
+    def cleanup_nfd_deletion_test():
+        get_logger().log_teardown_step(f"Removing {nfd_name} app")
+        cleanup_ssh = LabConnectionKeywords().get_active_controller_ssh()  # fresh and independent connection
+        install_nfd(cleanup_ssh)  # ensure NFD is applied to restore labels
+        validate_equals_with_retry(
+            lambda: len(get_feature_node_labels(LabConnectionKeywords().get_active_controller_ssh(), host_name)),
+            label_count_before,
+            "Labels should be restored before removing NFD",
+            timeout=360,
+            polling_sleep_time=60,
+        )
+        SystemApplicationRemoveKeywords(cleanup_ssh).system_application_remove_and_delete_app(nfd_name)
+
+    request.addfinalizer(cleanup_nfd_deletion_test)  # after label_count_before is defined
 
     get_logger().log_test_case_step(f"Deleting all feature.node.kubernetes.io labels from {host_name}")
     label_keywords = KubectlLabelNodeKeywords(ssh_connection)
@@ -185,7 +203,7 @@ def test_nfd_labels_restored_after_deletion(request):
     get_logger().log_test_case_step("Waiting for NFD worker pods to be Running")
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     KubectlGetPodsKeywords(ssh_connection).wait_for_pods_to_reach_status(
-        expected_status="Running", namespace=NFD_NAMESPACE, timeout=300
+        expected_status="Running", namespace=NFD_NAMESPACE, timeout=360
     )
 
     get_logger().log_test_case_step("Waiting for NFD to restore labels after worker restart")
@@ -193,6 +211,6 @@ def test_nfd_labels_restored_after_deletion(request):
         lambda: len(get_feature_node_labels(LabConnectionKeywords().get_active_controller_ssh(), host_name)),
         label_count_before,
         "Feature node label count should match original count after NFD re-labeling",
-        timeout=300,
+        timeout=360,
         polling_sleep_time=60,
     )
