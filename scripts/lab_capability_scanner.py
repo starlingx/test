@@ -567,10 +567,11 @@ def retrieve_subclouds(lab_config: LabConfig, ssh_connection: SSHConnection) -> 
         subcloud.set_system_controller_name(lab_config.get_lab_name())
 
         deployment_assets_config = ConfigurationManager.get_deployment_assets_config()
-        subcloud_deployment_assets = deployment_assets_config.get_subcloud_deployment_assets(subcloud_name)
-
-        if subcloud_deployment_assets is not None:
+        if deployment_assets_config.has_subcloud_deployment_assets(subcloud_name):
+            subcloud_deployment_assets = deployment_assets_config.get_subcloud_deployment_assets(subcloud_name)
             populate_subcloud_factory_credentials(ssh_connection, subcloud, subcloud_deployment_assets)
+        else:
+            get_logger().log_info(f"No deployment assets configured for subcloud '{subcloud_name}'; skipping factory credentials lookup.")
 
         subclouds.append(subcloud)
 

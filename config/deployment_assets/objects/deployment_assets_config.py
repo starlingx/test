@@ -35,6 +35,19 @@ class DeploymentAssetsConfig:
         """
         return self.controller_deployment_assets
 
+    def has_subcloud_deployment_assets(self, subcloud_name: str) -> bool:
+        """
+        Checks whether deployment assets are configured for the specified subcloud.
+
+        Args:
+            subcloud_name (str): Name of the subcloud.
+
+        Returns:
+            bool: True if deployment assets are configured for the subcloud, False otherwise.
+
+        """
+        return subcloud_name in self.subclouds_deployment_assets
+
     def get_subcloud_deployment_assets(self, subcloud_name: str) -> DeploymentAssets:
         """
         Getter for the deployment assets associated with the specified subcloud.
