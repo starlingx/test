@@ -418,3 +418,19 @@ class WebDriverCore:
 
         """
         self.driver.switch_to.window(self.driver.window_handles[index])
+
+    def set_window_size(self, width: int, height: int) -> None:
+        """
+        Set the browser window size.
+
+        This is useful for validating responsive UI behavior and ensuring
+        consistent browser dimensions during automation testing.
+
+        Args:
+            width (int): Window width in pixels.
+            height (int): Window height in pixels.
+
+        Returns:
+            None
+        """
+        self.driver.set_window_size(width, height)
