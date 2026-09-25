@@ -53,10 +53,7 @@ class HelperPowerMetrics:
         self.ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
         self.helm = SystemHelmOverrideKeywords(self.ssh_connection)
         self.kubectl_pods = KubectlGetPodsKeywords(self.ssh_connection)
-        self.node_ssh_connections = [
-            LabConnectionKeywords().get_ssh_for_hostname(node.get_name())
-            for node in lab_config.get_nodes()
-        ]
+        self.node_ssh_connections = [LabConnectionKeywords().get_ssh_for_hostname(node.get_name()) for node in lab_config.get_nodes()]
 
         apply_keywords = SystemApplicationApplyKeywords(self.ssh_connection)
         if apply_keywords.is_already_applied(self.app_name):
@@ -124,14 +121,16 @@ class HelperPowerMetrics:
 
     def fetch_all_metrics(self, ssh_connection: SSHConnection, endpoint: str = "telegraf.power-metrics.svc.cluster.local:9273/metrics", grep_pattern: str = None, max_lines: int = None) -> list:
         """Fetch metrics from the given endpoint on a given node."""
+        node_name = ssh_connection.get_name()
         cmd = f"curl -s {endpoint}"
         if grep_pattern:
             cmd += f" | grep {grep_pattern}"
         if max_lines:
             cmd += f" | head -n {max_lines}"
+        self.logger.log_info(f"Fetching metrics from {endpoint} on node '{node_name}'")
         output = ssh_connection.send(cmd)
         results = [line for line in output if line.strip() and not line.startswith("#")]
-        self.logger.log_info(f"Fetched {len(results)} metric line(s) from {endpoint}")
+        self.logger.log_info(f"Fetched {len(results)} metric line(s) from {endpoint} on node '{node_name}'")
         return results
 
     def filter_metrics(self, all_metrics: list, pattern: str) -> list:
@@ -239,4 +238,3 @@ class HelperPowerMetrics:
         self.helm.delete_system_helm_override(self.app_name, chart_name, POWER_METRICS_NAMESPACE)
         SystemApplicationApplyKeywords(self.ssh_connection).system_application_apply(self.app_name)
         self.wait_for_telegraf_running()
-
