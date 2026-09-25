@@ -8,6 +8,7 @@ from framework.logging.automation_logger import get_logger
 from framework.resources.resource_finder import get_stx_resource_path
 from framework.ssh.ssh_connection import SSHConnection
 from framework.validation.validation import validate_equals, validate_equals_with_retry, validate_not_equals
+from keywords.ceph.ceph_status_keywords import CephStatusKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.cloud_platform.system.application.object.system_application_delete_input import SystemApplicationDeleteInput
 from keywords.cloud_platform.system.application.object.system_application_status_enum import SystemApplicationStatusEnum
@@ -25,13 +26,18 @@ from keywords.cloud_platform.system.helm.system_helm_override_keywords import Sy
 from keywords.cloud_platform.system.host.system_host_list_keywords import SystemHostListKeywords
 from keywords.cloud_platform.system.host.system_host_lock_keywords import SystemHostLockKeywords
 from keywords.cloud_platform.system.host.system_host_reboot_keywords import SystemHostRebootKeywords
+from keywords.cloud_platform.system.host.system_host_stor_keywords import SystemHostStorageKeywords
+from keywords.cloud_platform.system.storage.system_storage_backend_keywords import SystemStorageBackendKeywords
 from keywords.files.file_keywords import FileKeywords
 from keywords.files.yaml_keywords import YamlKeywords
+from keywords.k8s.delete_resource.kubectl_delete_resource_keywords import KubectlDeleteResourceKeywords
 from keywords.k8s.files.kubectl_file_apply_keywords import KubectlFileApplyKeywords
 from keywords.k8s.files.kubectl_file_delete_keywords import KubectlFileDeleteKeywords
 from keywords.k8s.pods.kubectl_create_pods_keywords import KubectlCreatePodsKeywords
+from keywords.k8s.pods.kubectl_delete_pods_keywords import KubectlDeletePodsKeywords
 from keywords.k8s.pods.kubectl_exec_in_pods_keywords import KubectlExecInPodsKeywords
 from keywords.k8s.pods.kubectl_get_pods_keywords import KubectlGetPodsKeywords
+from keywords.k8s.pvc.kubectl_get_pvc_keywords import KubectlGetPvcKeywords
 from keywords.k8s.volumesnapshots.kubectl_get_volumesnapshots_keywords import KubectlGetVolumesnapshotsKeywords
 from keywords.linux.ip.ip_keywords import IPKeywords
 from keywords.linux.mount.mount_keywords import MountKeywords
@@ -119,6 +125,49 @@ def common_verify_dell_app_status_nfs_sx(ssh_connection, dell_storage_app_status
         get_logger().log_test_case_step(f"Apply {dell_storage_app_name}.")
         SystemApplicationApplyKeywords(ssh_connection).system_application_apply(dell_storage_app_name)
 
+
+def ensure_ceph_storage_backend_configured(ssh_connection: SSHConnection, timeout: int = 1800) -> None:
+    """Ensure the ceph storage backend is configured; add it and wait if it isn't.
+
+    Test Steps:
+        - Check whether the ceph storage backend is already present.
+        - If not, add it with 'system storage-backend-add ceph'.
+        - Wait for the backend to reach the 'configured' state.
+        - Wait for ceph to report healthy.
+
+    Args:
+        ssh_connection (SSHConnection): SSH connection to the active controller.
+        timeout (int): Max seconds to wait for the backend to configure. Defaults to 1800.
+    """
+    backend = "ceph"
+    storage_backend_keywords = SystemStorageBackendKeywords(ssh_connection)
+
+    backends = storage_backend_keywords.get_system_storage_backend_list()
+
+    if backends.is_backend_configured(backend):
+        get_logger().log_info("ceph storage backend is already present.")
+    else:
+        get_logger().log_test_case_step("Add ceph storage backend")
+        storage_backend_keywords.system_storage_backend_add(backend, confirmed=True)
+
+        get_logger().log_test_case_step("Wait for ceph storage backend to reach configured state")
+        is_configured = storage_backend_keywords.wait_for_backend_configured(backend, timeout=timeout)
+        validate_equals(is_configured, True, "ceph storage backend reached configured state")
+
+        host_stor = SystemHostStorageKeywords(ssh_connection)
+        hostname, osd_uuid = host_stor.find_and_add_osd(["controller-0"])
+
+    get_logger().log_test_case_step("Wait for ceph storage backend to reach configured state")
+    is_configured = storage_backend_keywords.wait_for_backend_configured(backend, timeout=timeout)
+    validate_equals(is_configured, True, "ceph storage backend reached configured state")
+
+    get_logger().log_test_case_step("Wait for ceph to be healthy")
+    CephStatusKeywords(ssh_connection).wait_for_ceph_health_status(expect_health_status=True, timeout=timeout)
+
+    app_config = ConfigurationManager.get_app_config()
+    platform_integ_apps_name = app_config.get_platform_integ_apps_app_name()
+    get_logger().log_test_case_step("Validate platform-integ-apps app is present and applied, and the version matches.")
+    SystemApplicationListKeywords(ssh_connection).validate_app_status(platform_integ_apps_name, "applied")
 
 def common_verify_dell_app_status_iscsi_sx(ssh_connection, dell_storage_app_status, namespace, dell_storage_app_name, chart_name):
     """
@@ -217,6 +266,44 @@ def verify_file_created_on_pod_exists(ssh_connection: SSHConnection, namespace: 
     kubectl_exec_in_pods = KubectlExecInPodsKeywords(ssh_connection)
     options = f"-it -n {namespace}"
     cmd = "bash -c 'test -f /data0/test.txt'"
+
+    get_logger().log_test_case_step(f"Verify if the test.txt file created on the dell-storage test pod is present on the pvc. {pod_name}")
+    validate_equals_with_retry(
+        function_to_execute=lambda: (kubectl_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options, ignore_error=True), ssh_connection.get_return_code())[1],
+        expected_value=0,
+        validation_description=f"test.txt is on {pod_name} pod.",
+        timeout=timeout,
+        polling_sleep_time=poll_interval,
+    )
+
+
+def verify_file_created_on_ceph_rbd_pod_exists(ssh_connection: SSHConnection, namespace: str, pod_name: str, timeout: int = 600, poll_interval: int = 15):
+    """
+    Verify that the test.txt file previously created still exists inside the pod.
+
+    After a power-off/on cycle the StatefulSet pod is torn down and recreated. There is a
+    window where the pod name is reported Running but 'kubectl exec' still fails transiently
+    with "pod does not exist" (the sandbox is not ready to be exec'd into yet). A single exec
+    races against that window, so the exec is polled: any transient exec failure is retried,
+    and the file is considered present only once the exec succeeds with return code 0.
+
+    Test Steps:
+        - Wait for the pod to be Running so it can be exec'd into.
+        - Poll 'test -f /data0/test.txt' inside the pod until it succeeds or the timeout elapses.
+
+    Args:
+        ssh_connection (SSHConnection): the ssh connection to the active controller.
+        namespace (str): the namespace the pod runs in.
+        pod_name (str): the name of the pod to check.
+        timeout (int): maximum time in seconds to wait for the file check to succeed.
+        poll_interval (int): time in seconds between exec attempts.
+    """
+    get_logger().log_test_case_step(f"Wait for pod {pod_name} to be Running before exec")
+    KubectlGetPodsKeywords(ssh_connection).wait_for_pod_status(pod_name, "Running", namespace, timeout=timeout)
+
+    kubectl_exec_in_pods = KubectlExecInPodsKeywords(ssh_connection)
+    options = f"-it -n {namespace}"
+    cmd = "bash -c 'test -f /data/test.txt'"
 
     get_logger().log_test_case_step(f"Verify if the test.txt file created on the dell-storage test pod is present on the pvc. {pod_name}")
     validate_equals_with_retry(
@@ -399,20 +486,20 @@ def test_dell_storage_powerstore_procedure(request):
     validate_equals(pod_status, True, f"Verify {pod_name} pod is running")
 
     get_logger().log_test_case_step(f"Creating text.txt file inside of {pod_name} pod")
-    kubeclt_exec_in_pods = KubectlExecInPodsKeywords(ssh_connection)
+    kubectl_exec_in_pods = KubectlExecInPodsKeywords(ssh_connection)
     options = f"-it -n {namespace}"
     cmd = "bash -c 'touch /data0/test.txt'"
-    kubeclt_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
+    kubectl_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
     validate_equals(ssh_connection.get_return_code(), 0, f"Write to {pod_name} pod success")
 
     get_logger().log_info("sync pod")
     cmd = "bash -c 'sync'"
-    kubeclt_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
+    kubectl_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
     validate_equals(ssh_connection.get_return_code(), 0, f"sync pod {pod_name} success")
 
     get_logger().log_info("Check if test.txt is exist")
     cmd = "bash -c 'test -f /data0/test.txt'"
-    kubeclt_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
+    kubectl_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
     validate_equals(ssh_connection.get_return_code(), 0, f"Access to {pod_name} pod success")
 
     get_logger().log_test_case_step("Creating volumesnapshot via yaml")
@@ -651,15 +738,15 @@ def test_node_reboot_with_pvc_pod_dell_storage_iscsi(request):
     verify_dell_storage_pods_are_running(ssh_connection)
 
     get_logger().log_test_case_step(f"Creating text.txt file inside of {pod_name} pod")
-    kubeclt_exec_in_pods = KubectlExecInPodsKeywords(ssh_connection)
+    kubectl_exec_in_pods = KubectlExecInPodsKeywords(ssh_connection)
     options = f"-it -n {namespace}"
     cmd = "bash -c 'touch /data0/test.txt'"
-    kubeclt_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
+    kubectl_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
     validate_equals(ssh_connection.get_return_code(), 0, f"Write to {pod_name} pod success")
 
     get_logger().log_info("sync pod")
     cmd = "bash -c 'sync'"
-    kubeclt_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
+    kubectl_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
     validate_equals(ssh_connection.get_return_code(), 0, f"sync pod {pod_name} success")
 
     verify_file_created_on_pod_exists(ssh_connection, namespace, pod_name)
@@ -683,7 +770,7 @@ def test_node_reboot_with_pvc_pod_dell_storage_iscsi(request):
 
     get_logger().log_test_case_step("Make sure that the test PVC and POD are still running.")
     cmd = "bash -c 'sync'"
-    kubeclt_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
+    kubectl_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
     validate_equals(ssh_connection.get_return_code(), 0, f"sync pod {pod_name} success")
 
     get_logger().log_test_case_step("Make sure that the file created before the reboot is still saved in the test pod.")
@@ -769,15 +856,15 @@ def test_node_reboot_with_pvc_pod_dell_storage_nfs(request):
     verify_dell_storage_pods_are_running(ssh_connection)
 
     get_logger().log_test_case_step(f"Creating text.txt file inside of {pod_name} pod")
-    kubeclt_exec_in_pods = KubectlExecInPodsKeywords(ssh_connection)
+    kubectl_exec_in_pods = KubectlExecInPodsKeywords(ssh_connection)
     options = f"-it -n {namespace}"
     cmd = "bash -c 'touch /data0/test.txt'"
-    kubeclt_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
+    kubectl_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
     validate_equals(ssh_connection.get_return_code(), 0, f"Write to {pod_name} pod success")
 
     get_logger().log_info("sync pod")
     cmd = "bash -c 'sync'"
-    kubeclt_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
+    kubectl_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
     validate_equals(ssh_connection.get_return_code(), 0, f"sync pod {pod_name} success")
 
     get_logger().log_info("Check if test.txt exists")
@@ -803,7 +890,7 @@ def test_node_reboot_with_pvc_pod_dell_storage_nfs(request):
 
     get_logger().log_test_case_step("Make sure that the test PVC and POD are still running.")
     cmd = "bash -c 'sync'"
-    kubeclt_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
+    kubectl_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
     validate_equals(ssh_connection.get_return_code(), 0, f"sync pod {pod_name} success")
 
     get_logger().log_test_case_step("Make sure that the file created before the reboot is still saved in the test pod.")
@@ -890,20 +977,20 @@ def test_lock_unlock_node_with_pvc_pod_dell_storage_iscsi(request):
     verify_dell_storage_pods_are_running(ssh_connection)
 
     get_logger().log_test_case_step(f"Creating text.txt file inside of {pod_name} pod")
-    kubeclt_exec_in_pods = KubectlExecInPodsKeywords(ssh_connection)
+    kubectl_exec_in_pods = KubectlExecInPodsKeywords(ssh_connection)
     options = f"-it -n {namespace}"
     cmd = "bash -c 'touch /data0/test.txt'"
-    kubeclt_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
+    kubectl_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
     validate_equals(ssh_connection.get_return_code(), 0, f"Write to {pod_name} pod success")
 
     get_logger().log_info("sync pod")
     cmd = "bash -c 'sync'"
-    kubeclt_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
+    kubectl_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
     validate_equals(ssh_connection.get_return_code(), 0, f"sync pod {pod_name} success")
 
     get_logger().log_info("Check if test.txt exists")
     cmd = "bash -c 'test -f /data0/test.txt'"
-    kubeclt_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
+    kubectl_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
     validate_equals(ssh_connection.get_return_code(), 0, f"Access to {pod_name} pod success")
 
     host_lock_keywords = SystemHostLockKeywords(ssh_connection)
@@ -926,7 +1013,7 @@ def test_lock_unlock_node_with_pvc_pod_dell_storage_iscsi(request):
 
     get_logger().log_test_case_step("Make sure that the test PVC and POD are still running.")
     cmd = "bash -c 'sync'"
-    kubeclt_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
+    kubectl_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
     validate_equals(ssh_connection.get_return_code(), 0, f"sync pod {pod_name} success")
 
     get_logger().log_test_case_step("Make sure that the file created before the reboot is still saved in the test pod.")
@@ -1014,15 +1101,15 @@ def test_lock_unlock_node_with_pvc_pod_dell_storage_nfs(request):
     verify_dell_storage_pods_are_running(ssh_connection)
 
     get_logger().log_test_case_step(f"Creating text.txt file inside of {pod_name} pod")
-    kubeclt_exec_in_pods = KubectlExecInPodsKeywords(ssh_connection)
+    kubectl_exec_in_pods = KubectlExecInPodsKeywords(ssh_connection)
     options = f"-it -n {namespace}"
     cmd = "bash -c 'touch /data0/test.txt'"
-    kubeclt_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
+    kubectl_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
     validate_equals(ssh_connection.get_return_code(), 0, f"Write to {pod_name} pod success")
 
     get_logger().log_info("sync pod")
     cmd = "bash -c 'sync'"
-    kubeclt_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
+    kubectl_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
     validate_equals(ssh_connection.get_return_code(), 0, f"sync pod {pod_name} success")
 
     get_logger().log_info("Check if test.txt exists")
@@ -1048,12 +1135,12 @@ def test_lock_unlock_node_with_pvc_pod_dell_storage_nfs(request):
 
     get_logger().log_test_case_step("Make sure that the test PVC and POD are still running.")
     cmd = "bash -c 'sync'"
-    kubeclt_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
+    kubectl_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
     validate_equals(ssh_connection.get_return_code(), 0, f"sync pod {pod_name} success")
 
     get_logger().log_test_case_step("Make sure that the test PVC and POD are still running.")
     cmd = "bash -c 'sync'"
-    kubeclt_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
+    kubectl_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
     validate_equals(ssh_connection.get_return_code(), 0, f"sync pod {pod_name} success")
 
     get_logger().log_test_case_step("Make sure that the file created before the reboot is still saved in the test pod.")
@@ -1153,15 +1240,15 @@ def test_power_off_node_with_pvc_pod_dell_storage_iscsi(request):
     verify_dell_storage_pods_are_running(ssh_connection)
 
     get_logger().log_test_case_step(f"Creating text.txt file inside of {pod_name} pod")
-    kubeclt_exec_in_pods = KubectlExecInPodsKeywords(ssh_connection)
+    kubectl_exec_in_pods = KubectlExecInPodsKeywords(ssh_connection)
     options = f"-it -n {namespace}"
     cmd = "bash -c 'touch /data0/test.txt'"
-    kubeclt_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
+    kubectl_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
     validate_equals(ssh_connection.get_return_code(), 0, f"Write to {pod_name} pod success")
 
     get_logger().log_info("sync pod")
     cmd = "bash -c 'sync'"
-    kubeclt_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
+    kubectl_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
     validate_equals(ssh_connection.get_return_code(), 0, f"sync pod {pod_name} success")
 
     get_logger().log_info("Check if test.txt exists")
@@ -1170,7 +1257,7 @@ def test_power_off_node_with_pvc_pod_dell_storage_iscsi(request):
     get_logger().log_test_case_step("sync pod")
     get_logger().log_info("sync pod")
     cmd = "bash -c 'sync'"
-    kubeclt_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
+    kubectl_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
     validate_equals(ssh_connection.get_return_code(), 0, f"sync pod {pod_name} success")
 
     get_logger().log_test_case_step("Power Off controller-0 through IPMITOOLS ")
@@ -1290,15 +1377,15 @@ def test_power_off_node_with_pvc_pod_dell_storage_nfs(request):
     verify_dell_storage_pods_are_running(ssh_connection)
 
     get_logger().log_test_case_step(f"Creating text.txt file inside of {pod_name} pod")
-    kubeclt_exec_in_pods = KubectlExecInPodsKeywords(ssh_connection)
+    kubectl_exec_in_pods = KubectlExecInPodsKeywords(ssh_connection)
     options = f"-it -n {namespace}"
     cmd = "bash -c 'touch /data0/test.txt'"
-    kubeclt_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
+    kubectl_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
     validate_equals(ssh_connection.get_return_code(), 0, f"Write to {pod_name} pod success")
 
     get_logger().log_info("sync pod")
     cmd = "bash -c 'sync'"
-    kubeclt_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
+    kubectl_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
     validate_equals(ssh_connection.get_return_code(), 0, f"sync pod {pod_name} success")
 
     get_logger().log_info("Check if test.txt exists")
@@ -1307,7 +1394,7 @@ def test_power_off_node_with_pvc_pod_dell_storage_nfs(request):
     get_logger().log_test_case_step("sync pod")
     get_logger().log_info("sync pod")
     cmd = "bash -c 'sync'"
-    kubeclt_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
+    kubectl_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
     validate_equals(ssh_connection.get_return_code(), 0, f"sync pod {pod_name} success")
 
     get_logger().log_test_case_step("Power Off controller-0 through IPMITOOLS ")
@@ -1520,15 +1607,15 @@ def test_auto_downgrade_dell_storage_iscsi(request: FixtureRequest):
     verify_dell_storage_pods_are_running(ssh_connection)
 
     get_logger().log_test_case_step(f"Creating text.txt file inside of {pod_name} pod")
-    kubeclt_exec_in_pods = KubectlExecInPodsKeywords(ssh_connection)
+    kubectl_exec_in_pods = KubectlExecInPodsKeywords(ssh_connection)
     options = f"-it -n {namespace}"
     cmd = "bash -c 'touch /data0/test.txt'"
-    kubeclt_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
+    kubectl_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
     validate_equals(ssh_connection.get_return_code(), 0, f"Write to {pod_name} pod success")
 
     get_logger().log_info("sync pod")
     cmd = "bash -c 'sync'"
-    kubeclt_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
+    kubectl_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
     validate_equals(ssh_connection.get_return_code(), 0, f"sync pod {pod_name} success")
 
     get_logger().log_info("Check if test.txt exists")
@@ -1645,7 +1732,6 @@ def test_auto_upgrade_dell_storage_iscsi(request: FixtureRequest):
                 f"{dell_storage_app_name} upload status validation",
                 timeout=300,
             )
-
 
             # Apply original version
             common_verify_dell_app_status_iscsi_sx(ssh_connection, dell_storage_app_status, namespace, dell_storage_app_name, chart_name)
@@ -2259,15 +2345,15 @@ def test_auto_downgrade_dell_storage_nfs(request: FixtureRequest):
     verify_dell_storage_pods_are_running(ssh_connection)
 
     get_logger().log_test_case_step(f"Creating text.txt file inside of {pod_name} pod")
-    kubeclt_exec_in_pods = KubectlExecInPodsKeywords(ssh_connection)
+    kubectl_exec_in_pods = KubectlExecInPodsKeywords(ssh_connection)
     options = f"-it -n {namespace}"
     cmd = "bash -c 'touch /data0/test.txt'"
-    kubeclt_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
+    kubectl_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
     validate_equals(ssh_connection.get_return_code(), 0, f"Write to {pod_name} pod success")
 
     get_logger().log_info("sync pod")
     cmd = "bash -c 'sync'"
-    kubeclt_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
+    kubectl_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
     validate_equals(ssh_connection.get_return_code(), 0, f"sync pod {pod_name} success")
 
     get_logger().log_info("Check if test.txt exists")
@@ -2488,15 +2574,15 @@ def test_manual_downgrade_dell_storage_iscsi(request: FixtureRequest):
     verify_dell_storage_pods_are_running(ssh_connection)
 
     get_logger().log_test_case_step(f"Creating text.txt file inside of {pod_name} pod")
-    kubeclt_exec_in_pods = KubectlExecInPodsKeywords(ssh_connection)
+    kubectl_exec_in_pods = KubectlExecInPodsKeywords(ssh_connection)
     options = f"-it -n {namespace}"
     cmd = "bash -c 'touch /data0/test.txt'"
-    kubeclt_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
+    kubectl_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
     validate_equals(ssh_connection.get_return_code(), 0, f"Write to {pod_name} pod success")
 
     get_logger().log_info("sync pod")
     cmd = "bash -c 'sync'"
-    kubeclt_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
+    kubectl_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
     validate_equals(ssh_connection.get_return_code(), 0, f"sync pod {pod_name} success")
 
     get_logger().log_info("Check if test.txt exists")
@@ -2712,15 +2798,15 @@ def test_manual_downgrade_dell_storage_nfs(request: FixtureRequest):
     verify_dell_storage_pods_are_running(ssh_connection)
 
     get_logger().log_test_case_step(f"Creating text.txt file inside of {pod_name} pod")
-    kubeclt_exec_in_pods = KubectlExecInPodsKeywords(ssh_connection)
+    kubectl_exec_in_pods = KubectlExecInPodsKeywords(ssh_connection)
     options = f"-it -n {namespace}"
     cmd = "bash -c 'touch /data0/test.txt'"
-    kubeclt_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
+    kubectl_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
     validate_equals(ssh_connection.get_return_code(), 0, f"Write to {pod_name} pod success")
 
     get_logger().log_info("sync pod")
     cmd = "bash -c 'sync'"
-    kubeclt_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
+    kubectl_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
     validate_equals(ssh_connection.get_return_code(), 0, f"sync pod {pod_name} success")
 
     get_logger().log_info("Check if test.txt exists")
@@ -2847,19 +2933,12 @@ def test_manual_upgrade_dell_storage_iscsi(request: FixtureRequest):
             get_logger().log_teardown_step("Move latest tarball from test_upgrade folder to base application path")
             FileKeywords(ssh_connection).move_file(f"/home/sysadmin/test_upgrade/dell-storage-{original_version}.tgz", base_application_path, sudo=True)
 
-            # Upload original version. 'system application-upload' expects a single
-            # concrete file path, not a glob.
-            #try:
-           system_application_upload_input = SystemApplicationUploadInput()
-           system_application_upload_input.set_app_name(dell_storage_app_name)
-           system_application_upload_input.set_tar_file_path(f"{base_application_path}dell-storage-{original_version}.tgz")
-           SystemApplicationUploadKeywords(ssh_connection).system_application_upload(system_application_upload_input)
-           system_applications = SystemApplicationListKeywords(ssh_connection).get_system_application_list()
-           dell_storage_app_status = system_applications.get_application(dell_storage_app_name).get_status()
-            #except Exception as e:
-            #    system_applications = SystemApplicationListKeywords(ssh_connection).get_system_application_list()
-            #    dell_storage_app_status = system_applications.get_application(dell_storage_app_name).get_status()
-            #    get_logger.log_info(f"dell-storage is already uploaded {e}")
+            system_application_upload_input = SystemApplicationUploadInput()
+            system_application_upload_input.set_app_name(dell_storage_app_name)
+            system_application_upload_input.set_tar_file_path(f"{base_application_path}dell-storage-{original_version}.tgz")
+            SystemApplicationUploadKeywords(ssh_connection).system_application_upload(system_application_upload_input)
+            system_applications = SystemApplicationListKeywords(ssh_connection).get_system_application_list()
+            dell_storage_app_status = system_applications.get_application(dell_storage_app_name).get_status()
 
             dell_storage_app_status = validate_equals_with_retry(
                 lambda: SystemApplicationListKeywords(ssh_connection).get_system_application_list().get_application(dell_storage_app_name).get_status(),
@@ -2906,7 +2985,6 @@ def test_manual_upgrade_dell_storage_iscsi(request: FixtureRequest):
             system_application_upload_input.set_app_name(dell_storage_app_name)
             system_application_upload_input.set_tar_file_path(f"{base_application_path}dell-storage-{original_version}.tgz")
             SystemApplicationUploadKeywords(ssh_connection).system_application_upload(system_application_upload_input)
-
 
             dell_storage_app_status = validate_equals_with_retry(
                 lambda: SystemApplicationListKeywords(ssh_connection).get_system_application_list().get_application(dell_storage_app_name).get_status(),
@@ -3132,7 +3210,6 @@ def test_manual_upgrade_dell_storage_nfs(request: FixtureRequest):
             system_applications = SystemApplicationListKeywords(ssh_connection).get_system_application_list()
             dell_storage_app_status = system_applications.get_application(dell_storage_app_name).get_status()
 
-
             dell_storage_app_status = validate_equals_with_retry(
                 lambda: SystemApplicationListKeywords(ssh_connection).get_system_application_list().get_application(dell_storage_app_name).get_status(),
                 "uploaded",
@@ -3178,7 +3255,6 @@ def test_manual_upgrade_dell_storage_nfs(request: FixtureRequest):
             system_application_upload_input.set_app_name(dell_storage_app_name)
             system_application_upload_input.set_tar_file_path(f"{base_application_path}dell-storage-{original_version}.tgz")
             SystemApplicationUploadKeywords(ssh_connection).system_application_upload(system_application_upload_input)
-
 
             dell_storage_app_status = validate_equals_with_retry(
                 lambda: SystemApplicationListKeywords(ssh_connection).get_system_application_list().get_application(dell_storage_app_name).get_status(),
@@ -3297,3 +3373,416 @@ def test_manual_upgrade_dell_storage_nfs(request: FixtureRequest):
     get_logger().log_test_case_step("Verify dell-storage app version has changed after upgrade")
     validate_not_equals(current_version, upgraded_version, "Application version should have changed after upgrade")
     validate_equals(upgraded_version, tarball_version, "Application should have been upgraded to the dell_storage_app_tarball version")
+
+
+@mark.p2
+@mark.lab_dell_storage
+@mark.lab_is_simplex
+def test_dell_storage_iscsi_lifecycle_coexistence_ceph_sx(request: FixtureRequest):
+    """
+    Test Dell Storage coexistence with Ceph backend
+
+    The lab should have dell-storage app installed with the dell storageClass and the ceph backend also installed.
+
+
+    Test Steps:
+        - Check dell-storage app status.
+        - Make sure that dell-storage is applied (ISCSI)
+        - Make sure that ceph backend is configured
+        - Create and apply PVC/Pod using RBD storageClass
+        - Write a test file on this RBD pod
+        - Create and apply PVC/Pod using CEPH storageClass
+        - Write a test file on this CEPH pod
+        - Create and apply PVC/Pod using dell-storage storageClass
+        - Write a test file on this dell-storage pod
+        - Verify data integrity
+
+
+    Args:
+        request (FixtureRequest): pytest request fixture for test setup and teardown
+    """
+
+    TEST_FILES_DIR = "resources/cloud_platform/storage/volume_snapshot"
+    REMOTE_HOME = "/home/sysadmin"
+
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    namespace = "dell-storage"
+    dell_storage_app_name = "dell-storage"
+    chart_name = "csi-powerstore"
+
+    def verify_dell_storage_pods_are_running(ssh_connection):
+        pod_prefix = "csi-powerstore"
+        get_pod_obj = KubectlGetPodsKeywords(ssh_connection)
+        pod_names = get_pod_obj.get_pods(namespace=namespace).get_unique_pod_matching_prefix(starts_with=pod_prefix)
+        pod_status = get_pod_obj.wait_for_pod_status(pod_names, "Running", namespace)
+        validate_equals(pod_status, True, f"Verify {pod_prefix} pods are running")
+
+        get_pod_obj = KubectlGetPodsKeywords(ssh_connection)
+        pod_status = get_pod_obj.wait_for_pod_status(pod_name, "Running", namespace)
+        validate_equals(pod_status, True, f"Verify {pod_name} pod is running")
+
+    def upload_yaml_files(ssh_connection: SSHConnection, file_names: list[str]) -> None:
+        """Upload test YAML files from local resources to the active controller.
+
+        Args:
+            ssh_connection (SSHConnection): SSH connection to the active controller.
+            file_names (list[str]): List of YAML file names to upload.
+        """
+        file_keywords = FileKeywords(ssh_connection)
+        for file_name in file_names:
+            local_path = get_stx_resource_path(f"{TEST_FILES_DIR}/{file_name}")
+            remote_path = f"{REMOTE_HOME}/{file_name}"
+            file_keywords.upload_file(local_path, remote_path, overwrite=True)
+
+    def cleanup_test_resources(
+        ssh_connection: SSHConnection,
+        pod_names: list[str],
+        pvc_names: list[str],
+        yaml_file_names: list[str],
+    ) -> None:
+        """Clean up all resources created during a volume snapshot test.
+
+        Args:
+            ssh_connection (SSHConnection): SSH connection to the active controller.
+            pod_names (list[str]): Pod names to delete.
+            pvc_names (list[str]): PVC names to delete.
+            yaml_file_names (list[str]): YAML file names to remove from the controller.
+        """
+        delete_resource_keywords = KubectlDeleteResourceKeywords(ssh_connection)
+
+        for pod_name in pod_names:
+            KubectlDeletePodsKeywords(ssh_connection).cleanup_pod(pod_name)
+
+        for pvc_name in pvc_names:
+            delete_resource_keywords.delete_resource("pvc", pvc_name)
+            KubectlGetPvcKeywords(ssh_connection).wait_for_pvc_to_be_deleted(pvc_name)
+
+        file_keywords = FileKeywords(ssh_connection)
+        for file_name in yaml_file_names:
+            file_keywords.delete_file(f"{REMOTE_HOME}/{file_name}")
+
+    def teardown():
+        get_logger().log_teardown_step("Clean up the test pod resources.")
+        KubectlFileDeleteKeywords(ssh_connection).delete_resources("/home/sysadmin/dell-storage-test-pod.yaml", ignore_not_found=True)
+        cleanup_test_resources(
+            ssh_connection,
+            pod_names=["csi-cephfs-demo-pod", "csi-rbd-demo-pod"],
+            pvc_names=["cephfs-pvc", "rbd-pvc"],
+            yaml_file_names=[],
+        )
+
+    get_logger().log_test_case_step(f"Make sure that {dell_storage_app_name} is applied (ISCSI) ")
+    system_applications = SystemApplicationListKeywords(ssh_connection).get_system_application_list()
+    dell_storage_app_status = system_applications.get_application(dell_storage_app_name).get_status()
+    get_logger().log_info(f"{dell_storage_app_name} application is: {dell_storage_app_status}")
+
+    common_verify_dell_app_status_iscsi_sx(ssh_connection, dell_storage_app_status, namespace, dell_storage_app_name, chart_name)
+    request.addfinalizer(common_dell_storage_teardown)
+    request.addfinalizer(teardown)
+
+    test_pod_yaml = "dell-storage-test-pod.yaml"
+    dell_storage_files = [test_pod_yaml]
+    for file_name in dell_storage_files:
+        local_path = get_stx_resource_path(f"resources/cloud_platform/storage/dell_storage/{file_name}")
+        remote_yaml_path = f"/home/sysadmin/{file_name}"
+        FileKeywords(ssh_connection).upload_file(local_path, remote_yaml_path, overwrite=True)
+
+    get_logger().log_test_case_step("Make sure that ceph backend is configured")
+    ensure_ceph_storage_backend_configured(ssh_connection)
+
+    get_logger().log_test_case_step("Create and apply PVC/Pod using CEPH storageClass")
+    storage_type = "cephfs"
+    pvc_name = f"{storage_type}-pvc"
+    pod_name = f"csi-{storage_type}-demo-pod"
+
+    yaml_files = [f"{storage_type}-pvc.yaml", f"{storage_type}-pod.yaml"]
+
+    # Setup: clean up any leftover resources from previous runs
+    get_logger().log_setup_step("Delete test pods, PVCs, and snapshots if they exist before test run")
+    cleanup_test_resources(
+        ssh_connection,
+        pod_names=[pod_name],
+        pvc_names=[pvc_name],
+        yaml_file_names=[],
+    )
+
+    get_logger().log_test_case_step("Upload CephFS test YAML files to active controller")
+    upload_yaml_files(ssh_connection, yaml_files)
+    pvc_yaml = f"{REMOTE_HOME}/{storage_type}-pvc.yaml"
+    pod_yaml = f"{REMOTE_HOME}/{storage_type}-pod.yaml"
+
+    get_logger().log_test_case_step(f"Create a {storage_type} PVC and make sure it is in Bound status")
+    KubectlFileApplyKeywords(ssh_connection).apply_resource_from_yaml(pvc_yaml)
+    KubectlGetPvcKeywords(ssh_connection).wait_for_pvcs_to_reach_status(expected_status="Bound", pvc_names=pvc_name)
+
+    get_logger().log_test_case_step(f"Create a {storage_type} pod")
+    KubectlFileApplyKeywords(ssh_connection).apply_resource_from_yaml(pod_yaml)
+    KubectlGetPodsKeywords(ssh_connection).wait_for_pod_status(pod_name, "Running")
+
+    get_logger().log_test_case_step("Write a test file on Pod")
+    KubectlExecInPodsKeywords(ssh_connection).run_pod_exec_cmd(pod_name, "bash -c 'touch /data/test.txt'", options="-i")
+
+    storage_type = "rbd"
+    pvc_name = f"{storage_type}-pvc"
+    pod_name = f"csi-{storage_type}-demo-pod"
+
+    yaml_files = [f"{storage_type}-pvc.yaml", f"{storage_type}-pod.yaml"]
+
+    get_logger().log_setup_step("Delete test pods, PVCs, and snapshots if they exist before test run")
+    cleanup_test_resources(
+        ssh_connection,
+        pod_names=[pod_name],
+        pvc_names=[pvc_name],
+        yaml_file_names=[],
+    )
+
+    get_logger().log_test_case_step("Upload RBD test YAML files to active controller")
+    upload_yaml_files(ssh_connection, yaml_files)
+    pvc_yaml = f"{REMOTE_HOME}/{storage_type}-pvc.yaml"
+    pod_yaml = f"{REMOTE_HOME}/{storage_type}-pod.yaml"
+
+    get_logger().log_test_case_step(f"Create a {storage_type} PVC and make sure it is in Bound status")
+    KubectlFileApplyKeywords(ssh_connection).apply_resource_from_yaml(pvc_yaml)
+    KubectlGetPvcKeywords(ssh_connection).wait_for_pvcs_to_reach_status(expected_status="Bound", pvc_names=pvc_name)
+
+    get_logger().log_test_case_step(f"Create a {storage_type} pod")
+    KubectlFileApplyKeywords(ssh_connection).apply_resource_from_yaml(pod_yaml)
+    KubectlGetPodsKeywords(ssh_connection).wait_for_pod_status(pod_name, "Running")
+
+    get_logger().log_test_case_step("Write a test file on Pod")
+    KubectlExecInPodsKeywords(ssh_connection).run_pod_exec_cmd(pod_name, "bash -c 'touch /data/test.txt'", options="-i")
+
+    get_logger().log_test_case_step("Create and apply PVC/Pod using dell-storage storageClass")
+    yaml_path = "/home/sysadmin/dell-storage-test-pod.yaml"
+    kubectl_create_pods_keyword = KubectlCreatePodsKeywords(ssh_connection)
+    kubectl_create_pods_keyword.create_from_yaml(yaml_path)
+
+    pod_name = "powerstoretest-0"
+    get_logger().log_test_case_step(f"Check if test {pod_name} pod is running")
+    verify_dell_storage_pods_are_running(ssh_connection)
+
+    get_logger().log_test_case_step(f"Creating text.txt file inside of {pod_name} pod")
+    kubectl_exec_in_pods = KubectlExecInPodsKeywords(ssh_connection)
+    options = f"-it -n {namespace}"
+    cmd = "bash -c 'touch /data0/test.txt'"
+    kubectl_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
+    validate_equals(ssh_connection.get_return_code(), 0, f"Write to {pod_name} pod success")
+
+    get_logger().log_info("sync pod")
+    cmd = "bash -c 'sync'"
+    kubectl_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
+    validate_equals(ssh_connection.get_return_code(), 0, f"sync pod {pod_name} success")
+
+    get_logger().log_test_case_step("Verify data integrity")
+    verify_file_created_on_pod_exists(ssh_connection, namespace, pod_name)
+    KubectlExecInPodsKeywords(ssh_connection).run_pod_exec_cmd("csi-cephfs-demo-pod", "bash -c 'test -f /data/test.txt'", options="-i")
+    validate_equals(ssh_connection.get_return_code(), 0, "test.txt exists on csi-cephfs-demo-pod")
+
+    KubectlExecInPodsKeywords(ssh_connection).run_pod_exec_cmd("csi-rbd-demo-pod", "bash -c 'test -f /data/test.txt'", options="-i")
+    validate_equals(ssh_connection.get_return_code(), 0, "test.txt exists on csi-rbd-demo-pod")
+
+@mark.p2
+@mark.lab_dell_storage
+@mark.lab_is_simplex
+def test_dell_storage_nfs_lifecycle_coexistence_ceph_sx(request: FixtureRequest):
+    """
+    Test Dell Storage coexistence with Ceph backend
+
+    The lab should have dell-storage app installed with the dell storageClass and the ceph backend also installed.
+
+
+    Test Steps:
+        - Check dell-storage app status.
+        - Make sure that dell-storage is applied (NFS)
+        - Make sure that ceph backend is configured
+        - Create and apply PVC/Pod using RBD storageClass
+        - Write a test file on this RBD pod
+        - Create and apply PVC/Pod using CEPH storageClass
+        - Write a test file on this CEPH pod
+        - Create and apply PVC/Pod using dell-storage storageClass
+        - Write a test file on this dell-storage pod
+        - Verify data integrity
+
+
+    Args:
+        request (FixtureRequest): pytest request fixture for test setup and teardown
+    """
+
+    TEST_FILES_DIR = "resources/cloud_platform/storage/volume_snapshot"
+    REMOTE_HOME = "/home/sysadmin"
+
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    namespace = "dell-storage"
+    dell_storage_app_name = "dell-storage"
+    chart_name = "csi-powerstore"
+
+    def verify_dell_storage_pods_are_running(ssh_connection):
+        pod_prefix = "csi-powerstore"
+        get_pod_obj = KubectlGetPodsKeywords(ssh_connection)
+        pod_names = get_pod_obj.get_pods(namespace=namespace).get_unique_pod_matching_prefix(starts_with=pod_prefix)
+        pod_status = get_pod_obj.wait_for_pod_status(pod_names, "Running", namespace)
+        validate_equals(pod_status, True, f"Verify {pod_prefix} pods are running")
+
+        get_pod_obj = KubectlGetPodsKeywords(ssh_connection)
+        pod_status = get_pod_obj.wait_for_pod_status(pod_name, "Running", namespace)
+        validate_equals(pod_status, True, f"Verify {pod_name} pod is running")
+
+    def upload_yaml_files(ssh_connection: SSHConnection, file_names: list[str]) -> None:
+        """Upload test YAML files from local resources to the active controller.
+
+        Args:
+            ssh_connection (SSHConnection): SSH connection to the active controller.
+            file_names (list[str]): List of YAML file names to upload.
+        """
+        file_keywords = FileKeywords(ssh_connection)
+        for file_name in file_names:
+            local_path = get_stx_resource_path(f"{TEST_FILES_DIR}/{file_name}")
+            remote_path = f"{REMOTE_HOME}/{file_name}"
+            file_keywords.upload_file(local_path, remote_path, overwrite=True)
+
+    def cleanup_test_resources(
+        ssh_connection: SSHConnection,
+        pod_names: list[str],
+        pvc_names: list[str],
+        yaml_file_names: list[str],
+    ) -> None:
+        """Clean up all resources created during a volume snapshot test.
+
+        Args:
+            ssh_connection (SSHConnection): SSH connection to the active controller.
+            pod_names (list[str]): Pod names to delete.
+            pvc_names (list[str]): PVC names to delete.
+            yaml_file_names (list[str]): YAML file names to remove from the controller.
+        """
+        delete_resource_keywords = KubectlDeleteResourceKeywords(ssh_connection)
+
+        for pod_name in pod_names:
+            KubectlDeletePodsKeywords(ssh_connection).cleanup_pod(pod_name)
+
+        for pvc_name in pvc_names:
+            delete_resource_keywords.delete_resource("pvc", pvc_name)
+            KubectlGetPvcKeywords(ssh_connection).wait_for_pvc_to_be_deleted(pvc_name)
+
+        file_keywords = FileKeywords(ssh_connection)
+        for file_name in yaml_file_names:
+            file_keywords.delete_file(f"{REMOTE_HOME}/{file_name}")
+
+    def teardown():
+        get_logger().log_teardown_step("Clean up the test pod resources.")
+        KubectlFileDeleteKeywords(ssh_connection).delete_resources("/home/sysadmin/dell-storage-test-nfs-pod.yaml", ignore_not_found=True)
+        cleanup_test_resources(
+            ssh_connection,
+            pod_names=["csi-cephfs-demo-pod", "csi-rbd-demo-pod"],
+            pvc_names=["cephfs-pvc", "rbd-pvc"],
+            yaml_file_names=[],
+        )
+
+    get_logger().log_test_case_step(f"Make sure that {dell_storage_app_name} is applied (NFS) ")
+    system_applications = SystemApplicationListKeywords(ssh_connection).get_system_application_list()
+    dell_storage_app_status = system_applications.get_application(dell_storage_app_name).get_status()
+    get_logger().log_info(f"{dell_storage_app_name} application is: {dell_storage_app_status}")
+
+    common_verify_dell_app_status_nfs_sx(ssh_connection, dell_storage_app_status, namespace, dell_storage_app_name, chart_name)
+    request.addfinalizer(common_dell_storage_teardown)
+    request.addfinalizer(teardown)
+
+    test_pod_yaml = "dell-storage-test-nfs-pod.yaml"
+    dell_storage_files = [test_pod_yaml]
+    for file_name in dell_storage_files:
+        local_path = get_stx_resource_path(f"resources/cloud_platform/storage/dell_storage/{file_name}")
+        remote_yaml_path = f"/home/sysadmin/{file_name}"
+        FileKeywords(ssh_connection).upload_file(local_path, remote_yaml_path, overwrite=True)
+
+    get_logger().log_test_case_step("Make sure that ceph backend is configured")
+    ensure_ceph_storage_backend_configured(ssh_connection)
+
+    get_logger().log_test_case_step("Create and apply PVC/Pod using CEPH storageClass")
+    storage_type = "cephfs"
+    pvc_name = f"{storage_type}-pvc"
+    pod_name = f"csi-{storage_type}-demo-pod"
+
+    yaml_files = [f"{storage_type}-pvc.yaml", f"{storage_type}-pod.yaml"]
+
+    # Setup: clean up any leftover resources from previous runs
+    get_logger().log_setup_step("Delete test pods, PVCs, and snapshots if they exist before test run")
+    cleanup_test_resources(
+        ssh_connection,
+        pod_names=[pod_name],
+        pvc_names=[pvc_name],
+        yaml_file_names=[],
+    )
+
+    get_logger().log_test_case_step("Upload CephFS test YAML files to active controller")
+    upload_yaml_files(ssh_connection, yaml_files)
+    pvc_yaml = f"{REMOTE_HOME}/{storage_type}-pvc.yaml"
+    pod_yaml = f"{REMOTE_HOME}/{storage_type}-pod.yaml"
+
+    get_logger().log_test_case_step(f"Create a {storage_type} PVC and make sure it is in Bound status")
+    KubectlFileApplyKeywords(ssh_connection).apply_resource_from_yaml(pvc_yaml)
+    KubectlGetPvcKeywords(ssh_connection).wait_for_pvcs_to_reach_status(expected_status="Bound", pvc_names=pvc_name)
+
+    get_logger().log_test_case_step(f"Create a {storage_type} pod")
+    KubectlFileApplyKeywords(ssh_connection).apply_resource_from_yaml(pod_yaml)
+    KubectlGetPodsKeywords(ssh_connection).wait_for_pod_status(pod_name, "Running")
+
+    get_logger().log_test_case_step("Write a test file on Pod")
+    KubectlExecInPodsKeywords(ssh_connection).run_pod_exec_cmd(pod_name, "bash -c 'touch /data/test.txt'", options="-i")
+
+    storage_type = "rbd"
+    pvc_name = f"{storage_type}-pvc"
+    pod_name = f"csi-{storage_type}-demo-pod"
+
+    yaml_files = [f"{storage_type}-pvc.yaml", f"{storage_type}-pod.yaml"]
+
+    get_logger().log_setup_step("Delete test pods, PVCs, and snapshots if they exist before test run")
+    cleanup_test_resources(
+        ssh_connection,
+        pod_names=[pod_name],
+        pvc_names=[pvc_name],
+        yaml_file_names=[],
+    )
+
+    get_logger().log_test_case_step("Upload RBD test YAML files to active controller")
+    upload_yaml_files(ssh_connection, yaml_files)
+    pvc_yaml = f"{REMOTE_HOME}/{storage_type}-pvc.yaml"
+    pod_yaml = f"{REMOTE_HOME}/{storage_type}-pod.yaml"
+
+    get_logger().log_test_case_step(f"Create a {storage_type} PVC and make sure it is in Bound status")
+    KubectlFileApplyKeywords(ssh_connection).apply_resource_from_yaml(pvc_yaml)
+    KubectlGetPvcKeywords(ssh_connection).wait_for_pvcs_to_reach_status(expected_status="Bound", pvc_names=pvc_name)
+
+    get_logger().log_test_case_step(f"Create a {storage_type} pod")
+    KubectlFileApplyKeywords(ssh_connection).apply_resource_from_yaml(pod_yaml)
+    KubectlGetPodsKeywords(ssh_connection).wait_for_pod_status(pod_name, "Running")
+
+    get_logger().log_test_case_step("Write a test file on Pod")
+    KubectlExecInPodsKeywords(ssh_connection).run_pod_exec_cmd(pod_name, "bash -c 'touch /data/test.txt'", options="-i")
+
+    get_logger().log_test_case_step("Create and apply PVC/Pod using dell-storage storageClass")
+    yaml_path = "/home/sysadmin/dell-storage-test-nfs-pod.yaml"
+    kubectl_create_pods_keyword = KubectlCreatePodsKeywords(ssh_connection)
+    kubectl_create_pods_keyword.create_from_yaml(yaml_path)
+
+    pod_name = "powerstoretest-0"
+    get_logger().log_test_case_step(f"Check if test {pod_name} pod is running")
+    verify_dell_storage_pods_are_running(ssh_connection)
+
+    get_logger().log_test_case_step(f"Creating text.txt file inside of {pod_name} pod")
+    kubectl_exec_in_pods = KubectlExecInPodsKeywords(ssh_connection)
+    options = f"-it -n {namespace}"
+    cmd = "bash -c 'touch /data0/test.txt'"
+    kubectl_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
+    validate_equals(ssh_connection.get_return_code(), 0, f"Write to {pod_name} pod success")
+
+    get_logger().log_info("sync pod")
+    cmd = "bash -c 'sync'"
+    kubectl_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
+    validate_equals(ssh_connection.get_return_code(), 0, f"sync pod {pod_name} success")
+
+    get_logger().log_test_case_step("Verify data integrity")
+    verify_file_created_on_pod_exists(ssh_connection, namespace, pod_name)
+    KubectlExecInPodsKeywords(ssh_connection).run_pod_exec_cmd("csi-cephfs-demo-pod", "bash -c 'test -f /data/test.txt'", options="-i")
+    validate_equals(ssh_connection.get_return_code(), 0, "test.txt exists on csi-cephfs-demo-pod")
+
+    KubectlExecInPodsKeywords(ssh_connection).run_pod_exec_cmd("csi-rbd-demo-pod", "bash -c 'test -f /data/test.txt'", options="-i")
+    validate_equals(ssh_connection.get_return_code(), 0, "test.txt exists on csi-rbd-demo-pod")
