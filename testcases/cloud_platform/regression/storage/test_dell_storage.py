@@ -38,6 +38,8 @@ from keywords.k8s.pods.kubectl_delete_pods_keywords import KubectlDeletePodsKeyw
 from keywords.k8s.pods.kubectl_exec_in_pods_keywords import KubectlExecInPodsKeywords
 from keywords.k8s.pods.kubectl_get_pods_keywords import KubectlGetPodsKeywords
 from keywords.k8s.pvc.kubectl_get_pvc_keywords import KubectlGetPvcKeywords
+from keywords.k8s.pvc.kubectl_patch_pvc_keywords import KubectlPatchPvcKeywords
+from keywords.k8s.storageclass.kubectl_get_storageclass_keywords import KubectlGetStorageclassKeywords
 from keywords.k8s.volumesnapshots.kubectl_get_volumesnapshots_keywords import KubectlGetVolumesnapshotsKeywords
 from keywords.linux.ip.ip_keywords import IPKeywords
 from keywords.linux.mount.mount_keywords import MountKeywords
@@ -67,7 +69,7 @@ def delete_dell_storage_test_pod_resources(ssh_connection: SSHConnection, remote
     KubectlFileDeleteKeywords(ssh_connection).delete_resources(remote_yaml_path, ignore_not_found=True)
 
 
-def common_verify_dell_app_status_nfs_sx(ssh_connection, dell_storage_app_status, namespace, dell_storage_app_name, chart_name):
+def common_verify_dell_app_status_nfs_sx(ssh_connection, dell_storage_app_status, namespace, dell_storage_app_name, chart_name, expansion=True):
     """
     To make sure dell-storage application is uploaded before starting the tests. Function for NFS protocol
 
@@ -81,6 +83,7 @@ def common_verify_dell_app_status_nfs_sx(ssh_connection, dell_storage_app_status
         - Apply dell-storage.
 
     """
+    overrides_files_expansion_files = ["dell-storage-powerstoreOverridesNoExpansion.yaml", "dell-storage-powerstoreOverrides.yaml"]
     get_logger().log_test_case_step(f"Verify the status of {dell_storage_app_name} application.")
 
     if dell_storage_app_status != SystemApplicationStatusEnum.UPLOADED.value:
@@ -110,7 +113,11 @@ def common_verify_dell_app_status_nfs_sx(ssh_connection, dell_storage_app_status
         ipkeyword.set_ip_port_state(storage_interface, "up")
 
         get_logger().log_test_case_step("Update user-overrides for CSI-Powerstore chart")
-        yaml_file = "dell-storage-powerstoreNfsOverrides.yaml"
+        if expansion:
+            yaml_file = overrides_files_expansion_files[1]
+        else:
+            yaml_file = overrides_files_expansion_files[0]
+
         username = storage_config.get_credentials().get_user_name()
         password = storage_config.get_credentials().get_password()
         array_id = storage_config.get_storage_array_id()
@@ -169,7 +176,8 @@ def ensure_ceph_storage_backend_configured(ssh_connection: SSHConnection, timeou
     get_logger().log_test_case_step("Validate platform-integ-apps app is present and applied, and the version matches.")
     SystemApplicationListKeywords(ssh_connection).validate_app_status(platform_integ_apps_name, "applied")
 
-def common_verify_dell_app_status_iscsi_sx(ssh_connection, dell_storage_app_status, namespace, dell_storage_app_name, chart_name):
+
+def common_verify_dell_app_status_iscsi_sx(ssh_connection, dell_storage_app_status, namespace, dell_storage_app_name, chart_name, expansion=True):
     """
     To make sure dell-storage application is uploaded before starting the tests. Function for ISCSI protocol
 
@@ -183,6 +191,9 @@ def common_verify_dell_app_status_iscsi_sx(ssh_connection, dell_storage_app_stat
         - Apply dell-storage.
 
     """
+
+    overrides_files_expansion_files = ["dell-storage-powerstoreOverridesNoExpansion.yaml", "dell-storage-powerstoreOverrides.yaml"]
+
     get_logger().log_test_case_step(f"Verify the status of {dell_storage_app_name} application.")
 
     if dell_storage_app_status != SystemApplicationStatusEnum.UPLOADED.value:
@@ -212,7 +223,10 @@ def common_verify_dell_app_status_iscsi_sx(ssh_connection, dell_storage_app_stat
         ipkeyword.set_ip_port_state(storage_interface, "up")
 
         get_logger().log_test_case_step("Update user-overrides for CSI-Powerstore chart")
-        yaml_file = "dell-storage-powerstoreOverrides.yaml"
+        if expansion:
+            yaml_file = overrides_files_expansion_files[1]
+        else:
+            yaml_file = overrides_files_expansion_files[0]
         username = storage_config.get_credentials().get_user_name()
         password = storage_config.get_credentials().get_password()
         array_id = storage_config.get_storage_array_id()
@@ -266,44 +280,6 @@ def verify_file_created_on_pod_exists(ssh_connection: SSHConnection, namespace: 
     kubectl_exec_in_pods = KubectlExecInPodsKeywords(ssh_connection)
     options = f"-it -n {namespace}"
     cmd = "bash -c 'test -f /data0/test.txt'"
-
-    get_logger().log_test_case_step(f"Verify if the test.txt file created on the dell-storage test pod is present on the pvc. {pod_name}")
-    validate_equals_with_retry(
-        function_to_execute=lambda: (kubectl_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options, ignore_error=True), ssh_connection.get_return_code())[1],
-        expected_value=0,
-        validation_description=f"test.txt is on {pod_name} pod.",
-        timeout=timeout,
-        polling_sleep_time=poll_interval,
-    )
-
-
-def verify_file_created_on_ceph_rbd_pod_exists(ssh_connection: SSHConnection, namespace: str, pod_name: str, timeout: int = 600, poll_interval: int = 15):
-    """
-    Verify that the test.txt file previously created still exists inside the pod.
-
-    After a power-off/on cycle the StatefulSet pod is torn down and recreated. There is a
-    window where the pod name is reported Running but 'kubectl exec' still fails transiently
-    with "pod does not exist" (the sandbox is not ready to be exec'd into yet). A single exec
-    races against that window, so the exec is polled: any transient exec failure is retried,
-    and the file is considered present only once the exec succeeds with return code 0.
-
-    Test Steps:
-        - Wait for the pod to be Running so it can be exec'd into.
-        - Poll 'test -f /data0/test.txt' inside the pod until it succeeds or the timeout elapses.
-
-    Args:
-        ssh_connection (SSHConnection): the ssh connection to the active controller.
-        namespace (str): the namespace the pod runs in.
-        pod_name (str): the name of the pod to check.
-        timeout (int): maximum time in seconds to wait for the file check to succeed.
-        poll_interval (int): time in seconds between exec attempts.
-    """
-    get_logger().log_test_case_step(f"Wait for pod {pod_name} to be Running before exec")
-    KubectlGetPodsKeywords(ssh_connection).wait_for_pod_status(pod_name, "Running", namespace, timeout=timeout)
-
-    kubectl_exec_in_pods = KubectlExecInPodsKeywords(ssh_connection)
-    options = f"-it -n {namespace}"
-    cmd = "bash -c 'test -f /data/test.txt'"
 
     get_logger().log_test_case_step(f"Verify if the test.txt file created on the dell-storage test pod is present on the pvc. {pod_name}")
     validate_equals_with_retry(
@@ -3351,7 +3327,7 @@ def test_manual_upgrade_dell_storage_nfs(request: FixtureRequest):
         remote_yaml_path = f"/home/sysadmin/{file_name}"
         FileKeywords(ssh_connection).upload_file(local_path, remote_yaml_path, overwrite=True)
 
-    get_logger().log_test_case_step("Execute Upload command poitning to the upgrade tarball")
+    get_logger().log_test_case_step("Execute Upload command pointing to the upgrade tarball")
 
     system_application_update_input.set_app_name(dell_storage_app_name)
     system_application_update_input.set_tar_file_path(f"{app_config.get_base_application_path()}dell-storage-{tarball_version}*.tgz")
@@ -3581,6 +3557,7 @@ def test_dell_storage_iscsi_lifecycle_coexistence_ceph_sx(request: FixtureReques
     KubectlExecInPodsKeywords(ssh_connection).run_pod_exec_cmd("csi-rbd-demo-pod", "bash -c 'test -f /data/test.txt'", options="-i")
     validate_equals(ssh_connection.get_return_code(), 0, "test.txt exists on csi-rbd-demo-pod")
 
+
 @mark.p2
 @mark.lab_dell_storage
 @mark.lab_is_simplex
@@ -3759,6 +3736,7 @@ def test_dell_storage_nfs_lifecycle_coexistence_ceph_sx(request: FixtureRequest)
     KubectlExecInPodsKeywords(ssh_connection).run_pod_exec_cmd(pod_name, "bash -c 'touch /data/test.txt'", options="-i")
 
     get_logger().log_test_case_step("Create and apply PVC/Pod using dell-storage storageClass")
+
     yaml_path = "/home/sysadmin/dell-storage-test-nfs-pod.yaml"
     kubectl_create_pods_keyword = KubectlCreatePodsKeywords(ssh_connection)
     kubectl_create_pods_keyword.create_from_yaml(yaml_path)
@@ -3786,3 +3764,289 @@ def test_dell_storage_nfs_lifecycle_coexistence_ceph_sx(request: FixtureRequest)
 
     KubectlExecInPodsKeywords(ssh_connection).run_pod_exec_cmd("csi-rbd-demo-pod", "bash -c 'test -f /data/test.txt'", options="-i")
     validate_equals(ssh_connection.get_return_code(), 0, "test.txt exists on csi-rbd-demo-pod")
+
+
+@mark.p3
+@mark.lab_dell_storage
+@mark.lab_is_simplex
+def test_dell_storage_iscsi_volume_expansion_true_sx(request: FixtureRequest):
+    """
+    Validate dell-storage allowVolumeExpansion true - resize an iSCSI PVC from 5Gi to 10Gi.
+
+
+    Test Steps:
+        1. Verify dell-storage is applied.
+        2. Verify all CSI driver pods are Running.
+        3. Verify the iSCSI dell-storage StorageClass has allowVolumeExpansion: true.
+        4. Create a 5Gi PVC using the iSCSI dell-storage StorageClass and wait for Bound.
+        5. Expand the PVC from 5Gi to 10Gi by patching the requested storage.
+        6. Monitor the expansion until the PVC capacity reports 10Gi.
+        7. Verify the filesystem inside the pod grew to ~10Gi and the pre-expansion data is intact.
+        8. Clean up the test pod and PVC.
+        9. Verify dell-storage app health after the expansion test.
+
+    Args:
+        request (FixtureRequest): pytest request fixture for test setup and teardown
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    namespace = "dell-storage"
+    dell_storage_app_name = "dell-storage"
+    chart_name = "csi-powerstore"
+
+    storage_class = "csi-powerstore-iscsi"
+    pvc_name = "pvol0"
+    pod_name = "powerstoretest-0"
+
+    initial_size = "5Gi"
+    expanded_size = "10Gi"
+
+    pvc_keywords = KubectlGetPvcKeywords(ssh_connection)
+    pod_keywords = KubectlGetPodsKeywords(ssh_connection)
+    delete_pod_keywords = KubectlDeletePodsKeywords(ssh_connection)
+    delete_resource_keywords = KubectlDeleteResourceKeywords(ssh_connection)
+
+    def verify_dell_storage_pods_are_running(ssh_connection):
+        pod_prefix = "csi-powerstore"
+        get_pod_obj = KubectlGetPodsKeywords(ssh_connection)
+        pod_names = get_pod_obj.get_pods(namespace=namespace).get_unique_pod_matching_prefix(starts_with=pod_prefix)
+        pod_status = get_pod_obj.wait_for_pod_status(pod_names, "Running", namespace)
+        validate_equals(pod_status, True, f"Verify {pod_prefix} pods are running")
+
+        get_pod_obj = KubectlGetPodsKeywords(ssh_connection)
+        pod_status = get_pod_obj.wait_for_pod_status(pod_name, "Running", namespace)
+        validate_equals(pod_status, True, f"Verify {pod_name} pod is running")
+
+    def teardown():
+        # Step 9: Clean up the test pod and PVC (best-effort, non-failing).
+        KubectlFileDeleteKeywords(ssh_connection).delete_resources("/home/sysadmin/dell-storage-test-pod.yaml", ignore_not_found=True)
+        get_logger().log_teardown_step(f"Delete test pod {pod_name}")
+        delete_pod_keywords.cleanup_pod(pod_name, namespace=dell_storage_app_name)
+
+        get_logger().log_teardown_step(f"Delete test PVC {pvc_name}")
+        delete_resource_keywords.delete_resource("pvc", pvc_name, namespace=dell_storage_app_name)
+        pvc_keywords.wait_for_pvc_to_be_deleted(pvc_name, namespace=dell_storage_app_name)
+
+    request.addfinalizer(common_dell_storage_teardown)
+    request.addfinalizer(teardown)
+
+    # Step 1: Verify dell-storage is applied.
+    get_logger().log_test_case_step("Verify dell-storage application is applied")
+
+    system_applications = SystemApplicationListKeywords(ssh_connection).get_system_application_list()
+    dell_storage_app_status = system_applications.get_application(dell_storage_app_name).get_status()
+    common_verify_dell_app_status_iscsi_sx(ssh_connection, dell_storage_app_status, namespace, dell_storage_app_name, chart_name, True)
+
+    # Step 2: Verify all CSI driver pods are Running.
+    get_logger().log_test_case_step("Verify all csi-powerstore driver pods are Running")
+    csi_pod_names = pod_keywords.get_pods(namespace=dell_storage_app_name).get_unique_pod_matching_prefix(starts_with="csi-powerstore")
+    csi_pods_running = pod_keywords.wait_for_pod_status(csi_pod_names, "Running", dell_storage_app_name)
+    validate_equals(csi_pods_running, True, "csi-powerstore driver pods are Running")
+
+    # Step 3: Verify the iSCSI StorageClass has allowVolumeExpansion: true.
+    get_logger().log_test_case_step(f"Verify StorageClass {storage_class} has allowVolumeExpansion: true")
+    storage_class_object = KubectlGetStorageclassKeywords(ssh_connection).get_storageclasses().get_storageclass_by_name(storage_class)
+    validate_equals(storage_class_object.get_allow_volume_expansion(), True, f"{storage_class} allowVolumeExpansion is true")
+
+    # Step 4: Create a 5Gi PVC using the iSCSI StorageClass and wait for Bound.
+    get_logger().log_test_case_step(f"Create a {initial_size} PVC {pvc_name} using {storage_class}")
+
+    test_pod_yaml = "dell-storage-test-pod.yaml"
+    dell_storage_files = [test_pod_yaml]
+    for file_name in dell_storage_files:
+        local_path = get_stx_resource_path(f"resources/cloud_platform/storage/dell_storage/{file_name}")
+        remote_yaml_path = f"/home/sysadmin/{file_name}"
+        FileKeywords(ssh_connection).upload_file(local_path, remote_yaml_path, overwrite=True)
+
+    # Step 5: Launch a test pod that mounts the PVC, write data, and record the initial mounted size.
+    yaml_path = "/home/sysadmin/dell-storage-test-pod.yaml"
+    kubectl_create_pods_keyword = KubectlCreatePodsKeywords(ssh_connection)
+    kubectl_create_pods_keyword.create_from_yaml(yaml_path)
+
+    get_logger().log_test_case_step(f"Verify PVC {pvc_name} is Bound with capacity {initial_size}")
+    pvc_keywords.wait_for_pvcs_to_reach_status("Bound", pvc_names=pvc_name, namespace=dell_storage_app_name)
+    initial_capacity = pvc_keywords.get_pvc(pvc_name, namespace=dell_storage_app_name).get_pvc_by_name(pvc_name).get_capacity()
+    validate_equals(initial_capacity, initial_size, f"PVC {pvc_name} is Bound with capacity {initial_size}")
+
+    get_logger().log_test_case_step(f"Check if test {pod_name} pod is running")
+    verify_dell_storage_pods_are_running(ssh_connection)
+
+    get_logger().log_test_case_step(f"Creating text.txt file inside of {pod_name} pod")
+    kubectl_exec_in_pods = KubectlExecInPodsKeywords(ssh_connection)
+    options = f"-it -n {namespace}"
+    cmd = "bash -c 'touch /data0/test.txt'"
+    kubectl_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
+    validate_equals(ssh_connection.get_return_code(), 0, f"Write to {pod_name} pod success")
+
+    get_logger().log_info("sync pod")
+    cmd = "bash -c 'sync'"
+    kubectl_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
+    validate_equals(ssh_connection.get_return_code(), 0, f"sync pod {pod_name} success")
+
+    # # Step 6: Expand the PVC from 5Gi to 10Gi.
+    get_logger().log_test_case_step(f"Expand PVC {pvc_name} from {initial_size} to {expanded_size}")
+    KubectlPatchPvcKeywords(ssh_connection).expand_pvc(pvc_name, expanded_size, namespace=dell_storage_app_name)
+
+    # # Step 7: Monitor the expansion until the PVC capacity reports 10Gi.
+    get_logger().log_test_case_step(f"Wait for PVC {pvc_name} capacity to report {expanded_size}")
+    validate_equals_with_retry(
+        function_to_execute=lambda: pvc_keywords.get_pvc(pvc_name, namespace=dell_storage_app_name).get_pvc_by_name(pvc_name).get_capacity(),
+        expected_value=expanded_size,
+        validation_description=f"PVC {pvc_name} capacity is {expanded_size}",
+        timeout=600,
+        polling_sleep_time=15,
+    )
+
+    # # Step 8: Verify the filesystem grew and the pre-expansion data is intact.
+    get_logger().log_test_case_step("Verify filesystem grew and pre-expansion data is intact")
+    kubectl_exec_in_pods.run_pod_exec_cmd(pod_name, "df -h /data0", options=f"-i -n {dell_storage_app_name}")
+    kubectl_exec_in_pods.run_pod_exec_cmd(pod_name, "cat /data0/test.txt", options=f"-i -n {dell_storage_app_name}")
+    validate_equals(ssh_connection.get_return_code(), 0, "test.txt still readable after expansion")
+
+    # # Step 10: Verify dell-storage app health after the expansion test.
+    get_logger().log_test_case_step("Verify dell-storage app is still applied and CSI pods are Running")
+    app_status = SystemApplicationShowKeywords(ssh_connection).get_system_application_show(dell_storage_app_name).get_system_application_object().get_status()
+    validate_equals(app_status, SystemApplicationStatusEnum.APPLIED.value, "dell-storage is still applied after expansion")
+    verify_dell_storage_pods_are_running(ssh_connection)
+
+
+@mark.p3
+@mark.lab_dell_storage
+@mark.lab_is_simplex
+def test_dell_storage_nfs_volume_expansion_true_sx(request: FixtureRequest):
+    """
+    Validate dell-storage allowVolumeExpansion true - resize an NFS PVC from 5Gi to 10Gi.
+
+
+    Test Steps:
+        1. Verify dell-storage is applied.
+        2. Verify all CSI driver pods are Running.
+        3. Verify the NFS dell-storage StorageClass has allowVolumeExpansion: true.
+        4. Create a 5Gi PVC using the NFS dell-storage StorageClass and wait for Bound.
+        5. Expand the PVC from 5Gi to 10Gi by patching the requested storage.
+        6. Monitor the expansion until the PVC capacity reports 10Gi.
+        7. Verify the filesystem inside the pod grew to ~10Gi and the pre-expansion data is intact.
+        8. Clean up the test pod and PVC.
+        9. Verify dell-storage app health after the expansion test.
+
+    Args:
+        request (FixtureRequest): pytest request fixture for test setup and teardown
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    namespace = "dell-storage"
+    dell_storage_app_name = "dell-storage"
+    chart_name = "csi-powerstore"
+
+    storage_class = "csi-powerstore-nfs"
+    pvc_name = "pvol0"
+    pod_name = "powerstoretest-0"
+
+    initial_size = "5Gi"
+    expanded_size = "10Gi"
+
+    pvc_keywords = KubectlGetPvcKeywords(ssh_connection)
+    pod_keywords = KubectlGetPodsKeywords(ssh_connection)
+    delete_pod_keywords = KubectlDeletePodsKeywords(ssh_connection)
+    delete_resource_keywords = KubectlDeleteResourceKeywords(ssh_connection)
+
+    def verify_dell_storage_pods_are_running(ssh_connection):
+        pod_prefix = "csi-powerstore"
+        get_pod_obj = KubectlGetPodsKeywords(ssh_connection)
+        pod_names = get_pod_obj.get_pods(namespace=namespace).get_unique_pod_matching_prefix(starts_with=pod_prefix)
+        pod_status = get_pod_obj.wait_for_pod_status(pod_names, "Running", namespace)
+        validate_equals(pod_status, True, f"Verify {pod_prefix} pods are running")
+
+        get_pod_obj = KubectlGetPodsKeywords(ssh_connection)
+        pod_status = get_pod_obj.wait_for_pod_status(pod_name, "Running", namespace)
+        validate_equals(pod_status, True, f"Verify {pod_name} pod is running")
+
+    def teardown():
+        # Step 9: Clean up the test pod and PVC (best-effort, non-failing).
+        KubectlFileDeleteKeywords(ssh_connection).delete_resources("/home/sysadmin/dell-storage-test-nfs-pod.yaml", ignore_not_found=True)
+        get_logger().log_teardown_step(f"Delete test pod {pod_name}")
+        delete_pod_keywords.cleanup_pod(pod_name, namespace=dell_storage_app_name)
+
+        get_logger().log_teardown_step(f"Delete test PVC {pvc_name}")
+        delete_resource_keywords.delete_resource("pvc", pvc_name, namespace=dell_storage_app_name)
+        pvc_keywords.wait_for_pvc_to_be_deleted(pvc_name, namespace=dell_storage_app_name)
+
+    request.addfinalizer(common_dell_storage_teardown)
+    request.addfinalizer(teardown)
+
+    # Step 1: Verify dell-storage is applied.
+    get_logger().log_test_case_step("Verify dell-storage application is applied")
+
+    system_applications = SystemApplicationListKeywords(ssh_connection).get_system_application_list()
+    dell_storage_app_status = system_applications.get_application(dell_storage_app_name).get_status()
+    common_verify_dell_app_status_nfs_sx(ssh_connection, dell_storage_app_status, namespace, dell_storage_app_name, chart_name, True)
+
+    # Step 2: Verify all CSI driver pods are Running.
+    get_logger().log_test_case_step("Verify all csi-powerstore driver pods are Running")
+    csi_pod_names = pod_keywords.get_pods(namespace=dell_storage_app_name).get_unique_pod_matching_prefix(starts_with="csi-powerstore")
+    csi_pods_running = pod_keywords.wait_for_pod_status(csi_pod_names, "Running", dell_storage_app_name)
+    validate_equals(csi_pods_running, True, "csi-powerstore driver pods are Running")
+
+    # Step 3: Verify the NFS StorageClass has allowVolumeExpansion: true.
+    get_logger().log_test_case_step(f"Verify StorageClass {storage_class} has allowVolumeExpansion: true")
+    storage_class_object = KubectlGetStorageclassKeywords(ssh_connection).get_storageclasses().get_storageclass_by_name(storage_class)
+    validate_equals(storage_class_object.get_allow_volume_expansion(), True, f"{storage_class} allowVolumeExpansion is true")
+
+    # Step 4: Create a 5Gi PVC using the NFS StorageClass and wait for Bound.
+    get_logger().log_test_case_step(f"Create a {initial_size} PVC {pvc_name} using {storage_class}")
+
+    test_pod_yaml = "dell-storage-test-nfs-pod.yaml"
+    dell_storage_files = [test_pod_yaml]
+    for file_name in dell_storage_files:
+        local_path = get_stx_resource_path(f"resources/cloud_platform/storage/dell_storage/{file_name}")
+        remote_yaml_path = f"/home/sysadmin/{file_name}"
+        FileKeywords(ssh_connection).upload_file(local_path, remote_yaml_path, overwrite=True)
+
+    # Step 5: Launch a test pod that mounts the PVC, write data, and record the initial mounted size.
+    yaml_path = "/home/sysadmin/dell-storage-test-nfs-pod.yaml"
+    kubectl_create_pods_keyword = KubectlCreatePodsKeywords(ssh_connection)
+    kubectl_create_pods_keyword.create_from_yaml(yaml_path)
+
+    get_logger().log_test_case_step(f"Verify PVC {pvc_name} is Bound with capacity {initial_size}")
+    pvc_keywords.wait_for_pvcs_to_reach_status("Bound", pvc_names=pvc_name, namespace=dell_storage_app_name)
+    initial_capacity = pvc_keywords.get_pvc(pvc_name, namespace=dell_storage_app_name).get_pvc_by_name(pvc_name).get_capacity()
+    validate_equals(initial_capacity, initial_size, f"PVC {pvc_name} is Bound with capacity {initial_size}")
+
+    get_logger().log_test_case_step(f"Check if test {pod_name} pod is running")
+    verify_dell_storage_pods_are_running(ssh_connection)
+
+    get_logger().log_test_case_step(f"Creating text.txt file inside of {pod_name} pod")
+    kubectl_exec_in_pods = KubectlExecInPodsKeywords(ssh_connection)
+    options = f"-it -n {namespace}"
+    cmd = "bash -c 'touch /data0/test.txt'"
+    kubectl_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
+    validate_equals(ssh_connection.get_return_code(), 0, f"Write to {pod_name} pod success")
+
+    get_logger().log_info("sync pod")
+    cmd = "bash -c 'sync'"
+    kubectl_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
+    validate_equals(ssh_connection.get_return_code(), 0, f"sync pod {pod_name} success")
+
+    # # Step 6: Expand the PVC from 5Gi to 10Gi.
+    get_logger().log_test_case_step(f"Expand PVC {pvc_name} from {initial_size} to {expanded_size}")
+    KubectlPatchPvcKeywords(ssh_connection).expand_pvc(pvc_name, expanded_size, namespace=dell_storage_app_name)
+
+    # # Step 7: Monitor the expansion until the PVC capacity reports 10Gi.
+    get_logger().log_test_case_step(f"Wait for PVC {pvc_name} capacity to report {expanded_size}")
+    validate_equals_with_retry(
+        function_to_execute=lambda: pvc_keywords.get_pvc(pvc_name, namespace=dell_storage_app_name).get_pvc_by_name(pvc_name).get_capacity(),
+        expected_value=expanded_size,
+        validation_description=f"PVC {pvc_name} capacity is {expanded_size}",
+        timeout=600,
+        polling_sleep_time=15,
+    )
+
+    # # Step 8: Verify the filesystem grew and the pre-expansion data is intact.
+    get_logger().log_test_case_step("Verify filesystem grew and pre-expansion data is intact")
+    kubectl_exec_in_pods.run_pod_exec_cmd(pod_name, "df -h /data0", options=f"-i -n {dell_storage_app_name}")
+    kubectl_exec_in_pods.run_pod_exec_cmd(pod_name, "cat /data0/test.txt", options=f"-i -n {dell_storage_app_name}")
+    validate_equals(ssh_connection.get_return_code(), 0, "test.txt still readable after expansion")
+
+    # # Step 10: Verify dell-storage app health after the expansion test.
+    get_logger().log_test_case_step("Verify dell-storage app is still applied and CSI pods are Running")
+    app_status = SystemApplicationShowKeywords(ssh_connection).get_system_application_show(dell_storage_app_name).get_system_application_object().get_status()
+    validate_equals(app_status, SystemApplicationStatusEnum.APPLIED.value, "dell-storage is still applied after expansion")
+    verify_dell_storage_pods_are_running(ssh_connection)

@@ -1,7 +1,9 @@
 storageClasses:
-  - name: csi-powerstore-iscsi
+  - name: csi-powerstore-nfs
     arrayID: "{{ array_id }}"
     fstype: ext4
+    nasName: "{{ nas_name }}"
+    allowVolumeExpansion: true
 
 secret:
   arrays:
@@ -10,4 +12,5 @@ secret:
       password: "{{ password }}"
       endpoint: "{{ endpoint }}"
       isDefault: true
-      blockProtocol: "ISCSI"
+      nasName: "{{ nas_name }}"
+      blockProtocol: "None"
