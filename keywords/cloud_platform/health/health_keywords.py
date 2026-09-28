@@ -106,8 +106,12 @@ class HealthKeywords(BaseKeyword):
         """
         healthy_status = ["applied", "uploaded"]
         app_list_keywords = SystemApplicationListKeywords(self.ssh_connection)
-        app_list_keywords.validate_all_apps_status(healthy_status)
 
+        # Wait for the asynchronously-applied platform-integ-apps FIRST. It re-applies after the
+        # platform settles and can still be transitioning (e.g. 'applying') when the health check
+        # runs, which is common right after a restore since the subcloud reaches deploy-complete
+        # and is managed before the app finishes. Waiting here first prevents the blanket
+        # validate_all_apps_status check below from failing on a transient 'applying' state.
         if self._is_platform_integ_apps_expected():
             get_logger().log_info(f"Storage backend configured; waiting for {PLATFORM_INTEG_APPS_NAME} to reach 'applied'")
 
@@ -128,6 +132,10 @@ class HealthKeywords(BaseKeyword):
             )
         else:
             get_logger().log_info(f"No storage backend requiring {PLATFORM_INTEG_APPS_NAME} is configured; skipping its check")
+
+        # Now validate every app is in a healthy end state. Poll rather than checking once so any
+        # remaining app still finishing its transition is waited out instead of failing immediately.
+        app_list_keywords.validate_all_apps_status(healthy_status, timeout=300, polling_sleep_time=15)
 
     def _is_platform_integ_apps_expected(self) -> bool:
         """Determine whether platform-integ-apps should be present on this system.
