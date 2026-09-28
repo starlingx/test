@@ -709,35 +709,73 @@ def test_rook_ceph_swact(request: FixtureRequest):
 
 @mark.lab_has_rook_ceph
 @mark.lab_has_standby_controller
-def test_reboot_active_controller_rook_ceph():
+def test_reboot_active_controller_rook_ceph(request: FixtureRequest):
     """
-    Reboot the active controller and verify rook-ceph health before and after.
+    Reboot the active controller and verify rook-ceph health before and after,
+    while pods keep continuously writing to CephFS and RBD volumes.
 
     Test Steps:
         - Get the active controller and record its uptime
         - Check rook-ceph health before reboot
+        - Start continuous-write pods on CephFS (RWX) and RBD (RWO) volumes,
+          pinned to the standby controller so they stay up while the active
+          controller is rebooted
+        - Record each pod's write-cycle count before the reboot
         - Reboot the active controller
         - Wait until the active controller finishes rebooting
+        - Verify each writer pod is still Running and its write-cycle count
+          advanced (i.e. the volumes stayed writable through the reboot)
         - Perform a swact to return control to the original controller
         - Check rook-ceph health after reboot
 
-    Args: None
+    Teardown:
+        - Delete each continuous-write pod and its PVC, waiting for the PVC to be
+          gone, and remove the uploaded YAML files from the active controller
+
+    Args:
+        request (FixtureRequest): pytest request fixture for test setup and teardown
     """
     active_controller_ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     system_host_swact_keywords = SystemHostSwactKeywords(active_controller_ssh_connection)
     system_host_list_keywords = SystemHostListKeywords(active_controller_ssh_connection)
+    kubectl_get_pods_keywords = KubectlGetPodsKeywords(active_controller_ssh_connection)
+    continuous_write_keywords = KubectlContinuousWriteKeywords(active_controller_ssh_connection)
     active_controller = system_host_list_keywords.get_active_controller()
     active_controller_host_name = active_controller.get_host_name()
+    standby_controller_host_name = system_host_list_keywords.get_standby_controller().get_host_name()
     prev_uptime = SystemHostListKeywords(active_controller_ssh_connection).get_uptime(active_controller_host_name)
     ceph_status_keywords = CephStatusKeywords(active_controller_ssh_connection)
 
     get_logger().log_test_case_step("Checking rook-ceph health before reboot.")
     ceph_status_keywords.wait_for_ceph_health_status(expect_health_status=True)
 
+    get_logger().log_info(f"Active controller to reboot: {active_controller_host_name}; writer pods pinned to standby: {standby_controller_host_name}")
+
+    writer_pods = {}
+    for storage_type in ["cephfs", "rbd"]:
+        get_logger().log_test_case_step(f"Start {storage_type} continuous-write pod on {standby_controller_host_name}.")
+        pod_name, pvc_name = continuous_write_keywords.start_continuous_write_pod(storage_type, node_name=standby_controller_host_name)
+        writer_pods[storage_type] = pod_name
+        request.addfinalizer(lambda p=pod_name, v=pvc_name: continuous_write_keywords.cleanup_continuous_write_pod(p, v))
+
+    write_counts = {}
+    for storage_type, pod_name in writer_pods.items():
+        write_counts[storage_type] = continuous_write_keywords.wait_for_write_progress(pod_name, previous_count=0)
+        get_logger().log_info(f"{pod_name} write-cycle count before reboot: {write_counts[storage_type]}")
+
+    get_logger().log_test_case_step(f"Force reboot {active_controller_host_name}.")
     active_controller_ssh_connection.send_as_sudo("sudo reboot -f")
     SystemHostRebootKeywords(active_controller_ssh_connection).wait_for_force_reboot(active_controller_host_name, prev_uptime)
 
-    get_logger().log_info("Performing controller swact back operation")
+    for storage_type, pod_name in writer_pods.items():
+        get_logger().log_test_case_step(f"Verify {pod_name} is still Running after reboot.")
+        kubectl_get_pods_keywords.wait_for_pod_status(pod_name, "Running")
+
+        get_logger().log_test_case_step(f"Verify {pod_name} kept writing after reboot.")
+        write_counts[storage_type] = continuous_write_keywords.wait_for_write_progress(pod_name, previous_count=write_counts[storage_type])
+        get_logger().log_info(f"{pod_name} write-cycle count after reboot: {write_counts[storage_type]}")
+
+    get_logger().log_test_case_step("Performing controller swact back operation.")
     system_host_swact_keywords.host_swact()
 
     get_logger().log_test_case_step("Checking rook-ceph health after reboot.")
