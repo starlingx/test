@@ -20,6 +20,11 @@ class FaultManagementTableParser:
         headers = []
         output_values_list = []
         found_headers = False
+        # A missing or empty command result (for example an SSH send that returned
+        # no output) means there are no rows to parse — treat it as an empty table
+        # rather than iterating over None and raising a TypeError.
+        if not self.fault_management_output:
+            return output_values_list
         for line in self.fault_management_output:
             # output that we care about like headers and actual output have | separators
             if line.__contains__('|'):

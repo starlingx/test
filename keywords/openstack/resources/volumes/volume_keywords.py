@@ -342,11 +342,18 @@ class VolumeKeywords(BaseKeyword):
     # ── Cleanup helpers (safe for teardown — never raise) ────────────
 
     def cleanup_volume(self, volume_name_or_id: str, server_name: Optional[str] = None) -> None:
-        """Safely delete a volume if it exists. Detaches first if in-use.
+        """Safely delete a volume if it exists. Detaches from every server first if in-use.
+
+        A multi-attach volume can be bound to more than one server, so detaching
+        from a single server is not enough to reach the ``available`` state that
+        deletion requires. This iterates over every attachment the volume
+        reports and detaches each one before deleting.
 
         Args:
             volume_name_or_id (str): Volume name or ID.
-            server_name (str): Optional server name to detach from if volume is in-use.
+            server_name (Optional[str]): Optional server to detach from first.
+                Retained for backwards compatibility; every remaining attachment
+                is detached regardless of this value.
         """
         storage = self.openstack_connection.get_block_storage()
         volume = storage.find_volume(volume_name_or_id, ignore_missing=True)
@@ -354,14 +361,31 @@ class VolumeKeywords(BaseKeyword):
             get_logger().log_info(f"Volume '{volume_name_or_id}' already gone, skipping cleanup")
             return
         try:
-            if volume.status == "in-use" and server_name:
-                self.detach_volume(server_name, volume_name_or_id)
+            if volume.status == "in-use":
+                self._detach_all_servers(volume, server_name)
                 self.wait_for_volume_status(volume_name_or_id, "available")
             storage.delete_volume(volume.id)
             storage.wait_for_delete(volume)
             get_logger().log_info(f"Cleaned up volume: {volume_name_or_id}")
         except Exception as e:
             get_logger().log_warning(f"Volume cleanup failed for '{volume_name_or_id}': {e}")
+
+    def _detach_all_servers(self, volume: object, preferred_server: Optional[str] = None) -> None:
+        """Detach a volume from every server it is currently attached to.
+
+        Args:
+            volume (object): SDK volume object whose ``attachments`` are detached.
+            preferred_server (Optional[str]): Server detached first when present in
+                the attachment list, so ordering is deterministic for callers that
+                care. All other attachments are detached afterwards.
+        """
+        server_ids = [attachment.get("server_id") for attachment in (volume.attachments or []) if attachment.get("server_id")]
+        if preferred_server and preferred_server in server_ids:
+            server_ids.remove(preferred_server)
+            server_ids.insert(0, preferred_server)
+        for server_id in server_ids:
+            get_logger().log_info(f"Detaching volume '{volume.id}' from server '{server_id}' before deletion")
+            self.detach_volume(server_id, volume.id)
 
     def cleanup_backup(self, backup_name_or_id: str) -> None:
         """Safely delete a backup if it exists. Does not raise on failure.
@@ -383,13 +407,23 @@ class VolumeKeywords(BaseKeyword):
     # ── Volume Type CRUD ─────────────────────────────────────────────
 
     def create_volume_type(self, name: str) -> None:
-        """Create a volume type.
+        """Create a volume type, replacing any pre-existing type of the same name.
+
+        A volume type left behind by a prior run (for example when teardown could
+        not delete it because a volume still referenced it) would otherwise make
+        this call fail with a 409 conflict. Deleting any existing type of the same
+        name first makes creation idempotent and re-runnable.
 
         Args:
             name (str): Volume type name.
         """
+        storage = self.openstack_connection.get_block_storage()
+        existing_type = storage.find_type(name, ignore_missing=True)
+        if existing_type is not None:
+            get_logger().log_info(f"Volume type '{name}' already exists; deleting it before re-creating")
+            storage.delete_type(existing_type.id)
         get_logger().log_info(f"Creating volume type '{name}'")
-        self.openstack_connection.get_block_storage().create_type(name=name)
+        storage.create_type(name=name)
 
     def set_volume_type_extra_specs(self, type_name_or_id: str, specs: Dict[str, str]) -> None:
         """Set extra-specs on a volume type.
