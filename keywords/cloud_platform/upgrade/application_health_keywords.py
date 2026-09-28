@@ -1,4 +1,5 @@
 from config.configuration_manager import ConfigurationManager
+from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
 from keywords.base_keyword import BaseKeyword
 from keywords.cloud_platform.fault_management.alarms.alarm_list_keywords import AlarmListKeywords
@@ -24,6 +25,10 @@ class ApplicationHealthKeywords(BaseKeyword):
     # for a minute is a real problem worth reporting rather than waiting out.
     POD_READ_TIMEOUT = 60
     POD_READ_POLL_INTERVAL = 10
+    # Reported by get_not_ready_pod_count when fewer pods were found than the caller expects to be
+    # present. Deliberately not zero, because zero means "all ready" and too few pods must never be
+    # read as ready. It is negative so it cannot be mistaken for a real count in a log.
+    POD_COUNT_BELOW_EXPECTED = -1
 
     def __init__(self, ssh_connection: SSHConnection):
         """
@@ -133,6 +138,54 @@ class ApplicationHealthKeywords(BaseKeyword):
             poll_interval=self.POD_READ_POLL_INTERVAL,
         ).get_pods()
         return len([pod for pod in unhealthy if pod.get_namespace() == namespace])
+
+    def get_not_ready_pod_count(self, namespace: str, expected_min: int = 1) -> int:
+        """
+        Count the pods in a namespace that are not Running with all of their containers ready.
+
+        This is the readiness counterpart to get_unhealthy_pod_count, which selects on status.phase
+        only: a pod whose containers are still starting reports phase Running while its ready count
+        is below its total, so a phase-only count reports an application as healthy before it is
+        serving. An application reaches 'applied' before its pods are ready - the platform still has
+        to pull the images for the release it moved to - so an upgrade test that samples phase once
+        can pass or fail on timing rather than on the application's actual state.
+
+        The read is retried the same way get_unhealthy_pod_count retries its own, so a query that
+        fails transiently while the platform restarts services around a deploy does not decide the
+        answer. A read that keeps failing raises, because a cluster that cannot list pods is a real
+        problem rather than something to wait out.
+
+        Finding fewer than expected_min pods reports a sentinel instead of a count, so an empty
+        namespace - an application that is absent rather than ready - is never counted as all-ready.
+        Written to be read inside validate_equals_with_retry, which retries on a value mismatch, so
+        the sentinel keeps a caller's wait going while the application is still coming up.
+
+        Args:
+            namespace(str): the namespace to inspect.
+            expected_min(int): the fewest pods that count as present. Below this the count is
+                reported as POD_COUNT_BELOW_EXPECTED so a caller's wait continues rather than
+                passing on too few pods. Defaults to 1.
+
+        Returns:
+            int: the number of pods that are not fully ready, or POD_COUNT_BELOW_EXPECTED when fewer
+                than expected_min pods were found.
+
+        Raises:
+            KeywordException: when the pod list cannot be read within the retry window.
+
+        """
+        pods_output = self.pods.get_pods_with_retry(
+            lambda: self.pods.get_pods(namespace),
+            timeout=self.POD_READ_TIMEOUT,
+            poll_interval=self.POD_READ_POLL_INTERVAL,
+        )
+
+        found = pods_output.get_pods()
+        if len(found) < expected_min:
+            get_logger().log_info(f"Found {len(found)} pods in namespace '{namespace}', expected at least {expected_min}; reporting as not ready")
+            return self.POD_COUNT_BELOW_EXPECTED
+
+        return len(pods_output.get_not_ready_pods())
 
     def get_app_or_deploy_alarm_count(self) -> int:
         """

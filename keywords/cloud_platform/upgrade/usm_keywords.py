@@ -414,6 +414,12 @@ class USMKeywords(BaseKeyword):
         """
         Method to wait for desired state in deploy show
 
+        A failed read is retried within the existing timeout rather than ending the wait. The read
+        asserts a zero return code, so a transient failure raises instead of returning, and
+        'software deploy show' has been observed returning non-zero while the platform restarts
+        services around an activate-rollback - once in 233 reads on one run, which abandoned a wait
+        whose state arrived moments later. A read that keeps failing is bounded by the timeout.
+
         Args:
             expected_deploy_state (str): Desired state in the deploy show output for the specified release.
             timeout (int): Timeout value to wait for the deploy state to match specified value.
@@ -424,7 +430,12 @@ class USMKeywords(BaseKeyword):
         deploy_show = SoftwareDeployShowKeywords(self.ssh_connection)
         end_time = time.time() + timeout
         while time.time() < end_time:
-            deploy_state = deploy_show.get_software_deploy_show().get_software_deploy_show().get_state()
+            try:
+                deploy_state = deploy_show.get_software_deploy_show().get_software_deploy_show().get_state()
+            except Exception as read_error:  # noqa: BLE001 - a failed read is not evidence of a deploy state
+                get_logger().log_info(f"Could not read the deploy state, retrying within the timeout: {read_error}")
+                time.sleep(5)
+                continue
             get_logger().log_info(f"Currently deploy state:{deploy_state} ")
             if deploy_state == expected_deploy_state:
                 get_logger().log_info(f"Deploy state updated as {deploy_state}")

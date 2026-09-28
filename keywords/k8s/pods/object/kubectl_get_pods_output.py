@@ -15,6 +15,11 @@ class KubectlGetPodsOutput:
 
     ALLOWED_SOURCES = {"table", "json"}
 
+    # Statuses a pod reports once it has terminated successfully. 'kubectl get pods' shows Completed
+    # for a pod whose phase is Succeeded, and both spellings have been seen depending on the source,
+    # so both are recognised. A pod in one of these states is finished rather than unready.
+    TERMINAL_SUCCESS_STATUSES = ("Completed", "Succeeded")
+
     def __init__(self, kubectl_get_pods_output: Union[str, list[str]], source: str = "table"):
         """Constructor.
 
@@ -241,6 +246,32 @@ class KubectlGetPodsOutput:
             list[KubectlPodObject]: List of pod objects on the specified node.
         """
         return [pod for pod in self.kubectl_pod if pod.get_node() == node_name]
+
+    def get_not_ready_pods(self) -> list[KubectlPodObject]:
+        """Get list of pod objects that are not Running with all of their containers ready.
+
+        Readiness is a stricter question than phase. A pod whose containers are still starting, or
+        one whose container is restarting, reports phase Running while its ready count is below its
+        total, so a phase-only filter reports it as healthy. This compares ready/total as well, which
+        is what "the application is serving" actually requires.
+
+        Pods that have terminated successfully are excluded rather than counted. A completed job or
+        helm hook reports its status as Completed with a ready count below its total, so comparing
+        ready/total alone would count it as never ready and a caller waiting for zero could never be
+        satisfied. This matches get_unhealthy_pods, which excludes phase Succeeded in its query.
+
+        Returns:
+            list[KubectlPodObject]: List of pod objects that are not Running or not fully ready,
+                excluding those that terminated successfully.
+        """
+        not_ready = []
+        for pod in self.kubectl_pod:
+            status = pod.get_status()
+            if status in self.TERMINAL_SUCCESS_STATUSES:
+                continue
+            if status != "Running" or not pod.is_ready():
+                not_ready.append(pod)
+        return not_ready
 
     def get_all_container_images(self) -> list[str]:
         """Get all container images across all pods.
