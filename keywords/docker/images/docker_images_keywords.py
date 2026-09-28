@@ -1,4 +1,5 @@
 from config.docker.objects.registry import Registry
+from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
 from keywords.base_keyword import BaseKeyword
 from keywords.docker.images.object.docker_images_output import DockerImagesOutput
@@ -55,6 +56,26 @@ class DockerImagesKeywords(BaseKeyword):
         Prunes all dangling Docker images to free disk space.
         """
         self.ssh_connection.send_as_sudo("docker image prune -f")
+
+    def prune_all_images(self) -> str:
+        """
+        Prunes all unused Docker images (not just dangling ones) to free disk space.
+
+        Runs 'docker image prune -a -f', which deletes every image not referenced
+        by a running container. This reclaims the docker image cache, a separate
+        filesystem from the docker-distribution registry. Pruned images are
+        re-pulled on demand from the registry when next needed.
+
+        Returns:
+            str: The 'Total reclaimed space' summary line reported by docker, or a
+                fallback message when that line is not present in the output.
+        """
+        output_lines = self.ssh_connection.send_as_sudo("docker image prune -a -f")
+        reclaimed_line = next((line.strip() for line in output_lines if "Total reclaimed space" in line), "")
+        if not reclaimed_line:
+            reclaimed_line = "Total reclaimed space: unknown (no summary line in output)"
+        get_logger().log_info(f"Docker image cache prune result: {reclaimed_line}")
+        return reclaimed_line
 
     def exists_image(self, registry: Registry, image: str, tag: str) -> bool:
         """

@@ -115,6 +115,31 @@ class FileKeywords(BaseKeyword):
             get_logger().log_info(f"{file_name} does not exist.")
             return False
 
+    def is_valid_gzip(self, file_path: str) -> bool:
+        """
+        Checks whether a file is a valid, uncorrupted gzip archive.
+
+        Runs 'gzip -t' (test mode), which decompresses the archive to verify
+        its integrity without writing any output. A truncated or corrupt file
+        (e.g. left behind by a partial download) exits non-zero. The return
+        code is inspected without validating it, so a bad file returns False
+        rather than raising.
+
+        Args:
+            file_path (str): Absolute path to the file to test.
+
+        Returns:
+            bool: True if the file is a valid gzip archive, False otherwise.
+        """
+        get_logger().log_info(f"Testing gzip integrity of {file_path}")
+        self.ssh_connection.send(f"gzip -t {shlex.quote(file_path)}")
+        is_valid = self.ssh_connection.get_return_code() == 0
+        if is_valid:
+            get_logger().log_info(f"{file_path} is a valid gzip archive.")
+        else:
+            get_logger().log_info(f"{file_path} is not a valid gzip archive.")
+        return is_valid
+
     def create_file_with_echo(self, file_name: str, content: str) -> bool:
         """
         Creates a file based on its content with the echo command.

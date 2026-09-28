@@ -36,3 +36,31 @@ class SystemRegistryImageListKeywords(BaseKeyword):
         )
         self.validate_success_return_code(self.ssh_connection)
         return SystemRegistryImageListOutput(output)
+
+    def is_registry_reachable(self, command_timeout: int = 120) -> bool:
+        """Check if the local docker registry is reachable via registry-image-list.
+
+        Runs 'system registry-image-list' and inspects the return code without
+        validating it (so a failure does not raise). When the docker registry
+        is down, the command exits non-zero with "Error communicating with the
+        docker registry"; this returns False in that case so callers doing
+        best-effort cleanup can skip it rather than failing.
+
+        Args:
+            command_timeout (int): Seconds to wait for the command to complete (default 120).
+
+        Returns:
+            bool: True if the command succeeded (registry reachable), False otherwise.
+        """
+        get_logger().log_info("Checking local docker registry reachability (registry-image-list)")
+        self.ssh_connection.send(
+            source_openrc("system registry-image-list"),
+            command_timeout=command_timeout,
+        )
+        rc = self.ssh_connection.get_return_code()
+        reachable = rc == 0
+        if reachable:
+            get_logger().log_info("Local docker registry reachable")
+        else:
+            get_logger().log_info(f"Local docker registry unreachable (registry-image-list failed, rc={rc})")
+        return reachable
