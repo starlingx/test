@@ -74,6 +74,7 @@ class KpiRecorderKeywords(BaseKeyword):
                     kpi_measure_details=measure.get_kpi_measure_details(),
                     collected_at=measure.get_collected_at(),
                     notes=measure.get_notes(),
+                    kpi_subcloud_version=measure.get_kpi_subcloud_version(),
                 )
 
             get_logger().log_info(f"=== Recorded {len(kpi_measures)} KPI measurements ===")

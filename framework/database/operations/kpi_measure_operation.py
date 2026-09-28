@@ -23,6 +23,7 @@ class KpiMeasureOperation:
         kpi_measure_details: Optional[Dict[str, Any]] = None,
         collected_at: Optional[str] = None,
         notes: Optional[str] = None,
+        kpi_subcloud_version: Optional[str] = None,
     ) -> int:
         """
         Inserts a KPI measurement into the database.
@@ -36,6 +37,8 @@ class KpiMeasureOperation:
             kpi_measure_details: Additional metadata dict.
             collected_at: ISO 8601 timestamp. Defaults to now.
             notes: Free-form notes.
+            kpi_subcloud_version: Subcloud software version the measurement was
+                taken against. Defaults to None (null).
 
         Returns:
             int: The kpi_measure_id.
@@ -46,22 +49,13 @@ class KpiMeasureOperation:
         if collected_at is None:
             collected_at = datetime.now(timezone.utc).isoformat()
 
-        details_json = json.dumps(kpi_measure_details) if kpi_measure_details else '{}'
+        details_json = json.dumps(kpi_measure_details) if kpi_measure_details else "{}"
         test_case_result_id = f"'{test_case_result_id}'" if test_case_result_id is not None else "NULL"
         baseline_val = f"{kpi_baseline_id}" if kpi_baseline_id is not None else "NULL"
         notes_val = f"'{notes}'" if notes is not None else "NULL"
+        subcloud_version_val = f"'{kpi_subcloud_version}'" if kpi_subcloud_version is not None else "NULL"
 
-        insert_query = (
-            "INSERT INTO kpi_measure ("
-            "kpi_id, session_id, test_case_result_id, "
-            "kpi_value, kpi_measure_details, "
-            "kpi_baseline_id, collected_at, is_displayed, notes"
-            ") VALUES ("
-            f"{kpi_id}, '{session_id}', {test_case_result_id}, "
-            f"{kpi_value}, '{details_json}', "
-            f"{baseline_val}, '{collected_at}', true, {notes_val}"
-            ") RETURNING kpi_measure_id"
-        )
+        insert_query = "INSERT INTO kpi_measure (" "kpi_id, session_id, test_case_result_id, " "kpi_value, kpi_measure_details, " "kpi_baseline_id, collected_at, is_displayed, notes, " "kpi_subcloud_version" ") VALUES (" f"{kpi_id}, '{session_id}', {test_case_result_id}, " f"{kpi_value}, '{details_json}', " f"{baseline_val}, '{collected_at}', true, {notes_val}, " f"{subcloud_version_val}" ") RETURNING kpi_measure_id"
 
         results = self.database_operation_manager.execute_query(insert_query)
 

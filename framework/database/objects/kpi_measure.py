@@ -18,6 +18,7 @@ class KpiMeasure:
         kpi_measure_details: Optional[Dict[str, Any]] = None,
         notes: Optional[str] = None,
         collected_at: Optional[str] = None,
+        kpi_subcloud_version: Optional[str] = None,
     ):
         """
         Constructor for KpiMeasure.
@@ -28,12 +29,15 @@ class KpiMeasure:
             kpi_measure_details (Optional[Dict[str, Any]]): Additional metadata.
             notes (Optional[str]): Free-form notes.
             collected_at (Optional[str]): ISO 8601 timestamp. Defaults to now.
+            kpi_subcloud_version (Optional[str]): Subcloud software version the
+                measurement was taken against. Defaults to None (null).
         """
         self.kpi = kpi
         self.kpi_value = kpi_value
         self.kpi_measure_details = kpi_measure_details
         self.notes = notes
         self.collected_at = collected_at
+        self.kpi_subcloud_version = kpi_subcloud_version
 
     def get_kpi(self) -> Kpi:
         """Getter for the associated KPI.
@@ -74,3 +78,11 @@ class KpiMeasure:
             Optional[str]: ISO 8601 timestamp.
         """
         return self.collected_at
+
+    def get_kpi_subcloud_version(self) -> Optional[str]:
+        """Getter for the subcloud software version.
+
+        Returns:
+            Optional[str]: The subcloud software version, or None.
+        """
+        return self.kpi_subcloud_version

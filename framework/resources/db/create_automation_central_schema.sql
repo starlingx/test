@@ -369,6 +369,7 @@ CREATE TABLE public.kpi_measure (
     kpi_measure_details jsonb DEFAULT '{}'::jsonb NOT NULL,
     collected_at timestamp with time zone,
     notes text,
+    kpi_subcloud_version character varying,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT kpi_measure_pkey PRIMARY KEY (kpi_measure_id)
 );

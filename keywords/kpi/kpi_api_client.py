@@ -160,9 +160,7 @@ class KpiApiClient:
             int: The run_id.
         """
         get_logger().log_info(f"Creating standalone run '{run_name}'")
-        run_id = self._run_operation.create_standalone_run(
-            run_name, product, run_type_id, build_info_id, platform_build_info_id
-        )
+        run_id = self._run_operation.create_standalone_run(run_name, product, run_type_id, build_info_id, platform_build_info_id)
         get_logger().log_info(f"Created run_id: {run_id}")
         return run_id
 
@@ -191,7 +189,9 @@ class KpiApiClient:
         """
         get_logger().log_info(f"Creating standalone session (tag='{tag}')")
         session_id = self._session_operation.create_standalone_session(
-            run_id, lab_id, tag,
+            run_id,
+            lab_id,
+            tag,
             lab_runtime_config_id=lab_runtime_config_id,
             session_info_id=session_info_id,
             sys_type=sys_type,
@@ -209,6 +209,7 @@ class KpiApiClient:
         kpi_measure_details: Optional[Dict[str, Any]] = None,
         collected_at: Optional[str] = None,
         notes: Optional[str] = None,
+        kpi_subcloud_version: Optional[str] = None,
     ) -> int:
         """
         Insert a single KPI measurement.
@@ -222,18 +223,23 @@ class KpiApiClient:
             kpi_measure_details: Additional metadata dict.
             collected_at: ISO 8601 timestamp. Defaults to now.
             notes: Free-form notes.
+            kpi_subcloud_version: Subcloud software version the measurement was
+                taken against. Defaults to None (null).
 
         Returns:
             int: The kpi_measure_id.
         """
         get_logger().log_info(f"Inserting kpi_measure (kpi_id={kpi_id}, value={kpi_value})")
         measure_id = self._measure_operation.create_kpi_measure(
-            kpi_id, session_id, kpi_value,
+            kpi_id,
+            session_id,
+            kpi_value,
             test_case_result_id=test_case_result_id,
             kpi_baseline_id=kpi_baseline_id,
             kpi_measure_details=kpi_measure_details,
             collected_at=collected_at,
             notes=notes,
+            kpi_subcloud_version=kpi_subcloud_version,
         )
         get_logger().log_info(f"Created kpi_measure_id: {measure_id}")
         return measure_id
