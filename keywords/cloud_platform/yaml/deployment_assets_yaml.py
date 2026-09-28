@@ -55,3 +55,32 @@ class DeploymentAssetsHandler:
         original_url = registries["registry.k8s.io"]["url"]
         registries["registry.k8s.io"]["url"] = f"{original_url}.wrong"
         self.write_yaml()
+
+    def modify_management_end_address(self) -> None:
+        """Modify management_end_address to a valid but different value for bootstrap replay.
+
+        Decrements the final hextet of an IPv6 management_end_address by one
+        (e.g. ...ffff -> ...fffe). The resulting address is still valid, so an
+        initial bootstrap succeeds; changing it forces a genuine bootstrap replay
+        with an altered configuration value.
+
+        Raises:
+            KeyError: If management_end_address key is not found.
+            ValueError: If management_end_address cannot be adjusted to a distinct value.
+        """
+        if "management_end_address" not in self.data:
+            raise KeyError("'management_end_address' key not found in bootstrap YAML")
+
+        original_address = self.data["management_end_address"]
+        prefix, _, last_hextet = str(original_address).rpartition(":")
+        if not prefix:
+            raise ValueError(f"Unexpected management_end_address format: '{original_address}'")
+
+        current_value = int(last_hextet, 16)
+        new_value = current_value - 1 if current_value > 0 else current_value + 1
+        modified_address = f"{prefix}:{new_value:x}"
+        if modified_address == original_address:
+            raise ValueError(f"Failed to produce a distinct management_end_address from '{original_address}'")
+
+        self.data["management_end_address"] = modified_address
+        self.write_yaml()

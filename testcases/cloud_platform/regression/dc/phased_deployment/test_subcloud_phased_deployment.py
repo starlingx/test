@@ -245,3 +245,101 @@ def test_bootstrap_failure_replay():
     dcmanager_subcloud_manage_output = dcm_sc_manager_kw.get_dcmanager_subcloud_manage(subcloud_name, timeout=60)
     manage_status = dcmanager_subcloud_manage_output.get_dcmanager_subcloud_manage_object().get_management()
     get_logger().log_info(f"The management state of the subcloud {subcloud_name} is {manage_status}")
+
+
+@mark.p2
+@mark.lab_has_subcloud
+def test_bootstrap_replay_after_successful_bootstrap(request):
+    """Test bootstrap replay after a successful initial bootstrap (subcloud stays locked).
+
+    Runs a phased subcloud deployment, lets the initial bootstrap complete
+    successfully (host stays locked, not unlocked), then modifies a bootstrap value
+    and re-runs bootstrap (replay). Validates that the replay completes successfully
+    without the shutdown_services "ipv6: Address not found" failure, then finishes the
+    deployment through config and manage.
+
+    Unlike test_bootstrap_failure_replay, the initial bootstrap must SUCCEED here; the
+    value is changed only after the first bootstrap completes.
+
+    Preconditions:
+        - System controller accessible
+        - An undeployed subcloud available for phased deployment
+        - IPv6 bootstrap-values file available for the target subcloud
+
+    Setup:
+        - Get active-controller SSH connection
+        - Select an undeployed subcloud
+        - Back up the original bootstrap-values.yaml
+
+    Test Steps:
+        1. Execute phased deploy create
+        2. Execute phased deploy install
+        3. Execute phased deploy bootstrap and wait for it to complete successfully
+        4. Confirm the subcloud remains at bootstrap-complete (not unlocked)
+        5. Modify management_end_address in bootstrap-values.yaml and upload it
+        6. Re-run bootstrap (replay) and validate it completes successfully
+        7. Execute phased deploy config and validate the subcloud reaches complete
+        8. Manage the subcloud and validate it is managed
+
+    Teardown:
+        - Restore the original bootstrap-values.yaml
+    """
+    primary_ssh = LabConnectionKeywords().get_active_controller_ssh()
+    subcloud_name = get_undeployed_subcloud_name()
+
+    dcm_sc_deploy_kw = DCManagerSubcloudDeployKeywords(primary_ssh)
+    dc_manager_sc_list_kw = DcManagerSubcloudListKeywords(primary_ssh)
+
+    get_logger().log_setup_step(f"Locate bootstrap-values file for subcloud '{subcloud_name}'")
+    deployment_assets_config = ConfigurationManager.get_deployment_assets_config()
+    sc_assets = deployment_assets_config.get_subcloud_deployment_assets(subcloud_name)
+    bootstrap_file = sc_assets.get_bootstrap_file()
+    local_bootstrap_file = os.path.basename(bootstrap_file)
+    bootstrap_bkup_file = f"{bootstrap_file}.bkup"
+
+    get_logger().log_setup_step(f"Back up original bootstrap-values file '{bootstrap_file}'")
+    FileKeywords(primary_ssh).copy_file(bootstrap_file, bootstrap_bkup_file)
+
+    def restore_bootstrap_file():
+        get_logger().log_teardown_step(f"Restore original bootstrap-values file '{bootstrap_file}'")
+        FileKeywords(primary_ssh).rename_file(bootstrap_bkup_file, bootstrap_file)
+
+    request.addfinalizer(restore_bootstrap_file)
+
+    get_logger().log_test_case_step(f"Execute phased deploy create for subcloud '{subcloud_name}'")
+    dcm_sc_deploy_kw.dcmanager_subcloud_deploy_create(subcloud_name)
+
+    get_logger().log_test_case_step(f"Execute phased deploy install for subcloud '{subcloud_name}'")
+    dcm_sc_deploy_kw.dcmanager_subcloud_deploy_install(subcloud_name)
+
+    get_logger().log_test_case_step(f"Execute phased deploy bootstrap for subcloud '{subcloud_name}' and wait for success")
+    dcm_sc_deploy_kw.dcmanager_subcloud_deploy_bootstrap(subcloud_name)
+
+    get_logger().log_test_case_step(f"Confirm subcloud '{subcloud_name}' remains at bootstrap-complete (not unlocked)")
+    deploy_status = dc_manager_sc_list_kw.get_dcmanager_subcloud_list().get_subcloud_by_name(subcloud_name).get_deploy_status()
+    validate_equals(deploy_status, "bootstrap-complete", "Subcloud deploy status after successful initial bootstrap")
+
+    get_logger().log_test_case_step(f"Modify management_end_address in bootstrap-values file for subcloud '{subcloud_name}'")
+    FileKeywords(primary_ssh).download_file(bootstrap_file, local_bootstrap_file)
+    bootstrap_yaml_obj = DeploymentAssetsHandler(local_bootstrap_file)
+    bootstrap_yaml_obj.modify_management_end_address()
+    FileKeywords(primary_ssh).upload_file(local_bootstrap_file, bootstrap_file)
+
+    get_logger().log_test_case_step(f"Re-run bootstrap (replay) for subcloud '{subcloud_name}' with modified values")
+    time_kpi_start_replay = TimeKPI(time.time())
+    dcm_sc_deploy_kw.dcmanager_subcloud_deploy_bootstrap(subcloud_name)
+    time_kpi_start_replay.log_elapsed_time(time.time(), "time taken subcloud deploy bootstrap replay")
+
+    replay_status = dc_manager_sc_list_kw.get_dcmanager_subcloud_list().get_subcloud_by_name(subcloud_name).get_deploy_status()
+    validate_equals(replay_status, "bootstrap-complete", "Subcloud deploy status after bootstrap replay")
+
+    get_logger().log_test_case_step(f"Execute phased deploy config for subcloud '{subcloud_name}'")
+    dcm_sc_deploy_kw.dcmanager_subcloud_deploy_config(subcloud_name)
+    deploy_complete_status = dc_manager_sc_list_kw.get_dcmanager_subcloud_list().get_subcloud_by_name(subcloud_name).get_deploy_status()
+    validate_equals(deploy_complete_status, "complete", "Subcloud deploy status after config")
+
+    get_logger().log_test_case_step(f"Manage subcloud '{subcloud_name}'")
+    dcm_sc_manager_kw = DcManagerSubcloudManagerKeywords(primary_ssh)
+    dcmanager_subcloud_manage_output = dcm_sc_manager_kw.get_dcmanager_subcloud_manage(subcloud_name, timeout=60)
+    manage_status = dcmanager_subcloud_manage_output.get_dcmanager_subcloud_manage_object().get_management()
+    validate_equals(manage_status, "managed", "Subcloud management state after manage")
