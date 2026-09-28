@@ -79,9 +79,11 @@ class SystemHostLvgObject:
         """Set the lvm_pool_size."""
         self.lvm_pool_size = lvm_pool_size
 
-    def get_lvm_pool_size(self):
-        """Get the lvm_pool_size."""
-        return self.lvm_pool_size
+    def get_lvm_pool_size(self) -> int:
+        """Get the lvm_pool_size as an integer (0 when unset/None)."""
+        if self.lvm_pool_size in (None, "", "None"):
+            return 0
+        return int(self.lvm_pool_size)
 
     def set_total_size(self, total_size):
         """Set the total_size."""

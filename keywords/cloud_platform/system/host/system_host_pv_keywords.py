@@ -73,7 +73,7 @@ class SystemHostPvKeywords(BaseKeyword):
         system_host_pv_output = SystemHostPvShowOutput(output)
         return system_host_pv_output
 
-    def find_and_add_free_pv(self, host_id: str, lvg_name: str, disks: list) -> SystemHostDiskObject:
+    def add_free_pv(self, host_id: str, lvg_name: str, disks: list) -> SystemHostDiskObject:
         """
         Add the first of the given disks that can be added as a physical volume to a volume group.
 
@@ -102,6 +102,35 @@ class SystemHostPvKeywords(BaseKeyword):
                 get_logger().log_info(f"Disk {device_path} could not be added to '{lvg_name}', trying the next disk.")
 
         raise KeywordException(f"No disk could be added as a physical volume to '{lvg_name}' on {host_id}. All candidates failed.")
+
+    def count_pvs_in_lvg(self, host_id: str, lvg_name: str) -> int:
+        """
+        Count the physical volumes currently backing a local volume group.
+
+        Args:
+            host_id (str): name or id of the host (e.g. 'controller-0').
+            lvg_name (str): name of the local volume group (e.g. 'lvm-provisioner').
+
+        Returns:
+            int: the number of physical volumes whose volume group is 'lvg_name'.
+        """
+        pvs = self.get_system_host_pv_list(host_id).get_system_host_pv()
+        return sum(1 for pv in pvs if pv.get_lvm_vg_name() == lvg_name)
+
+    def get_used_pv_device_paths(self, host_id: str) -> set:
+        """
+        Get the device paths already backing a physical volume on the host.
+
+        Lets callers determine which disks are free (by excluding these paths) without the PV
+        keyword having to know about disks, keeping the modules decoupled.
+
+        Args:
+            host_id (str): name or id of the host (e.g. 'controller-0').
+
+        Returns:
+            set: the device paths of disks already used as a physical volume.
+        """
+        return {pv.get_disk_or_part_device_path() for pv in self.get_system_host_pv_list(host_id).get_system_host_pv()}
 
     def system_host_pv_delete(self, host_id: str, pv_uuid: str) -> None:
         """

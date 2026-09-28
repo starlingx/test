@@ -1,9 +1,9 @@
-from pytest import mark
+from pytest import FixtureRequest, mark
 
 from framework.logging.automation_logger import get_logger
 from framework.resources.resource_finder import get_stx_resource_path
 from framework.ssh.ssh_connection import SSHConnection
-from framework.validation.validation import validate_equals, validate_equals_with_retry
+from framework.validation.validation import validate_equals, validate_equals_with_retry, validate_str_contains
 from keywords.cloud_platform.fault_management.alarms.alarm_list_keywords import AlarmListKeywords
 from keywords.cloud_platform.health.health_keywords import HealthKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
@@ -188,8 +188,7 @@ def _apply_lvm_csi_cgts_vg():
     validate_equals(lvg.get_lvm_function(), "lvm-csi", f"'{LVM_VG}' function should be 'lvm-csi'.")
     validate_equals(lvg.get_lvm_type(), "thin", f"'{LVM_VG}' type should be 'thin'.")
     pool_size = lvg.get_lvm_pool_size()
-    pool_size_value = int(pool_size) if pool_size not in (None, "", "None") else 0
-    validate_equals(pool_size_value > 0, True, f"'{LVM_VG}' lvm_pool_size should be greater than 0, got '{pool_size}'.")
+    validate_equals(pool_size > 0, True, f"'{LVM_VG}' lvm_pool_size should be greater than 0, got '{pool_size}'.")
 
     get_logger().log_test_case_step(f"Verify the '{LVM_VG}' available size dropped to ~50% after provisioning the thin pool.")
 
@@ -515,8 +514,9 @@ def _apply_lvm_csi_dedicated_thin_vg():
     system_host_lvg_keywords.system_host_lvg_add(active_controller, DEDICATED_VG, lvm_function="lvm-csi", lvm_type="thin")
 
     get_logger().log_test_case_step(f"Find a free disk and add it as a physical volume to '{DEDICATED_VG}' on {active_controller}")
-    disks = system_host_disk_keywords.get_system_host_disk_list(active_controller).system_host_disks
-    system_host_pv_keywords.find_and_add_free_pv(active_controller, DEDICATED_VG, disks)
+    used_disk_paths = system_host_pv_keywords.get_used_pv_device_paths(active_controller)
+    free_disks = system_host_disk_keywords.get_system_host_disk_list(active_controller).get_free_disks(used_disk_paths)
+    system_host_pv_keywords.add_free_pv(active_controller, DEDICATED_VG, free_disks)
 
     get_logger().log_test_case_step(f"Wait for the '{LVM_CSI_APP}' application to be applied")
     application_show_keywords.validate_app_progress_contains(LVM_CSI_APP, "completed")
@@ -578,8 +578,9 @@ def _apply_lvm_csi_dedicated_thick_vg():
     system_host_lvg_keywords.system_host_lvg_add(active_controller, DEDICATED_VG, lvm_function="lvm-csi")
 
     get_logger().log_test_case_step(f"Find a free disk and add it as a physical volume to '{DEDICATED_VG}' on {active_controller}")
-    disks = system_host_disk_keywords.get_system_host_disk_list(active_controller).system_host_disks
-    system_host_pv_keywords.find_and_add_free_pv(active_controller, DEDICATED_VG, disks)
+    used_disk_paths = system_host_pv_keywords.get_used_pv_device_paths(active_controller)
+    free_disks = system_host_disk_keywords.get_system_host_disk_list(active_controller).get_free_disks(used_disk_paths)
+    system_host_pv_keywords.add_free_pv(active_controller, DEDICATED_VG, free_disks)
 
     get_logger().log_test_case_step(f"Wait for the '{LVM_CSI_APP}' application to be applied")
     application_show_keywords.validate_app_progress_contains(LVM_CSI_APP, "completed")
@@ -593,13 +594,13 @@ def _apply_lvm_csi_dedicated_thick_vg():
     validate_equals(lvg.get_lvm_type(), "thick", f"'{DEDICATED_VG}' type should be 'thick'.")
 
 
-def _verify_dedicated_thick_lv_provisioned(ssh_connection: SSHConnection):
+def _verify_dedicated_vg_lv_provisioned(ssh_connection: SSHConnection):
     """
-    Verify that a logical volume was provisioned on the dedicated thick VG.
+    Verify that a logical volume was provisioned on the dedicated VG.
 
-    With thick provisioning there is no thin pool: space is only consumed once a PVC/Pod is created,
-    which materializes a logical volume in the 'lvm-provisioner' VG. This polls 'host-lvg-show' until
-    the VG reports at least one current logical volume (lvm_cur_lv > 0).
+    Once a PVC/Pod is created, a logical volume is materialized in the 'lvm-provisioner' VG. This
+    polls 'host-lvg-show' until the VG reports at least one current logical volume (lvm_cur_lv > 0).
+    Works for both thin and thick dedicated VGs.
 
     Args:
         ssh_connection (SSHConnection): the active controller SSH connection.
@@ -618,7 +619,7 @@ def _verify_dedicated_thick_lv_provisioned(ssh_connection: SSHConnection):
     validate_equals_with_retry(has_current_lv_on_dedicated_vg, True, f"a logical volume to be provisioned on '{DEDICATED_VG}'", timeout=300, polling_sleep_time=10)
 
 
-def _teardown_lvm_csi_dedicated_thin_vg(ssh_connection: SSHConnection, alarms_before: list):
+def _teardown_lvm_csi_dedicated_vg(ssh_connection: SSHConnection, alarms_before: list):
     """
     Revert the dedicated-disk lvm-csi setup and verify no new alarms remain.
 
@@ -687,6 +688,72 @@ def _teardown_lvm_csi_dedicated_thin_vg(ssh_connection: SSHConnection, alarms_be
 
     get_logger().log_teardown_step("Verify no new alarms remain after the revert.")
     alarm_list_keywords.wait_for_all_alarms_cleared_excluding(excluded_alarms=alarms_before, stable_checks=3, tolerate_query_failure=True)
+
+
+def _run_lvm_csi_add_two_pvs_dedicated_vg(request: FixtureRequest, lvm_type: str):
+    """
+    Create an empty dedicated lvm-csi VG and add two spare disks as physical volumes.
+
+    Shared by the thin and thick 'add two dedicated disks' scenarios. Creates the dedicated
+    'lvm-provisioner' VG with the given lvm_type, adds a first spare disk (verifying one PV), then a
+    second spare disk (verifying two PVs and a larger total size), and waits for lvm-csi to apply.
+
+    Args:
+        request (FixtureRequest): the pytest request fixture, used to register the teardown finalizer.
+        lvm_type (str): the lvm-csi provisioning type for the dedicated VG ('thin' or 'thick').
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    system_storage_backend_keywords = SystemStorageBackendKeywords(ssh_connection)
+    system_host_lvg_keywords = SystemHostLvgKeywords(ssh_connection)
+    system_host_pv_keywords = SystemHostPvKeywords(ssh_connection)
+    system_host_disk_keywords = SystemHostDiskKeywords(ssh_connection)
+    application_show_keywords = SystemApplicationShowKeywords(ssh_connection)
+    active_controller = SystemHostListKeywords(ssh_connection).get_active_controller().get_host_name()
+
+    alarms_before = _setup_lvm()
+
+    def teardown():
+        _teardown_lvm_csi_dedicated_vg(ssh_connection, alarms_before)
+
+    request.addfinalizer(teardown)
+
+    get_logger().log_test_case_step("Add 'lvm' as storage backend")
+    system_storage_backend_keywords.system_storage_backend_add(backend="lvm", confirmed=True)
+    validate_equals(system_storage_backend_keywords.get_system_storage_backend_list().is_backend_configured("lvm"), True, "'lvm' backend should be configured.")
+
+    # A thick VG is created without the '-t' option; a thin VG passes '-t thin'.
+    lvg_type_option = "thin" if lvm_type == "thin" else None
+    get_logger().log_test_case_step(f"Create the empty '{DEDICATED_VG}' dedicated {lvm_type} volume group (no physical volume yet) on {active_controller}.")
+    system_host_lvg_keywords.system_host_lvg_add(active_controller, DEDICATED_VG, lvm_function="lvm-csi", lvm_type=lvg_type_option)
+
+    get_logger().log_test_case_step(f"Add a first spare disk as a physical volume to '{DEDICATED_VG}' on {active_controller}.")
+    used_disk_paths = system_host_pv_keywords.get_used_pv_device_paths(active_controller)
+    free_disks = system_host_disk_keywords.get_system_host_disk_list(active_controller).get_free_disks(used_disk_paths)
+    system_host_pv_keywords.add_free_pv(active_controller, DEDICATED_VG, free_disks)
+
+    get_logger().log_test_case_step(f"Verify '{DEDICATED_VG}' reports one physical volume.")
+    validate_equals_with_retry(lambda: system_host_pv_keywords.count_pvs_in_lvg(active_controller, DEDICATED_VG), 1, f"'{DEDICATED_VG}' should report one physical volume after the first disk", timeout=300, polling_sleep_time=10)
+
+    get_logger().log_test_case_step(f"Capture the '{DEDICATED_VG}' total size after the first physical volume.")
+    total_size_after_first = float(system_host_lvg_keywords.get_system_host_lvg_show(active_controller, DEDICATED_VG).get_system_host_lvg().get_total_size())
+
+    get_logger().log_test_case_step(f"Add a second spare disk as a physical volume to '{DEDICATED_VG}' on {active_controller}.")
+    used_disk_paths = system_host_pv_keywords.get_used_pv_device_paths(active_controller)
+    free_disks = system_host_disk_keywords.get_system_host_disk_list(active_controller).get_free_disks(used_disk_paths)
+    system_host_pv_keywords.add_free_pv(active_controller, DEDICATED_VG, free_disks)
+
+    get_logger().log_test_case_step(f"Verify '{DEDICATED_VG}' now reports two physical volumes.")
+    validate_equals_with_retry(lambda: system_host_pv_keywords.count_pvs_in_lvg(active_controller, DEDICATED_VG), 2, f"'{DEDICATED_VG}' should report two physical volumes after the second disk", timeout=300, polling_sleep_time=10)
+
+    get_logger().log_test_case_step(f"Verify the '{DEDICATED_VG}' total size increased after the second physical volume (was {total_size_after_first} GiB).")
+    system_host_lvg_keywords.wait_for_total_size_above(active_controller, DEDICATED_VG, total_size_after_first, timeout=300, polling_interval=10)
+
+    get_logger().log_test_case_step(f"Wait for the '{LVM_CSI_APP}' application to be applied.")
+    application_show_keywords.validate_app_progress_contains(LVM_CSI_APP, "completed")
+    application_show_keywords.validate_app_status(LVM_CSI_APP, "applied")
+
+    _create_and_verify_pvc_and_pod(ssh_connection, DEDICATED_WORKLOAD)
+    _verify_dedicated_vg_lv_provisioned(ssh_connection)
 
 
 @mark.p2
@@ -869,7 +936,7 @@ def test_lvm_csi_dedicated_thin_vg_sx(request):
 
     # Register the teardown only after setup passed (setup is validation-only, nothing to revert if it fails).
     def teardown():
-        _teardown_lvm_csi_dedicated_thin_vg(ssh_connection, alarms_before)
+        _teardown_lvm_csi_dedicated_vg(ssh_connection, alarms_before)
 
     request.addfinalizer(teardown)
 
@@ -918,7 +985,7 @@ def test_lvm_csi_dedicated_thin_vg_dx(request):
 
     # Register the teardown only after setup passed (setup is validation-only, nothing to revert if it fails).
     def teardown():
-        _teardown_lvm_csi_dedicated_thin_vg(ssh_connection, alarms_before)
+        _teardown_lvm_csi_dedicated_vg(ssh_connection, alarms_before)
 
     request.addfinalizer(teardown)
 
@@ -968,7 +1035,7 @@ def test_lvm_csi_dedicated_thin_vg_compute(request):
 
     # Register the teardown only after setup passed (setup is validation-only, nothing to revert if it fails).
     def teardown():
-        _teardown_lvm_csi_dedicated_thin_vg(ssh_connection, alarms_before)
+        _teardown_lvm_csi_dedicated_vg(ssh_connection, alarms_before)
 
     request.addfinalizer(teardown)
 
@@ -1016,13 +1083,13 @@ def test_lvm_csi_dedicated_thick_vg_sx(request):
 
     # Register the teardown only after setup passed (setup is validation-only, nothing to revert if it fails).
     def teardown():
-        _teardown_lvm_csi_dedicated_thin_vg(ssh_connection, alarms_before)
+        _teardown_lvm_csi_dedicated_vg(ssh_connection, alarms_before)
 
     request.addfinalizer(teardown)
 
     _apply_lvm_csi_dedicated_thick_vg()
     _create_and_verify_pvc_and_pod(ssh_connection, DEDICATED_WORKLOAD)
-    _verify_dedicated_thick_lv_provisioned(ssh_connection)
+    _verify_dedicated_vg_lv_provisioned(ssh_connection)
     _verify_no_new_alarms(ssh_connection, alarms_before)
 
 
@@ -1064,14 +1131,14 @@ def test_lvm_csi_dedicated_thick_vg_dx(request):
 
     # Register the teardown only after setup passed (setup is validation-only, nothing to revert if it fails).
     def teardown():
-        _teardown_lvm_csi_dedicated_thin_vg(ssh_connection, alarms_before)
+        _teardown_lvm_csi_dedicated_vg(ssh_connection, alarms_before)
 
     request.addfinalizer(teardown)
 
     _apply_lvm_csi_dedicated_thick_vg()
     _verify_topolvm_pods_running(ssh_connection)
     _create_and_verify_pvc_and_pod(ssh_connection, DEDICATED_WORKLOAD)
-    _verify_dedicated_thick_lv_provisioned(ssh_connection)
+    _verify_dedicated_vg_lv_provisioned(ssh_connection)
     _verify_no_new_alarms(ssh_connection, alarms_before)
 
 
@@ -1113,14 +1180,14 @@ def test_lvm_csi_dedicated_thick_vg_compute(request):
 
     # Register the teardown only after setup passed (setup is validation-only, nothing to revert if it fails).
     def teardown():
-        _teardown_lvm_csi_dedicated_thin_vg(ssh_connection, alarms_before)
+        _teardown_lvm_csi_dedicated_vg(ssh_connection, alarms_before)
 
     request.addfinalizer(teardown)
 
     _apply_lvm_csi_dedicated_thick_vg()
     _verify_topolvm_pods_running(ssh_connection)
     _create_and_verify_pvc_and_pod(ssh_connection, DEDICATED_WORKLOAD)
-    _verify_dedicated_thick_lv_provisioned(ssh_connection)
+    _verify_dedicated_vg_lv_provisioned(ssh_connection)
     _verify_no_new_alarms(ssh_connection, alarms_before)
 
 
@@ -1601,3 +1668,212 @@ def test_lvm_csi_abort_apply(request):
     get_logger().log_test_case_step(f"Verify the '{LVM_CSI_APP}' apply progress reports the operation was aborted by the user.")
     apply_progress = application_show_keywords.get_system_application_show(LVM_CSI_APP).get_system_application_object().get_progress()
     validate_equals(apply_progress, "operation aborted by user", f"'{LVM_CSI_APP}' apply should report it was aborted by the user.")
+
+
+@mark.p2
+@mark.lab_has_lvm_thin_cgts_vg
+def test_lvm_csi_resize_thin_pool_cgts_vg(request):
+    """
+    Validate growing the lvm-csi thin pool size on the cgts-vg.
+
+    This scenario requires lvm-csi thin on the shared cgts-vg (lab_has_lvm_thin_cgts_vg capability).
+    The thin pool size is set with 'system host-lvg-modify -s <size>'. A thin pool can only be
+    grown, never shrunk, so the test increases the pool by a small fixed amount and validates the
+    new size. The change is not reversible: the teardown cannot restore the original (smaller) pool
+    size, so the lab keeps the grown pool.
+
+    Setup:
+        - Validate that all hosts are healthy
+        - Validate the 'lvm-csi' application is already 'applied'
+        - Validate the 'lvmcsi-pool' thin pool exists on the active controller
+        - Capture a snapshot of the active alarms
+
+    Test Steps:
+        - Capture the current cgts-vg lvm_pool_size and the pool's actual size (lvs)
+        - Verify the cgts-vg has enough available space to grow the pool
+        - Grow the thin pool size by GROW_STEP GiB (system host-lvg-modify -s)
+        - Verify the cgts-vg lvm_pool_size reflects the new (larger) value
+        - Verify the 'lvmcsi-pool' actual size (lvs) grew accordingly
+
+    Teardown:
+        - Verify no new alarms remain (a thin pool cannot be shrunk, so the grown pool is left as is)
+    """
+    grow_step_gib = 1
+
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    system_host_lvg_keywords = SystemHostLvgKeywords(ssh_connection)
+    lvs_keywords = LvsKeywords(ssh_connection)
+    active_controller = SystemHostListKeywords(ssh_connection).get_active_controller().get_host_name()
+
+    alarms_before = _setup_lvm_csi_snapshot()
+
+    def teardown():
+        # A thin pool cannot be shrunk, so there is nothing to restore; just confirm no new alarms.
+        _verify_no_new_alarms(ssh_connection, alarms_before)
+
+    request.addfinalizer(teardown)
+
+    get_logger().log_test_case_step(f"Capture the current '{LVM_VG}' thin pool size on {active_controller}.")
+    lvg_before = system_host_lvg_keywords.get_system_host_lvg_show(active_controller, LVM_VG).get_system_host_lvg()
+    pool_size_before = int(lvg_before.get_lvm_pool_size())
+    avail_before = float(lvg_before.get_avail_size())
+    pool_lsize_before = lvs_keywords.get_lvs().get_logical_volume(LVM_CSI_POOL).get_lsize_gib()
+    new_pool_size = pool_size_before + grow_step_gib
+
+    get_logger().log_test_case_step(f"Verify '{LVM_VG}' has at least {grow_step_gib} GiB available to grow the pool (available {avail_before} GiB).")
+    validate_equals(avail_before >= grow_step_gib, True, f"'{LVM_VG}' should have at least {grow_step_gib} GiB available, got {avail_before} GiB.")
+
+    get_logger().log_test_case_step(f"Grow the '{LVM_VG}' thin pool size from {pool_size_before} to {new_pool_size} GiB on {active_controller}.")
+    system_host_lvg_keywords.system_host_lvg_modify(host_id=active_controller, lvg_name=LVM_VG, lvm_pool_size=new_pool_size)
+
+    get_logger().log_test_case_step(f"Verify the '{LVM_VG}' lvm_pool_size reflects the new value ({new_pool_size} GiB).")
+
+    def is_pool_size_updated() -> bool:
+        # sysinv updates the pool size asynchronously, so poll until it reports the new value.
+        current_pool_size = int(system_host_lvg_keywords.get_system_host_lvg_show(active_controller, LVM_VG).get_system_host_lvg().get_lvm_pool_size())
+        get_logger().log_info(f"'{LVM_VG}' lvm_pool_size is {current_pool_size} GiB (target {new_pool_size} GiB).")
+        return current_pool_size == new_pool_size
+
+    validate_equals_with_retry(is_pool_size_updated, True, f"'{LVM_VG}' lvm_pool_size to reach {new_pool_size} GiB", timeout=300, polling_sleep_time=10)
+
+    get_logger().log_test_case_step(f"Verify the '{LVM_CSI_POOL}' actual size grew by ~{grow_step_gib} GiB (lvs).")
+
+    def is_pool_lsize_grown() -> bool:
+        # The physical thin pool is grown asynchronously, so poll until lvs reports the larger size.
+        current_lsize = lvs_keywords.get_lvs().get_logical_volume(LVM_CSI_POOL).get_lsize_gib()
+        get_logger().log_info(f"'{LVM_CSI_POOL}' actual size is {current_lsize} GiB (was {pool_lsize_before} GiB).")
+        return current_lsize > pool_lsize_before
+
+    validate_equals_with_retry(is_pool_lsize_grown, True, f"'{LVM_CSI_POOL}' actual size to grow above {pool_lsize_before} GiB", timeout=300, polling_sleep_time=10)
+
+
+@mark.p3
+@mark.lab_has_lvm_thin_cgts_vg
+def test_lvm_csi_shrink_thin_pool_rejected_cgts_vg(request):
+    """
+    Validate that shrinking the lvm-csi thin pool size on the cgts-vg is rejected.
+
+    This scenario requires lvm-csi thin on the shared cgts-vg (lab_has_lvm_thin_cgts_vg capability).
+    A thin pool can only be grown, never shrunk. This negative test attempts to set a smaller pool
+    size with 'system host-lvg-modify -s <smaller>' and verifies the command is rejected with the
+    'It's not possible to reduce the size of a thin pool' message, and that the pool size is
+    unchanged. Nothing is modified, so no teardown restore is needed.
+
+    Setup:
+        - Validate that all hosts are healthy
+        - Validate the 'lvm-csi' application is already 'applied'
+        - Validate the 'lvmcsi-pool' thin pool exists on the active controller
+        - Capture a snapshot of the active alarms
+
+    Test Steps:
+        - Capture the current cgts-vg lvm_pool_size
+        - Attempt to shrink the thin pool to a smaller size (system host-lvg-modify -s)
+        - Verify the command is rejected with the 'not possible to reduce' message
+        - Verify the cgts-vg lvm_pool_size is unchanged
+
+    Teardown:
+        - Verify no new alarms remain (nothing was modified)
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    system_host_lvg_keywords = SystemHostLvgKeywords(ssh_connection)
+    active_controller = SystemHostListKeywords(ssh_connection).get_active_controller().get_host_name()
+
+    alarms_before = _setup_lvm_csi_snapshot()
+
+    def teardown():
+        # Nothing was modified (the shrink is rejected), so just confirm no new alarms.
+        _verify_no_new_alarms(ssh_connection, alarms_before)
+
+    request.addfinalizer(teardown)
+
+    get_logger().log_test_case_step(f"Capture the current '{LVM_VG}' thin pool size on {active_controller}.")
+    pool_size_before = int(system_host_lvg_keywords.get_system_host_lvg_show(active_controller, LVM_VG).get_system_host_lvg().get_lvm_pool_size())
+    smaller_pool_size = pool_size_before - 1
+
+    get_logger().log_test_case_step(f"Attempt to shrink the '{LVM_VG}' thin pool from {pool_size_before} to {smaller_pool_size} GiB on {active_controller}.")
+    output = system_host_lvg_keywords.system_host_lvg_modify_with_error(host_id=active_controller, lvg_name=LVM_VG, lvm_pool_size=smaller_pool_size)
+
+    get_logger().log_test_case_step("Verify the shrink attempt was rejected with the expected message.")
+    validate_str_contains(output, "not possible to reduce the size of a thin pool", "thin pool shrink should be rejected")
+
+    get_logger().log_test_case_step(f"Verify the '{LVM_VG}' lvm_pool_size is unchanged ({pool_size_before} GiB).")
+    pool_size_after = int(system_host_lvg_keywords.get_system_host_lvg_show(active_controller, LVM_VG).get_system_host_lvg().get_lvm_pool_size())
+    validate_equals(pool_size_after, pool_size_before, f"'{LVM_VG}' lvm_pool_size should be unchanged after the rejected shrink.")
+
+
+@mark.p2
+@mark.lab_has_min_2_free_disk
+def test_lvm_csi_add_two_pvs_dedicated_thin_vg(request):
+    """
+    Validate adding two physical volumes (two dedicated disks) to a dedicated lvm-csi thin volume group.
+
+    This scenario needs at least two free disks (lab_has_min_2_free_disk). The lab has no dedicated
+    disk provisioned, so the test creates an empty dedicated 'lvm-provisioner' thin volume group,
+    adds a first spare disk as a physical volume, then adds a second spare disk, and verifies the
+    volume group grew: it reports two physical volumes and its total size increased after the second.
+
+    Setup:
+        - Validate that all hosts are healthy
+        - Validate the 'lvm-csi' application is in the initial 'uploaded' state
+        - Validate the 'lvm' storage backend is not already configured
+        - Capture a snapshot of the active alarms
+
+    Test Steps:
+        - Add the 'lvm' storage backend
+        - Create the empty 'lvm-provisioner' dedicated thin volume group (no physical volume yet)
+        - Add a first spare disk as a physical volume and verify the VG reports one physical volume
+        - Add a second spare disk as a physical volume
+        - Verify the VG now reports two physical volumes
+        - Verify the VG total size increased after adding the second physical volume
+        - Wait for the 'lvm-csi' application to be applied
+        - Create an LVM PVC on the lvm-provisioner storage class and a Pod that writes to it
+        - Verify the Pod is Running and the PVC is Bound
+        - Verify a logical volume was provisioned on the dedicated VG (current LVs > 0)
+
+    Teardown:
+        - Delete the Pod, PVC and manifest files
+        - Delete the dedicated volume group (frees both disks)
+        - Delete the 'lvm' storage backend
+        - Remove the 'lvm-csi' application (back to 'uploaded')
+        - Verify no new alarms remain after the revert
+    """
+    _run_lvm_csi_add_two_pvs_dedicated_vg(request, lvm_type="thin")
+
+
+@mark.p2
+@mark.lab_has_min_2_free_disk
+def test_lvm_csi_add_two_pvs_dedicated_thick_vg(request):
+    """
+    Validate adding two physical volumes (two dedicated disks) to a dedicated lvm-csi thick volume group.
+
+    This scenario needs at least two free disks (lab_has_min_2_free_disk). The lab has no dedicated
+    disk provisioned, so the test creates an empty dedicated 'lvm-provisioner' thick volume group,
+    adds a first spare disk as a physical volume, then adds a second spare disk, and verifies the
+    volume group grew: it reports two physical volumes and its total size increased after the second.
+
+    Setup:
+        - Validate that all hosts are healthy
+        - Validate the 'lvm-csi' application is in the initial 'uploaded' state
+        - Validate the 'lvm' storage backend is not already configured
+        - Capture a snapshot of the active alarms
+
+    Test Steps:
+        - Add the 'lvm' storage backend
+        - Create the empty 'lvm-provisioner' dedicated thick volume group (no physical volume yet)
+        - Add a first spare disk as a physical volume and verify the VG reports one physical volume
+        - Add a second spare disk as a physical volume
+        - Verify the VG now reports two physical volumes
+        - Verify the VG total size increased after adding the second physical volume
+        - Wait for the 'lvm-csi' application to be applied
+        - Create an LVM PVC on the lvm-provisioner storage class and a Pod that writes to it
+        - Verify the Pod is Running and the PVC is Bound
+        - Verify a logical volume was provisioned on the dedicated VG (current LVs > 0)
+
+    Teardown:
+        - Delete the Pod, PVC and manifest files
+        - Delete the dedicated volume group (frees both disks)
+        - Delete the 'lvm' storage backend
+        - Remove the 'lvm-csi' application (back to 'uploaded')
+        - Verify no new alarms remain after the revert
+    """
+    _run_lvm_csi_add_two_pvs_dedicated_vg(request, lvm_type="thick")

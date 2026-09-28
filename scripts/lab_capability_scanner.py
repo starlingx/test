@@ -783,9 +783,13 @@ def scan_hosts(lab_config: LabConfig, ssh_connection: SSHConnection) -> list[Nod
             lab_config.add_lab_capability("lab_has_min_space_30G")
 
         used_disk_uuids = set(host_storage_output.get_host_all_osd_idisk_uuid()) | set(host_pv_output.get_all_pv_disk_uuids())
-        if host_disk_output.has_free_disk(used_disk_uuids):
+        free_disk_count = host_disk_output.count_free_disks(used_disk_uuids)
+        if free_disk_count >= 1:
             node.append_node_capability("lab_has_free_disk")
             lab_config.add_lab_capability("lab_has_free_disk")
+        if free_disk_count >= 2:
+            node.append_node_capability("lab_has_min_2_free_disk")
+            lab_config.add_lab_capability("lab_has_min_2_free_disk")
 
         if host_cpu_output.has_minimum_number_processors(2):
             node.append_node_capability("lab_has_processor_min_2")

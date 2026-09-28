@@ -62,6 +62,28 @@ class SystemHostDiskOutput:
 
             self.system_host_disks.append(system_host_disk_object)
 
+    def get_system_host_disks(self) -> list[SystemHostDiskObject]:
+        """Get all parsed host disks.
+
+        Returns:
+            list[SystemHostDiskObject]: the list of host disk objects.
+        """
+        return self.system_host_disks
+
+    def get_free_disks(self, used_disk_device_paths: set) -> list[SystemHostDiskObject]:
+        """Get the disks whose device path is not already in use.
+
+        A disk is considered free when its device path is not already consumed (e.g. backing a
+        physical volume). Callers pass the set of device paths already in use to exclude.
+
+        Args:
+            used_disk_device_paths (set): the device paths of disks already in use.
+
+        Returns:
+            list[SystemHostDiskObject]: the disks whose device path is not in used_disk_device_paths.
+        """
+        return [disk for disk in self.system_host_disks if disk.get_device_path() not in used_disk_device_paths]
+
     def has_minimum_disk_space_in_gb(self, minimum_disk_space_in_gb: float) -> bool:
         """Check if any disk has at least the specified amount of free space.
 
@@ -102,4 +124,18 @@ class SystemHostDiskOutput:
         Returns:
             bool: True if at least one disk uuid is not in used_disk_uuids, False otherwise.
         """
-        return any(item.get_uuid() not in used_disk_uuids for item in self.system_host_disks)
+        return self.count_free_disks(used_disk_uuids) >= 1
+
+    def count_free_disks(self, used_disk_uuids: set) -> int:
+        """Count the disks that are not in the used set.
+
+        A disk is considered free when its uuid is not already consumed as a physical volume
+        (LVG) or as a Ceph OSD. Callers pass the set of used disk uuids to exclude.
+
+        Args:
+            used_disk_uuids (set): The uuids of disks already used as a PV or OSD.
+
+        Returns:
+            int: The number of disk uuids that are not in used_disk_uuids.
+        """
+        return sum(1 for item in self.system_host_disks if item.get_uuid() not in used_disk_uuids)
