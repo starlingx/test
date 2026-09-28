@@ -112,37 +112,43 @@ class LpmptoolKpiKeywords(BaseKeyword):
 
     @staticmethod
     def has_missing_blocks(output: List[str]) -> bool:
-        """Check whether lpmptool reported any block whose pattern was not found.
+        """Check whether lpmptool reported any REQUIRED block as not found.
 
-        lpmptool emits a warning line like:
-            "⚠️ Warn: block 'K8s STARTUP PHASE' stop pattern stop='...' not found in '...'"
-        for any (non-optional or still-pending) block it could not match. If any
-        such warning is present, not all blocks have been found yet.
+        lpmptool distinguishes required from optional blocks by severity:
+            - A REQUIRED block that is not found is reported as an Error:
+                "Error: block 'K8s STARTUP PHASE' stop pattern ... not found in ..."
+            - An OPTIONAL block that is not found is reported as a Warn:
+                "Warn: block 'test-service-no-pvc ready' stop pattern ... not found in ..."
+
+        Only a missing REQUIRED block (Error) means we should keep retrying.
+        Missing OPTIONAL blocks (Warn) are expected - e.g. the PVC test-service
+        blocks when the PVC pod is not installed - and are ignored.
 
         Args:
             output (List[str]): Raw output lines from lpmptool.
 
         Returns:
-            bool: True if at least one block is still missing.
+            bool: True if at least one required block is still missing (Error present).
         """
         for line in output:
             if not line:
                 continue
-            # Match on the warning marker and the "not found" phrasing so we don't
-            # trip on unrelated informational lines.
-            if ("⚠️" in line or "Warn:" in line) and "not found" in line:
+            # An Error line for a not-found block means a REQUIRED block is missing.
+            if "Error:" in line and "not found" in line:
                 return True
         return False
 
     def calculate_kpi_until_complete(self, start_time: str, model_path: str = REMOTE_MODEL_PATH, loops: int = 1, timeout: int = 300, poll_interval: int = 15) -> List[str]:
-        """Run lpmptool repeatedly until every block is found or the timeout expires.
+        """Run lpmptool repeatedly until every REQUIRED block is found or timeout.
 
         Rather than pre-waiting for a specific log line, this treats lpmptool as
-        the source of truth: it re-runs the tool while any block is reported as
-        "not found" (e.g. the final K8s STARTUP PHASE stop line that is written
-        only after pod recovery completes). Once lpmptool finds all blocks, the
-        output is returned. If the timeout is reached with blocks still missing,
-        a TimeoutError is raised so the test fails.
+        the source of truth: it re-runs the tool while any REQUIRED block is
+        reported as an Error/"not found" (e.g. the final K8s STARTUP PHASE stop
+        line that is written only after pod recovery completes). Warnings for
+        optional blocks are ignored, so a missing PVC test-service (when the PVC
+        pod is not installed) does not cause a failure. Once all required blocks
+        are found, the output is returned. If the timeout is reached with required
+        blocks still missing, a TimeoutError is raised so the test fails.
 
         Args:
             start_time (str): Start time in ISO format (e.g., "2026-05-20T10:00:20").
@@ -155,7 +161,7 @@ class LpmptoolKpiKeywords(BaseKeyword):
             List[str]: Raw output lines from the successful lpmptool run.
 
         Raises:
-            TimeoutError: If lpmptool still reports missing blocks after the timeout.
+            TimeoutError: If lpmptool still reports missing required blocks after the timeout.
         """
         end_time = time.time() + timeout
         attempt = 0
@@ -163,17 +169,17 @@ class LpmptoolKpiKeywords(BaseKeyword):
 
         while time.time() < end_time:
             attempt += 1
-            get_logger().log_info(f"lpmptool attempt {attempt} (retrying until all blocks are found, timeout={timeout}s)")
+            get_logger().log_info(f"lpmptool attempt {attempt} (retrying until all required blocks are found, timeout={timeout}s)")
             last_output = self.calculate_kpi(start_time, model_path, loops)
 
             if last_output and not self.has_missing_blocks(last_output):
-                get_logger().log_info(f"lpmptool found all blocks on attempt {attempt}")
+                get_logger().log_info(f"lpmptool found all required blocks on attempt {attempt}")
                 return last_output
 
-            get_logger().log_info(f"lpmptool still reports missing blocks, retrying in {poll_interval}s")
+            get_logger().log_info(f"lpmptool still reports missing required blocks, retrying in {poll_interval}s")
             time.sleep(poll_interval)
 
-        raise TimeoutError(f"lpmptool did not find all blocks within {timeout}s ({attempt} attempts)")
+        raise TimeoutError(f"lpmptool did not find all required blocks within {timeout}s ({attempt} attempts)")
 
     def parse_and_display_results(self, results: List[str]) -> None:
         """Log lpmptool results line by line for visibility in the test report.
@@ -214,6 +220,9 @@ class LpmptoolKpiKeywords(BaseKeyword):
         remote_model = self.upload_model(model_resource)
 
         if retry_until_complete:
+            # lpmptool reports missing REQUIRED blocks as Error and missing OPTIONAL
+            # blocks as Warn, so the retry loop keys off Error lines only - no need
+            # to inspect the model for optional labels.
             return self.calculate_kpi_until_complete(start_time, remote_model, loops, timeout=timeout, poll_interval=poll_interval)
 
         return self.calculate_kpi(start_time, remote_model, loops)

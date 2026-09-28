@@ -132,4 +132,3 @@ blocks:
     file: ["daemon.log*"]
     start: 'Started .*Kubernetes Kubelet Server'
     stop: ['info k8s-pod-recovery.service: .*successfully', 'info k8s-pod-recovery.service: Succeeded.']
-    optional: true
