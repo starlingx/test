@@ -1,4 +1,4 @@
-from pytest import mark, FixtureRequest
+from pytest import FixtureRequest, mark
 
 from keywords.cloud_platform.system.application.system_application_apply_keywords import SystemApplicationApplyKeywords
 from testcases.cloud_platform.regression.power_metrics.helper_power_metrics import HelperPowerMetrics
@@ -651,17 +651,17 @@ def test_change_helm_values_disable_and_enable_telegraf(request: FixtureRequest)
 
 def test_change_helm_values_disable_and_enable_cadvisor(request: FixtureRequest) -> None:
     """
-    Power Metrics - Change Helm values - Disable and Enable cAdvisor perf events
+    Power Metrics - Change Helm values - Disable and Enable cAdvisor
 
     Test Steps:
         1. Check if power-metrics is installed and pods are running
-        2. Verify cAdvisor perf metrics are being collected
-        3. Disable perf_events via cadvisor_disabled.yaml override
+        2. Verify cAdvisor metrics are being collected
+        3. Disable cAdvisor via cadvisor_disabled.yaml override
         4. Reapply power-metrics application and wait
-        5. Verify that no cAdvisor perf metrics are shown
-        6. Enable perf_events via cadvisor_enabled.yaml override
+        5. Verify that no cAdvisor metrics are shown
+        6. Enable cAdvisor via cadvisor_enabled.yaml override
         7. Reapply power-metrics application and wait
-        8. Verify that cAdvisor perf metrics are shown once again
+        8. Verify that cAdvisor metrics are shown once again
     """
     helper = HelperPowerMetrics()
     helper.setup_method()
@@ -672,31 +672,27 @@ def test_change_helm_values_disable_and_enable_cadvisor(request: FixtureRequest)
     helper.logger.log_test_case_step("Check if power-metrics is installed and pods are running")
     helper.wait_for_cadvisor_running()
 
-    helper.logger.log_test_case_step("Verify cAdvisor perf metrics are being collected")
-    helper.assert_metrics_present_on_all_nodes(["container_perf_events_total"], "should be present before disabling perf_events", cadvisor_endpoint, grep_pattern="container_perf_events_total", max_lines=50)
-    helper.assert_metrics_present_on_all_nodes(["container_perf_events_scaling_ratio"], "should be present before disabling perf_events", cadvisor_endpoint, grep_pattern="container_perf_events_scaling_ratio", max_lines=50)
+    helper.logger.log_test_case_step("Verify cAdvisor metrics are being collected")
+    helper.assert_metrics_present_on_all_nodes(["container_memory_rss"], "should be present before disabling cAdvisor", cadvisor_endpoint, grep_pattern="container_memory_rss", max_lines=50)
 
-    helper.logger.log_test_case_step("Disable perf_events via cadvisor_disabled.yaml override")
+    helper.logger.log_test_case_step("Disable cAdvisor via cadvisor_disabled.yaml override")
     helper.upload_and_apply_helm_override("cadvisor_disabled.yaml", chart_name="cadvisor")
 
     helper.logger.log_test_case_step("Reapply power-metrics application and wait")
     SystemApplicationApplyKeywords(helper.ssh_connection).system_application_apply(helper.app_name)
-    helper.wait_for_cadvisor_running()
 
-    helper.logger.log_test_case_step("Verify that no cAdvisor perf metrics are shown")
-    helper.assert_metrics_absent_on_all_nodes(["container_perf_events_total"], "should NOT be present after disabling perf_events", cadvisor_endpoint, grep_pattern="container_perf_events_total", max_lines=50)
-    helper.assert_metrics_absent_on_all_nodes(["container_perf_events_scaling_ratio"], "should NOT be present after disabling perf_events", cadvisor_endpoint, grep_pattern="container_perf_events_scaling_ratio", max_lines=50)
+    helper.logger.log_test_case_step("Verify that no cAdvisor metrics are shown")
+    helper.assert_metrics_absent_on_all_nodes(["container_memory_rss"], "should NOT be present after disabling cAdvisor", cadvisor_endpoint, grep_pattern="container_memory_rss", max_lines=50)
 
-    helper.logger.log_test_case_step("Enable perf_events via cadvisor_enabled.yaml override")
+    helper.logger.log_test_case_step("Enable cAdvisor via cadvisor_enabled.yaml override")
     helper.upload_and_apply_helm_override("cadvisor_enabled.yaml", chart_name="cadvisor")
 
     helper.logger.log_test_case_step("Reapply power-metrics application and wait")
     SystemApplicationApplyKeywords(helper.ssh_connection).system_application_apply(helper.app_name)
     helper.wait_for_cadvisor_running()
 
-    helper.logger.log_test_case_step("Verify that cAdvisor perf metrics are shown once again")
-    helper.assert_metrics_present_on_all_nodes(["container_perf_events_total"], "should be present again after re-enabling perf_events", cadvisor_endpoint, grep_pattern="container_perf_events_total", max_lines=50)
-    helper.assert_metrics_present_on_all_nodes(["container_perf_events_scaling_ratio"], "should be present again after re-enabling perf_events", cadvisor_endpoint, grep_pattern="container_perf_events_scaling_ratio", max_lines=50)
+    helper.logger.log_test_case_step("Verify that cAdvisor metrics are shown once again")
+    helper.assert_metrics_present_on_all_nodes(["container_memory_rss"], "should be present again after re-enabling cAdvisor", cadvisor_endpoint, grep_pattern="container_memory_rss", max_lines=50)
 
 
 # ============================================================================

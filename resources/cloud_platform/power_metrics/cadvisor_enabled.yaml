@@ -1,2 +1,3 @@
-#system helm-override-update power-metrics cadvisor power-metrics --set perf_events=true
-perf_events: true
+#system helm-override-update power-metrics cadvisor power-metrics --values cadvisor_enabled.yaml
+nodeSelector:
+    power-metrics: "enabled"
