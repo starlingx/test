@@ -32,9 +32,9 @@ class KubectlGetPvcKeywords(K8sBaseKeyword):
         """Get PVCs via 'kubectl get pvc -o wide'.
 
         Args:
-            pvc_name (str or list, optional): One PVC name or list of PVC names
+            pvc_name (Optional[Union[str, List[str]]]): One PVC name or list of PVC names
                 to query. If None, returns all PVCs.
-            namespace (str, optional): Namespace to query. If None,
+            namespace (Optional[str]): Namespace to query. If None,
                 returns PVCs from all namespaces.
 
         Returns:
@@ -98,9 +98,9 @@ class KubectlGetPvcKeywords(K8sBaseKeyword):
 
         Args:
             expected_status (str): Status string to wait for (e.g., 'Bound').
-            pvc_names (str or list, optional): One PVC name or list of PVC names.
+            pvc_names (Optional[Union[str, List[str]]]): One PVC name or list of PVC names.
                 If None, monitors all PVCs in the namespace.
-            namespace (str, optional): Namespace to query. If None,
+            namespace (Optional[str]): Namespace to query. If None,
                 searches all namespaces.
             poll_interval (int): Seconds between status checks. Defaults to 10.
             timeout (int): Maximum seconds to wait. Defaults to 180.
