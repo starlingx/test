@@ -53,3 +53,15 @@ class DexLoginPageLocators:
             WebLocator: Generic submit button locator.
         """
         return WebLocator("button[type='submit'], input[type='submit']", By.CSS_SELECTOR)
+
+    def get_locator_grant_access_button(self) -> WebLocator:
+        """Locator for the DEX "Grant Access" approval/consent button.
+
+        DEX shows an approval page after a successful login when the client has
+        not been pre-approved, requiring the user to grant access before being
+        redirected back to the application.
+
+        Returns:
+            WebLocator: Grant Access button locator (submit button on the approval form).
+        """
+        return WebLocator("button[type='submit'], input[type='submit']", By.CSS_SELECTOR)

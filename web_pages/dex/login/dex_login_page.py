@@ -84,11 +84,15 @@ class DexLoginPage(BasePage):
     def submit_native_login(self, username: str, password: str) -> None:
         """Fill and submit the DEX-native login form (Local LDAP / WAD connectors).
 
+        Waits for the DEX username field to appear first, since the Horizon WebSSO
+        redirect chain (Horizon -> Keystone -> DEX) can take a few seconds to land
+        on the DEX login form before the fields are present.
+
         Args:
             username (str): Login username.
             password (str): Login password.
         """
-        time.sleep(3)
+        self._wait_for_login_form()
         self.driver.set_text(self.locators.get_locator_username_input(), username)
         self.driver.set_text(self.locators.get_locator_password_input(), password)
         submit_locator = self.locators.get_locator_sign_in_button()
@@ -97,3 +101,36 @@ class DexLoginPage(BasePage):
         else:
             self.driver.click(self.locators.get_locator_generic_submit_button())
         get_logger().log_info(f"DEX-native login submitted - current URL: {self.driver.get_current_url()}")
+
+    def _wait_for_login_form(self, timeout: int = 60, poll_interval: int = 2) -> None:
+        """Wait until the DEX-native username field is present before filling the form.
+
+        Args:
+            timeout (int): Maximum seconds to wait for the login field. Defaults to 60.
+            poll_interval (int): Seconds between checks. Defaults to 2.
+        """
+        deadline = time.time() + timeout
+        username_input = self.locators.get_locator_username_input()
+        while time.time() < deadline:
+            if self.driver.is_exists(username_input):
+                get_logger().log_info(f"DEX login form ready - current URL: {self.driver.get_current_url()}")
+                return
+            time.sleep(poll_interval)
+        get_logger().log_info(f"DEX login form not detected within {timeout}s - current URL: {self.driver.get_current_url()}")
+
+    def grant_access_if_present(self) -> None:
+        """Click "Grant Access" on the DEX approval page, if that page is shown.
+
+        After a successful login DEX may present an approval/consent page (when
+        the client is not pre-approved) that the user must accept before being
+        redirected back to the application. If no approval page is shown this is
+        a no-op.
+        """
+        time.sleep(3)
+        if "approval" not in self.driver.get_current_url().lower():
+            get_logger().log_info("No DEX approval page shown; proceeding")
+            return
+        get_logger().log_info("DEX approval page detected; granting access")
+        self.driver.click(self.locators.get_locator_grant_access_button())
+        time.sleep(3)
+        get_logger().log_info(f"DEX approval granted - current URL: {self.driver.get_current_url()}")

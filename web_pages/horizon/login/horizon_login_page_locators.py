@@ -1,7 +1,8 @@
 """Horizon Login Page locators."""
 
-from framework.web.web_locator import WebLocator
 from selenium.webdriver.common.by import By
+
+from framework.web.web_locator import WebLocator
 
 
 class HorizonLoginPageLocators:
@@ -84,3 +85,30 @@ class HorizonLoginPageLocators:
             WebLocator: XPath locator for the element containing the display name.
         """
         return WebLocator(f"//*[contains(text(), '{name}')]", By.XPATH)
+
+    def get_locator_auth_method_select(self) -> WebLocator:
+        """Locator for the Horizon authentication-method dropdown (Keystone / OpenID Connect).
+
+        Horizon presents this select when WebSSO is enabled, letting the user
+        choose the authentication method before signing in.
+
+        Returns:
+            WebLocator: CSS selector for the auth-method select element.
+        """
+        return WebLocator("#id_auth_type, select[name='auth_type']", By.CSS_SELECTOR)
+
+    def get_locator_oidc_auth_option(self) -> WebLocator:
+        """Locator for the "OpenID Connect" option in the auth-method dropdown.
+
+        Returns:
+            WebLocator: XPath for the OpenID Connect option.
+        """
+        return WebLocator("//option[contains(translate(text(),'OPENID CNCT','openid cnct'),'openid connect')]", By.XPATH)
+
+    def get_locator_keystone_auth_option(self) -> WebLocator:
+        """Locator for the "Keystone Credentials" option in the auth-method dropdown.
+
+        Returns:
+            WebLocator: XPath for the Keystone Credentials option.
+        """
+        return WebLocator("//option[contains(translate(text(),'KEYSTONE','keystone'),'keystone')]", By.XPATH)
