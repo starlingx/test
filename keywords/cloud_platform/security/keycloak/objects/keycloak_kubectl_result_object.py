@@ -49,6 +49,27 @@ class KubectlResultObject:
         """
         return self.output is not None and "Error from server (Forbidden)" in self.output
 
+    def is_stx_forbidden(self) -> bool:
+        """Check if STX platform CLI output contains a 403/Forbidden (RBAC-denied) error.
+
+        StarlingX platform CLIs ('system', 'software', 'fm', 'sw-manager') return a
+        different denial message than kubectl, so this checks the STX-specific
+        forbidden/not-authorized patterns rather than the kubectl one.
+
+        Returns:
+            bool: True if output indicates the command was denied by RBAC.
+        """
+        if self.output is None:
+            return False
+        stx_forbidden_patterns = [
+            "Authorization failed",
+            "Forbidden",
+            "The requested action is not authorized",
+            "Status: 403",
+            "Not allowed",
+        ]
+        return any(pattern in self.output for pattern in stx_forbidden_patterns)
+
     def is_kubectl_auth_denied(self) -> bool:
         """Check if kubectl auth can-i returned 'no'.
 
