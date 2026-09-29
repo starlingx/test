@@ -214,15 +214,12 @@ class KubectlNodeDescriptionOutput:
             if "intel.com/dummy:" in line:
                 value = line[len("intel.com/dummy:") :].strip()
                 kubernetes_node_capacity_object.set_intel_dummy(int(value))
-            if "intel.com/pci_sriov_net_group0_data0:" in line:
-                value = line[len("intel.com/pci_sriov_net_group0_data0:") :].strip()
-                kubernetes_node_capacity_object.set_intel_pci_sriov_net_group0_data0(int(value))
-            if "intel.com/pci_sriov_net_group0_data1:" in line:
-                value = line[len("intel.com/pci_sriov_net_group0_data1:") :].strip()
-                kubernetes_node_capacity_object.set_intel_pci_sriov_net_group0_data1(int(value))
-            if "intel.com/pci_sriov_net_sriov_test_datanetwork:" in line:
-                value = line[len("intel.com/pci_sriov_net_sriov_test_datanetwork:") :].strip()
-                kubernetes_node_capacity_object.set_intel_pci_sriov_net_sriov_test_datanetwork(int(value))
+            if "intel.com/pci_sriov_net_" in line and ":" in line:
+                # Maps resource name to datanetwork name, e.g. pci_sriov_net_group1_data2 -> group1-data2
+                resource, value = line.split(":", 1)
+                suffix = resource.strip()[len("intel.com/pci_sriov_net_") :]
+                datanetwork = suffix.replace("_", "-")
+                kubernetes_node_capacity_object.set_sriov_datanetwork_allocatable(datanetwork, int(value.strip()))
 
         return kubernetes_node_capacity_object
 
