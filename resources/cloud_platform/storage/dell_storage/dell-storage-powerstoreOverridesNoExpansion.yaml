@@ -1,0 +1,14 @@
+storageClasses:
+  - name: csi-powerstore-iscsi
+    arrayID: "{{ array_id }}"
+    fstype: ext4
+    allowVolumeExpansion: False
+
+secret:
+  arrays:
+    - globalID: "{{ array_id }}"
+      username: "{{ username }}"
+      password: "{{ password }}"
+      endpoint: "{{ endpoint }}"
+      isDefault: true
+      blockProtocol: "ISCSI"
