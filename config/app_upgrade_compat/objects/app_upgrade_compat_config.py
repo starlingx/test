@@ -3,11 +3,11 @@ import json5
 
 class AppUpgradeCompatConfig:
     """
-    This class holds the release data for application platform-upgrade compatibility tests.
+    This class holds the configuration for the application platform-upgrade compatibility tests.
 
-    It carries data only: the release being upgraded to, and the application version to expect on a
-    given release. What a test does with that data - which steps it runs, what it asserts, which
-    phases it checks - lives in the test case, not here.
+    It carries data only: the release being upgraded to, and the name and namespace of the
+    application to act on. What a test does with that data - which steps it runs, what it asserts,
+    which phases it checks - lives in the test case, not here.
     """
 
     def __init__(self, config_path: str):
@@ -35,16 +35,6 @@ class AppUpgradeCompatConfig:
 
         """
         return self.to_version
-
-    def get_app_names(self) -> list[str]:
-        """
-        Get the keys of the applications the configuration carries data for.
-
-        Returns:
-            list[str]: the configured application keys.
-
-        """
-        return list(self.applications.keys())
 
     def get_app_name(self, app_key: str) -> str:
         """
@@ -77,33 +67,6 @@ class AppUpgradeCompatConfig:
 
         """
         return self._get_app(app_key)["namespace"]
-
-    def get_app_version(self, app_key: str, release: str) -> str:
-        """
-        Get the application version to expect on a given platform release.
-
-        The value is a release prefix rather than a full version, because it is matched by
-        containment: build suffixes move between respins, so pinning one fails a baseline check on
-        a freshly reinstalled lab.
-
-        Args:
-            app_key(str): the configured application key.
-            release(str): the short platform release, for example "26.03".
-
-        Returns:
-            str: the version prefix to expect, for example "26.03-".
-
-        Raises:
-            ValueError: when the application is not configured, or has no version for the release.
-
-        """
-        versions = self._get_app(app_key).get("versions", {})
-        if release not in versions:
-            raise ValueError(
-                f"Application {app_key!r} has no configured version for release {release!r}; "
-                f"configured releases: {sorted(versions)}"
-            )
-        return versions[release]
 
     def _get_app(self, app_key: str) -> dict:
         """
