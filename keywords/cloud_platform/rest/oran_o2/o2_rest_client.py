@@ -211,6 +211,22 @@ class O2RestClient(BaseKeyword):
         """
         return self._send("POST", url, auth_config_path=self.auth_config_path, data=data)
 
+    def patch(self, url: str, data: str) -> O2RestResponse:
+        """Run an authenticated PATCH on the controller.
+
+        Args:
+            url (str): The URL to PATCH.
+            data (str): The request body, sent as application/json. Required, with
+                no default, unlike post: _send attaches the Content-Type header and
+                the -d argument only when data is truthy, so an empty body would
+                send neither and the server would reject the request for a reason
+                unrelated to the behaviour under test.
+
+        Returns:
+            O2RestResponse: Response exposing the HTTP status code and JSON body.
+        """
+        return self._send("PATCH", url, auth_config_path=self.auth_config_path, data=data)
+
     def get_no_auth(self, url: str) -> O2RestResponse:
         """Run a GET on the controller with no Authorization header, still presenting the client cert.
 

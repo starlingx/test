@@ -6,14 +6,25 @@ directory, and that the curl output splitter recovers the status code and body
 from every shape of output curl can produce. This is lab-free: the certificate
 check runs before any SSH connection is used, so a None connection is
 acceptable here, and the splitter is a pure static method.
+
+Also verifies how a PATCH request is constructed, driven through the client's real
+send path with a mocked connection rather than through an extracted command builder,
+so the assertions cannot pass while the production path stops using them. The
+credential assertions are the point of that: the token is supplied to the
+constructor and proven absent from the command handed to the SSH layer, which logs
+every command verbatim.
 """
 
 import json
 import os
 import tempfile
+from unittest.mock import NonCallableMagicMock, patch
 
 import pytest
 
+from config.configuration_file_locations_manager import ConfigurationFileLocationsManager
+from config.configuration_manager import ConfigurationManager
+from framework.ssh.ssh_connection import SSHConnection
 from keywords.cloud_platform.rest.oran_o2.o2_rest_client import _STATUS_MARKER, O2RestClient
 
 
@@ -137,3 +148,115 @@ def test_split_uses_last_marker_when_body_contains_the_marker():
 
     assert status_code == 200
     assert body == payload
+
+
+# Supplied to the client so the tests can prove it never reaches the command string.
+# Not a real credential.
+_TEST_TOKEN = "a-token-value"
+
+# A controller-local URL, so no lab address appears in this file.
+_ALARM_URL = "https://localhost:30205/o2ims-infrastructureMonitoring/v1/alarms/abc"
+
+# A body shaped like the one the alarm clear path sends.
+_ALARM_BODY = '{"perceivedSeverity": "5"}'
+
+
+def _build_client_with_mock_connection(cert_dir: str, send_output: str) -> O2RestClient:
+    """Build a client whose connection is mocked, so requests are observable.
+
+    Three things have to be arranged for the real send path to run without a
+    controller. The certificate material must exist locally, because it is resolved
+    before anything is staged. Certificate staging and Authorization-config staging
+    must be patched out, because both drive file uploads over SFTP; patching the
+    latter is what allows a token to be supplied, which is what lets a test prove the
+    token never reaches the command line. The connection must be a non-callable mock,
+    because the keyword base class wraps callable attributes in its logging hook, and
+    its return code must be pinned to zero, because any other value is read as a
+    transport failure.
+
+    Args:
+        cert_dir (str): Directory to create the certificate material in.
+        send_output (str): Output the mocked connection returns for the request.
+
+    Returns:
+        O2RestClient: Client whose ssh_connection is the mock, ready to send.
+    """
+    _write_empty_file(cert_dir, O2RestClient.CLIENT_CERT_FILE)
+    _write_empty_file(cert_dir, O2RestClient.CLIENT_KEY_FILE)
+    _write_empty_file(cert_dir, O2RestClient.CA_CERT_FILE)
+
+    mock_ssh = NonCallableMagicMock(spec=SSHConnection)
+    mock_ssh.send.return_value = send_output
+    mock_ssh.get_return_code.return_value = 0
+
+    # Both the constructor and the send path log, so the logger must be configured.
+    ConfigurationManager.load_configs(ConfigurationFileLocationsManager())
+
+    staged_certs = (os.path.join(cert_dir, O2RestClient.CLIENT_CERT_FILE), os.path.join(cert_dir, O2RestClient.CLIENT_KEY_FILE))
+    with patch.object(O2RestClient, "_stage_certs_on_controller", return_value=staged_certs), patch("keywords.cloud_platform.rest.oran_o2.o2_rest_client.stage_auth_config", return_value=os.path.join(cert_dir, "auth.cfg")):
+        return O2RestClient(cert_dir, ssh_connection=mock_ssh, token=_TEST_TOKEN)
+
+
+def test_patch_carries_the_method_content_type_and_body():
+    """A PATCH names the method and sends the body as JSON."""
+    with tempfile.TemporaryDirectory() as temp_dir:
+        client = _build_client_with_mock_connection(temp_dir, f"{{}}\n{_STATUS_MARKER}404")
+
+        client.patch(_ALARM_URL, data=_ALARM_BODY)
+
+        command = client.ssh_connection.send.call_args[0][0]
+        assert "-X PATCH" in command
+        assert "Content-Type: application/json" in command
+        assert _ALARM_BODY in command
+        assert _ALARM_URL in command
+
+
+def test_patch_keeps_the_token_and_the_authorization_header_off_the_command_line():
+    """A PATCH authenticates by config-file reference, never by an inline header.
+
+    The SSH layer logs every command verbatim, so a token on the command line would
+    be written to the log. The token is supplied to the constructor here, so its
+    absence from the command is evidence rather than an accident of configuration.
+    """
+    with tempfile.TemporaryDirectory() as temp_dir:
+        client = _build_client_with_mock_connection(temp_dir, f"{{}}\n{_STATUS_MARKER}404")
+
+        client.patch(_ALARM_URL, data=_ALARM_BODY)
+
+        command = client.ssh_connection.send.call_args[0][0]
+        assert "Authorization" not in command
+        assert _TEST_TOKEN not in command
+        assert "-K " in command
+
+
+def test_patch_inherits_the_no_fail_transport_contract():
+    """A PATCH returning 404 yields a response carrying that status, not an error.
+
+    curl runs without --fail, so an HTTP error status exits zero and arrives as data
+    the caller can assert on. This is what lets the negative tests compare a status
+    instead of catching an exception.
+    """
+    with tempfile.TemporaryDirectory() as temp_dir:
+        body = '{"detail": "404 Not Found: Alarm Event Record abc doesn\'t exist"}'
+        client = _build_client_with_mock_connection(temp_dir, f"{body}\n{_STATUS_MARKER}404")
+
+        response = client.patch(_ALARM_URL, data=_ALARM_BODY)
+
+        command = client.ssh_connection.send.call_args[0][0]
+        assert "--fail" not in command
+        assert response.get_status_code() == 404
+        assert "doesn't exist" in response.get_body()
+
+
+def test_patch_requires_a_request_body():
+    """Omitting the body is a signature error, not a request with no content type.
+
+    The send path attaches the content type and the body argument only when a body is
+    present, so a defaulted empty body would send neither and the server would reject
+    the request for a reason unrelated to the behaviour under test.
+    """
+    with tempfile.TemporaryDirectory() as temp_dir:
+        client = _build_client_with_mock_connection(temp_dir, f"{{}}\n{_STATUS_MARKER}404")
+
+        with pytest.raises(TypeError):
+            client.patch(_ALARM_URL)
