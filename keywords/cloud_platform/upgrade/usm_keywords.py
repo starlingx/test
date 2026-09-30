@@ -241,7 +241,7 @@ class USMKeywords(BaseKeyword):
         Returns:
             str: software deploy abort output.
         """
-        timeout = self.usm_config.get_deploy_delete_timeout_sec()
+        timeout = self.usm_config.get_deploy_activate_timeout_sec()
         base_cmd = "software deploy abort"
         cmd = source_openrc(base_cmd)
         if sudo:
@@ -250,7 +250,8 @@ class USMKeywords(BaseKeyword):
             output = self.ssh_connection.send(cmd, command_timeout=timeout, reconnect_timeout=timeout, get_pty=True)
         if validate_success:
             self.validate_success_return_code(self.ssh_connection)
-        return "".join(output)
+        output = [line.strip() for line in output if line.strip()]
+        return output[-1] if output else ""
 
     def software_deploy_activate_rollback(self, sudo: bool = False) -> str:
         """
