@@ -256,20 +256,43 @@ def test_service_parameter_apply_effectiveness(request):
 
 @mark.p1
 def test_horizon_session_timeout_configure(request):
-    """Verify Horizon session timeout can be configured via service-parameter.
+    """Verify Horizon SESSION_TIMEOUT is configured AND enforced at runtime.
+
+    Configuring SESSION_TIMEOUT is not sufficient: the value must actually
+    supersede the longer token lifetime, and background AJAX polling must not
+    keep resetting it (otherwise an idle session with an open browser tab is
+    never terminated). This test establishes a real authenticated Horizon
+    session and verifies, in one flow: the config is updated, the session's
+    stored expiry is capped at SESSION_TIMEOUT (not the token lifetime), an
+    AJAX request does NOT extend the session, the expiry remains capped even
+    after AJAX traffic (idle-timeout enforced despite polling), and normal
+    (non-AJAX) navigation DOES refresh it (active users stay logged in). The
+    WebSSO/OIDC login path is confirmed enabled so the same shared-middleware
+    idle-timeout behavior applies to OIDC-authenticated sessions. Expiry is
+    read deterministically (not by polling, which would refresh the session
+    and mask an idle-timeout regression).
 
     Test Steps:
-        - Modify horizon session_timeout=300 via service-parameter
-        - Apply horizon service parameters
+        - Modify the Horizon session timeout to a short value via service-parameter
+        - Apply the identity security_compliance service parameters
         - Verify SESSION_TIMEOUT is updated in Horizon local_settings
+        - Establish an authenticated Horizon session
+        - Verify the session is initially authenticated
+        - Verify the session expiry is capped at SESSION_TIMEOUT (runtime enforcement)
+        - Verify an AJAX request does NOT extend the session
+        - Verify the session expiry remains capped after AJAX traffic (idle timeout enforced)
+        - Verify a non-AJAX request DOES extend the session
+        - Verify WebSSO/OIDC login is enabled (same idle timeout applies to OIDC sessions)
         - Restore original value
     """
+    session_timeout_seconds = 300
+    default_timeout_seconds = 3000
 
     def cleanup():
         get_logger().log_teardown_step("Restoring Horizon session timeout")
         ssh = LabConnectionKeywords().get_active_controller_ssh()
         lockout_kw = SessionLockoutKeywords(ssh)
-        lockout_kw.modify_horizon_session_timeout("3600")
+        lockout_kw.modify_horizon_session_timeout(str(default_timeout_seconds))
         lockout_kw.apply_horizon_service_parameters()
 
     request.addfinalizer(cleanup)
@@ -277,13 +300,40 @@ def test_horizon_session_timeout_configure(request):
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     lockout_keywords = SessionLockoutKeywords(ssh_connection)
 
-    get_logger().log_test_case_step("Modify Horizon session timeout to 300s")
-    lockout_keywords.modify_horizon_session_timeout("300")
+    get_logger().log_test_case_step(f"Modify Horizon session timeout to {session_timeout_seconds}s")
+    lockout_keywords.modify_horizon_session_timeout(str(session_timeout_seconds))
     lockout_keywords.apply_horizon_service_parameters()
 
-    get_logger().log_test_case_step("Verify Horizon SESSION_TIMEOUT updated")
+    get_logger().log_test_case_step("Verify Horizon SESSION_TIMEOUT updated in config")
     timeout = lockout_keywords.get_horizon_session_timeout()
-    validate_equals(timeout, 300, "Horizon SESSION_TIMEOUT should be 300 after modification")
+    validate_equals(timeout, session_timeout_seconds, f"Horizon SESSION_TIMEOUT should be {session_timeout_seconds} in config")
+
+    get_logger().log_test_case_step("Establish an authenticated Horizon session once the timeout is effective")
+    cookie_jar = lockout_keywords.establish_horizon_session_with_effective_timeout(session_timeout_seconds)
+
+    get_logger().log_test_case_step("Verify Horizon session is authenticated")
+    authenticated = lockout_keywords.is_horizon_session_authenticated(cookie_jar)
+    validate_equals(authenticated, True, "Horizon session should be authenticated immediately after login")
+
+    get_logger().log_test_case_step(f"Verify session expiry is capped at SESSION_TIMEOUT ({session_timeout_seconds}s)")
+    expiry_capped = lockout_keywords.is_horizon_session_expiry_capped(cookie_jar, session_timeout_seconds)
+    validate_equals(expiry_capped, True, f"Session expiry should be capped at SESSION_TIMEOUT ({session_timeout_seconds}s), not the token lifetime")
+
+    get_logger().log_test_case_step("Verify an AJAX request does NOT extend the session")
+    ajax_extended = lockout_keywords.ajax_request_extends_session(cookie_jar)
+    validate_equals(ajax_extended, False, "AJAX request must not extend (reset) the idle session timeout")
+
+    get_logger().log_test_case_step("Verify session expiry remains capped after AJAX traffic (idle timeout enforced)")
+    expiry_still_capped = lockout_keywords.is_horizon_session_expiry_capped(cookie_jar, session_timeout_seconds)
+    validate_equals(expiry_still_capped, True, "Session expiry must remain capped after AJAX polling, so an idle session terminates at SESSION_TIMEOUT")
+
+    get_logger().log_test_case_step("Verify a non-AJAX request DOES extend the session")
+    non_ajax_extended = lockout_keywords.non_ajax_request_extends_session(cookie_jar)
+    validate_equals(non_ajax_extended, True, "Non-AJAX user activity should extend (refresh) the session timeout")
+
+    get_logger().log_test_case_step("Verify WebSSO/OIDC login is enabled (same idle timeout applies to OIDC sessions)")
+    oidc_enabled = lockout_keywords.is_websso_oidc_enabled()
+    validate_equals(oidc_enabled, True, "WebSSO/OIDC login should be enabled so the shared idle-timeout applies to OIDC sessions")
 
 
 @mark.p1

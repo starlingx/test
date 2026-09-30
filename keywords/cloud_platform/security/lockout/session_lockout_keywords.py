@@ -8,13 +8,16 @@ session timeout configuration on StarlingX systems.
 import time
 from typing import Union
 
+from config.configuration_manager import ConfigurationManager
 from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
+from framework.validation.validation import validate_equals_with_retry
 from keywords.base_keyword import BaseKeyword
 from keywords.cloud_platform.command_wrappers import source_openrc
 from keywords.cloud_platform.fault_management.alarms.alarm_list_keywords import AlarmListKeywords
 from keywords.cloud_platform.system.service.objects.system_service_parameter_list_output import SystemServiceParameterListOutput
 from keywords.cloud_platform.system.service.system_service_parameter_keywords import SystemServiceParameterKeywords
+from keywords.files.file_keywords import FileKeywords
 
 CONFIG_OUT_OF_DATE_ALARM_ID = "250.001"
 
@@ -26,6 +29,11 @@ class SessionLockoutKeywords(BaseKeyword):
     keystone.conf, PAM faillock, SSH TMOUT, and Horizon session settings.
     """
 
+    # Horizon file-backed session store: files are named
+    # <SESSION_COOKIE_NAME><session_key> under SESSION_FILE_PATH.
+    _HORIZON_SESSION_COOKIE_NAME = "platformsessionid"
+    _HORIZON_SESSION_FILE_PATH = "/var/tmp"
+
     def __init__(self, ssh_connection: SSHConnection):
         """Initialize session lockout keywords.
 
@@ -35,6 +43,7 @@ class SessionLockoutKeywords(BaseKeyword):
         self.ssh_connection = ssh_connection
         self.service_params = SystemServiceParameterKeywords(ssh_connection)
         self.alarm_keywords = AlarmListKeywords(ssh_connection)
+        self.file_keywords = FileKeywords(ssh_connection)
 
     def get_keystone_lockout_retries(self) -> int:
         """Read lockout_retries from identity service parameters.
@@ -160,9 +169,7 @@ class SessionLockoutKeywords(BaseKeyword):
         failed_count = 0
         for i in range(attempts):
             get_logger().log_info(f"SSH login attempt {i + 1}/{attempts} for '{username}@{host}'")
-            output = self.ssh_connection.send(
-                f"sshpass -p '{password}' ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 {username}@{host} 'exit' 2>&1"
-            )
+            output = self.ssh_connection.send(f"sshpass -p '{password}' ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 {username}@{host} 'exit' 2>&1")
             raw = "\n".join(output) if isinstance(output, list) else str(output)
             if "Permission denied" in raw or "Authentication failed" in raw or "Connection refused" in raw:
                 failed_count += 1
@@ -245,31 +252,29 @@ class SessionLockoutKeywords(BaseKeyword):
             self.service_params.add_service_parameter("identity", "security_compliance", "inactive_session_term_timeout_seconds", timeout_seconds)
 
     def modify_horizon_session_timeout(self, timeout_seconds: str) -> None:
-        """Modify Horizon session timeout via service-parameter CLI.
+        """Modify the Horizon idle session timeout via service-parameter CLI.
 
-        Uses try/except pattern: attempts modify first, falls back to add
-        if the parameter does not yet exist.
+        Horizon's SESSION_TIMEOUT is driven by the identity security_compliance
+        inactive_session_term_timeout_seconds service parameter (puppet maps it
+        into the dashboard local_settings). There is no dedicated 'horizon'
+        service parameter, so this sets the identity parameter that supersedes
+        the token expiry with a shorter idle session timeout.
 
         Args:
             timeout_seconds (str): SESSION_TIMEOUT value in seconds.
         """
-        get_logger().log_info(f"Modifying Horizon session timeout: {timeout_seconds}s")
-        output = self.service_params.list_service_parameters(service="horizon", section="auth")
-        param_exists = False
-        for param in output.get_parameters():
-            if param.get_name() == "session_timeout":
-                param_exists = True
-                break
-        if param_exists:
-            self.service_params.modify_service_parameter("horizon", "auth", "session_timeout", timeout_seconds)
-        else:
-            self.service_params.add_service_parameter("horizon", "auth", "session_timeout", timeout_seconds)
+        get_logger().log_info(f"Modifying Horizon session timeout (inactive_session_term_timeout_seconds): {timeout_seconds}s")
+        self.service_params.modify_service_parameter("identity", "security_compliance", "inactive_session_term_timeout_seconds", timeout_seconds)
 
     def apply_horizon_service_parameters(self) -> None:
-        """Apply horizon service parameters and wait for config to propagate."""
-        get_logger().log_info("Applying horizon service parameters")
-        self.service_params.apply_service_parameters("horizon")
-        self._wait_for_config_applied()
+        """Apply the identity security_compliance parameters that drive Horizon.
+
+        The Horizon SESSION_TIMEOUT is applied through the identity
+        security_compliance section (there is no 'horizon' service), so this
+        applies that section and waits for config to propagate.
+        """
+        get_logger().log_info("Applying identity security_compliance service parameters for Horizon session timeout")
+        self.apply_security_compliance_parameters()
 
     def get_horizon_session_timeout(self) -> int:
         """Read SESSION_TIMEOUT from Horizon local_settings.
@@ -284,6 +289,386 @@ class SessionLockoutKeywords(BaseKeyword):
         """
         lines = self._grep_config_with_sudo("/etc/openstack-dashboard/local_settings.d/_30_stx_local_settings.py", "SESSION_TIMEOUT")
         return self._extract_ini_value(lines, "SESSION_TIMEOUT")
+
+    def is_websso_oidc_enabled(self) -> bool:
+        """Check whether Horizon WebSSO/OIDC federated login is enabled.
+
+        The session idle-timeout fix lives in the shared Horizon middleware and
+        governs any authenticated session regardless of the authentication
+        method. This confirms the OIDC/WebSSO login path is active on the system
+        (WEBSSO_ENABLED = True and an 'oidc' auth choice is offered), so the same
+        idle-timeout behavior applies to OIDC/WebSSO Horizon sessions.
+
+        Returns:
+            bool: True if WebSSO is enabled and an OIDC choice is configured.
+        """
+        config_file = "/etc/openstack-dashboard/local_settings.d/_30_stx_local_settings.py"
+        websso_lines = self._grep_config_with_sudo(config_file, "WEBSSO_ENABLED")
+        websso_raw = "\n".join(websso_lines) if isinstance(websso_lines, list) else str(websso_lines)
+        websso_enabled = "true" in websso_raw.lower()
+
+        oidc_lines = self._grep_config_with_sudo(config_file, "oidc")
+        oidc_raw = "\n".join(oidc_lines) if isinstance(oidc_lines, list) else str(oidc_lines)
+        oidc_choice = "oidc" in oidc_raw.lower()
+
+        get_logger().log_info(f"WebSSO enabled={websso_enabled}, OIDC choice present={oidc_choice}")
+        return websso_enabled and oidc_choice
+
+    def is_horizon_login_page_ready(self) -> bool:
+        """Check whether the Horizon login page is served and contains a CSRF token.
+
+        Fetches the login page and confirms it returns HTTP 200 with a
+        csrfmiddlewaretoken field. Used to detect when Horizon is fully up
+        (e.g. after a service-parameter apply that restarts the dashboard),
+        so a login is not attempted while the backend returns 5xx.
+
+        Returns:
+            bool: True if the login page is ready with a CSRF token present.
+        """
+        lab_config = ConfigurationManager.get_lab_config()
+        horizon_url = lab_config.get_horizon_url().rstrip("/")
+        login_url = f"{horizon_url}/auth/login/"
+
+        output = self.ssh_connection.send(f"curl -sk -o /dev/null -w '%{{http_code}}' '{login_url}'")
+        raw = "\n".join(output) if isinstance(output, list) else str(output)
+        status_code = raw.strip().split("\n")[-1].strip()
+        if status_code != "200":
+            get_logger().log_info(f"Horizon login page not ready (HTTP {status_code})")
+            return False
+
+        probe_page = "/tmp/horizon_login_probe.html"
+        self.ssh_connection.send(f"curl -sk '{login_url}' -o {probe_page}")
+        csrf_token = self._extract_horizon_csrf_token(probe_page)
+        ready = len(csrf_token) > 0
+        get_logger().log_info(f"Horizon login page ready={ready} (HTTP 200, csrf_present={ready})")
+        return ready
+
+    def wait_for_horizon_ready(self, timeout: int = 180) -> None:
+        """Wait until the Horizon login page is ready to accept a login.
+
+        Polls the login page until it returns HTTP 200 with a CSRF token,
+        allowing time for the dashboard to come back up after a
+        service-parameter apply restarts it.
+
+        Args:
+            timeout (int): Maximum seconds to wait for Horizon to be ready.
+        """
+        get_logger().log_info("Waiting for Horizon login page to be ready")
+        validate_equals_with_retry(
+            function_to_execute=self.is_horizon_login_page_ready,
+            expected_value=True,
+            validation_description="Horizon login page ready (HTTP 200 with CSRF token)",
+            timeout=timeout,
+            polling_sleep_time=10,
+        )
+
+    def establish_horizon_session_with_effective_timeout(self, session_timeout: int, margin: int = 30, timeout: int = 300) -> str:
+        """Establish a Horizon session once the running dashboard honors the timeout.
+
+        After a service-parameter apply, the config file is updated before the
+        running Horizon reloads, and the dashboard briefly returns 5xx while it
+        restarts. This logs in repeatedly until a freshly created session's
+        stored expiry reflects the configured SESSION_TIMEOUT (capped at
+        session_timeout + margin), so the caller gets a session that the running
+        dashboard actually governs with the new idle timeout.
+
+        Args:
+            session_timeout (int): Expected SESSION_TIMEOUT in seconds.
+            margin (int): Allowed slack above session_timeout in seconds.
+            timeout (int): Maximum seconds to wait for the effective timeout.
+
+        Returns:
+            str: Path to the cookie jar holding the effective authenticated session.
+        """
+        get_logger().log_info(f"Establishing Horizon session until effective timeout is <= {session_timeout + margin}s")
+
+        def _login_and_check_expiry() -> bool:
+            cookie_jar = self.establish_horizon_session()
+            if not self.is_horizon_session_authenticated(cookie_jar):
+                return False
+            return self.is_horizon_session_expiry_capped(cookie_jar, session_timeout, margin)
+
+        validate_equals_with_retry(
+            function_to_execute=_login_and_check_expiry,
+            expected_value=True,
+            validation_description="Horizon running dashboard honors the configured SESSION_TIMEOUT",
+            timeout=timeout,
+            polling_sleep_time=15,
+        )
+        return "/tmp/horizon_session_cookies.txt"
+
+    def establish_horizon_session(self, username: str = "", password: str = "") -> str:
+        """Establish an authenticated Horizon session and return the cookie jar path.
+
+        Waits for Horizon to be ready, then performs a full Horizon keystone
+        login over HTTP from the active controller using curl: fetches the
+        login page to obtain the CSRF token and session cookie, then POSTs
+        credentials. The resulting authenticated cookies are stored in a cookie
+        jar file on the controller so that subsequent requests reuse the same
+        session.
+
+        Args:
+            username (str): Horizon username. Defaults to the lab Horizon user.
+            password (str): Horizon password. Defaults to the lab Horizon password.
+
+        Returns:
+            str: Path to the cookie jar file holding the authenticated session.
+        """
+        lab_config = ConfigurationManager.get_lab_config()
+        horizon_url = lab_config.get_horizon_url().rstrip("/")
+        credentials = lab_config.get_horizon_credentials()
+        user = username if username else credentials.get_user_name()
+        secret = password if password else credentials.get_password()
+
+        cookie_jar = "/tmp/horizon_session_cookies.txt"
+        login_page = "/tmp/horizon_login_page.html"
+        login_url = f"{horizon_url}/auth/login/"
+
+        self.wait_for_horizon_ready()
+        get_logger().log_info(f"Establishing Horizon session for user '{user}' at {login_url}")
+
+        # GET the login page to obtain the CSRF token and initial session cookie.
+        self.ssh_connection.send(f"curl -sk -c {cookie_jar} -b {cookie_jar} '{login_url}' -o {login_page}")
+        csrf_token = self._extract_horizon_csrf_token(login_page)
+        region = self._extract_horizon_login_region(login_page)
+
+        # POST credentials with the CSRF token and region to authenticate.
+        self.ssh_connection.send(f"curl -sk -c {cookie_jar} -b {cookie_jar} " f"-e '{login_url}' " f"-d 'csrfmiddlewaretoken={csrf_token}' " f"--data-urlencode 'username={user}' " f"--data-urlencode 'password={secret}' " f"--data-urlencode 'region={region}' " f"'{login_url}' -o /dev/null")
+        return cookie_jar
+
+    def is_horizon_session_authenticated(self, cookie_jar: str) -> bool:
+        """Check whether a Horizon session cookie jar is still authenticated.
+
+        Requests the Horizon dashboard root with the stored cookies and follows
+        redirects. An authenticated session lands on a dashboard page (its
+        effective URL is NOT the login page); a terminated session is
+        redirected back to ``/auth/login/``. Inspecting the final effective URL
+        is more reliable than a fixed status code, because the landing page and
+        RBAC differ by user (an admin may receive 403/302 on ``/project/`` while
+        still authenticated).
+
+        Args:
+            cookie_jar (str): Path to the cookie jar file on the controller.
+
+        Returns:
+            bool: True if the session is still authenticated, False if terminated.
+        """
+        lab_config = ConfigurationManager.get_lab_config()
+        horizon_url = lab_config.get_horizon_url().rstrip("/")
+        dashboard_url = f"{horizon_url}/"
+
+        output = self.ssh_connection.send(f"curl -sk -L -o /dev/null -b {cookie_jar} -w '%{{http_code}} %{{url_effective}}' '{dashboard_url}'")
+        raw = "\n".join(output) if isinstance(output, list) else str(output)
+        result = raw.strip().split("\n")[-1].strip()
+        get_logger().log_info(f"Horizon dashboard request result: {result}")
+        status_code = result.split(" ", 1)[0].strip()
+        redirected_to_login = "/auth/login" in result
+        # Authenticated only when the dashboard returns HTTP 200 and did not
+        # redirect to the login page. A 5xx (e.g. Horizon restarting) is NOT
+        # authenticated and must not be treated as a valid session.
+        return status_code == "200" and not redirected_to_login
+
+    def is_horizon_session_expiry_capped(self, cookie_jar: str, session_timeout: int, margin: int = 30) -> bool:
+        """Check that a Horizon session expiry is capped at SESSION_TIMEOUT.
+
+        Reads the session's stored expiry age and confirms it does not exceed
+        the configured SESSION_TIMEOUT (within a small margin). Before the fix,
+        the session expiry followed the longer token lifetime and SESSION_TIMEOUT
+        was ignored; after the fix, the shorter SESSION_TIMEOUT supersedes it.
+        This is checked deterministically from the stored session, avoiding
+        polling requests that would themselves refresh the session expiry.
+
+        Args:
+            cookie_jar (str): Path to the authenticated session cookie jar.
+            session_timeout (int): Configured SESSION_TIMEOUT in seconds.
+            margin (int): Allowed slack above session_timeout in seconds.
+
+        Returns:
+            bool: True if the stored expiry age is at or below
+                session_timeout + margin, False otherwise.
+        """
+        expiry_age = self.get_horizon_session_expiry_age(cookie_jar)
+        capped = 0 < expiry_age <= session_timeout + margin
+        get_logger().log_info(f"Horizon session expiry_age={expiry_age}s, SESSION_TIMEOUT={session_timeout}s, capped={capped}")
+        return capped
+
+    def ajax_request_extends_session(self, cookie_jar: str, settle_seconds: int = 5) -> bool:
+        """Check whether an AJAX request extends an authenticated Horizon session.
+
+        Sends a single request carrying the ``X-Requested-With: XMLHttpRequest``
+        header (as browser background polling does) and compares the Horizon
+        session store file modification time before and after. When the session
+        idle timeout fix is present, AJAX requests must NOT refresh the session
+        expiry, so the session file modification time is unchanged.
+
+        Args:
+            cookie_jar (str): Path to the authenticated session cookie jar.
+            settle_seconds (int): Seconds to wait between baseline and the AJAX
+                request so a genuine expiry refresh would produce a different
+                modification time.
+
+        Returns:
+            bool: True if the AJAX request extended the session (modification
+                time changed), False if it did not extend the session.
+        """
+        lab_config = ConfigurationManager.get_lab_config()
+        horizon_url = lab_config.get_horizon_url().rstrip("/")
+        ajax_url = f"{horizon_url}/admin/"
+
+        get_logger().log_info("Checking that an AJAX request does not extend the Horizon session")
+        mtime_before = self._get_horizon_session_file_mtime(cookie_jar)
+
+        time.sleep(settle_seconds)
+        self.ssh_connection.send(f"curl -sk -o /dev/null -b {cookie_jar} -H 'X-Requested-With: XMLHttpRequest' '{ajax_url}'")
+
+        mtime_after = self._get_horizon_session_file_mtime(cookie_jar)
+        extended = mtime_before != mtime_after
+        get_logger().log_info(f"AJAX session file mtime before={mtime_before} after={mtime_after} extended={extended}")
+        return extended
+
+    def non_ajax_request_extends_session(self, cookie_jar: str, settle_seconds: int = 5) -> bool:
+        """Check whether a normal (non-AJAX) request extends the Horizon session.
+
+        Sends a single request without the ``X-Requested-With`` header (genuine
+        user navigation) and compares the Horizon session store file
+        modification time before and after. Real user activity is expected to
+        refresh the session expiry, so the modification time should change.
+        This is the positive counterpart to ``ajax_request_extends_session``.
+
+        Args:
+            cookie_jar (str): Path to the authenticated session cookie jar.
+            settle_seconds (int): Seconds to wait between baseline and the
+                request so a genuine expiry refresh produces a different
+                modification time.
+
+        Returns:
+            bool: True if the request extended the session (modification time
+                changed), False otherwise.
+        """
+        lab_config = ConfigurationManager.get_lab_config()
+        horizon_url = lab_config.get_horizon_url().rstrip("/")
+        page_url = f"{horizon_url}/admin/"
+
+        get_logger().log_info("Checking that a non-AJAX request extends the Horizon session")
+        mtime_before = self._get_horizon_session_file_mtime(cookie_jar)
+
+        time.sleep(settle_seconds)
+        self.ssh_connection.send(f"curl -sk -o /dev/null -b {cookie_jar} '{page_url}'")
+
+        mtime_after = self._get_horizon_session_file_mtime(cookie_jar)
+        extended = mtime_before != mtime_after
+        get_logger().log_info(f"Non-AJAX session file mtime before={mtime_before} after={mtime_after} extended={extended}")
+        return extended
+
+    def _get_horizon_session_file_mtime(self, cookie_jar: str) -> int:
+        """Get the modification time of the Django session file for a session.
+
+        Horizon uses a file-backed session store whose files are named
+        ``<SESSION_COOKIE_NAME><session_key>`` under the configured
+        ``SESSION_FILE_PATH``. The session key is read from the cookie jar and
+        the file modification time is read with sudo (the files are owned by
+        the web server user). The modification time acts as a proxy for the
+        last time the session expiry was refreshed.
+
+        Args:
+            cookie_jar (str): Path to the authenticated session cookie jar.
+
+        Returns:
+            int: Session file modification time as a Unix timestamp, or 0 if
+                the session key or file could not be resolved.
+        """
+        session_key = self._get_horizon_session_key(cookie_jar)
+        if not session_key:
+            return 0
+
+        session_file = f"{self._HORIZON_SESSION_FILE_PATH}/{self._HORIZON_SESSION_COOKIE_NAME}{session_key}"
+        mtime_output = self.ssh_connection.send_as_sudo(f"stat -c %Y {session_file} 2>/dev/null || echo 0")
+        raw_mtime = "\n".join(mtime_output) if isinstance(mtime_output, list) else str(mtime_output)
+        for token in reversed(raw_mtime.strip().split("\n")):
+            candidate = token.strip()
+            if candidate.isdigit():
+                return int(candidate)
+        return 0
+
+    def _get_horizon_session_key(self, cookie_jar: str) -> str:
+        """Read the Horizon session key from a cookie jar file.
+
+        Args:
+            cookie_jar (str): Path to the cookie jar file on the controller.
+
+        Returns:
+            str: The session key value, or empty string if not present.
+        """
+        output = self.ssh_connection.send(f"awk '/{self._HORIZON_SESSION_COOKIE_NAME}/ {{print $NF}}' {cookie_jar} | tail -1")
+        raw = "\n".join(output) if isinstance(output, list) else str(output)
+        return raw.strip().split("\n")[-1].strip()
+
+    def get_horizon_session_expiry_age(self, cookie_jar: str) -> int:
+        """Read the stored expiry age (seconds) of a Horizon session.
+
+        Loads the file-backed Django session for the authenticated cookie jar
+        and returns ``SessionStore.get_expiry_age()``. This is the effective
+        idle lifetime the server assigned to the session. When SESSION_TIMEOUT
+        is shorter than the token lifetime, the fix caps this value at
+        SESSION_TIMEOUT; the pre-fix behavior left it at the token lifetime.
+        Reading the stored value is deterministic and does not require polling
+        with requests that would themselves refresh the session.
+
+        Args:
+            cookie_jar (str): Path to the authenticated session cookie jar.
+
+        Returns:
+            int: The session expiry age in seconds, or 0 if it could not be read.
+        """
+        session_key = self._get_horizon_session_key(cookie_jar)
+        if not session_key:
+            return 0
+
+        python_snippet = "import os,django;" "os.environ.setdefault('DJANGO_SETTINGS_MODULE','openstack_dashboard.settings');" "django.setup();" "from django.contrib.sessions.backends.file import SessionStore;" "import sys;" "s=SessionStore(session_key=sys.argv[1]);" "s.load();" "print(s.get_expiry_age())"
+        command = f'DJANGO_SETTINGS_MODULE=openstack_dashboard.settings python3 -c "{python_snippet}" {session_key} 2>/dev/null'
+        output = self.ssh_connection.send_as_sudo(command)
+        raw = "\n".join(output) if isinstance(output, list) else str(output)
+        for token in reversed(raw.strip().split("\n")):
+            candidate = token.strip()
+            if candidate.isdigit():
+                return int(candidate)
+        return 0
+
+    def _extract_horizon_csrf_token(self, login_page: str) -> str:
+        """Extract the CSRF token from the Horizon login page HTML.
+
+        The login form embeds a hidden input
+        ``<input ... name="csrfmiddlewaretoken" value="...">`` that must be
+        echoed back on the authentication POST. Reading the value from the
+        cookie is not reliable, so it is parsed from the rendered login page.
+
+        Args:
+            login_page (str): Path to the saved login page HTML on the controller.
+
+        Returns:
+            str: The csrfmiddlewaretoken value, or empty string if not found.
+        """
+        output = self.ssh_connection.send(f'grep -oE \'name="csrfmiddlewaretoken"[^>]*value="[^"]+"\' {login_page} | grep -oE \'value="[^"]+"\' | head -1 | sed \'s/value="//;s/"//\'')
+        raw = "\n".join(output) if isinstance(output, list) else str(output)
+        return raw.strip().split("\n")[-1].strip()
+
+    def _extract_horizon_login_region(self, login_page: str) -> str:
+        """Extract the region value from the Horizon login page HTML.
+
+        The login form includes a hidden ``region`` input whose value must be
+        submitted with the credentials. Defaults to ``default`` when the field
+        is absent.
+
+        Args:
+            login_page (str): Path to the saved login page HTML on the controller.
+
+        Returns:
+            str: The region value, or 'default' if not found.
+        """
+        output = self.ssh_connection.send(f'grep -oE \'name="region"[^>]*value="[^"]+"\' {login_page} | grep -oE \'value="[^"]+"\' | head -1 | sed \'s/value="//;s/"//\'')
+        raw = "\n".join(output) if isinstance(output, list) else str(output)
+        region = raw.strip().split("\n")[-1].strip()
+        return region if region else "default"
 
     def apply_platform_service_parameters(self) -> None:
         """Apply platform service parameters and wait for config to propagate."""
@@ -371,9 +756,7 @@ class SessionLockoutKeywords(BaseKeyword):
         get_logger().log_info(f"Polling for lockout expiry (max {lockout_seconds + margin}s)")
         deadline = time.time() + lockout_seconds + margin
         while time.time() < deadline:
-            output = self.ssh_connection.send(source_openrc(
-                f"openstack token issue --os-username {username} --os-password 'placeholder' --os-project-name admin --os-identity-api-version 3 2>&1"
-            ))
+            output = self.ssh_connection.send(source_openrc(f"openstack token issue --os-username {username} --os-password 'placeholder' --os-project-name admin --os-identity-api-version 3 2>&1"))
             raw = "\n".join(output) if isinstance(output, list) else str(output)
             if "locked" not in raw.lower() and "maximum" not in raw.lower():
                 get_logger().log_info("Account no longer locked — lockout expired")
