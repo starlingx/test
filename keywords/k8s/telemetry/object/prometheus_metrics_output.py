@@ -1,5 +1,6 @@
 """Output parser for Prometheus-format metrics."""
 
+import re
 from typing import Dict, List, Optional
 
 
@@ -79,6 +80,28 @@ class PrometheusMetricsOutput:
                 count += 1
         return count
 
+    def get_label_values_for_prefix(self, metric_prefix: str, label_name: str) -> List[str]:
+        """Get the distinct values of a label across all metrics matching a prefix.
+
+        Scans every data line whose metric name starts with metric_prefix and
+        collects the distinct values of the given label.
+
+        Args:
+            metric_prefix (str): Metric name prefix to match.
+            label_name (str): Label key whose values to collect.
+
+        Returns:
+            List[str]: Sorted list of distinct label values.
+        """
+        values = set()
+        for line in self._lines:
+            if not self._is_data_line(line) or not line.startswith(metric_prefix):
+                continue
+            label_value = self._extract_label_value(line, label_name)
+            if label_value is not None:
+                values.add(label_value)
+        return sorted(values)
+
     def get_metric_value_with_label(
         self, metric_name: str, label_name: str, label_value: str
     ) -> Optional[float]:
@@ -132,6 +155,19 @@ class PrometheusMetricsOutput:
             bool: True if the line contains metric data.
         """
         return bool(line) and not line.startswith("#")
+
+    def _extract_label_value(self, line: str, label_name: str) -> Optional[str]:
+        """Extract the value of a label from a single metric line.
+
+        Args:
+            line (str): A Prometheus metric line (e.g. 'metric{name="x",id="0"} 42').
+            label_name (str): The label key to read.
+
+        Returns:
+            Optional[str]: The label value, or None if the label is absent from the line.
+        """
+        match = re.search(rf'(?:\{{|,)\s*{re.escape(label_name)}="([^"]*)"',line)
+        return match.group(1) if match else None
 
     def _parse_value(self, line: str) -> Optional[float]:
         """Parse the numeric value from a metric line.
