@@ -11,5 +11,4 @@ secret:
       password: "{{ password }}"
       endpoint: "{{ endpoint }}"
       isDefault: true
-      nasName: "{{ nas_name }}"
       blockProtocol: "None"

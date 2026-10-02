@@ -2,7 +2,8 @@ storageClasses:
   - name: csi-powerstore-iscsi
     arrayID: "{{ array_id }}"
     fstype: ext4
-    allowVolumeExpansion: False
+    allowVolumeExpansion: false
+    nasName: "{{ nas_name }}"
 
 secret:
   arrays:

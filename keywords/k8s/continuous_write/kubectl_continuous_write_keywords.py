@@ -211,7 +211,10 @@ class KubectlContinuousWriteKeywords(K8sBaseKeyword):
             pod_name (str): the continuous-write pod name.
             pvc_name (str): the continuous-write PVC name.
         """
-        storage_type = pod_name.split("-")[0]
+        # Derive the storage type by stripping the known "-writer-pod" suffix. Splitting on
+        # the first "-" is wrong for multi-token types like "dell-iscsi"/"dell-nfs" (it yields
+        # "dell"), which would leave the uploaded YAML files behind on the controller.
+        storage_type = pod_name[: -len("-writer-pod")] if pod_name.endswith("-writer-pod") else pod_name.split("-")[0]
         KubectlDeletePodsKeywords(self.ssh_connection).cleanup_pod(pod_name)
         KubectlDeleteResourceKeywords(self.ssh_connection).delete_resource("pvc", pvc_name)
         KubectlGetPvcKeywords(self.ssh_connection).wait_for_pvc_to_be_deleted(pvc_name)
