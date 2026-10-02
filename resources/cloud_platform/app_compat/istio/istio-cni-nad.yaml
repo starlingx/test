@@ -1,0 +1,15 @@
+# istio-cni NetworkAttachmentDefinition (Multus).
+#
+# REQUIRED, and it is the platform's packaging that makes it so rather than istio itself. The
+# application configures its injector to add `k8s.v1.cni.cncf.io/networks: istio-cni` to every
+# injected pod (stx-istio-helm's istio-pilot static overrides), and Multus then resolves that name
+# in the pod's own namespace. The application ships no NetworkAttachmentDefinition of its own, so a
+# scratch namespace has to provide one or the injected pod never gets a sandbox - observed as the
+# pod sitting in Init with "cannot find a network-attachment-definition (istio-cni)".
+#
+# Teardown deletes it with the namespace.
+apiVersion: "k8s.cni.cncf.io/v1"
+kind: NetworkAttachmentDefinition
+metadata:
+  name: istio-cni
+  namespace: {{ namespace }}
