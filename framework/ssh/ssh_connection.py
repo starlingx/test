@@ -478,6 +478,23 @@ class SSHConnection:
 
         return 0, current_buffer_decoded
 
+    def is_reachable(self) -> bool:
+        """
+        Test whether an SSH connection to the target host can be established.
+
+        Attempts to establish the connection if it is not already connected.
+        Unlike reading connection state directly, this actively verifies that
+        the host accepts the SSH session, so callers can decide whether to
+        proceed against the target or treat it as unreachable.
+
+        Returns:
+            bool: True if the connection is established (or was already
+            established), False if the connection attempt failed.
+        """
+        if self.is_connected:
+            return True
+        return self.connect()
+
     def get_return_code(self) -> Optional[int]:
         """
         Return the last return code captured by this SSH connection.
