@@ -1,0 +1,61 @@
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: lvm-writer-pvc-cgts-vg
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: cgts-vg
+  resources:
+    requests:
+      storage: 1Gi
+---
+# Deployment with 'Recreate' strategy so the writer pod is re-deployed automatically if it is
+# deleted, while reusing the existing PVC above (the PVC is never recreated). 'Recreate' avoids a
+# second pod trying to mount the ReadWriteOnce volume before the old one is gone.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lvm-writer-cgts-vg
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: lvm-writer-cgts-vg
+  template:
+    metadata:
+      labels:
+        app: lvm-writer-cgts-vg
+    spec:
+      restartPolicy: Always
+      containers:
+        - name: lvm-writer-cgts-vg
+          image: busybox:1.37
+          command:
+            - /bin/sh
+            - -c
+            - |
+              # anchor: written once with a known checksum, revalidated after the upgrade.
+              if [ ! -f /mnt1/anchor ]; then
+                dd if=/dev/urandom of=/mnt1/anchor bs=1M count=50 conv=fsync
+                md5sum /mnt1/anchor > /mnt1/anchor.md5
+                sync
+              fi
+              # heartbeat: the same file is rewritten in place every 5s (fixed size, never grows).
+              i=0
+              while :; do
+                echo "write-$i $(date -u +%Y-%m-%dT%H:%M:%SZ)" > /mnt1/heartbeat
+                sync
+                i=$((i + 1))
+                sleep 5
+              done
+          volumeMounts:
+            - mountPath: /mnt1
+              name: pvc1
+      volumes:
+        - name: pvc1
+          persistentVolumeClaim:
+            claimName: lvm-writer-pvc-cgts-vg
