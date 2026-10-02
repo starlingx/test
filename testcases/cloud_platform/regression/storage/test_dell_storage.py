@@ -23,6 +23,7 @@ from keywords.cloud_platform.system.application.system_application_update_keywor
 from keywords.cloud_platform.system.application.system_application_upload_keywords import SystemApplicationUploadInput, SystemApplicationUploadKeywords
 from keywords.cloud_platform.system.helm.system_helm_chart_attribute_modify_keywords import SystemHelmChartAttributeModifyKeywords
 from keywords.cloud_platform.system.helm.system_helm_override_keywords import SystemHelmOverrideKeywords
+from keywords.cloud_platform.system.host.system_host_fs_keywords import SystemHostFSKeywords
 from keywords.cloud_platform.system.host.system_host_list_keywords import SystemHostListKeywords
 from keywords.cloud_platform.system.host.system_host_lock_keywords import SystemHostLockKeywords
 from keywords.cloud_platform.system.host.system_host_reboot_keywords import SystemHostRebootKeywords
@@ -30,6 +31,7 @@ from keywords.cloud_platform.system.host.system_host_stor_keywords import System
 from keywords.cloud_platform.system.storage.system_storage_backend_keywords import SystemStorageBackendKeywords
 from keywords.files.file_keywords import FileKeywords
 from keywords.files.yaml_keywords import YamlKeywords
+from keywords.k8s.continuous_write.kubectl_continuous_write_keywords import KubectlContinuousWriteKeywords
 from keywords.k8s.delete_resource.kubectl_delete_resource_keywords import KubectlDeleteResourceKeywords
 from keywords.k8s.files.kubectl_file_apply_keywords import KubectlFileApplyKeywords
 from keywords.k8s.files.kubectl_file_delete_keywords import KubectlFileDeleteKeywords
@@ -175,6 +177,73 @@ def ensure_ceph_storage_backend_configured(ssh_connection: SSHConnection, timeou
     platform_integ_apps_name = app_config.get_platform_integ_apps_app_name()
     get_logger().log_test_case_step("Validate platform-integ-apps app is present and applied, and the version matches.")
     SystemApplicationListKeywords(ssh_connection).validate_app_status(platform_integ_apps_name, "applied")
+
+
+def ensure_rook_ceph_storage_backend_configured(ssh_connection: SSHConnection, timeout: int = 1800) -> None:
+    """Ensure the ceph-rook storage backend is configured; add it and wait if it isn't.
+
+    Test Steps:
+        - Check whether the ceph storage backend is already present.
+        - If not, add it with 'system storage-backend-add ceph-rook'.
+        - Wait for the backend to reach the 'configured' state.
+        - Wait for ceph to report healthy.
+
+    Args:
+        ssh_connection (SSHConnection): SSH connection to the active controller.
+        timeout (int): Max seconds to wait for the backend to configure. Defaults to 1800.
+    """
+    backend = "ceph-rook"
+    storage_backend_keywords = SystemStorageBackendKeywords(ssh_connection)
+    backends = storage_backend_keywords.get_system_storage_backend_list()
+    if backends.is_backend_configured(backend):
+        get_logger().log_info("ceph-rook storage backend is already present.")
+    else:
+        get_logger().log_test_case_step("Add ceph-rook storage backend")
+        storage_backend_keywords.system_storage_backend_add(backend, confirmed=True)
+
+        get_logger().log_test_case_step("Ensure a ceph MON exists on controller-0")
+        host_fs_keywords = SystemHostFSKeywords(ssh_connection)
+        controller_0_fs = host_fs_keywords.get_system_host_fs_list("controller-0")
+        if controller_0_fs.has_monitor():
+            get_logger().log_info("ceph MON already present on controller-0.")
+        elif not controller_0_fs.is_fs_exist("ceph"):
+            # A ceph host-fs added on a host that has none comes up carrying the monitor function.
+            host_fs_keywords.system_host_fs_add("controller-0", "ceph", 20)
+        else:
+            # controller-0 already has a ceph host-fs consumed by the OSD, so this API cannot
+            # attach the monitor function to it (host-fs-modify refuses to touch the osd function).
+            raise AssertionError("controller-0 has a ceph host-fs assigned to the OSD but no MON; a MON cannot be added on this node via host-fs APIs.")
+
+        get_logger().log_test_case_step("Add OSD to controller-0")
+        host_stor = SystemHostStorageKeywords(ssh_connection)
+        hostname, osd_uuid = host_stor.find_and_add_osd(["controller-0"])
+
+        get_logger().log_test_case_step("Wait for ceph-rook storage backend to reach configured state")
+        is_configured = storage_backend_keywords.wait_for_backend_configured(backend, timeout=timeout)
+        validate_equals(is_configured, True, "ceph-rook storage backend reached configured state")
+
+    get_logger().log_test_case_step("Wait for ceph-rook storage backend to reach configured state")
+    is_configured = storage_backend_keywords.wait_for_backend_configured(backend, timeout=timeout)
+    validate_equals(is_configured, True, "ceph-rook storage backend reached configured state")
+
+    get_logger().log_test_case_step("Wait for ceph to be healthy")
+    CephStatusKeywords(ssh_connection).wait_for_ceph_health_status(expect_health_status=True, timeout=timeout)
+
+    app_config = ConfigurationManager.get_app_config()
+    rook_ceph_name = app_config.get_rook_ceph_app_name()
+    base_path = app_config.get_base_application_path()
+    app_list = SystemApplicationListKeywords(ssh_connection)
+
+    if not app_list.is_app_present(rook_ceph_name):
+        upload_input = SystemApplicationUploadInput()
+        upload_input.set_app_name(rook_ceph_name)
+        upload_input.set_tar_file_path(f"{base_path}{rook_ceph_name}*.tgz")
+        SystemApplicationUploadKeywords(ssh_connection).system_application_upload(upload_input)
+        SystemApplicationApplyKeywords(ssh_connection).system_application_apply(app_name=rook_ceph_name, timeout=1800)
+    else:
+        status = SystemApplicationShowKeywords(ssh_connection).get_system_application_show(rook_ceph_name).get_system_application_object().get_status()
+        if status != "applied":
+            SystemApplicationApplyKeywords(ssh_connection).system_application_apply(app_name=rook_ceph_name, timeout=1800)
 
 
 def common_verify_dell_app_status_iscsi_sx(ssh_connection, dell_storage_app_status, namespace, dell_storage_app_name, chart_name, expansion=True):
@@ -726,6 +795,13 @@ def test_node_reboot_with_pvc_pod_dell_storage_iscsi(request):
     validate_equals(ssh_connection.get_return_code(), 0, f"sync pod {pod_name} success")
 
     verify_file_created_on_pod_exists(ssh_connection, namespace, pod_name)
+    # Start a continuous-write pod on the iscsi StorageClass and confirm it is writing.
+    get_logger().log_test_case_step("Start continuous-write pod on the iscsi StorageClass and verify it is writing")
+    continuous_write_keywords = KubectlContinuousWriteKeywords(ssh_connection)
+    writer_pod_name, writer_pvc_name = continuous_write_keywords.start_continuous_write_pod("dell-iscsi")
+    request.addfinalizer(lambda: continuous_write_keywords.cleanup_continuous_write_pod(writer_pod_name, writer_pvc_name))
+    writer_count_before = continuous_write_keywords.wait_for_write_progress(writer_pod_name, previous_count=0)
+    get_logger().log_info(f"{writer_pod_name} write-cycle count: {writer_count_before}")
 
     get_logger().log_test_case_step("Reboot the controller-0 node through the sudo reboot command")
     host_list_keywords = SystemHostListKeywords(ssh_connection)
@@ -751,6 +827,11 @@ def test_node_reboot_with_pvc_pod_dell_storage_iscsi(request):
 
     get_logger().log_test_case_step("Make sure that the file created before the reboot is still saved in the test pod.")
     verify_file_created_on_pod_exists(ssh_connection, namespace, pod_name)
+
+    # # Step 9: Verify the continuous-write pod kept writing through the expansion attempt.
+    get_logger().log_test_case_step("Verify continuous-write pod is still writing after the expansion attempt")
+    writer_count_after = continuous_write_keywords.wait_for_write_progress(writer_pod_name, previous_count=writer_count_before)
+    get_logger().log_info(f"{writer_pod_name} write-cycle count advanced from {writer_count_before} to {writer_count_after}")
 
 
 @mark.p2
@@ -846,6 +927,14 @@ def test_node_reboot_with_pvc_pod_dell_storage_nfs(request):
     get_logger().log_info("Check if test.txt exists")
     verify_file_created_on_pod_exists(ssh_connection, namespace, pod_name)
 
+    # Start a continuous-write pod on the nfs StorageClass and confirm it is writing.
+    get_logger().log_test_case_step("Start continuous-write pod on the nfs StorageClass and verify it is writing")
+    continuous_write_keywords = KubectlContinuousWriteKeywords(ssh_connection)
+    writer_pod_name, writer_pvc_name = continuous_write_keywords.start_continuous_write_pod("dell-nfs")
+    request.addfinalizer(lambda: continuous_write_keywords.cleanup_continuous_write_pod(writer_pod_name, writer_pvc_name))
+    writer_count_before = continuous_write_keywords.wait_for_write_progress(writer_pod_name, previous_count=0)
+    get_logger().log_info(f"{writer_pod_name} write-cycle count: {writer_count_before}")
+
     get_logger().log_test_case_step("Reboot the controller-0 node through the sudo reboot command")
     host_list_keywords = SystemHostListKeywords(ssh_connection)
     pre_uptime = host_list_keywords.get_uptime("controller-0")
@@ -871,6 +960,11 @@ def test_node_reboot_with_pvc_pod_dell_storage_nfs(request):
 
     get_logger().log_test_case_step("Make sure that the file created before the reboot is still saved in the test pod.")
     verify_file_created_on_pod_exists(ssh_connection, namespace, pod_name)
+
+    # # Step 9: Verify the continuous-write pod kept writing through the expansion attempt.
+    get_logger().log_test_case_step("Verify continuous-write pod is still writing after the expansion attempt")
+    writer_count_after = continuous_write_keywords.wait_for_write_progress(writer_pod_name, previous_count=writer_count_before)
+    get_logger().log_info(f"{writer_pod_name} write-cycle count advanced from {writer_count_before} to {writer_count_after}")
 
 
 @mark.p2
@@ -969,6 +1063,14 @@ def test_lock_unlock_node_with_pvc_pod_dell_storage_iscsi(request):
     kubectl_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
     validate_equals(ssh_connection.get_return_code(), 0, f"Access to {pod_name} pod success")
 
+    # Start a continuous-write pod on the iscsi StorageClass and confirm it is writing.
+    get_logger().log_test_case_step("Start continuous-write pod on the iscsi StorageClass and verify it is writing")
+    continuous_write_keywords = KubectlContinuousWriteKeywords(ssh_connection)
+    writer_pod_name, writer_pvc_name = continuous_write_keywords.start_continuous_write_pod("dell-iscsi")
+    request.addfinalizer(lambda: continuous_write_keywords.cleanup_continuous_write_pod(writer_pod_name, writer_pvc_name))
+    writer_count_before = continuous_write_keywords.wait_for_write_progress(writer_pod_name, previous_count=0)
+    get_logger().log_info(f"{writer_pod_name} write-cycle count: {writer_count_before}")
+
     host_lock_keywords = SystemHostLockKeywords(ssh_connection)
     get_logger().log_test_case_step("Lock controller-0 node")
     lock_success = host_lock_keywords.lock_host("controller-0")
@@ -994,6 +1096,11 @@ def test_lock_unlock_node_with_pvc_pod_dell_storage_iscsi(request):
 
     get_logger().log_test_case_step("Make sure that the file created before the reboot is still saved in the test pod.")
     verify_file_created_on_pod_exists(ssh_connection, namespace, pod_name)
+
+    # # Step 9: Verify the continuous-write pod kept writing through the expansion attempt.
+    get_logger().log_test_case_step("Verify continuous-write pod is still writing after the expansion attempt")
+    writer_count_after = continuous_write_keywords.wait_for_write_progress(writer_pod_name, previous_count=writer_count_before)
+    get_logger().log_info(f"{writer_pod_name} write-cycle count advanced from {writer_count_before} to {writer_count_after}")
 
 
 @mark.p2
@@ -1091,6 +1198,14 @@ def test_lock_unlock_node_with_pvc_pod_dell_storage_nfs(request):
     get_logger().log_info("Check if test.txt exists")
     verify_file_created_on_pod_exists(ssh_connection, namespace, pod_name)
 
+    # Start a continuous-write pod on the nfs StorageClass and confirm it is writing.
+    get_logger().log_test_case_step("Start continuous-write pod on the nfs StorageClass and verify it is writing")
+    continuous_write_keywords = KubectlContinuousWriteKeywords(ssh_connection)
+    writer_pod_name, writer_pvc_name = continuous_write_keywords.start_continuous_write_pod("dell-nfs")
+    request.addfinalizer(lambda: continuous_write_keywords.cleanup_continuous_write_pod(writer_pod_name, writer_pvc_name))
+    writer_count_before = continuous_write_keywords.wait_for_write_progress(writer_pod_name, previous_count=0)
+    get_logger().log_info(f"{writer_pod_name} write-cycle count: {writer_count_before}")
+
     host_lock_keywords = SystemHostLockKeywords(ssh_connection)
     get_logger().log_test_case_step("Lock controller-0 node")
     lock_success = host_lock_keywords.lock_host("controller-0")
@@ -1121,6 +1236,11 @@ def test_lock_unlock_node_with_pvc_pod_dell_storage_nfs(request):
 
     get_logger().log_test_case_step("Make sure that the file created before the reboot is still saved in the test pod.")
     verify_file_created_on_pod_exists(ssh_connection, namespace, pod_name)
+
+    # # Step 9: Verify the continuous-write pod kept writing through the expansion attempt.
+    get_logger().log_test_case_step("Verify continuous-write pod is still writing after the expansion attempt")
+    writer_count_after = continuous_write_keywords.wait_for_write_progress(writer_pod_name, previous_count=writer_count_before)
+    get_logger().log_info(f"{writer_pod_name} write-cycle count advanced from {writer_count_before} to {writer_count_after}")
 
 
 @mark.p2
@@ -1227,6 +1347,14 @@ def test_power_off_node_with_pvc_pod_dell_storage_iscsi(request):
     kubectl_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
     validate_equals(ssh_connection.get_return_code(), 0, f"sync pod {pod_name} success")
 
+    # Start a continuous-write pod on the iscsi StorageClass and confirm it is writing.
+    get_logger().log_test_case_step("Start continuous-write pod on the iscsi StorageClass and verify it is writing")
+    continuous_write_keywords = KubectlContinuousWriteKeywords(ssh_connection)
+    writer_pod_name, writer_pvc_name = continuous_write_keywords.start_continuous_write_pod("dell-iscsi")
+    request.addfinalizer(lambda: continuous_write_keywords.cleanup_continuous_write_pod(writer_pod_name, writer_pvc_name))
+    writer_count_before = continuous_write_keywords.wait_for_write_progress(writer_pod_name, previous_count=0)
+    get_logger().log_info(f"{writer_pod_name} write-cycle count: {writer_count_before}")
+
     get_logger().log_info("Check if test.txt exists")
     verify_file_created_on_pod_exists(ssh_connection, namespace, pod_name)
 
@@ -1258,6 +1386,11 @@ def test_power_off_node_with_pvc_pod_dell_storage_iscsi(request):
 
     get_logger().log_test_case_step("Make sure that the file created before powering off is still saved in the test pod.")
     verify_file_created_on_pod_exists(ssh_connection, namespace, pod_name)
+
+    # # Step 9: Verify the continuous-write pod kept writing through the expansion attempt.
+    get_logger().log_test_case_step("Verify continuous-write pod is still writing after the expansion attempt")
+    writer_count_after = continuous_write_keywords.wait_for_write_progress(writer_pod_name, previous_count=writer_count_before)
+    get_logger().log_info(f"{writer_pod_name} write-cycle count advanced from {writer_count_before} to {writer_count_after}")
 
 
 @mark.p2
@@ -1373,6 +1506,14 @@ def test_power_off_node_with_pvc_pod_dell_storage_nfs(request):
     kubectl_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
     validate_equals(ssh_connection.get_return_code(), 0, f"sync pod {pod_name} success")
 
+    # Start a continuous-write pod on the nfs StorageClass and confirm it is writing.
+    get_logger().log_test_case_step("Start continuous-write pod on the nfs StorageClass and verify it is writing")
+    continuous_write_keywords = KubectlContinuousWriteKeywords(ssh_connection)
+    writer_pod_name, writer_pvc_name = continuous_write_keywords.start_continuous_write_pod("dell-nfs")
+    request.addfinalizer(lambda: continuous_write_keywords.cleanup_continuous_write_pod(writer_pod_name, writer_pvc_name))
+    writer_count_before = continuous_write_keywords.wait_for_write_progress(writer_pod_name, previous_count=0)
+    get_logger().log_info(f"{writer_pod_name} write-cycle count: {writer_count_before}")
+
     get_logger().log_test_case_step("Power Off controller-0 through IPMITOOLS ")
     power_off_rc = power_chassis.power_off_from_localhost("controller-0", ignore_error=True)
     validate_equals(power_off_rc, 0, "controller-0 IPMI power off command was not accepted by the BMC")
@@ -1395,6 +1536,11 @@ def test_power_off_node_with_pvc_pod_dell_storage_nfs(request):
 
     get_logger().log_test_case_step("Make sure that the file created before powering off is still saved in the test pod.")
     verify_file_created_on_pod_exists(ssh_connection, namespace, pod_name)
+
+    # # Step 9: Verify the continuous-write pod kept writing through the expansion attempt.
+    get_logger().log_test_case_step("Verify continuous-write pod is still writing after the expansion attempt")
+    writer_count_after = continuous_write_keywords.wait_for_write_progress(writer_pod_name, previous_count=writer_count_before)
+    get_logger().log_info(f"{writer_pod_name} write-cycle count advanced from {writer_count_before} to {writer_count_after}")
 
 
 @mark.p2
@@ -3353,6 +3499,7 @@ def test_manual_upgrade_dell_storage_nfs(request: FixtureRequest):
 
 @mark.p2
 @mark.lab_dell_storage
+@mark.lab_has_ceph
 @mark.lab_is_simplex
 def test_dell_storage_iscsi_lifecycle_coexistence_ceph_sx(request: FixtureRequest):
     """
@@ -3560,6 +3707,7 @@ def test_dell_storage_iscsi_lifecycle_coexistence_ceph_sx(request: FixtureReques
 
 @mark.p2
 @mark.lab_dell_storage
+@mark.lab_has_ceph
 @mark.lab_is_simplex
 def test_dell_storage_nfs_lifecycle_coexistence_ceph_sx(request: FixtureRequest):
     """
@@ -3718,6 +3866,14 @@ def test_dell_storage_nfs_lifecycle_coexistence_ceph_sx(request: FixtureRequest)
         pvc_names=[pvc_name],
         yaml_file_names=[],
     )
+
+    # Start a continuous-write pod on the nfs StorageClass and confirm it is writing.
+    get_logger().log_test_case_step("Start continuous-write pod on the nfs StorageClass and verify it is writing")
+    continuous_write_keywords = KubectlContinuousWriteKeywords(ssh_connection)
+    writer_pod_name, writer_pvc_name = continuous_write_keywords.start_continuous_write_pod("dell-nfs")
+    request.addfinalizer(lambda: continuous_write_keywords.cleanup_continuous_write_pod(writer_pod_name, writer_pvc_name))
+    writer_count_before = continuous_write_keywords.wait_for_write_progress(writer_pod_name, previous_count=0)
+    get_logger().log_info(f"{writer_pod_name} write-cycle count: {writer_count_before}")
 
     get_logger().log_test_case_step("Upload RBD test YAML files to active controller")
     upload_yaml_files(ssh_connection, yaml_files)
@@ -3882,6 +4038,14 @@ def test_dell_storage_iscsi_volume_expansion_true_sx(request: FixtureRequest):
     kubectl_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
     validate_equals(ssh_connection.get_return_code(), 0, f"sync pod {pod_name} success")
 
+    # Start a continuous-write pod on the iscsi StorageClass and confirm it is writing.
+    get_logger().log_test_case_step("Start continuous-write pod on the iscsi StorageClass and verify it is writing")
+    continuous_write_keywords = KubectlContinuousWriteKeywords(ssh_connection)
+    writer_pod_name, writer_pvc_name = continuous_write_keywords.start_continuous_write_pod("dell-iscsi")
+    request.addfinalizer(lambda: continuous_write_keywords.cleanup_continuous_write_pod(writer_pod_name, writer_pvc_name))
+    writer_count_before = continuous_write_keywords.wait_for_write_progress(writer_pod_name, previous_count=0)
+    get_logger().log_info(f"{writer_pod_name} write-cycle count: {writer_count_before}")
+
     # # Step 6: Expand the PVC from 5Gi to 10Gi.
     get_logger().log_test_case_step(f"Expand PVC {pvc_name} from {initial_size} to {expanded_size}")
     KubectlPatchPvcKeywords(ssh_connection).expand_pvc(pvc_name, expanded_size, namespace=dell_storage_app_name)
@@ -3901,6 +4065,11 @@ def test_dell_storage_iscsi_volume_expansion_true_sx(request: FixtureRequest):
     kubectl_exec_in_pods.run_pod_exec_cmd(pod_name, "df -h /data0", options=f"-i -n {dell_storage_app_name}")
     kubectl_exec_in_pods.run_pod_exec_cmd(pod_name, "cat /data0/test.txt", options=f"-i -n {dell_storage_app_name}")
     validate_equals(ssh_connection.get_return_code(), 0, "test.txt still readable after expansion")
+
+    # # Step 9: Verify the continuous-write pod kept writing through the expansion attempt.
+    get_logger().log_test_case_step("Verify continuous-write pod is still writing after the expansion attempt")
+    writer_count_after = continuous_write_keywords.wait_for_write_progress(writer_pod_name, previous_count=writer_count_before)
+    get_logger().log_info(f"{writer_pod_name} write-cycle count advanced from {writer_count_before} to {writer_count_after}")
 
     # # Step 10: Verify dell-storage app health after the expansion test.
     get_logger().log_test_case_step("Verify dell-storage app is still applied and CSI pods are Running")
@@ -4025,6 +4194,14 @@ def test_dell_storage_nfs_volume_expansion_true_sx(request: FixtureRequest):
     kubectl_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
     validate_equals(ssh_connection.get_return_code(), 0, f"sync pod {pod_name} success")
 
+    # Start a continuous-write pod on the nfs StorageClass and confirm it is writing.
+    get_logger().log_test_case_step("Start continuous-write pod on the nfs StorageClass and verify it is writing")
+    continuous_write_keywords = KubectlContinuousWriteKeywords(ssh_connection)
+    writer_pod_name, writer_pvc_name = continuous_write_keywords.start_continuous_write_pod("dell-nfs")
+    request.addfinalizer(lambda: continuous_write_keywords.cleanup_continuous_write_pod(writer_pod_name, writer_pvc_name))
+    writer_count_before = continuous_write_keywords.wait_for_write_progress(writer_pod_name, previous_count=0)
+    get_logger().log_info(f"{writer_pod_name} write-cycle count: {writer_count_before}")
+
     # # Step 6: Expand the PVC from 5Gi to 10Gi.
     get_logger().log_test_case_step(f"Expand PVC {pvc_name} from {initial_size} to {expanded_size}")
     KubectlPatchPvcKeywords(ssh_connection).expand_pvc(pvc_name, expanded_size, namespace=dell_storage_app_name)
@@ -4044,6 +4221,11 @@ def test_dell_storage_nfs_volume_expansion_true_sx(request: FixtureRequest):
     kubectl_exec_in_pods.run_pod_exec_cmd(pod_name, "df -h /data0", options=f"-i -n {dell_storage_app_name}")
     kubectl_exec_in_pods.run_pod_exec_cmd(pod_name, "cat /data0/test.txt", options=f"-i -n {dell_storage_app_name}")
     validate_equals(ssh_connection.get_return_code(), 0, "test.txt still readable after expansion")
+
+    # # Step 9: Verify the continuous-write pod kept writing through the expansion attempt.
+    get_logger().log_test_case_step("Verify continuous-write pod is still writing after the expansion attempt")
+    writer_count_after = continuous_write_keywords.wait_for_write_progress(writer_pod_name, previous_count=writer_count_before)
+    get_logger().log_info(f"{writer_pod_name} write-cycle count advanced from {writer_count_before} to {writer_count_after}")
 
     # # Step 10: Verify dell-storage app health after the expansion test.
     get_logger().log_test_case_step("Verify dell-storage app is still applied and CSI pods are Running")
@@ -4167,6 +4349,14 @@ def test_dell_storage_iscsi_volume_expansion_false_sx(request: FixtureRequest):
     kubectl_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
     validate_equals(ssh_connection.get_return_code(), 0, f"sync pod {pod_name} success")
 
+    # Start a continuous-write pod on the iscsi StorageClass and confirm it is writing.
+    get_logger().log_test_case_step("Start continuous-write pod on the iscsi StorageClass and verify it is writing")
+    continuous_write_keywords = KubectlContinuousWriteKeywords(ssh_connection)
+    writer_pod_name, writer_pvc_name = continuous_write_keywords.start_continuous_write_pod("dell-iscsi")
+    request.addfinalizer(lambda: continuous_write_keywords.cleanup_continuous_write_pod(writer_pod_name, writer_pvc_name))
+    writer_count_before = continuous_write_keywords.wait_for_write_progress(writer_pod_name, previous_count=0)
+    get_logger().log_info(f"{writer_pod_name} write-cycle count: {writer_count_before}")
+
     # # Step 6: Expand the PVC from 5Gi to 10Gi by patching the requested storage.
     get_logger().log_test_case_step(f"Expand PVC {pvc_name} from {initial_size} to {expanded_size}")
     patch_output = KubectlPatchPvcKeywords(ssh_connection).expand_pvc_with_error(pvc_name, expanded_size, namespace=dell_storage_app_name)
@@ -4190,6 +4380,11 @@ def test_dell_storage_iscsi_volume_expansion_false_sx(request: FixtureRequest):
     kubectl_exec_in_pods.run_pod_exec_cmd(pod_name, "df -h /data0", options=f"-i -n {dell_storage_app_name}")
     kubectl_exec_in_pods.run_pod_exec_cmd(pod_name, "cat /data0/test.txt", options=f"-i -n {dell_storage_app_name}")
     validate_equals(ssh_connection.get_return_code(), 0, "test.txt still readable after expansion")
+
+    # # Step 9: Verify the continuous-write pod kept writing through the expansion attempt.
+    get_logger().log_test_case_step("Verify continuous-write pod is still writing after the expansion attempt")
+    writer_count_after = continuous_write_keywords.wait_for_write_progress(writer_pod_name, previous_count=writer_count_before)
+    get_logger().log_info(f"{writer_pod_name} write-cycle count advanced from {writer_count_before} to {writer_count_after}")
 
     # # Step 10: Verify dell-storage app health after the expansion test.
     get_logger().log_test_case_step("Verify dell-storage app is still applied and CSI pods are Running")
@@ -4265,7 +4460,7 @@ def test_dell_storage_nfs_volume_expansion_false_sx(request: FixtureRequest):
 
     system_applications = SystemApplicationListKeywords(ssh_connection).get_system_application_list()
     dell_storage_app_status = system_applications.get_application(dell_storage_app_name).get_status()
-    common_verify_dell_app_status_iscsi_sx(ssh_connection, dell_storage_app_status, namespace, dell_storage_app_name, chart_name, False)
+    common_verify_dell_app_status_nfs_sx(ssh_connection, dell_storage_app_status, namespace, dell_storage_app_name, chart_name, False)
 
     # Step 2: Verify all CSI driver pods are Running.
     get_logger().log_test_case_step("Verify all csi-powerstore driver pods are Running")
@@ -4313,6 +4508,14 @@ def test_dell_storage_nfs_volume_expansion_false_sx(request: FixtureRequest):
     kubectl_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
     validate_equals(ssh_connection.get_return_code(), 0, f"sync pod {pod_name} success")
 
+    # Start a continuous-write pod on the nfs StorageClass and confirm it is writing.
+    get_logger().log_test_case_step("Start continuous-write pod on the iscsi StorageClass and verify it is writing")
+    continuous_write_keywords = KubectlContinuousWriteKeywords(ssh_connection)
+    writer_pod_name, writer_pvc_name = continuous_write_keywords.start_continuous_write_pod("dell-iscsi")
+    request.addfinalizer(lambda: continuous_write_keywords.cleanup_continuous_write_pod(writer_pod_name, writer_pvc_name))
+    writer_count_before = continuous_write_keywords.wait_for_write_progress(writer_pod_name, previous_count=0)
+    get_logger().log_info(f"{writer_pod_name} write-cycle count: {writer_count_before}")
+
     # # Step 6: Expand the PVC from 5Gi to 10Gi by patching the requested storage.
     get_logger().log_test_case_step(f"Expand PVC {pvc_name} from {initial_size} to {expanded_size}")
     patch_output = KubectlPatchPvcKeywords(ssh_connection).expand_pvc_with_error(pvc_name, expanded_size, namespace=dell_storage_app_name)
@@ -4337,8 +4540,450 @@ def test_dell_storage_nfs_volume_expansion_false_sx(request: FixtureRequest):
     kubectl_exec_in_pods.run_pod_exec_cmd(pod_name, "cat /data0/test.txt", options=f"-i -n {dell_storage_app_name}")
     validate_equals(ssh_connection.get_return_code(), 0, "test.txt still readable after expansion")
 
+    # # Step 9: Verify the continuous-write pod kept writing through the expansion attempt.
+    get_logger().log_test_case_step("Start continuous-write pod on the iscsi StorageClass and verify it is writing")
+    continuous_write_keywords = KubectlContinuousWriteKeywords(ssh_connection)
+    writer_pod_name, writer_pvc_name = continuous_write_keywords.start_continuous_write_pod("dell-iscsi")
+    request.addfinalizer(lambda: continuous_write_keywords.cleanup_continuous_write_pod(writer_pod_name, writer_pvc_name))
+    writer_count_before = continuous_write_keywords.wait_for_write_progress(writer_pod_name, previous_count=0)
+    get_logger().log_info(f"{writer_pod_name} write-cycle count: {writer_count_before}")
+
     # # Step 10: Verify dell-storage app health after the expansion test.
     get_logger().log_test_case_step("Verify dell-storage app is still applied and CSI pods are Running")
     app_status = SystemApplicationShowKeywords(ssh_connection).get_system_application_show(dell_storage_app_name).get_system_application_object().get_status()
     validate_equals(app_status, SystemApplicationStatusEnum.APPLIED.value, "dell-storage is still applied after expansion")
     verify_dell_storage_pods_are_running(ssh_connection)
+
+
+@mark.p2
+@mark.lab_dell_storage
+@mark.lab_has_rook_ceph
+@mark.lab_is_simplex
+def test_dell_storage_nfs_lifecycle_coexistence_rook_ceph_sx(request: FixtureRequest):
+    """
+    Test Dell Storage coexistence with Ceph backend
+
+    The lab should have dell-storage app installed with the dell storageClass and the ceph backend also installed.
+
+
+    Test Steps:
+        - Check dell-storage app status.
+        - Make sure that dell-storage is applied (NFS)
+        - Make sure that rook-ceph backend is configured
+        - Create and apply PVC/Pod using RBD storageClass
+        - Write a test file on this RBD pod
+        - Create and apply PVC/Pod using CEPH storageClass
+        - Write a test file on this CEPH pod
+        - Create and apply PVC/Pod using dell-storage storageClass
+        - Write a test file on this dell-storage pod
+        - Verify data integrity
+
+
+    Args:
+        request (FixtureRequest): pytest request fixture for test setup and teardown
+    """
+
+    TEST_FILES_DIR = "resources/cloud_platform/storage/volume_snapshot"
+    REMOTE_HOME = "/home/sysadmin"
+
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    namespace = "dell-storage"
+    dell_storage_app_name = "dell-storage"
+    chart_name = "csi-powerstore"
+
+    def verify_dell_storage_pods_are_running(ssh_connection):
+        pod_prefix = "csi-powerstore"
+        get_pod_obj = KubectlGetPodsKeywords(ssh_connection)
+        pod_names = get_pod_obj.get_pods(namespace=namespace).get_unique_pod_matching_prefix(starts_with=pod_prefix)
+        pod_status = get_pod_obj.wait_for_pod_status(pod_names, "Running", namespace)
+        validate_equals(pod_status, True, f"Verify {pod_prefix} pods are running")
+
+        get_pod_obj = KubectlGetPodsKeywords(ssh_connection)
+        pod_status = get_pod_obj.wait_for_pod_status(pod_name, "Running", namespace)
+        validate_equals(pod_status, True, f"Verify {pod_name} pod is running")
+
+    def upload_yaml_files(ssh_connection: SSHConnection, file_names: list[str]) -> None:
+        """Upload test YAML files from local resources to the active controller.
+
+        Args:
+            ssh_connection (SSHConnection): SSH connection to the active controller.
+            file_names (list[str]): List of YAML file names to upload.
+        """
+        file_keywords = FileKeywords(ssh_connection)
+        for file_name in file_names:
+            local_path = get_stx_resource_path(f"{TEST_FILES_DIR}/{file_name}")
+            remote_path = f"{REMOTE_HOME}/{file_name}"
+            file_keywords.upload_file(local_path, remote_path, overwrite=True)
+
+    def cleanup_test_resources(
+        ssh_connection: SSHConnection,
+        pod_names: list[str],
+        pvc_names: list[str],
+        yaml_file_names: list[str],
+    ) -> None:
+        """Clean up all resources created during a volume snapshot test.
+
+        Args:
+            ssh_connection (SSHConnection): SSH connection to the active controller.
+            pod_names (list[str]): Pod names to delete.
+            pvc_names (list[str]): PVC names to delete.
+            yaml_file_names (list[str]): YAML file names to remove from the controller.
+        """
+        delete_resource_keywords = KubectlDeleteResourceKeywords(ssh_connection)
+
+        for pod_name in pod_names:
+            KubectlDeletePodsKeywords(ssh_connection).cleanup_pod(pod_name)
+
+        for pvc_name in pvc_names:
+            delete_resource_keywords.delete_resource("pvc", pvc_name)
+            KubectlGetPvcKeywords(ssh_connection).wait_for_pvc_to_be_deleted(pvc_name)
+
+        file_keywords = FileKeywords(ssh_connection)
+        for file_name in yaml_file_names:
+            file_keywords.delete_file(f"{REMOTE_HOME}/{file_name}")
+
+    def teardown():
+        get_logger().log_teardown_step("Clean up the test pod resources.")
+        KubectlFileDeleteKeywords(ssh_connection).delete_resources("/home/sysadmin/dell-storage-test-nfs-pod.yaml", ignore_not_found=True)
+        cleanup_test_resources(
+            ssh_connection,
+            pod_names=["csi-cephfs-demo-pod", "csi-rbd-demo-pod"],
+            pvc_names=["cephfs-pvc", "rbd-pvc"],
+            yaml_file_names=[],
+        )
+
+    get_logger().log_test_case_step(f"Make sure that {dell_storage_app_name} is applied (NFS) ")
+    system_applications = SystemApplicationListKeywords(ssh_connection).get_system_application_list()
+    dell_storage_app_status = system_applications.get_application(dell_storage_app_name).get_status()
+    get_logger().log_info(f"{dell_storage_app_name} application is: {dell_storage_app_status}")
+
+    common_verify_dell_app_status_nfs_sx(ssh_connection, dell_storage_app_status, namespace, dell_storage_app_name, chart_name)
+    request.addfinalizer(common_dell_storage_teardown)
+    request.addfinalizer(teardown)
+
+    test_pod_yaml = "dell-storage-test-nfs-pod.yaml"
+    dell_storage_files = [test_pod_yaml]
+    for file_name in dell_storage_files:
+        local_path = get_stx_resource_path(f"resources/cloud_platform/storage/dell_storage/{file_name}")
+        remote_yaml_path = f"/home/sysadmin/{file_name}"
+        FileKeywords(ssh_connection).upload_file(local_path, remote_yaml_path, overwrite=True)
+
+    get_logger().log_test_case_step("Make sure that rook-ceph backend is configured")
+    ensure_rook_ceph_storage_backend_configured(ssh_connection)
+
+    get_logger().log_test_case_step("Create and apply PVC/Pod using CEPH storageClass")
+    storage_type = "cephfs"
+    pvc_name = f"{storage_type}-pvc"
+    pod_name = f"csi-{storage_type}-demo-pod"
+
+    yaml_files = [f"{storage_type}-pvc.yaml", f"{storage_type}-pod.yaml"]
+
+    # Setup: clean up any leftover resources from previous runs
+    get_logger().log_setup_step("Delete test pods, PVCs, and snapshots if they exist before test run")
+    cleanup_test_resources(
+        ssh_connection,
+        pod_names=[pod_name],
+        pvc_names=[pvc_name],
+        yaml_file_names=[],
+    )
+
+    get_logger().log_test_case_step("Upload CephFS test YAML files to active controller")
+    upload_yaml_files(ssh_connection, yaml_files)
+    pvc_yaml = f"{REMOTE_HOME}/{storage_type}-pvc.yaml"
+    pod_yaml = f"{REMOTE_HOME}/{storage_type}-pod.yaml"
+
+    get_logger().log_test_case_step(f"Create a {storage_type} PVC and make sure it is in Bound status")
+    KubectlFileApplyKeywords(ssh_connection).apply_resource_from_yaml(pvc_yaml)
+    KubectlGetPvcKeywords(ssh_connection).wait_for_pvcs_to_reach_status(expected_status="Bound", pvc_names=pvc_name)
+
+    get_logger().log_test_case_step(f"Create a {storage_type} pod")
+    KubectlFileApplyKeywords(ssh_connection).apply_resource_from_yaml(pod_yaml)
+    KubectlGetPodsKeywords(ssh_connection).wait_for_pod_status(pod_name, "Running")
+
+    get_logger().log_test_case_step("Write a test file on Pod")
+    KubectlExecInPodsKeywords(ssh_connection).run_pod_exec_cmd(pod_name, "bash -c 'touch /data/test.txt'", options="-i")
+
+    storage_type = "rbd"
+    pvc_name = f"{storage_type}-pvc"
+    pod_name = f"csi-{storage_type}-demo-pod"
+
+    yaml_files = [f"{storage_type}-pvc.yaml", f"{storage_type}-pod.yaml"]
+
+    get_logger().log_setup_step("Delete test pods, PVCs, and snapshots if they exist before test run")
+    cleanup_test_resources(
+        ssh_connection,
+        pod_names=[pod_name],
+        pvc_names=[pvc_name],
+        yaml_file_names=[],
+    )
+
+    get_logger().log_test_case_step("Upload RBD test YAML files to active controller")
+    upload_yaml_files(ssh_connection, yaml_files)
+    pvc_yaml = f"{REMOTE_HOME}/{storage_type}-pvc.yaml"
+    pod_yaml = f"{REMOTE_HOME}/{storage_type}-pod.yaml"
+
+    get_logger().log_test_case_step(f"Create a {storage_type} PVC and make sure it is in Bound status")
+    KubectlFileApplyKeywords(ssh_connection).apply_resource_from_yaml(pvc_yaml)
+    KubectlGetPvcKeywords(ssh_connection).wait_for_pvcs_to_reach_status(expected_status="Bound", pvc_names=pvc_name)
+
+    get_logger().log_test_case_step(f"Create a {storage_type} pod")
+    KubectlFileApplyKeywords(ssh_connection).apply_resource_from_yaml(pod_yaml)
+    KubectlGetPodsKeywords(ssh_connection).wait_for_pod_status(pod_name, "Running")
+
+    get_logger().log_test_case_step("Write a test file on Pod")
+    KubectlExecInPodsKeywords(ssh_connection).run_pod_exec_cmd(pod_name, "bash -c 'touch /data/test.txt'", options="-i")
+
+    get_logger().log_test_case_step("Create and apply PVC/Pod using dell-storage storageClass")
+
+    yaml_path = "/home/sysadmin/dell-storage-test-nfs-pod.yaml"
+    kubectl_create_pods_keyword = KubectlCreatePodsKeywords(ssh_connection)
+    kubectl_create_pods_keyword.create_from_yaml(yaml_path)
+
+    pod_name = "powerstoretest-0"
+    get_logger().log_test_case_step(f"Check if test {pod_name} pod is running")
+    verify_dell_storage_pods_are_running(ssh_connection)
+
+    get_logger().log_test_case_step(f"Creating text.txt file inside of {pod_name} pod")
+    kubectl_exec_in_pods = KubectlExecInPodsKeywords(ssh_connection)
+    options = f"-it -n {namespace}"
+    cmd = "bash -c 'touch /data0/test.txt'"
+    kubectl_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
+    validate_equals(ssh_connection.get_return_code(), 0, f"Write to {pod_name} pod success")
+
+    get_logger().log_info("sync pod")
+    cmd = "bash -c 'sync'"
+    kubectl_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
+    validate_equals(ssh_connection.get_return_code(), 0, f"sync pod {pod_name} success")
+
+    get_logger().log_test_case_step("Verify data integrity")
+    verify_file_created_on_pod_exists(ssh_connection, namespace, pod_name)
+    KubectlExecInPodsKeywords(ssh_connection).run_pod_exec_cmd("csi-cephfs-demo-pod", "bash -c 'test -f /data/test.txt'", options="-i")
+    validate_equals(ssh_connection.get_return_code(), 0, "test.txt exists on csi-cephfs-demo-pod")
+
+    # Start a continuous-write pod on the nfs StorageClass and confirm it is writing.
+    get_logger().log_test_case_step("Start continuous-write pod on the nfs StorageClass and verify it is writing")
+    continuous_write_keywords = KubectlContinuousWriteKeywords(ssh_connection)
+    writer_pod_name, writer_pvc_name = continuous_write_keywords.start_continuous_write_pod("dell-nfs")
+    request.addfinalizer(lambda: continuous_write_keywords.cleanup_continuous_write_pod(writer_pod_name, writer_pvc_name))
+    writer_count_before = continuous_write_keywords.wait_for_write_progress(writer_pod_name, previous_count=0)
+    get_logger().log_info(f"{writer_pod_name} write-cycle count: {writer_count_before}")
+
+    KubectlExecInPodsKeywords(ssh_connection).run_pod_exec_cmd("csi-rbd-demo-pod", "bash -c 'test -f /data/test.txt'", options="-i")
+    validate_equals(ssh_connection.get_return_code(), 0, "test.txt exists on csi-rbd-demo-pod")
+
+
+@mark.p2
+@mark.lab_dell_storage
+@mark.lab_has_rook_ceph
+@mark.lab_is_simplex
+def test_dell_storage_iscsi_lifecycle_coexistence_rook_ceph_sx(request: FixtureRequest):
+    """
+    Test Dell Storage coexistence with Ceph backend
+
+    The lab should have dell-storage app installed with the dell storageClass and the ceph backend also installed.
+
+
+    Test Steps:
+        - Check dell-storage app status.
+        - Make sure that dell-storage is applied (ISCSI)
+        - Make sure that rook-ceph backend is configured
+        - Create and apply PVC/Pod using RBD storageClass
+        - Write a test file on this RBD pod
+        - Create and apply PVC/Pod using CEPH storageClass
+        - Write a test file on this CEPH pod
+        - Create and apply PVC/Pod using dell-storage storageClass
+        - Write a test file on this dell-storage pod
+        - Verify data integrity
+
+
+    Args:
+        request (FixtureRequest): pytest request fixture for test setup and teardown
+    """
+
+    TEST_FILES_DIR = "resources/cloud_platform/storage/volume_snapshot"
+    REMOTE_HOME = "/home/sysadmin"
+
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    namespace = "dell-storage"
+    dell_storage_app_name = "dell-storage"
+    chart_name = "csi-powerstore"
+
+    def verify_dell_storage_pods_are_running(ssh_connection):
+        pod_prefix = "csi-powerstore"
+        get_pod_obj = KubectlGetPodsKeywords(ssh_connection)
+        pod_names = get_pod_obj.get_pods(namespace=namespace).get_unique_pod_matching_prefix(starts_with=pod_prefix)
+        pod_status = get_pod_obj.wait_for_pod_status(pod_names, "Running", namespace)
+        validate_equals(pod_status, True, f"Verify {pod_prefix} pods are running")
+
+        get_pod_obj = KubectlGetPodsKeywords(ssh_connection)
+        pod_status = get_pod_obj.wait_for_pod_status(pod_name, "Running", namespace)
+        validate_equals(pod_status, True, f"Verify {pod_name} pod is running")
+
+    def upload_yaml_files(ssh_connection: SSHConnection, file_names: list[str]) -> None:
+        """Upload test YAML files from local resources to the active controller.
+
+        Args:
+            ssh_connection (SSHConnection): SSH connection to the active controller.
+            file_names (list[str]): List of YAML file names to upload.
+        """
+        file_keywords = FileKeywords(ssh_connection)
+        for file_name in file_names:
+            local_path = get_stx_resource_path(f"{TEST_FILES_DIR}/{file_name}")
+            remote_path = f"{REMOTE_HOME}/{file_name}"
+            file_keywords.upload_file(local_path, remote_path, overwrite=True)
+
+    def cleanup_test_resources(
+        ssh_connection: SSHConnection,
+        pod_names: list[str],
+        pvc_names: list[str],
+        yaml_file_names: list[str],
+    ) -> None:
+        """Clean up all resources created during a volume snapshot test.
+
+        Args:
+            ssh_connection (SSHConnection): SSH connection to the active controller.
+            pod_names (list[str]): Pod names to delete.
+            pvc_names (list[str]): PVC names to delete.
+            yaml_file_names (list[str]): YAML file names to remove from the controller.
+        """
+        delete_resource_keywords = KubectlDeleteResourceKeywords(ssh_connection)
+
+        for pod_name in pod_names:
+            KubectlDeletePodsKeywords(ssh_connection).cleanup_pod(pod_name)
+
+        for pvc_name in pvc_names:
+            delete_resource_keywords.delete_resource("pvc", pvc_name)
+            KubectlGetPvcKeywords(ssh_connection).wait_for_pvc_to_be_deleted(pvc_name)
+
+        file_keywords = FileKeywords(ssh_connection)
+        for file_name in yaml_file_names:
+            file_keywords.delete_file(f"{REMOTE_HOME}/{file_name}")
+
+    def teardown():
+        get_logger().log_teardown_step("Clean up the test pod resources.")
+        KubectlFileDeleteKeywords(ssh_connection).delete_resources("/home/sysadmin/dell-storage-test-pod.yaml", ignore_not_found=True)
+        cleanup_test_resources(
+            ssh_connection,
+            pod_names=["csi-cephfs-demo-pod", "csi-rbd-demo-pod"],
+            pvc_names=["cephfs-pvc", "rbd-pvc"],
+            yaml_file_names=[],
+        )
+
+    get_logger().log_test_case_step(f"Make sure that {dell_storage_app_name} is applied (ISCSI) ")
+    system_applications = SystemApplicationListKeywords(ssh_connection).get_system_application_list()
+    dell_storage_app_status = system_applications.get_application(dell_storage_app_name).get_status()
+    get_logger().log_info(f"{dell_storage_app_name} application is: {dell_storage_app_status}")
+
+    common_verify_dell_app_status_iscsi_sx(ssh_connection, dell_storage_app_status, namespace, dell_storage_app_name, chart_name)
+    request.addfinalizer(common_dell_storage_teardown)
+    request.addfinalizer(teardown)
+
+    test_pod_yaml = "dell-storage-test-pod.yaml"
+    dell_storage_files = [test_pod_yaml]
+    for file_name in dell_storage_files:
+        local_path = get_stx_resource_path(f"resources/cloud_platform/storage/dell_storage/{file_name}")
+        remote_yaml_path = f"/home/sysadmin/{file_name}"
+        FileKeywords(ssh_connection).upload_file(local_path, remote_yaml_path, overwrite=True)
+
+    get_logger().log_test_case_step("Make sure that rook-ceph backend is configured")
+    ensure_rook_ceph_storage_backend_configured(ssh_connection)
+
+    get_logger().log_test_case_step("Create and apply PVC/Pod using CEPH storageClass")
+    storage_type = "cephfs"
+    pvc_name = f"{storage_type}-pvc"
+    pod_name = f"csi-{storage_type}-demo-pod"
+
+    yaml_files = [f"{storage_type}-pvc.yaml", f"{storage_type}-pod.yaml"]
+
+    # Setup: clean up any leftover resources from previous runs
+    get_logger().log_setup_step("Delete test pods, PVCs, and snapshots if they exist before test run")
+    cleanup_test_resources(
+        ssh_connection,
+        pod_names=[pod_name],
+        pvc_names=[pvc_name],
+        yaml_file_names=[],
+    )
+
+    get_logger().log_test_case_step("Upload CephFS test YAML files to active controller")
+    upload_yaml_files(ssh_connection, yaml_files)
+    pvc_yaml = f"{REMOTE_HOME}/{storage_type}-pvc.yaml"
+    pod_yaml = f"{REMOTE_HOME}/{storage_type}-pod.yaml"
+
+    get_logger().log_test_case_step(f"Create a {storage_type} PVC and make sure it is in Bound status")
+    KubectlFileApplyKeywords(ssh_connection).apply_resource_from_yaml(pvc_yaml)
+    KubectlGetPvcKeywords(ssh_connection).wait_for_pvcs_to_reach_status(expected_status="Bound", pvc_names=pvc_name)
+
+    get_logger().log_test_case_step(f"Create a {storage_type} pod")
+    KubectlFileApplyKeywords(ssh_connection).apply_resource_from_yaml(pod_yaml)
+    KubectlGetPodsKeywords(ssh_connection).wait_for_pod_status(pod_name, "Running")
+
+    get_logger().log_test_case_step("Write a test file on Pod")
+    KubectlExecInPodsKeywords(ssh_connection).run_pod_exec_cmd(pod_name, "bash -c 'touch /data/test.txt'", options="-i")
+
+    storage_type = "rbd"
+    pvc_name = f"{storage_type}-pvc"
+    pod_name = f"csi-{storage_type}-demo-pod"
+
+    yaml_files = [f"{storage_type}-pvc.yaml", f"{storage_type}-pod.yaml"]
+
+    get_logger().log_setup_step("Delete test pods, PVCs, and snapshots if they exist before test run")
+    cleanup_test_resources(
+        ssh_connection,
+        pod_names=[pod_name],
+        pvc_names=[pvc_name],
+        yaml_file_names=[],
+    )
+
+    get_logger().log_test_case_step("Upload RBD test YAML files to active controller")
+    upload_yaml_files(ssh_connection, yaml_files)
+    pvc_yaml = f"{REMOTE_HOME}/{storage_type}-pvc.yaml"
+    pod_yaml = f"{REMOTE_HOME}/{storage_type}-pod.yaml"
+
+    get_logger().log_test_case_step(f"Create a {storage_type} PVC and make sure it is in Bound status")
+    KubectlFileApplyKeywords(ssh_connection).apply_resource_from_yaml(pvc_yaml)
+    KubectlGetPvcKeywords(ssh_connection).wait_for_pvcs_to_reach_status(expected_status="Bound", pvc_names=pvc_name)
+
+    get_logger().log_test_case_step(f"Create a {storage_type} pod")
+    KubectlFileApplyKeywords(ssh_connection).apply_resource_from_yaml(pod_yaml)
+    KubectlGetPodsKeywords(ssh_connection).wait_for_pod_status(pod_name, "Running")
+
+    get_logger().log_test_case_step("Write a test file on Pod")
+    KubectlExecInPodsKeywords(ssh_connection).run_pod_exec_cmd(pod_name, "bash -c 'touch /data/test.txt'", options="-i")
+
+    get_logger().log_test_case_step("Create and apply PVC/Pod using dell-storage storageClass")
+
+    yaml_path = "/home/sysadmin/dell-storage-test-pod.yaml"
+    kubectl_create_pods_keyword = KubectlCreatePodsKeywords(ssh_connection)
+    kubectl_create_pods_keyword.create_from_yaml(yaml_path)
+
+    pod_name = "powerstoretest-0"
+    get_logger().log_test_case_step(f"Check if test {pod_name} pod is running")
+    verify_dell_storage_pods_are_running(ssh_connection)
+
+    get_logger().log_test_case_step(f"Creating text.txt file inside of {pod_name} pod")
+    kubectl_exec_in_pods = KubectlExecInPodsKeywords(ssh_connection)
+    options = f"-it -n {namespace}"
+    cmd = "bash -c 'touch /data0/test.txt'"
+    kubectl_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
+    validate_equals(ssh_connection.get_return_code(), 0, f"Write to {pod_name} pod success")
+
+    get_logger().log_info("sync pod")
+    cmd = "bash -c 'sync'"
+    kubectl_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options)
+    validate_equals(ssh_connection.get_return_code(), 0, f"sync pod {pod_name} success")
+
+    get_logger().log_test_case_step("Verify data integrity")
+    verify_file_created_on_pod_exists(ssh_connection, namespace, pod_name)
+    KubectlExecInPodsKeywords(ssh_connection).run_pod_exec_cmd("csi-cephfs-demo-pod", "bash -c 'test -f /data/test.txt'", options="-i")
+    validate_equals(ssh_connection.get_return_code(), 0, "test.txt exists on csi-cephfs-demo-pod")
+
+    # Start a continuous-write pod on the iscsi StorageClass and confirm it is writing.
+    get_logger().log_test_case_step("Start continuous-write pod on the iscsi StorageClass and verify it is writing")
+    continuous_write_keywords = KubectlContinuousWriteKeywords(ssh_connection)
+    writer_pod_name, writer_pvc_name = continuous_write_keywords.start_continuous_write_pod("dell-iscsi")
+    request.addfinalizer(lambda: continuous_write_keywords.cleanup_continuous_write_pod(writer_pod_name, writer_pvc_name))
+    writer_count_before = continuous_write_keywords.wait_for_write_progress(writer_pod_name, previous_count=0)
+    get_logger().log_info(f"{writer_pod_name} write-cycle count: {writer_count_before}")
+
+    KubectlExecInPodsKeywords(ssh_connection).run_pod_exec_cmd("csi-rbd-demo-pod", "bash -c 'test -f /data/test.txt'", options="-i")
+    validate_equals(ssh_connection.get_return_code(), 0, "test.txt exists on csi-rbd-demo-pod")
