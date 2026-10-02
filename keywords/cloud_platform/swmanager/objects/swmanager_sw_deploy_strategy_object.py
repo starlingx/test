@@ -134,3 +134,31 @@ class SwManagerSwDeployStrategyObject:
     def get_build_reason(self) -> Optional[str]:
         """Gets the build_reason of the sw-deploy-strategy."""
         return self.build_reason
+
+    def is_at_step(self, step_name: str) -> bool:
+        """Checks whether the current-step contains step_name (substring match).
+
+        A substring match tolerates trailing detail such as the Kubernetes version
+        appended to ``kube-host-upgrade-control-plane <version>``.
+
+        Args:
+            step_name (str): The current-step value to match.
+
+        Returns:
+            bool: True if current-step contains step_name, False otherwise.
+        """
+        return self.current_step is not None and step_name in self.current_step
+
+    def is_at_stage(self, stage_name: str) -> bool:
+        """Checks whether the current-stage contains stage_name (substring match).
+
+        Stage-level targets such as ``sw-upgrade-complete`` are reported as the
+        ``current-stage`` while the ``current-step`` cycles through step names.
+
+        Args:
+            stage_name (str): The current-stage value to match.
+
+        Returns:
+            bool: True if current-stage contains stage_name, False otherwise.
+        """
+        return self.current_stage is not None and stage_name in self.current_stage
