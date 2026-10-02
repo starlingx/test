@@ -6,7 +6,7 @@ from framework.ssh.ssh_connection import SSHConnection
 from framework.validation.validation import validate_equals
 from keywords.cloud_platform.dcmanager.objects.dcmanger_subcloud_list_availability_enum import DcManagerSubcloudListAvailabilityEnum
 from keywords.cloud_platform.dcmanager.rehoming_utils import verify_subcloud_healthy
-from keywords.cloud_platform.dcmanager.subcloud_picker_keywords import pick_subcloud_with_fallback
+from keywords.cloud_platform.dcmanager.subcloud_picker_keywords import SubcloudPickerKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.cloud_platform.system.host.system_host_list_keywords import SystemHostListKeywords
 from keywords.cloud_platform.system.host.system_host_swact_keywords import SystemHostSwactKeywords
@@ -64,7 +64,7 @@ def test_swact_duplex_subcloud_c0_to_c1_and_back(request):
     Teardown:
         - None
     """
-    system_controller_ssh, result = pick_subcloud_with_fallback(
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
         availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
         present_in_config=True,
         lab_type=LabTypeEnum.DUPLEX,

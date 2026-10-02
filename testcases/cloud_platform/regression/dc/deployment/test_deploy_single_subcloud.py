@@ -11,7 +11,7 @@ from keywords.cloud_platform.dcmanager.dcmanager_subcloud_lifecycle_keywords imp
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_list_keywords import DcManagerSubcloudListKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_manager_keywords import DcManagerSubcloudManagerKeywords
 from keywords.cloud_platform.dcmanager.subcloud_deploy_config_sync_keywords import SubcloudDeployConfigSyncKeywords
-from keywords.cloud_platform.dcmanager.subcloud_picker_keywords import SubcloudPickerKeywords, pick_subcloud_with_fallback
+from keywords.cloud_platform.dcmanager.subcloud_picker_keywords import SubcloudPickerKeywords
 from keywords.cloud_platform.health.health_keywords import HealthKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.cloud_platform.sync_files.sync_deployment_assets import SyncDeploymentAssets
@@ -26,7 +26,7 @@ def get_undeployed_subcloud_name() -> str:
 
     Uses SubcloudPickerKeywords.pick_undeployed_with_fallback to find a config
     subcloud not deployed on either system controller. If all are deployed, picks
-    one via pick_subcloud_with_fallback and removes it.
+    one via SubcloudPickerKeywords.pick_with_fallback and removes it.
 
     Returns:
         str: Subcloud name ready for deployment.
@@ -36,7 +36,7 @@ def get_undeployed_subcloud_name() -> str:
         return subcloud_name
 
     get_logger().log_info("All config subclouds are deployed, removing one to free it")
-    owner_ssh, result = pick_subcloud_with_fallback(present_in_config=True)
+    owner_ssh, result = SubcloudPickerKeywords.pick_with_fallback(present_in_config=True)
     subcloud_name = result.get_name()
     DcManagerSubcloudLifecycleKeywords(owner_ssh).delete_subcloud(subcloud_name)
     return subcloud_name

@@ -8,7 +8,7 @@ from keywords.cloud_platform.dcmanager.dcmanager_kube_rootca_update_strategy_key
 from keywords.cloud_platform.dcmanager.dcmanager_strategy_cleanup_keywords import DcmanagerStrategyCleanupKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_show_keywords import DcManagerSubcloudShowKeywords
 from keywords.cloud_platform.dcmanager.objects.dcmanger_subcloud_list_availability_enum import DcManagerSubcloudListAvailabilityEnum
-from keywords.cloud_platform.dcmanager.subcloud_picker_keywords import pick_subcloud_with_fallback
+from keywords.cloud_platform.dcmanager.subcloud_picker_keywords import SubcloudPickerKeywords
 
 SUBJECT = "C=CA ST=ON L=Ottawa O=WindRiver OU=StarlingX CN=kubernetes"
 
@@ -73,7 +73,7 @@ def test_kube_rootca_update_strategy_single_simplex_subcloud_n_release(request):
     Teardown:
         - Delete strategy if still present
     """
-    system_controller_ssh, result = pick_subcloud_with_fallback(
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
         availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
         load="N",
         lab_type=LabTypeEnum.SIMPLEX,
@@ -100,7 +100,7 @@ def test_kube_rootca_update_strategy_single_simplex_subcloud_n_minus_1_release(r
     Teardown:
         - Delete strategy if still present
     """
-    system_controller_ssh, result = pick_subcloud_with_fallback(
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
         availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
         load="N-1",
         lab_type=LabTypeEnum.SIMPLEX,
@@ -130,7 +130,7 @@ def test_kube_rootca_update_strategy_single_duplex_subcloud_n_release(request):
     Teardown:
         - Delete strategy if still present
     """
-    system_controller_ssh, result = pick_subcloud_with_fallback(
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
         availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
         load="N",
         lab_type=LabTypeEnum.DUPLEX,
@@ -157,7 +157,7 @@ def test_kube_rootca_update_strategy_single_duplex_subcloud_n_minus_1_release(re
     Teardown:
         - Delete strategy if still present
     """
-    system_controller_ssh, result = pick_subcloud_with_fallback(
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
         availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
         load="N-1",
         lab_type=LabTypeEnum.DUPLEX,

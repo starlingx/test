@@ -4,7 +4,7 @@ from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
 from framework.validation.validation import validate_equals
 from keywords.cloud_platform.dcmanager.objects.dcmanger_subcloud_list_availability_enum import DcManagerSubcloudListAvailabilityEnum
-from keywords.cloud_platform.dcmanager.subcloud_picker_keywords import pick_subcloud_with_fallback
+from keywords.cloud_platform.dcmanager.subcloud_picker_keywords import SubcloudPickerKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.cloud_platform.system.application.object.system_application_upload_input import SystemApplicationUploadInput
 from keywords.cloud_platform.system.application.system_application_apply_keywords import SystemApplicationApplyKeywords
@@ -99,7 +99,7 @@ def test_oidc_app_applied_on_subcloud(request):
     Teardown:
         - None
     """
-    _, result = pick_subcloud_with_fallback(
+    _, result = SubcloudPickerKeywords.pick_with_fallback(
         availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
         present_in_config=True,
     )

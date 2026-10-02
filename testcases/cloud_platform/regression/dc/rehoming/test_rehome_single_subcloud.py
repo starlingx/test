@@ -12,7 +12,7 @@ from keywords.cloud_platform.dcmanager.dcmanager_subcloud_manager_keywords impor
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_show_keywords import DcManagerSubcloudShowKeywords
 from keywords.cloud_platform.dcmanager.objects.dcmanger_subcloud_list_availability_enum import DcManagerSubcloudListAvailabilityEnum
 from keywords.cloud_platform.dcmanager.rehoming_utils import perform_rehome_operation, sync_deployment_assets_between_system_controllers, verify_subcloud_healthy
-from keywords.cloud_platform.dcmanager.subcloud_picker_keywords import pick_subcloud_with_fallback
+from keywords.cloud_platform.dcmanager.subcloud_picker_keywords import SubcloudPickerKeywords
 from keywords.cloud_platform.fault_management.alarms.alarm_list_keywords import AlarmListKeywords
 from keywords.cloud_platform.fault_management.fm_client_cli.fm_client_cli_keywords import FaultManagementClientCLIKeywords
 from keywords.cloud_platform.fault_management.fm_client_cli.object.fm_client_cli_object import FaultManagementClientCLIObject
@@ -116,7 +116,7 @@ def test_rehome_single_duplex_subcloud_n_release():
 
     # Find a healthy duplex subcloud (with fallback to secondary SC)
     get_logger().log_info("Getting duplex subcloud")
-    origin_system_controller_ssh, result = pick_subcloud_with_fallback(
+    origin_system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
         availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
         load="N",
         lab_type=LabTypeEnum.DUPLEX,
@@ -190,7 +190,7 @@ def test_rehome_single_simplex_subcloud_n_release():
 
     # Find a healthy simplex subcloud (with fallback to secondary SC)
     get_logger().log_info("Selecting healthy simplex subcloud for rehoming")
-    origin_system_controller_ssh, result = pick_subcloud_with_fallback(
+    origin_system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
         availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
         load="N",
         lab_type=LabTypeEnum.SIMPLEX,
@@ -254,7 +254,7 @@ def test_rehome_single_duplex_subcloud_n_minus_1_release():
     cloud_b_ssh = LabConnectionKeywords().get_secondary_active_controller_ssh()
 
     get_logger().log_info("Getting duplex subcloud on N-1 release")
-    origin_system_controller_ssh, result = pick_subcloud_with_fallback(
+    origin_system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
         availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
         load="N-1",
         lab_type=LabTypeEnum.DUPLEX,
@@ -318,7 +318,7 @@ def test_rehome_single_simplex_subcloud_n_minus_1_release():
     cloud_b_ssh = LabConnectionKeywords().get_secondary_active_controller_ssh()
 
     get_logger().log_info("Selecting healthy simplex subcloud on N-1 release for rehoming")
-    origin_system_controller_ssh, result = pick_subcloud_with_fallback(
+    origin_system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
         availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
         load="N-1",
         lab_type=LabTypeEnum.SIMPLEX,
@@ -376,7 +376,7 @@ def test_rehome_single_duplex_subcloud_n_minus_2_release():
     cloud_b_ssh = LabConnectionKeywords().get_secondary_active_controller_ssh()
 
     get_logger().log_info("Getting duplex subcloud on N-2 release")
-    origin_system_controller_ssh, result = pick_subcloud_with_fallback(
+    origin_system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
         availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
         load="N-2",
         lab_type=LabTypeEnum.DUPLEX,
@@ -440,7 +440,7 @@ def test_rehome_single_simplex_subcloud_n_minus_2_release():
     cloud_b_ssh = LabConnectionKeywords().get_secondary_active_controller_ssh()
 
     get_logger().log_info("Selecting healthy simplex subcloud on N-2 release for rehoming")
-    origin_system_controller_ssh, result = pick_subcloud_with_fallback(
+    origin_system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
         availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
         load="N-2",
         lab_type=LabTypeEnum.SIMPLEX,
@@ -501,7 +501,7 @@ def test_rehome_duplex_subcloud_fails_when_c1_is_active():
 
     # Find a healthy duplex subcloud (with fallback to secondary SC)
     get_logger().log_info("Getting duplex subcloud")
-    origin_system_controller_ssh, result = pick_subcloud_with_fallback(
+    origin_system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
         availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
         load="N",
         lab_type=LabTypeEnum.DUPLEX,
@@ -577,7 +577,7 @@ def test_rehome_simplex_subcloud_fails_with_alarm_and_succeeds_after_clear(reque
 
     # Find a healthy simplex subcloud (with fallback to secondary SC)
     get_logger().log_info("Selecting healthy simplex subcloud for rehoming test")
-    origin_system_controller_ssh, result = pick_subcloud_with_fallback(
+    origin_system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
         availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
         load="N",
         lab_type=LabTypeEnum.SIMPLEX,

@@ -14,7 +14,7 @@ from keywords.cloud_platform.dcmanager.dcmanager_subcloud_manager_keywords impor
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_prestage import DcmanagerSubcloudPrestage
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_show_keywords import DcManagerSubcloudShowKeywords
 from keywords.cloud_platform.dcmanager.objects.dcmanger_subcloud_list_availability_enum import DcManagerSubcloudListAvailabilityEnum
-from keywords.cloud_platform.dcmanager.subcloud_picker_keywords import pick_subcloud_with_fallback
+from keywords.cloud_platform.dcmanager.subcloud_picker_keywords import SubcloudPickerKeywords
 from keywords.cloud_platform.fault_management.alarms.alarm_list_keywords import AlarmListKeywords
 from keywords.cloud_platform.fault_management.fm_client_cli.fm_client_cli_keywords import FaultManagementClientCLIKeywords
 from keywords.cloud_platform.fault_management.fm_client_cli.object.fm_client_cli_object import FaultManagementClientCLIObject
@@ -182,7 +182,7 @@ def test_prestage_single_simplex_subcloud_for_install_n_release(request):
         - None
     """
 
-    system_controller_ssh, result = pick_subcloud_with_fallback(
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
         availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
         lab_type=LabTypeEnum.SIMPLEX,
     )
@@ -222,7 +222,7 @@ def test_prestage_single_simplex_subcloud_for_sw_deploy_n_release(request):
         - None
     """
 
-    system_controller_ssh, result = pick_subcloud_with_fallback(
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
         availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
         lab_type=LabTypeEnum.SIMPLEX,
     )
@@ -263,7 +263,7 @@ def test_prestage_single_simplex_subcloud_for_install_n_release_on_n_release(req
     """
     required_release = str(CloudPlatformVersionManagerClass().get_sw_version())
 
-    system_controller_ssh, result = pick_subcloud_with_fallback(
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
         availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
         lab_type=LabTypeEnum.SIMPLEX,
         load=required_release,
@@ -309,7 +309,7 @@ def test_prestage_single_simplex_subcloud_for_install_n_minus_one_release(reques
     """
     required_release = str(CloudPlatformVersionManagerClass().get_last_major_release())
 
-    system_controller_ssh, result = pick_subcloud_with_fallback(
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
         availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
         lab_type=LabTypeEnum.SIMPLEX,
         load=required_release,
@@ -355,7 +355,7 @@ def test_prestage_single_simplex_subcloud_for_install_n_minus_two_release(reques
     """
     required_release = str(CloudPlatformVersionManagerClass().get_second_last_major_release())
 
-    system_controller_ssh, result = pick_subcloud_with_fallback(
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
         availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
         lab_type=LabTypeEnum.SIMPLEX,
         load=required_release,
@@ -401,7 +401,7 @@ def test_prestage_single_simplex_subcloud_for_install_n_release_from_n_minus_two
     current_release = str(CloudPlatformVersionManagerClass().get_second_last_major_release())
     target_release = str(CloudPlatformVersionManagerClass().get_sw_version())
 
-    system_controller_ssh, result = pick_subcloud_with_fallback(
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
         availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
         lab_type=LabTypeEnum.SIMPLEX,
         load=current_release,
@@ -447,7 +447,7 @@ def test_prestage_single_simplex_subcloud_for_install_n_release_from_n_minus_one
     current_release = str(CloudPlatformVersionManagerClass().get_last_major_release())
     target_release = str(CloudPlatformVersionManagerClass().get_sw_version())
 
-    system_controller_ssh, result = pick_subcloud_with_fallback(
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
         availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
         lab_type=LabTypeEnum.SIMPLEX,
         load=current_release,
@@ -491,7 +491,7 @@ def test_prestage_single_simplex_subcloud_for_install_retry_after_process_kill_n
     Teardown:
         - None
     """
-    system_controller_ssh, result = pick_subcloud_with_fallback(
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
         availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
         lab_type=LabTypeEnum.SIMPLEX,
     )
@@ -527,7 +527,7 @@ def test_prestage_single_simplex_subcloud_for_sw_deploy_retry_after_process_kill
     Teardown:
         - None
     """
-    system_controller_ssh, result = pick_subcloud_with_fallback(
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
         availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
         lab_type=LabTypeEnum.SIMPLEX,
     )
@@ -564,7 +564,7 @@ def test_prestage_single_simplex_subcloud_for_multiple_deployment_states(request
     Teardown:
         - Restore release metadata to original location
     """
-    system_controller_ssh, result = pick_subcloud_with_fallback(
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
         availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
         lab_type=LabTypeEnum.SIMPLEX,
     )
@@ -665,7 +665,7 @@ def test_verify_prestage_for_sw_deploy_option_n_minus_one_to_n(request):
     required_release = str(CloudPlatformVersionManagerClass().get_last_major_release())
     target_prestage_release = str(CloudPlatformVersionManagerClass().get_sw_version())
 
-    system_controller_ssh, result = pick_subcloud_with_fallback(
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
     availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
     lab_type=LabTypeEnum.SIMPLEX,
     load=required_release
@@ -711,7 +711,7 @@ def test_verify_prestage_for_sw_deploy_option_n_minus_two_to_n(request):
     required_release = str(CloudPlatformVersionManagerClass().get_second_last_major_release())
     target_prestage_release = str(CloudPlatformVersionManagerClass().get_sw_version())
 
-    system_controller_ssh, result = pick_subcloud_with_fallback(
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
     availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
     lab_type=LabTypeEnum.SIMPLEX,
     load=required_release
@@ -756,7 +756,7 @@ def test_verify_prestage_for_sw_deploy_option_n_patching(request):
 
     required_release = str(CloudPlatformVersionManagerClass().get_sw_version())
 
-    system_controller_ssh, result = pick_subcloud_with_fallback(
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
     availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
     lab_type=LabTypeEnum.SIMPLEX,
     load=required_release
@@ -804,7 +804,7 @@ def test_verify_prestage_for_sw_deploy_option_n_minus_one_patching(request):
 
     required_release = str(CloudPlatformVersionManagerClass().get_last_major_release())
 
-    system_controller_ssh, result = pick_subcloud_with_fallback(
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
     availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
     lab_type=LabTypeEnum.SIMPLEX,
     load=required_release
@@ -858,7 +858,7 @@ def test_verify_prestage_for_sw_deploy_option_n_minus_two_patching(request):
     required_release = str(CloudPlatformVersionManagerClass().get_second_last_major_release())
     patch_state = "available"
 
-    system_controller_ssh, result = pick_subcloud_with_fallback(
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
     availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
     lab_type=LabTypeEnum.SIMPLEX,
     load=required_release,
@@ -906,7 +906,7 @@ def test_prestage_single_simplex_subcloud_fails_with_mgmt_alarm_but_succeeds_wit
     Teardown:
         - Clear injected alarm if still present
     """
-    system_controller_ssh, result = pick_subcloud_with_fallback(
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
         availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
         lab_type=LabTypeEnum.SIMPLEX,
     )
@@ -970,7 +970,7 @@ def test_prestage_blocked_when_subcloud_release_in_transient_state(request):
     Teardown:
         - Remove the copied metadata file from the subcloud's 'deploying' directory.
     """
-    system_controller_ssh, result = pick_subcloud_with_fallback(
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
         availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
         lab_type=LabTypeEnum.SIMPLEX,
     )
@@ -1067,14 +1067,14 @@ def test_prestage_fails_when_system_controller_metadata_dir_empty_for_version(re
     target_release = str(CloudPlatformVersionManagerClass().get_last_major_release())
 
     try:
-        system_controller_ssh, result = pick_subcloud_with_fallback(
+        system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
             availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
             lab_type=LabTypeEnum.SIMPLEX,
             load=target_release,
         )
     except KeywordException:
         target_release = str(CloudPlatformVersionManagerClass().get_second_last_major_release())
-        system_controller_ssh, result = pick_subcloud_with_fallback(
+        system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
             availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
             lab_type=LabTypeEnum.SIMPLEX,
             load=target_release,
@@ -1157,7 +1157,7 @@ def test_prestage_system_controller_copies_metadata_from_releases_dir_for_n_rele
     required_release = str(required_release_version)
     validate_equals(required_release_version.is_after_or_equal_to(CloudPlatformSoftwareVersion.STARLINGX_12_0), True, f"Validate that the current release {required_release} is >= N for this test.")
 
-    system_controller_ssh, result = pick_subcloud_with_fallback(
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
         availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
         lab_type=LabTypeEnum.SIMPLEX,
         load=required_release,
@@ -1216,7 +1216,7 @@ def test_prestage_system_controller_copies_metadata_from_legacy_dir_for_pre_n_mi
     required_release = str(required_release_version)
     validate_equals(required_release_version.is_after_or_equal_to(CloudPlatformSoftwareVersion.STARLINGX_12_0), False, f"Validate that the release {required_release} is < N for this test.")
 
-    system_controller_ssh, result = pick_subcloud_with_fallback(
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
         availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
         lab_type=LabTypeEnum.SIMPLEX,
         load=required_release,
@@ -1269,7 +1269,7 @@ def test_prestage_writes_metadata_to_correct_subcloud_path(request):
     """
     required_release = str(CloudPlatformVersionManagerClass().get_sw_version())
 
-    system_controller_ssh, result = pick_subcloud_with_fallback(
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
         availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
         lab_type=LabTypeEnum.SIMPLEX,
         load=required_release,
@@ -1318,7 +1318,7 @@ def test_prestage_verify_prestage_version_for_sw_deploy(request):
     """
     required_release = str(CloudPlatformVersionManagerClass().get_sw_version())
 
-    system_controller_ssh, result = pick_subcloud_with_fallback(
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
         availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
         lab_type=LabTypeEnum.SIMPLEX,
         load=required_release,
@@ -1367,7 +1367,7 @@ def test_prestage_sync_output_has_no_missing_file_errors(request):
     """
     required_release = str(CloudPlatformVersionManagerClass().get_sw_version())
 
-    system_controller_ssh, result = pick_subcloud_with_fallback(
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
         availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
         lab_type=LabTypeEnum.SIMPLEX,
         load=required_release,
@@ -1410,7 +1410,7 @@ def test_prestage_for_install_then_for_sw_deploy_preserves_for_install_version(r
     required_release = str(CloudPlatformVersionManagerClass().get_last_major_release())
     target_prestage_release = str(CloudPlatformVersionManagerClass().get_sw_version())
 
-    system_controller_ssh, result = pick_subcloud_with_fallback(
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
         availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
         lab_type=LabTypeEnum.SIMPLEX,
         load=required_release,
@@ -1473,7 +1473,7 @@ def test_prestage_for_sw_deploy_then_for_install_preserves_for_sw_deploy_version
     required_release = str(CloudPlatformVersionManagerClass().get_last_major_release())
     target_prestage_release = str(CloudPlatformVersionManagerClass().get_sw_version())
 
-    system_controller_ssh, result = pick_subcloud_with_fallback(
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
         availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
         lab_type=LabTypeEnum.SIMPLEX,
         load=required_release,
@@ -1534,7 +1534,7 @@ def test_prestage_for_sw_deploy_n_release_is_idempotent(request):
     """
     target_prestage_release = str(CloudPlatformVersionManagerClass().get_sw_version())
 
-    system_controller_ssh, result = pick_subcloud_with_fallback(
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
         availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
         lab_type=LabTypeEnum.SIMPLEX,
         load=target_prestage_release,

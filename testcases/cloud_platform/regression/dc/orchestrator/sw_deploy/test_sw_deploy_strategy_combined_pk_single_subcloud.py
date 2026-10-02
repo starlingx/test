@@ -38,7 +38,7 @@ from keywords.cloud_platform.dcmanager.dcmanager_sw_deploy_strategy_keywords imp
 from keywords.cloud_platform.dcmanager.dcmanager_strategy_step_keywords import DcmanagerStrategyStepKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_list_keywords import DcManagerSubcloudListKeywords
 from keywords.cloud_platform.dcmanager.objects.dcmanger_subcloud_list_availability_enum import DcManagerSubcloudListAvailabilityEnum
-from keywords.cloud_platform.dcmanager.subcloud_picker_keywords import pick_subcloud_with_fallback
+from keywords.cloud_platform.dcmanager.subcloud_picker_keywords import SubcloudPickerKeywords
 from keywords.cloud_platform.system.kubernetes.kubernetes_version_list_keywords import SystemKubernetesListKeywords
 from keywords.cloud_platform.upgrade.software_list_keywords import SoftwareListKeywords
 from keywords.cloud_platform.version_info.cloud_platform_version_manager import CloudPlatformVersionManagerClass
@@ -207,7 +207,7 @@ def test_combined_pk_sw_deploy_strategy_single_simplex_subcloud_n_release(reques
     Teardown:
         - Delete strategy if still present
     """
-    system_controller_ssh, result = pick_subcloud_with_fallback(
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
         availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
         in_sync=False,
         lab_type=LabTypeEnum.SIMPLEX,
@@ -256,7 +256,7 @@ def test_combined_pk_sw_deploy_strategy_single_duplex_subcloud_n_release(request
     Teardown:
         - Delete strategy if still present
     """
-    system_controller_ssh, result = pick_subcloud_with_fallback(
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
         availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
         in_sync=False,
         lab_type=LabTypeEnum.DUPLEX,
@@ -307,7 +307,7 @@ def test_combined_pk_sw_deploy_strategy_with_prestage_single_simplex_subcloud_n_
     Teardown:
         - Delete strategy if still present
     """
-    system_controller_ssh, result = pick_subcloud_with_fallback(
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
         availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
         in_sync=False,
         lab_type=LabTypeEnum.SIMPLEX,
@@ -355,7 +355,7 @@ def test_combined_pk_sw_deploy_strategy_with_prestage_single_duplex_subcloud_n_r
     Teardown:
         - Delete strategy if still present
     """
-    system_controller_ssh, result = pick_subcloud_with_fallback(
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
         availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
         in_sync=False,
         lab_type=LabTypeEnum.DUPLEX,
@@ -407,7 +407,7 @@ def test_combined_pk_sw_deploy_strategy_with_prestage_snapshot_single_simplex_su
     Teardown:
         - Delete strategy if still present
     """
-    system_controller_ssh, result = pick_subcloud_with_fallback(
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
         availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
         in_sync=False,
         lab_type=LabTypeEnum.SIMPLEX,
@@ -456,7 +456,7 @@ def test_combined_pk_sw_deploy_strategy_with_prestage_snapshot_single_duplex_sub
     Teardown:
         - Delete strategy if still present
     """
-    system_controller_ssh, result = pick_subcloud_with_fallback(
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
         availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
         in_sync=False,
         lab_type=LabTypeEnum.DUPLEX,

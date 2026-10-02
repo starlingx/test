@@ -47,7 +47,7 @@ from keywords.cloud_platform.dcmanager.dcmanager_strategy_cleanup_keywords impor
 from keywords.cloud_platform.dcmanager.dcmanager_strategy_step_keywords import DcmanagerStrategyStepKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_sw_deploy_strategy_keywords import DcmanagerSwDeployStrategy
 from keywords.cloud_platform.dcmanager.objects.dcmanger_subcloud_list_availability_enum import DcManagerSubcloudListAvailabilityEnum
-from keywords.cloud_platform.dcmanager.subcloud_picker_keywords import SubcloudPickerKeywords, pick_subcloud_with_fallback
+from keywords.cloud_platform.dcmanager.subcloud_picker_keywords import SubcloudPickerKeywords
 from keywords.cloud_platform.linux.iptables_fault_injection_keywords import IptablesFaultInjectionKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.cloud_platform.system.kubernetes.kube_host_upgrade_list_keywords import KubeHostUpgradeListKeywords
@@ -258,7 +258,7 @@ def test_combined_pk_auto_rollback_kube_cp_failure(request):
         - Remove the ip6tables rule (idempotent)
         - Delete strategy if still present
     """
-    system_controller_ssh, result = pick_subcloud_with_fallback(
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
         availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
         in_sync=False,
         lab_type=LabTypeEnum.SIMPLEX,
@@ -499,7 +499,7 @@ def test_combined_pk_cleanup_after_auto_rollback(request):
         - Remove the ip6tables rule (idempotent)
         - Delete strategy if still present
     """
-    system_controller_ssh, result = pick_subcloud_with_fallback(
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
         availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
         in_sync=False,
         lab_type=LabTypeEnum.SIMPLEX,

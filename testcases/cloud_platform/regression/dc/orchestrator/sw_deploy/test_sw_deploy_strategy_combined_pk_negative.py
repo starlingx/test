@@ -50,7 +50,7 @@ from keywords.cloud_platform.dcmanager.dcmanager_strategy_cleanup_keywords impor
 from keywords.cloud_platform.dcmanager.dcmanager_strategy_step_keywords import DcmanagerStrategyStepKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_sw_deploy_strategy_keywords import DcmanagerSwDeployStrategy
 from keywords.cloud_platform.dcmanager.objects.dcmanger_subcloud_list_availability_enum import DcManagerSubcloudListAvailabilityEnum
-from keywords.cloud_platform.dcmanager.subcloud_picker_keywords import pick_subcloud_with_fallback
+from keywords.cloud_platform.dcmanager.subcloud_picker_keywords import SubcloudPickerKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.cloud_platform.system.kubernetes.kubernetes_version_list_keywords import SystemKubernetesListKeywords
 from keywords.cloud_platform.upgrade.software_list_keywords import SoftwareListKeywords
@@ -158,7 +158,7 @@ def test_combined_pk_invalid_kube_version(request):
     Teardown:
         - Delete strategy if still present
     """
-    system_controller_ssh, result = pick_subcloud_with_fallback(
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
         availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
         lab_type=LabTypeEnum.SIMPLEX,
         load="N-1",
@@ -223,7 +223,7 @@ def test_combined_pk_invalid_release(request):
     Teardown:
         - Delete strategy if any was created
     """
-    system_controller_ssh, result = pick_subcloud_with_fallback(
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
         availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
         lab_type=LabTypeEnum.SIMPLEX,
         load="N-1",
@@ -277,7 +277,7 @@ def test_combined_pk_kube_version_lower_than_active(request):
     Teardown:
         - Delete strategy if still present
     """
-    system_controller_ssh, result = pick_subcloud_with_fallback(
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
         availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
         lab_type=LabTypeEnum.SIMPLEX,
         load="N-1",
@@ -337,7 +337,7 @@ def test_combined_pk_kube_version_same_as_active(request):
     Teardown:
         - Delete strategy if still present
     """
-    system_controller_ssh, result = pick_subcloud_with_fallback(
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
         availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
         lab_type=LabTypeEnum.SIMPLEX,
         load="N-1",
@@ -400,7 +400,7 @@ def test_combined_pk_rollback_with_delete_rejected(request):
     Teardown:
         - Delete strategy if any was created
     """
-    system_controller_ssh, result = pick_subcloud_with_fallback(
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
         availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
         in_sync=False,
         lab_type=LabTypeEnum.SIMPLEX,

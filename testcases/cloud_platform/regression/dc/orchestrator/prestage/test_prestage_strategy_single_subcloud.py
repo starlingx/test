@@ -7,7 +7,7 @@ from framework.validation.validation import validate_equals
 from keywords.cloud_platform.dcmanager.dcmanager_prestage_strategy_keywords import DcmanagerPrestageStrategyKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_strategy_cleanup_keywords import DcmanagerStrategyCleanupKeywords
 from keywords.cloud_platform.dcmanager.objects.dcmanger_subcloud_list_availability_enum import DcManagerSubcloudListAvailabilityEnum
-from keywords.cloud_platform.dcmanager.subcloud_picker_keywords import pick_subcloud_with_fallback
+from keywords.cloud_platform.dcmanager.subcloud_picker_keywords import SubcloudPickerKeywords
 from keywords.cloud_platform.version_info.cloud_platform_version_manager import CloudPlatformVersionManagerClass
 
 
@@ -68,7 +68,7 @@ def test_prestage_strategy_single_simplex_subcloud_for_install_n_release(request
     Teardown:
         - Delete strategy if still present
     """
-    system_controller_ssh, result = pick_subcloud_with_fallback(
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
         availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
         lab_type=LabTypeEnum.SIMPLEX,
     )
@@ -95,7 +95,7 @@ def test_prestage_strategy_single_simplex_subcloud_for_install_n_minus_1_release
     Teardown:
         - Delete strategy if still present
     """
-    system_controller_ssh, result = pick_subcloud_with_fallback(
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
         availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
         lab_type=LabTypeEnum.SIMPLEX,
     )
@@ -125,7 +125,7 @@ def test_prestage_strategy_single_simplex_subcloud_for_sw_deploy_n_release(reque
     Teardown:
         - Delete strategy if still present
     """
-    system_controller_ssh, result = pick_subcloud_with_fallback(
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
         availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
         lab_type=LabTypeEnum.SIMPLEX,
     )
@@ -152,7 +152,7 @@ def test_prestage_strategy_single_simplex_subcloud_for_sw_deploy_n_minus_1_relea
     Teardown:
         - Delete strategy if still present
     """
-    system_controller_ssh, result = pick_subcloud_with_fallback(
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
         availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
         lab_type=LabTypeEnum.SIMPLEX,
     )
@@ -182,7 +182,7 @@ def test_prestage_strategy_single_duplex_subcloud_for_install_n_release(request)
     Teardown:
         - Delete strategy if still present
     """
-    system_controller_ssh, result = pick_subcloud_with_fallback(
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
         availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
         lab_type=LabTypeEnum.DUPLEX,
     )
@@ -209,7 +209,7 @@ def test_prestage_strategy_single_duplex_subcloud_for_install_n_minus_1_release(
     Teardown:
         - Delete strategy if still present
     """
-    system_controller_ssh, result = pick_subcloud_with_fallback(
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
         availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
         lab_type=LabTypeEnum.DUPLEX,
     )
@@ -239,7 +239,7 @@ def test_prestage_strategy_single_duplex_subcloud_for_sw_deploy_n_release(reques
     Teardown:
         - Delete strategy if still present
     """
-    system_controller_ssh, result = pick_subcloud_with_fallback(
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
         availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
         lab_type=LabTypeEnum.DUPLEX,
     )
@@ -266,7 +266,7 @@ def test_prestage_strategy_single_duplex_subcloud_for_sw_deploy_n_minus_1_releas
     Teardown:
         - Delete strategy if still present
     """
-    system_controller_ssh, result = pick_subcloud_with_fallback(
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
         availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
         lab_type=LabTypeEnum.DUPLEX,
     )

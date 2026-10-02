@@ -16,7 +16,7 @@ from keywords.cloud_platform.dcmanager.objects.dcmanager_subcloud_group_output i
 from keywords.cloud_platform.dcmanager.objects.dcmanager_subcloud_group_show_output import (
     DcmanagerSubcloudGroupShowOutput,
 )
-from keywords.cloud_platform.dcmanager.subcloud_picker_keywords import SubcloudPickerKeywords, pick_subcloud_with_fallback
+from keywords.cloud_platform.dcmanager.subcloud_picker_keywords import SubcloudPickerKeywords
 
 DEFAULT_GROUP_NAME = "Default"
 
@@ -168,7 +168,7 @@ class DcmanagerSubcloudGroupKeywords(BaseKeyword):
             Tuple[SSHConnection, List[str]]: The system controller SSH connection
                 owning the members and the sorted member subcloud names.
         """
-        system_controller_ssh, _ = pick_subcloud_with_fallback(availability=DcManagerSubcloudListAvailabilityEnum.ONLINE, load=load)
+        system_controller_ssh, _ = SubcloudPickerKeywords.pick_with_fallback(availability=DcManagerSubcloudListAvailabilityEnum.ONLINE, load=load)
         members = sorted([result.get_name() for result in SubcloudPickerKeywords(system_controller_ssh).pick_all(availability=DcManagerSubcloudListAvailabilityEnum.ONLINE, load=load)])
         DcmanagerSubcloudGroupKeywords(system_controller_ssh).dcmanager_subcloud_group_add_with_subclouds(group_name, members)
         return system_controller_ssh, members
@@ -194,7 +194,7 @@ class DcmanagerSubcloudGroupKeywords(BaseKeyword):
             Tuple[SSHConnection, List[str]]: The system controller SSH connection
                 owning the members and the sorted member subcloud names.
         """
-        system_controller_ssh, _ = pick_subcloud_with_fallback(availability=DcManagerSubcloudListAvailabilityEnum.ONLINE, in_sync=in_sync)
+        system_controller_ssh, _ = SubcloudPickerKeywords.pick_with_fallback(availability=DcManagerSubcloudListAvailabilityEnum.ONLINE, in_sync=in_sync)
         members = sorted([result.get_name() for result in SubcloudPickerKeywords(system_controller_ssh).pick_all(availability=DcManagerSubcloudListAvailabilityEnum.ONLINE, in_sync=in_sync)])
         DcmanagerSubcloudGroupKeywords(system_controller_ssh).dcmanager_subcloud_group_add_with_subclouds(group_name, members)
         return system_controller_ssh, members
