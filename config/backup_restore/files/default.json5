@@ -1,5 +1,55 @@
 {
   // Base path for storing backup files locally.
   // Override this with a shared path when backup and restore
-  "local_backup_base_path": "/tmp/bnr"
+  "local_backup_base_path": "/tmp/bnr",
+
+  // Configuration for the "onsite restore without reinstall" flow.
+  // The seed ISO is built on the System Controller from the nocloud-factory-install
+  // tree, staged on the SC HTTPS server, and mounted on the subcloud via RVMC.
+  "onsite_restore": {
+    // Working directory on the System Controller where the nocloud tree is
+    // downloaded and the seed ISO is assembled. Named to be self-explanatory
+    // that it is created by automation.
+    "seed_stage_path": "/home/sysadmin/onsite-restore-seed",
+
+    // Base path of the SC HTTPS-served ISO tree. The seed is staged under
+    // <www_iso_base_path>/<sw_version>/nodes/<subcloud_name>/seed.iso
+    "www_iso_base_path": "/var/www/pages/iso",
+
+    // HTTPS port the System Controller serves staged ISOs on (used in the seed
+    // ISO URL mounted via RVMC).
+    "sc_https_iso_port": 8443,
+
+    // Filename of the SSL CA certificate to ship in the seed config so the
+    // subcloud trusts the registry used during restore. Optional: leave empty
+    // when no CA cert install is required (the seed scripts skip it). When set,
+    // a file with this name must exist on the SC home directory to be staged.
+    "ssl_ca_cert_name": "",
+
+    // Default total timeout (seconds) for the restore monitoring phase.
+    // Mirrors the platform restore-values.yaml default.
+    "default_restore_timeout": 5400,
+
+    // Base URL of the release build server hosting the prebuilt
+    // nocloud-factory-install tarball. The full download URL is resolved by the
+    // config object from this base + the version's branch/distro + tarball name
+    // (see OnsiteRestoreConfig.resolve_nocloud_tarball_url). Left empty by
+    // default: supply the real value via a non-public backup_restore config file
+    // (--backup_restore_config_file), or set a per-version "tarball_url" below.
+    "release_base_url": "",
+    "nocloud_tarball_name": "nocloud-factory-install.tar",
+
+    // Versions registry: maps subcloud software version -> build metadata.
+    //   branch: the release build-server branch (e.g. "master" for the trixie line).
+    //   distro: selects the URL template (currently only "trixie").
+    // Onsite restore without reinstall is a trixie/master-only feature: the
+    // bullseye release tarballs do NOT contain the onsite-restore scripts, so only
+    // supported loads are listed here. A load not listed here fails fast in
+    // resolve_nocloud_tarball_url (KeyError), which correctly signals "onsite
+    // restore not supported on this load". To override the resolved URL, add a
+    // "tarball_url" to an entry.
+    "versions": {
+      "26.10": { "branch": "master", "distro": "trixie" }
+    }
+  }
 }
