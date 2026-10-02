@@ -657,14 +657,17 @@ class TlsKeywords(BaseKeyword):
     def verify_cipher_removal_on_endpoints(self, endpoints: list, cipher_config: dict, endpoint_context: dict) -> None:
         """Verify cipher removal enforcement across all endpoints.
 
-        Detects the certificate type per endpoint so that the correct TLS 1.2
-        ciphers are tested on endpoints that may present different certificates
-        (e.g. HAProxy uses the platform cert while Ingress uses its own).
+        TLS 1.2 ciphers are selected per endpoint based on the certificate type
+        the endpoint actually presents, since endpoints fronted by different
+        servers (e.g. HAProxy vs nginx ingress) may use different certificate
+        types (ECDSA vs RSA) and therefore negotiate different ciphers.
 
         Args:
             endpoints (list): List of endpoint dicts to test.
-            cipher_config (dict): Dict with removed_tls12_rsa, removed_tls12_ecdsa,
-                remaining_tls12_rsa, remaining_tls12_ecdsa, removed_tls13, remaining_tls13.
+            cipher_config (dict): Dict with removed_tls13, remaining_tls13, and
+                both cert-type variants of the TLS 1.2 ciphers:
+                removed_tls12_rsa, removed_tls12_ecdsa, remaining_tls12_rsa,
+                remaining_tls12_ecdsa.
             endpoint_context (dict): Dict with oam_ip, mgmt_ip, is_ipv6, tls13_not_enforced, skip_cipher_removal.
         """
         oam_ip = endpoint_context["oam_ip"]
@@ -682,7 +685,7 @@ class TlsKeywords(BaseKeyword):
                 get_logger().log_info(f"Skipping {name} - not governed by platform tls-cipher-suite")
                 continue
 
-            # Detect cert type per endpoint to select matching TLS 1.2 ciphers
+            # Select TLS 1.2 ciphers matching this endpoint's certificate type
             ep_cert_type = self.detect_platform_cert_type(host, ep["port"], ep_is_ipv6)
             if ep_cert_type == "RSA":
                 removed_tls12 = cipher_config["removed_tls12_rsa"]
@@ -691,7 +694,7 @@ class TlsKeywords(BaseKeyword):
                 removed_tls12 = cipher_config["removed_tls12_ecdsa"]
                 remaining_tls12 = cipher_config["remaining_tls12_ecdsa"]
 
-            get_logger().log_test_case_step(f"Verifying cipher removal on {name} (cert: {ep_cert_type})")
+            get_logger().log_test_case_step(f"Verifying cipher removal on {name}")
             self.verify_cipher_rejected(host, ep["port"], removed_tls12, name, ep_is_ipv6)
 
             if name in tls13_not_enforced:

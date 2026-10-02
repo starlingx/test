@@ -1,3 +1,4 @@
+from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
 from keywords.base_keyword import BaseKeyword
 from keywords.cloud_platform.command_wrappers import source_openrc
@@ -291,6 +292,14 @@ class SystemServiceParameterKeywords(BaseKeyword):
         """
         Deletes a service parameter.
 
+        The 'system service-parameter-delete' command can be transparently
+        retried by the SSH layer when the delete triggers a slow config apply
+        that exceeds the command timeout. On the retry the parameter is already
+        gone, so the CLI returns a non-zero code with a "No service parameter
+        entry found" message. A successful delete or an already-absent
+        parameter is therefore treated as success; any other output falls back
+        to the strict return-code check so genuine failures are still surfaced.
+
         Args:
             uuid (str): The uuid of the service parameter
 
@@ -298,7 +307,13 @@ class SystemServiceParameterKeywords(BaseKeyword):
             str: The command output string
         """
         command = source_openrc(f"system service-parameter-delete {uuid}")
-        output_str = self.ssh_connection.send(command)
+        output = self.ssh_connection.send(command)
+        output_str = "\n".join(output) if isinstance(output, list) else str(output)
+
+        if "No service parameter entry found" in output_str or "Deleted service parameter" in output_str:
+            get_logger().log_info(f"Service parameter {uuid} deleted (or already absent)")
+            return output_str
+
         self.validate_success_return_code(self.ssh_connection)
         return output_str
 

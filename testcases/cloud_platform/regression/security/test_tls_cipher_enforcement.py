@@ -25,10 +25,6 @@ ALLOWED_TLS13_CIPHERSUITES = TLS13_CIPHERSUITES
 
 ORIGINAL_CIPHER_LIST = "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384," "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256," "TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384," "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256," "TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256," "TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256," "TLS_AES_256_GCM_SHA384," "TLS_AES_128_GCM_SHA256," "TLS_CHACHA20_POLY1305_SHA256"
 
-REDUCED_CIPHER_LIST = "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256," "TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384," "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256," "TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256," "TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256," "TLS_AES_256_GCM_SHA384," "TLS_AES_128_GCM_SHA256"
-
-RESTRICTED_CIPHER_LIST = "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_AES_128_GCM_SHA256"
-
 # HAProxy SSL-terminating endpoints
 HAPROXY_ENDPOINTS = [
     {"port": 5000, "name": "Keystone (keystone-restapi)", "use_oam": True},
@@ -110,17 +106,17 @@ def test_allowed_ciphers_accepted(request):
     get_logger().log_setup_step("Retrieving OAM and management IPs")
     ep_ips = tls_kw.get_endpoint_ips()
 
+    # Cert type is detected per endpoint below, since endpoints fronted by
+    # different servers (e.g. HAProxy vs nginx ingress) may present different
+    # certificate types (ECDSA vs RSA) and therefore accept different ciphers.
+
     for ep in ENDPOINTS:
         host = tls_kw.resolve_host(ep, ep_ips.get_oam_ip(), ep_ips.get_mgmt_ip())
         ep_is_ipv6 = ep_ips.is_ipv6_lab() and not ep.get("host")
 
-        # Detect certificate type per endpoint — different endpoints may present
-        # different certificates (e.g. HAProxy uses platform cert, Ingress uses its own).
-        cert_type = tls_kw.detect_platform_cert_type(host, ep["port"], ep_is_ipv6)
-        if cert_type == "RSA":
-            tls12_ciphers_to_test = TLS12_RSA_CIPHERS
-        else:
-            tls12_ciphers_to_test = TLS12_ECDSA_CIPHERS
+        # Select TLS 1.2 ciphers matching this endpoint's certificate type
+        ep_cert_type = tls_kw.detect_platform_cert_type(host, ep["port"], ep_is_ipv6)
+        tls12_ciphers_to_test = TLS12_RSA_CIPHERS if ep_cert_type == "RSA" else TLS12_ECDSA_CIPHERS
 
         # Test TLS 1.2 allowed ciphers (matching cert type)
         for cipher in tls12_ciphers_to_test:
@@ -543,8 +539,12 @@ def test_tls12_and_tls13_cipher_removal_enforcement(request):
 
     if cert_type == "RSA":
         poll_removed_cipher = TLS12_RSA_CIPHERS[0]
+        # Reduced list omits the removed RSA 256 cipher (and TLS_CHACHA20_POLY1305_SHA256)
+        reduced_cipher_list = "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256," "TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384," "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256," "TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256," "TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256," "TLS_AES_256_GCM_SHA384," "TLS_AES_128_GCM_SHA256"
     else:
         poll_removed_cipher = TLS12_ECDSA_CIPHERS[0]
+        # Reduced list omits the removed ECDSA 256 cipher (and TLS_CHACHA20_POLY1305_SHA256)
+        reduced_cipher_list = "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384," "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256," "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256," "TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256," "TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256," "TLS_AES_256_GCM_SHA384," "TLS_AES_128_GCM_SHA256"
     removed_tls13_cipher = TLS13_CIPHERSUITES[2]
 
     def teardown() -> None:
@@ -556,7 +556,7 @@ def test_tls12_and_tls13_cipher_removal_enforcement(request):
     request.addfinalizer(teardown)
 
     get_logger().log_test_case_step(f"Removing cipher '{poll_removed_cipher}' and '{removed_tls13_cipher}'")
-    tls_kw.apply_cipher_list(REDUCED_CIPHER_LIST)
+    tls_kw.apply_cipher_list(reduced_cipher_list)
 
     poll_ep = HAPROXY_ENDPOINTS[0]
     poll_host = tls_kw.resolve_host(poll_ep, ep_ips.get_oam_ip(), ep_ips.get_mgmt_ip())
@@ -588,6 +588,11 @@ def test_tls12_and_tls13_cipher_removal_enforcement(request):
         skip_cipher_removal.add("OpenLDAP")
     # DEX NodePort (30556) — ciphers hardcoded in serve.go, not configurable
     skip_cipher_removal.add("OIDC DEX")
+    # OAM HTTPS Ingress (443) is served by the nginx ingress controller using its
+    # own default self-signed cert ("Kubernetes Ingress Controller Fake Certificate")
+    # and is not governed by the platform tls-cipher-suite parameter, so cipher
+    # removal is not enforced here.
+    skip_cipher_removal.add("OAM HTTPS (Ingress)")
 
     tls_kw.verify_cipher_removal_on_endpoints(
         ENDPOINTS,
@@ -631,9 +636,11 @@ def test_single_cipher_enforcement(request):
     if cert_type == "RSA":
         accepted_cipher_openssl = "ECDHE-RSA-AES128-GCM-SHA256"
         rejected_ciphers = [c for c in TLS12_RSA_CIPHERS if c != accepted_cipher_openssl]
+        restricted_cipher_list = "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_AES_128_GCM_SHA256"
     else:
         accepted_cipher_openssl = "ECDHE-ECDSA-AES128-GCM-SHA256"
         rejected_ciphers = [c for c in TLS12_ECDSA_CIPHERS if c != accepted_cipher_openssl]
+        restricted_cipher_list = "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_AES_128_GCM_SHA256"
 
     def teardown() -> None:
         """Restore the original cipher suite parameter."""
@@ -654,8 +661,8 @@ def test_single_cipher_enforcement(request):
     )
 
     # Apply restricted cipher list and wait for propagation
-    get_logger().log_test_case_step(f"Setting tls-cipher-suite to '{RESTRICTED_CIPHER_LIST}'")
-    tls_kw.apply_cipher_list(RESTRICTED_CIPHER_LIST)
+    get_logger().log_test_case_step(f"Setting tls-cipher-suite to '{restricted_cipher_list}'")
+    tls_kw.apply_cipher_list(restricted_cipher_list)
 
     if rejected_ciphers:
         tls_kw.wait_for_cipher_propagation(

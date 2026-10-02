@@ -155,9 +155,12 @@ def test_set_min_tls13_platform_endpoints(request):
         if ep["name"] == "OpenLDAP" and os_version == "bullseye":
             get_logger().log_info(f"OpenLDAP on {os_version}: validating TLS 1.2 IS accepted (known limitation)")
             tls_kw.verify_tls_accepted(host, ep["port"], "-tls1_2", ep["name"], ep_is_ipv6)
-        # OIDC DEX: Go binary on direct NodePort, not controlled by platform tls-min-version
-        elif ep["name"] == "OIDC DEX" and os_version in ("bullseye", "trixie"):
-            get_logger().log_info("OIDC DEX: validating TLS 1.2 IS accepted (known limitation - not fronted by HAProxy)")
+        # OIDC DEX / OIDC Client: Go-binary NodePort services (oidc-auth-apps) that terminate
+        # TLS in-pod and do NOT honor the platform tls-min-version floor, so TLS 1.2 stays
+        # accepted at steady state (verified on trixie lab). A brief transient rejection can
+        # occur during app reapply, but steady state is accepted.
+        elif ep["name"] in ("OIDC DEX", "OIDC Client") and os_version in ("bullseye", "trixie"):
+            get_logger().log_info(f"{ep['name']}: validating TLS 1.2 IS accepted (known limitation - not fronted by HAProxy)")
             tls_kw.verify_tls_accepted(host, ep["port"], "-tls1_2", ep["name"], ep_is_ipv6)
         else:
             tls_kw.verify_tls_rejected(host, ep["port"], "-tls1_2", ep["name"], ep_is_ipv6)
