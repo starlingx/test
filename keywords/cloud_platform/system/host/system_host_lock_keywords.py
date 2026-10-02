@@ -148,6 +148,28 @@ class SystemHostLockKeywords(BaseKeyword):
             raise KeywordException("Unlock host did not unlock in the required time.")
         return True
 
+    def ensure_host_unlocked(self, host_name: str, unlock_accepted_timeout: int = 300, exclude_alarm_ids: list[str] = None) -> bool:
+        """Ensure the host is unlocked, unlocking it only if it is currently locked.
+
+        Safe to call for recovery (e.g. in teardown): if the host is already
+        unlocked this is a no-op and returns False; if the host is locked (for
+        example after an interrupted lock/unlock step) it is unlocked and True
+        is returned.
+
+        Args:
+            host_name (str): the host name
+            unlock_accepted_timeout (int): unlock_accepted_timeout to wait to try unlock the host
+            exclude_alarm_ids (list[str]): list of alarm IDs to exclude from alarm checks
+
+        Returns:
+            bool: True if an unlock was performed, False if the host was already unlocked.
+
+        """
+        if not self.is_host_locked(host_name):
+            return False
+        self.unlock_host(host_name, unlock_accepted_timeout=unlock_accepted_timeout, exclude_alarm_ids=exclude_alarm_ids)
+        return True
+
     def unlock_host_pre_check(self):
         """
         Checks to ensure no apps are currently applying as this will cause unlock to fail
