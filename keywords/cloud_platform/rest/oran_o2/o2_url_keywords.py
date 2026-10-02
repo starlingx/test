@@ -5,6 +5,11 @@ from keywords.cloud_platform.rest.get_rest_url_keywords import GetRestUrlKeyword
 # Path prefix for the O2 IMS infrastructure inventory API.
 O2_INVENTORY_PATH = "/o2ims-infrastructureInventory"
 
+# Path prefix for the O2 IMS infrastructure monitoring API, which serves the alarm
+# endpoints. A sibling of the inventory path: both are namespaces under the same
+# host and port, so both are built by the same private builder.
+O2_MONITORING_PATH = "/o2ims-infrastructureMonitoring"
+
 
 class GetO2UrlKeywords(BaseKeyword):
     """Keywords for building O2 IMS API URLs."""
@@ -43,7 +48,7 @@ class GetO2UrlKeywords(BaseKeyword):
         Returns:
             str: The full endpoint URL.
         """
-        return self._build_inventory_endpoint_url(self.base_url, endpoint_suffix)
+        return self._build_endpoint_url(self.base_url, O2_INVENTORY_PATH, endpoint_suffix)
 
     def get_local_inventory_endpoint_url(self, endpoint_suffix: str) -> str:
         """Return a controller-local inventory endpoint URL for on-controller curl.
@@ -60,18 +65,49 @@ class GetO2UrlKeywords(BaseKeyword):
         Returns:
             str: The full controller-local endpoint URL.
         """
-        return self._build_inventory_endpoint_url(f"https://localhost:{self.served_port}", endpoint_suffix)
+        return self._build_endpoint_url(self._get_local_base_url(), O2_INVENTORY_PATH, endpoint_suffix)
 
-    def _build_inventory_endpoint_url(self, base_url: str, endpoint_suffix: str) -> str:
-        """Join a base URL, the inventory path and an endpoint suffix.
+    def get_local_monitoring_endpoint_url(self, endpoint_suffix: str) -> str:
+        """Return a controller-local monitoring endpoint URL for on-controller curl.
+
+        The monitoring namespace serves the alarm endpoints. Like the inventory
+        namespace, it is a controller-side NodePort reached by executing curl on the
+        controller, so the request targets the controller's own loopback rather than
+        the floating IP.
+
+        Args:
+            endpoint_suffix (str): The suffix to append after the monitoring path,
+                for example 'api_versions' or 'v1/alarms'. A leading slash is
+                optional.
+
+        Returns:
+            str: The full controller-local endpoint URL.
+        """
+        return self._build_endpoint_url(self._get_local_base_url(), O2_MONITORING_PATH, endpoint_suffix)
+
+    def _get_local_base_url(self) -> str:
+        """Return the controller-local base URL that on-controller curl dials.
+
+        Stated once so the loopback host and the port cannot drift apart between the
+        namespaces that build on them.
+
+        Returns:
+            str: The controller-local base URL, e.g. https://localhost:30205.
+        """
+        return f"https://localhost:{self.served_port}"
+
+    def _build_endpoint_url(self, base_url: str, namespace_path: str, endpoint_suffix: str) -> str:
+        """Join a base URL, an API namespace path and an endpoint suffix.
 
         Args:
             base_url (str): Scheme, host and port to build on, with no trailing slash.
-            endpoint_suffix (str): The suffix to append after the inventory path. A
+            namespace_path (str): The API namespace path, either O2_INVENTORY_PATH or
+                O2_MONITORING_PATH.
+            endpoint_suffix (str): The suffix to append after the namespace path. A
                 leading slash is optional.
 
         Returns:
             str: The full endpoint URL.
         """
         suffix = endpoint_suffix.lstrip("/")
-        return f"{base_url}{O2_INVENTORY_PATH}/{suffix}"
+        return f"{base_url}{namespace_path}/{suffix}"
