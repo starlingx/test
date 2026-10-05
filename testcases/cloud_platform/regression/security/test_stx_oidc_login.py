@@ -16,6 +16,7 @@ from pytest import FixtureRequest, mark
 from config.configuration_manager import ConfigurationManager
 from config.lab.objects.lab_config import LabConfig
 from config.security.objects.dex_config import DexConfig
+from config.security.objects.dex_test_user import DexTestUser
 from config.security.objects.security_config import SecurityConfig
 from framework.logging.automation_logger import get_logger
 from framework.resources.resource_finder import get_stx_resource_path
@@ -25,6 +26,7 @@ from keywords.cloud_platform.security.keycloak.keycloak_admin_keywords import Ke
 from keywords.cloud_platform.security.oidc.dex_connector_keywords import DexConnectorKeywords
 from keywords.cloud_platform.security.oidc.oidc_environment_keywords import OidcEnvironmentKeywords
 from keywords.cloud_platform.security.oidc.oidc_setup_keywords import OidcSetupKeywords
+from keywords.cloud_platform.security.oidc.wad_connector_keywords import WadConnectorKeywords
 from keywords.cloud_platform.security.oidc_login.objects.stx_oidc_role_context import StxOidcRoleContext
 from keywords.cloud_platform.security.oidc_login.stx_oidc_login_keywords import StxOidcLoginKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
@@ -128,13 +130,18 @@ def _setup_ldap_oidc_role(ssh_connection: SSHConnection, group_name: str, stx_ro
     return StxOidcRoleContext(test_user, login_url, oam_ip, "ldap-1", [role_bindings_teardown, cleanup])
 
 
-def _run_stx_via_browser(ssh_connection: SSHConnection, ctx: StxOidcRoleContext, stx_cli_cmd: str) -> object:
-    """Run an STX CLI command via browser-based LDAP OIDC login and return the result.
+def _run_stx_via_browser(ssh_connection: SSHConnection, ctx: StxOidcRoleContext, stx_cli_cmd: str, is_keycloak: bool = False, totp_secret: str = None) -> object:
+    """Run an STX CLI command via browser-based OIDC login and return the result.
+
+    Defaults to the DEX-native login flow (LDAP/WAD). For Keycloak, pass
+    is_keycloak=True and an optional totp_secret for MFA.
 
     Args:
         ssh_connection (SSHConnection): Active controller SSH connection.
         ctx (StxOidcRoleContext): Context holding user/login-url/oam/connector.
         stx_cli_cmd (str): STX CLI command to run.
+        is_keycloak (bool): True to use the Keycloak redirect login flow.
+        totp_secret (str): TOTP secret for Keycloak MFA, or None.
 
     Returns:
         object: KubectlResultObject with the command output.
@@ -147,9 +154,62 @@ def _run_stx_via_browser(ssh_connection: SSHConnection, ctx: StxOidcRoleContext,
         username=test_user.get_username(),
         password=test_user.get_password(),
         connector=ctx.get_connector_id(),
-        is_keycloak=False,
-        totp_secret=None,
+        is_keycloak=is_keycloak,
+        totp_secret=totp_secret,
     )
+
+
+def _setup_wad_oidc_role(ssh_connection: SSHConnection, group_name: str, stx_role: str) -> StxOidcRoleContext:
+    """Set up the WAD DEX connector + role-bindings for a browser-login role test.
+
+    Unlike LDAP, the WAD user/group already exist in Active Directory, so this
+    only applies the WAD DEX connector override, ensures the WAD user's mail
+    attribute, sets the oidc-username-claim, applies identity/stx role-bindings
+    for the given role, and creates the cluster-admin ClusterRoleBinding for the
+    issuer-prefixed user. Teardown callables are returned on the context so the
+    caller registers them in the correct LIFO order.
+
+    Args:
+        ssh_connection (SSHConnection): Active controller SSH connection.
+        group_name (str): WAD group name bound to the keystone role.
+        stx_role (str): STX role to bind (e.g. 'admin').
+
+    Returns:
+        StxOidcRoleContext: Context with login values and teardown callables.
+    """
+    lab_config = ConfigurationManager.get_lab_config()
+    dex_config = ConfigurationManager.get_security_config().get_dex_connector_config()
+    wad_connector = dex_config.get_wad_connector()
+    wad_user = dex_config.get_wad_test_user()
+
+    wad_keywords = WadConnectorKeywords(ssh_connection)
+    dex_keywords = DexConnectorKeywords(ssh_connection)
+    crb_keywords = KubectlCreateClusterRoleBindingKeywords(ssh_connection)
+    oidc_setup = OidcSetupKeywords(ssh_connection)
+    oam_ip = lab_config.get_floating_ip()
+
+    def cleanup():
+        ssh = LabConnectionKeywords().get_active_controller_ssh()
+        get_logger().log_teardown_step("Cleaning up WAD test resources")
+        KubectlCreateClusterRoleBindingKeywords(ssh).delete_clusterrolebinding(wad_user.get_crb_name())
+        FileKeywords(ssh).delete_directory(dex_config.get_working_dir())
+
+    get_logger().log_test_case_step("Configure the WAD DEX connector and re-apply oidc-auth-apps")
+    wad_keywords.apply_wad_override(dex_config, wad_connector.get_email_attr(), wad_connector.get_username_attr(), wad_connector.get_name_attr())
+    wad_keywords.ensure_wad_user_mail_attribute(dex_config, wad_user.get_username(), wad_user.get_email())
+    dex_keywords.set_oidc_username_claim(dex_config.get_oidc_username_claim().get_default())
+
+    get_logger().log_test_case_step(f"Set up identity/stx role-bindings ({group_name} -> {stx_role})")
+    role_bindings_teardown = oidc_setup.setup_role_bindings(group_name, stx_role)
+
+    bracketed_ip = f"[{oam_ip}]" if ":" in oam_ip else oam_ip
+    oidc_issuer = f"https://{bracketed_ip}:30556/dex"
+    crb_keywords.create_clusterrolebinding_for_user(wad_user.get_crb_name(), "cluster-admin", f"{oidc_issuer}#{wad_user.get_username()}")
+    login_url = f"http://{bracketed_ip}:8000/"
+    # Order matters: [role_bindings_teardown, cleanup]. The caller registers them
+    # in this order so (LIFO) cleanup runs first (keystone up) and the
+    # keystone-restarting role-bindings teardown runs last.
+    return StxOidcRoleContext(wad_user, login_url, oam_ip, wad_connector.get_connector_id(), [role_bindings_teardown, cleanup])
 
 
 def _get_keycloak_admin(security_config: SecurityConfig) -> KeycloakAdminKeywords:
@@ -303,3 +363,76 @@ def test_stx_oidc_login_ldap_operator_role(request: FixtureRequest):
     write_result = _run_stx_via_browser(ssh_connection, ctx, "system application-apply dummy-app")
     get_logger().log_info(f"operator write output:\n{write_result.get_output()}")
     validate_equals(write_result.is_stx_forbidden(), True, "Operator must be denied 'system application-apply'")
+
+
+@mark.p2
+def test_stx_oidc_login_wad_system_host_list(request: FixtureRequest):
+    """Verify 'system host-list' runs after browser-based OIDC login via the WAD connector.
+
+    Exercises the full flow using the WAD (Windows Active Directory) DEX connector
+    (DEX-native login form, no MFA): the WAD connector override is applied, the WAD
+    group is bound to the 'admin' role, a headless Selenium browser selects the WAD
+    connector and logs in as the AD test user, and 'system host-list' returns
+    controller hosts. The WAD user/group already exist in Active Directory, so no
+    user/group creation is performed.
+
+    Teardown:
+        - Delete the ClusterRoleBinding, working dir, role-bindings
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    ctx = _setup_wad_oidc_role(ssh_connection, "Level1SystemAdmin", "admin")
+    # LIFO: register role-bindings teardown FIRST so it runs LAST (it restarts
+    # keystone); cleanup runs first while keystone is still up.
+    for teardown in ctx.get_teardowns():
+        request.addfinalizer(teardown)
+
+    get_logger().log_test_case_step("Run 'system host-list' with browser-based OIDC login via WAD connector")
+    result = _run_stx_via_browser(ssh_connection, ctx, "system host-list")
+    get_logger().log_info(f"system host-list output:\n{result.get_output()}")
+
+    get_logger().log_test_case_step("Validate 'system host-list' returned controller hosts")
+    validate_equals("controller" in result.get_output(), True, "system host-list should return controller hosts after WAD OIDC browser login")
+
+
+@mark.p2
+def test_stx_oidc_login_keycloak_system_host_list(request: FixtureRequest):
+    """Verify 'system host-list' runs after browser-based OIDC login via the Keycloak connector.
+
+    Exercises the full flow using the external Keycloak IdP connector: the OIDC
+    Keycloak environment (oidc-auth-apps + kubeconfig + CRB) is set up, OTP and
+    brute-force lockout are reset for a clean MFA enrollment, and a headless
+    Selenium browser completes the Keycloak redirect login with TOTP, after which
+    'system host-list' returns controller hosts.
+
+    Teardown:
+        - Restore the OIDC Keycloak environment to its default state
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    security_config = ConfigurationManager.get_security_config()
+    lab_config = ConfigurationManager.get_lab_config()
+
+    username = security_config.get_oidc_keycloak_test_username()
+    password = security_config.get_oidc_keycloak_test_password()
+    totp_secret = security_config.get_oidc_keycloak_test_totp_secret()
+
+    get_logger().log_test_case_step("Reset Keycloak OTP and clear brute-force lockout for the test user")
+    keycloak_admin = _get_keycloak_admin(security_config)
+    keycloak_admin.delete_user_otp_credentials(username)
+    keycloak_admin.clear_user_brute_force_lockout(username)
+
+    get_logger().log_test_case_step("Set up the OIDC Keycloak environment (oidc-auth-apps + kubeconfig + CRB)")
+    request.addfinalizer(lambda: _cleanup_oidc_environment(ssh_connection, security_config))
+    _setup_oidc_environment(ssh_connection, security_config, lab_config)
+
+    oam_ip = lab_config.get_floating_ip()
+    bracketed_ip = f"[{oam_ip}]" if ":" in oam_ip else oam_ip
+    login_url = f"http://{bracketed_ip}:8000/"
+    keycloak_user = DexTestUser({"username": username, "password": password})
+    ctx = StxOidcRoleContext(keycloak_user, login_url, oam_ip, "keycloak", [])
+
+    get_logger().log_test_case_step("Run 'system host-list' with browser-based Keycloak OIDC login (with TOTP)")
+    result = _run_stx_via_browser(ssh_connection, ctx, "system host-list", is_keycloak=True, totp_secret=totp_secret)
+    get_logger().log_info(f"system host-list output:\n{result.get_output()}")
+
+    get_logger().log_test_case_step("Validate 'system host-list' returned controller hosts")
+    validate_equals("controller" in result.get_output(), True, "system host-list should return controller hosts after Keycloak OIDC browser login")
