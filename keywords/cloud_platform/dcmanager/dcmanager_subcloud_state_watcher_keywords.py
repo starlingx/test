@@ -27,10 +27,14 @@ RESTORE_IN_PROGRESS_STATES = ["pre-install", "installing", "restoring"]
 # Prestage operation in-progress states (dcmanager subcloud prestage)
 PRESTAGE_IN_PROGRESS_STATES = ["prestaging-packages", "prestaging-images", "prestaging"]
 
-# Strategy-step in-progress states (dcmanager strategy-step list). Shared by the
-# orchestrated strategies (sw-deploy-strategy, kube-upgrade-strategy,
-# prestage-strategy): a step is "initial" once queued and "applying" while it
-# runs, before reaching the terminal "complete"/"failed" state.
+# Strategy-step in-progress states (dcmanager strategy-step list) common to every
+# orchestrated strategy: a step is "initial" once queued and "applying" while it
+# runs. This list is intentionally NOT exhaustive - each strategy type also
+# reports its own granular phase names while running, for example
+# "prestage-precheck" / "prestaging-packages" / "prestaging-images" for
+# prestage-strategy and "sw-deploy pre-check" / "create VIM sw-deploy strategy"
+# for sw-deploy-strategy. Any state that is neither terminal-success nor
+# terminal-failure is treated as still in progress; see watch_strategy_steps().
 STRATEGY_STEP_IN_PROGRESS_STATES = ["initial", "applying"]
 
 # Strategy-step terminal success state.
@@ -203,13 +207,17 @@ class DcManagerSubcloudStateWatcherKeywords(BaseKeyword):
         Args:
             subcloud_names (List[str]): Names of subclouds (strategy-step "cloud"
                 entries) to watch.
-            in_progress_states (Optional[List[str]]): States indicating the step
-                is still running. Defaults to STRATEGY_STEP_IN_PROGRESS_STATES
-                (["initial", "applying"]).
+            in_progress_states (Optional[List[str]]): Known in-progress states,
+                used for logging only. Defaults to
+                STRATEGY_STEP_IN_PROGRESS_STATES (["initial", "applying"]).
+                States outside this list that are neither the complete state nor
+                a failed state are also treated as in progress, since each
+                strategy type reports its own granular phase names.
             complete_state (str): Target state indicating success. Defaults to
                 "complete".
             failed_states (Optional[List[str]]): States indicating failure. If
-                None, any state containing "failed" is treated as a failure.
+                None, any state containing "failed" or "aborted" is treated as a
+                failure.
             timeout (int): Maximum seconds to wait for all subclouds. Defaults to 4800.
             polling_interval (int): Seconds between polls. Defaults to 30.
 
@@ -252,9 +260,11 @@ class DcManagerSubcloudStateWatcherKeywords(BaseKeyword):
                     failed.append((sc_name, current_state))
                     finished_this_round.append(sc_name)
                 elif current_state not in in_progress_states:
-                    get_logger().log_info(f"Subcloud '{sc_name}' strategy step in unexpected state: '{current_state}'")
-                    failed.append((sc_name, current_state))
-                    finished_this_round.append(sc_name)
+                    # Not terminal-success and not terminal-failure, so the step
+                    # is still running through one of the strategy's own granular
+                    # phases (e.g. "prestage-precheck"). Keep waiting instead of
+                    # declaring a failure; the timeout is the safety net.
+                    get_logger().log_debug(f"Subcloud '{sc_name}' strategy step in non-terminal state: '{current_state}'")
 
             for sc_name in finished_this_round:
                 pending.remove(sc_name)
@@ -320,14 +330,17 @@ class DcManagerSubcloudStateWatcherKeywords(BaseKeyword):
         Args:
             state (str): Current state to check.
             failed_states (Optional[List[str]]): Explicit list of failed states,
-                or None to use the default "contains failed" heuristic.
+                or None to use the default heuristic.
 
         Returns:
             bool: True if the state is a failure.
         """
         if failed_states is not None:
             return state in failed_states
-        return "failed" in state
+        # "aborted" is terminal but does not contain "failed", so it must be
+        # matched explicitly; otherwise an aborted step would be mistaken for
+        # work still in progress and only surface as a timeout.
+        return "failed" in state or "aborted" in state
 
     @staticmethod
     def _log_status_summary(sc_list_output: object, pending: set, field_to_watch: str, completed_count: int, failed: list) -> None:
