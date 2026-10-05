@@ -14,6 +14,7 @@ class KubectlNodesObject:
         self.age: str = None
         self.version: str = None
         self.allocatable: dict = {}
+        self.internal_ips: list = []
 
     def set_name(self, name: str):
         """
@@ -132,3 +133,42 @@ class KubectlNodesObject:
         """
         val = self.allocatable.get(resource_key)
         return int(val) if val and str(val).isdigit() else 0
+
+    def set_internal_ips(self, internal_ips: list):
+        """
+        Setter for the node's InternalIP addresses.
+
+        Args:
+            internal_ips (list): InternalIP address strings from status.addresses.
+        """
+        self.internal_ips = internal_ips
+
+    def get_internal_ips(self) -> list:
+        """
+        Getter for the node's InternalIP addresses.
+
+        Returns:
+            list: InternalIP address strings (may include IPv4 and/or IPv6).
+        """
+        return self.internal_ips
+
+    def get_internal_ipv4(self) -> str:
+        """
+        Return the node's IPv4 InternalIP, or None if the node has no IPv4 InternalIP.
+
+        Returns:
+            str: IPv4 InternalIP address, or None if not present.
+        """
+        for ip in self.internal_ips:
+            if ":" not in ip:
+                return ip
+        return None
+
+    def has_ipv6_internal_ip(self) -> bool:
+        """
+        Return True if the node has an IPv6 InternalIP (dual-stack or IPv6 cluster).
+
+        Returns:
+            bool: True if any InternalIP is IPv6.
+        """
+        return any(":" in ip for ip in self.internal_ips)
