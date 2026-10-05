@@ -296,6 +296,49 @@ class FileKeywords(BaseKeyword):
             grep_arg = f"| grep {grep_pattern}"
         return self.ssh_connection.send(f"sed -n '/{start}/,/{end}/p' {file_path} {grep_arg}")
 
+    def get_file_line_count(self, file_path: str) -> int:
+        """Return the current number of lines in a file.
+
+        Intended to bookmark a log file before an operation so that only lines
+        appended afterwards are read later (see read_file_from_line). Using a line
+        offset avoids depending on log-line timestamp formats, which vary between
+        components.
+
+        Args:
+            file_path (str): Absolute path to the file (e.g. '/var/log/sysinv.log').
+
+        Returns:
+            int: Number of lines currently in the file, or 0 if it is empty or absent.
+        """
+        output = self.ssh_connection.send(f"wc -l < {shlex.quote(file_path)} 2>/dev/null || echo 0")
+        if not output:
+            return 0
+        return int(output[0].strip() or 0)
+
+    def read_file_from_line(self, file_path: str, start_line: int, grep_pattern: str = None) -> list[str]:
+        """Read lines of a file starting after a given line number.
+
+        Reads from line 'start_line + 1' to the end of the file, optionally
+        filtering with a fixed-string (literal) grep. Pair with get_file_line_count
+        taken before an operation to read only newly appended lines, independent of
+        any timestamp format in the file. The path and pattern are shell-quoted and
+        the grep uses '-F' so regex metacharacters (e.g. '.') match literally; a
+        trailing '|| true' keeps a non-matching grep from surfacing as a failure.
+
+        Args:
+            file_path (str): Absolute path to the file (e.g. '/var/log/sysinv.log').
+            start_line (int): Number of pre-existing lines to skip; reading begins at the next line.
+            grep_pattern (str): Optional literal string to filter matching lines.
+
+        Returns:
+            list[str]: The matching lines appended after start_line, or an empty list if none.
+        """
+        pipeline = f"tail -n +{start_line + 1} {shlex.quote(file_path)} 2>/dev/null"
+        if grep_pattern:
+            pipeline += f" | grep -F -- {shlex.quote(grep_pattern)}"
+        pipeline += " || true"
+        return self.ssh_connection.send(pipeline)
+
     def find_in_tgz(self, file_path: str, grep_pattern: str, is_sudo: bool = False) -> int:
         """
         Searches for a string in tgz file

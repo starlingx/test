@@ -19,145 +19,69 @@ Description:
   upgrade while killing sysinv-agent to trigger abort timeout (Only SX lab)
 """
 
-import time
-
 from pytest import FixtureRequest, mark
 
 from config.configuration_manager import ConfigurationManager
 from framework.logging.automation_logger import get_logger
 from framework.validation.validation import validate_equals, validate_list_contains, validate_not_none, validate_str_contains
+from keywords.cloud_platform.fault_management.alarms.alarm_list_keywords import AlarmListKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.cloud_platform.swmanager.swmanager_kube_upgrade_strategy_keywords import SwManagerKubeUpgradeStrategyKeywords
 from keywords.cloud_platform.system.host.system_host_list_keywords import SystemHostListKeywords
 from keywords.cloud_platform.system.host.system_host_lock_keywords import SystemHostLockKeywords
 from keywords.cloud_platform.system.kubernetes.kube_host_upgrade_keywords import KubeHostUpgradeKeywords
-from keywords.cloud_platform.system.kubernetes.kube_host_upgrade_list_keywords import KubeHostUpgradeListKeywords
+from keywords.cloud_platform.system.kubernetes.kube_upgrade_fault_injection_keywords import KubeUpgradeFaultInjectionKeywords
 from keywords.cloud_platform.system.kubernetes.kube_upgrade_keywords import KubeUpgradeKeywords
 from keywords.cloud_platform.system.kubernetes.kube_upgrade_show_keywords import KubeUpgradeShowKeywords
 from keywords.cloud_platform.system.kubernetes.kubernetes_version_list_keywords import SystemKubernetesListKeywords
 from keywords.linux.pkill.pkill_keywords import PkillKeywords
 
 
-def _kill_process_until_apply_result(pkill_keywords: PkillKeywords, kube_strategy_keywords: SwManagerKubeUpgradeStrategyKeywords, process_pattern: str, apply_result: str, timeout: int = 600) -> bool:
-    """Kill a process in a loop until the orchestration strategy state reaches the expected apply result.
+def cleanup_kube_upgrade_strategy_and_entity() -> None:
+    """Delete the kube-upgrade strategy and the kube-upgrade entity, then clear alarms.
 
-    Continuously kills the specified process (via pkill) and polls the
-    sw-manager kube-upgrade-strategy show command to check whether the
-    orchestration apply-result has transitioned to the expected failure
-    state. This simulates a fault injection scenario where a critical
-    process is repeatedly terminated during an active Kubernetes upgrade
-    orchestration, forcing the strategy into an error state (e.g.,
-    'failed', 'timed-out', or 'aborted').
+    Shared teardown for the orchestrated tests. Deleting the sw-deploy/kube-upgrade
+    strategy does not remove the underlying kube-upgrade entity, which can remain in a
+    state such as 'upgraded-first-master' or 'upgrade-aborted' and block subsequent
+    tests. This helper deletes the strategy (if present), then aborts the kube-upgrade
+    only when it is not already aborted (abort returns a non-zero code once it is in
+    'upgrade-aborted'), deletes the kube-upgrade entity, and waits for alarms to clear.
 
-    The loop tolerates transient failures from both the pkill command
-    (process may not exist between respawns) and the sw-manager query
-    (system may be temporarily unresponsive during the disruption).
-
-    Args:
-        pkill_keywords (PkillKeywords): Keywords for killing processes.
-        kube_strategy_keywords (SwManagerKubeUpgradeStrategyKeywords): Keywords for sw-manager kube-upgrade-strategy commands.
-        process_pattern (str): Process pattern to kill (e.g., '[k]ubeadm', 'sysinv-agent').
-        apply_result (str): Expected apply result state (e.g., 'failed', 'timed-out', 'aborted').
-        timeout (int): Maximum wait time in seconds. Defaults to 1800 (30 minutes).
-
-    Returns:
-        bool: True if the expected apply result state was reached within the timeout, False otherwise.
+    A fresh SSH connection is taken so it remains valid even after a controller swact.
     """
-    end_time = time.time() + timeout
-    while time.time() < end_time:
-        try:
-            get_logger().log_info(f"Killing process matching '{process_pattern}'")
-            pkill_keywords.pkill_by_pattern(process_pattern, send_as_sudo=True)
-        except Exception as e:
-            get_logger().log_info(f"Failed to kill '{process_pattern}': {e}, retrying")
-        try:
-            strategy_output = kube_strategy_keywords.show_kube_upgrade_strategy()
-            state = strategy_output.get_swmanager_kube_upgrade_strategy_show().get_apply_result()
-            get_logger().log_info(f"Current strategy state: {state}")
-            if state == apply_result:
-                return True
-        except Exception:
-            get_logger().log_info("sw-manager command failed during polling, retrying")
-    return False
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    kube_strategy_keywords = SwManagerKubeUpgradeStrategyKeywords(ssh_connection)
+    kube_upgrade_keywords = KubeUpgradeKeywords(ssh_connection)
+    kube_upgrade_show_keywords = KubeUpgradeShowKeywords(ssh_connection)
 
+    get_logger().log_teardown_step("Delete kube-upgrade strategy if present")
+    if kube_strategy_keywords.kube_upgrade_strategy_exists():
+        # The abort may still be in progress (state 'aborting'); wait for the abort
+        # phase to finish before deleting, since a delete during the abort can be
+        # rejected. The terminal abort state varies ('aborted', 'abort-timeout', or
+        # 'abort-failed'), but all reach current-phase-completion 100%, so wait on
+        # that rather than a single state.
+        kube_strategy_keywords.wait_for_current_phase_completion()
+        kube_strategy_keywords.delete_kube_upgrade_strategy()
+    else:
+        get_logger().log_info("No kube-upgrade strategy to delete")
 
-def _stop_process_until_apply_result(pkill_keywords: PkillKeywords, kube_strategy_keywords: SwManagerKubeUpgradeStrategyKeywords, process_name: str, apply_result: str, timeout: int = 600) -> bool:
-    """Send STOP signal to a process in a loop until the orchestration strategy state reaches the expected apply result.
+    if kube_upgrade_show_keywords.is_kube_upgrade_in_progress():
+        current_state = kube_upgrade_show_keywords.kube_upgrade_show().get_kube_upgrade_show_object().get_state()
+        get_logger().log_info(f"Kubernetes upgrade present in state '{current_state}'")
+        # 'system kube-upgrade-abort' returns a non-zero code once the upgrade is
+        # already in 'upgrade-aborted', so only abort when it is not aborted yet.
+        if current_state != "upgrade-aborted":
+            get_logger().log_teardown_step("Abort Kubernetes upgrade")
+            kube_upgrade_keywords.kube_upgrade_abort()
+            kube_upgrade_show_keywords.wait_for_kube_upgrade_state("upgrade-aborted", timeout=600)
+        get_logger().log_teardown_step("Delete Kubernetes upgrade")
+        kube_upgrade_keywords.kube_upgrade_delete()
+    else:
+        get_logger().log_info("No Kubernetes upgrade to clean up")
 
-    Args:
-        pkill_keywords (PkillKeywords): Keywords for killing processes.
-        kube_strategy_keywords (SwManagerKubeUpgradeStrategyKeywords): Keywords for sw-manager kube-upgrade-strategy commands.
-        process_name (str): Process name to send STOP signal to.
-        apply_result (str): Expected apply result state (e.g., 'timed-out').
-        timeout (int): Maximum wait time in seconds.
-
-    Returns:
-        bool: True if the expected apply result state was reached.
-    """
-    end_time = time.time() + timeout
-    while time.time() < end_time:
-        try:
-            get_logger().log_info(f"Sending STOP signal to '{process_name}'")
-            pkill_keywords.pkill_signal("STOP", process_name)
-        except Exception as e:
-            get_logger().log_info(f"Failed to send STOP to '{process_name}': {e}, retrying")
-        try:
-            strategy_output = kube_strategy_keywords.show_kube_upgrade_strategy()
-            state = strategy_output.get_swmanager_kube_upgrade_strategy_show().get_apply_result()
-            get_logger().log_info(f"Current strategy state: {state}")
-            if state == apply_result:
-                return True
-        except Exception:
-            get_logger().log_info("sw-manager command failed during polling, retrying")
-    return False
-
-
-def _kill_process_until_host_upgrade_status(pkill_keywords: PkillKeywords, kube_host_upgrade_list_keywords: KubeHostUpgradeListKeywords, process_pattern: str, hostname: str, expected_status: str, timeout: int = 600) -> bool:
-    """Kill a process in a loop until the host upgrade status reaches the expected value.
-
-    Continuously kills the specified process (via pkill) and polls the
-    'system kube-host-upgrade-list' command to check whether the per-host
-    upgrade status has transitioned to the expected failure state. This is
-    used for fault injection during the kubelet upgrade phase of a manual
-    Kubernetes upgrade, where killing a process like sysinv-agent prevents
-    the kubelet upgrade from completing successfully, resulting in a
-    'upgrading-kubelet-failed' status for the target host.
-
-    Unlike _kill_process_until_apply_result which monitors the orchestration
-    strategy's overall apply-result, this function monitors the per-host
-    upgrade status reported by 'system kube-host-upgrade-list', making it
-    suitable for manual (non-orchestrated) upgrade scenarios.
-
-    The loop tolerates transient failures from both the pkill command
-    and the kube-host-upgrade-list query.
-
-    Args:
-        pkill_keywords (PkillKeywords): Keywords for killing processes.
-        kube_host_upgrade_list_keywords (KubeHostUpgradeListKeywords): Keywords for system kube-host-upgrade-list.
-        process_pattern (str): Process pattern to kill (e.g., 'sysinv-agent').
-        hostname (str): Target hostname to check status for.
-        expected_status (str): Expected status value (e.g., 'upgrading-kubelet-failed').
-        timeout (int): Maximum wait time in seconds. Defaults to 1800 (30 minutes).
-
-    Returns:
-        bool: True if the expected status was reached within the timeout, False otherwise.
-    """
-    end_time = time.time() + timeout
-    while time.time() < end_time:
-        try:
-            get_logger().log_info(f"Killing process matching '{process_pattern}'")
-            pkill_keywords.pkill_by_pattern(process_pattern, send_as_sudo=True)
-        except Exception as e:
-            get_logger().log_info(f"Failed to kill '{process_pattern}': {e}, retrying")
-        try:
-            host_upgrade = kube_host_upgrade_list_keywords.kube_host_upgrade_list().get_host_upgrade_by_hostname(hostname)
-            status = host_upgrade.get_status()
-            get_logger().log_info(f"Current host upgrade status for '{hostname}': {status}")
-            if status == expected_status:
-                return True
-        except Exception:
-            get_logger().log_info("kube-host-upgrade-list command failed during polling, retrying")
-    return False
+    get_logger().log_teardown_step("Wait for alarms to clear")
+    AlarmListKeywords(ssh_connection).wait_for_all_alarms_cleared()
 
 
 def test_kube_upgrade_fails_on_control_plane_upgrade_kill_process_kubeadm(request: FixtureRequest) -> None:
@@ -190,24 +114,10 @@ def test_kube_upgrade_fails_on_control_plane_upgrade_kill_process_kubeadm(reques
 
     kube_strategy_keywords = SwManagerKubeUpgradeStrategyKeywords(ssh_connection)
     system_kube_keywords = SystemKubernetesListKeywords(ssh_connection)
-    pkill_keywords = PkillKeywords(ssh_connection)
 
     kubernetes_upgrade_config = ConfigurationManager.get_kubernetes_upgrade_config()
 
-    def teardown() -> None:
-        """Cleanup orchestration strategy and kubernetes upgrade."""
-        get_logger().log_teardown_step("Cleanup orchestration strategy and kubernetes upgrade")
-        try:
-            kube_strategy_keywords.abort_kube_upgrade_strategy()
-        except Exception:
-            get_logger().log_info("No strategy to abort")
-        try:
-            kube_strategy_keywords.wait_for_aborted()
-            kube_strategy_keywords.delete_kube_upgrade_strategy()
-        except Exception:
-            get_logger().log_info("No strategy to delete")
-
-    request.addfinalizer(teardown)
+    request.addfinalizer(cleanup_kube_upgrade_strategy_and_entity)
 
     get_logger().log_test_case_step("Validate active and available Kubernetes versions")
     kube_version_list = system_kube_keywords.get_system_kube_version_list()
@@ -232,8 +142,7 @@ def test_kube_upgrade_fails_on_control_plane_upgrade_kill_process_kubeadm(reques
     kube_strategy_keywords.wait_for_kube_upgrade_step("kube-host-upgrade-control-plane", timeout=600)
 
     get_logger().log_test_case_step(f"Kill '{process_to_kill}' in loop until strategy reaches apply-failed")
-    apply_failed = _kill_process_until_apply_result(pkill_keywords, kube_strategy_keywords, process_to_kill, "failed", timeout=600)
-    validate_equals(apply_failed, True, f"Orchestration strategy reached apply-failed after killing '{process_to_kill}'")
+    KubeUpgradeFaultInjectionKeywords(ssh_connection).kill_process_until_state(process_to_kill, kube_strategy_keywords.get_apply_result, ["failed"], timeout=600)
 
     get_logger().log_test_case_step("Verify apply-reason contains upgrading-first-master-failed")
     strategy_obj = kube_strategy_keywords.show_kube_upgrade_strategy().get_swmanager_kube_upgrade_strategy_show()
@@ -272,24 +181,10 @@ def test_kube_upgrade_fails_on_control_plane_upgrade_kill_process_sysinv(request
 
     kube_strategy_keywords = SwManagerKubeUpgradeStrategyKeywords(ssh_connection)
     system_kube_keywords = SystemKubernetesListKeywords(ssh_connection)
-    pkill_keywords = PkillKeywords(ssh_connection)
 
     kubernetes_upgrade_config = ConfigurationManager.get_kubernetes_upgrade_config()
 
-    def teardown() -> None:
-        """Cleanup orchestration strategy and kubernetes upgrade."""
-        get_logger().log_teardown_step("Cleanup orchestration strategy and kubernetes upgrade")
-        try:
-            kube_strategy_keywords.abort_kube_upgrade_strategy()
-        except Exception:
-            get_logger().log_info("No strategy to abort")
-        try:
-            kube_strategy_keywords.wait_for_aborted()
-            kube_strategy_keywords.delete_kube_upgrade_strategy()
-        except Exception:
-            get_logger().log_info("No strategy to delete")
-
-    request.addfinalizer(teardown)
+    request.addfinalizer(cleanup_kube_upgrade_strategy_and_entity)
 
     get_logger().log_test_case_step("Validate active and available Kubernetes versions")
     kube_version_list = system_kube_keywords.get_system_kube_version_list()
@@ -314,8 +209,7 @@ def test_kube_upgrade_fails_on_control_plane_upgrade_kill_process_sysinv(request
     kube_strategy_keywords.wait_for_kube_upgrade_step("kube-host-upgrade-control-plane", timeout=600)
 
     get_logger().log_test_case_step(f"Kill '{process_to_kill}' in loop until strategy reaches apply-failed")
-    apply_failed = _kill_process_until_apply_result(pkill_keywords, kube_strategy_keywords, process_to_kill, "timed-out", timeout=600)
-    validate_equals(apply_failed, True, f"Orchestration strategy reached apply-failed after killing '{process_to_kill}'")
+    KubeUpgradeFaultInjectionKeywords(ssh_connection).kill_process_until_state(process_to_kill, kube_strategy_keywords.get_apply_result, ["timed-out"], timeout=600)
 
     get_logger().log_test_case_step("Wait for current-phase-completion to reach 100%")
     kube_strategy_keywords.wait_for_current_phase_completion()
@@ -357,24 +251,10 @@ def test_kube_upgrade_fails_on_control_plane_upgrade_stop_process(request: Fixtu
 
     kube_strategy_keywords = SwManagerKubeUpgradeStrategyKeywords(ssh_connection)
     system_kube_keywords = SystemKubernetesListKeywords(ssh_connection)
-    pkill_keywords = PkillKeywords(ssh_connection)
 
     kubernetes_upgrade_config = ConfigurationManager.get_kubernetes_upgrade_config()
 
-    def teardown() -> None:
-        """Cleanup orchestration strategy and kubernetes upgrade."""
-        get_logger().log_teardown_step("Cleanup orchestration strategy and kubernetes upgrade")
-        try:
-            kube_strategy_keywords.abort_kube_upgrade_strategy()
-        except Exception:
-            get_logger().log_info("No strategy to abort")
-        try:
-            kube_strategy_keywords.wait_for_aborted()
-            kube_strategy_keywords.delete_kube_upgrade_strategy()
-        except Exception:
-            get_logger().log_info("No strategy to delete")
-
-    request.addfinalizer(teardown)
+    request.addfinalizer(cleanup_kube_upgrade_strategy_and_entity)
 
     get_logger().log_test_case_step("Validate active and available Kubernetes versions")
     kube_version_list = system_kube_keywords.get_system_kube_version_list()
@@ -399,8 +279,7 @@ def test_kube_upgrade_fails_on_control_plane_upgrade_stop_process(request: Fixtu
     kube_strategy_keywords.wait_for_kube_upgrade_step("kube-host-upgrade-control-plane", timeout=600)
 
     get_logger().log_test_case_step(f"Send STOP signal to '{process_to_kill}' in loop until strategy reaches apply-failed")
-    apply_failed = _stop_process_until_apply_result(pkill_keywords, kube_strategy_keywords, process_to_kill, "timed-out", timeout=600)
-    validate_equals(apply_failed, True, f"Orchestration strategy reached apply-failed after killing '{process_to_kill}'")
+    KubeUpgradeFaultInjectionKeywords(ssh_connection).stop_process_until_state(process_to_kill, kube_strategy_keywords.get_apply_result, ["timed-out"], timeout=600)
 
     get_logger().log_test_case_step("Wait for current-phase-completion to reach 100%")
     kube_strategy_keywords.wait_for_current_phase_completion()
@@ -450,15 +329,7 @@ def test_kube_upgrade_fails_on_kubelet_upgrade_kill_process_sysinv(request: Fixt
     kubernetes_upgrade_config = ConfigurationManager.get_kubernetes_upgrade_config()
     is_simplex = ConfigurationManager.get_lab_config().get_lab_type() == "Simplex"
 
-    def teardown() -> None:
-        """Cleanup kubernetes upgrade."""
-        get_logger().log_teardown_step("Cleanup kubernetes upgrade")
-        try:
-            kube_upgrade_keywords.kube_upgrade_abort()
-        except Exception:
-            get_logger().log_info("No upgrade to abort")
-
-    request.addfinalizer(teardown)
+    request.addfinalizer(cleanup_kube_upgrade_strategy_and_entity)
 
     get_logger().log_test_case_step("Validate active and available Kubernetes versions")
     kube_version_list = system_kube_keywords.get_system_kube_version_list()
@@ -520,9 +391,7 @@ def test_kube_upgrade_fails_on_kubelet_upgrade_kill_process_sysinv(request: Fixt
     kube_host_upgrade_keywords.kube_host_upgrade_kubelet(target_hostname)
 
     get_logger().log_test_case_step(f"Kill '{process_to_kill}' in loop until kubelet upgrade fails on {target_hostname}")
-    kube_host_upgrade_list_keywords = KubeHostUpgradeListKeywords(ssh_connection)
-    kubelet_failed = _kill_process_until_host_upgrade_status(pkill_keywords, kube_host_upgrade_list_keywords, process_to_kill, target_hostname, "upgrading-kubelet-failed", timeout=600)
-    validate_equals(kubelet_failed, True, f"Kubelet upgrade on '{target_hostname}' reached upgrading-kubelet-failed after killing '{process_to_kill}'")
+    KubeUpgradeFaultInjectionKeywords(ssh_connection).kill_process_until_host_upgrade_status(process_to_kill, target_hostname, "upgrading-kubelet-failed", timeout=900)
 
 
 def test_kube_upgrade_abort_on_control_plane_upgrade_kill_process_sysinv(request: FixtureRequest) -> None:
@@ -558,24 +427,10 @@ def test_kube_upgrade_abort_on_control_plane_upgrade_kill_process_sysinv(request
 
     kube_strategy_keywords = SwManagerKubeUpgradeStrategyKeywords(ssh_connection)
     system_kube_keywords = SystemKubernetesListKeywords(ssh_connection)
-    pkill_keywords = PkillKeywords(ssh_connection)
 
     kubernetes_upgrade_config = ConfigurationManager.get_kubernetes_upgrade_config()
 
-    def teardown() -> None:
-        """Cleanup orchestration strategy and kubernetes upgrade."""
-        get_logger().log_teardown_step("Cleanup orchestration strategy and kubernetes upgrade")
-        try:
-            kube_strategy_keywords.abort_kube_upgrade_strategy()
-        except Exception:
-            get_logger().log_info("No strategy to abort")
-        try:
-            kube_strategy_keywords.wait_for_aborted()
-            kube_strategy_keywords.delete_kube_upgrade_strategy()
-        except Exception:
-            get_logger().log_info("No strategy to delete")
-
-    request.addfinalizer(teardown)
+    request.addfinalizer(cleanup_kube_upgrade_strategy_and_entity)
 
     get_logger().log_test_case_step("Validate active and available Kubernetes versions")
     kube_version_list = system_kube_keywords.get_system_kube_version_list()
@@ -603,8 +458,7 @@ def test_kube_upgrade_abort_on_control_plane_upgrade_kill_process_sysinv(request
     kube_strategy_keywords.abort_kube_upgrade_strategy_without_waiting()
 
     get_logger().log_test_case_step(f"Kill '{process_to_kill}' in loop until strategy reaches apply-failed")
-    apply_failed = _kill_process_until_apply_result(pkill_keywords, kube_strategy_keywords, process_to_kill, "aborted", timeout=600)
-    validate_equals(apply_failed, True, f"Orchestration strategy reached apply-failed after killing '{process_to_kill}'")
+    KubeUpgradeFaultInjectionKeywords(ssh_connection).kill_process_until_state(process_to_kill, kube_strategy_keywords.get_apply_result, ["aborted"], timeout=600)
 
     get_logger().log_test_case_step("Wait for current-phase-completion to reach 100%")
     kube_strategy_keywords.wait_for_current_phase_completion()
@@ -658,19 +512,10 @@ def test_kube_upgrade_abort_on_kubelet_upgrade_kill_process_sysinv(request: Fixt
     kube_host_upgrade_keywords = KubeHostUpgradeKeywords(ssh_connection)
     system_kube_keywords = SystemKubernetesListKeywords(ssh_connection)
     system_host_list_keywords = SystemHostListKeywords(ssh_connection)
-    pkill_keywords = PkillKeywords(ssh_connection)
 
     kubernetes_upgrade_config = ConfigurationManager.get_kubernetes_upgrade_config()
 
-    def teardown() -> None:
-        """Cleanup kubernetes upgrade."""
-        get_logger().log_teardown_step("Cleanup kubernetes upgrade")
-        try:
-            kube_upgrade_keywords.kube_upgrade_abort()
-        except Exception:
-            get_logger().log_info("No upgrade to abort")
-
-    request.addfinalizer(teardown)
+    request.addfinalizer(cleanup_kube_upgrade_strategy_and_entity)
 
     get_logger().log_test_case_step("Validate active and available Kubernetes versions")
     kube_version_list = system_kube_keywords.get_system_kube_version_list()
@@ -718,6 +563,4 @@ def test_kube_upgrade_abort_on_kubelet_upgrade_kill_process_sysinv(request: Fixt
     kube_upgrade_keywords.kube_upgrade_abort()
 
     get_logger().log_test_case_step(f"Kill '{process_to_kill}' in loop until kubelet upgrade fails on {target_hostname}")
-    kube_host_upgrade_list_keywords = KubeHostUpgradeListKeywords(ssh_connection)
-    kubelet_failed = _kill_process_until_host_upgrade_status(pkill_keywords, kube_host_upgrade_list_keywords, process_to_kill, target_hostname, "upgrading-kubelet-failed", timeout=600)
-    validate_equals(kubelet_failed, True, f"Kubelet upgrade on '{target_hostname}' reached upgrading-kubelet-failed after killing '{process_to_kill}'")
+    KubeUpgradeFaultInjectionKeywords(ssh_connection).kill_process_until_host_upgrade_status(process_to_kill, target_hostname, "upgrading-kubelet-failed", timeout=600)

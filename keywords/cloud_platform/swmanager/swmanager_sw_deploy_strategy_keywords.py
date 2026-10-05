@@ -113,6 +113,18 @@ class SwManagerSwDeployStrategyKeywords(BaseKeyword):
             get_logger().log_error(f"Final attempt failed: {e}")
             raise
 
+    def get_current_state(self) -> str:
+        """Get the current state of the sw-deploy-strategy.
+
+        A zero-argument getter suitable for polling helpers (e.g.
+        KubeUpgradeFaultInjectionKeywords.kill_process_until_state), which read the
+        state on each iteration while disrupting a process.
+
+        Returns:
+            str: The strategy's current state (e.g. 'applying', 'aborting', 'aborted').
+        """
+        return self.get_sw_deploy_strategy_show().get_swmanager_sw_deploy_strategy_show().get_state()
+
     def get_sw_deploy_strategy_show_details(self) -> list:
         """Gets the sw-deploy-strategy show --details.
 
