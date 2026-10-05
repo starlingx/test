@@ -3,6 +3,7 @@ from framework.validation.validation import validate_equals_with_retry
 from keywords.k8s.k8s_base_keyword import K8sBaseKeyword
 from keywords.k8s.sriov_fec_node_config.object.kubectl_get_sriov_fec_node_config_detail_output import KubectlGetSriovFecNodeConfigDetailOutput
 from keywords.k8s.sriov_fec_node_config.object.kubectl_get_sriov_fec_node_config_output import KubectlGetSriovFecNodeConfigOutput
+from keywords.k8s.sriov_fec_node_config.object.kubectl_get_sriov_fec_node_config_yaml_output import KubectlGetSriovFecNodeConfigYamlOutput
 from keywords.k8s.sriov_fec_node_config.object.kubectl_sriov_fec_node_config_object import KubectlSriovFecNodeConfigObject
 
 
@@ -63,6 +64,20 @@ class KubectlGetSriovFecNodeConfigKeywords(K8sBaseKeyword):
         output = self.ssh_connection.send(self.k8s_config.export(f"kubectl get sriovfecnodeconfigs.sriovfec.intel.com {node_name} -n {namespace} -o json"))
         self.validate_success_return_code(self.ssh_connection)
         return KubectlGetSriovFecNodeConfigDetailOutput(output)
+
+    def get_sriov_fec_node_config_yaml(self, node_name: str, namespace: str = "sriov-fec-system") -> KubectlGetSriovFecNodeConfigYamlOutput:
+        """Get the YAML output of a SriovFecNodeConfig by node name.
+
+        Args:
+            node_name (str): The name of the node to retrieve (e.g., 'controller-0').
+            namespace (str): Kubernetes namespace. Defaults to 'sriov-fec-system'.
+
+        Returns:
+            KubectlGetSriovFecNodeConfigYamlOutput: The parsed SriovFecNodeConfig YAML output.
+        """
+        output = self.ssh_connection.send(self.k8s_config.export(f"kubectl get sriovfecnodeconfigs.sriovfec.intel.com -n {namespace} {node_name} -o yaml"))
+        self.validate_success_return_code(self.ssh_connection)
+        return KubectlGetSriovFecNodeConfigYamlOutput(output)
 
     def wait_for_configured_status(self, node_name: str, expected_status: str = "Succeeded", namespace: str = "sriov-fec-system", timeout: int = 180, poll_interval: int = 10) -> None:
         """Wait for a SriovFecNodeConfig to reach the expected CONFIGURED status.
