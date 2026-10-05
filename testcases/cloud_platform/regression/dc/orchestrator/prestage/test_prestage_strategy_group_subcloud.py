@@ -33,12 +33,10 @@ from pytest import mark
 from framework.logging.automation_logger import get_logger
 from framework.validation.validation import validate_equals
 from keywords.cloud_platform.dcmanager.dcmanager_prestage_strategy_keywords import DcmanagerPrestageStrategyKeywords
+from keywords.cloud_platform.dcmanager.dcmanager_strategy_cleanup_keywords import DcmanagerStrategyCleanupKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_group_keywords import DcmanagerSubcloudGroupKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_list_keywords import DcManagerSubcloudListKeywords
-from keywords.cloud_platform.dcmanager.dcmanager_subcloud_state_watcher_keywords import (
-    STRATEGY_STEP_IN_PROGRESS_STATES,
-    DcManagerSubcloudStateWatcherKeywords,
-)
+from keywords.cloud_platform.dcmanager.dcmanager_subcloud_state_watcher_keywords import STRATEGY_STEP_IN_PROGRESS_STATES, DcManagerSubcloudStateWatcherKeywords
 from keywords.cloud_platform.version_info.cloud_platform_version_manager import CloudPlatformVersionManagerClass
 
 TEST_GROUP_NAME = "TestGroup"
@@ -65,6 +63,11 @@ def run_group_prestage_strategy(request, release: str = None, for_sw_deploy: boo
     # Register teardown before the operation so a partial run still cleans up (LIFO).
     request.addfinalizer(lambda: prestage_keywords.get_dcmanager_prestage_strategy_delete())
     request.addfinalizer(lambda: DcmanagerSubcloudGroupKeywords(system_controller_ssh).dcmanager_subcloud_group_delete_and_reset(TEST_GROUP_NAME, members))
+
+    # Only one dcmanager strategy may exist at a time, of any type. Fail fast with
+    # an actionable message instead of an opaque return code from the create below.
+    get_logger().log_test_case_step("Verify no pre-existing dcmanager strategy blocks this run")
+    DcmanagerStrategyCleanupKeywords(system_controller_ssh).assert_no_strategy_exists()
 
     get_logger().log_test_case_step(f"Create prestage-strategy for group '{TEST_GROUP_NAME}' (release={release}, for_sw_deploy={for_sw_deploy}, members={members})")
     prestage_keywords.get_dcmanager_prestage_strategy_create(subcloud_group=TEST_GROUP_NAME, release=release, sw_deploy=for_sw_deploy)
