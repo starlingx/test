@@ -1,4 +1,4 @@
-from pytest import mark
+from pytest import FixtureRequest, mark
 
 from config.configuration_manager import ConfigurationManager
 from framework.logging.automation_logger import get_logger
@@ -20,6 +20,8 @@ from keywords.cloud_platform.system.host.system_host_reinstall_keywords import S
 from keywords.cloud_platform.system.host.system_host_stor_keywords import SystemHostStorageKeywords
 from keywords.cloud_platform.system.host.system_host_swact_keywords import SystemHostSwactKeywords
 from keywords.cloud_platform.system.storage.system_storage_backend_keywords import SystemStorageBackendKeywords
+from keywords.k8s.continuous_write.kubectl_continuous_write_keywords import KubectlContinuousWriteKeywords
+from keywords.k8s.pods.kubectl_get_pods_keywords import KubectlGetPodsKeywords
 
 
 @mark.p2
@@ -621,9 +623,10 @@ def test_lock_unlock_then_swact_and_reverse_cycle():
 
 @mark.lab_has_rook_ceph
 @mark.lab_has_standby_controller
-def test_rook_ceph_swact():
+def test_rook_ceph_swact(request: FixtureRequest):
     """
-    Test case: rook-ceph swact
+    Test case: rook-ceph swact, verifying pods keep continuously writing to
+    CephFS and RBD volumes across both switchovers.
 
     Setup:
         - Ensure rook-ceph storage backend is already configured
@@ -631,34 +634,77 @@ def test_rook_ceph_swact():
 
     Test Steps:
         - Check rook-ceph health before swact
-        - Perform swact from active to standby controller
-        - Validate swact completed successfully
+        - Start continuous-write pods on CephFS (RWX) and RBD (RWO) volumes,
+          pinned to the active controller so the writers sit on the node that
+          goes through the active -> standby role transition
+        - Record each pod's write-cycle count before the swact
+        - Perform swact from active to standby controller, which fails the test
+          if the switchover does not complete
+        - Verify each writer pod is still Running and its write-cycle count
+          advanced (i.e. it kept writing through the swact)
         - Perform swact back to the original controller
-        - Validate swact completed successfully
         - Check rook-ceph health after swact
+        - Verify each writer pod is still Running and its write-cycle count
+          advanced again after the swact back
+
+    Teardown:
+        - Delete each continuous-write pod and its PVC, waiting for the PVC to be
+          gone, and remove the uploaded YAML files from the active controller
+
+    Args:
+        request (FixtureRequest): pytest request fixture for test setup and teardown
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     system_host_list_keywords = SystemHostListKeywords(ssh_connection)
     ceph_status_keywords = CephStatusKeywords(ssh_connection)
     system_host_swact_keywords = SystemHostSwactKeywords(ssh_connection)
+    kubectl_get_pods_keywords = KubectlGetPodsKeywords(ssh_connection)
+    continuous_write_keywords = KubectlContinuousWriteKeywords(ssh_connection)
     active_controller = system_host_list_keywords.get_active_controller()
     standby_controller = system_host_list_keywords.get_standby_controller()
+    active_host_name = active_controller.get_host_name()
 
     get_logger().log_test_case_step("Checking rook-ceph health before swact.")
     ceph_status_keywords.wait_for_ceph_health_status(expect_health_status=True)
 
-    get_logger().log_info("Performing controller swact operation")
-    system_host_swact_keywords.host_swact()
-    swact_success = system_host_swact_keywords.wait_for_swact(active_controller, standby_controller)
-    validate_equals(swact_success, True, "Host swact")
+    get_logger().log_info(f"Active controller (writer pods pinned here): {active_host_name}; standby: {standby_controller.get_host_name()}")
 
-    get_logger().log_info("Performing controller swact back operation")
+    writer_pods = {}
+    for storage_type in ["cephfs", "rbd"]:
+        get_logger().log_test_case_step(f"Start {storage_type} continuous-write pod on {active_host_name}.")
+        pod_name, pvc_name = continuous_write_keywords.start_continuous_write_pod(storage_type, node_name=active_host_name)
+        writer_pods[storage_type] = pod_name
+        request.addfinalizer(lambda p=pod_name, v=pvc_name: continuous_write_keywords.cleanup_continuous_write_pod(p, v))
+
+    write_counts = {}
+    for storage_type, pod_name in writer_pods.items():
+        write_counts[storage_type] = continuous_write_keywords.wait_for_write_progress(pod_name, previous_count=0)
+        get_logger().log_info(f"{pod_name} write-cycle count before swact: {write_counts[storage_type]}")
+
+    get_logger().log_test_case_step("Performing controller swact operation.")
     system_host_swact_keywords.host_swact()
-    swact_success = system_host_swact_keywords.wait_for_swact(standby_controller, active_controller)
-    validate_equals(swact_success, True, "Host swact")
+
+    for storage_type, pod_name in writer_pods.items():
+        get_logger().log_test_case_step(f"Verify {pod_name} is still Running after swact.")
+        kubectl_get_pods_keywords.wait_for_pod_status(pod_name, "Running")
+
+        get_logger().log_test_case_step(f"Verify {pod_name} kept writing after swact.")
+        write_counts[storage_type] = continuous_write_keywords.wait_for_write_progress(pod_name, previous_count=write_counts[storage_type])
+        get_logger().log_info(f"{pod_name} write-cycle count after swact: {write_counts[storage_type]}")
+
+    get_logger().log_test_case_step("Performing controller swact back operation.")
+    system_host_swact_keywords.host_swact()
 
     get_logger().log_test_case_step("Checking rook-ceph health after swact.")
     ceph_status_keywords.wait_for_ceph_health_status(expect_health_status=True)
+
+    for storage_type, pod_name in writer_pods.items():
+        get_logger().log_test_case_step(f"Verify {pod_name} is still Running after swact back.")
+        kubectl_get_pods_keywords.wait_for_pod_status(pod_name, "Running")
+
+        get_logger().log_test_case_step(f"Verify {pod_name} kept writing after swact back.")
+        write_counts[storage_type] = continuous_write_keywords.wait_for_write_progress(pod_name, previous_count=write_counts[storage_type])
+        get_logger().log_info(f"{pod_name} write-cycle count after swact back: {write_counts[storage_type]}")
 
 
 @mark.lab_has_rook_ceph
