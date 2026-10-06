@@ -1,3 +1,4 @@
+from framework.exceptions.keyword_exception import KeywordException
 from keywords.k8s.node.object.kubectl_node_description_output import KubectlNodeDescriptionOutput
 
 
@@ -48,6 +49,9 @@ def test_node_description_output_parser():
         '  hugepages-2Mi:      0\n',
         '  memory:             129003248Ki\n',
         '  pods:               110\n',
+        '  intel.com/dummy:                       0\n',
+        '  intel.com/pci_sriov_net_group0_data0:  28\n',
+        '  intel.com/pci_sriov_net_group1_data2:  2\n',
         'Allocatable:\n',
         '  cpu:                22\n',
         '  ephemeral-storage:  9417620260\n',
@@ -55,6 +59,13 @@ def test_node_description_output_parser():
         '  hugepages-2Mi:      0\n',
         '  memory:             118660848Ki\n',
         '  pods:               110\n',
+        '  intel.com/dummy:                       0\n',
+        '  intel.com/pci_sriov_net_group0_data0:  28\n',
+        '  intel.com/pci_sriov_net_group0_data1:  2\n',
+        '  intel.com/pci_sriov_net_group0_data2:  2\n',
+        '  intel.com/pci_sriov_net_group1_data0:  28\n',
+        '  intel.com/pci_sriov_net_group1_data1:  2\n',
+        '  intel.com/pci_sriov_net_group1_data2:  2\n',
         ' System Info:\n',
         '  Machine ID:                  aaa9999a76584037a9a7fd11d22284ba\n',
         '  System UUID:                 4c4c4544-0057-4b10-8351-a1a04f505233\n',
@@ -100,6 +111,9 @@ def test_node_description_output_parser():
         '  ephemeral-storage  0 (0%)      0 (0%)\n',
         '  hugepages-1Gi      0 (0%)      0 (0%)\n',
         '  hugepages-2Mi      0 (0%)      0 (0%)\n',
+        '  intel.com/dummy                       0              0\n',
+        '  intel.com/pci_sriov_net_group0_data0  6              6\n',
+        '  intel.com/pci_sriov_net_group1_data2  0              0\n',
         'Events:              <none>\n',
     )
 
@@ -135,6 +149,21 @@ def test_node_description_output_parser():
     assert kubernetes_node_allocatable.get_hugepages_2mi() == "0"
     assert kubernetes_node_allocatable.get_memory() == "118660848Ki"
     assert kubernetes_node_allocatable.get_pods() == 110
+
+    assert kubernetes_node_allocatable.get_datanetwork_allocatable("group0-data0") == 28
+    assert kubernetes_node_allocatable.get_datanetwork_allocatable("group0-data1") == 2
+    assert kubernetes_node_allocatable.get_datanetwork_allocatable("group0-data2") == 2
+    assert kubernetes_node_allocatable.get_datanetwork_allocatable("group1-data0") == 28
+    assert kubernetes_node_allocatable.get_datanetwork_allocatable("group1-data1") == 2
+    assert kubernetes_node_allocatable.get_datanetwork_allocatable("group1-data2") == 2
+
+    assert kubernetes_node_capacity.get_datanetwork_allocatable("group1-data2") == 2
+
+    try:
+        kubernetes_node_allocatable.get_datanetwork_allocatable("nonexistent-datanetwork")
+        assert False, "Expected KeywordException for an unadvertised datanetwork"
+    except KeywordException:
+        pass
 
     allocated_resources = node_description_object.get_allocated_resources()
     assert allocated_resources.get_cpu().get_limits() == "2 (9%)"

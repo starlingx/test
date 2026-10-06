@@ -1,3 +1,5 @@
+from typing import Dict
+
 from framework.exceptions.keyword_exception import KeywordException
 
 
@@ -18,10 +20,9 @@ class KubernetesNodeCapacityObject:
         self.memory: str = None
         self.pods: int = -1
         self.windriver_isolcpus: int = -1
-        self.intel_pci_sriov_net_group0_data0 = -1
-        self.intel_pci_sriov_net_group0_data1 = -1
         self.intel_dummy = -1
-        self.intel_pci_sriov_net_sriov_test_datanetwork = -1
+        # Allocatable VF count keyed by datanetwork name
+        self.sriov_datanetwork_allocatable: Dict[str, int] = {}
 
     def set_cpu(self, cpu: int):
         """
@@ -135,44 +136,6 @@ class KubernetesNodeCapacityObject:
         """
         return self.windriver_isolcpus
 
-    def set_intel_pci_sriov_net_group0_data0(self, intel_pci_sriov_net_group0_data0: int):
-        """
-        Setter for intel_pci_sriov_net_group0_data0
-        Args:
-            intel_pci_sriov_net_group0_data0 (): the intel_pci_sriov_net_group0_data0 vf value
-
-        Returns:
-
-        """
-        self.intel_pci_sriov_net_group0_data0 = intel_pci_sriov_net_group0_data0
-
-    def get_intel_pci_sriov_net_group0_data0(self) -> int:
-        """
-        Getter for intel_pci_sriov_net_group0_data0
-        Returns:
-
-        """
-        return self.intel_pci_sriov_net_group0_data0
-
-    def set_intel_pci_sriov_net_group0_data1(self, intel_pci_sriov_net_group0_data1: int):
-        """
-        Setter for intel_pci_sriov_net_group0_data1
-        Args:
-            intel_pci_sriov_net_group0_data1 (): the intel_pci_sriov_net_group0_data1 value
-
-        Returns:
-
-        """
-        self.intel_pci_sriov_net_group0_data1 = intel_pci_sriov_net_group0_data1
-
-    def get_intel_pci_sriov_net_group0_data1(self) -> int:
-        """
-        Getter for intel_pci_sriov_net_group0_data1
-        Returns:
-
-        """
-        return self.intel_pci_sriov_net_group0_data1
-
     def set_intel_dummy(self, intel_dummy):
         """
         Setter for intel dummy
@@ -192,41 +155,42 @@ class KubernetesNodeCapacityObject:
         """
         return self.intel_dummy
 
-    def set_intel_pci_sriov_net_sriov_test_datanetwork(self, intel_pci_sriov_net_sriov_test_datanetwork: int):
+    def set_sriov_datanetwork_allocatable(self, datanetwork: str, allocatable: int):
         """
-        Setter for intel_pci_sriov_net_sriov_test_datanetwork
+        Set the allocatable VF count for a datanetwork.
+
         Args:
-            intel_pci_sriov_net_sriov_test_datanetwork (): intel_pci_sriov_net_sriov_test_datanetwork value
+            datanetwork (str): the datanetwork name (e.g. "group0-data0").
+            allocatable (int): the allocatable VF count for that datanetwork.
+        """
+        self.sriov_datanetwork_allocatable[datanetwork] = allocatable
+
+    def get_sriov_datanetwork_allocatable(self) -> Dict[str, int]:
+        """
+        Get the full map of datanetwork name to allocatable VF count.
 
         Returns:
-
+            Dict[str, int]: allocatable VF count keyed by datanetwork name.
         """
-        self.intel_pci_sriov_net_sriov_test_datanetwork = intel_pci_sriov_net_sriov_test_datanetwork
-
-    def get_intel_pci_sriov_net_sriov_test_datanetwork(self) -> int:
-        """
-        Getter for intel_pci_sriov_net_sriov_test_datanetwork
-        Returns:
-
-        """
-        return self.intel_pci_sriov_net_sriov_test_datanetwork
+        return self.sriov_datanetwork_allocatable
 
     def get_datanetwork_allocatable(self, datanetwork: str) -> int:
         """
-        Get the datanetwork allocatable based on the datanetwork name
+        Get the allocatable VF count for a datanetwork by name.
+
+        The count is looked up generically from the datanetworks the node
+        advertises, so any datanetwork exposed by the host is supported
+        without a per-name handler.
+
         Args:
-            datanetwork (): the datanetwork name
+            datanetwork (str): the datanetwork name (e.g. "group1-data2").
 
         Returns:
+            int: the allocatable VF count for the datanetwork.
 
+        Raises:
+            KeywordException: if the node does not advertise the datanetwork.
         """
-        if datanetwork == 'group0-data0':
-            return self.get_intel_pci_sriov_net_group0_data0()
-        elif datanetwork in 'group0-data1':
-            return self.get_intel_pci_sriov_net_group0_data1()
-        elif datanetwork in 'sriov-test-datanetwork':
-            return self.get_intel_pci_sriov_net_sriov_test_datanetwork()
-        elif datanetwork in 'intel-dummy':
-            return self.get_intel_dummy()
-        else:
-            raise KeywordException(f"No datanetwork method implemented for datanetwork {datanetwork}")
+        if datanetwork not in self.sriov_datanetwork_allocatable:
+            raise KeywordException(f"Node does not advertise datanetwork {datanetwork}. Available datanetworks: {sorted(self.sriov_datanetwork_allocatable.keys())}")
+        return self.sriov_datanetwork_allocatable[datanetwork]
