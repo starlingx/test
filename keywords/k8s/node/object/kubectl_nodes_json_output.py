@@ -147,6 +147,11 @@ class KubectlNodesJSONOutput:
         allocatable = (item.get("status") or {}).get("allocatable") or {}
         obj.set_allocatable(allocatable)
 
+        # InternalIP addresses (may include IPv4 and/or IPv6 for dual-stack)
+        addresses = (item.get("status") or {}).get("addresses") or []
+        internal_ips = [addr.get("address") for addr in addresses if addr.get("type") == "InternalIP" and addr.get("address")]
+        obj.set_internal_ips(internal_ips)
+
         return obj
 
     def _infer_roles_from_labels(self, labels: dict) -> list:
