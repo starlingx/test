@@ -123,3 +123,12 @@ class SystemHostRebootKeywords(BaseKeyword):
         """
         get_logger().log_info("Force rebooting host")
         self.ssh_connection.send_as_sudo("reboot -f")
+
+    def host_graceful_reboot(self) -> None:
+        """Gracefully reboot the host using sudo reboot.
+
+        Sends the graceful reboot command via the class SSH connection.
+        Initialize this class with the SSH connection to the target host.
+        """
+        get_logger().log_info("Gracefully rebooting host")
+        self.ssh_connection.send_as_sudo("reboot")
