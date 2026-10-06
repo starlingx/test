@@ -150,19 +150,18 @@ class OidcSetupKeywords(BaseKeyword):
         get_logger().log_info("All OIDC pods are ready")
 
     def cleanup_oidc_environment(self) -> None:
-        """Remove OIDC helm overrides, re-apply oidc-auth-apps, and delete temp files.
+        """Clean up temporary override files created by setup_oidc_environment.
 
-        Reverts the dex and oidc-client helm overrides applied by setup_oidc_environment(),
-        re-applies the application to restore default state, and removes the temporary
-        override YAML files from the controller.
+        Removes the temporary YAML files from the controller. Does not delete the
+        helm overrides or re-apply the app — removing the dex connector override
+        leaves oidc-auth-apps with an incomplete OIDC configuration, which causes
+        application-apply to be rejected. The setup is idempotent, so subsequent
+        runs will re-apply the overrides as needed.
         """
-        get_logger().log_info("Cleaning up OIDC environment: removing helm overrides")
-        self.helm_override_kw.delete_system_helm_override(OIDC_APP_NAME, "dex", OIDC_NAMESPACE)
-        self.helm_override_kw.delete_system_helm_override(OIDC_APP_NAME, "oidc-client", OIDC_NAMESPACE)
-        self.app_apply_kw.system_application_apply(OIDC_APP_NAME, timeout=300, wait_for_applied=True)
+        get_logger().log_info("Cleaning up OIDC environment: removing temporary override files")
         self.file_kw.delete_file("/tmp/dex-oidc-override.yaml")
         self.file_kw.delete_file("/tmp/oidc-client-override.yaml")
-        get_logger().log_info("OIDC environment restored to default state")
+        get_logger().log_info("OIDC environment cleanup complete")
 
     def setup_role_bindings(self, group_name: str, role: str) -> callable:
         """Add identity stx role-bindings for the given group and role.
