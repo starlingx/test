@@ -367,42 +367,45 @@ def test_stx_oidc_login_ldap_operator_role(request: FixtureRequest):
 
 @mark.p2
 def test_stx_oidc_login_wad_system_host_list(request: FixtureRequest):
-    """Verify 'system host-list' runs after browser-based OIDC login via the WAD connector.
+    """Verify 'system host-list' and 'fm alarm-list' run after browser OIDC login via the WAD connector.
 
     Exercises the full flow using the WAD (Windows Active Directory) DEX connector
     (DEX-native login form, no MFA): the WAD connector override is applied, the WAD
     group is bound to the 'admin' role, a headless Selenium browser selects the WAD
-    connector and logs in as the AD test user, and 'system host-list' returns
-    controller hosts. The WAD user/group already exist in Active Directory, so no
-    user/group creation is performed.
+    connector and logs in once as the AD test user, then 'system host-list' and
+    'fm alarm-list' run in the same authenticated session. The OIDC token is cached
+    after the browser login, so fm reuses it with no second browser login.
 
     Teardown:
         - Delete the ClusterRoleBinding, working dir, role-bindings
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     ctx = _setup_wad_oidc_role(ssh_connection, "Level1SystemAdmin", "admin")
-    # LIFO: register role-bindings teardown FIRST so it runs LAST (it restarts
-    # keystone); cleanup runs first while keystone is still up.
     for teardown in ctx.get_teardowns():
         request.addfinalizer(teardown)
 
-    get_logger().log_test_case_step("Run 'system host-list' with browser-based OIDC login via WAD connector")
-    result = _run_stx_via_browser(ssh_connection, ctx, "system host-list")
-    get_logger().log_info(f"system host-list output:\n{result.get_output()}")
+    get_logger().log_test_case_step("Run 'system host-list' then 'fm alarm-list' in one browser-login session (WAD)")
+    result = _run_stx_via_browser(ssh_connection, ctx, "system host-list && fm alarm-list")
+    get_logger().log_info(f"system + fm output:\n{result.get_output()}")
 
     get_logger().log_test_case_step("Validate 'system host-list' returned controller hosts")
     validate_equals("controller" in result.get_output(), True, "system host-list should return controller hosts after WAD OIDC browser login")
 
+    get_logger().log_test_case_step("Validate 'fm alarm-list' was not denied")
+    validate_equals(result.is_stx_forbidden(), False, "fm alarm-list must NOT be denied after WAD OIDC browser login")
+
 
 @mark.p2
 def test_stx_oidc_login_keycloak_system_host_list(request: FixtureRequest):
-    """Verify 'system host-list' runs after browser-based OIDC login via the Keycloak connector.
+    """Verify 'system host-list' and 'fm alarm-list' run after browser OIDC login via Keycloak.
 
     Exercises the full flow using the external Keycloak IdP connector: the OIDC
     Keycloak environment (oidc-auth-apps + kubeconfig + CRB) is set up, OTP and
     brute-force lockout are reset for a clean MFA enrollment, and a headless
-    Selenium browser completes the Keycloak redirect login with TOTP, after which
-    'system host-list' returns controller hosts.
+    Selenium browser completes the Keycloak redirect login with TOTP. Then
+    'system host-list' and 'fm alarm-list' run in the same authenticated session.
+    The OIDC token is cached after the browser login, so fm reuses it with no
+    second browser login.
 
     Teardown:
         - Restore the OIDC Keycloak environment to its default state
@@ -430,9 +433,37 @@ def test_stx_oidc_login_keycloak_system_host_list(request: FixtureRequest):
     keycloak_user = DexTestUser({"username": username, "password": password})
     ctx = StxOidcRoleContext(keycloak_user, login_url, oam_ip, "keycloak", [])
 
-    get_logger().log_test_case_step("Run 'system host-list' with browser-based Keycloak OIDC login (with TOTP)")
-    result = _run_stx_via_browser(ssh_connection, ctx, "system host-list", is_keycloak=True, totp_secret=totp_secret)
-    get_logger().log_info(f"system host-list output:\n{result.get_output()}")
+    get_logger().log_test_case_step("Run 'system host-list' then 'fm alarm-list' in one browser-login session (Keycloak)")
+    result = _run_stx_via_browser(ssh_connection, ctx, "system host-list && fm alarm-list", is_keycloak=True, totp_secret=totp_secret)
+    get_logger().log_info(f"system + fm output:\n{result.get_output()}")
 
     get_logger().log_test_case_step("Validate 'system host-list' returned controller hosts")
     validate_equals("controller" in result.get_output(), True, "system host-list should return controller hosts after Keycloak OIDC browser login")
+
+    get_logger().log_test_case_step("Validate 'fm alarm-list' was not denied")
+    validate_equals(result.is_stx_forbidden(), False, "fm alarm-list must NOT be denied after Keycloak OIDC browser login")
+
+
+@mark.p2
+def test_stx_oidc_login_ldap_fm_alarm_list(request: FixtureRequest):
+    """Verify 'fm alarm-list' runs after browser-based OIDC login via the LDAP connector.
+
+    Exercises the FM CLI flow using the Local LDAP DEX connector: a headless
+    Selenium browser completes the DEX-native login, then 'fm alarm-list' runs
+    and returns a valid alarm table (or empty list). The group is bound to the
+    'admin' role so the command is authorized.
+
+    Teardown:
+        - Delete the ClusterRoleBinding, LDAP user/group, working dir, role-bindings
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    ctx = _setup_ldap_oidc_role(ssh_connection, "Level1SystemAdmin", "admin")
+    for teardown in ctx.get_teardowns():
+        request.addfinalizer(teardown)
+
+    get_logger().log_test_case_step("Run 'fm alarm-list' with browser-based OIDC login via LDAP connector")
+    result = _run_stx_via_browser(ssh_connection, ctx, "fm alarm-list")
+    get_logger().log_info(f"fm alarm-list output:\n{result.get_output()}")
+
+    get_logger().log_test_case_step("Validate 'fm alarm-list' was not denied")
+    validate_equals(result.is_stx_forbidden(), False, "fm alarm-list must NOT be denied after LDAP OIDC browser login")
