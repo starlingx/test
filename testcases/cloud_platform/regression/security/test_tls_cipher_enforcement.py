@@ -110,20 +110,17 @@ def test_allowed_ciphers_accepted(request):
     get_logger().log_setup_step("Retrieving OAM and management IPs")
     ep_ips = tls_kw.get_endpoint_ips()
 
-    # Detect platform certificate type to determine which TLS 1.2 ciphers will work
-    first_ep = ENDPOINTS[0]
-    detect_host = tls_kw.resolve_host(first_ep, ep_ips.get_oam_ip(), ep_ips.get_mgmt_ip())
-    cert_type = tls_kw.detect_platform_cert_type(detect_host, first_ep["port"], ep_ips.is_ipv6_lab())
-
-    # Select TLS 1.2 ciphers matching the installed certificate type
-    if cert_type == "RSA":
-        tls12_ciphers_to_test = TLS12_RSA_CIPHERS
-    else:
-        tls12_ciphers_to_test = TLS12_ECDSA_CIPHERS
-
     for ep in ENDPOINTS:
         host = tls_kw.resolve_host(ep, ep_ips.get_oam_ip(), ep_ips.get_mgmt_ip())
         ep_is_ipv6 = ep_ips.is_ipv6_lab() and not ep.get("host")
+
+        # Detect certificate type per endpoint — different endpoints may present
+        # different certificates (e.g. HAProxy uses platform cert, Ingress uses its own).
+        cert_type = tls_kw.detect_platform_cert_type(host, ep["port"], ep_is_ipv6)
+        if cert_type == "RSA":
+            tls12_ciphers_to_test = TLS12_RSA_CIPHERS
+        else:
+            tls12_ciphers_to_test = TLS12_ECDSA_CIPHERS
 
         # Test TLS 1.2 allowed ciphers (matching cert type)
         for cipher in tls12_ciphers_to_test:
@@ -431,7 +428,7 @@ def test_matching_tls_version_cipher_accepted(request):
 
     get_logger().log_test_case_step("TLS 1.2 with TLS 1.2 cipher")
     cert_type = tls_kw.detect_platform_cert_type(oam_host, oam_ep["port"], ep_ips.is_ipv6_lab())
-    tls12_cipher = TLS12_ECDSA_CIPHERS[0] if cert_type == "ecdsa" else TLS12_RSA_CIPHERS[0]
+    tls12_cipher = TLS12_ECDSA_CIPHERS[0] if cert_type == "ECDSA" else TLS12_RSA_CIPHERS[0]
     tls_kw.verify_cipher_accepted(
         oam_host,
         oam_ep["port"],
@@ -492,7 +489,7 @@ def test_cipher_enforcement_on_key_endpoints(request):
 
     get_logger().log_test_case_step("Verifying allowed ciphers work")
     cert_type = tls_kw.detect_platform_cert_type(oam_host, oam_ep["port"], ep_ips.is_ipv6_lab())
-    tls12_cipher = TLS12_ECDSA_CIPHERS[0] if cert_type == "ecdsa" else TLS12_RSA_CIPHERS[0]
+    tls12_cipher = TLS12_ECDSA_CIPHERS[0] if cert_type == "ECDSA" else TLS12_RSA_CIPHERS[0]
     tls_kw.verify_cipher_accepted(oam_host, oam_ep["port"], tls12_cipher, oam_ep["name"], ep_ips.is_ipv6_lab())
     tls_kw.verify_cipher_accepted(k8s_host, k8s_ep["port"], tls12_cipher, k8s_ep["name"], ep_ips.is_ipv6_lab())
 
@@ -539,15 +536,15 @@ def test_tls12_and_tls13_cipher_removal_enforcement(request):
     get_logger().log_setup_step("Retrieving OAM and management IPs")
     ep_ips = tls_kw.get_endpoint_ips()
 
-    # Detect cert type
+    # Detect cert type from HAProxy for propagation polling (HAProxy is the reference)
     first_ep = HAPROXY_ENDPOINTS[0]
     detect_host = tls_kw.resolve_host(first_ep, ep_ips.get_oam_ip(), ep_ips.get_mgmt_ip())
     cert_type = tls_kw.detect_platform_cert_type(detect_host, first_ep["port"], ep_ips.is_ipv6_lab())
 
     if cert_type == "RSA":
-        removed_tls12_cipher = TLS12_RSA_CIPHERS[0]
+        poll_removed_cipher = TLS12_RSA_CIPHERS[0]
     else:
-        removed_tls12_cipher = TLS12_ECDSA_CIPHERS[0]
+        poll_removed_cipher = TLS12_ECDSA_CIPHERS[0]
     removed_tls13_cipher = TLS13_CIPHERSUITES[2]
 
     def teardown() -> None:
@@ -558,7 +555,7 @@ def test_tls12_and_tls13_cipher_removal_enforcement(request):
 
     request.addfinalizer(teardown)
 
-    get_logger().log_test_case_step(f"Removing cipher '{removed_tls12_cipher}' and '{removed_tls13_cipher}'")
+    get_logger().log_test_case_step(f"Removing cipher '{poll_removed_cipher}' and '{removed_tls13_cipher}'")
     tls_kw.apply_cipher_list(REDUCED_CIPHER_LIST)
 
     poll_ep = HAPROXY_ENDPOINTS[0]
@@ -566,7 +563,7 @@ def test_tls12_and_tls13_cipher_removal_enforcement(request):
     tls_kw.wait_for_cipher_propagation(
         poll_host,
         poll_ep["port"],
-        removed_tls12_cipher,
+        poll_removed_cipher,
         expect_rejected=True,
         is_ipv6=ep_ips.is_ipv6_lab() and not poll_ep.get("host"),
     )
@@ -574,15 +571,11 @@ def test_tls12_and_tls13_cipher_removal_enforcement(request):
     tls_kw.wait_for_cipher_propagation(
         k8s_host,
         K8S_API_ENDPOINT["port"],
-        removed_tls12_cipher,
+        poll_removed_cipher,
         expect_rejected=True,
         is_ipv6=ep_ips.is_ipv6_lab(),
     )
 
-    if cert_type == "RSA":
-        remaining_tls12 = TLS12_RSA_CIPHERS[1]
-    else:
-        remaining_tls12 = TLS12_ECDSA_CIPHERS[1]
     remaining_tls13 = TLS13_CIPHERSUITES[0]
     os_version = tls_kw.get_os_version()
 
@@ -598,7 +591,14 @@ def test_tls12_and_tls13_cipher_removal_enforcement(request):
 
     tls_kw.verify_cipher_removal_on_endpoints(
         ENDPOINTS,
-        {"removed_tls12": removed_tls12_cipher, "removed_tls13": removed_tls13_cipher, "remaining_tls12": remaining_tls12, "remaining_tls13": remaining_tls13},
+        {
+            "removed_tls12_rsa": TLS12_RSA_CIPHERS[0],
+            "removed_tls12_ecdsa": TLS12_ECDSA_CIPHERS[0],
+            "remaining_tls12_rsa": TLS12_RSA_CIPHERS[1],
+            "remaining_tls12_ecdsa": TLS12_ECDSA_CIPHERS[1],
+            "removed_tls13": removed_tls13_cipher,
+            "remaining_tls13": remaining_tls13,
+        },
         {"oam_ip": ep_ips.get_oam_ip(), "mgmt_ip": ep_ips.get_mgmt_ip(), "is_ipv6": ep_ips.is_ipv6_lab(), "tls13_not_enforced": tls13_not_enforced, "skip_cipher_removal": skip_cipher_removal},
     )
 
@@ -790,7 +790,7 @@ def test_delete_cipher_config_reverts_to_defaults(request):
 
     get_logger().log_test_case_step("Verifying default ciphers still accepted after delete")
     cert_type = tls_kw.detect_platform_cert_type(oam_ip, 5000, is_ipv6)
-    if cert_type == "ecdsa":
+    if cert_type == "ECDSA":
         tls_kw.verify_cipher_accepted(oam_ip, 5000, "ECDHE-ECDSA-AES256-GCM-SHA384", "Keystone", is_ipv6)
         tls_kw.verify_cipher_accepted(oam_ip, 5000, "ECDHE-ECDSA-AES128-GCM-SHA256", "Keystone", is_ipv6)
     else:
