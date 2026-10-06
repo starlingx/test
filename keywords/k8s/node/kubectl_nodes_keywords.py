@@ -1,7 +1,7 @@
 import json
+from typing import Optional
 
 from framework.ssh.ssh_connection import SSHConnection
-from keywords.cloud_platform.command_wrappers import source_openrc
 from keywords.k8s.k8s_base_keyword import K8sBaseKeyword
 from keywords.k8s.node.object.kubectl_node_labels_output import KubectlNodeLabelsOutput
 from keywords.k8s.node.object.kubectl_nodes_json_output import KubectlNodesJSONOutput
@@ -13,15 +13,18 @@ class KubectlNodesKeywords(K8sBaseKeyword):
     Class for Kubectl "kubectl get nodes"  keywords
     """
 
-    def __init__(self, ssh_connection: SSHConnection, kubeconfig_path: str = None):
+    def __init__(self, ssh_connection: SSHConnection, kubeconfig_path: Optional[str] = None, use_openrc: bool = True):
         """
         Constructor
 
         Args:
             ssh_connection(SSHConnection): SSH Connection object
-            kubeconfig_path (str, optional): Custom KUBECONFIG path. If None, uses default from config.
+            kubeconfig_path (Optional[str]): Custom KUBECONFIG path. If None, uses default from config.
+            use_openrc (bool): Source platform openrc before kubectl commands. Defaults to True.
+                Set to False for clusters (e.g. MicroK8s) where /etc/platform/openrc does not
+                exist and KUBECONFIG alone is sufficient.
         """
-        super().__init__(ssh_connection, kubeconfig_path)
+        super().__init__(ssh_connection, kubeconfig_path, use_openrc)
 
     def get_kubectl_nodes(self) -> KubectlNodesOutput:
         """
@@ -31,7 +34,7 @@ class KubectlNodesKeywords(K8sBaseKeyword):
             KubectlNodesOutput:  KubectlNodesOutput object
 
         """
-        output = self.ssh_connection.send(source_openrc(self.k8s_config.export("kubectl get nodes")))
+        output = self.ssh_connection.send(self.source_and_export("kubectl get nodes"))
         self.validate_success_return_code(self.ssh_connection)
         kubectl_nodes_output = KubectlNodesOutput(output)
 
@@ -44,7 +47,7 @@ class KubectlNodesKeywords(K8sBaseKeyword):
         Returns:
             KubectlNodesJSONOutput: Object that parses and provides structured access to allocatable resources.
         """
-        raw_out = self.ssh_connection.send(source_openrc(self.k8s_config.export("kubectl get nodes -o json")))
+        raw_out = self.ssh_connection.send(self.source_and_export("kubectl get nodes -o json"))
         self.validate_success_return_code(self.ssh_connection)
 
         text = "\n".join(raw_out) if isinstance(raw_out, list) else str(raw_out)
