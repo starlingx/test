@@ -11,9 +11,13 @@ The sequence is driven by _run_combined_upgrade_until: each test names the comma
 to stop after (a STEP_* constant); the driver runs every earlier command, runs the
 stop command, then applies the rollback procedure valid for that region.
 
-This module covers the Kubernetes-upgrade phase (kube-upgrade-start through
-control-plane) plus 'software deploy start' and the subsequent 'system host-lock'.
-Later deploy-phase abort points (deploy host onward) are covered separately.
+This module covers the full combined-upgrade sequence: the Kubernetes-upgrade phase
+(kube-upgrade-start through control-plane), the platform-deploy phase ('software
+deploy start', 'system host-lock', 'software deploy host', 'system host-unlock',
+'software deploy activate', 'software deploy complete'), and the Kubernetes-completion
+phase ('system kube-upgrade-complete', 'system kube-post-application-update', and
+'system kube-upgrade-delete'). Each test aborts at one stop point and the driver
+applies the rollback procedure valid for that region.
 
 Prerequisites:
     - Lab must be in a state where a combined upgrade can be started
@@ -38,6 +42,7 @@ from keywords.cloud_platform.system.kubernetes.kube_host_upgrade_list_keywords i
 from keywords.cloud_platform.system.kubernetes.kube_upgrade_keywords import KubeUpgradeKeywords
 from keywords.cloud_platform.system.kubernetes.kube_upgrade_show_keywords import KubeUpgradeShowKeywords
 from keywords.cloud_platform.system.kubernetes.kubernetes_version_list_keywords import SystemKubernetesListKeywords
+from keywords.cloud_platform.upgrade.software_deploy_show_keywords import SoftwareDeployShowKeywords
 from keywords.cloud_platform.upgrade.software_list_keywords import SoftwareListKeywords
 from keywords.cloud_platform.upgrade.usm_keywords import USMKeywords
 
@@ -57,6 +62,16 @@ KUBE_STATE_UPGRADE_ABORTED = "upgrade-aborted"
 # --- Platform deploy-phase states (software deploy show 'State' column) ---
 
 DEPLOY_STATE_START_DONE = "deploy-start-done"
+DEPLOY_STATE_HOST_DONE = "deploy-host-done"
+DEPLOY_STATE_ACTIVATE_DONE = "deploy-activate-done"
+DEPLOY_STATE_COMPLETED = "deploy-completed"
+
+# --- Kube-upgrade states reached during the platform deploy / completion phase ---
+
+KUBE_STATE_UPGRADE_COMPLETE = "upgrade-complete"
+# NOTE: the CLI 'kube-upgrade-show' may display 'kube-post-application-updated',
+# but the automation framework (and every other test) waits on 'post-updated-apps'.
+KUBE_STATE_POST_UPDATED_APPS = "post-updated-apps"
 
 
 # =============================================================================
@@ -116,7 +131,7 @@ def _verify_kube_and_etcd_versions_rolled_back(hostname: str, original_control_p
 
 
 # =============================================================================
-# Upgrade sequence: stop-point constants
+# Upgrade sequence: context + stop-point constants
 # =============================================================================
 
 
@@ -131,7 +146,17 @@ STEP_UPGRADE_STORAGE = 4
 STEP_CONTROL_PLANE = 5
 STEP_DEPLOY_START = 6
 STEP_HOST_LOCK = 7
+STEP_DEPLOY_HOST = 8
+STEP_HOST_UNLOCK = 9
+STEP_DEPLOY_ACTIVATE = 10
+STEP_DEPLOY_COMPLETE = 11
+STEP_KUBE_UPGRADE_COMPLETE = 12
+STEP_KUBE_POST_APPLICATION_UPDATE = 13
+STEP_KUBE_UPGRADE_DELETE = 14
 
+# Deploy-phase stop points (deploy host onward) run the full platform deploy, which
+# takes longer than the kube-only phase, so they use a longer state-transition timeout.
+DEPLOY_PHASE_TIMEOUT = 1200
 
 # =============================================================================
 # Helpers: waits + rollback procedures
@@ -272,6 +297,84 @@ def _rollback_after_deploy_start(ssh_connection: SSHConnection, active_controlle
     usm_keywords.system_deploy_delete()
 
 
+def _rollback_after_deploy_host(ssh_connection: SSHConnection, active_controller: str, timeout: int) -> None:
+    """Abort and roll back a combined upgrade after 'software deploy host'.
+
+    Valid after 'software deploy host' and before 'software deploy activate' (also
+    applies after the subsequent 'system host-unlock').
+
+    Steps:
+        - software deploy abort
+        - system host-lock, software deploy host-rollback, system host-unlock
+        - software deploy delete
+        - software system-deploy delete
+
+    Args:
+        ssh_connection (SSHConnection): SSH connection to the active controller.
+        active_controller (str): Hostname of the active controller.
+        timeout (int): Maximum wait time for state transitions.
+    """
+    usm_keywords = USMKeywords(ssh_connection)
+    system_host_lock_keywords = SystemHostLockKeywords(ssh_connection)
+
+    get_logger().log_test_case_step("Abort the software deploy")
+    usm_keywords.software_deploy_abort()
+
+    get_logger().log_test_case_step(f"Roll back {active_controller} (lock, host-rollback, unlock)")
+    if not system_host_lock_keywords.is_host_locked(active_controller):
+        system_host_lock_keywords.lock_host(active_controller)
+    usm_keywords.software_deploy_host_rollback(active_controller)
+    system_host_lock_keywords.unlock_host(active_controller)
+
+    get_logger().log_test_case_step("Delete the software deploy")
+    usm_keywords.software_deploy_delete()
+
+    get_logger().log_test_case_step("Delete the system deploy")
+    usm_keywords.system_deploy_delete()
+
+
+def _rollback_after_deploy_activate(ssh_connection: SSHConnection, active_controller: str, timeout: int) -> None:
+    """Abort and roll back a combined upgrade after 'software deploy activate'.
+
+    Valid once 'software deploy activate' has run (also applies after 'software deploy
+    complete', 'system kube-upgrade-complete', 'system kube-post-application-update',
+    and 'system kube-upgrade-delete', since all of those keep the deploy in the
+    activated region).
+
+    Steps:
+        - software deploy abort
+        - software deploy activate-rollback
+        - system host-lock, software deploy host-rollback, system host-unlock
+        - software deploy delete
+        - software system-deploy delete
+
+    Args:
+        ssh_connection (SSHConnection): SSH connection to the active controller.
+        active_controller (str): Hostname of the active controller.
+        timeout (int): Maximum wait time for state transitions.
+    """
+    usm_keywords = USMKeywords(ssh_connection)
+    system_host_lock_keywords = SystemHostLockKeywords(ssh_connection)
+
+    get_logger().log_test_case_step("Abort the software deploy")
+    usm_keywords.software_deploy_abort()
+
+    get_logger().log_test_case_step("Perform the activate-rollback")
+    usm_keywords.software_deploy_activate_rollback()
+
+    get_logger().log_test_case_step(f"Roll back {active_controller} (lock, host-rollback, unlock)")
+    if not system_host_lock_keywords.is_host_locked(active_controller):
+        system_host_lock_keywords.lock_host(active_controller)
+    usm_keywords.software_deploy_host_rollback(active_controller)
+    system_host_lock_keywords.unlock_host(active_controller)
+
+    get_logger().log_test_case_step("Delete the software deploy")
+    usm_keywords.software_deploy_delete()
+
+    get_logger().log_test_case_step("Delete the system deploy")
+    usm_keywords.system_deploy_delete()
+
+
 # =============================================================================
 # Driver: run the sequence to a stop point and abort
 # =============================================================================
@@ -316,7 +419,10 @@ def _register_combined_upgrade_teardowns(request: FixtureRequest, ssh_connection
     """Register independent teardown finalizers for the combined upgrade (LIFO order).
 
     Each finalizer is best-effort: it logs and continues if there is nothing to clean
-    up, so teardown never fails a test on an already-clean system.
+    up, so teardown never fails a test on an already-clean system. The software-deploy
+    finalizer inspects the current 'software deploy show' state and applies the matching
+    rollback, so a deploy left in any region (started, host-deployed, or activated) is
+    fully unwound rather than leaking a locked host and in-progress deploy/kube upgrade.
 
     Args:
         request (FixtureRequest): Pytest request fixture for teardown registration.
@@ -332,36 +438,62 @@ def _register_combined_upgrade_teardowns(request: FixtureRequest, ssh_connection
             get_logger().log_info("No system deploy to delete")
 
     def teardown_software_deploy() -> None:
-        get_logger().log_teardown_step("Abort and delete software deploy if needed")
+        get_logger().log_teardown_step("Roll back and delete software deploy if needed")
         try:
-            USMKeywords(ssh_connection).software_deploy_abort()
+            deploy = SoftwareDeployShowKeywords(ssh_connection).get_software_deploy_show().get_software_deploy_show()
         except (KeywordException, AssertionError):
-            get_logger().log_info("No software deploy to abort")
+            deploy = None
+        if deploy is None:
+            get_logger().log_info("No software deploy to roll back")
+            return
+        state = deploy.get_state()
+        get_logger().log_info(f"Software deploy present in state '{state}'")
         try:
-            USMKeywords(ssh_connection).software_deploy_delete()
-        except (KeywordException, AssertionError):
-            get_logger().log_info("No software deploy to delete")
+            # 'activate'/'completed' states need activate-rollback first; 'host'/'start'
+            # states need the host-rollback path. 'deploy-start*' (before any host deploy)
+            # only needs a plain delete. The after-deploy-* helpers end by deleting both
+            # the software deploy and the system deploy.
+            if "activate" in state or "completed" in state:
+                _rollback_after_deploy_activate(ssh_connection, active_controller_name(), timeout)
+            elif "host" in state:
+                _rollback_after_deploy_host(ssh_connection, active_controller_name(), timeout)
+            else:
+                _rollback_after_deploy_start(ssh_connection, active_controller_name(), timeout)
+        except (KeywordException, AssertionError) as e:
+            get_logger().log_info(f"Software deploy rollback encountered an issue during teardown: {e}")
 
     def teardown_kube_upgrade() -> None:
         get_logger().log_teardown_step("Abort kubernetes upgrade if needed")
         try:
             KubeUpgradeKeywords(ssh_connection).kube_upgrade_abort()
-        except (KeywordException, AssertionError):
-            get_logger().log_info("No kubernetes upgrade to abort")
-            return
-        try:
             KubeUpgradeShowKeywords(ssh_connection).wait_for_kube_upgrade_state(KUBE_STATE_UPGRADE_ABORTED, timeout=300)
         except (KeywordException, AssertionError):
-            get_logger().log_info("Timed out waiting for upgrade-aborted state")
+            # A standalone abort is invalid once a deploy is/was in progress (the deploy
+            # rollback already unwinds kube); fall through and still attempt the delete so
+            # the kube-upgrade entity and its alarm (900.007) are cleared.
+            get_logger().log_info("Kubernetes upgrade abort not applicable, attempting delete")
         get_logger().log_teardown_step("Delete kubernetes upgrade if needed")
         try:
             KubeUpgradeKeywords(ssh_connection).kube_upgrade_delete()
         except (KeywordException, AssertionError):
             get_logger().log_info("No kubernetes upgrade to delete")
 
+    def active_controller_name() -> str:
+        """Return the active controller hostname using a fresh query.
+
+        Returns:
+            str: The active controller hostname.
+        """
+        return SystemHostListKeywords(ssh_connection).get_active_controller().get_host_name()
+
+    # LIFO: register so the software-deploy rollback runs BEFORE the kube-upgrade
+    # cleanup. Once a deploy is in progress the kube upgrade cannot be aborted on its
+    # own; the software-deploy rollback must unwind the combined deploy first, after
+    # which the kube-upgrade entity can be deleted. The system-deploy delete runs last
+    # as a final safety net (the rollback helpers already delete it).
     request.addfinalizer(teardown_system_deploy)
-    request.addfinalizer(teardown_software_deploy)
     request.addfinalizer(teardown_kube_upgrade)
+    request.addfinalizer(teardown_software_deploy)
 
 
 def _run_kube_command(ssh_connection: SSHConnection, step: int, wait: bool, timeout: int) -> None:
@@ -447,23 +579,80 @@ def _run_kube_phase_until(ssh_connection: SSHConnection, active_controller: str,
 
 
 def _run_deploy_phase(ssh_connection: SSHConnection, active_controller: str, target_platform_release: str, stop_step: int, timeout: int) -> None:
-    """Run 'software deploy start' and, for the host-lock stop point, lock the host.
+    """Run the platform-deploy and Kubernetes-completion sequence up to the stop point.
+
+    Drives the linear sequence that follows the control-plane upgrade, stopping after
+    the command named by ``stop_step``:
+    deploy start -> host-lock -> deploy host -> host-unlock -> deploy activate ->
+    deploy complete -> kube-upgrade-complete -> kube-post-application-update ->
+    kube-upgrade-delete. Each state-changing command is waited to its completed state
+    before the next is sent.
 
     Args:
         ssh_connection (SSHConnection): SSH connection to the active controller.
         active_controller (str): Hostname of the active controller.
         target_platform_release (str): Target platform release to deploy.
-        stop_step (int): Command to stop after (a STEP_* constant).
+        stop_step (int): Command to stop after (a STEP_* constant >= STEP_DEPLOY_START).
         timeout (int): Maximum wait time for state transitions.
     """
-    get_logger().log_test_case_step(f"Send software deploy start for release {target_platform_release}")
-    USMKeywords(ssh_connection).deploy_start(target_platform_release)
-    _wait_deploy_start_done(ssh_connection, timeout)
+    usm_keywords = USMKeywords(ssh_connection)
+    kube_upgrade_keywords = KubeUpgradeKeywords(ssh_connection)
+    kube_upgrade_show_keywords = KubeUpgradeShowKeywords(ssh_connection)
+    system_host_lock_keywords = SystemHostLockKeywords(ssh_connection)
 
+    get_logger().log_test_case_step(f"Send software deploy start for release {target_platform_release}")
+    usm_keywords.deploy_start(target_platform_release)
+    _wait_deploy_start_done(ssh_connection, timeout)
+    if stop_step == STEP_DEPLOY_START:
+        return
+
+    get_logger().log_test_case_step(f"Lock host {active_controller}")
+    system_host_lock_keywords.lock_host(active_controller)
     if stop_step == STEP_HOST_LOCK:
-        # lock_host blocks until the host is locked (and raises otherwise).
-        get_logger().log_test_case_step(f"Lock host {active_controller}")
-        SystemHostLockKeywords(ssh_connection).lock_host(active_controller)
+        return
+
+    get_logger().log_test_case_step(f"Deploy the software release to {active_controller}")
+    usm_keywords.software_deploy_host(active_controller)
+    get_logger().log_test_case_step(f"Wait for '{DEPLOY_STATE_HOST_DONE}' deploy state")
+    validate_equals(usm_keywords.wait_for_deploy_state(DEPLOY_STATE_HOST_DONE, timeout=timeout), True, f"Deploy reached '{DEPLOY_STATE_HOST_DONE}' state")
+    if stop_step == STEP_DEPLOY_HOST:
+        return
+
+    get_logger().log_test_case_step(f"Unlock host {active_controller}")
+    system_host_lock_keywords.unlock_host(active_controller)
+    if stop_step == STEP_HOST_UNLOCK:
+        return
+
+    get_logger().log_test_case_step("Activate the software deploy")
+    usm_keywords.software_deploy_activate()
+    get_logger().log_test_case_step(f"Wait for '{DEPLOY_STATE_ACTIVATE_DONE}' deploy state")
+    validate_equals(usm_keywords.wait_for_deploy_state(DEPLOY_STATE_ACTIVATE_DONE, timeout=timeout), True, f"Deploy reached '{DEPLOY_STATE_ACTIVATE_DONE}' state")
+    if stop_step == STEP_DEPLOY_ACTIVATE:
+        return
+
+    get_logger().log_test_case_step("Complete the software deploy")
+    usm_keywords.software_deploy_complete()
+    get_logger().log_test_case_step(f"Wait for '{DEPLOY_STATE_COMPLETED}' deploy state")
+    validate_equals(usm_keywords.wait_for_deploy_state(DEPLOY_STATE_COMPLETED, timeout=timeout), True, f"Deploy reached '{DEPLOY_STATE_COMPLETED}' state")
+    if stop_step == STEP_DEPLOY_COMPLETE:
+        return
+
+    get_logger().log_test_case_step("Complete the Kubernetes upgrade")
+    kube_upgrade_keywords.kube_upgrade_complete()
+    get_logger().log_test_case_step(f"Wait for '{KUBE_STATE_UPGRADE_COMPLETE}' kube upgrade state")
+    kube_upgrade_show_keywords.wait_for_kube_upgrade_state(KUBE_STATE_UPGRADE_COMPLETE, timeout=timeout)
+    if stop_step == STEP_KUBE_UPGRADE_COMPLETE:
+        return
+
+    get_logger().log_test_case_step("Run kube-post-application-update")
+    kube_upgrade_keywords.kube_post_application_update()
+    get_logger().log_test_case_step(f"Wait for '{KUBE_STATE_POST_UPDATED_APPS}' kube upgrade state")
+    kube_upgrade_show_keywords.wait_for_kube_upgrade_state(KUBE_STATE_POST_UPDATED_APPS, timeout=timeout)
+    if stop_step == STEP_KUBE_POST_APPLICATION_UPDATE:
+        return
+
+    get_logger().log_test_case_step("Delete the Kubernetes upgrade")
+    kube_upgrade_keywords.kube_upgrade_delete()
 
 
 def _run_combined_upgrade_until(
@@ -503,15 +692,27 @@ def _run_combined_upgrade_until(
     USMKeywords(ssh_connection).system_deploy_init(target_platform_release, kube_upgrade=target_kube_version)
 
     # Run the kube phase up to the stop point, then apply the rollback valid for the
-    # region the stop point falls in: the kube-phase rollback before any deploy command,
-    # or the after-deploy-start rollback once 'software deploy start' has run.
+    # region the stop point falls in. The reference procedure defines three deploy-phase
+    # rollbacks keyed on how far the deploy progressed:
+    #   - before any deploy command            -> kube-phase rollback
+    #   - after deploy start, before deploy host-> after-deploy-start rollback
+    #   - after deploy host, before activate    -> after-deploy-host rollback
+    #   - after deploy activate (and beyond)    -> after-deploy-activate rollback
     _run_kube_phase_until(ssh_connection, active_controller, target_kube_version, stop_step, wait_for_completion, timeout)
 
     if stop_step <= STEP_CONTROL_PLANE:
         _rollback_kube_phase(ssh_connection, timeout)
-    else:
-        _run_deploy_phase(ssh_connection, active_controller, target_platform_release, stop_step, timeout)
+        AlarmListKeywords(ssh_connection).wait_for_all_alarms_cleared()
+        return
+
+    _run_deploy_phase(ssh_connection, active_controller, target_platform_release, stop_step, timeout)
+
+    if stop_step <= STEP_HOST_LOCK:
         _rollback_after_deploy_start(ssh_connection, active_controller, timeout)
+    elif stop_step <= STEP_HOST_UNLOCK:
+        _rollback_after_deploy_host(ssh_connection, active_controller, timeout)
+    else:
+        _rollback_after_deploy_activate(ssh_connection, active_controller, timeout)
 
     AlarmListKeywords(ssh_connection).wait_for_all_alarms_cleared()
 
@@ -985,5 +1186,359 @@ def test_combined_upgrade_abort_after_host_lock(request: FixtureRequest) -> None
     get_logger().log_info(f"Etcd version before upgrade: {original_etcd_version}")
 
     _run_combined_upgrade_until(request, STEP_HOST_LOCK, wait_for_completion=True)
+
+    _verify_kube_and_etcd_versions_rolled_back(active_controller, original_control_plane_version, original_etcd_version)
+
+
+# =============================================================================
+# Tests: Abort after software deploy host
+# =============================================================================
+
+
+@mark.p2
+@mark.lab_is_simplex
+def test_combined_upgrade_abort_after_deploy_host(request: FixtureRequest) -> None:
+    """Test aborting a combined upgrade after 'software deploy host' completes.
+
+    Drives the combined upgrade through the control-plane, software deploy start,
+    host-lock, and 'software deploy host'. Since 'software deploy activate' has not
+    run, the after-deploy-host rollback applies (deploy abort, host-lock,
+    host-rollback, host-unlock, deploy delete, system-deploy delete), then verifies
+    both versions rolled back to their originals. Restricted to simplex labs via the
+    lab_is_simplex marker.
+
+    Test Steps:
+        - Establish SSH connection and record original control-plane and etcd versions
+        - Run the combined upgrade through the control-plane (reaching the target version)
+        - Send software deploy start and wait for deploy-start-done
+        - Lock the host
+        - Send software deploy host and wait for deploy-host-done
+        - Abort the software deploy
+        - Lock the host, roll back the deploy host, and unlock the host
+        - Delete the software deploy and the system deploy
+        - Wait for all alarms to clear
+        - Verify the control-plane and etcd versions rolled back to their originals
+
+    Args:
+        request (FixtureRequest): Pytest request fixture for teardown management.
+
+    Raises:
+        AssertionError: If any validation step fails.
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    active_controller = SystemHostListKeywords(ssh_connection).get_active_controller().get_host_name()
+
+    get_logger().log_setup_step("Record control-plane version before upgrade")
+    original_control_plane_version = _get_control_plane_version(ssh_connection, active_controller)
+    get_logger().log_info(f"Control-plane version before upgrade: {original_control_plane_version}")
+
+    get_logger().log_setup_step("Record etcd version before upgrade")
+    original_etcd_version = _get_etcd_version(ssh_connection)
+    get_logger().log_info(f"Etcd version before upgrade: {original_etcd_version}")
+
+    _run_combined_upgrade_until(request, STEP_DEPLOY_HOST, wait_for_completion=True, timeout=DEPLOY_PHASE_TIMEOUT)
+
+    _verify_kube_and_etcd_versions_rolled_back(active_controller, original_control_plane_version, original_etcd_version)
+
+
+# =============================================================================
+# Tests: Abort after system host-unlock (after deploy host, before activate)
+# =============================================================================
+
+
+@mark.p2
+@mark.lab_is_simplex
+def test_combined_upgrade_abort_after_host_unlock(request: FixtureRequest) -> None:
+    """Test aborting a combined upgrade after 'system host-unlock' completes.
+
+    Drives the combined upgrade through the control-plane, software deploy start,
+    host-lock, 'software deploy host', and host-unlock. Since 'software deploy
+    activate' has not run, the after-deploy-host rollback applies, then verifies both
+    versions rolled back to their originals. Restricted to simplex labs via the
+    lab_is_simplex marker.
+
+    Test Steps:
+        - Establish SSH connection and record original control-plane and etcd versions
+        - Run the combined upgrade through the control-plane (reaching the target version)
+        - Send software deploy start and wait for deploy-start-done
+        - Lock the host
+        - Send software deploy host and wait for deploy-host-done
+        - Unlock the host
+        - Abort the software deploy
+        - Lock the host, roll back the deploy host, and unlock the host
+        - Delete the software deploy and the system deploy
+        - Wait for all alarms to clear
+        - Verify the control-plane and etcd versions rolled back to their originals
+
+    Args:
+        request (FixtureRequest): Pytest request fixture for teardown management.
+
+    Raises:
+        AssertionError: If any validation step fails.
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    active_controller = SystemHostListKeywords(ssh_connection).get_active_controller().get_host_name()
+
+    get_logger().log_setup_step("Record control-plane version before upgrade")
+    original_control_plane_version = _get_control_plane_version(ssh_connection, active_controller)
+    get_logger().log_info(f"Control-plane version before upgrade: {original_control_plane_version}")
+
+    get_logger().log_setup_step("Record etcd version before upgrade")
+    original_etcd_version = _get_etcd_version(ssh_connection)
+    get_logger().log_info(f"Etcd version before upgrade: {original_etcd_version}")
+
+    _run_combined_upgrade_until(request, STEP_HOST_UNLOCK, wait_for_completion=True, timeout=DEPLOY_PHASE_TIMEOUT)
+
+    _verify_kube_and_etcd_versions_rolled_back(active_controller, original_control_plane_version, original_etcd_version)
+
+
+# =============================================================================
+# Tests: Abort after software deploy activate
+# =============================================================================
+
+
+@mark.p2
+@mark.lab_is_simplex
+def test_combined_upgrade_abort_after_deploy_activate(request: FixtureRequest) -> None:
+    """Test aborting a combined upgrade after 'software deploy activate' completes.
+
+    Drives the combined upgrade through the control-plane and the full deploy-host
+    sequence, then runs 'software deploy activate'. The after-deploy-activate rollback
+    applies (deploy abort, activate-rollback, host-lock, host-rollback, host-unlock,
+    deploy delete, system-deploy delete), then verifies both versions rolled back to
+    their originals. Restricted to simplex labs via the lab_is_simplex marker.
+
+    Test Steps:
+        - Establish SSH connection and record original control-plane and etcd versions
+        - Run the combined upgrade through the control-plane (reaching the target version)
+        - Run software deploy start, host-lock, deploy host, and host-unlock
+        - Send software deploy activate and wait for deploy-activate-done
+        - Abort the software deploy
+        - Roll back the deploy activate
+        - Lock the host, roll back the deploy host, and unlock the host
+        - Delete the software deploy and the system deploy
+        - Wait for all alarms to clear
+        - Verify the control-plane and etcd versions rolled back to their originals
+
+    Args:
+        request (FixtureRequest): Pytest request fixture for teardown management.
+
+    Raises:
+        AssertionError: If any validation step fails.
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    active_controller = SystemHostListKeywords(ssh_connection).get_active_controller().get_host_name()
+
+    get_logger().log_setup_step("Record control-plane version before upgrade")
+    original_control_plane_version = _get_control_plane_version(ssh_connection, active_controller)
+    get_logger().log_info(f"Control-plane version before upgrade: {original_control_plane_version}")
+
+    get_logger().log_setup_step("Record etcd version before upgrade")
+    original_etcd_version = _get_etcd_version(ssh_connection)
+    get_logger().log_info(f"Etcd version before upgrade: {original_etcd_version}")
+
+    _run_combined_upgrade_until(request, STEP_DEPLOY_ACTIVATE, wait_for_completion=True, timeout=DEPLOY_PHASE_TIMEOUT)
+
+    _verify_kube_and_etcd_versions_rolled_back(active_controller, original_control_plane_version, original_etcd_version)
+
+
+# =============================================================================
+# Tests: Abort after software deploy complete
+# =============================================================================
+
+
+@mark.p2
+@mark.lab_is_simplex
+def test_combined_upgrade_abort_after_deploy_complete(request: FixtureRequest) -> None:
+    """Test aborting a combined upgrade after 'software deploy complete' finishes.
+
+    Drives the combined upgrade through the control-plane, the full deploy-host
+    sequence, and 'software deploy activate', then runs 'software deploy complete'.
+    The after-deploy-activate rollback applies, then verifies both versions rolled
+    back to their originals. Restricted to simplex labs via the lab_is_simplex marker.
+
+    Test Steps:
+        - Establish SSH connection and record original control-plane and etcd versions
+        - Run the combined upgrade through the control-plane (reaching the target version)
+        - Run software deploy start, host-lock, deploy host, host-unlock, and activate
+        - Send software deploy complete and wait for deploy-completed
+        - Abort the software deploy
+        - Roll back the deploy activate
+        - Lock the host, roll back the deploy host, and unlock the host
+        - Delete the software deploy and the system deploy
+        - Wait for all alarms to clear
+        - Verify the control-plane and etcd versions rolled back to their originals
+
+    Args:
+        request (FixtureRequest): Pytest request fixture for teardown management.
+
+    Raises:
+        AssertionError: If any validation step fails.
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    active_controller = SystemHostListKeywords(ssh_connection).get_active_controller().get_host_name()
+
+    get_logger().log_setup_step("Record control-plane version before upgrade")
+    original_control_plane_version = _get_control_plane_version(ssh_connection, active_controller)
+    get_logger().log_info(f"Control-plane version before upgrade: {original_control_plane_version}")
+
+    get_logger().log_setup_step("Record etcd version before upgrade")
+    original_etcd_version = _get_etcd_version(ssh_connection)
+    get_logger().log_info(f"Etcd version before upgrade: {original_etcd_version}")
+
+    _run_combined_upgrade_until(request, STEP_DEPLOY_COMPLETE, wait_for_completion=True, timeout=DEPLOY_PHASE_TIMEOUT)
+
+    _verify_kube_and_etcd_versions_rolled_back(active_controller, original_control_plane_version, original_etcd_version)
+
+
+# =============================================================================
+# Tests: Abort after system kube-upgrade-complete
+# =============================================================================
+
+
+@mark.p2
+@mark.lab_is_simplex
+def test_combined_upgrade_abort_after_kube_upgrade_complete(request: FixtureRequest) -> None:
+    """Test aborting a combined upgrade after 'system kube-upgrade-complete' finishes.
+
+    Drives the combined upgrade through the control-plane, the full deploy sequence
+    (activate and complete), then completes the Kubernetes upgrade to 'upgrade-complete'.
+    The after-deploy-activate rollback applies, then verifies both versions rolled back
+    to their originals. Restricted to simplex labs via the lab_is_simplex marker.
+
+    Test Steps:
+        - Establish SSH connection and record original control-plane and etcd versions
+        - Run the combined upgrade through the control-plane (reaching the target version)
+        - Run software deploy start, host-lock, deploy host, host-unlock, activate, and complete
+        - Complete the Kubernetes upgrade and wait for 'upgrade-complete'
+        - Abort the software deploy
+        - Roll back the deploy activate
+        - Lock the host, roll back the deploy host, and unlock the host
+        - Delete the software deploy and the system deploy
+        - Wait for all alarms to clear
+        - Verify the control-plane and etcd versions rolled back to their originals
+
+    Args:
+        request (FixtureRequest): Pytest request fixture for teardown management.
+
+    Raises:
+        AssertionError: If any validation step fails.
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    active_controller = SystemHostListKeywords(ssh_connection).get_active_controller().get_host_name()
+
+    get_logger().log_setup_step("Record control-plane version before upgrade")
+    original_control_plane_version = _get_control_plane_version(ssh_connection, active_controller)
+    get_logger().log_info(f"Control-plane version before upgrade: {original_control_plane_version}")
+
+    get_logger().log_setup_step("Record etcd version before upgrade")
+    original_etcd_version = _get_etcd_version(ssh_connection)
+    get_logger().log_info(f"Etcd version before upgrade: {original_etcd_version}")
+
+    _run_combined_upgrade_until(request, STEP_KUBE_UPGRADE_COMPLETE, wait_for_completion=True, timeout=DEPLOY_PHASE_TIMEOUT)
+
+    _verify_kube_and_etcd_versions_rolled_back(active_controller, original_control_plane_version, original_etcd_version)
+
+
+# =============================================================================
+# Tests: Abort after system kube-post-application-update
+# =============================================================================
+
+
+@mark.p2
+@mark.lab_is_simplex
+def test_combined_upgrade_abort_after_kube_post_application_update(request: FixtureRequest) -> None:
+    """Test aborting a combined upgrade after 'system kube-post-application-update'.
+
+    Drives the combined upgrade through the control-plane, the full deploy sequence,
+    the Kubernetes upgrade completion, and the post-application-update to
+    'post-updated-apps'. The after-deploy-activate rollback applies, then verifies both
+    versions rolled back to their originals. Restricted to simplex labs via the
+    lab_is_simplex marker.
+
+    Test Steps:
+        - Establish SSH connection and record original control-plane and etcd versions
+        - Run the combined upgrade through the control-plane (reaching the target version)
+        - Run software deploy start, host-lock, deploy host, host-unlock, activate, and complete
+        - Complete the Kubernetes upgrade and wait for 'upgrade-complete'
+        - Run kube-post-application-update and wait for 'post-updated-apps'
+        - Abort the software deploy
+        - Roll back the deploy activate
+        - Lock the host, roll back the deploy host, and unlock the host
+        - Delete the software deploy and the system deploy
+        - Wait for all alarms to clear
+        - Verify the control-plane and etcd versions rolled back to their originals
+
+    Args:
+        request (FixtureRequest): Pytest request fixture for teardown management.
+
+    Raises:
+        AssertionError: If any validation step fails.
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    active_controller = SystemHostListKeywords(ssh_connection).get_active_controller().get_host_name()
+
+    get_logger().log_setup_step("Record control-plane version before upgrade")
+    original_control_plane_version = _get_control_plane_version(ssh_connection, active_controller)
+    get_logger().log_info(f"Control-plane version before upgrade: {original_control_plane_version}")
+
+    get_logger().log_setup_step("Record etcd version before upgrade")
+    original_etcd_version = _get_etcd_version(ssh_connection)
+    get_logger().log_info(f"Etcd version before upgrade: {original_etcd_version}")
+
+    _run_combined_upgrade_until(request, STEP_KUBE_POST_APPLICATION_UPDATE, wait_for_completion=True, timeout=DEPLOY_PHASE_TIMEOUT)
+
+    _verify_kube_and_etcd_versions_rolled_back(active_controller, original_control_plane_version, original_etcd_version)
+
+
+# =============================================================================
+# Tests: Abort after system kube-upgrade-delete
+# =============================================================================
+
+
+@mark.p2
+@mark.lab_is_simplex
+def test_combined_upgrade_abort_after_kube_upgrade_delete(request: FixtureRequest) -> None:
+    """Test aborting a combined upgrade after 'system kube-upgrade-delete'.
+
+    Drives the combined upgrade through the control-plane, the full deploy sequence,
+    the Kubernetes upgrade completion, the post-application-update, and the deletion of
+    the kube-upgrade entity. Only the platform deploy remains, so the
+    after-deploy-activate rollback applies (the kube-upgrade abort/delete teardown steps
+    become no-ops since the entity is already gone), then verifies both versions rolled
+    back to their originals. Restricted to simplex labs via the lab_is_simplex marker.
+
+    Test Steps:
+        - Establish SSH connection and record original control-plane and etcd versions
+        - Run the combined upgrade through the control-plane (reaching the target version)
+        - Run software deploy start, host-lock, deploy host, host-unlock, activate, and complete
+        - Complete the Kubernetes upgrade and wait for 'upgrade-complete'
+        - Run kube-post-application-update and wait for 'post-updated-apps'
+        - Delete the Kubernetes upgrade
+        - Abort the software deploy
+        - Roll back the deploy activate
+        - Lock the host, roll back the deploy host, and unlock the host
+        - Delete the software deploy and the system deploy
+        - Wait for all alarms to clear
+        - Verify the control-plane and etcd versions rolled back to their originals
+
+    Args:
+        request (FixtureRequest): Pytest request fixture for teardown management.
+
+    Raises:
+        AssertionError: If any validation step fails.
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    active_controller = SystemHostListKeywords(ssh_connection).get_active_controller().get_host_name()
+
+    get_logger().log_setup_step("Record control-plane version before upgrade")
+    original_control_plane_version = _get_control_plane_version(ssh_connection, active_controller)
+    get_logger().log_info(f"Control-plane version before upgrade: {original_control_plane_version}")
+
+    get_logger().log_setup_step("Record etcd version before upgrade")
+    original_etcd_version = _get_etcd_version(ssh_connection)
+    get_logger().log_info(f"Etcd version before upgrade: {original_etcd_version}")
+
+    _run_combined_upgrade_until(request, STEP_KUBE_UPGRADE_DELETE, wait_for_completion=True, timeout=DEPLOY_PHASE_TIMEOUT)
 
     _verify_kube_and_etcd_versions_rolled_back(active_controller, original_control_plane_version, original_etcd_version)
