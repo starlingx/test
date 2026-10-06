@@ -1,14 +1,16 @@
-from pytest import mark, fail
-
-from config.configuration_manager import ConfigurationManager
 from framework.logging.automation_logger import get_logger
 from framework.validation.validation import validate_equals, validate_not_equals
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_backup_keywords import DcManagerSubcloudBackupKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_show_keywords import DcManagerSubcloudShowKeywords
+from keywords.cloud_platform.dcmanager.objects.dcmanger_subcloud_list_availability_enum import DcManagerSubcloudListAvailabilityEnum
+from keywords.cloud_platform.dcmanager.subcloud_picker_keywords import SubcloudPickerKeywords
+from keywords.cloud_platform.health.health_keywords import HealthKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.cloud_platform.version_info.cloud_platform_version_manager import CloudPlatformVersionManagerClass
 from keywords.files.file_keywords import FileKeywords
-from keywords.cloud_platform.health.health_keywords import HealthKeywords
+from pytest import mark
+
+from config.configuration_manager import ConfigurationManager
 
 
 @mark.p2
@@ -53,9 +55,6 @@ def test_verify_one_release_per_subcloud_on_central(request):
     get_logger().log_info(f"Create first {subcloud_name} backup on Central Cloud")
     dc_manager_backup.create_subcloud_backup(subcloud_password, central_ssh, path=central_path, subcloud=subcloud_name)
 
-    get_logger().log_info("Checking if first backup was created on Central")
-    DcManagerSubcloudBackupKeywords(central_ssh).wait_for_backup_status_complete(subcloud_name, expected_status="complete-central")
-
     get_logger().log_info(f"First {subcloud_name} backup created at {central_path}/{release}.")
     first_backup_datetime = dcmanager_subcloud_obj.get_backup_datetime()
 
@@ -68,14 +67,12 @@ def test_verify_one_release_per_subcloud_on_central(request):
     get_logger().log_info(f"Create second {subcloud_name} backup on Central Cloud")
     dc_manager_backup.create_subcloud_backup(subcloud_password, central_ssh, path=central_path, subcloud=subcloud_name)
 
-    get_logger().log_info("Checking if second backup was created on Central")
-    DcManagerSubcloudBackupKeywords(central_ssh).wait_for_backup_status_complete(subcloud_name, expected_status="complete-central")
-
     dcmanager_subcloud_obj = DcManagerSubcloudShowKeywords(central_ssh).get_dcmanager_subcloud_show(subcloud_name).get_dcmanager_subcloud_show_object()
 
     second_backup_datetime = dcmanager_subcloud_obj.get_backup_datetime()
 
     validate_not_equals(second_backup_datetime, first_backup_datetime, "The backup created time has changed.")
+
 
 @mark.p2
 @mark.lab_has_subcloud
@@ -136,8 +133,6 @@ def test_verify_two_releases_per_subcloud_on_central(request):
     # First subcloud backup creation
     get_logger().log_info(f"Create first {subcloud_name} backup on Central Cloud")
     dc_manager_backup.create_subcloud_backup(subcloud_password, central_ssh, path=central_path, subcloud=subcloud_name)
-    get_logger().log_info("Checking if first backup was created on Central")
-    DcManagerSubcloudBackupKeywords(central_ssh).wait_for_backup_status_complete(subcloud_name, expected_status="complete-central")
 
     get_logger().log_info(f"Changing backup name to {old_release_1}")
     FileKeywords(central_ssh).rename_file(release_central_path, old_release_1_central_path)
@@ -146,8 +141,6 @@ def test_verify_two_releases_per_subcloud_on_central(request):
     validate_subcloud_health(subcloud_name)
     get_logger().log_info(f"Create a second {subcloud_name} backup on Central Cloud")
     dc_manager_backup.create_subcloud_backup(subcloud_password, central_ssh, path=central_path, subcloud=subcloud_name)
-    get_logger().log_info("Checking if second backup was created on Central")
-    DcManagerSubcloudBackupKeywords(central_ssh).wait_for_backup_status_complete(subcloud_name, expected_status="complete-central")
 
     get_logger().log_info(f"Changing backup name to {old_release_2}")
     FileKeywords(central_ssh).rename_file(release_central_path, old_release_2_central_path)
@@ -156,8 +149,6 @@ def test_verify_two_releases_per_subcloud_on_central(request):
     validate_subcloud_health(subcloud_name)
     get_logger().log_info(f"Create a third {subcloud_name} backup on Central Cloud")
     dc_manager_backup.create_subcloud_backup(subcloud_password, central_ssh, path=central_path, subcloud=subcloud_name)
-    get_logger().log_info("Checking if third backup was created on Central")
-    DcManagerSubcloudBackupKeywords(central_ssh).wait_for_backup_status_complete(subcloud_name, expected_status="complete-central")
 
     get_logger().log_info(f"Checking if {old_release_1} backup exists and {old_release_2} was deleted")
     old_release_1_exists = FileKeywords(central_ssh).validate_file_exists_with_sudo(old_release_1_central_path)
@@ -165,6 +156,7 @@ def test_verify_two_releases_per_subcloud_on_central(request):
 
     validate_equals(old_release_1_exists, True, f"Release {old_release_1} exists")
     validate_equals(old_release_2_exists, False, f"Release {old_release_2} has been deleted.")
+
 
 @mark.p2
 @mark.lab_has_subcloud
@@ -234,8 +226,6 @@ def test_verify_three_releases_per_subcloud_on_central(request):
     # First subcloud backup creation
     get_logger().log_info(f"Create first {subcloud_name} backup on Central Cloud")
     dc_manager_backup.create_subcloud_backup(subcloud_password, central_ssh, path=central_path, subcloud=subcloud_name)
-    get_logger().log_info("Checking if first backup was created on Central")
-    DcManagerSubcloudBackupKeywords(central_ssh).wait_for_backup_status_complete(subcloud_name, expected_status="complete-central")
 
     get_logger().log_info(f"Changing backup name to {old_release_1}")
     FileKeywords(central_ssh).rename_file(release_central_path, old_release_1_central_path)
@@ -244,8 +234,6 @@ def test_verify_three_releases_per_subcloud_on_central(request):
     validate_subcloud_health(subcloud_name)
     get_logger().log_info(f"Create a second {subcloud_name} backup on Central Cloud")
     dc_manager_backup.create_subcloud_backup(subcloud_password, central_ssh, path=central_path, subcloud=subcloud_name)
-    get_logger().log_info("Checking if second backup was created on Central")
-    DcManagerSubcloudBackupKeywords(central_ssh).wait_for_backup_status_complete(subcloud_name, expected_status="complete-central")
 
     get_logger().log_info(f"Changing backup name to {old_release_2}")
     FileKeywords(central_ssh).rename_file(release_central_path, old_release_2_central_path)
@@ -254,8 +242,6 @@ def test_verify_three_releases_per_subcloud_on_central(request):
     validate_subcloud_health(subcloud_name)
     get_logger().log_info(f"Create a third {subcloud_name} backup on Central Cloud")
     dc_manager_backup.create_subcloud_backup(subcloud_password, central_ssh, path=central_path, subcloud=subcloud_name)
-    get_logger().log_info("Checking if third backup was created on Central")
-    DcManagerSubcloudBackupKeywords(central_ssh).wait_for_backup_status_complete(subcloud_name, expected_status="complete-central")
 
     get_logger().log_info(f"Changing backup name to {old_release_3}")
     FileKeywords(central_ssh).rename_file(release_central_path, old_release_3_central_path)
@@ -264,8 +250,6 @@ def test_verify_three_releases_per_subcloud_on_central(request):
     validate_subcloud_health(subcloud_name)
     get_logger().log_info(f"Create a fourth {subcloud_name} backup on Central Cloud")
     dc_manager_backup.create_subcloud_backup(subcloud_password, central_ssh, path=central_path, subcloud=subcloud_name)
-    get_logger().log_info("Checking if fourth backup was created on Central")
-    DcManagerSubcloudBackupKeywords(central_ssh).wait_for_backup_status_complete(subcloud_name, expected_status="complete-central")
 
     get_logger().log_info(f"Checking that {old_release_1} and {old_release_2} backups exist and {old_release_3} was deleted")
     old_release_1_exists = FileKeywords(central_ssh).validate_file_exists_with_sudo(old_release_1_central_path)
@@ -275,6 +259,7 @@ def test_verify_three_releases_per_subcloud_on_central(request):
     validate_equals(old_release_1_exists, True, f"Release {old_release_1} exists")
     validate_equals(old_release_2_exists, True, f"Release {old_release_2} exists")
     validate_equals(old_release_3_exists, False, f"Release {old_release_3} has been deleted.")
+
 
 @mark.p2
 @mark.lab_has_subcloud
@@ -316,20 +301,18 @@ def test_verify_one_release_per_subcloud_on_local(request):
     get_logger().log_info(f"Create first backup on {subcloud_name}")
     dc_manager_backup.create_subcloud_backup(subcloud_password, subcloud_ssh, path=f"{local_path}/{release}/", subcloud=subcloud_name, local_only=True)
 
-    get_logger().log_info(f"Checking if backup was created on {subcloud_name}")
-    DcManagerSubcloudBackupKeywords(central_ssh).wait_for_backup_status_complete(subcloud_name, expected_status="complete-local")
-
+    get_logger().log_info(f"Verify first backup was created on {subcloud_name}")
     first_backup_datetime = DcManagerSubcloudShowKeywords(central_ssh).get_dcmanager_subcloud_show(subcloud_name).get_dcmanager_subcloud_show_object().get_backup_datetime()
+    validate_not_equals(first_backup_datetime, None, "First backup datetime is populated")
 
     # Second backup creation
     validate_subcloud_health(subcloud_name)
     get_logger().log_info(f"Create second backup on {subcloud_name}")
     dc_manager_backup.create_subcloud_backup(subcloud_password, subcloud_ssh, path=local_path, subcloud=subcloud_name, local_only=True)
 
-    get_logger().log_info(f"Checking if second backup was created on {subcloud_name}")
-    DcManagerSubcloudBackupKeywords(central_ssh).wait_for_backup_status_complete(subcloud_name, expected_status="complete-local")
-
+    get_logger().log_info(f"Verify second backup was created on {subcloud_name}")
     second_backup_datetime = DcManagerSubcloudShowKeywords(central_ssh).get_dcmanager_subcloud_show(subcloud_name).get_dcmanager_subcloud_show_object().get_backup_datetime()
+    validate_not_equals(second_backup_datetime, None, "Second backup datetime is populated")
 
     validate_not_equals(second_backup_datetime, first_backup_datetime, "The backup created time has changed.")
 
@@ -337,6 +320,7 @@ def test_verify_one_release_per_subcloud_on_local(request):
         teardown_local(subcloud_name)
 
     request.addfinalizer(teardown)
+
 
 @mark.p2
 @mark.lab_has_subcloud
@@ -399,8 +383,8 @@ def test_verify_two_releases_per_subcloud_on_local(request):
     get_logger().log_info(f"Create first {subcloud_name} backup on local.")
     dc_manager_backup.create_subcloud_backup(subcloud_password, subcloud_ssh, path=f"{local_path}/{release}", subcloud=subcloud_name, local_only=True)
 
-    get_logger().log_info(f"Checking if first backup was created on {subcloud_name}")
-    DcManagerSubcloudBackupKeywords(central_ssh).wait_for_backup_status_complete(subcloud_name, expected_status="complete-local")
+    get_logger().log_info(f"Verify first backup was created on {subcloud_name}")
+    validate_equals(FileKeywords(subcloud_ssh).validate_file_exists_with_sudo(release_local_path), True, f"First backup exists at {release_local_path}")
 
     get_logger().log_info(f"Changing backup name to {old_release_1}")
     FileKeywords(subcloud_ssh).rename_file(release_local_path, old_release_1_local_path)
@@ -410,8 +394,8 @@ def test_verify_two_releases_per_subcloud_on_local(request):
     get_logger().log_info(f"Create a second {subcloud_name} backup on local.")
     dc_manager_backup.create_subcloud_backup(subcloud_password, subcloud_ssh, path=f"{local_path}/{release}", subcloud=subcloud_name, local_only=True)
 
-    get_logger().log_info(f"Checking if second backup was created on {subcloud_name}")
-    DcManagerSubcloudBackupKeywords(central_ssh).wait_for_backup_status_complete(subcloud_name, expected_status="complete-local")
+    get_logger().log_info(f"Verify second backup was created on {subcloud_name}")
+    validate_equals(FileKeywords(subcloud_ssh).validate_file_exists_with_sudo(release_local_path), True, f"Second backup exists at {release_local_path}")
 
     get_logger().log_info(f"Changing backup name to {old_release_2}")
     FileKeywords(subcloud_ssh).rename_file(release_local_path, old_release_2_local_path)
@@ -421,8 +405,8 @@ def test_verify_two_releases_per_subcloud_on_local(request):
     get_logger().log_info(f"Create a third {subcloud_name} backup on local.")
     dc_manager_backup.create_subcloud_backup(subcloud_password, subcloud_ssh, path=f"{local_path}/{release}", subcloud=subcloud_name, local_only=True)
 
-    get_logger().log_info(f"Checking if third backup was created on {subcloud_name}")
-    DcManagerSubcloudBackupKeywords(central_ssh).wait_for_backup_status_complete(subcloud_name, expected_status="complete-local")
+    get_logger().log_info(f"Verify third backup was created on {subcloud_name}")
+    validate_equals(FileKeywords(subcloud_ssh).validate_file_exists_with_sudo(release_local_path), True, f"Third backup exists at {release_local_path}")
 
     get_logger().log_info(f"Checking if {old_release_1} backup exists and {old_release_2} was deleted")
     old_release_1_exists = FileKeywords(subcloud_ssh).validate_file_exists_with_sudo(old_release_1_local_path)
@@ -430,6 +414,7 @@ def test_verify_two_releases_per_subcloud_on_local(request):
 
     validate_equals(old_release_1_exists, True, f"Release {old_release_1} exists")
     validate_equals(old_release_2_exists, False, f"Release {old_release_2} has been deleted.")
+
 
 @mark.p2
 @mark.lab_has_subcloud
@@ -501,8 +486,8 @@ def test_verify_three_releases_per_subcloud_on_local(request):
     get_logger().log_info(f"Create first {subcloud_name} backup on local.")
     dc_manager_backup.create_subcloud_backup(subcloud_password, subcloud_ssh, path=f"{local_path}/{release}", subcloud=subcloud_name, local_only=True)
 
-    get_logger().log_info(f"Checking if first backup was created on {subcloud_name}")
-    DcManagerSubcloudBackupKeywords(central_ssh).wait_for_backup_status_complete(subcloud_name, expected_status="complete-local")
+    get_logger().log_info(f"Verify first backup was created on {subcloud_name}")
+    validate_equals(FileKeywords(subcloud_ssh).validate_file_exists_with_sudo(release_local_path), True, f"First backup exists at {release_local_path}")
 
     get_logger().log_info(f"Changing backup name to {old_release_1}")
     FileKeywords(subcloud_ssh).rename_file(release_local_path, old_release_1_local_path)
@@ -512,8 +497,8 @@ def test_verify_three_releases_per_subcloud_on_local(request):
     get_logger().log_info(f"Create a second {subcloud_name} backup on local.")
     dc_manager_backup.create_subcloud_backup(subcloud_password, subcloud_ssh, path=f"{local_path}/{release}", subcloud=subcloud_name, local_only=True)
 
-    get_logger().log_info(f"Checking if second backup was created on {subcloud_name}")
-    DcManagerSubcloudBackupKeywords(central_ssh).wait_for_backup_status_complete(subcloud_name, expected_status="complete-local")
+    get_logger().log_info(f"Verify second backup was created on {subcloud_name}")
+    validate_equals(FileKeywords(subcloud_ssh).validate_file_exists_with_sudo(release_local_path), True, f"Second backup exists at {release_local_path}")
 
     get_logger().log_info(f"Changing backup name to {old_release_2}")
     FileKeywords(subcloud_ssh).rename_file(release_local_path, old_release_2_local_path)
@@ -523,8 +508,8 @@ def test_verify_three_releases_per_subcloud_on_local(request):
     get_logger().log_info(f"Create a third {subcloud_name} backup on local.")
     dc_manager_backup.create_subcloud_backup(subcloud_password, subcloud_ssh, path=f"{local_path}/{release}", subcloud=subcloud_name, local_only=True)
 
-    get_logger().log_info(f"Checking if third backup was created on {subcloud_name}")
-    DcManagerSubcloudBackupKeywords(central_ssh).wait_for_backup_status_complete(subcloud_name, expected_status="complete-local")
+    get_logger().log_info(f"Verify third backup was created on {subcloud_name}")
+    validate_equals(FileKeywords(subcloud_ssh).validate_file_exists_with_sudo(release_local_path), True, f"Third backup exists at {release_local_path}")
 
     get_logger().log_info(f"Changing backup name to {old_release_3}")
     FileKeywords(subcloud_ssh).rename_file(release_local_path, old_release_3_local_path)
@@ -534,8 +519,8 @@ def test_verify_three_releases_per_subcloud_on_local(request):
     get_logger().log_info(f"Create a fourth {subcloud_name} backup on local.")
     dc_manager_backup.create_subcloud_backup(subcloud_password, subcloud_ssh, path=f"{local_path}/{release}", subcloud=subcloud_name, local_only=True)
 
-    get_logger().log_info(f"Checking if fourth backup was created on {subcloud_name}")
-    DcManagerSubcloudBackupKeywords(central_ssh).wait_for_backup_status_complete(subcloud_name, expected_status="complete-local")
+    get_logger().log_info(f"Verify fourth backup was created on {subcloud_name}")
+    validate_equals(FileKeywords(subcloud_ssh).validate_file_exists_with_sudo(release_local_path), True, f"Fourth backup exists at {release_local_path}")
 
     get_logger().log_info(f"Checking that {old_release_1} and {old_release_2} backups exist and {old_release_3} was deleted")
     old_release_1_exists = FileKeywords(subcloud_ssh).validate_file_exists_with_sudo(old_release_1_local_path)
@@ -558,6 +543,7 @@ def teardown_central(subcloud_name: str, release: str):
     get_logger().log_info("Removing test files during teardown")
     FileKeywords(central_ssh).delete_folder_with_sudo(f"/opt/dc-vault/backups/{subcloud_name}/{release}")
 
+
 def teardown_local(subcloud_name: str):
     """Teardown function for local backup.
 
@@ -568,6 +554,7 @@ def teardown_local(subcloud_name: str):
     get_logger().log_info("Removing test files during teardown")
     FileKeywords(subcloud_ssh).delete_folder_with_sudo("/opt/platform-backup/backups")
 
+
 def validate_subcloud_health(subcloud_name):
     subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
 
@@ -576,24 +563,26 @@ def validate_subcloud_health(subcloud_name):
     obj_health = HealthKeywords(subcloud_ssh)
     obj_health.validate_healty_cluster()  # Checks alarms, pods, app health
 
+
 def get_healthy_subcloud(release: str = None) -> str:
-    """Iterates through subclouds from lab config and returns the first healthy one.
+    """Select an online, in-config subcloud and validate its health.
+
+    Uses the subcloud picker (with secondary system controller fallback) to
+    select an online subcloud declared in the lab config, optionally filtered by
+    software load, then validates the subcloud cluster is healthy before
+    returning it.
+
+    Args:
+        release (str): Software load filter ("N", "N-1", "N-2" or explicit
+            version). When None, no load filter is applied.
 
     Returns:
         str: The name of a healthy subcloud.
 
     Raises:
-        pytest.skip: If no healthy subcloud is found.
+        KeywordException: If no matching subcloud is found.
     """
-    central_ssh = LabConnectionKeywords().get_active_controller_ssh()
-    for subcloud_name in ConfigurationManager.get_lab_config().get_subcloud_names():
-        subcloud_sw_version = DcManagerSubcloudShowKeywords(central_ssh).get_dcmanager_subcloud_show(subcloud_name).get_dcmanager_subcloud_show_object().get_software_version()
-        if release:
-            if release != subcloud_sw_version:
-                continue
-        try:
-            validate_subcloud_health(subcloud_name)
-            return subcloud_name
-        except TimeoutError:
-            continue
-    fail("No healthy subcloud available. Skipping test.")
+    _, result = SubcloudPickerKeywords.pick_with_fallback(availability=DcManagerSubcloudListAvailabilityEnum.ONLINE, load=release)
+    subcloud_name = result.get_name()
+    validate_subcloud_health(subcloud_name)
+    return subcloud_name

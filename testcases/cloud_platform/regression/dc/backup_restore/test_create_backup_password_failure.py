@@ -1,22 +1,24 @@
+from framework.logging.automation_logger import get_logger
+from framework.ssh.ssh_connection import SSHConnection
+from keywords.cloud_platform.dcmanager.dcmanager_subcloud_backup_keywords import DcManagerSubcloudBackupKeywords
+from keywords.cloud_platform.dcmanager.objects.dcmanger_subcloud_list_availability_enum import DcManagerSubcloudListAvailabilityEnum
+from keywords.cloud_platform.dcmanager.subcloud_picker_keywords import SubcloudPickerKeywords
+from keywords.cloud_platform.health.health_keywords import HealthKeywords
+from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from pytest import mark
 
 from config.lab.objects.lab_type_enum import LabTypeEnum
-from framework.logging.automation_logger import get_logger
-from keywords.cloud_platform.dcmanager.dcmanager_subcloud_backup_keywords import DcManagerSubcloudBackupKeywords
-from keywords.cloud_platform.dcmanager.dcmanager_subcloud_list_keywords import DcManagerSubcloudListKeywords
-from keywords.cloud_platform.health.health_keywords import HealthKeywords
-from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 
 
-def backup_create_failure(subcloud_name: str, central: bool = True):
+def backup_create_failure(central_ssh: SSHConnection, subcloud_name: str, central: bool = True):
     """Function to run backup operation for both central
     and local backups.
 
     Args:
+        central_ssh (SSHConnection): SSH connection to the active system controller.
         subcloud_name (str): subcloud name to backup.
         central (bool): if the backup should be stored on central cloud, if False, backup is set to be stored on subcloud. Default value as True.
     """
-    central_ssh = LabConnectionKeywords().get_active_controller_ssh()
     subcloud_password = "Fakepassword1234!"
 
     dc_manager_backup = DcManagerSubcloudBackupKeywords(central_ssh)
@@ -44,10 +46,11 @@ def test_verify_backup_password_failure(request):
         and central.
 
     """
-    central_ssh = LabConnectionKeywords().get_active_controller_ssh()
-    dcm_sc_list_kw = DcManagerSubcloudListKeywords(central_ssh)
-    lowest_subcloud = DcManagerSubcloudListKeywords(central_ssh).get_dcmanager_subcloud_list().get_specific_subcloud_with_lowest_id()
-    subcloud_name = lowest_subcloud.get_name()
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
+        availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
+        lab_type=LabTypeEnum.SIMPLEX,
+    )
+    subcloud_name = result.get_name()
     # get subcloud ssh
     subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
     # Prechecks Before Back-Up:
@@ -55,5 +58,5 @@ def test_verify_backup_password_failure(request):
     obj_health = HealthKeywords(subcloud_ssh)
     obj_health.validate_healty_cluster()  # Checks alarms, pods, app health
 
-    backup_create_failure(subcloud_name)
-    backup_create_failure(subcloud_name, central=False)
+    backup_create_failure(system_controller_ssh, subcloud_name)
+    backup_create_failure(system_controller_ssh, subcloud_name, central=False)

@@ -1,23 +1,22 @@
-from pytest import mark
-
-from config.configuration_manager import ConfigurationManager
 from framework.logging.automation_logger import get_logger
+from framework.ssh.ssh_connection import SSHConnection
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_backup_keywords import DcManagerSubcloudBackupKeywords
-from keywords.cloud_platform.dcmanager.dcmanager_subcloud_list_keywords import DcManagerSubcloudListKeywords
+from keywords.cloud_platform.dcmanager.objects.dcmanger_subcloud_list_availability_enum import DcManagerSubcloudListAvailabilityEnum
+from keywords.cloud_platform.dcmanager.subcloud_picker_keywords import SubcloudPickerKeywords
 from keywords.cloud_platform.health.health_keywords import HealthKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
+from pytest import mark
+
+from config.lab.objects.lab_type_enum import LabTypeEnum
 
 
-def backup_creation_rejection(subcloud_name: str):
+def backup_creation_rejection(central_ssh: SSHConnection, subcloud_name: str):
     """Function to run backup creation command.
 
     Args:
+        central_ssh (SSHConnection): SSH connection to the active system controller.
         subcloud_name (str): subcloud name to back up.
     """
-    central_ssh = LabConnectionKeywords().get_active_controller_ssh()
-
-    # Gets the lowest subcloud sysadmin password needed for backup creation.
-    lab_config = ConfigurationManager.get_lab_config().get_subcloud(subcloud_name)
     subcloud_password = "wrongpassword"
     dc_manager_backup = DcManagerSubcloudBackupKeywords(central_ssh)
 
@@ -36,10 +35,11 @@ def test_verify_backup_command_rejection(request):
         and central.
 
     """
-    central_ssh = LabConnectionKeywords().get_active_controller_ssh()
-    dcm_sc_list_kw = DcManagerSubcloudListKeywords(central_ssh)
-    subcloud = dcm_sc_list_kw.get_dcmanager_subcloud_list().get_specific_subcloud_with_lowest_id()
-    subcloud_name = subcloud.get_name()
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
+        availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
+        lab_type=LabTypeEnum.SIMPLEX,
+    )
+    subcloud_name = result.get_name()
     # get subcloud ssh
     subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
     # Prechecks Before Back-Up:
@@ -47,4 +47,4 @@ def test_verify_backup_command_rejection(request):
     obj_health = HealthKeywords(subcloud_ssh)
     obj_health.validate_healty_cluster()  # Checks alarms, pods, app health
 
-    backup_creation_rejection(subcloud_name=subcloud_name)
+    backup_creation_rejection(system_controller_ssh, subcloud_name=subcloud_name)

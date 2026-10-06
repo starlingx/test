@@ -1,15 +1,17 @@
-from pytest import mark
-
-from config.configuration_manager import ConfigurationManager
 from framework.logging.automation_logger import get_logger
 from framework.validation.validation import validate_greater_than
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_backup_keywords import DcManagerSubcloudBackupKeywords
-from keywords.cloud_platform.dcmanager.dcmanager_subcloud_list_keywords import DcManagerSubcloudListKeywords
+from keywords.cloud_platform.dcmanager.objects.dcmanger_subcloud_list_availability_enum import DcManagerSubcloudListAvailabilityEnum
+from keywords.cloud_platform.dcmanager.subcloud_picker_keywords import SubcloudPickerKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.cloud_platform.version_info.cloud_platform_version_manager import CloudPlatformVersionManagerClass
 from keywords.docker.images.docker_images_keywords import DockerImagesKeywords
 from keywords.docker.images.docker_load_image_keywords import DockerLoadImageKeywords
 from keywords.files.file_keywords import FileKeywords
+from pytest import mark
+
+from config.configuration_manager import ConfigurationManager
+from config.lab.objects.lab_type_enum import LabTypeEnum
 
 
 def teardown_local(subcloud_name: str, local_path: str):
@@ -43,10 +45,11 @@ def test_verify_backup_with_custom_docker_image(request):
     docker_img = "hello-world:latest"
     local_registry = docker_config.get_local_registry()
     local_default_backup_path = "/opt/platform-backup/backups"
-    central_ssh = LabConnectionKeywords().get_active_controller_ssh()
-    dcmanager_subcloud_list_keywords = DcManagerSubcloudListKeywords(central_ssh)
-    lowest_subcloud = dcmanager_subcloud_list_keywords.get_dcmanager_subcloud_list().get_specific_subcloud_with_lowest_id()
-    subcloud_name = lowest_subcloud.get_name()
+    central_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
+        availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
+        lab_type=LabTypeEnum.SIMPLEX,
+    )
+    subcloud_name = result.get_name()
     subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
     lab_config = ConfigurationManager.get_lab_config().get_subcloud(subcloud_name)
     subcloud_password = lab_config.get_admin_credentials().get_password()
@@ -68,11 +71,9 @@ def test_verify_backup_with_custom_docker_image(request):
     request.addfinalizer(teardown)
 
     # Create a subcloud backup and verify the subcloud backup file in local custom path.
+    # create_subcloud_backup waits for completion via the state watcher (fail-fast on 'failed').
     get_logger().log_info(f"Create {subcloud_name} backup locally on custom path")
     dc_manager_backup.create_subcloud_backup(subcloud_password, subcloud_ssh, path=f"{local_path}{subcloud_name}_platform_backup_*.tgz", subcloud=subcloud_name, local_only=True, registry=True)
-
-    get_logger().log_info("Checking if first backup was created on Central")
-    DcManagerSubcloudBackupKeywords(central_ssh).wait_for_backup_status_complete(subcloud_name, expected_status="complete-local")
 
     files_in_bckp_dir = FileKeywords(subcloud_ssh).get_files_in_dir(f"{local_default_backup_path}/{release}/")
     img_tarball = [file for file in files_in_bckp_dir if "image_registry" in file][0]

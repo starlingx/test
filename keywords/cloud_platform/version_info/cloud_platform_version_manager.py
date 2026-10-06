@@ -1,3 +1,5 @@
+from typing import Optional
+
 from framework.ssh.ssh_connection import SSHConnection
 from keywords.cloud_platform.rest.configuration.system.get_system_keywords import GetSystemKeywords
 from keywords.cloud_platform.version_info.cloud_platform_software_version import CloudPlatformSoftwareVersion
@@ -92,6 +94,47 @@ class CloudPlatformVersionManagerClass:
         CloudPlatformSoftwareVersion class.
         """
         return CloudPlatformSoftwareVersion.STARLINGX_9_0
+
+    def resolve_release_token(self, token: Optional[str]) -> Optional[str]:
+        """Resolve a relative release token into a concrete software version string.
+
+        This is the single source of truth for interpreting the ``"N"``,
+        ``"N-1"`` and ``"N-2"`` tokens so that every caller (subcloud picker,
+        backup/restore helpers, etc.) resolves them identically.
+
+        Resolution rules:
+            - ``None`` is returned unchanged (no release requested).
+            - ``"N"`` resolves to the version currently running on the system.
+            - ``"N-1"`` resolves to the last major release, unless the running
+              version already is the last major release, in which case it steps
+              back to the second-last major release (so ``"N-1"`` is always the
+              release before the one running).
+            - ``"N-2"`` resolves to the second-last major release.
+            - Any other value is treated as an explicit version and returned
+              unchanged.
+
+        Args:
+            token (Optional[str]): Release token (``"N"``, ``"N-1"``, ``"N-2"``)
+                or an explicit version string.
+
+        Returns:
+            Optional[str]: ``None`` when no token was supplied, else a concrete
+            software version string.
+        """
+        if token is None:
+            return None
+        if token == "N":
+            return self.get_sw_version().get_name()
+        if token == "N-2":
+            return self.get_second_last_major_release().get_name()
+        if token != "N-1":
+            return token
+
+        sw_version_name = self.get_sw_version().get_name()
+        last_major_name = self.get_last_major_release().get_name()
+        if last_major_name != sw_version_name:
+            return last_major_name
+        return self.get_second_last_major_release().get_name()
 
     def is_trixie(self, ssh_connection: SSHConnection) -> bool:
         """Check if the system is running Debian Trixie (strongSwan 6.0).

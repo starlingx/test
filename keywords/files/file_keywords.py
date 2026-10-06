@@ -1,18 +1,17 @@
-import math
 import os
 import shlex
 import shutil
 import time
 from typing import Optional
 
-from jinja2 import Template
-
-from config.configuration_manager import ConfigurationManager
 from framework.exceptions.keyword_exception import KeywordException
 from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
 from framework.validation.validation import validate_equals_with_retry, validate_less_than_or_equal
+from jinja2 import Template
 from keywords.base_keyword import BaseKeyword
+
+from config.configuration_manager import ConfigurationManager
 
 
 class FileKeywords(BaseKeyword):
@@ -607,43 +606,52 @@ class FileKeywords(BaseKeyword):
         self.validate_success_return_code(self.ssh_connection)
 
     def create_file_to_fill_disk_space(self, dest_dir: str = "/opt/dc-vault", file_size: int = None) -> str:
-        """Creates a file with the available space of the desired directory.
+        """Create a large file in a directory, either of a fixed size or to fill the disk.
+
+        Two modes:
+          - ``file_size`` provided: create a file of exactly ``file_size`` MB. The
+            created file's size is validated directly (not the remaining disk
+            space), so this works regardless of how large the underlying
+            filesystem is. Used to push a directory past a size precheck.
+          - ``file_size`` omitted: fill the filesystem backing ``dest_dir`` until
+            it is nearly full (``dd`` stops at ENOSPC), leaving too little space
+            for a backup to succeed.
 
         Args:
-            dest_dir (str): Directory where the file is created. Default to home dir.
-            file_size (int): Size of the file to be created, fills directory if not sent
+            dest_dir (str): Directory where the file is created.
+            file_size (int): Size of the file to create in MB. When None, the disk is filled.
 
         Returns:
             str: Created file path.
         """
-        get_space_cmd = f"echo $(($(stat -f --format=\"%a*%S\" {dest_dir}))) | awk '{{print int($1 / (1024*1024))}}'"
-        available_space_mb = int(self.ssh_connection.send_as_sudo(get_space_cmd)[0].strip("\n"))
-        start_size = available_space_mb - 1  # leave 256MB, not enough for backup to succeed
+        path_to_file = f"{dest_dir}/giant_test_file"
+        # dd on a large/empty filesystem can take well over the default SSH read
+        # window; give it a generous command timeout so the write is not cut off.
+        dd_command_timeout = 600
 
         if file_size:
-            file_size_to_be_created = file_size
-            expected_remaining_space = math.ceil((start_size - file_size) / 1023)
-            if expected_remaining_space <= 0:
-                raise KeywordException(f"Exception creating file. File size {file_size} is bigger than available space {start_size}.")
-        else:
-            file_size_to_be_created = start_size
-            expected_remaining_space = 0
+            get_logger().log_info(f"Creating file '{path_to_file}' with fixed size {file_size} MB")
+            self.ssh_connection.send_as_sudo(f"dd if=/dev/zero of={path_to_file} bs=1M count={file_size}", command_timeout=dd_command_timeout)
 
-        get_logger().log_info(f"Creating file 'test' with size {file_size_to_be_created}. Total: {start_size}")
-        self.ssh_connection.send_as_sudo(f"dd if=/dev/zero of={dest_dir}/giant_test_file bs=1M count={file_size_to_be_created}")
+            def get_created_file_size_mb() -> int:
+                size_bytes = self.ssh_connection.send_as_sudo(f"stat -c %s {path_to_file}")[0].strip("\n")
+                return int(int(size_bytes) / (1024 * 1024))
+
+            validate_equals_with_retry(get_created_file_size_mb, file_size, f"Created file '{path_to_file}' size in MB", timeout=10, polling_sleep_time=1)
+            return path_to_file
 
         def get_remaining_space() -> int:
             get_space_cmd = f"echo $(($(stat -f --format=\"%a*%S\" {dest_dir}))) | awk '{{print int($1 / (1024*1024))}}'"
-            remaining_space = self.ssh_connection.send_as_sudo(get_space_cmd)[0].strip("\n")
-            return int(remaining_space)
+            return int(self.ssh_connection.send_as_sudo(get_space_cmd)[0].strip("\n"))
 
-        if file_size:
-            validate_equals_with_retry(get_remaining_space, expected_remaining_space, f"Remaining size is {get_remaining_space()} MB. Expected {expected_remaining_space} MB", timeout=5, polling_sleep_time=1)
-        else:
-            remaining = get_remaining_space()
-            validate_less_than_or_equal(remaining, 1, f"Remaining size is {remaining} MB. Expected <= 256 MB")
+        available_space_mb = get_remaining_space()
+        get_logger().log_info(f"Filling '{dest_dir}' (approx {available_space_mb} MB free) to leave the disk nearly full")
+        # No count: dd writes until the filesystem is full (ENOSPC), which is the
+        # reliable way to leave minimal free space regardless of quotas.
+        self.ssh_connection.send_as_sudo(f"dd if=/dev/zero of={path_to_file} bs=1M", command_timeout=dd_command_timeout)
 
-        path_to_file = f"{dest_dir}/giant_test_file"
+        remaining = get_remaining_space()
+        validate_less_than_or_equal(remaining, 256, f"Remaining size is {remaining} MB. Expected <= 256 MB")
         return path_to_file
 
     def remove_reserved_blocks(self, device: str) -> int:

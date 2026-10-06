@@ -6,14 +6,15 @@ when users provide invalid flag combinations or parameters during subcloud
 backup restore operations.
 """
 
-from pytest import FixtureRequest, mark
-
-from config.configuration_manager import ConfigurationManager
 from framework.logging.automation_logger import get_logger
 from framework.validation.validation import validate_not_equals, validate_str_contains
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_backup_keywords import DcManagerSubcloudBackupKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_manager_keywords import DcManagerSubcloudManagerKeywords
-from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
+from keywords.cloud_platform.dcmanager.objects.dcmanger_subcloud_list_availability_enum import DcManagerSubcloudListAvailabilityEnum
+from keywords.cloud_platform.dcmanager.subcloud_picker_keywords import SubcloudPickerKeywords
+from pytest import FixtureRequest, mark
+
+from config.configuration_manager import ConfigurationManager
 
 REGISTRY_WITHOUT_LOCAL_ONLY_ERROR = "Option --registry-images cannot be used without --local-only option."
 RELEASE_WITHOUT_INSTALL_OR_FACTORY_ERROR = "Option --release cannot be used without --with-install or --factory option."
@@ -45,10 +46,9 @@ def test_restore_rejects_registry_images_without_local_only(request: FixtureRequ
         - Error output contains the expected error about registry-images requiring local-only.
         - No subcloud state is changed.
     """
-    system_controller_ssh = LabConnectionKeywords().get_active_controller_ssh()
-    subcloud_name = ConfigurationManager.get_lab_config().get_subcloud_names()[0]
-    lab_config = ConfigurationManager.get_lab_config().get_subcloud(subcloud_name)
-    subcloud_password = lab_config.get_admin_credentials().get_password()
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(availability=DcManagerSubcloudListAvailabilityEnum.ONLINE)
+    subcloud_name = result.get_name()
+    subcloud_password = ConfigurationManager.get_lab_config().get_subcloud(subcloud_name).get_admin_credentials().get_password()
 
     output, rc = DcManagerSubcloudBackupKeywords(system_controller_ssh).restore_subcloud_backup_with_error(sysadmin_password=subcloud_password, subcloud=subcloud_name, registry=True, local_only=False)
 
@@ -77,10 +77,9 @@ def test_restore_rejects_release_without_install_or_factory(request: FixtureRequ
         - Error output contains the expected error about release requiring with-install or factory.
         - No subcloud state is changed.
     """
-    system_controller_ssh = LabConnectionKeywords().get_active_controller_ssh()
-    subcloud_name = ConfigurationManager.get_lab_config().get_subcloud_names()[0]
-    lab_config = ConfigurationManager.get_lab_config().get_subcloud(subcloud_name)
-    subcloud_password = lab_config.get_admin_credentials().get_password()
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(availability=DcManagerSubcloudListAvailabilityEnum.ONLINE)
+    subcloud_name = result.get_name()
+    subcloud_password = ConfigurationManager.get_lab_config().get_subcloud(subcloud_name).get_admin_credentials().get_password()
 
     output, rc = DcManagerSubcloudBackupKeywords(system_controller_ssh).restore_subcloud_backup_with_error(sysadmin_password=subcloud_password, subcloud=subcloud_name, release="25.09")
 
@@ -109,10 +108,9 @@ def test_restore_rejects_both_subcloud_and_group(request: FixtureRequest):
         - Error output contains the expected error about not using both parameters.
         - No subcloud state is changed.
     """
-    system_controller_ssh = LabConnectionKeywords().get_active_controller_ssh()
-    subcloud_name = ConfigurationManager.get_lab_config().get_subcloud_names()[0]
-    lab_config = ConfigurationManager.get_lab_config().get_subcloud(subcloud_name)
-    subcloud_password = lab_config.get_admin_credentials().get_password()
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(availability=DcManagerSubcloudListAvailabilityEnum.ONLINE)
+    subcloud_name = result.get_name()
+    subcloud_password = ConfigurationManager.get_lab_config().get_subcloud(subcloud_name).get_admin_credentials().get_password()
 
     output, rc = DcManagerSubcloudBackupKeywords(system_controller_ssh).restore_subcloud_backup_with_error(sysadmin_password=subcloud_password, subcloud=subcloud_name, group="Default")
 
@@ -140,10 +138,9 @@ def test_restore_rejects_missing_subcloud_and_group(request: FixtureRequest):
         - Error output contains the expected error about providing subcloud or group.
         - No subcloud state is changed.
     """
-    system_controller_ssh = LabConnectionKeywords().get_active_controller_ssh()
-    subcloud_name = ConfigurationManager.get_lab_config().get_subcloud_names()[0]
-    lab_config = ConfigurationManager.get_lab_config().get_subcloud(subcloud_name)
-    subcloud_password = lab_config.get_admin_credentials().get_password()
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(availability=DcManagerSubcloudListAvailabilityEnum.ONLINE)
+    subcloud_name = result.get_name()
+    subcloud_password = ConfigurationManager.get_lab_config().get_subcloud(subcloud_name).get_admin_credentials().get_password()
 
     output, rc = DcManagerSubcloudBackupKeywords(system_controller_ssh).restore_subcloud_backup_with_error(sysadmin_password=subcloud_password)
 
@@ -173,10 +170,9 @@ def test_restore_rejects_auto_with_old_release(request: FixtureRequest):
         - Error output contains the expected error about releases earlier than 26.03.
         - No subcloud state is changed.
     """
-    system_controller_ssh = LabConnectionKeywords().get_active_controller_ssh()
-    subcloud_name = ConfigurationManager.get_lab_config().get_subcloud_names()[0]
-    lab_config = ConfigurationManager.get_lab_config().get_subcloud(subcloud_name)
-    subcloud_password = lab_config.get_admin_credentials().get_password()
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(availability=DcManagerSubcloudListAvailabilityEnum.ONLINE)
+    subcloud_name = result.get_name()
+    subcloud_password = ConfigurationManager.get_lab_config().get_subcloud(subcloud_name).get_admin_credentials().get_password()
 
     output, rc = DcManagerSubcloudBackupKeywords(system_controller_ssh).restore_subcloud_backup_with_error(sysadmin_password=subcloud_password, subcloud=subcloud_name, auto_restore=True, with_install=True, release="25.03")
 
@@ -208,8 +204,8 @@ def test_restore_prompts_for_password_when_not_provided(request: FixtureRequest)
         - The CLI outputs a password prompt containing expected text.
         - No subcloud state is changed.
     """
-    system_controller_ssh = LabConnectionKeywords().get_active_controller_ssh()
-    subcloud_name = ConfigurationManager.get_lab_config().get_subcloud_names()[0]
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(availability=DcManagerSubcloudListAvailabilityEnum.ONLINE)
+    subcloud_name = result.get_name()
 
     get_logger().log_test_case_step("Running restore without --sysadmin-password to trigger prompt")
     prompt_output = DcManagerSubcloudBackupKeywords(system_controller_ssh).restore_subcloud_backup_prompt_check(subcloud=subcloud_name)
@@ -239,10 +235,9 @@ def test_restore_rejects_nonexistent_subcloud(request: FixtureRequest):
         - Non-zero exit code.
         - Error output contains 'Subcloud not found'.
     """
-    system_controller_ssh = LabConnectionKeywords().get_active_controller_ssh()
-    subcloud_name = ConfigurationManager.get_lab_config().get_subcloud_names()[0]
-    lab_config = ConfigurationManager.get_lab_config().get_subcloud(subcloud_name)
-    subcloud_password = lab_config.get_admin_credentials().get_password()
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(availability=DcManagerSubcloudListAvailabilityEnum.ONLINE)
+    subcloud_name = result.get_name()
+    subcloud_password = ConfigurationManager.get_lab_config().get_subcloud(subcloud_name).get_admin_credentials().get_password()
 
     get_logger().log_test_case_step(f"Running backup restore on non-existent subcloud '{NONEXISTENT_SUBCLOUD_NAME}'")
     output, rc = DcManagerSubcloudBackupKeywords(system_controller_ssh).restore_subcloud_backup_with_error(
@@ -275,10 +270,9 @@ def test_restore_rejects_nonexistent_release(request: FixtureRequest):
         - Error output contains message about release/ISO not available.
         - Subcloud re-managed in teardown.
     """
-    system_controller_ssh = LabConnectionKeywords().get_active_controller_ssh()
-    subcloud_name = ConfigurationManager.get_lab_config().get_subcloud_names()[0]
-    lab_config = ConfigurationManager.get_lab_config().get_subcloud(subcloud_name)
-    subcloud_password = lab_config.get_admin_credentials().get_password()
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(availability=DcManagerSubcloudListAvailabilityEnum.ONLINE)
+    subcloud_name = result.get_name()
+    subcloud_password = ConfigurationManager.get_lab_config().get_subcloud(subcloud_name).get_admin_credentials().get_password()
 
     def teardown():
         get_logger().log_teardown_step(f"Re-managing subcloud {subcloud_name}")

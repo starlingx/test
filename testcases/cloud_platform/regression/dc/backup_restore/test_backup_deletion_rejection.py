@@ -1,16 +1,14 @@
-from typing import List
-
-from pytest import fail, mark
-
-from config.configuration_manager import ConfigurationManager
 from framework.logging.automation_logger import get_logger
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_backup_keywords import DcManagerSubcloudBackupKeywords
-from keywords.cloud_platform.dcmanager.dcmanager_subcloud_list_keywords import DcManagerSubcloudListKeywords
+from keywords.cloud_platform.dcmanager.dcmanager_subcloud_manager_keywords import DcManagerSubcloudManagerKeywords
+from keywords.cloud_platform.dcmanager.objects.dcmanger_subcloud_list_availability_enum import DcManagerSubcloudListAvailabilityEnum
+from keywords.cloud_platform.dcmanager.subcloud_picker_keywords import SubcloudPickerKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.cloud_platform.version_info.cloud_platform_version_manager import CloudPlatformVersionManagerClass
 from keywords.files.file_keywords import FileKeywords
-from keywords.cloud_platform.upgrade.software_list_keywords import SoftwareListKeywords
-from keywords.cloud_platform.dcmanager.dcmanager_subcloud_manager_keywords import DcManagerSubcloudManagerKeywords
+from pytest import mark
+
+from config.configuration_manager import ConfigurationManager
 
 
 @mark.p2
@@ -26,11 +24,11 @@ def test_delete_backup_rejection_invalid_state(request):
         - Remove files created while the Tc was running.
 
     """
-    central_ssh = LabConnectionKeywords().get_active_controller_ssh()
-
-    # Gets the lowest subcloud (the subcloud with the lowest id).
-    lowest_subcloud = DcManagerSubcloudListKeywords(central_ssh).get_dcmanager_subcloud_list().get_specific_subcloud_with_lowest_id()
-    subcloud_name = lowest_subcloud.get_name()
+    # Select an online, in-config subcloud (with secondary SC fallback).
+    central_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
+        availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
+    )
+    subcloud_name = result.get_name()
     subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
 
     # Gets the lowest subcloud sysadmin password needed for backup creation.
@@ -40,10 +38,8 @@ def test_delete_backup_rejection_invalid_state(request):
     dc_manager_backup = DcManagerSubcloudBackupKeywords(central_ssh)
     current_release = CloudPlatformVersionManagerClass().get_sw_version()
 
-    # Path to where the backup file will store.
-    local_path = f"/opt/platform-backup/backups/{current_release}/{subcloud_name}_platform_backup_*.tgz"
     central_path = "/opt/dc-vault/backups/"
-
+    local_path = "/opt/platform-backup/backups/"
 
     def teardown():
         get_logger().log_info("Managing back subcloud")
@@ -54,9 +50,10 @@ def test_delete_backup_rejection_invalid_state(request):
 
     request.addfinalizer(teardown)
 
-    # Create a sbcloud backup
-    get_logger().log_info(f"Create {subcloud_name} backup on Central Cloud")
-    dc_manager_backup.create_subcloud_backup(subcloud_password, subcloud_ssh, path=local_path, subcloud=subcloud_name, local_only=True, release=str(current_release))
+    # Create a local backup and wait for it to complete (so the subcloud is not
+    # left mid-backup for the next test).
+    get_logger().log_info(f"Create {subcloud_name} local backup and wait for completion")
+    dc_manager_backup.create_local_backup(subcloud_name)
 
     # Unmanage the subcloud so the backup command is rejected
     # by a subcloud with invalid state.
@@ -81,11 +78,11 @@ def test_delete_backup_rejection_version_mismatch(request):
         - Remove files created while the Tc was running.
 
     """
-    central_ssh = LabConnectionKeywords().get_active_controller_ssh()
-
-    # Gets the lowest subcloud (the subcloud with the lowest id).
-    lowest_subcloud = DcManagerSubcloudListKeywords(central_ssh).get_dcmanager_subcloud_list().get_specific_subcloud_with_lowest_id()
-    subcloud_name = lowest_subcloud.get_name()
+    # Select an online, in-config subcloud (with secondary SC fallback).
+    central_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
+        availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
+    )
+    subcloud_name = result.get_name()
     subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
 
     # Gets the lowest subcloud sysadmin password needed for backup creation.
@@ -100,7 +97,6 @@ def test_delete_backup_rejection_version_mismatch(request):
     central_path = "/opt/dc-vault/backups/"
     local_path = "/opt/platform-backup/backups/"
 
-
     def teardown():
         get_logger().log_info("Managing back subcloud")
         DcManagerSubcloudManagerKeywords(central_ssh).get_dcmanager_subcloud_manage(subcloud_name, 10)
@@ -110,9 +106,10 @@ def test_delete_backup_rejection_version_mismatch(request):
 
     request.addfinalizer(teardown)
 
-    # Create a sbcloud backup
-    get_logger().log_info(f"Create {subcloud_name} backup on Central Cloud")
-    dc_manager_backup.create_subcloud_backup(subcloud_password, central_ssh, path=central_path, subcloud=subcloud_name, release=str(current_release))
+    # Create a central backup and wait for it to complete (so the subcloud is
+    # not left mid-backup for the next test).
+    get_logger().log_info(f"Create {subcloud_name} central backup and wait for completion")
+    dc_manager_backup.create_central_backup(subcloud_name)
 
     # Unmanage the subcloud so the backup command is rejected
     # by a subcloud with invalid state.

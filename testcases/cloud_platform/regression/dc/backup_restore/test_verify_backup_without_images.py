@@ -1,14 +1,17 @@
-from pytest import mark
-
-from keywords.docker.images.docker_images_keywords import DockerImagesKeywords
-from config.configuration_manager import ConfigurationManager
 from framework.logging.automation_logger import get_logger
-from framework.validation.validation import validate_equals, validate_list_contains
+from framework.validation.validation import validate_equals
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_backup_keywords import DcManagerSubcloudBackupKeywords
-from keywords.cloud_platform.dcmanager.dcmanager_subcloud_list_keywords import DcManagerSubcloudListKeywords
+from keywords.cloud_platform.dcmanager.objects.dcmanger_subcloud_list_availability_enum import DcManagerSubcloudListAvailabilityEnum
+from keywords.cloud_platform.dcmanager.subcloud_picker_keywords import SubcloudPickerKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.cloud_platform.version_info.cloud_platform_version_manager import CloudPlatformVersionManagerClass
+from keywords.docker.images.docker_images_keywords import DockerImagesKeywords
 from keywords.files.file_keywords import FileKeywords
+from pytest import mark
+
+from config.configuration_manager import ConfigurationManager
+from config.lab.objects.lab_type_enum import LabTypeEnum
+
 
 def teardown_local(subcloud_name: str):
     """Teardown function for local backup.
@@ -38,9 +41,11 @@ def test_verify_backup_without_docker_cache(request):
     """
     central_docker_image = "registry.central:9001/registry.k8s.io/sig-storage/csi-snapshotter:v8.2.0"
     local_default_backup_path = "/opt/platform-backup/backups"
-    central_ssh = LabConnectionKeywords().get_active_controller_ssh()
-    subcloud_list = DcManagerSubcloudListKeywords(central_ssh)
-    subcloud_name = subcloud_list.get_dcmanager_subcloud_list().get_healthy_subcloud_with_lowest_id().get_name()
+    central_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
+        availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
+        lab_type=LabTypeEnum.SIMPLEX,
+    )
+    subcloud_name = result.get_name()
     subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
     lab_config = ConfigurationManager.get_lab_config().get_subcloud(subcloud_name)
     subcloud_password = lab_config.get_admin_credentials().get_password()
@@ -67,6 +72,5 @@ def test_verify_backup_without_docker_cache(request):
     files_in_bckp_dir = FileKeywords(subcloud_ssh).get_files_in_dir(f"{local_default_backup_path}/{release}/")
     img_tarball = [file for file in files_in_bckp_dir if "image_registry" in file][0]
 
-    matches = FileKeywords(subcloud_ssh).find_in_tgz(
-        f"{local_default_backup_path}/{release}/{img_tarball}", registry_img_to_search)
-    validate_equals(matches, 0,f"Validate that no matches were found for {registry_img_to_search} in {img_tarball} tarball.")
+    matches = FileKeywords(subcloud_ssh).find_in_tgz(f"{local_default_backup_path}/{release}/{img_tarball}", registry_img_to_search)
+    validate_equals(matches, 0, f"Validate that no matches were found for {registry_img_to_search} in {img_tarball} tarball.")
