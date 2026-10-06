@@ -1,0 +1,16 @@
+{
+  // File used for unit testing the onsite restore configuration.
+  "local_backup_base_path": "/custom/bnr",
+
+  "onsite_restore": {
+    "seed_stage_path": "/home/testadmin/custom-seed",
+    "www_iso_base_path": "/custom/www/iso",
+    "default_restore_timeout": 1234,
+    "release_base_url": "http://custom-builds.example.com/builds/wrcp",
+    "nocloud_tarball_name": "custom-nocloud.tar",
+    "versions": {
+      "26.10": { "branch": "master", "distro": "trixie" },
+      "27.03": { "branch": "master", "distro": "trixie", "tarball_url": "http://override.example.com/pinned-nocloud.tar" }
+    }
+  }
+}
