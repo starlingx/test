@@ -277,6 +277,55 @@ def _cleanup_oidc_environment(ssh_connection: SSHConnection, security_config: Se
     )
 
 
+def _setup_keycloak_oidc_role(ssh_connection: SSHConnection, security_config: SecurityConfig, lab_config: LabConfig, stx_role: str) -> StxOidcRoleContext:
+    """Set up the Keycloak OIDC environment + identity/stx role-bindings for a browser-login RBAC test.
+
+    Resets the test user's OTP + brute-force lockout for a clean MFA enrollment,
+    sets up the full OIDC Keycloak environment (oidc-auth-apps + kubeconfig + CRB),
+    then binds the Keycloak keystone group (crb_group) to the given STX role so the
+    browser-login user is authorized only for that role. Teardown callables are
+    returned on the context so the caller registers them in the correct LIFO order.
+
+    Args:
+        ssh_connection (SSHConnection): Active controller SSH connection.
+        security_config (SecurityConfig): Security configuration object.
+        lab_config (LabConfig): Lab configuration object.
+        stx_role (str): STX role to bind (e.g. 'reader', 'operator').
+
+    Returns:
+        StxOidcRoleContext: Context with login values and teardown callables.
+    """
+    username = security_config.get_oidc_keycloak_test_username()
+    password = security_config.get_oidc_keycloak_test_password()
+    group_name = security_config.get_oidc_keycloak_crb_group()
+    oidc_setup = OidcSetupKeywords(ssh_connection)
+
+    get_logger().log_test_case_step("Reset Keycloak OTP and clear brute-force lockout for the test user")
+    keycloak_admin = _get_keycloak_admin(security_config)
+    keycloak_admin.delete_user_otp_credentials(username)
+    keycloak_admin.clear_user_brute_force_lockout(username)
+
+    get_logger().log_test_case_step("Set up the OIDC Keycloak environment (oidc-auth-apps + kubeconfig + CRB)")
+    _setup_oidc_environment(ssh_connection, security_config, lab_config)
+
+    def env_cleanup():
+        ssh = LabConnectionKeywords().get_active_controller_ssh()
+        get_logger().log_teardown_step("Restoring OIDC Keycloak environment")
+        _cleanup_oidc_environment(ssh, security_config)
+
+    get_logger().log_test_case_step(f"Set up identity/stx role-bindings ({group_name} -> {stx_role})")
+    role_bindings_teardown = oidc_setup.setup_role_bindings(group_name, stx_role)
+
+    oam_ip = lab_config.get_floating_ip()
+    bracketed_ip = f"[{oam_ip}]" if ":" in oam_ip else oam_ip
+    login_url = f"http://{bracketed_ip}:8000/"
+    keycloak_user = DexTestUser({"username": username, "password": password})
+    # Order matters: [role_bindings_teardown, env_cleanup]. The caller registers
+    # them in this order so (LIFO) env_cleanup runs first while keystone is up and
+    # the keystone-restarting role-bindings teardown runs last.
+    return StxOidcRoleContext(keycloak_user, login_url, oam_ip, "keycloak", [role_bindings_teardown, env_cleanup])
+
+
 @mark.p1
 def test_stx_oidc_login_ldap_system_host_list(request: FixtureRequest):
     """Verify 'system host-list' runs after browser-based OIDC login via the LDAP connector.
@@ -467,3 +516,99 @@ def test_stx_oidc_login_ldap_fm_alarm_list(request: FixtureRequest):
 
     get_logger().log_test_case_step("Validate 'fm alarm-list' was not denied")
     validate_equals(result.is_stx_forbidden(), False, "fm alarm-list must NOT be denied after LDAP OIDC browser login")
+
+
+@mark.p2
+def test_stx_oidc_login_wad_reader_role(request: FixtureRequest):
+    """Verify the reader role via browser OIDC login through the WAD connector: read allowed, write denied.
+
+    Binds the WAD group to the STX 'reader' role, logs in through the browser DEX
+    flow using the WAD (Windows Active Directory) connector (no MFA), then confirms
+    a read command ('system service-parameter-list') succeeds while a write command
+    ('system application-apply dummy-app') is denied with a 403/Forbidden RBAC error.
+
+    Teardown:
+        - Delete the ClusterRoleBinding, working dir, role-bindings
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    ctx = _setup_wad_oidc_role(ssh_connection, "Level1SystemReader", "reader")
+    # LIFO: register role-bindings teardown FIRST so it runs LAST (it restarts
+    # keystone); cleanup runs first while keystone is still up.
+    for teardown in ctx.get_teardowns():
+        request.addfinalizer(teardown)
+
+    get_logger().log_test_case_step("Reader (WAD): verify read command 'system service-parameter-list' is allowed")
+    read_result = _run_stx_via_browser(ssh_connection, ctx, "system service-parameter-list")
+    get_logger().log_info(f"WAD reader read output:\n{read_result.get_output()}")
+    validate_equals(read_result.is_stx_forbidden(), False, "Reader must NOT be denied 'system service-parameter-list'")
+
+    get_logger().log_test_case_step("Reader (WAD): verify write command 'system application-apply dummy-app' is denied")
+    write_result = _run_stx_via_browser(ssh_connection, ctx, "system application-apply dummy-app")
+    get_logger().log_info(f"WAD reader write output:\n{write_result.get_output()}")
+    validate_equals(write_result.is_stx_forbidden(), True, "Reader must be denied 'system application-apply'")
+
+
+@mark.p2
+def test_stx_oidc_login_wad_operator_role(request: FixtureRequest):
+    """Verify the operator role via browser OIDC login through the WAD connector: read allowed, write denied.
+
+    Binds the WAD group to the STX 'operator' role (which the framework maps to
+    operator+reader), logs in through the browser DEX flow using the WAD connector
+    (no MFA), then confirms a read command succeeds while a config-changing write
+    command is denied with a 403/Forbidden RBAC error.
+
+    Teardown:
+        - Delete the ClusterRoleBinding, working dir, role-bindings
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    ctx = _setup_wad_oidc_role(ssh_connection, "Level1SystemOperator", "operator")
+    # LIFO: register role-bindings teardown FIRST so it runs LAST (it restarts
+    # keystone); cleanup runs first while keystone is still up.
+    for teardown in ctx.get_teardowns():
+        request.addfinalizer(teardown)
+
+    get_logger().log_test_case_step("Operator (WAD): verify read command 'system service-parameter-list' is allowed")
+    read_result = _run_stx_via_browser(ssh_connection, ctx, "system service-parameter-list")
+    get_logger().log_info(f"WAD operator read output:\n{read_result.get_output()}")
+    validate_equals(read_result.is_stx_forbidden(), False, "Operator must NOT be denied 'system service-parameter-list'")
+
+    get_logger().log_test_case_step("Operator (WAD): verify write command 'system application-apply dummy-app' is denied")
+    write_result = _run_stx_via_browser(ssh_connection, ctx, "system application-apply dummy-app")
+    get_logger().log_info(f"WAD operator write output:\n{write_result.get_output()}")
+    validate_equals(write_result.is_stx_forbidden(), True, "Operator must be denied 'system application-apply'")
+
+
+@mark.p2
+def test_stx_oidc_login_keycloak_reader_role(request: FixtureRequest):
+    """Verify the reader role via browser OIDC login through Keycloak: read allowed, write denied.
+
+    Sets up the external Keycloak IdP environment (oidc-auth-apps + kubeconfig +
+    CRB), resets OTP + brute-force lockout for a clean MFA enrollment, binds the
+    Keycloak keystone group to the STX 'reader' role, then completes the Keycloak
+    redirect login with TOTP in a headless browser. Confirms a read command
+    ('system service-parameter-list') succeeds while a write command
+    ('system application-apply dummy-app') is denied with a 403/Forbidden RBAC error.
+
+    Teardown:
+        - Remove the role-bindings, restore the OIDC Keycloak environment
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    security_config = ConfigurationManager.get_security_config()
+    lab_config = ConfigurationManager.get_lab_config()
+    totp_secret = security_config.get_oidc_keycloak_test_totp_secret()
+
+    ctx = _setup_keycloak_oidc_role(ssh_connection, security_config, lab_config, "reader")
+    # LIFO: register role-bindings teardown FIRST so it runs LAST (it restarts
+    # keystone); env_cleanup runs first while keystone is still up.
+    for teardown in ctx.get_teardowns():
+        request.addfinalizer(teardown)
+
+    get_logger().log_test_case_step("Reader (Keycloak): verify read command 'system service-parameter-list' is allowed")
+    read_result = _run_stx_via_browser(ssh_connection, ctx, "system service-parameter-list", is_keycloak=True, totp_secret=totp_secret)
+    get_logger().log_info(f"Keycloak reader read output:\n{read_result.get_output()}")
+    validate_equals(read_result.is_stx_forbidden(), False, "Reader must NOT be denied 'system service-parameter-list'")
+
+    get_logger().log_test_case_step("Reader (Keycloak): verify write command 'system application-apply dummy-app' is denied")
+    write_result = _run_stx_via_browser(ssh_connection, ctx, "system application-apply dummy-app", is_keycloak=True, totp_secret=totp_secret)
+    get_logger().log_info(f"Keycloak reader write output:\n{write_result.get_output()}")
+    validate_equals(write_result.is_stx_forbidden(), True, "Reader must be denied 'system application-apply'")
