@@ -5,15 +5,17 @@ from config.lab.objects.lab_type_enum import LabTypeEnum
 from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
 from framework.validation.validation import validate_equals, validate_not_equals
-from keywords.cloud_platform.command_wrappers import source_openrc
 from keywords.cloud_platform.dcmanager.dcmanager_strategy_cleanup_keywords import DcmanagerStrategyCleanupKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_sw_deploy_strategy_keywords import DcmanagerSwDeployStrategy
 from keywords.cloud_platform.dcmanager.dcmanager_strategy_step_keywords import DcmanagerStrategyStepKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_list_keywords import DcManagerSubcloudListKeywords
+from keywords.cloud_platform.dcmanager.dcmanager_subcloud_state_watcher_keywords import (
+    STRATEGY_STEP_IN_PROGRESS_STATES,
+    DcManagerSubcloudStateWatcherKeywords,
+)
 from keywords.cloud_platform.dcmanager.objects.dcmanger_subcloud_list_availability_enum import DcManagerSubcloudListAvailabilityEnum
 from keywords.cloud_platform.dcmanager.subcloud_picker_keywords import SubcloudPickerKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
-from keywords.cloud_platform.system.kubernetes.kubernetes_version_list_keywords import SystemKubernetesListKeywords
 from keywords.cloud_platform.upgrade.software_list_keywords import SoftwareListKeywords
 from keywords.cloud_platform.version_info.cloud_platform_version_manager import CloudPlatformVersionManagerClass
 from keywords.files.file_keywords import FileKeywords
@@ -595,3 +597,67 @@ def test_iso_mismatch(request):
     deployment_timeout = ConfigurationManager.get_usm_config().get_deployment_timeout_sec()
     strategy_step = DcmanagerStrategyStepKeywords(system_controller_ssh).wait_for_strategy_step_state(subcloud_name, states=["complete", "failed"], timeout=deployment_timeout)
     validate_equals(strategy_step.get_state(), "failed", f"sw-deploy-strategy should fail precheck for subcloud {subcloud_name} due to ISO level mismatch (no 'deployed' release).")
+
+
+# --- SW Deploy --cleanup ---
+
+
+@mark.p2
+@mark.lab_has_subcloud
+def test_sw_deploy_strategy_cleanup_single_subcloud(request):
+    """Verify sw-deploy-strategy --cleanup restores a subcloud left in a non-clean state.
+
+    dcmanager sw-deploy-strategy --cleanup finishes/cleans up a subcloud left in a
+    non-clean deploy state (e.g. an unfinished sw-deploy missing its deploy-delete,
+    or an auto-rollback that left an aborted kube-upgrade + leftover system-deploy).
+    It is a simple, subcloud-type-agnostic operation and applies to both simplex
+    and duplex subclouds, so this test does not filter on lab type.
+
+    The test runs --cleanup against an eligible subcloud as-is; it does not set
+    up a non-clean state first. Combining a state-producing scenario with cleanup
+    belongs at the test-plan level, not inside this test case.
+
+    Test Steps:
+        1. Pick an eligible online, out-of-sync subcloud (any lab type)
+        2. Create and apply a sw-deploy-strategy --cleanup for the subcloud (no wait)
+        3. Watch the --cleanup strategy step to completion via the shared
+           strategy-step watcher
+        4. Validate the subcloud deploy status is 'complete'
+        5. Delete the strategy
+
+    Teardown:
+        - Delete strategy if still present
+    """
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
+        availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
+        in_sync=False,
+    )
+
+    subcloud_name = result.get_name()
+    request.addfinalizer(lambda: cleanup_strategy(system_controller_ssh))
+
+    strategy_keywords = DcmanagerSwDeployStrategy(system_controller_ssh)
+
+    # Run --cleanup to finish/clean up any leftover deploy state.
+    get_logger().log_test_case_step(f"Create and apply sw-deploy-strategy --cleanup for {subcloud_name}")
+    strategy_keywords.dcmanager_sw_deploy_strategy_create(subcloud_name=subcloud_name, cleanup=True)
+    strategy_keywords.dcmanager_sw_deploy_strategy_apply(target=subcloud_name, wait_completion=False)
+
+    # Watch the --cleanup strategy step to completion via the shared watcher.
+    get_logger().log_test_case_step(f"Watch --cleanup strategy step to completion for {subcloud_name}")
+    DcManagerSubcloudStateWatcherKeywords(system_controller_ssh).watch_strategy_steps(
+        subcloud_names=[subcloud_name],
+        in_progress_states=STRATEGY_STEP_IN_PROGRESS_STATES,
+    )
+
+    # Validate the subcloud deploy status returned to complete.
+    subcloud = (
+        DcManagerSubcloudListKeywords(system_controller_ssh)
+        .get_dcmanager_subcloud_list()
+        .get_subcloud_by_name(subcloud_name)
+    )
+    validate_equals(subcloud.get_deploy_status(), "complete", f"Subcloud {subcloud_name} deploy status should be complete after --cleanup")
+
+    # Delete the cleanup strategy.
+    get_logger().log_info("Deleting sw-deploy-strategy")
+    strategy_keywords.dcmanager_sw_deploy_strategy_delete()
