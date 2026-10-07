@@ -1,0 +1,43 @@
+# istio sidecar-injection probe pod (rendered per phase into the injection-labeled test ns).
+# Minimal single pod so the probe can assert the sidecar was injected alongside this container.
+#
+# Do NOT assume where the sidecar lands, and do NOT derive an expected ready count from this spec.
+# Both were measured on hardware and both are counter-intuitive:
+#
+#   * The layout does not follow the istio version. The same istio 1.29.2 injected istio-proxy as
+#     an INIT container when the platform was upgraded from 26.03, and as a REGULAR container when
+#     upgraded from 25.09 - it follows the injector configuration carried through the upgrade, not
+#     the proxy version. So this pod's rendered spec does not tell you the injected shape.
+#   * An injected pod reports READY "2/2", not "1/1", in BOTH layouts. Kubernetes counts the
+#     restartable init container, so one workload container plus a sidecar reads 2/2 either way.
+#     An earlier version derived the expected count from the regular containers alone, computed
+#     1/1, and would have failed every phase of a healthy run after a full timeout.
+#
+# The check therefore reads both container lists and compares ready against total. Nothing here
+# should be changed to encode a count.
+#
+# Namespace, pod name, image and pull secret are all templated. The image is discovered from the
+# local registry at runtime rather than pinned, so this stays correct as the registry contents
+# change. imagePullSecrets is required because the probe runs in a scratch namespace created by the
+# test, which carries no registry credential of its own; without it the pod fails ImagePullBackOff
+# and the failure looks like a sidecar-injection failure.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ test_pod_name }}
+  namespace: {{ namespace }}
+spec:
+  imagePullSecrets:
+    - name: {{ pull_secret_name }}
+  containers:
+    - name: sleeper
+      image: {{ sleep_image }}
+      command: ["/bin/sh", "-c", "sleep 3600"]
+      resources:
+        requests:
+          cpu: "50m"
+          memory: "64Mi"
+        limits:
+          cpu: "100m"
+          memory: "128Mi"
+  restartPolicy: Always

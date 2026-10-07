@@ -25,5 +25,11 @@
       "namespace": "oran-o2",
       "versions": { "25.09": "25.09-", "26.03": "26.03-", "26.10": "26.10-" },
     },
+    // No "versions" map here on purpose: get_app_version() has no caller, so an istio entry would
+    // only add release literals nothing reads.
+    "istio": {
+      "app_name": "istio",
+      "namespace": "istio-system",
+    },
   },
 }
