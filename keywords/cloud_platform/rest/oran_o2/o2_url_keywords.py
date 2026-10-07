@@ -1,3 +1,6 @@
+from typing import Optional
+from urllib.parse import quote
+
 from config.configuration_manager import ConfigurationManager
 from keywords.base_keyword import BaseKeyword
 from keywords.cloud_platform.rest.get_rest_url_keywords import GetRestUrlKeywords
@@ -50,7 +53,7 @@ class GetO2UrlKeywords(BaseKeyword):
         """
         return self._build_endpoint_url(self.base_url, O2_INVENTORY_PATH, endpoint_suffix)
 
-    def get_local_inventory_endpoint_url(self, endpoint_suffix: str) -> str:
+    def get_local_inventory_endpoint_url(self, endpoint_suffix: str, query_parameters: Optional[dict[str, str]] = None) -> str:
         """Return a controller-local inventory endpoint URL for on-controller curl.
 
         The O2 API is a controller-side NodePort reached by executing curl on the
@@ -61,11 +64,13 @@ class GetO2UrlKeywords(BaseKeyword):
             endpoint_suffix (str): The suffix to append after the inventory path,
                 for example 'api_versions' or 'v1/resourcePools'. A leading slash
                 is optional.
+            query_parameters (Optional[dict[str, str]]): Query parameters to append,
+                for example {'all_fields': 'true'}. Keys and values are encoded.
 
         Returns:
             str: The full controller-local endpoint URL.
         """
-        return self._build_endpoint_url(self._get_local_base_url(), O2_INVENTORY_PATH, endpoint_suffix)
+        return self._build_endpoint_url(self._get_local_base_url(), O2_INVENTORY_PATH, endpoint_suffix, query_parameters)
 
     def get_local_monitoring_endpoint_url(self, endpoint_suffix: str) -> str:
         """Return a controller-local monitoring endpoint URL for on-controller curl.
@@ -96,7 +101,7 @@ class GetO2UrlKeywords(BaseKeyword):
         """
         return f"https://localhost:{self.served_port}"
 
-    def _build_endpoint_url(self, base_url: str, namespace_path: str, endpoint_suffix: str) -> str:
+    def _build_endpoint_url(self, base_url: str, namespace_path: str, endpoint_suffix: str, query_parameters: Optional[dict[str, str]] = None) -> str:
         """Join a base URL, an API namespace path and an endpoint suffix.
 
         Args:
@@ -105,9 +110,26 @@ class GetO2UrlKeywords(BaseKeyword):
                 O2_MONITORING_PATH.
             endpoint_suffix (str): The suffix to append after the namespace path. A
                 leading slash is optional.
+            query_parameters (Optional[dict[str, str]]): Query parameters to append.
+                Keys and values are encoded.
 
         Returns:
             str: The full endpoint URL.
         """
         suffix = endpoint_suffix.lstrip("/")
-        return f"{base_url}{namespace_path}/{suffix}"
+        url = f"{base_url}{namespace_path}/{suffix}"
+        if query_parameters:
+            url = f"{url}?{self._build_query_string(query_parameters)}"
+        return url
+
+    @staticmethod
+    def _build_query_string(query_parameters: dict[str, str]) -> str:
+        """Compose a query string, encoding keys and values.
+
+        Args:
+            query_parameters (dict[str, str]): Parameters to encode, in insertion order.
+
+        Returns:
+            str: The encoded query string, without a leading '?'.
+        """
+        return "&".join(f"{quote(str(key), safe='')}={quote(str(value), safe='')}" for key, value in query_parameters.items())

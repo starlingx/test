@@ -35,7 +35,7 @@ from pytest import FixtureRequest, mark
 
 from config.configuration_manager import ConfigurationManager
 from framework.logging.automation_logger import get_logger
-from framework.validation.validation import validate_equals, validate_not_equals
+from framework.validation.validation import validate_equals, validate_not_equals, validate_not_none
 from keywords.cloud_platform.rest.oran_o2.o2_environment_keywords import O2EnvironmentKeywords
 from keywords.cloud_platform.rest.oran_o2.o2_inventory_keywords import O2InventoryKeywords
 from keywords.cloud_platform.rest.oran_o2.o2_rest_client import O2RestClient
@@ -178,9 +178,10 @@ def test_o2_api_deployment_managers(request: FixtureRequest):
 
     Test Steps:
         1. GET deploymentManagers and verify a non-empty list, each entry carrying
-           a deploymentManagerId.
-        2. GET a deploymentManager detail by an id from the unfiltered list and
-           verify it returns that deploymentManagerId.
+           a deploymentManagerId and the supportedLocations, capabilities and
+           capacity fields.
+        2. GET a deploymentManager detail by an id from the list and verify it
+           returns that deploymentManagerId and carries the same three fields.
 
     Teardown:
         - None.
@@ -188,14 +189,59 @@ def test_o2_api_deployment_managers(request: FixtureRequest):
     get_logger().log_setup_step("Establish environment and build O2 inventory keywords")
     inventory_keywords = _build_inventory_keywords()
 
-    get_logger().log_test_case_step("GET deploymentManagers and verify a non-empty list carrying ids")
-    output = inventory_keywords.get_deployment_managers()
+    get_logger().log_test_case_step("GET deploymentManagers and verify ids and the documented fields on each entry")
+    output = inventory_keywords.get_deployment_managers(nextpage_opaque_marker="1")
     validate_not_equals(output.is_empty(), True, "deploymentManagers list is not empty")
     for deployment_manager in output.get_deployment_managers():
         validate_not_equals(deployment_manager.get_deployment_manager_id(), "", "deploymentManager entry has a deploymentManagerId")
+        validate_not_none(deployment_manager.get_supported_locations(), "deploymentManager entry carries supportedLocations")
+        validate_not_none(deployment_manager.get_capabilities(), "deploymentManager entry carries capabilities")
+        validate_not_none(deployment_manager.get_capacity(), "deploymentManager entry carries capacity")
 
-    get_logger().log_test_case_step("GET a deploymentManager detail by an id from the unfiltered list")
+    get_logger().log_test_case_step("GET a deploymentManager detail by an id from the list and verify the documented fields")
     detail_id = output.get_first().get_deployment_manager_id()
     get_logger().log_info(f"deploymentManager detail id: {detail_id}")
-    detail_output = inventory_keywords.get_deployment_manager(detail_id)
-    validate_equals(detail_output.get_first().get_deployment_manager_id(), detail_id, "deploymentManager detail returns the requested deploymentManagerId")
+    detail = inventory_keywords.get_deployment_manager(detail_id).get_first()
+    validate_equals(detail.get_deployment_manager_id(), detail_id, "deploymentManager detail returns the requested deploymentManagerId")
+    validate_not_none(detail.get_supported_locations(), "deploymentManager detail carries supportedLocations")
+    validate_not_none(detail.get_capabilities(), "deploymentManager detail carries capabilities")
+    validate_not_none(detail.get_capacity(), "deploymentManager detail carries capacity")
+
+
+@mark.p2
+def test_o2_api_deployment_managers_all_fields(request: FixtureRequest):
+    """Read the O2 IMS deployment managers list with field expansion.
+
+    Preconditions:
+        - The O2 bring-up has been run and left the environment standing.
+
+    Setup:
+        - Establish SSH, verify the O2 environment is ready, acquire a Bearer token.
+
+    Test Steps:
+        1. GET deploymentManagers without field expansion and verify no entry
+           carries an extensions key, establishing the control for step 2.
+        2. GET deploymentManagers with all_fields=true and verify a non-empty list,
+           each entry carrying an extensions key and the supportedLocations,
+           capabilities and capacity fields.
+
+    Teardown:
+        - None.
+    """
+    get_logger().log_setup_step("Establish environment and build O2 inventory keywords")
+    inventory_keywords = _build_inventory_keywords()
+
+    get_logger().log_test_case_step("GET deploymentManagers without field expansion and verify no entry carries extensions")
+    plain_output = inventory_keywords.get_deployment_managers()
+    validate_not_equals(plain_output.is_empty(), True, "deploymentManagers list is not empty")
+    for deployment_manager in plain_output.get_deployment_managers():
+        validate_equals(deployment_manager.has_extensions(), False, "deploymentManager entry carries no extensions without field expansion")
+
+    get_logger().log_test_case_step("GET deploymentManagers with all_fields=true and verify extensions and the documented fields on each entry")
+    output = inventory_keywords.get_deployment_managers(all_fields=True, nextpage_opaque_marker="1")
+    validate_not_equals(output.is_empty(), True, "field-expanded deploymentManagers list is not empty")
+    for deployment_manager in output.get_deployment_managers():
+        validate_equals(deployment_manager.has_extensions(), True, "deploymentManager entry carries extensions with field expansion")
+        validate_not_none(deployment_manager.get_supported_locations(), "deploymentManager entry carries supportedLocations")
+        validate_not_none(deployment_manager.get_capabilities(), "deploymentManager entry carries capabilities")
+        validate_not_none(deployment_manager.get_capacity(), "deploymentManager entry carries capacity")

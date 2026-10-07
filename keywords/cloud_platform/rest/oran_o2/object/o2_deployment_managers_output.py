@@ -23,7 +23,12 @@ class O2DeploymentManagersOutput:
         for entry in content:
             deployment_manager_id = entry.get("deploymentManagerId", "")
             if deployment_manager_id:
-                self.deployment_managers.append(O2DeploymentManagerObject(deployment_manager_id))
+                deployment_manager = O2DeploymentManagerObject(deployment_manager_id)
+                deployment_manager.set_supported_locations(entry.get("supportedLocations"))
+                deployment_manager.set_capabilities(entry.get("capabilities"))
+                deployment_manager.set_capacity(entry.get("capacity"))
+                deployment_manager.set_extensions_present("extensions" in entry)
+                self.deployment_managers.append(deployment_manager)
 
     def get_deployment_managers(self) -> list[O2DeploymentManagerObject]:
         """Get all deployment manager objects.
