@@ -30,7 +30,7 @@ from keywords.cloud_platform.dcmanager.dcmanager_onsite_restore_keywords import 
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_list_keywords import DcManagerSubcloudListKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_manager_keywords import DcManagerSubcloudManagerKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_show_keywords import DcManagerSubcloudShowKeywords
-from keywords.cloud_platform.dcmanager.subcloud_picker_keywords import pick_subcloud_with_fallback
+from keywords.cloud_platform.dcmanager.subcloud_picker_keywords import SubcloudPickerKeywords
 from keywords.cloud_platform.nocloud.seed_iso_builder_keywords import SeedIsoBuilderKeywords
 from keywords.cloud_platform.nocloud.seed_iso_staging_keywords import SeedIsoStagingKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
@@ -190,7 +190,7 @@ def _run_onsite_restore(request, local_only: bool) -> None:
     # No availability/backup_status filter is applied: the target is offline at
     # 'factory-restore-complete' when this runs, so filtering on ONLINE would
     # exclude it.
-    system_controller_ssh, pick_result = pick_subcloud_with_fallback(present_in_config=True, lab_type=LabTypeEnum.SIMPLEX)
+    system_controller_ssh, pick_result = SubcloudPickerKeywords.pick_with_fallback(present_in_config=True, lab_type=LabTypeEnum.SIMPLEX)
     subcloud_name = pick_result.get_name()
 
     _run_onsite_restore_prechecks(system_controller_ssh, subcloud_name, local_only)
