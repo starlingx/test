@@ -32,3 +32,12 @@ class SystemHostKernelShowObject:
     def get_kernel_running(self) -> str:
         """Getter for kernel_running"""
         return self.kernel_running
+
+    def is_lowlatency(self) -> bool:
+        """Return True if the running kernel is the lowlatency/real-time kernel.
+
+        host-kernel-show reports the kernel TYPE ('standard' | 'lowlatency')
+        Returns:
+            bool: True if the running kernel type is 'lowlatency'.
+        """
+        return self.kernel_running is not None and self.kernel_running.lower() == "lowlatency"
