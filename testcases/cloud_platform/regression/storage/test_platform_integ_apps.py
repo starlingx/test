@@ -1,9 +1,11 @@
 import re
+from typing import List
 
 from pytest import FixtureRequest, mark
 
 from config.configuration_manager import ConfigurationManager
 from framework.logging.automation_logger import get_logger
+from framework.ssh.ssh_connection import SSHConnection
 from framework.validation.validation import validate_equals, validate_not_equals, validate_str_contains
 from keywords.ceph.ceph_status_keywords import CephStatusKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
@@ -21,7 +23,10 @@ from keywords.cloud_platform.system.application.system_application_update_keywor
 from keywords.cloud_platform.system.application.system_application_upload_keywords import SystemApplicationUploadKeywords
 from keywords.cloud_platform.system.helm.system_helm_chart_attribute_modify_keywords import SystemHelmChartAttributeModifyKeywords
 from keywords.cloud_platform.system.helm.system_helm_override_keywords import SystemHelmOverrideKeywords
+from keywords.cloud_platform.system.host.system_host_list_keywords import SystemHostListKeywords
 from keywords.files.file_keywords import FileKeywords
+from keywords.k8s.continuous_write.kubectl_continuous_write_keywords import KubectlContinuousWriteKeywords
+from keywords.k8s.pods.kubectl_get_pods_keywords import KubectlGetPodsKeywords
 from keywords.linux.mount.mount_keywords import MountKeywords
 
 
@@ -44,6 +49,16 @@ def setup(request, active_ssh_connection):
 
     request.addfinalizer(cleanup)
     return platform_integ_apps_name
+
+
+def verify_provisioner(ssh_connection: SSHConnection, pod_names: List[str], expected_status: str, namespace: str) -> None:
+    """Function to verify if the rbd provisioner pods are running"""
+    KubectlGetPodsKeywords(ssh_connection).wait_for_pods_to_reach_status(
+        expected_status=expected_status,
+        pod_names=pod_names,
+        namespace=namespace,
+        timeout=300,
+    )
 
 
 @mark.p2
@@ -572,3 +587,252 @@ def test_modify_helm_chart_attribute_platform_integ_app(request: FixtureRequest)
     disabled_attributes = disabled_override_show.get_helm_override_show().get_attributes()
     validate_str_contains(str(disabled_attributes), "enabled: false", "Attributes should contain enabled: false")
     get_logger().log_info(f"Disabled attributes: {disabled_attributes}")
+
+
+@mark.p2
+@mark.lab_has_ceph
+def test_disable_and_re_enable_rbd_provisioner_platform_integ_app(request: FixtureRequest):
+    """
+    Modify helm chart attribute rbd provisioner to false and verify the rbd pods
+
+    Test Steps:
+        - Make sure that platform-integ-apps is applied
+        - Verify if platform-integ-apps rbd provisioner pods are running
+        - Create a PVC and wait for it to be bound to RBD storageClass
+        - Create a Pod with continuous writing to the bound PVC
+        - Check if the continous writing Pod is working
+        - Set the rbd provisioner to false
+        - Apply the platform-integ-apps
+        - Check if the rbd provisioner Pods disappeared
+        - Set the rbd provisioner to true
+        - Apply the platform-integ-apps
+        - Verify if platform-integ-apps rbd provisioner pods are running
+        - Verify if the Pod/PVC keep working properly (Bound/Running)
+
+    Args:
+        request (FixtureRequest): pytest request fixture for test setup and teardown
+    """
+
+    active_ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    system_host_list_keywords = SystemHostListKeywords(active_ssh_connection)
+    platform_integ_apps_name = setup(request, active_ssh_connection)
+
+    continuous_write_keywords = KubectlContinuousWriteKeywords(active_ssh_connection)
+    namespace = "kube-system"
+    rbd_pod_names = ["rbd-provisioner"]
+    storage_type = "rbd"
+    kubectl_get_pods_keywords = KubectlGetPodsKeywords(active_ssh_connection)
+
+    def teardown():
+        get_logger().log_teardown_step("Check if application status is not applied and apply if needed")
+        app_list_keywords = SystemApplicationListKeywords(active_ssh_connection)
+        if app_list_keywords.is_app_present(platform_integ_apps_name):
+            system_applications = app_list_keywords.get_system_application_list()
+            current_status = system_applications.get_application(platform_integ_apps_name).get_status()
+            if current_status != "applied":
+                get_logger().log_teardown_step("Apply platform-integ-apps")
+                SystemApplicationApplyKeywords(active_ssh_connection).system_application_apply(app_name=platform_integ_apps_name)
+
+        get_logger().log_teardown_step("Set the rbd provisioner to true")
+        SystemHelmChartAttributeModifyKeywords(active_ssh_connection).helm_chart_attribute_modify_enabled(
+            enabled_value="true",
+            app_name="platform-integ-apps",
+            chart_name="rbd-provisioner",
+            namespace=namespace,
+        )
+
+        get_logger().log_teardown_step("Apply the platform-integ-apps")
+        SystemApplicationApplyKeywords(active_ssh_connection).system_application_apply(app_name=platform_integ_apps_name)
+        get_logger().log_teardown_step("Verify if platform-integ-apps rbd provisioner pods are running")
+        verify_provisioner(active_ssh_connection, rbd_pod_names, "Running", namespace)
+
+        get_logger().log_teardown_step("Verify if the Pod/PVC keep working properly (Bound/Running)")
+        kubectl_get_pods_keywords.wait_for_pod_status(pod_name, "Running")
+
+        counts_before = continuous_write_keywords.wait_for_write_progress(pod_name, previous_count=0)
+        get_logger().log_info(f"{pod_name} write-cycle count before: {counts_before}")
+
+        kubectl_get_pods_keywords.wait_for_pod_status(pod_name, "Running")
+        count_after = continuous_write_keywords.wait_for_write_progress(pod_name, previous_count=counts_before)
+        validate_not_equals(counts_before, count_after, "Making sure counts before and after are not equal (pod is writing)")
+        get_logger().log_info(f"{pod_name} write-cycle count after: {count_after}")
+        continuous_write_keywords.cleanup_continuous_write_pod(pod_name, pvc_name, force=True)
+
+    request.addfinalizer(teardown)
+
+    get_logger().log_test_case_step("Remove platform-integ-apps")
+    system_application_remove_input = SystemApplicationRemoveInput()
+    system_application_remove_input.set_app_name(platform_integ_apps_name)
+    SystemApplicationRemoveKeywords(active_ssh_connection).system_application_remove(system_application_remove_input)
+
+    get_logger().log_test_case_step("Apply platform-integ-apps")
+    SystemApplicationApplyKeywords(active_ssh_connection).system_application_apply(app_name=platform_integ_apps_name, wait_for_applied=False)
+    app_status_list = ["applied"]
+    SystemApplicationListKeywords(active_ssh_connection).validate_app_status_in_list(platform_integ_apps_name, app_status_list, timeout=600, polling_sleep_time=20)
+
+    get_logger().log_test_case_step("Verify if platform-integ-apps rbd provisioner pods are running")
+    verify_provisioner(active_ssh_connection, rbd_pod_names, "Running", namespace)
+    get_logger().log_test_case_step("Create a PVC and wait for it to be bound to RBD storageClass")
+
+    active_controller = system_host_list_keywords.get_active_controller()
+    active_host_name = active_controller.get_host_name()
+    pod_name, pvc_name = continuous_write_keywords.start_continuous_write_pod(storage_type, node_name=active_host_name)
+
+    get_logger().log_test_case_step(f"Verify {pod_name} is Running")
+    kubectl_get_pods_keywords.wait_for_pod_status(pod_name, "Running")
+
+    counts_before = continuous_write_keywords.wait_for_write_progress(pod_name, previous_count=0)
+    get_logger().log_info(f"{pod_name} write-cycle count before: {counts_before}")
+    kubectl_get_pods_keywords.wait_for_pod_status(pod_name, "Running")
+    get_logger().log_test_case_step(f"Verify {pod_name} kept writing after.")
+    count_after = continuous_write_keywords.wait_for_write_progress(pod_name, previous_count=counts_before)
+    validate_not_equals(counts_before, count_after, "Making sure counts before and after are not equal (pod is writing)")
+    get_logger().log_info(f"{pod_name} write-cycle count after: {count_after}")
+
+    get_logger().log_test_case_step("Set the rbd provisioner to false")
+
+    SystemHelmChartAttributeModifyKeywords(active_ssh_connection).helm_chart_attribute_modify_enabled(
+        enabled_value="false",
+        app_name="platform-integ-apps",
+        chart_name="rbd-provisioner",
+        namespace=namespace,
+    )
+
+    get_logger().log_test_case_step("Apply the platform-integ-apps")
+    SystemApplicationApplyKeywords(active_ssh_connection).system_application_apply(app_name=platform_integ_apps_name, wait_for_applied=False)
+    app_status_list = ["applied"]
+    SystemApplicationListKeywords(active_ssh_connection).validate_app_status_in_list(platform_integ_apps_name, app_status_list, timeout=600, polling_sleep_time=20)
+
+    get_logger().log_test_case_step("Check if the rbd provisioner Pods disappeared")
+    pods = KubectlGetPodsKeywords(active_ssh_connection).get_pods(namespace=namespace)
+    rbd_pods = pods.get_pods_start_with("rbd-provisioner")
+    validate_equals(len(rbd_pods), 0, "rbd-provisioner pods should be gone after disable + apply")
+
+    counts_before = continuous_write_keywords.wait_for_write_progress(pod_name, previous_count=0)
+    get_logger().log_test_case_step(f"Verify {pod_name} kept writing after:")
+
+    kubectl_get_pods_keywords.wait_for_pod_status(pod_name, "Running")
+    count_after = continuous_write_keywords.wait_for_write_progress(pod_name, previous_count=counts_before)
+    validate_not_equals(counts_before, count_after, "Making sure counts before and after are not equal (pod is writing)")
+    get_logger().log_info(f"{pod_name} write-cycle count after: {count_after}")
+
+
+@mark.p2
+@mark.lab_has_ceph
+def test_disable_and_re_enable_cephfs_provisioner_platform_integ_app(request: FixtureRequest):
+    """
+    Modify helm chart attribute cephfs provisioner to false and verify the cephfs pods
+
+    Test Steps:
+        - Make sure that platform-integ-apps is applied
+        - Verify if platform-integ-apps cephfs provisioner pods are running
+        - Create a PVC and wait for it to be bound to CEPHFS storageClass
+        - Create a Pod with continuous writing to the bound PVC
+        - Check if the continous writing Pod is working
+        - Set the cephfs provisioner to false
+        - Apply the platform-integ-apps
+        - Check if the cephfs provisioner Pods disappeared
+        - Set the cephfs provisioner to true
+        - Apply the platform-integ-apps
+        - Verify if platform-integ-apps cephfs provisioner pods are running
+        - Verify if the Pod/PVC keep working properly (Bound/Running)
+
+    Args:
+        request (FixtureRequest): pytest request fixture for test setup and teardown
+    """
+
+    active_ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    system_host_list_keywords = SystemHostListKeywords(active_ssh_connection)
+    platform_integ_apps_name = setup(request, active_ssh_connection)
+
+    continuous_write_keywords = KubectlContinuousWriteKeywords(active_ssh_connection)
+    namespace = "kube-system"
+    cephfs_pod_names = ["cephfs-provisioner"]
+    storage_type = "cephfs"
+    kubectl_get_pods_keywords = KubectlGetPodsKeywords(active_ssh_connection)
+
+    def teardown():
+        get_logger().log_teardown_step("Check if application status is not applied and apply if needed")
+        app_list_keywords = SystemApplicationListKeywords(active_ssh_connection)
+        if app_list_keywords.is_app_present(platform_integ_apps_name):
+            system_applications = app_list_keywords.get_system_application_list()
+            current_status = system_applications.get_application(platform_integ_apps_name).get_status()
+            if current_status != "applied":
+                get_logger().log_teardown_step("Apply platform-integ-apps")
+                SystemApplicationApplyKeywords(active_ssh_connection).system_application_apply(app_name=platform_integ_apps_name)
+
+        get_logger().log_teardown_step("Set the cephfs provisioner to true")
+        SystemHelmChartAttributeModifyKeywords(active_ssh_connection).helm_chart_attribute_modify_enabled(enabled_value="true", app_name="platform-integ-apps", chart_name="cephfs-provisioner", namespace=namespace)
+
+        get_logger().log_teardown_step("Apply the platform-integ-apps")
+        SystemApplicationApplyKeywords(active_ssh_connection).system_application_apply(app_name=platform_integ_apps_name)
+        get_logger().log_teardown_step("Verify if platform-integ-apps cephfs provisioner pods are running")
+        verify_provisioner(active_ssh_connection, cephfs_pod_names, "Running", namespace)
+
+        get_logger().log_teardown_step("Verify if the Pod/PVC keep working properly (Bound/Running)")
+        kubectl_get_pods_keywords.wait_for_pod_status(pod_name, "Running")
+
+        counts_before = continuous_write_keywords.wait_for_write_progress(pod_name, previous_count=0)
+        get_logger().log_info(f"{pod_name} write-cycle count before: {counts_before}")
+
+        kubectl_get_pods_keywords.wait_for_pod_status(pod_name, "Running")
+        count_after = continuous_write_keywords.wait_for_write_progress(pod_name, previous_count=counts_before)
+        get_logger().log_info(f"{pod_name} write-cycle count after: {count_after}")
+        validate_not_equals(counts_before, count_after, "Making sure counts before and after are not equal (pod is writing)")
+        continuous_write_keywords.cleanup_continuous_write_pod(pod_name, pvc_name, force=True)
+
+    request.addfinalizer(teardown)
+
+    get_logger().log_test_case_step("Remove platform-integ-apps")
+    system_application_remove_input = SystemApplicationRemoveInput()
+    system_application_remove_input.set_app_name(platform_integ_apps_name)
+    SystemApplicationRemoveKeywords(active_ssh_connection).system_application_remove(system_application_remove_input)
+
+    get_logger().log_test_case_step("Apply platform-integ-apps")
+    SystemApplicationApplyKeywords(active_ssh_connection).system_application_apply(app_name=platform_integ_apps_name, wait_for_applied=False)
+    app_status_list = ["applied"]
+    SystemApplicationListKeywords(active_ssh_connection).validate_app_status_in_list(platform_integ_apps_name, app_status_list, timeout=600, polling_sleep_time=20)
+
+    get_logger().log_test_case_step("Verify if platform-integ-apps cephfs provisioner pods are running")
+    verify_provisioner(active_ssh_connection, cephfs_pod_names, "Running", namespace)
+    get_logger().log_test_case_step("Create a PVC and wait for it to be bound to CEPHFS storageClass")
+
+    active_controller = system_host_list_keywords.get_active_controller()
+    active_host_name = active_controller.get_host_name()
+    pod_name, pvc_name = continuous_write_keywords.start_continuous_write_pod(storage_type, node_name=active_host_name)
+
+    get_logger().log_test_case_step(f"Verify {pod_name} is Running")
+    kubectl_get_pods_keywords.wait_for_pod_status(pod_name, "Running")
+
+    counts_before = continuous_write_keywords.wait_for_write_progress(pod_name, previous_count=0)
+    get_logger().log_info(f"{pod_name} write-cycle count before: {counts_before}")
+
+    kubectl_get_pods_keywords.wait_for_pod_status(pod_name, "Running")
+    count_after = continuous_write_keywords.wait_for_write_progress(pod_name, previous_count=counts_before)
+
+    validate_not_equals(counts_before, count_after, "Making sure counts before and after are not equal (pod is writing)")
+    get_logger().log_info(f"{pod_name} write-cycle count after: {count_after}")
+    get_logger().log_test_case_step("Set the cephfs provisioner to false")
+
+    SystemHelmChartAttributeModifyKeywords(active_ssh_connection).helm_chart_attribute_modify_enabled(
+        enabled_value="false",
+        app_name="platform-integ-apps",
+        chart_name="cephfs-provisioner",
+        namespace=namespace,
+    )
+
+    get_logger().log_test_case_step("Apply the platform-integ-apps")
+    SystemApplicationApplyKeywords(active_ssh_connection).system_application_apply(app_name=platform_integ_apps_name, wait_for_applied=False)
+    app_status_list = ["applied"]
+    SystemApplicationListKeywords(active_ssh_connection).validate_app_status_in_list(platform_integ_apps_name, app_status_list, timeout=600, polling_sleep_time=20)
+
+    get_logger().log_test_case_step("Check if the cephfs provisioner Pods disappeared")
+    pods = KubectlGetPodsKeywords(active_ssh_connection).get_pods(namespace=namespace)
+    cephfs_pods = pods.get_pods_start_with("cephfs-provisioner")
+    validate_equals(len(cephfs_pods), 0, "cephfs-provisioner pods should be gone after disable + apply")
+
+    counts_before = continuous_write_keywords.wait_for_write_progress(pod_name, previous_count=0)
+    kubectl_get_pods_keywords.wait_for_pod_status(pod_name, "Running")
+    count_after = continuous_write_keywords.wait_for_write_progress(pod_name, previous_count=counts_before)
+    validate_not_equals(counts_before, count_after, "Making sure counts before and after are not equal (pod is writing)")
+    get_logger().log_info(f"{pod_name} write-cycle count after: {count_after}")
