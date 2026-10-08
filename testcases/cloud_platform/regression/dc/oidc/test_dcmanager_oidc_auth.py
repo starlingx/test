@@ -11,9 +11,11 @@ from keywords.cloud_platform.command_wrappers import source_openrc
 from keywords.cloud_platform.dcmanager.dcmanager_oidc_keywords import DcManagerOidcKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_prestage_strategy_keywords import DcmanagerPrestageStrategyKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_strategy_cleanup_keywords import DcmanagerStrategyCleanupKeywords
-from keywords.cloud_platform.dcmanager.dcmanager_subcloud_backup_keywords import DcManagerSubcloudBackupKeywords
+from keywords.cloud_platform.dcmanager.dcmanager_subcloud_backup_keywords import COMPLETE_LOCAL_STATUS, DcManagerSubcloudBackupKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_list_keywords import DcManagerSubcloudListKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_prestage import DcmanagerSubcloudPrestage
+from keywords.cloud_platform.dcmanager.dcmanager_subcloud_show_keywords import DcManagerSubcloudShowKeywords
+from keywords.cloud_platform.dcmanager.dcmanager_subcloud_state_watcher_keywords import BACKUP_IN_PROGRESS_STATES, DcManagerSubcloudStateWatcherKeywords
 from keywords.cloud_platform.dcmanager.subcloud_picker_keywords import SubcloudPickerKeywords
 from keywords.cloud_platform.dcmanager.objects.dcmanger_subcloud_list_availability_enum import DcManagerSubcloudListAvailabilityEnum
 from keywords.cloud_platform.dcmanager.objects.dcmanger_subcloud_list_management_enum import DcManagerSubcloudListManagementEnum
@@ -432,7 +434,8 @@ def test_dcmanager_oidc_backup_create_admin(request: FixtureRequest) -> None:
 
     Test Steps:
         1. Run dcmanager subcloud-backup create on a real subcloud as OIDC admin
-        2. Validate command is accepted
+        2. Wait for the backup operation to reach a terminal state
+        3. Validate the subcloud's backup status is complete-local
 
     Teardown:
         - Delete LDAP user and group
@@ -453,11 +456,22 @@ def test_dcmanager_oidc_backup_create_admin(request: FixtureRequest) -> None:
     ensure_ldap_user(ssh_connection, ADMIN_USERNAME, password, ADMIN_GROUP)
     ensure_role_bindings(ssh_connection, ADMIN_GROUP, "admin")
 
-
     get_logger().log_test_case_step(f"Run dcmanager subcloud-backup create on '{subcloud_name}' as OIDC admin")
     oidc_ssh = dcm_oidc_kw.get_authenticated_session(ADMIN_USERNAME, password, lab_oam_ip)
     backup_kw = DcManagerSubcloudBackupKeywords(oidc_ssh, use_oidc=True)
-    backup_kw.create_subcloud_backup(sysadmin_password=password, con_ssh=oidc_ssh, subcloud=subcloud_name, local_only=True)
+    backup_kw.create_subcloud_backup(sysadmin_password=password, con_ssh=oidc_ssh, subcloud=subcloud_name, local_only=True, wait=False)
+
+    get_logger().log_test_case_step(f"Wait for backup operation on '{subcloud_name}' to complete")
+    DcManagerSubcloudStateWatcherKeywords(ssh_connection).watch_single_subcloud(
+        subcloud_name=subcloud_name,
+        field_to_watch="backup_status",
+        in_progress_states=BACKUP_IN_PROGRESS_STATES,
+        complete_state=COMPLETE_LOCAL_STATUS,
+    )
+
+    get_logger().log_test_case_step(f"Validate backup status for '{subcloud_name}' reached terminal state")
+    backup_status = DcManagerSubcloudShowKeywords(ssh_connection).get_dcmanager_subcloud_show(subcloud_name).get_dcmanager_subcloud_show_object().get_backup_status()
+    validate_equals(backup_status, COMPLETE_LOCAL_STATUS, f"Backup status for subcloud '{subcloud_name}' is complete-local")
 
 
 @mark.p2
