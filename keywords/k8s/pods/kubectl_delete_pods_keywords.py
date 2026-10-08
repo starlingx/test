@@ -17,17 +17,22 @@ class KubectlDeletePodsKeywords(K8sBaseKeyword):
         """
         super().__init__(ssh_connection, kubeconfig_path)
 
-    def delete_pod(self, pod_name: str, namespace: str = "default") -> str:
+    def delete_pod(self, pod_name: str, namespace: str = "default", ignore_not_found: bool = False) -> str:
         """Deletes the pod.
 
         Args:
             pod_name (str): the pod name
             namespace (str): the namespace. Defaults to "default"
+            ignore_not_found (bool): if True, add --ignore-not-found so a
+                missing pod is a no-op rather than an error (useful for
+                idempotent teardown). Defaults to False.
 
         Returns:
             str: the output
         """
         cmd = f"kubectl delete pod {pod_name} -n {namespace}"
+        if ignore_not_found:
+            cmd = f"{cmd} --ignore-not-found"
 
         output = self.ssh_connection.send(self.k8s_config.export(cmd))
         self.validate_success_return_code(self.ssh_connection)
