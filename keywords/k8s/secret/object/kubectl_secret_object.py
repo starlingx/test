@@ -173,6 +173,14 @@ class KubectlSecretObject:
                 pass
         return None
 
+    def get_data_key_count(self) -> int:
+        """Return the number of keys in the secret data section.
+
+        Returns:
+            int: Count of data keys, or 0 if the data section is absent.
+        """
+        return len(self.data) if isinstance(self.data, dict) else 0
+
     def load_x509_certificate(self) -> Optional[object]:
         """Load and return the parsed x509 certificate from TLS data.
 

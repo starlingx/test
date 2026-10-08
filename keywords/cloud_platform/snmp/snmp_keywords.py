@@ -166,12 +166,14 @@ class SNMPKeywords(BaseKeyword):
         port_config_path = get_stx_resource_path(f"resources/cloud_platform/snmp/{self.config.port_config_file}")
         self.file_keywords.upload_file(port_config_path, f"/tmp/{self.config.port_config_file}")
 
-    def _generate_user_conf(self, trap_server_ip: str, is_ipv6: bool) -> str:
+    def _generate_user_conf(self, trap_server_ip: str, is_ipv6: bool, trap_port: int = None) -> str:
         """Generate SNMP user configuration YAML content.
 
         Args:
             trap_server_ip (str): IP address of the trap server/receiver.
             is_ipv6 (bool): Whether the lab uses IPv6 addressing.
+            trap_port (int): Trap destination port. Defaults to the configured
+                trap_server_port when not provided.
 
         Returns:
             str: YAML content for the SNMP helm override.
@@ -180,7 +182,7 @@ class SNMPKeywords(BaseKeyword):
         auth_pass = self.config.snmp_v3_auth_password
         priv_pass = self.config.snmp_v3_priv_password
         community = self.config.snmp_v2c_community
-        trap_port = self.config.trap_server_port
+        trap_port = trap_port if trap_port is not None else self.config.trap_server_port
 
         if is_ipv6:
             trap_target = f"udp6:[{trap_server_ip}]:{trap_port}"
@@ -317,6 +319,35 @@ class SNMPKeywords(BaseKeyword):
             get_logger().log_info("Port helm override failed, continuing with default config")
 
         # Apply Calico network policy to allow SNMP traffic on OAM interface
+        self._apply_snmp_network_policy()
+
+    def install_and_configure_snmp_with_trap_target(self, trap_receiver_ip: str, trap_receiver_port: int) -> None:
+        """Install and configure SNMP with trap2sink pointing at a receiver.
+
+        Mirrors install_and_configure_snmp but directs the trap destination at
+        an explicit receiver IP and port (for example a trap receiver running
+        on the test runner) instead of the configured defaults.
+
+        Args:
+            trap_receiver_ip (str): IP address of the trap receiver.
+            trap_receiver_port (int): UDP port the receiver listens on.
+        """
+        lab_config = ConfigurationManager.get_lab_config()
+        is_ipv6 = lab_config.is_ipv6()
+        config_file = self.config.config_file_ipv6 if is_ipv6 else self.config.config_file_ipv4
+        user_conf_content = self._generate_user_conf(trap_receiver_ip, is_ipv6, trap_receiver_port)
+        self._write_remote_file(f"/tmp/{config_file}", user_conf_content)
+
+        port_config_path = get_stx_resource_path(f"resources/cloud_platform/snmp/{self.config.port_config_file}")
+        self.file_keywords.upload_file(port_config_path, f"/tmp/{self.config.port_config_file}")
+
+        self.upload_and_apply_snmp_app()
+        snmp_override_success = self.apply_snmp_helm_overrides()
+        port_override_success = self.apply_port_helm_overrides()
+        if not snmp_override_success:
+            get_logger().log_info("SNMP helm override failed, continuing with default config")
+        if not port_override_success:
+            get_logger().log_info("Port helm override failed, continuing with default config")
         self._apply_snmp_network_policy()
 
     def _apply_snmp_network_policy(self) -> None:
