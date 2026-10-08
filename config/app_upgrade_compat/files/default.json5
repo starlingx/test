@@ -31,5 +31,15 @@
       "app_name": "istio",
       "namespace": "istio-system",
     },
+    // oidc-auth-apps installs into kube-system, which it shares with the control plane, so its
+    // test narrows pod reads by label rather than relying on the namespace alone.
+    //
+    // No "versions" map: get_app_version() on this config object has no caller anywhere in the
+    // tree, and a separate change tracks removing the maps the other entries still carry. This
+    // entry is deliberately the shape the others will have once that merges.
+    "oidc-auth-apps": {
+      "app_name": "oidc-auth-apps",
+      "namespace": "kube-system",
+    },
   },
 }
