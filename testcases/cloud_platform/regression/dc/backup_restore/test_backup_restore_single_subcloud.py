@@ -22,9 +22,6 @@ Markers:
     - @mark.lab_has_subcloud: requires at least one subcloud
 """
 
-from pytest import mark
-
-from config.lab.objects.lab_type_enum import LabTypeEnum
 from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_backup_keywords import DcManagerSubcloudBackupKeywords
@@ -34,9 +31,10 @@ from keywords.cloud_platform.dcmanager.subcloud_picker_keywords import SubcloudP
 from keywords.cloud_platform.health.health_keywords import HealthKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.cloud_platform.system.host.system_host_swact_keywords import SystemHostSwactKeywords
-from keywords.cloud_platform.version_info.cloud_platform_version_manager import CloudPlatformVersionManagerClass
 from keywords.files.file_keywords import FileKeywords
+from pytest import mark
 
+from config.lab.objects.lab_type_enum import LabTypeEnum
 
 # --- Post-Restore Helpers ---
 
@@ -74,8 +72,13 @@ def test_backup_restore_central_single_simplex_subcloud_n_release(request):
         3. Manage the restored subcloud
         4. Validate the subcloud cluster is healthy
     """
-    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(availability=DcManagerSubcloudListAvailabilityEnum.ONLINE, backup_status="complete-central", lab_type=LabTypeEnum.SIMPLEX)
-    backup_release = str(CloudPlatformVersionManagerClass().get_sw_version())
+    backup_release = "N"
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
+        availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
+        backup_mode="central",
+        backup_release=backup_release,
+        lab_type=LabTypeEnum.SIMPLEX,
+    )
     DcManagerSubcloudBackupKeywords(system_controller_ssh).restore_central_backup(result.get_name(), backup_release)
     manage_and_validate_health(system_controller_ssh, result.get_name())
 
@@ -92,8 +95,13 @@ def test_backup_restore_local_single_simplex_subcloud_n_release(request):
         3. Manage the restored subcloud
         4. Validate the subcloud cluster is healthy
     """
-    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(availability=DcManagerSubcloudListAvailabilityEnum.ONLINE, backup_status="complete-local", lab_type=LabTypeEnum.SIMPLEX)
-    backup_release = str(CloudPlatformVersionManagerClass().get_sw_version())
+    backup_release = "N"
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
+        availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
+        backup_mode="local",
+        backup_release=backup_release,
+        lab_type=LabTypeEnum.SIMPLEX,
+    )
     DcManagerSubcloudBackupKeywords(system_controller_ssh).restore_local_backup(result.get_name(), backup_release)
     manage_and_validate_health(system_controller_ssh, result.get_name())
 
@@ -110,8 +118,13 @@ def test_backup_restore_central_single_simplex_subcloud_n_minus_1_release(reques
         3. Manage the restored subcloud
         4. Validate the subcloud cluster is healthy
     """
-    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(availability=DcManagerSubcloudListAvailabilityEnum.ONLINE, backup_status="complete-central", lab_type=LabTypeEnum.SIMPLEX)
-    backup_release = str(CloudPlatformVersionManagerClass().get_last_major_release())
+    backup_release = "N-1"
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
+        availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
+        backup_mode="central",
+        backup_release=backup_release,
+        lab_type=LabTypeEnum.SIMPLEX,
+    )
     DcManagerSubcloudBackupKeywords(system_controller_ssh).restore_central_backup(result.get_name(), backup_release)
     manage_and_validate_health(system_controller_ssh, result.get_name())
 
@@ -128,8 +141,13 @@ def test_backup_restore_central_single_simplex_subcloud_n_minus_2_release(reques
         3. Manage the restored subcloud
         4. Validate the subcloud cluster is healthy
     """
-    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(availability=DcManagerSubcloudListAvailabilityEnum.ONLINE, backup_status="complete-central", lab_type=LabTypeEnum.SIMPLEX)
-    backup_release = str(CloudPlatformVersionManagerClass().get_second_last_major_release())
+    backup_release = "N-2"
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
+        availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
+        backup_mode="central",
+        backup_release=backup_release,
+        lab_type=LabTypeEnum.SIMPLEX,
+    )
     DcManagerSubcloudBackupKeywords(system_controller_ssh).restore_central_backup(result.get_name(), backup_release)
     manage_and_validate_health(system_controller_ssh, result.get_name())
 
@@ -146,8 +164,13 @@ def test_backup_restore_local_single_simplex_subcloud_n_minus_1_release(request)
         3. Manage the restored subcloud
         4. Validate the subcloud cluster is healthy
     """
-    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(availability=DcManagerSubcloudListAvailabilityEnum.ONLINE, backup_status="complete-local", lab_type=LabTypeEnum.SIMPLEX)
-    backup_release = str(CloudPlatformVersionManagerClass().get_last_major_release())
+    backup_release = "N-1"
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
+        availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
+        backup_mode="local",
+        backup_release=backup_release,
+        lab_type=LabTypeEnum.SIMPLEX,
+    )
     DcManagerSubcloudBackupKeywords(system_controller_ssh).restore_local_backup(result.get_name(), backup_release)
     manage_and_validate_health(system_controller_ssh, result.get_name())
 
@@ -164,8 +187,13 @@ def test_backup_restore_local_single_simplex_subcloud_n_minus_2_release(request)
         3. Manage the restored subcloud
         4. Validate the subcloud cluster is healthy
     """
-    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(availability=DcManagerSubcloudListAvailabilityEnum.ONLINE, backup_status="complete-local", lab_type=LabTypeEnum.SIMPLEX)
-    backup_release = str(CloudPlatformVersionManagerClass().get_second_last_major_release())
+    backup_release = "N-2"
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
+        availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
+        backup_mode="local",
+        backup_release=backup_release,
+        lab_type=LabTypeEnum.SIMPLEX,
+    )
     DcManagerSubcloudBackupKeywords(system_controller_ssh).restore_local_backup(result.get_name(), backup_release)
     manage_and_validate_health(system_controller_ssh, result.get_name())
 
@@ -186,8 +214,13 @@ def test_backup_restore_central_single_simplex_subcloud_n_release_with_restore_v
         4. Manage the restored subcloud
         5. Validate the subcloud cluster is healthy
     """
-    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(availability=DcManagerSubcloudListAvailabilityEnum.ONLINE, backup_status="complete-central", lab_type=LabTypeEnum.SIMPLEX)
-    backup_release = str(CloudPlatformVersionManagerClass().get_sw_version())
+    backup_release = "N"
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
+        availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
+        backup_mode="central",
+        backup_release=backup_release,
+        lab_type=LabTypeEnum.SIMPLEX,
+    )
     FileKeywords(system_controller_ssh).create_file_with_echo("restore_values.yaml", 'wipe_ceph_osds: "false"')
     DcManagerSubcloudBackupKeywords(system_controller_ssh).restore_central_backup(result.get_name(), backup_release, override_values="restore_values.yaml")
     manage_and_validate_health(system_controller_ssh, result.get_name())
@@ -206,8 +239,13 @@ def test_backup_restore_local_single_simplex_subcloud_n_release_with_restore_val
         4. Manage the restored subcloud
         5. Validate the subcloud cluster is healthy
     """
-    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(availability=DcManagerSubcloudListAvailabilityEnum.ONLINE, backup_status="complete-local", lab_type=LabTypeEnum.SIMPLEX)
-    backup_release = str(CloudPlatformVersionManagerClass().get_sw_version())
+    backup_release = "N"
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
+        availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
+        backup_mode="local",
+        backup_release=backup_release,
+        lab_type=LabTypeEnum.SIMPLEX,
+    )
     FileKeywords(system_controller_ssh).create_file_with_echo("restore_values.yaml", 'wipe_ceph_osds: "false"')
     DcManagerSubcloudBackupKeywords(system_controller_ssh).restore_local_backup(result.get_name(), backup_release, override_values="restore_values.yaml")
     manage_and_validate_health(system_controller_ssh, result.get_name())
@@ -226,8 +264,13 @@ def test_backup_restore_central_single_simplex_subcloud_n_minus_1_release_with_r
         4. Manage the restored subcloud
         5. Validate the subcloud cluster is healthy
     """
-    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(availability=DcManagerSubcloudListAvailabilityEnum.ONLINE, backup_status="complete-central", lab_type=LabTypeEnum.SIMPLEX)
-    backup_release = str(CloudPlatformVersionManagerClass().get_last_major_release())
+    backup_release = "N-1"
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
+        availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
+        backup_mode="central",
+        backup_release=backup_release,
+        lab_type=LabTypeEnum.SIMPLEX,
+    )
     FileKeywords(system_controller_ssh).create_file_with_echo("restore_values.yaml", 'wipe_ceph_osds: "false"')
     DcManagerSubcloudBackupKeywords(system_controller_ssh).restore_central_backup(result.get_name(), backup_release, override_values="restore_values.yaml")
     manage_and_validate_health(system_controller_ssh, result.get_name())
@@ -246,8 +289,13 @@ def test_backup_restore_central_single_simplex_subcloud_n_minus_2_release_with_r
         4. Manage the restored subcloud
         5. Validate the subcloud cluster is healthy
     """
-    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(availability=DcManagerSubcloudListAvailabilityEnum.ONLINE, backup_status="complete-central", lab_type=LabTypeEnum.SIMPLEX)
-    backup_release = str(CloudPlatformVersionManagerClass().get_second_last_major_release())
+    backup_release = "N-2"
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
+        availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
+        backup_mode="central",
+        backup_release=backup_release,
+        lab_type=LabTypeEnum.SIMPLEX,
+    )
     FileKeywords(system_controller_ssh).create_file_with_echo("restore_values.yaml", 'wipe_ceph_osds: "false"')
     DcManagerSubcloudBackupKeywords(system_controller_ssh).restore_central_backup(result.get_name(), backup_release, override_values="restore_values.yaml")
     manage_and_validate_health(system_controller_ssh, result.get_name())
@@ -266,8 +314,13 @@ def test_backup_restore_local_single_simplex_subcloud_n_minus_1_release_with_res
         4. Manage the restored subcloud
         5. Validate the subcloud cluster is healthy
     """
-    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(availability=DcManagerSubcloudListAvailabilityEnum.ONLINE, backup_status="complete-local", lab_type=LabTypeEnum.SIMPLEX)
-    backup_release = str(CloudPlatformVersionManagerClass().get_last_major_release())
+    backup_release = "N-1"
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
+        availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
+        backup_mode="local",
+        backup_release=backup_release,
+        lab_type=LabTypeEnum.SIMPLEX,
+    )
     FileKeywords(system_controller_ssh).create_file_with_echo("restore_values.yaml", 'wipe_ceph_osds: "false"')
     DcManagerSubcloudBackupKeywords(system_controller_ssh).restore_local_backup(result.get_name(), backup_release, override_values="restore_values.yaml")
     manage_and_validate_health(system_controller_ssh, result.get_name())
@@ -286,8 +339,13 @@ def test_backup_restore_local_single_simplex_subcloud_n_minus_2_release_with_res
         4. Manage the restored subcloud
         5. Validate the subcloud cluster is healthy
     """
-    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(availability=DcManagerSubcloudListAvailabilityEnum.ONLINE, backup_status="complete-local", lab_type=LabTypeEnum.SIMPLEX)
-    backup_release = str(CloudPlatformVersionManagerClass().get_second_last_major_release())
+    backup_release = "N-2"
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
+        availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
+        backup_mode="local",
+        backup_release=backup_release,
+        lab_type=LabTypeEnum.SIMPLEX,
+    )
     FileKeywords(system_controller_ssh).create_file_with_echo("restore_values.yaml", 'wipe_ceph_osds: "false"')
     DcManagerSubcloudBackupKeywords(system_controller_ssh).restore_local_backup(result.get_name(), backup_release, override_values="restore_values.yaml")
     manage_and_validate_health(system_controller_ssh, result.get_name())
@@ -308,8 +366,13 @@ def test_backup_restore_central_single_simplex_subcloud_n_release_no_install(req
         3. Manage the restored subcloud
         4. Validate the subcloud cluster is healthy
     """
-    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(availability=DcManagerSubcloudListAvailabilityEnum.ONLINE, backup_status="complete-central", lab_type=LabTypeEnum.SIMPLEX)
-    backup_release = str(CloudPlatformVersionManagerClass().get_sw_version())
+    backup_release = "N"
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
+        availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
+        backup_mode="central",
+        backup_release=backup_release,
+        lab_type=LabTypeEnum.SIMPLEX,
+    )
     DcManagerSubcloudBackupKeywords(system_controller_ssh).restore_central_backup(result.get_name(), backup_release, with_install=False)
     manage_and_validate_health(system_controller_ssh, result.get_name())
 
@@ -329,8 +392,13 @@ def test_backup_auto_restore_central_single_simplex_subcloud_n_release(request):
         3. Manage the restored subcloud
         4. Validate the subcloud cluster is healthy
     """
-    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(availability=DcManagerSubcloudListAvailabilityEnum.ONLINE, backup_status="complete-central", lab_type=LabTypeEnum.SIMPLEX)
-    backup_release = str(CloudPlatformVersionManagerClass().get_sw_version())
+    backup_release = "N"
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
+        availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
+        backup_mode="central",
+        backup_release=backup_release,
+        lab_type=LabTypeEnum.SIMPLEX,
+    )
     DcManagerSubcloudBackupKeywords(system_controller_ssh).auto_restore_central_backup(result.get_name(), backup_release)
     manage_and_validate_health(system_controller_ssh, result.get_name())
 
@@ -347,8 +415,13 @@ def test_backup_auto_restore_local_single_simplex_subcloud_n_release(request):
         3. Manage the restored subcloud
         4. Validate the subcloud cluster is healthy
     """
-    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(availability=DcManagerSubcloudListAvailabilityEnum.ONLINE, backup_status="complete-local", lab_type=LabTypeEnum.SIMPLEX)
-    backup_release = str(CloudPlatformVersionManagerClass().get_sw_version())
+    backup_release = "N"
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
+        availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
+        backup_mode="local",
+        backup_release=backup_release,
+        lab_type=LabTypeEnum.SIMPLEX,
+    )
     DcManagerSubcloudBackupKeywords(system_controller_ssh).auto_restore_local_backup(result.get_name(), backup_release)
     manage_and_validate_health(system_controller_ssh, result.get_name())
 
@@ -365,7 +438,12 @@ def test_backup_factory_restore_local_single_simplex_subcloud_n_release(request)
         3. Manage the restored subcloud
         4. Validate the subcloud cluster is healthy
     """
-    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(availability=DcManagerSubcloudListAvailabilityEnum.ONLINE, backup_status="complete-local", lab_type=LabTypeEnum.SIMPLEX)
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
+        availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
+        backup_mode="local",
+        backup_release="N",
+        lab_type=LabTypeEnum.SIMPLEX,
+    )
     DcManagerSubcloudBackupKeywords(system_controller_ssh).factory_restore_backup(result.get_name())
     manage_and_validate_health(system_controller_ssh, result.get_name())
 
@@ -385,8 +463,13 @@ def test_backup_restore_central_single_duplex_subcloud_n_release(request):
         3. Manage the restored subcloud
         4. Validate the subcloud cluster is healthy
     """
-    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(availability=DcManagerSubcloudListAvailabilityEnum.ONLINE, backup_status="complete-central", lab_type=LabTypeEnum.DUPLEX)
-    backup_release = str(CloudPlatformVersionManagerClass().get_sw_version())
+    backup_release = "N"
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
+        availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
+        backup_mode="central",
+        backup_release=backup_release,
+        lab_type=LabTypeEnum.DUPLEX,
+    )
     DcManagerSubcloudBackupKeywords(system_controller_ssh).restore_central_backup(result.get_name(), backup_release)
     manage_and_validate_health(system_controller_ssh, result.get_name())
 
@@ -403,8 +486,13 @@ def test_backup_restore_central_single_duplex_subcloud_n_minus_1_release(request
         3. Manage the restored subcloud
         4. Validate the subcloud cluster is healthy
     """
-    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(availability=DcManagerSubcloudListAvailabilityEnum.ONLINE, backup_status="complete-central", lab_type=LabTypeEnum.DUPLEX)
-    backup_release = str(CloudPlatformVersionManagerClass().get_last_major_release())
+    backup_release = "N-1"
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
+        availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
+        backup_mode="central",
+        backup_release=backup_release,
+        lab_type=LabTypeEnum.DUPLEX,
+    )
     DcManagerSubcloudBackupKeywords(system_controller_ssh).restore_central_backup(result.get_name(), backup_release)
     manage_and_validate_health(system_controller_ssh, result.get_name())
 
@@ -421,8 +509,13 @@ def test_backup_restore_central_single_duplex_subcloud_n_minus_2_release(request
         3. Manage the restored subcloud
         4. Validate the subcloud cluster is healthy
     """
-    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(availability=DcManagerSubcloudListAvailabilityEnum.ONLINE, backup_status="complete-central", lab_type=LabTypeEnum.DUPLEX)
-    backup_release = str(CloudPlatformVersionManagerClass().get_second_last_major_release())
+    backup_release = "N-2"
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
+        availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
+        backup_mode="central",
+        backup_release=backup_release,
+        lab_type=LabTypeEnum.DUPLEX,
+    )
     DcManagerSubcloudBackupKeywords(system_controller_ssh).restore_central_backup(result.get_name(), backup_release)
     manage_and_validate_health(system_controller_ssh, result.get_name())
 
@@ -442,8 +535,13 @@ def test_backup_restore_local_single_duplex_subcloud_n_release(request):
         3. Manage the restored subcloud
         4. Validate the subcloud cluster is healthy
     """
-    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(availability=DcManagerSubcloudListAvailabilityEnum.ONLINE, backup_status="complete-local", lab_type=LabTypeEnum.DUPLEX)
-    backup_release = str(CloudPlatformVersionManagerClass().get_sw_version())
+    backup_release = "N"
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
+        availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
+        backup_mode="local",
+        backup_release=backup_release,
+        lab_type=LabTypeEnum.DUPLEX,
+    )
     DcManagerSubcloudBackupKeywords(system_controller_ssh).restore_local_backup(result.get_name(), backup_release)
     manage_and_validate_health(system_controller_ssh, result.get_name())
 
@@ -460,8 +558,13 @@ def test_backup_restore_local_single_duplex_subcloud_n_minus_1_release(request):
         3. Manage the restored subcloud
         4. Validate the subcloud cluster is healthy
     """
-    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(availability=DcManagerSubcloudListAvailabilityEnum.ONLINE, backup_status="complete-local", lab_type=LabTypeEnum.DUPLEX)
-    backup_release = str(CloudPlatformVersionManagerClass().get_last_major_release())
+    backup_release = "N-1"
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
+        availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
+        backup_mode="local",
+        backup_release=backup_release,
+        lab_type=LabTypeEnum.DUPLEX,
+    )
     DcManagerSubcloudBackupKeywords(system_controller_ssh).restore_local_backup(result.get_name(), backup_release)
     manage_and_validate_health(system_controller_ssh, result.get_name())
 
@@ -478,8 +581,13 @@ def test_backup_restore_local_single_duplex_subcloud_n_minus_2_release(request):
         3. Manage the restored subcloud
         4. Validate the subcloud cluster is healthy
     """
-    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(availability=DcManagerSubcloudListAvailabilityEnum.ONLINE, backup_status="complete-local", lab_type=LabTypeEnum.DUPLEX)
-    backup_release = str(CloudPlatformVersionManagerClass().get_second_last_major_release())
+    backup_release = "N-2"
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
+        availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
+        backup_mode="local",
+        backup_release=backup_release,
+        lab_type=LabTypeEnum.DUPLEX,
+    )
     DcManagerSubcloudBackupKeywords(system_controller_ssh).restore_local_backup(result.get_name(), backup_release)
     manage_and_validate_health(system_controller_ssh, result.get_name())
 
@@ -507,8 +615,13 @@ def test_backup_restore_central_single_simplex_subcloud_n_release_from_system_co
     request.addfinalizer(lambda: SystemHostSwactKeywords(central_ssh).ensure_controller_is_active("controller-0"))
     SystemHostSwactKeywords(central_ssh).ensure_controller_is_active("controller-1")
 
-    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(availability=DcManagerSubcloudListAvailabilityEnum.ONLINE, backup_status="complete-central", lab_type=LabTypeEnum.SIMPLEX)
-    backup_release = str(CloudPlatformVersionManagerClass().get_sw_version())
+    backup_release = "N"
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
+        availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
+        backup_mode="central",
+        backup_release=backup_release,
+        lab_type=LabTypeEnum.SIMPLEX,
+    )
     DcManagerSubcloudBackupKeywords(system_controller_ssh).restore_central_backup(result.get_name(), backup_release)
     manage_and_validate_health(system_controller_ssh, result.get_name())
 
@@ -533,8 +646,13 @@ def test_backup_restore_local_single_simplex_subcloud_n_release_from_system_cont
     request.addfinalizer(lambda: SystemHostSwactKeywords(central_ssh).ensure_controller_is_active("controller-0"))
     SystemHostSwactKeywords(central_ssh).ensure_controller_is_active("controller-1")
 
-    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(availability=DcManagerSubcloudListAvailabilityEnum.ONLINE, backup_status="complete-local", lab_type=LabTypeEnum.SIMPLEX)
-    backup_release = str(CloudPlatformVersionManagerClass().get_sw_version())
+    backup_release = "N"
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
+        availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
+        backup_mode="local",
+        backup_release=backup_release,
+        lab_type=LabTypeEnum.SIMPLEX,
+    )
     DcManagerSubcloudBackupKeywords(system_controller_ssh).restore_local_backup(result.get_name(), backup_release)
     manage_and_validate_health(system_controller_ssh, result.get_name())
 
@@ -559,8 +677,13 @@ def test_backup_restore_central_single_simplex_subcloud_n_minus_1_release_from_s
     request.addfinalizer(lambda: SystemHostSwactKeywords(central_ssh).ensure_controller_is_active("controller-0"))
     SystemHostSwactKeywords(central_ssh).ensure_controller_is_active("controller-1")
 
-    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(availability=DcManagerSubcloudListAvailabilityEnum.ONLINE, backup_status="complete-central", lab_type=LabTypeEnum.SIMPLEX)
-    backup_release = str(CloudPlatformVersionManagerClass().get_last_major_release())
+    backup_release = "N-1"
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
+        availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
+        backup_mode="central",
+        backup_release=backup_release,
+        lab_type=LabTypeEnum.SIMPLEX,
+    )
     DcManagerSubcloudBackupKeywords(system_controller_ssh).restore_central_backup(result.get_name(), backup_release)
     manage_and_validate_health(system_controller_ssh, result.get_name())
 
@@ -585,8 +708,13 @@ def test_backup_restore_central_single_simplex_subcloud_n_minus_2_release_from_s
     request.addfinalizer(lambda: SystemHostSwactKeywords(central_ssh).ensure_controller_is_active("controller-0"))
     SystemHostSwactKeywords(central_ssh).ensure_controller_is_active("controller-1")
 
-    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(availability=DcManagerSubcloudListAvailabilityEnum.ONLINE, backup_status="complete-central", lab_type=LabTypeEnum.SIMPLEX)
-    backup_release = str(CloudPlatformVersionManagerClass().get_second_last_major_release())
+    backup_release = "N-2"
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
+        availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
+        backup_mode="central",
+        backup_release=backup_release,
+        lab_type=LabTypeEnum.SIMPLEX,
+    )
     DcManagerSubcloudBackupKeywords(system_controller_ssh).restore_central_backup(result.get_name(), backup_release)
     manage_and_validate_health(system_controller_ssh, result.get_name())
 
@@ -611,8 +739,13 @@ def test_backup_restore_local_single_simplex_subcloud_n_minus_1_release_from_sys
     request.addfinalizer(lambda: SystemHostSwactKeywords(central_ssh).ensure_controller_is_active("controller-0"))
     SystemHostSwactKeywords(central_ssh).ensure_controller_is_active("controller-1")
 
-    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(availability=DcManagerSubcloudListAvailabilityEnum.ONLINE, backup_status="complete-local", lab_type=LabTypeEnum.SIMPLEX)
-    backup_release = str(CloudPlatformVersionManagerClass().get_last_major_release())
+    backup_release = "N-1"
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
+        availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
+        backup_mode="local",
+        backup_release=backup_release,
+        lab_type=LabTypeEnum.SIMPLEX,
+    )
     DcManagerSubcloudBackupKeywords(system_controller_ssh).restore_local_backup(result.get_name(), backup_release)
     manage_and_validate_health(system_controller_ssh, result.get_name())
 
@@ -637,7 +770,12 @@ def test_backup_restore_local_single_simplex_subcloud_n_minus_2_release_from_sys
     request.addfinalizer(lambda: SystemHostSwactKeywords(central_ssh).ensure_controller_is_active("controller-0"))
     SystemHostSwactKeywords(central_ssh).ensure_controller_is_active("controller-1")
 
-    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(availability=DcManagerSubcloudListAvailabilityEnum.ONLINE, backup_status="complete-local", lab_type=LabTypeEnum.SIMPLEX)
-    backup_release = str(CloudPlatformVersionManagerClass().get_second_last_major_release())
+    backup_release = "N-2"
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
+        availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
+        backup_mode="local",
+        backup_release=backup_release,
+        lab_type=LabTypeEnum.SIMPLEX,
+    )
     DcManagerSubcloudBackupKeywords(system_controller_ssh).restore_local_backup(result.get_name(), backup_release)
     manage_and_validate_health(system_controller_ssh, result.get_name())

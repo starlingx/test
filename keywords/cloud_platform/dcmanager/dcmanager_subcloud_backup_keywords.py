@@ -1,7 +1,5 @@
 from typing import List, Optional
 
-from config.configuration_manager import ConfigurationManager
-from config.lab.objects.lab_type_enum import LabTypeEnum
 from framework.logging.automation_logger import get_logger
 from framework.ssh.prompt_response import PromptResponse
 from framework.ssh.ssh_connection import SSHConnection
@@ -13,8 +11,12 @@ from keywords.cloud_platform.dcmanager.dcmanager_subcloud_manager_keywords impor
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_show_keywords import DcManagerSubcloudShowKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_state_watcher_keywords import BACKUP_IN_PROGRESS_STATES, RESTORE_IN_PROGRESS_STATES, DcManagerSubcloudStateWatcherKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
+from keywords.cloud_platform.version_info.cloud_platform_version_manager import CloudPlatformVersionManagerClass
 from keywords.files.file_keywords import FileKeywords
 from keywords.server.power_keywords import PowerKeywords
+
+from config.configuration_manager import ConfigurationManager
+from config.lab.objects.lab_type_enum import LabTypeEnum
 
 CENTRAL_BACKUP_PATH = "/opt/dc-vault/backups/"
 LOCAL_BACKUP_PATH = "/opt/platform-backup/backups/"
@@ -220,23 +222,18 @@ class DcManagerSubcloudBackupKeywords(BaseKeyword):
         if not wait:
             return
 
-        if group:
-            for subcloud_name in subcloud_list:
-                ssh_connection = LabConnectionKeywords().get_subcloud_ssh(subcloud_name) if local_only else con_ssh
-                backup_path = self.get_backup_path(subcloud_name, release, local_only)
-
-                if local_only:
-                    backup_path = f"{backup_path}{subcloud_name}_platform_backup_*.tgz"
-
-                self.wait_for_backup_creation(ssh_connection, backup_path, subcloud_name)
-
-        else:
-            # Wait for backup to initiate to avoid false validation.
-            self.wait_for_backup_status_complete(subcloud=subcloud, expected_status="backing-up", check_interval=2, timeout=30)
-
-            if path:
-                ssh_connection = LabConnectionKeywords().get_subcloud_ssh(subcloud) if local_only else con_ssh
-                self.wait_for_backup_creation(ssh_connection, path, subcloud)
+        # Wait on the backup_status reported by 'dcmanager subcloud list' via the
+        # general state watcher. It fails fast on a 'failed' status and succeeds on
+        # the terminal complete status, rather than polling the on-disk file (which
+        # cannot observe a failed backup and would wait out the full timeout).
+        complete_state = COMPLETE_LOCAL_STATUS if local_only else COMPLETE_CENTRAL_STATUS
+        subclouds_to_watch = subcloud_list if group else [subcloud]
+        DcManagerSubcloudStateWatcherKeywords(self.ssh_connection).watch_subclouds(
+            subcloud_names=subclouds_to_watch,
+            field_to_watch="backup_status",
+            in_progress_states=BACKUP_IN_PROGRESS_STATES,
+            complete_state=complete_state,
+        )
 
     def wait_for_backup_creation(
         self,
@@ -740,6 +737,22 @@ class DcManagerSubcloudBackupKeywords(BaseKeyword):
         else:
             get_logger().log_info(f"Subcloud '{subcloud_name}' is already '{management_state}', skipping unmanage before restore")
 
+    def _resolve_backup_release(self, release: str) -> str:
+        """Resolve a backup release token into a concrete software version string.
+
+        Accepts the same convention as the subcloud picker: the literals ``"N"``,
+        ``"N-1"`` and ``"N-2"`` are resolved against the central cloud version
+        manager; any other value is treated as an explicit version and returned
+        unchanged.
+
+        Args:
+            release (str): Release token ("N", "N-1", "N-2") or an explicit version.
+
+        Returns:
+            str: Concrete software version string.
+        """
+        return CloudPlatformVersionManagerClass().resolve_release_token(release)
+
     def create_central_backup(self, subcloud_name: str, backup_values: bool = False) -> None:
         """Create a subcloud backup on central storage and wait for completion.
 
@@ -833,6 +846,7 @@ class DcManagerSubcloudBackupKeywords(BaseKeyword):
             override_values (Optional[str]): Path to a restore-values yaml. Defaults to None.
             with_install (bool): If True, reinstall before restoring. Defaults to True.
         """
+        release = self._resolve_backup_release(release)
         password = self._get_subcloud_password(subcloud_name)
         self._unmanage_subcloud_for_restore(subcloud_name)
         self._power_off_if_duplex_install(subcloud_name, with_install)
@@ -854,6 +868,7 @@ class DcManagerSubcloudBackupKeywords(BaseKeyword):
             override_values (Optional[str]): Path to a restore-values yaml. Defaults to None.
             with_install (bool): If True, reinstall before restoring. Defaults to True.
         """
+        release = self._resolve_backup_release(release)
         password = self._get_subcloud_password(subcloud_name)
         self._unmanage_subcloud_for_restore(subcloud_name)
         self._power_off_if_duplex_install(subcloud_name, with_install)
@@ -869,6 +884,7 @@ class DcManagerSubcloudBackupKeywords(BaseKeyword):
             subcloud_name (str): Subcloud to restore.
             release (str): Release of the backup to restore.
         """
+        release = self._resolve_backup_release(release)
         password = self._get_subcloud_password(subcloud_name)
         self._unmanage_subcloud_for_restore(subcloud_name)
         self._power_off_if_duplex_install(subcloud_name, with_install=True)
@@ -884,6 +900,7 @@ class DcManagerSubcloudBackupKeywords(BaseKeyword):
             subcloud_name (str): Subcloud to restore.
             release (str): Release of the backup to restore.
         """
+        release = self._resolve_backup_release(release)
         password = self._get_subcloud_password(subcloud_name)
         self._unmanage_subcloud_for_restore(subcloud_name)
         self._power_off_if_duplex_install(subcloud_name, with_install=True)
@@ -916,6 +933,7 @@ class DcManagerSubcloudBackupKeywords(BaseKeyword):
             release (str): Release of the backups to restore.
             with_install (bool): If True, reinstall before restoring. Defaults to True.
         """
+        release = self._resolve_backup_release(release)
         password = self._get_subcloud_password(subcloud_names[0])
         for subcloud_name in subcloud_names:
             self._unmanage_subcloud_for_restore(subcloud_name)
@@ -938,6 +956,7 @@ class DcManagerSubcloudBackupKeywords(BaseKeyword):
             release (str): Release of the backups to restore.
             with_install (bool): If True, reinstall before restoring. Defaults to True.
         """
+        release = self._resolve_backup_release(release)
         password = self._get_subcloud_password(subcloud_names[0])
         for subcloud_name in subcloud_names:
             self._unmanage_subcloud_for_restore(subcloud_name)
@@ -946,3 +965,62 @@ class DcManagerSubcloudBackupKeywords(BaseKeyword):
         self.restore_subcloud_backup(password, self.ssh_connection, group=group_name, subcloud_list=subcloud_names, local_only=True, release=release, with_install=with_install, wait=False)
 
         DcManagerSubcloudStateWatcherKeywords(self.ssh_connection).watch_subclouds(subcloud_names=subcloud_names, field_to_watch="deploy_status", in_progress_states=RESTORE_IN_PROGRESS_STATES, complete_state=RESTORE_COMPLETE_STATUS)
+
+    def delete_central_backup(self, subcloud_name: str, release: str) -> None:
+        """Delete a subcloud's central backup for the given release and wait for removal.
+
+        The central backup lives on the central cloud under
+        ``/opt/dc-vault/backups/<subcloud>/<release>/``. The delete does not create
+        anything - the backup must already exist.
+
+        Args:
+            subcloud_name (str): Subcloud whose central backup is deleted.
+            release (str): Release of the backup to delete.
+        """
+        release = self._resolve_backup_release(release)
+        central_path = f"{CENTRAL_BACKUP_PATH}{subcloud_name}/{release}"
+        get_logger().log_info(f"Delete central backup (release {release}) for subcloud '{subcloud_name}'")
+        self.delete_subcloud_backup(self.ssh_connection, release, path=central_path, subcloud=subcloud_name)
+
+    def delete_local_backup(self, subcloud_name: str, release: str) -> None:
+        """Delete a subcloud's local backup for the given release and wait for removal.
+
+        The local backup lives on the subcloud under
+        ``/opt/platform-backup/backups/<release>/``. The delete does not create
+        anything - the backup must already exist.
+
+        Args:
+            subcloud_name (str): Subcloud whose local backup is deleted.
+            release (str): Release of the backup to delete.
+        """
+        release = self._resolve_backup_release(release)
+        password = self._get_subcloud_password(subcloud_name)
+        subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
+        local_path = f"{LOCAL_BACKUP_PATH}{release}/"
+        get_logger().log_info(f"Delete local backup (release {release}) for subcloud '{subcloud_name}'")
+        self.delete_subcloud_backup(subcloud_ssh, release, path=local_path, subcloud=subcloud_name, local_only=True, sysadmin_password=password)
+
+    def delete_group_central_backup(self, group_name: str, subcloud_names: List[str], release: str) -> None:
+        """Delete a subcloud group's central backups for the given release and wait for removal.
+
+        Args:
+            group_name (str): Group whose central backups are deleted.
+            subcloud_names (List[str]): Group member subclouds (used to wait for removal).
+            release (str): Release of the backups to delete.
+        """
+        release = self._resolve_backup_release(release)
+        get_logger().log_info(f"Delete central backup (release {release}) for subcloud group '{group_name}'")
+        self.delete_subcloud_backup(self.ssh_connection, release, group=group_name, subcloud_list=subcloud_names)
+
+    def delete_group_local_backup(self, group_name: str, subcloud_names: List[str], release: str) -> None:
+        """Delete a subcloud group's local backups for the given release and wait for removal.
+
+        Args:
+            group_name (str): Group whose local backups are deleted.
+            subcloud_names (List[str]): Group member subclouds (used to wait for removal).
+            release (str): Release of the backups to delete.
+        """
+        release = self._resolve_backup_release(release)
+        password = self._get_subcloud_password(subcloud_names[0])
+        get_logger().log_info(f"Delete local backup (release {release}) for subcloud group '{group_name}'")
+        self.delete_subcloud_backup(self.ssh_connection, release, local_only=True, group=group_name, sysadmin_password=password, subcloud_list=subcloud_names)

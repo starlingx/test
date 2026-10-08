@@ -18,13 +18,12 @@ Markers:
     - @mark.lab_has_subcloud: requires at least one subcloud
 """
 
-from pytest import mark
-
-from config.lab.objects.lab_type_enum import LabTypeEnum
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_backup_keywords import DcManagerSubcloudBackupKeywords
 from keywords.cloud_platform.dcmanager.objects.dcmanger_subcloud_list_availability_enum import DcManagerSubcloudListAvailabilityEnum
 from keywords.cloud_platform.dcmanager.subcloud_picker_keywords import SubcloudPickerKeywords
+from pytest import mark
 
+from config.lab.objects.lab_type_enum import LabTypeEnum
 
 # --- Central Backup - Simplex ---
 
@@ -38,7 +37,11 @@ def test_backup_create_central_single_simplex_subcloud_n_release(request):
         1. Select an online simplex subcloud running N release
         2. Create a central backup and verify it completes
     """
-    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(availability=DcManagerSubcloudListAvailabilityEnum.ONLINE, load="N", lab_type=LabTypeEnum.SIMPLEX)
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
+        availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
+        load="N",
+        lab_type=LabTypeEnum.SIMPLEX,
+    )
     DcManagerSubcloudBackupKeywords(system_controller_ssh).create_central_backup(result.get_name())
 
 
@@ -52,7 +55,11 @@ def test_backup_create_central_single_simplex_subcloud_n_minus_1_release(request
         1. Select an online simplex subcloud running N-1 release
         2. Create a central backup and verify it completes
     """
-    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(availability=DcManagerSubcloudListAvailabilityEnum.ONLINE, load="N-1", lab_type=LabTypeEnum.SIMPLEX)
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
+        availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
+        load="N-1",
+        lab_type=LabTypeEnum.SIMPLEX,
+    )
     DcManagerSubcloudBackupKeywords(system_controller_ssh).create_central_backup(result.get_name())
 
 
@@ -66,7 +73,11 @@ def test_backup_create_central_single_simplex_subcloud_n_minus_2_release(request
         1. Select an online simplex subcloud running N-2 release
         2. Create a central backup and verify it completes
     """
-    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(availability=DcManagerSubcloudListAvailabilityEnum.ONLINE, load="N-2", lab_type=LabTypeEnum.SIMPLEX)
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
+        availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
+        load="N-2",
+        lab_type=LabTypeEnum.SIMPLEX,
+    )
     DcManagerSubcloudBackupKeywords(system_controller_ssh).create_central_backup(result.get_name())
 
 
@@ -80,7 +91,11 @@ def test_backup_create_central_single_simplex_subcloud_n_release_with_backup_val
         1. Select an online simplex subcloud running N release
         2. Create a central backup passing a backup-values yaml and verify it completes
     """
-    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(availability=DcManagerSubcloudListAvailabilityEnum.ONLINE, load="N", lab_type=LabTypeEnum.SIMPLEX)
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
+        availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
+        load="N",
+        lab_type=LabTypeEnum.SIMPLEX,
+    )
     DcManagerSubcloudBackupKeywords(system_controller_ssh).create_central_backup(result.get_name(), backup_values=True)
 
 
@@ -96,7 +111,11 @@ def test_backup_create_central_single_duplex_subcloud_n_release(request):
         1. Select an online duplex subcloud running N release
         2. Create a central backup and verify it completes
     """
-    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(availability=DcManagerSubcloudListAvailabilityEnum.ONLINE, load="N", lab_type=LabTypeEnum.DUPLEX)
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
+        availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
+        load="N",
+        lab_type=LabTypeEnum.DUPLEX,
+    )
     DcManagerSubcloudBackupKeywords(system_controller_ssh).create_central_backup(result.get_name())
 
 
@@ -110,7 +129,11 @@ def test_backup_create_central_single_duplex_subcloud_n_minus_1_release(request)
         1. Select an online duplex subcloud running N-1 release
         2. Create a central backup and verify it completes
     """
-    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(availability=DcManagerSubcloudListAvailabilityEnum.ONLINE, load="N-1", lab_type=LabTypeEnum.DUPLEX)
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
+        availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
+        load="N-1",
+        lab_type=LabTypeEnum.DUPLEX,
+    )
     DcManagerSubcloudBackupKeywords(system_controller_ssh).create_central_backup(result.get_name())
 
 
@@ -124,7 +147,11 @@ def test_backup_create_central_single_duplex_subcloud_n_minus_2_release(request)
         1. Select an online duplex subcloud running N-2 release
         2. Create a central backup and verify it completes
     """
-    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(availability=DcManagerSubcloudListAvailabilityEnum.ONLINE, load="N-2", lab_type=LabTypeEnum.DUPLEX)
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
+        availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
+        load="N-2",
+        lab_type=LabTypeEnum.DUPLEX,
+    )
     DcManagerSubcloudBackupKeywords(system_controller_ssh).create_central_backup(result.get_name())
 
 
@@ -140,7 +167,11 @@ def test_backup_create_central_single_standard_subcloud_n_release(request):
         1. Select an online standard subcloud running N release
         2. Create a central backup and verify it completes
     """
-    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(availability=DcManagerSubcloudListAvailabilityEnum.ONLINE, load="N", lab_type=LabTypeEnum.STANDARD)
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
+        availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
+        load="N",
+        lab_type=LabTypeEnum.STANDARD,
+    )
     DcManagerSubcloudBackupKeywords(system_controller_ssh).create_central_backup(result.get_name())
 
 
@@ -156,7 +187,11 @@ def test_backup_create_local_single_simplex_subcloud_n_release(request):
         1. Select an online simplex subcloud running N release
         2. Create a local backup and verify it completes
     """
-    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(availability=DcManagerSubcloudListAvailabilityEnum.ONLINE, load="N", lab_type=LabTypeEnum.SIMPLEX)
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
+        availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
+        load="N",
+        lab_type=LabTypeEnum.SIMPLEX,
+    )
     DcManagerSubcloudBackupKeywords(system_controller_ssh).create_local_backup(result.get_name())
 
 
@@ -169,7 +204,11 @@ def test_backup_create_local_single_simplex_subcloud_n_release_custom_path(reque
         1. Select an online simplex subcloud running N release
         2. Create a local backup redirected to a custom path and verify it completes
     """
-    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(availability=DcManagerSubcloudListAvailabilityEnum.ONLINE, load="N", lab_type=LabTypeEnum.SIMPLEX)
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
+        availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
+        load="N",
+        lab_type=LabTypeEnum.SIMPLEX,
+    )
     DcManagerSubcloudBackupKeywords(system_controller_ssh).create_local_backup(result.get_name(), custom_path=True)
 
 
@@ -182,7 +221,11 @@ def test_backup_create_local_single_simplex_subcloud_n_release_with_backup_value
         1. Select an online simplex subcloud running N release
         2. Create a local backup passing a backup-values yaml and verify it completes
     """
-    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(availability=DcManagerSubcloudListAvailabilityEnum.ONLINE, load="N", lab_type=LabTypeEnum.SIMPLEX)
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
+        availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
+        load="N",
+        lab_type=LabTypeEnum.SIMPLEX,
+    )
     DcManagerSubcloudBackupKeywords(system_controller_ssh).create_local_backup(result.get_name(), backup_values=True)
 
 
@@ -196,7 +239,11 @@ def test_backup_create_local_single_simplex_subcloud_n_minus_1_release(request):
         1. Select an online simplex subcloud running N-1 release
         2. Create a local backup and verify it completes
     """
-    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(availability=DcManagerSubcloudListAvailabilityEnum.ONLINE, load="N-1", lab_type=LabTypeEnum.SIMPLEX)
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
+        availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
+        load="N-1",
+        lab_type=LabTypeEnum.SIMPLEX,
+    )
     DcManagerSubcloudBackupKeywords(system_controller_ssh).create_local_backup(result.get_name())
 
 
@@ -210,7 +257,11 @@ def test_backup_create_local_single_simplex_subcloud_n_minus_2_release(request):
         1. Select an online simplex subcloud running N-2 release
         2. Create a local backup and verify it completes
     """
-    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(availability=DcManagerSubcloudListAvailabilityEnum.ONLINE, load="N-2", lab_type=LabTypeEnum.SIMPLEX)
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
+        availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
+        load="N-2",
+        lab_type=LabTypeEnum.SIMPLEX,
+    )
     DcManagerSubcloudBackupKeywords(system_controller_ssh).create_local_backup(result.get_name())
 
 
@@ -226,7 +277,11 @@ def test_backup_create_local_single_duplex_subcloud_n_release(request):
         1. Select an online duplex subcloud running N release
         2. Create a local backup and verify it completes
     """
-    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(availability=DcManagerSubcloudListAvailabilityEnum.ONLINE, load="N", lab_type=LabTypeEnum.DUPLEX)
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
+        availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
+        load="N",
+        lab_type=LabTypeEnum.DUPLEX,
+    )
     DcManagerSubcloudBackupKeywords(system_controller_ssh).create_local_backup(result.get_name())
 
 
@@ -240,7 +295,11 @@ def test_backup_create_local_single_duplex_subcloud_n_minus_1_release(request):
         1. Select an online duplex subcloud running N-1 release
         2. Create a local backup and verify it completes
     """
-    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(availability=DcManagerSubcloudListAvailabilityEnum.ONLINE, load="N-1", lab_type=LabTypeEnum.DUPLEX)
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
+        availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
+        load="N-1",
+        lab_type=LabTypeEnum.DUPLEX,
+    )
     DcManagerSubcloudBackupKeywords(system_controller_ssh).create_local_backup(result.get_name())
 
 
@@ -254,7 +313,11 @@ def test_backup_create_local_single_duplex_subcloud_n_minus_2_release(request):
         1. Select an online duplex subcloud running N-2 release
         2. Create a local backup and verify it completes
     """
-    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(availability=DcManagerSubcloudListAvailabilityEnum.ONLINE, load="N-2", lab_type=LabTypeEnum.DUPLEX)
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
+        availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
+        load="N-2",
+        lab_type=LabTypeEnum.DUPLEX,
+    )
     DcManagerSubcloudBackupKeywords(system_controller_ssh).create_local_backup(result.get_name())
 
 
@@ -270,5 +333,9 @@ def test_backup_create_local_single_standard_subcloud_n_release(request):
         1. Select an online standard subcloud running N release
         2. Create a local backup and verify it completes
     """
-    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(availability=DcManagerSubcloudListAvailabilityEnum.ONLINE, load="N", lab_type=LabTypeEnum.STANDARD)
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
+        availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
+        load="N",
+        lab_type=LabTypeEnum.STANDARD,
+    )
     DcManagerSubcloudBackupKeywords(system_controller_ssh).create_local_backup(result.get_name())

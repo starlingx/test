@@ -1,15 +1,17 @@
+from framework.logging.automation_logger import get_logger
+from keywords.cloud_platform.dcmanager.dcmanager_subcloud_backup_keywords import DcManagerSubcloudBackupKeywords
+from keywords.cloud_platform.dcmanager.objects.dcmanger_subcloud_list_availability_enum import DcManagerSubcloudListAvailabilityEnum
+from keywords.cloud_platform.dcmanager.subcloud_picker_keywords import SubcloudPickerKeywords
+from keywords.cloud_platform.health.health_keywords import HealthKeywords
+from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
+from keywords.files.file_keywords import FileKeywords
 from pytest import mark
 
 from config.configuration_manager import ConfigurationManager
 from config.lab.objects.lab_type_enum import LabTypeEnum
-from framework.logging.automation_logger import get_logger
-from keywords.cloud_platform.dcmanager.dcmanager_subcloud_backup_keywords import DcManagerSubcloudBackupKeywords
-from keywords.cloud_platform.dcmanager.dcmanager_subcloud_list_keywords import DcManagerSubcloudListKeywords
-from keywords.cloud_platform.health.health_keywords import HealthKeywords
-from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
-from keywords.files.file_keywords import FileKeywords
 
 default_central_backup_path = "/opt/dc-vault/backups/"
+
 
 def backup_create_failure_local(subcloud_name: str, local: bool = False):
     """Function to run backup operation for local back up.
@@ -69,7 +71,11 @@ def test_verify_backup_space_failure(request):
         - Attempt subcloud backup with no space left on local storage.
 
     """
-    subcloud_name = ConfigurationManager.get_lab_config().get_subcloud_names()[0]
+    _, result = SubcloudPickerKeywords.pick_with_fallback(
+        availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
+        lab_type=LabTypeEnum.SIMPLEX,
+    )
+    subcloud_name = result.get_name()
     # get subcloud ssh
     subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
 
@@ -96,8 +102,11 @@ def test_verify_backup_space_failure_default_storage(request):
         - Attempt subcloud backup with no space left on local storage.
 
     """
-    central_ssh = LabConnectionKeywords().get_active_controller_ssh()
-    subcloud_name = ConfigurationManager.get_lab_config().get_subcloud_names()[0]
+    central_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
+        availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
+        lab_type=LabTypeEnum.SIMPLEX,
+    )
+    subcloud_name = result.get_name()
     # get subcloud ssh
     subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
 
@@ -129,7 +138,11 @@ def test_verify_backup_failure_home_folder_too_large(request):
         - Check that the backup fails
 
     """
-    subcloud_name = ConfigurationManager.get_lab_config().get_subcloud_names()[0]
+    _, result = SubcloudPickerKeywords.pick_with_fallback(
+        availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
+        lab_type=LabTypeEnum.SIMPLEX,
+    )
+    subcloud_name = result.get_name()
     # get subcloud ssh
     subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
 
