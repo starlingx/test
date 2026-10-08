@@ -1,7 +1,93 @@
 from pytest import FixtureRequest, mark
 
-from keywords.cloud_platform.system.application.system_application_apply_keywords import SystemApplicationApplyKeywords
-from testcases.cloud_platform.regression.power_metrics.helper_power_metrics import HelperPowerMetrics
+from config.configuration_manager import ConfigurationManager
+from framework.logging.automation_logger import get_logger
+from framework.ssh.ssh_connection_manager import SSHConnectionManager
+from framework.validation.validation import validate_equals
+from keywords.cloud_platform.applications.power_metrics_keywords import CADVISOR_METRICS_ENDPOINT, PowerMetricsKeywords
+from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
+
+
+def setup_power_metrics(request: FixtureRequest, install: bool = True) -> None:
+    """Connect to the lab, optionally ensure power-metrics is applied, and register test cleanup.
+
+    Args:
+        request (FixtureRequest): The pytest request used to register the finalizer.
+        install (bool): Whether to install power-metrics as a precondition. The install
+            and uninstall tests pass False because they drive the application lifecycle
+            themselves.
+    """
+    get_logger().log_setup_step(f"Connecting to lab: {ConfigurationManager.get_lab_config().get_lab_name()}")
+    power_metrics_keywords = PowerMetricsKeywords(LabConnectionKeywords().get_active_controller_ssh())
+
+    if install:
+        if power_metrics_keywords.is_power_metrics_already_applied():
+            get_logger().log_info(f"{power_metrics_keywords.get_app_name()} is already applied, tearing down.")
+            power_metrics_keywords.remove_power_metrics()
+
+        get_logger().log_setup_step(f"Installing {power_metrics_keywords.get_app_name()} application")
+        power_metrics_keywords.ensure_power_metrics_applied()
+
+    def cleanup() -> None:
+        power_metrics_keywords.remove_power_metrics()
+        get_logger().log_teardown_step("Disconnecting from lab")
+        SSHConnectionManager.remove_all()
+
+    request.addfinalizer(cleanup)
+
+
+# ============================================================================
+# Power Metrics - Install and uninstall application
+# ============================================================================
+
+
+@mark.p0
+def test_power_metrics_install_and_uninstall(request: FixtureRequest) -> None:
+    """
+    Power Metrics - Install and uninstall application
+
+    Test Steps:
+        1. Check if power-metrics is already uninstalled, and uninstall it if it is not
+        2. Label the nodes, upload, and apply the power-metrics application
+        3. Verify power-metrics reaches the applied status
+        4. Verify telegraf and cAdvisor pods are running
+        5. Verify metrics are being collected on all nodes
+        6. Remove and delete the power-metrics application
+        7. Verify power-metrics is not present in the application list
+        8. Verify telegraf pods are no longer running
+    """
+    setup_power_metrics(request, install=False)
+    power_metrics = PowerMetricsKeywords(LabConnectionKeywords().get_active_controller_ssh())
+
+    get_logger().log_test_case_step("Check if power-metrics is already uninstalled, and uninstall it if it is not")
+    if power_metrics.is_power_metrics_installed():
+        get_logger().log_info(f"{power_metrics.get_app_name()} is still installed, uninstalling it first")
+        power_metrics.remove_power_metrics()
+    else:
+        get_logger().log_info(f"{power_metrics.get_app_name()} is already uninstalled, proceeding with the install")
+
+    get_logger().log_test_case_step("Label the nodes, upload, and apply the power-metrics application")
+    power_metrics.ensure_power_metrics_applied()
+
+    get_logger().log_test_case_step("Verify power-metrics reaches the applied status")
+    power_metrics.validate_power_metrics_applied()
+
+    get_logger().log_test_case_step("Verify telegraf and cAdvisor pods are running")
+    power_metrics.wait_for_telegraf_running()
+    power_metrics.wait_for_cadvisor_running()
+
+    get_logger().log_test_case_step("Verify metrics are being collected on all nodes")
+    power_metrics.validate_metrics(["powerstat_package_current_power_consumption_watts"], "should be present after install")
+
+    get_logger().log_test_case_step("Remove and delete the power-metrics application")
+    power_metrics.remove_power_metrics()
+
+    get_logger().log_test_case_step("Verify power-metrics is not present in the application list")
+    validate_equals(power_metrics.is_power_metrics_installed(), False, f"{power_metrics.get_app_name()} should be absent from the application list after uninstall")
+
+    get_logger().log_test_case_step("Verify telegraf pods are no longer running")
+    power_metrics.validate_telegraf_not_running()
+
 
 # ============================================================================
 # Power Metrics - Change Helm values - Filter package metrics
@@ -24,9 +110,8 @@ def test_change_helm_values_filter_package_metrics(request: FixtureRequest) -> N
         7. Delete the user_overrides, reapply, and wait
         8. Verify all package metrics are collected again
     """
-    helper = HelperPowerMetrics()
-    helper.setup_method()
-    request.addfinalizer(helper.teardown_method)
+    setup_power_metrics(request)
+    power_metrics = PowerMetricsKeywords(LabConnectionKeywords().get_active_controller_ssh())
 
     metrics_expected = [
         "powerstat_package_current_power_consumption_watts",
@@ -42,30 +127,30 @@ def test_change_helm_values_filter_package_metrics(request: FixtureRequest) -> N
     all_metrics = metrics_not_expected + metrics_expected
     override_files = ["filter_package_metrics_toml.yaml", "filter_package_metrics.yaml"]
 
-    helper.logger.log_test_case_step("Check if power-metrics is installed and pods are running")
-    helper.wait_for_telegraf_running()
+    get_logger().log_test_case_step("Check if power-metrics is installed and pods are running")
+    power_metrics.wait_for_telegraf_running()
 
-    helper.logger.log_test_case_step("Verify all package metrics are collected")
-    helper.assert_metrics_present_on_all_nodes(all_metrics, "should be present before override")
+    get_logger().log_test_case_step("Verify all package metrics are collected")
+    power_metrics.validate_metrics(all_metrics, "should be present before override")
     for override_file in override_files:
-        helper.logger.log_test_case_step(f"Update telegraf helm value with only current_power_consumption via {override_file}")
-        helper.upload_and_apply_helm_override(override_file)
+        get_logger().log_test_case_step(f"Update telegraf helm value with only current_power_consumption via {override_file}")
+        power_metrics.upload_and_apply_helm_override(override_file)
 
-        helper.logger.log_test_case_step("Reapply power-metrics application and wait")
-        SystemApplicationApplyKeywords(helper.ssh_connection).system_application_apply(helper.app_name)
-        helper.wait_for_telegraf_running()
+        get_logger().log_test_case_step("Reapply power-metrics application and wait")
+        power_metrics.apply_power_metrics()
+        power_metrics.wait_for_telegraf_running()
 
-        helper.logger.log_test_case_step("Verify that only current_power_consumption metric is shown")
-        helper.assert_metrics_present_on_all_nodes(metrics_expected, "should still be present after filter")
+        get_logger().log_test_case_step("Verify that only current_power_consumption metric is shown")
+        power_metrics.validate_metrics(metrics_expected, "should still be present after filter")
 
-        helper.logger.log_test_case_step("Verify that dram, tdp, cpu_base_frequency, uncore_frequency are NOT shown")
-        helper.assert_metrics_absent_on_all_nodes(metrics_not_expected, "should NOT be present after filter override")
+        get_logger().log_test_case_step("Verify that dram, tdp, cpu_base_frequency, uncore_frequency are NOT shown")
+        power_metrics.validate_metrics(metrics_not_expected, "should NOT be present after filter override", should_be_present=False)
 
-        helper.logger.log_test_case_step("Delete the user_overrides, reapply, and wait")
-        helper.delete_override_and_reapply()
+        get_logger().log_test_case_step("Delete the user_overrides, reapply, and wait")
+        power_metrics.delete_override_and_reapply()
 
-        helper.logger.log_test_case_step("Verify all package metrics are collected again")
-        helper.assert_metrics_present_on_all_nodes(all_metrics, "should be present again after restoring defaults")
+        get_logger().log_test_case_step("Verify all package metrics are collected again")
+        power_metrics.validate_metrics(all_metrics, "should be present again after restoring defaults")
 
 
 # ============================================================================
@@ -88,9 +173,8 @@ def test_change_helm_values_empty_package_metrics(request: FixtureRequest) -> No
         6. Delete the user_overrides, reapply, and wait
         7. Verify all package metrics are collected again
     """
-    helper = HelperPowerMetrics()
-    helper.setup_method()
-    request.addfinalizer(helper.teardown_method)
+    setup_power_metrics(request)
+    power_metrics = PowerMetricsKeywords(LabConnectionKeywords().get_active_controller_ssh())
 
     metrics_to_check = [
         "powerstat_package_current_power_consumption_watts",
@@ -102,26 +186,26 @@ def test_change_helm_values_empty_package_metrics(request: FixtureRequest) -> No
 
     override_files = ["empty_package_metrics_toml.yaml", "empty_package_metrics.yaml"]
 
-    helper.logger.log_test_case_step("Check if power-metrics is installed and pods are running")
-    helper.wait_for_telegraf_running()
+    get_logger().log_test_case_step("Check if power-metrics is installed and pods are running")
+    power_metrics.wait_for_telegraf_running()
 
-    helper.logger.log_test_case_step("Verify all package metrics are collected")
-    helper.assert_metrics_present_on_all_nodes(metrics_to_check, "should be present before override")
+    get_logger().log_test_case_step("Verify all package metrics are collected")
+    power_metrics.validate_metrics(metrics_to_check, "should be present before override")
     for override_file in override_files:
-        helper.logger.log_test_case_step(f"Update telegraf helm value with empty package_metrics via {override_file}")
-        helper.upload_and_apply_helm_override(override_file)
+        get_logger().log_test_case_step(f"Update telegraf helm value with empty package_metrics via {override_file}")
+        power_metrics.upload_and_apply_helm_override(override_file)
 
-        helper.logger.log_test_case_step("Reapply power-metrics application and wait")
-        SystemApplicationApplyKeywords(helper.ssh_connection).system_application_apply(helper.app_name)
-        helper.wait_for_telegraf_running()
+        get_logger().log_test_case_step("Reapply power-metrics application and wait")
+        power_metrics.apply_power_metrics()
+        power_metrics.wait_for_telegraf_running()
 
-        helper.logger.log_test_case_step("Verify that NO package metrics are shown")
-        helper.assert_metrics_absent_on_all_nodes(metrics_to_check, "should NOT be present with empty package_metrics override")
-        helper.logger.log_test_case_step("Delete the user_overrides, reapply, and wait")
-        helper.delete_override_and_reapply()
+        get_logger().log_test_case_step("Verify that NO package metrics are shown")
+        power_metrics.validate_metrics(metrics_to_check, "should NOT be present with empty package_metrics override", should_be_present=False)
+        get_logger().log_test_case_step("Delete the user_overrides, reapply, and wait")
+        power_metrics.delete_override_and_reapply()
 
-        helper.logger.log_test_case_step("Verify all package metrics are collected again")
-        helper.assert_metrics_present_on_all_nodes(metrics_to_check, "should be present again after restoring defaults")
+        get_logger().log_test_case_step("Verify all package metrics are collected again")
+        power_metrics.validate_metrics(metrics_to_check, "should be present again after restoring defaults")
 
 
 # ============================================================================
@@ -145,9 +229,8 @@ def test_change_helm_values_without_package_metrics(request: FixtureRequest) -> 
         7. Delete the user_overrides, reapply, and wait
         8. Verify all package metrics are collected again
     """
-    helper = HelperPowerMetrics()
-    helper.setup_method()
-    request.addfinalizer(helper.teardown_method)
+    setup_power_metrics(request)
+    power_metrics = PowerMetricsKeywords(LabConnectionKeywords().get_active_controller_ssh())
 
     metrics_expected = [
         "powerstat_package_current_power_consumption_watts",
@@ -163,30 +246,30 @@ def test_change_helm_values_without_package_metrics(request: FixtureRequest) -> 
     all_metrics = metrics_not_expected + metrics_expected
     override_files = ["without_package_metrics_toml.yaml", "without_package_metrics.yaml"]
 
-    helper.logger.log_test_case_step("Check if power-metrics is installed and pods are running")
-    helper.wait_for_telegraf_running()
+    get_logger().log_test_case_step("Check if power-metrics is installed and pods are running")
+    power_metrics.wait_for_telegraf_running()
 
-    helper.logger.log_test_case_step("Verify all package metrics are collected")
-    helper.assert_metrics_present_on_all_nodes(all_metrics, "should be present before override")
+    get_logger().log_test_case_step("Verify all package metrics are collected")
+    power_metrics.validate_metrics(all_metrics, "should be present before override")
     for override_file in override_files:
-        helper.logger.log_test_case_step(f"Update telegraf helm value via {override_file}")
-        helper.upload_and_apply_helm_override(override_file)
+        get_logger().log_test_case_step(f"Update telegraf helm value via {override_file}")
+        power_metrics.upload_and_apply_helm_override(override_file)
 
-        helper.logger.log_test_case_step("Reapply power-metrics application and wait")
-        SystemApplicationApplyKeywords(helper.ssh_connection).system_application_apply(helper.app_name)
-        helper.wait_for_telegraf_running()
+        get_logger().log_test_case_step("Reapply power-metrics application and wait")
+        power_metrics.apply_power_metrics()
+        power_metrics.wait_for_telegraf_running()
 
-        helper.logger.log_test_case_step("Verify that default package metrics are still shown")
-        helper.assert_metrics_present_on_all_nodes(metrics_expected, "should still be present after without_package_metrics override")
+        get_logger().log_test_case_step("Verify that default package metrics are still shown")
+        power_metrics.validate_metrics(metrics_expected, "should still be present after without_package_metrics override")
 
-        helper.logger.log_test_case_step("Verify that non default package metrics are not shown")
-        helper.assert_metrics_absent_on_all_nodes(metrics_not_expected, "should NOT be present after filter override")
+        get_logger().log_test_case_step("Verify that non default package metrics are not shown")
+        power_metrics.validate_metrics(metrics_not_expected, "should NOT be present after filter override", should_be_present=False)
 
-        helper.logger.log_test_case_step("Delete the user_overrides, reapply, and wait")
-        helper.delete_override_and_reapply()
+        get_logger().log_test_case_step("Delete the user_overrides, reapply, and wait")
+        power_metrics.delete_override_and_reapply()
 
-        helper.logger.log_test_case_step("Verify all package metrics are collected again")
-        helper.assert_metrics_present_on_all_nodes(all_metrics, "should be present again after restoring defaults")
+        get_logger().log_test_case_step("Verify all package metrics are collected again")
+        power_metrics.validate_metrics(all_metrics, "should be present again after restoring defaults")
 
 
 # ============================================================================
@@ -210,9 +293,8 @@ def test_change_helm_values_filter_cpu_metrics(request: FixtureRequest) -> None:
         7. Delete the user_overrides, reapply, and wait
         8. Verify all per-CPU metrics are collected again
     """
-    helper = HelperPowerMetrics()
-    helper.setup_method()
-    request.addfinalizer(helper.teardown_method)
+    setup_power_metrics(request)
+    power_metrics = PowerMetricsKeywords(LabConnectionKeywords().get_active_controller_ssh())
 
     metrics_expected = [
         "powerstat_core_cpu_frequency_mhz",
@@ -229,30 +311,30 @@ def test_change_helm_values_filter_cpu_metrics(request: FixtureRequest) -> None:
     all_metrics = metrics_not_expected + metrics_expected
     override_files = ["filter_cpu_metrics_toml.yaml", "filter_cpu_metrics.yaml"]
 
-    helper.logger.log_test_case_step("Check if power-metrics is installed and pods are running")
-    helper.wait_for_telegraf_running()
+    get_logger().log_test_case_step("Check if power-metrics is installed and pods are running")
+    power_metrics.wait_for_telegraf_running()
 
-    helper.logger.log_test_case_step("Verify all per-CPU metrics are collected")
-    helper.assert_metrics_present_on_all_nodes(all_metrics, "should be present before override")
+    get_logger().log_test_case_step("Verify all per-CPU metrics are collected")
+    power_metrics.validate_metrics(all_metrics, "should be present before override")
     for override_file in override_files:
-        helper.logger.log_test_case_step(f"Update telegraf helm value with only cpu_frequency in cpu_metrics via {override_file}")
-        helper.upload_and_apply_helm_override(override_file)
+        get_logger().log_test_case_step(f"Update telegraf helm value with only cpu_frequency in cpu_metrics via {override_file}")
+        power_metrics.upload_and_apply_helm_override(override_file)
 
-        helper.logger.log_test_case_step("Reapply power-metrics application and wait")
-        SystemApplicationApplyKeywords(helper.ssh_connection).system_application_apply(helper.app_name)
-        helper.wait_for_telegraf_running()
+        get_logger().log_test_case_step("Reapply power-metrics application and wait")
+        power_metrics.apply_power_metrics()
+        power_metrics.wait_for_telegraf_running()
 
-        helper.logger.log_test_case_step("Verify that only cpu_frequency metric is shown")
-        helper.assert_metrics_present_on_all_nodes(metrics_expected, "should still be present after filter")
+        get_logger().log_test_case_step("Verify that only cpu_frequency metric is shown")
+        power_metrics.validate_metrics(metrics_expected, "should still be present after filter")
 
-        helper.logger.log_test_case_step("Verify that busy_frequency, temperature, c0, c1, c6 are NOT shown")
-        helper.assert_metrics_absent_on_all_nodes(metrics_not_expected, "should NOT be present after filter override")
+        get_logger().log_test_case_step("Verify that busy_frequency, temperature, c0, c1, c6 are NOT shown")
+        power_metrics.validate_metrics(metrics_not_expected, "should NOT be present after filter override", should_be_present=False)
 
-        helper.logger.log_test_case_step("Delete the user_overrides, reapply, and wait")
-        helper.delete_override_and_reapply()
+        get_logger().log_test_case_step("Delete the user_overrides, reapply, and wait")
+        power_metrics.delete_override_and_reapply()
 
-        helper.logger.log_test_case_step("Verify all per-CPU metrics are collected again")
-        helper.assert_metrics_present_on_all_nodes(all_metrics, "should be present again after restoring defaults")
+        get_logger().log_test_case_step("Verify all per-CPU metrics are collected again")
+        power_metrics.validate_metrics(all_metrics, "should be present again after restoring defaults")
 
 
 # ============================================================================
@@ -275,9 +357,8 @@ def test_change_helm_values_empty_cpu_metrics(request: FixtureRequest) -> None:
         6. Delete the user_overrides, reapply, and wait
         7. Verify all per-CPU metrics are collected again
     """
-    helper = HelperPowerMetrics()
-    helper.setup_method()
-    request.addfinalizer(helper.teardown_method)
+    setup_power_metrics(request)
+    power_metrics = PowerMetricsKeywords(LabConnectionKeywords().get_active_controller_ssh())
 
     metrics_to_check = [
         "powerstat_core_cpu_frequency_mhz",
@@ -290,27 +371,27 @@ def test_change_helm_values_empty_cpu_metrics(request: FixtureRequest) -> None:
 
     override_files = ["empty_cpu_metrics_toml.yaml", "empty_cpu_metrics.yaml"]
 
-    helper.logger.log_test_case_step("Check if power-metrics is installed and pods are running")
-    helper.wait_for_telegraf_running()
+    get_logger().log_test_case_step("Check if power-metrics is installed and pods are running")
+    power_metrics.wait_for_telegraf_running()
 
-    helper.logger.log_test_case_step("Verify all per-CPU metrics are collected")
-    helper.assert_metrics_present_on_all_nodes(metrics_to_check, "should be present before override")
+    get_logger().log_test_case_step("Verify all per-CPU metrics are collected")
+    power_metrics.validate_metrics(metrics_to_check, "should be present before override")
     for override_file in override_files:
-        helper.logger.log_test_case_step(f"Update telegraf helm value with empty cpu_metrics via {override_file}")
-        helper.upload_and_apply_helm_override(override_file)
+        get_logger().log_test_case_step(f"Update telegraf helm value with empty cpu_metrics via {override_file}")
+        power_metrics.upload_and_apply_helm_override(override_file)
 
-        helper.logger.log_test_case_step("Reapply power-metrics application and wait")
-        SystemApplicationApplyKeywords(helper.ssh_connection).system_application_apply(helper.app_name)
-        helper.wait_for_telegraf_running()
+        get_logger().log_test_case_step("Reapply power-metrics application and wait")
+        power_metrics.apply_power_metrics()
+        power_metrics.wait_for_telegraf_running()
 
-        helper.logger.log_test_case_step("Verify that NO per-CPU metrics are shown")
-        helper.assert_metrics_absent_on_all_nodes(metrics_to_check, "should NOT be present with empty cpu_metrics override")
+        get_logger().log_test_case_step("Verify that NO per-CPU metrics are shown")
+        power_metrics.validate_metrics(metrics_to_check, "should NOT be present with empty cpu_metrics override", should_be_present=False)
 
-        helper.logger.log_test_case_step("Delete the user_overrides, reapply, and wait")
-        helper.delete_override_and_reapply()
+        get_logger().log_test_case_step("Delete the user_overrides, reapply, and wait")
+        power_metrics.delete_override_and_reapply()
 
-        helper.logger.log_test_case_step("Verify all per-CPU metrics are collected again")
-        helper.assert_metrics_present_on_all_nodes(metrics_to_check, "should be present again after restoring defaults")
+        get_logger().log_test_case_step("Verify all per-CPU metrics are collected again")
+        power_metrics.validate_metrics(metrics_to_check, "should be present again after restoring defaults")
 
 
 # ============================================================================
@@ -333,9 +414,8 @@ def test_change_helm_values_without_cpu_metrics(request: FixtureRequest) -> None
         6. Delete the user_overrides, reapply, and wait
         7. Verify that per-CPU metrics are collected again
     """
-    helper = HelperPowerMetrics()
-    helper.setup_method()
-    request.addfinalizer(helper.teardown_method)
+    setup_power_metrics(request)
+    power_metrics = PowerMetricsKeywords(LabConnectionKeywords().get_active_controller_ssh())
 
     metrics_to_check = [
         "powerstat_core_cpu_frequency_mhz",
@@ -348,27 +428,27 @@ def test_change_helm_values_without_cpu_metrics(request: FixtureRequest) -> None
 
     override_files = ["without_cpu_metrics_toml.yaml", "without_cpu_metrics.yaml"]
 
-    helper.logger.log_test_case_step("Check if power-metrics is installed and pods are running")
-    helper.wait_for_telegraf_running()
+    get_logger().log_test_case_step("Check if power-metrics is installed and pods are running")
+    power_metrics.wait_for_telegraf_running()
 
-    helper.logger.log_test_case_step("Verify that per-CPU metrics are collected")
-    helper.assert_metrics_present_on_all_nodes(metrics_to_check, "should be present before override")
+    get_logger().log_test_case_step("Verify that per-CPU metrics are collected")
+    power_metrics.validate_metrics(metrics_to_check, "should be present before override")
     for override_file in override_files:
-        helper.logger.log_test_case_step(f"Update telegraf helm value via {override_file}")
-        helper.upload_and_apply_helm_override(override_file)
+        get_logger().log_test_case_step(f"Update telegraf helm value via {override_file}")
+        power_metrics.upload_and_apply_helm_override(override_file)
 
-        helper.logger.log_test_case_step("Reapply power-metrics application and wait")
-        SystemApplicationApplyKeywords(helper.ssh_connection).system_application_apply(helper.app_name)
-        helper.wait_for_telegraf_running()
+        get_logger().log_test_case_step("Reapply power-metrics application and wait")
+        power_metrics.apply_power_metrics()
+        power_metrics.wait_for_telegraf_running()
 
-        helper.logger.log_test_case_step("Verify that no per-CPU metrics are shown")
-        helper.assert_metrics_absent_on_all_nodes(metrics_to_check, "should NOT be present with without_cpu_metrics override")
+        get_logger().log_test_case_step("Verify that no per-CPU metrics are shown")
+        power_metrics.validate_metrics(metrics_to_check, "should NOT be present with without_cpu_metrics override", should_be_present=False)
 
-        helper.logger.log_test_case_step("Delete the user_overrides, reapply, and wait")
-        helper.delete_override_and_reapply()
+        get_logger().log_test_case_step("Delete the user_overrides, reapply, and wait")
+        power_metrics.delete_override_and_reapply()
 
-        helper.logger.log_test_case_step("Verify that per-CPU metrics are collected again")
-        helper.assert_metrics_present_on_all_nodes(metrics_to_check, "should be present again after restoring defaults")
+        get_logger().log_test_case_step("Verify that per-CPU metrics are collected again")
+        power_metrics.validate_metrics(metrics_to_check, "should be present again after restoring defaults")
 
 
 # ============================================================================
@@ -392,39 +472,38 @@ def test_change_helm_values_filter_excluded_cpus(request: FixtureRequest) -> Non
         7. Delete the user_overrides, reapply, and wait
         8. Verify that cpu_frequency is shown for all CPUs again
     """
-    helper = HelperPowerMetrics()
-    helper.setup_method()
-    request.addfinalizer(helper.teardown_method)
+    setup_power_metrics(request)
+    power_metrics = PowerMetricsKeywords(LabConnectionKeywords().get_active_controller_ssh())
 
     included_cpu_ids = ["0", "1", "2", "3", "8"]
     excluded_cpu_ids = ["4", "5", "6", "7", "9"]
     all_cpu_ids = included_cpu_ids + excluded_cpu_ids
     override_files = ["filter_excluded_cpus_toml.yaml", "filter_excluded_cpus.yaml"]
 
-    helper.logger.log_test_case_step("Check if power-metrics is installed and pods are running")
-    helper.wait_for_telegraf_running()
+    get_logger().log_test_case_step("Check if power-metrics is installed and pods are running")
+    power_metrics.wait_for_telegraf_running()
 
-    helper.logger.log_test_case_step("Verify that cpu_frequency is shown for all CPUs")
-    helper.assert_cpu_ids_present_on_all_nodes(all_cpu_ids, "should be present before override")
+    get_logger().log_test_case_step("Verify that cpu_frequency is shown for all CPUs")
+    power_metrics.validate_cpu_ids(all_cpu_ids, "should be present before override")
     for override_file in override_files:
-        helper.logger.log_test_case_step(f"Update telegraf helm value with excluded_cpus via {override_file}")
-        helper.upload_and_apply_helm_override(override_file)
+        get_logger().log_test_case_step(f"Update telegraf helm value with excluded_cpus via {override_file}")
+        power_metrics.upload_and_apply_helm_override(override_file)
 
-        helper.logger.log_test_case_step("Reapply power-metrics application and wait")
-        SystemApplicationApplyKeywords(helper.ssh_connection).system_application_apply(helper.app_name)
-        helper.wait_for_telegraf_running()
+        get_logger().log_test_case_step("Reapply power-metrics application and wait")
+        power_metrics.apply_power_metrics()
+        power_metrics.wait_for_telegraf_running()
 
-        helper.logger.log_test_case_step("Verify that cpu_frequency is shown for kept CPUs")
-        helper.assert_cpu_ids_present_on_all_nodes(included_cpu_ids, "should still be present after exclusion")
+        get_logger().log_test_case_step("Verify that cpu_frequency is shown for kept CPUs")
+        power_metrics.validate_cpu_ids(included_cpu_ids, "should still be present after exclusion")
 
-        helper.logger.log_test_case_step("Verify that cpu_frequency is NOT shown for excluded CPUs")
-        helper.assert_cpu_ids_absent_on_all_nodes(excluded_cpu_ids, "should NOT be present after exclusion")
+        get_logger().log_test_case_step("Verify that cpu_frequency is NOT shown for excluded CPUs")
+        power_metrics.validate_cpu_ids(excluded_cpu_ids, "should NOT be present after exclusion", should_be_present=False)
 
-        helper.logger.log_test_case_step("Delete the user_overrides, reapply, and wait")
-        helper.delete_override_and_reapply()
+        get_logger().log_test_case_step("Delete the user_overrides, reapply, and wait")
+        power_metrics.delete_override_and_reapply()
 
-        helper.logger.log_test_case_step("Verify that cpu_frequency is shown for all CPUs again")
-        helper.assert_cpu_ids_present_on_all_nodes(all_cpu_ids, "should be present after restoring defaults")
+        get_logger().log_test_case_step("Verify that cpu_frequency is shown for all CPUs again")
+        power_metrics.validate_cpu_ids(all_cpu_ids, "should be present after restoring defaults")
 
 
 # ============================================================================
@@ -448,39 +527,38 @@ def test_change_helm_values_filter_included_cpus(request: FixtureRequest) -> Non
         7. Delete the user_overrides, reapply, and wait
         8. Verify that cpu_frequency is shown for all CPUs again
     """
-    helper = HelperPowerMetrics()
-    helper.setup_method()
-    request.addfinalizer(helper.teardown_method)
+    setup_power_metrics(request)
+    power_metrics = PowerMetricsKeywords(LabConnectionKeywords().get_active_controller_ssh())
 
     included_cpu_ids = ["0", "1", "2", "3", "5", "6", "8"]
     excluded_cpu_ids = ["4", "7", "9"]
     all_cpu_ids = included_cpu_ids + excluded_cpu_ids
     override_files = ["filter_included_cpus_toml.yaml", "filter_included_cpus.yaml"]
 
-    helper.logger.log_test_case_step("Check if power-metrics is installed and pods are running")
-    helper.wait_for_telegraf_running()
+    get_logger().log_test_case_step("Check if power-metrics is installed and pods are running")
+    power_metrics.wait_for_telegraf_running()
 
-    helper.logger.log_test_case_step("Verify that cpu_frequency is shown for all CPUs")
-    helper.assert_cpu_ids_present_on_all_nodes(all_cpu_ids, "should be present before override")
+    get_logger().log_test_case_step("Verify that cpu_frequency is shown for all CPUs")
+    power_metrics.validate_cpu_ids(all_cpu_ids, "should be present before override")
     for override_file in override_files:
-        helper.logger.log_test_case_step(f"Update telegraf helm value with included_cpus via {override_file}")
-        helper.upload_and_apply_helm_override(override_file)
+        get_logger().log_test_case_step(f"Update telegraf helm value with included_cpus via {override_file}")
+        power_metrics.upload_and_apply_helm_override(override_file)
 
-        helper.logger.log_test_case_step("Reapply power-metrics application and wait")
-        SystemApplicationApplyKeywords(helper.ssh_connection).system_application_apply(helper.app_name)
-        helper.wait_for_telegraf_running()
+        get_logger().log_test_case_step("Reapply power-metrics application and wait")
+        power_metrics.apply_power_metrics()
+        power_metrics.wait_for_telegraf_running()
 
-        helper.logger.log_test_case_step("Verify that cpu_frequency is shown for included CPUs")
-        helper.assert_cpu_ids_present_on_all_nodes(included_cpu_ids, "should still be present after inclusion filter")
+        get_logger().log_test_case_step("Verify that cpu_frequency is shown for included CPUs")
+        power_metrics.validate_cpu_ids(included_cpu_ids, "should still be present after inclusion filter")
 
-        helper.logger.log_test_case_step("Verify that cpu_frequency is NOT shown for excluded CPUs")
-        helper.assert_cpu_ids_absent_on_all_nodes(excluded_cpu_ids, "should NOT be present after inclusion filter")
+        get_logger().log_test_case_step("Verify that cpu_frequency is NOT shown for excluded CPUs")
+        power_metrics.validate_cpu_ids(excluded_cpu_ids, "should NOT be present after inclusion filter", should_be_present=False)
 
-        helper.logger.log_test_case_step("Delete the user_overrides, reapply, and wait")
-        helper.delete_override_and_reapply()
+        get_logger().log_test_case_step("Delete the user_overrides, reapply, and wait")
+        power_metrics.delete_override_and_reapply()
 
-        helper.logger.log_test_case_step("Verify that cpu_frequency is shown for all CPUs again")
-        helper.assert_cpu_ids_present_on_all_nodes(all_cpu_ids, "should be present after restoring defaults")
+        get_logger().log_test_case_step("Verify that cpu_frequency is shown for all CPUs again")
+        power_metrics.validate_cpu_ids(all_cpu_ids, "should be present after restoring defaults")
 
 
 # ============================================================================
@@ -503,34 +581,33 @@ def test_change_helm_values_empty_excluded_cpus(request: FixtureRequest) -> None
         6. Delete the user_overrides, reapply, and wait
         7. Verify that cpu_frequency is shown for all CPUs
     """
-    helper = HelperPowerMetrics()
-    helper.setup_method()
-    request.addfinalizer(helper.teardown_method)
+    setup_power_metrics(request)
+    power_metrics = PowerMetricsKeywords(LabConnectionKeywords().get_active_controller_ssh())
 
     metrics_to_check = ["powerstat_core_cpu_frequency_mhz"]
     override_files = ["excluded_cpus_empty_toml.yaml", "excluded_cpus_empty.yaml"]
 
-    helper.logger.log_test_case_step("Check if power-metrics is installed and pods are running")
-    helper.wait_for_telegraf_running()
+    get_logger().log_test_case_step("Check if power-metrics is installed and pods are running")
+    power_metrics.wait_for_telegraf_running()
 
-    helper.logger.log_test_case_step("Verify that cpu_frequency is shown for all CPUs")
-    helper.assert_metrics_present_on_all_nodes(metrics_to_check, "should be present before override")
+    get_logger().log_test_case_step("Verify that cpu_frequency is shown for all CPUs")
+    power_metrics.validate_metrics(metrics_to_check, "should be present before override")
     for override_file in override_files:
-        helper.logger.log_test_case_step(f"Update telegraf helm value with empty excluded_cpus via {override_file}")
-        helper.upload_and_apply_helm_override(override_file)
+        get_logger().log_test_case_step(f"Update telegraf helm value with empty excluded_cpus via {override_file}")
+        power_metrics.upload_and_apply_helm_override(override_file)
 
-        helper.logger.log_test_case_step("Reapply power-metrics application and wait")
-        SystemApplicationApplyKeywords(helper.ssh_connection).system_application_apply(helper.app_name)
-        helper.wait_for_telegraf_running()
+        get_logger().log_test_case_step("Reapply power-metrics application and wait")
+        power_metrics.apply_power_metrics()
+        power_metrics.wait_for_telegraf_running()
 
-        helper.logger.log_test_case_step("Verify that cpu_frequency remains shown for all CPUs (empty means no exclusion)")
-        helper.assert_metrics_present_on_all_nodes(metrics_to_check, "should remain present with empty excluded_cpus")
+        get_logger().log_test_case_step("Verify that cpu_frequency remains shown for all CPUs (empty means no exclusion)")
+        power_metrics.validate_metrics(metrics_to_check, "should remain present with empty excluded_cpus")
 
-        helper.logger.log_test_case_step("Delete the user_overrides, reapply, and wait")
-        helper.delete_override_and_reapply()
+        get_logger().log_test_case_step("Delete the user_overrides, reapply, and wait")
+        power_metrics.delete_override_and_reapply()
 
-        helper.logger.log_test_case_step("Verify that cpu_frequency is shown for all CPUs")
-        helper.assert_metrics_present_on_all_nodes(metrics_to_check, "should be present after restore")
+        get_logger().log_test_case_step("Verify that cpu_frequency is shown for all CPUs")
+        power_metrics.validate_metrics(metrics_to_check, "should be present after restore")
 
 
 # ============================================================================
@@ -553,34 +630,33 @@ def test_change_helm_values_included_empty_cpus(request: FixtureRequest) -> None
         6. Delete the user_overrides, reapply, and wait
         7. Verify that cpu_frequency is shown for all CPUs
     """
-    helper = HelperPowerMetrics()
-    helper.setup_method()
-    request.addfinalizer(helper.teardown_method)
+    setup_power_metrics(request)
+    power_metrics = PowerMetricsKeywords(LabConnectionKeywords().get_active_controller_ssh())
 
     metrics_to_check = ["powerstat_core_cpu_frequency_mhz"]
     override_files = ["included_cpus_empty_toml.yaml", "included_cpus_empty.yaml"]
 
-    helper.logger.log_test_case_step("Check if power-metrics is installed and pods are running")
-    helper.wait_for_telegraf_running()
+    get_logger().log_test_case_step("Check if power-metrics is installed and pods are running")
+    power_metrics.wait_for_telegraf_running()
 
-    helper.logger.log_test_case_step("Verify that cpu_frequency is shown for all CPUs")
-    helper.assert_metrics_present_on_all_nodes(metrics_to_check, "should be present before override")
+    get_logger().log_test_case_step("Verify that cpu_frequency is shown for all CPUs")
+    power_metrics.validate_metrics(metrics_to_check, "should be present before override")
     for override_file in override_files:
-        helper.logger.log_test_case_step(f"Update telegraf helm value with empty included_cpus via {override_file}")
-        helper.upload_and_apply_helm_override(override_file)
+        get_logger().log_test_case_step(f"Update telegraf helm value with empty included_cpus via {override_file}")
+        power_metrics.upload_and_apply_helm_override(override_file)
 
-        helper.logger.log_test_case_step("Reapply power-metrics application and wait")
-        SystemApplicationApplyKeywords(helper.ssh_connection).system_application_apply(helper.app_name)
-        helper.wait_for_telegraf_running()
+        get_logger().log_test_case_step("Reapply power-metrics application and wait")
+        power_metrics.apply_power_metrics()
+        power_metrics.wait_for_telegraf_running()
 
-        helper.logger.log_test_case_step("Verify that cpu_frequency remains shown for all CPUs (empty means all included)")
-        helper.assert_metrics_present_on_all_nodes(metrics_to_check, "should remain present with empty included_cpus")
+        get_logger().log_test_case_step("Verify that cpu_frequency remains shown for all CPUs (empty means all included)")
+        power_metrics.validate_metrics(metrics_to_check, "should remain present with empty included_cpus")
 
-        helper.logger.log_test_case_step("Delete the user_overrides, reapply, and wait")
-        helper.delete_override_and_reapply()
+        get_logger().log_test_case_step("Delete the user_overrides, reapply, and wait")
+        power_metrics.delete_override_and_reapply()
 
-        helper.logger.log_test_case_step("Verify that cpu_frequency is shown for all CPUs")
-        helper.assert_metrics_present_on_all_nodes(metrics_to_check, "should be present after restore")
+        get_logger().log_test_case_step("Verify that cpu_frequency is shown for all CPUs")
+        power_metrics.validate_metrics(metrics_to_check, "should be present after restore")
 
 
 # ============================================================================
@@ -605,9 +681,8 @@ def test_change_helm_values_disable_and_enable_telegraf(request: FixtureRequest)
         8. Reapply power-metrics application and wait
         9. Verify that metrics are shown once again
     """
-    helper = HelperPowerMetrics()
-    helper.setup_method()
-    request.addfinalizer(helper.teardown_method)
+    setup_power_metrics(request)
+    power_metrics = PowerMetricsKeywords(LabConnectionKeywords().get_active_controller_ssh())
 
     metrics_to_check = [
         "powerstat_package_cpu_base_frequency_mhz",
@@ -615,33 +690,33 @@ def test_change_helm_values_disable_and_enable_telegraf(request: FixtureRequest)
         "linux_cpu_cpuinfo_min_freq",
     ]
 
-    helper.logger.log_test_case_step("Check if power-metrics is installed and pods are running")
-    helper.wait_for_telegraf_running()
+    get_logger().log_test_case_step("Check if power-metrics is installed and pods are running")
+    power_metrics.wait_for_telegraf_running()
 
-    helper.logger.log_test_case_step("Verify metrics are being collected")
-    helper.assert_metrics_present_on_all_nodes(metrics_to_check, "should be present before disabling telegraf")
+    get_logger().log_test_case_step("Verify metrics are being collected")
+    power_metrics.validate_metrics(metrics_to_check, "should be present before disabling telegraf")
 
-    helper.logger.log_test_case_step("Disable telegraf via telegraf_disabled.yaml override")
-    helper.upload_and_apply_helm_override("telegraf_disabled.yaml")
+    get_logger().log_test_case_step("Disable telegraf via telegraf_disabled.yaml override")
+    power_metrics.upload_and_apply_helm_override("telegraf_disabled.yaml")
 
-    helper.logger.log_test_case_step("Reapply power-metrics application")
-    SystemApplicationApplyKeywords(helper.ssh_connection).system_application_apply(helper.app_name)
+    get_logger().log_test_case_step("Reapply power-metrics application")
+    power_metrics.apply_power_metrics()
 
-    helper.logger.log_test_case_step("Verify that telegraf pod is NOT running")
-    helper.assert_telegraf_not_running()
+    get_logger().log_test_case_step("Verify that telegraf pod is NOT running")
+    power_metrics.validate_telegraf_not_running()
 
-    helper.logger.log_test_case_step("Verify that no telegraf metrics are shown")
-    helper.assert_metrics_absent_on_all_nodes(metrics_to_check, "should NOT be present after disabling telegraf")
+    get_logger().log_test_case_step("Verify that no telegraf metrics are shown")
+    power_metrics.validate_metrics(metrics_to_check, "should NOT be present after disabling telegraf", should_be_present=False)
 
-    helper.logger.log_test_case_step("Enable telegraf via telegraf_enabled.yaml override")
-    helper.upload_and_apply_helm_override("telegraf_enabled.yaml")
+    get_logger().log_test_case_step("Enable telegraf via telegraf_enabled.yaml override")
+    power_metrics.upload_and_apply_helm_override("telegraf_enabled.yaml")
 
-    helper.logger.log_test_case_step("Reapply power-metrics application and wait")
-    SystemApplicationApplyKeywords(helper.ssh_connection).system_application_apply(helper.app_name)
-    helper.wait_for_telegraf_running()
+    get_logger().log_test_case_step("Reapply power-metrics application and wait")
+    power_metrics.apply_power_metrics()
+    power_metrics.wait_for_telegraf_running()
 
-    helper.logger.log_test_case_step("Verify that metrics are shown once again")
-    helper.assert_metrics_present_on_all_nodes(metrics_to_check, "should be present again after re-enabling telegraf")
+    get_logger().log_test_case_step("Verify that metrics are shown once again")
+    power_metrics.validate_metrics(metrics_to_check, "should be present again after re-enabling telegraf")
 
 
 # ============================================================================
@@ -663,36 +738,33 @@ def test_change_helm_values_disable_and_enable_cadvisor(request: FixtureRequest)
         7. Reapply power-metrics application and wait
         8. Verify that cAdvisor metrics are shown once again
     """
-    helper = HelperPowerMetrics()
-    helper.setup_method()
-    request.addfinalizer(helper.teardown_method)
+    setup_power_metrics(request)
+    power_metrics = PowerMetricsKeywords(LabConnectionKeywords().get_active_controller_ssh())
 
-    cadvisor_endpoint = "cadvisor.power-metrics.svc.cluster.local/metrics"
+    get_logger().log_test_case_step("Check if power-metrics is installed and pods are running")
+    power_metrics.wait_for_cadvisor_running()
 
-    helper.logger.log_test_case_step("Check if power-metrics is installed and pods are running")
-    helper.wait_for_cadvisor_running()
+    get_logger().log_test_case_step("Verify cAdvisor metrics are being collected")
+    power_metrics.validate_metrics(["container_memory_rss"], "should be present before disabling cAdvisor", endpoint=CADVISOR_METRICS_ENDPOINT, grep_pattern="container_memory_rss", max_lines=50)
 
-    helper.logger.log_test_case_step("Verify cAdvisor metrics are being collected")
-    helper.assert_metrics_present_on_all_nodes(["container_memory_rss"], "should be present before disabling cAdvisor", cadvisor_endpoint, grep_pattern="container_memory_rss", max_lines=50)
+    get_logger().log_test_case_step("Disable cAdvisor via cadvisor_disabled.yaml override")
+    power_metrics.upload_and_apply_helm_override("cadvisor_disabled.yaml", chart_name="cadvisor")
 
-    helper.logger.log_test_case_step("Disable cAdvisor via cadvisor_disabled.yaml override")
-    helper.upload_and_apply_helm_override("cadvisor_disabled.yaml", chart_name="cadvisor")
+    get_logger().log_test_case_step("Reapply power-metrics application and wait")
+    power_metrics.apply_power_metrics()
 
-    helper.logger.log_test_case_step("Reapply power-metrics application and wait")
-    SystemApplicationApplyKeywords(helper.ssh_connection).system_application_apply(helper.app_name)
+    get_logger().log_test_case_step("Verify that no cAdvisor metrics are shown")
+    power_metrics.validate_metrics(["container_memory_rss"], "should NOT be present after disabling cAdvisor", should_be_present=False, endpoint=CADVISOR_METRICS_ENDPOINT, grep_pattern="container_memory_rss", max_lines=50)
 
-    helper.logger.log_test_case_step("Verify that no cAdvisor metrics are shown")
-    helper.assert_metrics_absent_on_all_nodes(["container_memory_rss"], "should NOT be present after disabling cAdvisor", cadvisor_endpoint, grep_pattern="container_memory_rss", max_lines=50)
+    get_logger().log_test_case_step("Enable cAdvisor via cadvisor_enabled.yaml override")
+    power_metrics.upload_and_apply_helm_override("cadvisor_enabled.yaml", chart_name="cadvisor")
 
-    helper.logger.log_test_case_step("Enable cAdvisor via cadvisor_enabled.yaml override")
-    helper.upload_and_apply_helm_override("cadvisor_enabled.yaml", chart_name="cadvisor")
+    get_logger().log_test_case_step("Reapply power-metrics application and wait")
+    power_metrics.apply_power_metrics()
+    power_metrics.wait_for_cadvisor_running()
 
-    helper.logger.log_test_case_step("Reapply power-metrics application and wait")
-    SystemApplicationApplyKeywords(helper.ssh_connection).system_application_apply(helper.app_name)
-    helper.wait_for_cadvisor_running()
-
-    helper.logger.log_test_case_step("Verify that cAdvisor metrics are shown once again")
-    helper.assert_metrics_present_on_all_nodes(["container_memory_rss"], "should be present again after re-enabling cAdvisor", cadvisor_endpoint, grep_pattern="container_memory_rss", max_lines=50)
+    get_logger().log_test_case_step("Verify that cAdvisor metrics are shown once again")
+    power_metrics.validate_metrics(["container_memory_rss"], "should be present again after re-enabling cAdvisor", endpoint=CADVISOR_METRICS_ENDPOINT, grep_pattern="container_memory_rss", max_lines=50)
 
 
 # ============================================================================
@@ -708,15 +780,14 @@ def test_metric_per_cpu_current_temperature(request: FixtureRequest) -> None:
         1. Check if power-metrics is installed and pods are running
         2. Verify powerstat_core_cpu_temperature_celsius metric is present on all nodes
     """
-    helper = HelperPowerMetrics()
-    helper.setup_method()
-    request.addfinalizer(helper.teardown_method)
+    setup_power_metrics(request)
+    power_metrics = PowerMetricsKeywords(LabConnectionKeywords().get_active_controller_ssh())
 
-    helper.logger.log_test_case_step("Check if power-metrics is installed and pods are running")
-    helper.wait_for_telegraf_running()
+    get_logger().log_test_case_step("Check if power-metrics is installed and pods are running")
+    power_metrics.wait_for_telegraf_running()
 
-    helper.logger.log_test_case_step("Verify powerstat_core_cpu_temperature_celsius metric is present on all nodes")
-    helper.assert_metrics_present_on_all_nodes(["powerstat_core_cpu_temperature_celsius"], "should be present")
+    get_logger().log_test_case_step("Verify powerstat_core_cpu_temperature_celsius metric is present on all nodes")
+    power_metrics.validate_metrics(["powerstat_core_cpu_temperature_celsius"], "should be present")
 
 
 # ============================================================================
@@ -732,15 +803,14 @@ def test_metric_per_cpu_percentage_c6_state(request: FixtureRequest) -> None:
         1. Check if power-metrics is installed and pods are running
         2. Verify powerstat_core_cpu_c6_state_residency_percent metric is present on all nodes
     """
-    helper = HelperPowerMetrics()
-    helper.setup_method()
-    request.addfinalizer(helper.teardown_method)
+    setup_power_metrics(request)
+    power_metrics = PowerMetricsKeywords(LabConnectionKeywords().get_active_controller_ssh())
 
-    helper.logger.log_test_case_step("Check if power-metrics is installed and pods are running")
-    helper.wait_for_telegraf_running()
+    get_logger().log_test_case_step("Check if power-metrics is installed and pods are running")
+    power_metrics.wait_for_telegraf_running()
 
-    helper.logger.log_test_case_step("Verify powerstat_core_cpu_c6_state_residency_percent metric is present on all nodes")
-    helper.assert_metrics_present_on_all_nodes(["powerstat_core_cpu_c6_state_residency_percent"], "should be present")
+    get_logger().log_test_case_step("Verify powerstat_core_cpu_c6_state_residency_percent metric is present on all nodes")
+    power_metrics.validate_metrics(["powerstat_core_cpu_c6_state_residency_percent"], "should be present")
 
 
 # ============================================================================
@@ -756,15 +826,14 @@ def test_metric_per_cpu_percentage_c1_state(request: FixtureRequest) -> None:
         1. Check if power-metrics is installed and pods are running
         2. Verify powerstat_core_cpu_c1_state_residency_percent metric is present on all nodes
     """
-    helper = HelperPowerMetrics()
-    helper.setup_method()
-    request.addfinalizer(helper.teardown_method)
+    setup_power_metrics(request)
+    power_metrics = PowerMetricsKeywords(LabConnectionKeywords().get_active_controller_ssh())
 
-    helper.logger.log_test_case_step("Check if power-metrics is installed and pods are running")
-    helper.wait_for_telegraf_running()
+    get_logger().log_test_case_step("Check if power-metrics is installed and pods are running")
+    power_metrics.wait_for_telegraf_running()
 
-    helper.logger.log_test_case_step("Verify powerstat_core_cpu_c1_state_residency_percent metric is present on all nodes")
-    helper.assert_metrics_present_on_all_nodes(["powerstat_core_cpu_c1_state_residency_percent"], "should be present")
+    get_logger().log_test_case_step("Verify powerstat_core_cpu_c1_state_residency_percent metric is present on all nodes")
+    power_metrics.validate_metrics(["powerstat_core_cpu_c1_state_residency_percent"], "should be present")
 
 
 # ============================================================================
@@ -780,15 +849,14 @@ def test_metric_per_cpu_percentage_c0_state(request: FixtureRequest) -> None:
         1. Check if power-metrics is installed and pods are running
         2. Verify powerstat_core_cpu_c0_state_residency_percent metric is present on all nodes
     """
-    helper = HelperPowerMetrics()
-    helper.setup_method()
-    request.addfinalizer(helper.teardown_method)
+    setup_power_metrics(request)
+    power_metrics = PowerMetricsKeywords(LabConnectionKeywords().get_active_controller_ssh())
 
-    helper.logger.log_test_case_step("Check if power-metrics is installed and pods are running")
-    helper.wait_for_telegraf_running()
+    get_logger().log_test_case_step("Check if power-metrics is installed and pods are running")
+    power_metrics.wait_for_telegraf_running()
 
-    helper.logger.log_test_case_step("Verify powerstat_core_cpu_c0_state_residency_percent metric is present on all nodes")
-    helper.assert_metrics_present_on_all_nodes(["powerstat_core_cpu_c0_state_residency_percent"], "should be present")
+    get_logger().log_test_case_step("Verify powerstat_core_cpu_c0_state_residency_percent metric is present on all nodes")
+    power_metrics.validate_metrics(["powerstat_core_cpu_c0_state_residency_percent"], "should be present")
 
 
 # ============================================================================
@@ -804,15 +872,14 @@ def test_metric_per_cpu_busy_frequency(request: FixtureRequest) -> None:
         1. Check if power-metrics is installed and pods are running
         2. Verify powerstat_core_cpu_busy_frequency_mhz metric is present on all nodes
     """
-    helper = HelperPowerMetrics()
-    helper.setup_method()
-    request.addfinalizer(helper.teardown_method)
+    setup_power_metrics(request)
+    power_metrics = PowerMetricsKeywords(LabConnectionKeywords().get_active_controller_ssh())
 
-    helper.logger.log_test_case_step("Check if power-metrics is installed and pods are running")
-    helper.wait_for_telegraf_running()
+    get_logger().log_test_case_step("Check if power-metrics is installed and pods are running")
+    power_metrics.wait_for_telegraf_running()
 
-    helper.logger.log_test_case_step("Verify powerstat_core_cpu_busy_frequency_mhz metric is present on all nodes")
-    helper.assert_metrics_present_on_all_nodes(["powerstat_core_cpu_busy_frequency_mhz"], "should be present")
+    get_logger().log_test_case_step("Verify powerstat_core_cpu_busy_frequency_mhz metric is present on all nodes")
+    power_metrics.validate_metrics(["powerstat_core_cpu_busy_frequency_mhz"], "should be present")
 
 
 # ============================================================================
@@ -830,15 +897,14 @@ def test_metric_per_cpu_current_frequency(request: FixtureRequest) -> None:
         1. Check if power-metrics is installed and pods are running
         2. Verify linux_cpu_scaling_cur_freq metric is present on all nodes
     """
-    helper = HelperPowerMetrics()
-    helper.setup_method()
-    request.addfinalizer(helper.teardown_method)
+    setup_power_metrics(request)
+    power_metrics = PowerMetricsKeywords(LabConnectionKeywords().get_active_controller_ssh())
 
-    helper.logger.log_test_case_step("Check if power-metrics is installed and pods are running")
-    helper.wait_for_telegraf_running()
+    get_logger().log_test_case_step("Check if power-metrics is installed and pods are running")
+    power_metrics.wait_for_telegraf_running()
 
-    helper.logger.log_test_case_step("Verify linux_cpu_scaling_cur_freq metric is present on all nodes")
-    helper.assert_metrics_present_on_all_nodes(["linux_cpu_scaling_cur_freq"], "should be present")
+    get_logger().log_test_case_step("Verify linux_cpu_scaling_cur_freq metric is present on all nodes")
+    power_metrics.validate_metrics(["linux_cpu_scaling_cur_freq"], "should be present")
 
 
 # ============================================================================
@@ -856,15 +922,14 @@ def test_metric_per_cpu_maximum_frequency_setting(request: FixtureRequest) -> No
         1. Check if power-metrics is installed and pods are running
         2. Verify linux_cpu_cpuinfo_max_freq metric is present on all nodes
     """
-    helper = HelperPowerMetrics()
-    helper.setup_method()
-    request.addfinalizer(helper.teardown_method)
+    setup_power_metrics(request)
+    power_metrics = PowerMetricsKeywords(LabConnectionKeywords().get_active_controller_ssh())
 
-    helper.logger.log_test_case_step("Check if power-metrics is installed and pods are running")
-    helper.wait_for_telegraf_running()
+    get_logger().log_test_case_step("Check if power-metrics is installed and pods are running")
+    power_metrics.wait_for_telegraf_running()
 
-    helper.logger.log_test_case_step("Verify linux_cpu_cpuinfo_max_freq metric is present on all nodes")
-    helper.assert_metrics_present_on_all_nodes(["linux_cpu_cpuinfo_max_freq"], "should be present")
+    get_logger().log_test_case_step("Verify linux_cpu_cpuinfo_max_freq metric is present on all nodes")
+    power_metrics.validate_metrics(["linux_cpu_cpuinfo_max_freq"], "should be present")
 
 
 # ============================================================================
@@ -882,15 +947,14 @@ def test_metric_per_cpu_minimum_frequency_setting(request: FixtureRequest) -> No
         1. Check if power-metrics is installed and pods are running
         2. Verify linux_cpu_cpuinfo_min_freq metric is present on all nodes
     """
-    helper = HelperPowerMetrics()
-    helper.setup_method()
-    request.addfinalizer(helper.teardown_method)
+    setup_power_metrics(request)
+    power_metrics = PowerMetricsKeywords(LabConnectionKeywords().get_active_controller_ssh())
 
-    helper.logger.log_test_case_step("Check if power-metrics is installed and pods are running")
-    helper.wait_for_telegraf_running()
+    get_logger().log_test_case_step("Check if power-metrics is installed and pods are running")
+    power_metrics.wait_for_telegraf_running()
 
-    helper.logger.log_test_case_step("Verify linux_cpu_cpuinfo_min_freq metric is present on all nodes")
-    helper.assert_metrics_present_on_all_nodes(["linux_cpu_cpuinfo_min_freq"], "should be present")
+    get_logger().log_test_case_step("Verify linux_cpu_cpuinfo_min_freq metric is present on all nodes")
+    power_metrics.validate_metrics(["linux_cpu_cpuinfo_min_freq"], "should be present")
 
 
 # ============================================================================
@@ -907,9 +971,8 @@ def test_metric_uncore_frequency_setting(request: FixtureRequest) -> None:
         2. Verify powerstat_package_uncore_frequency metrics are present on all nodes
         3. Verify cur, max, and min uncore frequency sub-metrics are present
     """
-    helper = HelperPowerMetrics()
-    helper.setup_method()
-    request.addfinalizer(helper.teardown_method)
+    setup_power_metrics(request)
+    power_metrics = PowerMetricsKeywords(LabConnectionKeywords().get_active_controller_ssh())
 
     metrics_to_check = [
         "powerstat_package_uncore_frequency_mhz_cur",
@@ -917,11 +980,11 @@ def test_metric_uncore_frequency_setting(request: FixtureRequest) -> None:
         "powerstat_package_uncore_frequency_limit_mhz_min",
     ]
 
-    helper.logger.log_test_case_step("Check if power-metrics is installed and pods are running")
-    helper.wait_for_telegraf_running()
+    get_logger().log_test_case_step("Check if power-metrics is installed and pods are running")
+    power_metrics.wait_for_telegraf_running()
 
-    helper.logger.log_test_case_step("Verify powerstat_package_uncore_frequency metrics are present on all nodes")
-    helper.assert_metrics_present_on_all_nodes(metrics_to_check, "should be present")
+    get_logger().log_test_case_step("Verify powerstat_package_uncore_frequency metrics are present on all nodes")
+    power_metrics.validate_metrics(metrics_to_check, "should be present")
 
 
 # ============================================================================
@@ -937,15 +1000,14 @@ def test_metric_cpu_base_frequency_setting(request: FixtureRequest) -> None:
         1. Check if power-metrics is installed and pods are running
         2. Verify powerstat_package_cpu_base_frequency_mhz metric is present on all nodes
     """
-    helper = HelperPowerMetrics()
-    helper.setup_method()
-    request.addfinalizer(helper.teardown_method)
+    setup_power_metrics(request)
+    power_metrics = PowerMetricsKeywords(LabConnectionKeywords().get_active_controller_ssh())
 
-    helper.logger.log_test_case_step("Check if power-metrics is installed and pods are running")
-    helper.wait_for_telegraf_running()
+    get_logger().log_test_case_step("Check if power-metrics is installed and pods are running")
+    power_metrics.wait_for_telegraf_running()
 
-    helper.logger.log_test_case_step("Verify powerstat_package_cpu_base_frequency_mhz metric is present on all nodes")
-    helper.assert_metrics_present_on_all_nodes(["powerstat_package_cpu_base_frequency_mhz"], "should be present")
+    get_logger().log_test_case_step("Verify powerstat_package_cpu_base_frequency_mhz metric is present on all nodes")
+    power_metrics.validate_metrics(["powerstat_package_cpu_base_frequency_mhz"], "should be present")
 
 
 # ============================================================================
@@ -961,15 +1023,14 @@ def test_metric_dram_power_consumption(request: FixtureRequest) -> None:
         1. Check if power-metrics is installed and pods are running
         2. Verify powerstat_package_current_dram_power_consumption_watts metric is present on all nodes
     """
-    helper = HelperPowerMetrics()
-    helper.setup_method()
-    request.addfinalizer(helper.teardown_method)
+    setup_power_metrics(request)
+    power_metrics = PowerMetricsKeywords(LabConnectionKeywords().get_active_controller_ssh())
 
-    helper.logger.log_test_case_step("Check if power-metrics is installed and pods are running")
-    helper.wait_for_telegraf_running()
+    get_logger().log_test_case_step("Check if power-metrics is installed and pods are running")
+    power_metrics.wait_for_telegraf_running()
 
-    helper.logger.log_test_case_step("Verify powerstat_package_current_dram_power_consumption_watts metric is present on all nodes")
-    helper.assert_metrics_present_on_all_nodes(["powerstat_package_current_dram_power_consumption_watts"], "should be present")
+    get_logger().log_test_case_step("Verify powerstat_package_current_dram_power_consumption_watts metric is present on all nodes")
+    power_metrics.validate_metrics(["powerstat_package_current_dram_power_consumption_watts"], "should be present")
 
 
 # ============================================================================
@@ -985,15 +1046,14 @@ def test_metric_current_processor_package_power_consumption(request: FixtureRequ
         1. Check if power-metrics is installed and pods are running
         2. Verify powerstat_package_current_power_consumption_watts metric is present on all nodes
     """
-    helper = HelperPowerMetrics()
-    helper.setup_method()
-    request.addfinalizer(helper.teardown_method)
+    setup_power_metrics(request)
+    power_metrics = PowerMetricsKeywords(LabConnectionKeywords().get_active_controller_ssh())
 
-    helper.logger.log_test_case_step("Check if power-metrics is installed and pods are running")
-    helper.wait_for_telegraf_running()
+    get_logger().log_test_case_step("Check if power-metrics is installed and pods are running")
+    power_metrics.wait_for_telegraf_running()
 
-    helper.logger.log_test_case_step("Verify powerstat_package_current_power_consumption_watts metric is present on all nodes")
-    helper.assert_metrics_present_on_all_nodes(["powerstat_package_current_power_consumption_watts"], "should be present")
+    get_logger().log_test_case_step("Verify powerstat_package_current_power_consumption_watts metric is present on all nodes")
+    power_metrics.validate_metrics(["powerstat_package_current_power_consumption_watts"], "should be present")
 
 
 # ============================================================================
@@ -1009,15 +1069,14 @@ def test_metric_thermal_design_power_setting(request: FixtureRequest) -> None:
         1. Check if power-metrics is installed and pods are running
         2. Verify powerstat_package_thermal_design_power_watts metric is present on all nodes
     """
-    helper = HelperPowerMetrics()
-    helper.setup_method()
-    request.addfinalizer(helper.teardown_method)
+    setup_power_metrics(request)
+    power_metrics = PowerMetricsKeywords(LabConnectionKeywords().get_active_controller_ssh())
 
-    helper.logger.log_test_case_step("Check if power-metrics is installed and pods are running")
-    helper.wait_for_telegraf_running()
+    get_logger().log_test_case_step("Check if power-metrics is installed and pods are running")
+    power_metrics.wait_for_telegraf_running()
 
-    helper.logger.log_test_case_step("Verify powerstat_package_thermal_design_power_watts metric is present on all nodes")
-    helper.assert_metrics_present_on_all_nodes(["powerstat_package_thermal_design_power_watts"], "should be present")
+    get_logger().log_test_case_step("Verify powerstat_package_thermal_design_power_watts metric is present on all nodes")
+    power_metrics.validate_metrics(["powerstat_package_thermal_design_power_watts"], "should be present")
 
 
 # ============================================================================
@@ -1033,17 +1092,14 @@ def test_metric_container_perf_events_total(request: FixtureRequest) -> None:
         1. Check if power-metrics is installed and pods are running
         2. Verify container_perf_events_total metric is present on all nodes
     """
-    helper = HelperPowerMetrics()
-    helper.setup_method()
-    request.addfinalizer(helper.teardown_method)
+    setup_power_metrics(request)
+    power_metrics = PowerMetricsKeywords(LabConnectionKeywords().get_active_controller_ssh())
 
-    cadvisor_endpoint = "cadvisor.power-metrics.svc.cluster.local/metrics"
+    get_logger().log_test_case_step("Check if power-metrics is installed and pods are running")
+    power_metrics.wait_for_cadvisor_running()
 
-    helper.logger.log_test_case_step("Check if power-metrics is installed and pods are running")
-    helper.wait_for_cadvisor_running()
-
-    helper.logger.log_test_case_step("Verify container_perf_events_total metric is present on all nodes")
-    helper.assert_metrics_present_on_all_nodes(["container_perf_events_total"], "should be present", cadvisor_endpoint, grep_pattern="container_perf_events_total", max_lines=50)
+    get_logger().log_test_case_step("Verify container_perf_events_total metric is present on all nodes")
+    power_metrics.validate_metrics(["container_perf_events_total"], "should be present", endpoint=CADVISOR_METRICS_ENDPOINT, grep_pattern="container_perf_events_total", max_lines=50)
 
 
 # ============================================================================
@@ -1059,14 +1115,11 @@ def test_metric_container_perf_events_scaling_ratio(request: FixtureRequest) -> 
         1. Check if power-metrics is installed and pods are running
         2. Verify container_perf_events_scaling_ratio metric is present on all nodes
     """
-    helper = HelperPowerMetrics()
-    helper.setup_method()
-    request.addfinalizer(helper.teardown_method)
+    setup_power_metrics(request)
+    power_metrics = PowerMetricsKeywords(LabConnectionKeywords().get_active_controller_ssh())
 
-    cadvisor_endpoint = "cadvisor.power-metrics.svc.cluster.local/metrics"
+    get_logger().log_test_case_step("Check if power-metrics is installed and pods are running")
+    power_metrics.wait_for_cadvisor_running()
 
-    helper.logger.log_test_case_step("Check if power-metrics is installed and pods are running")
-    helper.wait_for_cadvisor_running()
-
-    helper.logger.log_test_case_step("Verify container_perf_events_scaling_ratio metric is present on all nodes")
-    helper.assert_metrics_present_on_all_nodes(["container_perf_events_scaling_ratio"], "should be present", cadvisor_endpoint, grep_pattern="container_perf_events_scaling_ratio", max_lines=50)
+    get_logger().log_test_case_step("Verify container_perf_events_scaling_ratio metric is present on all nodes")
+    power_metrics.validate_metrics(["container_perf_events_scaling_ratio"], "should be present", endpoint=CADVISOR_METRICS_ENDPOINT, grep_pattern="container_perf_events_scaling_ratio", max_lines=50)
