@@ -33,7 +33,7 @@ class AnsiblePlaybookBackUpRestoreOutput:
         optimized-restore/apply-manifest : Create puppet hieradata runtime configuration ------------------------------------------------------------ 80.92s
 
         """
-        successful_backup = False
+        successful_backup_restore = False
         output = "".join(self.cmd_output)
 
         if output and len(output) > 0:

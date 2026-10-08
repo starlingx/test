@@ -46,6 +46,14 @@ class DfObject:
         """
         return self.used_kb
 
+    def get_available_kb(self) -> int:
+        """Get available space in kilobytes.
+
+        Returns:
+            int: Available space in KB.
+        """
+        return self.available_kb
+
     def get_filesystem(self) -> str:
         """Get filesystem name.
 
