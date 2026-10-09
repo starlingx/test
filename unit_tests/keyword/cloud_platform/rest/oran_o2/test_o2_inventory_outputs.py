@@ -4,9 +4,9 @@ Builds each typed Output from a synthetic response carrying canned JSON and
 asserts the getters. Lab-free: no SSH, no live system. Mirrors the
 canned-input, no-lab style of the other parser unit tests.
 
-Only the fields the assertions read are modelled; fields such as
-`extensions`, `supportedLocations` and `alarmDictionary` are intentionally not
-modelled and not asserted.
+Only the fields the assertions read are modelled. For deployment managers the
+`extensions` key is modelled by presence only, since a list read returns it with
+a null value; `alarmDictionary` is intentionally not modelled and not asserted.
 """
 
 from keywords.cloud_platform.rest.oran_o2.object.o2_api_versions_output import O2ApiVersionsOutput
@@ -130,6 +130,35 @@ def test_deployment_managers_output_parses_detail_response():
     assert output.is_empty() is False
     assert len(output.get_deployment_managers()) == 1
     assert output.get_first().get_deployment_manager_id() == "dm-1"
+
+
+def test_deployment_managers_output_parses_documented_fields():
+    """The supportedLocations, capabilities and capacity fields are parsed, including empty forms."""
+    response = FakeO2RestResponse([{"deploymentManagerId": "dm-1", "name": "generic-host.kubernetes", "serviceUri": "https://127.0.0.1:6443", "supportedLocations": "", "capabilities": {}, "capacity": {}}])
+    deployment_manager = O2DeploymentManagersOutput(response).get_first()
+    assert deployment_manager.get_supported_locations() == ""
+    assert deployment_manager.get_capabilities() == {}
+    assert deployment_manager.get_capacity() == {}
+
+
+def test_deployment_managers_output_fields_are_none_when_absent():
+    """A field absent from the payload parses as None rather than a silent default."""
+    deployment_manager = O2DeploymentManagersOutput(FakeO2RestResponse([{"deploymentManagerId": "dm-1"}])).get_first()
+    assert deployment_manager.get_supported_locations() is None
+    assert deployment_manager.get_capabilities() is None
+    assert deployment_manager.get_capacity() is None
+
+
+def test_deployment_managers_output_reports_extensions_present_even_when_null():
+    """An extensions key is reported present by key, not by value, since a list read nulls it."""
+    response = FakeO2RestResponse([{"deploymentManagerId": "dm-1", "extensions": None}])
+    assert O2DeploymentManagersOutput(response).get_first().has_extensions() is True
+
+
+def test_deployment_managers_output_reports_extensions_absent_when_key_missing():
+    """An entry with no extensions key reports absent, which is the unexpanded read."""
+    response = FakeO2RestResponse([{"deploymentManagerId": "dm-1", "supportedLocations": ""}])
+    assert O2DeploymentManagersOutput(response).get_first().has_extensions() is False
 
 
 def test_collection_output_ignores_detail_response_without_id():

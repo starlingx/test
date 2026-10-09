@@ -95,3 +95,30 @@ def test_monitoring_alarm_subscriptions_suffix_is_placed_correctly():
     observed = url_keywords.get_local_monitoring_endpoint_url("v1/alarmSubscriptions")
 
     assert observed.endswith("/o2ims-infrastructureMonitoring/v1/alarmSubscriptions")
+
+
+def test_a_single_query_parameter_is_appended():
+    """A single key/value parameter is appended after a '?'."""
+    url_keywords = _build_url_keywords()
+
+    observed = url_keywords.get_local_inventory_endpoint_url("v1/deploymentManagers", {"nextpage_opaque_marker": "1"})
+
+    assert observed == f"{_get_local_base_url()}/o2ims-infrastructureInventory/v1/deploymentManagers?nextpage_opaque_marker=1"
+
+
+def test_two_query_parameters_are_joined_with_ampersand():
+    """Two parameters are joined with '&' in insertion order."""
+    url_keywords = _build_url_keywords()
+
+    observed = url_keywords.get_local_inventory_endpoint_url("v1/deploymentManagers", {"all_fields": "true", "nextpage_opaque_marker": "1"})
+
+    assert observed.endswith("/v1/deploymentManagers?all_fields=true&nextpage_opaque_marker=1")
+
+
+def test_query_parameter_values_are_encoded():
+    """A value with reserved characters is percent-encoded."""
+    url_keywords = _build_url_keywords()
+
+    observed = url_keywords.get_local_inventory_endpoint_url("v1/deploymentManagers", {"marker": "a b&c"})
+
+    assert observed.endswith("/v1/deploymentManagers?marker=a%20b%26c")

@@ -1,3 +1,5 @@
+from typing import Optional
+
 from keywords.base_keyword import BaseKeyword
 from keywords.cloud_platform.rest.oran_o2.o2_rest_client import O2RestClient
 from keywords.cloud_platform.rest.oran_o2.o2_url_keywords import GetO2UrlKeywords
@@ -125,13 +127,22 @@ class O2InventoryKeywords(BaseKeyword):
         self.validate_success_status_code(response)
         return O2ResourcesOutput(response)
 
-    def get_deployment_managers(self) -> O2DeploymentManagersOutput:
+    def get_deployment_managers(self, all_fields: bool = False, nextpage_opaque_marker: Optional[str] = None) -> O2DeploymentManagersOutput:
         """List the O2 IMS deployment managers.
+
+        Args:
+            all_fields (bool): When True, request field-expanded entries via all_fields=true.
+            nextpage_opaque_marker (Optional[str]): Pagination marker to request a page.
 
         Returns:
             O2DeploymentManagersOutput: Parsed deploymentManagers list output.
         """
-        response = self.o2_rest_client.get(self.url_keywords.get_local_inventory_endpoint_url("v1/deploymentManagers"))
+        query_parameters = {}
+        if all_fields:
+            query_parameters["all_fields"] = "true"
+        if nextpage_opaque_marker is not None:
+            query_parameters["nextpage_opaque_marker"] = nextpage_opaque_marker
+        response = self.o2_rest_client.get(self.url_keywords.get_local_inventory_endpoint_url("v1/deploymentManagers", query_parameters))
         self.validate_success_status_code(response)
         return O2DeploymentManagersOutput(response)
 
