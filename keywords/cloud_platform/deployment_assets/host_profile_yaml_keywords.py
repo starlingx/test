@@ -2,6 +2,7 @@ import os
 
 import yaml
 
+from framework.exceptions.keyword_exception import KeywordException
 from framework.ssh.ssh_connection import SSHConnection
 from keywords.files.file_keywords import FileKeywords
 
@@ -21,35 +22,52 @@ class HostProfileYamlKeywords:
         self.ssh_connection = ssh_connection
 
     def edit_yaml_spec_storage(self, searched_metadata: str, fs: str, size: int, remote_filename: str):
-        """Edit storage specs for the desired filesystem.
+        """Set the size of a filesystem in a host profile, adding it when absent.
+
+        Documents that do not match 'searched_metadata' are skipped. In the
+        matched document, the 'fs' entry is updated when already declared and
+        appended otherwise, since a host profile is not required to declare
+        every filesystem present on the host.
 
         Args:
             searched_metadata (str): Metadata to be searched.
             fs (str): Desired filesystem to be modified.
             size (int): Desired size to be set.
             remote_filename (str): Name of the output file.
+
+        Raises:
+            KeywordException: If no document matches 'searched_metadata'.
         """
         local_filename = self.download_file(remote_filename)
         with open(local_filename) as stream:
             list_doc = list(yaml.safe_load_all(stream))
 
+        profile_found = False
+
         for document in list_doc:
-            if "metadata" in document.keys():
-                try:
-                    metadata = document["metadata"]
-                    if "name" in metadata.keys():
-                        metadata_name = document["metadata"]["name"]
-                        if metadata_name == searched_metadata:
-                            for item in document["spec"]["storage"]["filesystems"]:
-                                if item["name"] == fs:
-                                    item["size"] = size
-                except TypeError:
-                    pass
+            if not isinstance(document, dict):
+                continue
+            if document.get("metadata", {}).get("name") != searched_metadata:
+                continue
 
-        if "status" not in list_doc[-1].keys():
-            list_doc[-1]["status"] = {"deploymentScope": "principal"}
+            profile_found = True
+            filesystems = document.setdefault("spec", {}).setdefault("storage", {}).setdefault("filesystems", [])
+            for item in filesystems:
+                if item.get("name") == fs:
+                    item["size"] = size
+                    break
+            else:
+                filesystems.append({"name": fs, "size": size})
 
-        self.write_yaml(list(list_doc), local_filename)
+        if not profile_found:
+            raise KeywordException(f"No document with metadata.name '{searched_metadata}' was found in {remote_filename}.")
+
+        documents = [document for document in list_doc if isinstance(document, dict)]
+
+        if "status" not in documents[-1]:
+            documents[-1]["status"] = {"deploymentScope": "principal"}
+
+        self.write_yaml(documents, local_filename)
         self.upload_file(local_filename, remote_filename)
 
     def edit_yaml_host_interface_mtu(self, interface_name: str, mtu: int, remote_filename: str):
