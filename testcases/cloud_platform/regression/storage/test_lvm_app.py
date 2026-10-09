@@ -1,4 +1,4 @@
-from pytest import FixtureRequest, mark
+from pytest import mark
 
 from framework.logging.automation_logger import get_logger
 from framework.resources.resource_finder import get_stx_resource_path
@@ -62,6 +62,14 @@ DEDICATED_WORKLOAD = {
     "pod_resource": "resources/cloud_platform/storage/lvm_csi/lvm-pod-lvm-provisioner.yaml",
     "pod_yaml_path": f"{REMOTE_DIR}/lvm-pod-lvm-provisioner.yaml",
 }
+
+# Constants for the coexistence scenario (thin cgts-vg + thick dedicated at the same time).
+# A single multi-document manifest with two PVCs (one per storage class) and one Pod writing to both.
+COEXIST_RESOURCE = "resources/cloud_platform/storage/lvm_csi/lvm-pod-coexistence-cgts-vg-thick.yaml"
+COEXIST_YAML_PATH = f"{REMOTE_DIR}/lvm-pod-coexistence-cgts-vg-thick.yaml"
+COEXIST_POD = "lvm-pod-coexist"
+COEXIST_PVC_CGTS_VG = "lvm-pvc-coexist-cgts-vg"
+COEXIST_PVC_DEDICATED = "lvm-pvc-coexist-dedicated"
 
 # Constants specific to the create-and-restore snapshot scenario (lvm-csi thin).
 # The lvm-csi (TopoLVM) VolumeSnapshotClass shared by both the cgts-vg and the dedicated scenarios.
@@ -164,7 +172,8 @@ def _apply_lvm_csi_cgts_vg():
     active_controller = SystemHostListKeywords(ssh_connection).get_active_controller().get_host_name()
 
     get_logger().log_test_case_step("Add 'lvm' as storage backend")
-    system_storage_backend_keywords.system_storage_backend_add(backend="lvm", confirmed=True)
+    if not system_storage_backend_keywords.get_system_storage_backend_list().is_backend_configured("lvm"):
+        system_storage_backend_keywords.system_storage_backend_add(backend="lvm", confirmed=True)
     validate_equals(system_storage_backend_keywords.get_system_storage_backend_list().is_backend_configured("lvm"), True, "'lvm' backend should be configured.")
 
     get_logger().log_test_case_step(f"Capture the '{LVM_VG}' available size before assigning the lvm-csi function")
@@ -439,7 +448,8 @@ def _teardown_lvm_csi_resources(ssh_connection: SSHConnection, alarms_before: li
     kubectl_get_pvc_keywords = KubectlGetPvcKeywords(ssh_connection)
     system_host_lvg_keywords = SystemHostLvgKeywords(ssh_connection)
     system_storage_backend_keywords = SystemStorageBackendKeywords(ssh_connection)
-    system_application_apply_keywords = SystemApplicationApplyKeywords(ssh_connection)
+    system_application_list_keywords = SystemApplicationListKeywords(ssh_connection)
+    system_application_abort_keywords = SystemApplicationAbortKeywords(ssh_connection)
     system_application_remove_keywords = SystemApplicationRemoveKeywords(ssh_connection)
     alarm_list_keywords = AlarmListKeywords(ssh_connection)
     active_controller = SystemHostListKeywords(ssh_connection).get_active_controller().get_host_name()
@@ -468,20 +478,42 @@ def _teardown_lvm_csi_resources(ssh_connection: SSHConnection, alarms_before: li
     else:
         get_logger().log_info(f"'{LVM_VG}' function is '{current_function}', no reset needed.")
 
+    # Resetting the cgts-vg function above makes the platform-managed lvm-csi re-apply.
+    # 'storage-backend-delete' is rejected while the app is in transition, so if an apply is in
+    # progress, abort it and wait for a terminal state before deleting the backend.
+    app_status = system_application_list_keywords.get_system_application_list().get_application(LVM_CSI_APP).get_status()
+    if app_status == "applying":
+        get_logger().log_teardown_step(f"Abort the in-progress '{LVM_CSI_APP}' apply so the backend delete is not rejected.")
+        system_application_abort_keywords.system_application_abort(LVM_CSI_APP)
+        system_application_list_keywords.validate_app_status_in_list(LVM_CSI_APP, ["applied", "apply-failed"], timeout=600, polling_sleep_time=15)
+
+    # Delete the 'lvm' storage backend FIRST, then VALIDATE it is gone. lvm-csi is platform-managed
+    # (desired_state 'applied'); while the backend is configured, sysinv re-applies the app, so
+    # removing the app before the backend lets a reapply put it back to 'applied'. Deleting the
+    # backend first removes that desired state so the later app-remove sticks.
     get_logger().log_teardown_step("Delete the 'lvm' storage backend.")
     if system_storage_backend_keywords.get_system_storage_backend_list().is_backend_configured("lvm"):
         system_storage_backend_keywords.system_storage_backend_delete(backend="lvm")
-    else:
-        get_logger().log_info("'lvm' backend is not configured, nothing to delete.")
+    get_logger().log_teardown_step("Validate the 'lvm' storage backend is no longer configured.")
+    validate_equals_with_retry(
+        lambda: system_storage_backend_keywords.get_system_storage_backend_list().is_backend_configured("lvm"),
+        False,
+        "'lvm' storage backend should be deleted after teardown",
+        timeout=300,
+        polling_sleep_time=10,
+    )
 
-    if system_application_apply_keywords.is_already_applied(LVM_CSI_APP):
-        get_logger().log_teardown_step(f"Remove the '{LVM_CSI_APP}' application (back to 'uploaded').")
+    # Now remove the app (back to 'uploaded') if not already uploaded, then VALIDATE it reached
+    # 'uploaded'. With the backend gone, no reapply is triggered, so the removal is durable.
+    app_status = system_application_list_keywords.get_system_application_list().get_application(LVM_CSI_APP).get_status()
+    if app_status != "uploaded":
+        get_logger().log_teardown_step(f"Remove the '{LVM_CSI_APP}' application (currently '{app_status}') back to 'uploaded'.")
         remove_input = SystemApplicationRemoveInput()
         remove_input.set_app_name(LVM_CSI_APP)
         remove_input.set_force_removal(True)
         system_application_remove_keywords.system_application_remove(remove_input)
-    else:
-        get_logger().log_info(f"'{LVM_CSI_APP}' application is not applied, no removal needed.")
+    get_logger().log_teardown_step(f"Validate the '{LVM_CSI_APP}' application is back to 'uploaded'.")
+    system_application_list_keywords.validate_app_status(LVM_CSI_APP, "uploaded", timeout=600, polling_sleep_time=15)
 
     get_logger().log_teardown_step("Verify no new alarms remain after the revert.")
     alarm_list_keywords.wait_for_all_alarms_cleared_excluding(excluded_alarms=alarms_before, stable_checks=3, tolerate_query_failure=True)
@@ -571,7 +603,8 @@ def _apply_lvm_csi_dedicated_thick_vg():
     active_controller = SystemHostListKeywords(ssh_connection).get_active_controller().get_host_name()
 
     get_logger().log_test_case_step("Add 'lvm' as storage backend")
-    system_storage_backend_keywords.system_storage_backend_add(backend="lvm", confirmed=True)
+    if not system_storage_backend_keywords.get_system_storage_backend_list().is_backend_configured("lvm"):
+        system_storage_backend_keywords.system_storage_backend_add(backend="lvm", confirmed=True)
     validate_equals(system_storage_backend_keywords.get_system_storage_backend_list().is_backend_configured("lvm"), True, "'lvm' backend should be configured.")
 
     get_logger().log_test_case_step(f"Create the '{DEDICATED_VG}' local volume group with the lvm-csi thick function on {active_controller}")
@@ -638,7 +671,8 @@ def _teardown_lvm_csi_dedicated_vg(ssh_connection: SSHConnection, alarms_before:
     kubectl_get_pvc_keywords = KubectlGetPvcKeywords(ssh_connection)
     system_host_lvg_keywords = SystemHostLvgKeywords(ssh_connection)
     system_storage_backend_keywords = SystemStorageBackendKeywords(ssh_connection)
-    system_application_apply_keywords = SystemApplicationApplyKeywords(ssh_connection)
+    system_application_list_keywords = SystemApplicationListKeywords(ssh_connection)
+    system_application_abort_keywords = SystemApplicationAbortKeywords(ssh_connection)
     system_application_remove_keywords = SystemApplicationRemoveKeywords(ssh_connection)
     alarm_list_keywords = AlarmListKeywords(ssh_connection)
     active_controller = SystemHostListKeywords(ssh_connection).get_active_controller().get_host_name()
@@ -671,26 +705,172 @@ def _teardown_lvm_csi_dedicated_vg(ssh_connection: SSHConnection, alarms_before:
     else:
         get_logger().log_info(f"'{DEDICATED_VG}' local volume group is not present, nothing to delete.")
 
+    # Deleting the dedicated VG above makes the platform-managed lvm-csi re-apply.
+    # 'storage-backend-delete' is rejected while the app is in transition, so if an apply is in
+    # progress, abort it and wait for a terminal state before deleting the backend.
+    app_status = system_application_list_keywords.get_system_application_list().get_application(LVM_CSI_APP).get_status()
+    if app_status == "applying":
+        get_logger().log_teardown_step(f"Abort the in-progress '{LVM_CSI_APP}' apply so the backend delete is not rejected.")
+        system_application_abort_keywords.system_application_abort(LVM_CSI_APP)
+        system_application_list_keywords.validate_app_status_in_list(LVM_CSI_APP, ["applied", "apply-failed"], timeout=600, polling_sleep_time=15)
+
+    # Delete the 'lvm' storage backend FIRST, then VALIDATE it is gone. lvm-csi is platform-managed
+    # (desired_state 'applied'); while the backend is configured, sysinv re-applies the app, so
+    # removing the app before the backend lets a reapply put it back to 'applied'. Deleting the
+    # backend first removes that desired state so the later app-remove sticks.
     get_logger().log_teardown_step("Delete the 'lvm' storage backend.")
     if system_storage_backend_keywords.get_system_storage_backend_list().is_backend_configured("lvm"):
         system_storage_backend_keywords.system_storage_backend_delete(backend="lvm")
-    else:
-        get_logger().log_info("'lvm' backend is not configured, nothing to delete.")
+    get_logger().log_teardown_step("Validate the 'lvm' storage backend is no longer configured.")
+    validate_equals_with_retry(
+        lambda: system_storage_backend_keywords.get_system_storage_backend_list().is_backend_configured("lvm"),
+        False,
+        "'lvm' storage backend should be deleted after teardown",
+        timeout=300,
+        polling_sleep_time=10,
+    )
 
-    if system_application_apply_keywords.is_already_applied(LVM_CSI_APP):
-        get_logger().log_teardown_step(f"Remove the '{LVM_CSI_APP}' application (back to 'uploaded').")
+    # Now remove the app (back to 'uploaded') if not already uploaded, then VALIDATE it reached
+    # 'uploaded'. With the backend gone, no reapply is triggered, so the removal is durable.
+    app_status = system_application_list_keywords.get_system_application_list().get_application(LVM_CSI_APP).get_status()
+    if app_status != "uploaded":
+        get_logger().log_teardown_step(f"Remove the '{LVM_CSI_APP}' application (currently '{app_status}') back to 'uploaded'.")
         remove_input = SystemApplicationRemoveInput()
         remove_input.set_app_name(LVM_CSI_APP)
         remove_input.set_force_removal(True)
         system_application_remove_keywords.system_application_remove(remove_input)
-    else:
-        get_logger().log_info(f"'{LVM_CSI_APP}' application is not applied, no removal needed.")
+    get_logger().log_teardown_step(f"Validate the '{LVM_CSI_APP}' application is back to 'uploaded'.")
+    system_application_list_keywords.validate_app_status(LVM_CSI_APP, "uploaded", timeout=600, polling_sleep_time=15)
 
     get_logger().log_teardown_step("Verify no new alarms remain after the revert.")
     alarm_list_keywords.wait_for_all_alarms_cleared_excluding(excluded_alarms=alarms_before, stable_checks=3, tolerate_query_failure=True)
 
 
-def _run_lvm_csi_add_two_pvs_dedicated_vg(request: FixtureRequest, lvm_type: str):
+def _teardown_lvm_csi_coexistence(ssh_connection: SSHConnection, alarms_before: list):
+    """
+    Revert the coexistence setup (thin cgts-vg + thick dedicated) and verify no new alarms remain.
+
+    Deletes the coexistence Pod and both PVCs, resets the cgts-vg function to 'none', deletes the
+    dedicated 'lvm-provisioner' volume group (frees the disk), deletes the 'lvm' storage backend,
+    removes the 'lvm-csi' application (back to 'uploaded'), and verifies no new alarms remain.
+
+    Args:
+        ssh_connection (SSHConnection): the active controller SSH connection.
+        alarms_before (list): the snapshot of active alarms captured during setup.
+    """
+    kubectl_file_delete_keywords = KubectlFileDeleteKeywords(ssh_connection)
+    file_keywords = FileKeywords(ssh_connection)
+    kubectl_get_pods_keywords = KubectlGetPodsKeywords(ssh_connection)
+    kubectl_get_pvc_keywords = KubectlGetPvcKeywords(ssh_connection)
+    system_host_lvg_keywords = SystemHostLvgKeywords(ssh_connection)
+    system_storage_backend_keywords = SystemStorageBackendKeywords(ssh_connection)
+    system_application_list_keywords = SystemApplicationListKeywords(ssh_connection)
+    system_application_abort_keywords = SystemApplicationAbortKeywords(ssh_connection)
+    system_application_remove_keywords = SystemApplicationRemoveKeywords(ssh_connection)
+    alarm_list_keywords = AlarmListKeywords(ssh_connection)
+    active_controller = SystemHostListKeywords(ssh_connection).get_active_controller().get_host_name()
+
+    get_logger().log_teardown_step("Delete the coexistence Pod, PVCs and manifest file.")
+    if file_keywords.file_exists(COEXIST_YAML_PATH):
+        kubectl_file_delete_keywords.delete_resources(COEXIST_YAML_PATH, ignore_not_found=True)
+        file_keywords.delete_file(COEXIST_YAML_PATH)
+
+    get_logger().log_teardown_step("Confirm the coexistence Pod and both PVCs are deleted.")
+    kubectl_get_pods_keywords.wait_for_pods_to_be_deleted(namespace="default", pod_names=[COEXIST_POD])
+    kubectl_get_pvc_keywords.wait_for_pvc_to_be_deleted(COEXIST_PVC_CGTS_VG, namespace="default")
+    kubectl_get_pvc_keywords.wait_for_pvc_to_be_deleted(COEXIST_PVC_DEDICATED, namespace="default")
+
+    # 'host-lvg-modify -f none' is rejected while sysinv still counts thin LVs, so wait for thin_cur_lv to reach 0.
+    get_logger().log_teardown_step(f"Wait for '{LVM_VG}' thin_cur_lv to reach 0 on {active_controller}.")
+    system_host_lvg_keywords.wait_for_thin_cur_lv_zero(active_controller, LVM_VG)
+
+    current_function = system_host_lvg_keywords.get_system_host_lvg_show(active_controller, LVM_VG).get_system_host_lvg().get_lvm_function()
+    if current_function == "lvm-csi":
+        get_logger().log_teardown_step(f"Reset the '{LVM_VG}' function to 'none' on {active_controller}.")
+        system_host_lvg_keywords.system_host_lvg_modify(host_id=active_controller, lvg_name=LVM_VG, lvm_function="none")
+
+    # Delete the dedicated VG entirely (frees the disk), only if it is present.
+    lvg_names = [lvg.get_lvg_name() for lvg in system_host_lvg_keywords.get_system_host_lvg_list(active_controller).get_system_host_lvg()]
+    if DEDICATED_VG in lvg_names:
+        # 'host-lvg-delete' is rejected while the VG still has a provisioned LV, so wait for Current LVs to reach 0.
+        get_logger().log_teardown_step(f"Wait for '{DEDICATED_VG}' current LVs to reach 0 on {active_controller}.")
+
+        def is_dedicated_vg_empty() -> bool:
+            current_lvs = system_host_lvg_keywords.get_system_host_lvg_show(active_controller, DEDICATED_VG).get_system_host_lvg().get_current_lvs()
+            get_logger().log_info(f"'{DEDICATED_VG}' current LVs: {current_lvs}.")
+            return int(current_lvs) == 0
+
+        validate_equals_with_retry(is_dedicated_vg_empty, True, f"'{DEDICATED_VG}' current LVs to reach 0", timeout=300, polling_sleep_time=10)
+
+        get_logger().log_teardown_step(f"Delete the '{DEDICATED_VG}' local volume group on {active_controller}.")
+        system_host_lvg_keywords.system_host_lvg_delete(active_controller, DEDICATED_VG)
+
+    # Resetting the cgts-vg function and deleting the dedicated VG above makes the platform-managed
+    # lvm-csi re-apply. 'storage-backend-delete' is rejected while the app is in transition, so if an
+    # apply is in progress, abort it and wait for a terminal state before deleting the backend.
+    app_status = system_application_list_keywords.get_system_application_list().get_application(LVM_CSI_APP).get_status()
+    if app_status == "applying":
+        get_logger().log_teardown_step(f"Abort the in-progress '{LVM_CSI_APP}' apply so the backend delete is not rejected.")
+        system_application_abort_keywords.system_application_abort(LVM_CSI_APP)
+        system_application_list_keywords.validate_app_status_in_list(LVM_CSI_APP, ["applied", "apply-failed"], timeout=600, polling_sleep_time=15)
+
+    # Delete the 'lvm' storage backend FIRST, then VALIDATE it is gone. lvm-csi is platform-managed
+    # (desired_state 'applied'); while the backend is configured, sysinv re-applies the app, so
+    # removing the app before the backend lets a reapply put it back to 'applied'. Deleting the
+    # backend first removes that desired state so the later app-remove sticks.
+    get_logger().log_teardown_step("Delete the 'lvm' storage backend.")
+    if system_storage_backend_keywords.get_system_storage_backend_list().is_backend_configured("lvm"):
+        system_storage_backend_keywords.system_storage_backend_delete(backend="lvm")
+    get_logger().log_teardown_step("Validate the 'lvm' storage backend is no longer configured.")
+    validate_equals_with_retry(
+        lambda: system_storage_backend_keywords.get_system_storage_backend_list().is_backend_configured("lvm"),
+        False,
+        "'lvm' storage backend should be deleted after teardown",
+        timeout=300,
+        polling_sleep_time=10,
+    )
+
+    # Now remove the app (back to 'uploaded') if not already uploaded, then VALIDATE it reached
+    # 'uploaded'. With the backend gone, no reapply is triggered, so the removal is durable.
+    app_status = system_application_list_keywords.get_system_application_list().get_application(LVM_CSI_APP).get_status()
+    if app_status != "uploaded":
+        get_logger().log_teardown_step(f"Remove the '{LVM_CSI_APP}' application (currently '{app_status}') back to 'uploaded'.")
+        remove_input = SystemApplicationRemoveInput()
+        remove_input.set_app_name(LVM_CSI_APP)
+        remove_input.set_force_removal(True)
+        system_application_remove_keywords.system_application_remove(remove_input)
+    get_logger().log_teardown_step(f"Validate the '{LVM_CSI_APP}' application is back to 'uploaded'.")
+    system_application_list_keywords.validate_app_status(LVM_CSI_APP, "uploaded", timeout=600, polling_sleep_time=15)
+
+    get_logger().log_teardown_step("Verify no new alarms remain after the revert.")
+    alarm_list_keywords.wait_for_all_alarms_cleared_excluding(excluded_alarms=alarms_before, stable_checks=3, tolerate_query_failure=True)
+
+
+def _create_and_verify_coexistence_workload(ssh_connection: SSHConnection):
+    """
+    Create the coexistence Pod with two PVCs (one on cgts-vg thin, one on lvm-provisioner thick).
+
+    Uploads the single multi-document manifest, creates both PVCs and the Pod, and verifies the Pod
+    is Running and both PVCs are Bound.
+
+    Args:
+        ssh_connection (SSHConnection): the active controller SSH connection.
+    """
+    file_keywords = FileKeywords(ssh_connection)
+    kubectl_apply_file_keywords = KubectlFileApplyKeywords(ssh_connection)
+    kubectl_get_pods_keywords = KubectlGetPodsKeywords(ssh_connection)
+    kubectl_get_pvc_keywords = KubectlGetPvcKeywords(ssh_connection)
+
+    get_logger().log_test_case_step("Create the two PVCs (thin cgts-vg + thick dedicated) and the Pod that writes to both.")
+    file_keywords.upload_file(get_stx_resource_path(COEXIST_RESOURCE), COEXIST_YAML_PATH, overwrite=True)
+    kubectl_apply_file_keywords.apply_resource_from_yaml(COEXIST_YAML_PATH)
+
+    get_logger().log_test_case_step("Verify the Pod is Running and both PVCs are Bound.")
+    kubectl_get_pods_keywords.wait_for_pods_to_reach_status("Running", pod_names=[COEXIST_POD], namespace="default", timeout=300)
+    kubectl_get_pvc_keywords.wait_for_pvcs_to_reach_status("Bound", pvc_names=[COEXIST_PVC_CGTS_VG, COEXIST_PVC_DEDICATED], namespace="default", timeout=300)
+
+
+def _add_two_pvs_to_dedicated_vg(ssh_connection: SSHConnection, lvm_type: str):
     """
     Create an empty dedicated lvm-csi VG and add two spare disks as physical volumes.
 
@@ -699,23 +879,15 @@ def _run_lvm_csi_add_two_pvs_dedicated_vg(request: FixtureRequest, lvm_type: str
     second spare disk (verifying two PVs and a larger total size), and waits for lvm-csi to apply.
 
     Args:
-        request (FixtureRequest): the pytest request fixture, used to register the teardown finalizer.
+        ssh_connection (SSHConnection): the active controller SSH connection.
         lvm_type (str): the lvm-csi provisioning type for the dedicated VG ('thin' or 'thick').
     """
-    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     system_storage_backend_keywords = SystemStorageBackendKeywords(ssh_connection)
     system_host_lvg_keywords = SystemHostLvgKeywords(ssh_connection)
     system_host_pv_keywords = SystemHostPvKeywords(ssh_connection)
     system_host_disk_keywords = SystemHostDiskKeywords(ssh_connection)
     application_show_keywords = SystemApplicationShowKeywords(ssh_connection)
     active_controller = SystemHostListKeywords(ssh_connection).get_active_controller().get_host_name()
-
-    alarms_before = _setup_lvm()
-
-    def teardown():
-        _teardown_lvm_csi_dedicated_vg(ssh_connection, alarms_before)
-
-    request.addfinalizer(teardown)
 
     get_logger().log_test_case_step("Add 'lvm' as storage backend")
     system_storage_backend_keywords.system_storage_backend_add(backend="lvm", confirmed=True)
@@ -751,9 +923,6 @@ def _run_lvm_csi_add_two_pvs_dedicated_vg(request: FixtureRequest, lvm_type: str
     get_logger().log_test_case_step(f"Wait for the '{LVM_CSI_APP}' application to be applied.")
     application_show_keywords.validate_app_progress_contains(LVM_CSI_APP, "completed")
     application_show_keywords.validate_app_status(LVM_CSI_APP, "applied")
-
-    _create_and_verify_pvc_and_pod(ssh_connection, DEDICATED_WORKLOAD)
-    _verify_dedicated_vg_lv_provisioned(ssh_connection)
 
 
 @mark.p2
@@ -1837,7 +2006,19 @@ def test_lvm_csi_add_two_pvs_dedicated_thin_vg(request):
         - Remove the 'lvm-csi' application (back to 'uploaded')
         - Verify no new alarms remain after the revert
     """
-    _run_lvm_csi_add_two_pvs_dedicated_vg(request, lvm_type="thin")
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+
+    alarms_before = _setup_lvm()
+
+    # Register the teardown only after setup passed (setup is validation-only, nothing to revert if it fails).
+    def teardown():
+        _teardown_lvm_csi_dedicated_vg(ssh_connection, alarms_before)
+
+    request.addfinalizer(teardown)
+
+    _add_two_pvs_to_dedicated_vg(ssh_connection, lvm_type="thin")
+    _create_and_verify_pvc_and_pod(ssh_connection, DEDICATED_WORKLOAD)
+    _verify_dedicated_vg_lv_provisioned(ssh_connection)
 
 
 @mark.p2
@@ -1876,4 +2057,182 @@ def test_lvm_csi_add_two_pvs_dedicated_thick_vg(request):
         - Remove the 'lvm-csi' application (back to 'uploaded')
         - Verify no new alarms remain after the revert
     """
-    _run_lvm_csi_add_two_pvs_dedicated_vg(request, lvm_type="thick")
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+
+    alarms_before = _setup_lvm()
+
+    # Register the teardown only after setup passed (setup is validation-only, nothing to revert if it fails).
+    def teardown():
+        _teardown_lvm_csi_dedicated_vg(ssh_connection, alarms_before)
+
+    request.addfinalizer(teardown)
+
+    _add_two_pvs_to_dedicated_vg(ssh_connection, lvm_type="thick")
+    _create_and_verify_pvc_and_pod(ssh_connection, DEDICATED_WORKLOAD)
+    _verify_dedicated_vg_lv_provisioned(ssh_connection)
+
+
+@mark.p2
+@mark.lab_is_simplex
+@mark.lab_has_free_disk
+def test_lvm_csi_thin_cgts_vg_and_thick_dedicated_coexistence_sx(request):
+    """
+    Validate thin cgts-vg and thick dedicated lvm-csi provisioning coexisting on AIO-SX.
+
+    This scenario needs one free disk (lab_has_free_disk) for the dedicated thick volume group. It
+    provisions the shared cgts-vg as thin and the dedicated 'lvm-provisioner' VG as thick at the same
+    time, then runs a Pod with two PVCs (one per storage class) writing to both concurrently.
+
+    Setup:
+        - Validate that all hosts are healthy
+        - Validate the 'lvm-csi' application is in the initial 'uploaded' state
+        - Validate the 'lvm' storage backend is not already configured
+        - Capture a snapshot of the active alarms
+
+    Test Steps:
+        - Add the 'lvm' storage backend
+        - Assign the lvm-csi function to the shared cgts-vg (thin) and verify its thin pool
+        - Create the dedicated 'lvm-provisioner' thick volume group on a free disk
+        - Wait for the 'lvm-csi' application to be applied
+        - Verify both the cgts-vg (thin) and the dedicated (thick) volume group attributes
+        - Create a Pod with two PVCs (cgts-vg thin + lvm-provisioner thick) and verify both are Bound
+        - Verify the cgts-vg thin pool has been used (Data% > 0) and the dedicated VG has a logical volume
+        - Verify no new alarms appeared during the test
+
+    Teardown:
+        - Delete the Pod, both PVCs and the manifest file
+        - Reset the cgts-vg function to 'none' and delete the dedicated volume group
+        - Delete the 'lvm' storage backend
+        - Remove the 'lvm-csi' application (back to 'uploaded')
+        - Verify no new alarms remain after the revert
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+
+    alarms_before = _setup_lvm()
+
+    # Register the teardown only after setup passed (setup is validation-only, nothing to revert if it fails).
+    def teardown():
+        _teardown_lvm_csi_coexistence(ssh_connection, alarms_before)
+
+    request.addfinalizer(teardown)
+
+    # Provision the shared cgts-vg (thin) first, then the dedicated lvm-provisioner (thick); the
+    # 'lvm' backend-add is idempotent, so running both back to back is safe.
+    _apply_lvm_csi_cgts_vg()
+    _apply_lvm_csi_dedicated_thick_vg()
+    _create_and_verify_coexistence_workload(ssh_connection)
+    _verify_lvmcsi_pool_used(ssh_connection)
+    _verify_dedicated_vg_lv_provisioned(ssh_connection)
+    _verify_no_new_alarms(ssh_connection, alarms_before)
+
+
+@mark.p2
+@mark.lab_is_duplex
+@mark.lab_has_free_disk
+def test_lvm_csi_thin_cgts_vg_and_thick_dedicated_coexistence_dx(request):
+    """
+    Validate thin cgts-vg and thick dedicated lvm-csi provisioning coexisting on AIO-DX.
+
+    This scenario needs one free disk (lab_has_free_disk) for the dedicated thick volume group. It
+    provisions the shared cgts-vg as thin and the dedicated 'lvm-provisioner' VG as thick at the same
+    time, then runs a Pod with two PVCs (one per storage class) writing to both concurrently.
+
+    Setup:
+        - Validate that all hosts are healthy
+        - Validate the 'lvm-csi' application is in the initial 'uploaded' state
+        - Validate the 'lvm' storage backend is not already configured
+        - Capture a snapshot of the active alarms
+
+    Test Steps:
+        - Add the 'lvm' storage backend
+        - Assign the lvm-csi function to the shared cgts-vg (thin) and verify its thin pool
+        - Create the dedicated 'lvm-provisioner' thick volume group on a free disk
+        - Wait for the 'lvm-csi' application to be applied
+        - Verify both the cgts-vg (thin) and the dedicated (thick) volume group attributes
+        - Verify the topolvm-system pods are Running (including topolvm-scheduler)
+        - Create a Pod with two PVCs (cgts-vg thin + lvm-provisioner thick) and verify both are Bound
+        - Verify the cgts-vg thin pool has been used (Data% > 0) and the dedicated VG has a logical volume
+        - Verify no new alarms appeared during the test
+
+    Teardown:
+        - Delete the Pod, both PVCs and the manifest file
+        - Reset the cgts-vg function to 'none' and delete the dedicated volume group
+        - Delete the 'lvm' storage backend
+        - Remove the 'lvm-csi' application (back to 'uploaded')
+        - Verify no new alarms remain after the revert
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+
+    alarms_before = _setup_lvm()
+
+    # Register the teardown only after setup passed (setup is validation-only, nothing to revert if it fails).
+    def teardown():
+        _teardown_lvm_csi_coexistence(ssh_connection, alarms_before)
+
+    request.addfinalizer(teardown)
+
+    # Provision the shared cgts-vg (thin) first, then the dedicated lvm-provisioner (thick); the
+    # 'lvm' backend-add is idempotent, so running both back to back is safe.
+    _apply_lvm_csi_cgts_vg()
+    _apply_lvm_csi_dedicated_thick_vg()
+    _verify_topolvm_pods_running(ssh_connection)
+    _create_and_verify_coexistence_workload(ssh_connection)
+    _verify_lvmcsi_pool_used(ssh_connection)
+    _verify_dedicated_vg_lv_provisioned(ssh_connection)
+    _verify_no_new_alarms(ssh_connection, alarms_before)
+
+
+@mark.p2
+@mark.lab_has_compute
+@mark.lab_has_free_disk
+def test_lvm_csi_thin_cgts_vg_and_thick_dedicated_coexistence_compute(request):
+    """
+    Validate thin cgts-vg and thick dedicated lvm-csi provisioning coexisting on a lab with compute.
+
+    This scenario needs one free disk (lab_has_free_disk) for the dedicated thick volume group. It
+    provisions the shared cgts-vg as thin and the dedicated 'lvm-provisioner' VG as thick at the same
+    time, then runs a Pod with two PVCs (one per storage class) writing to both concurrently.
+
+    Setup:
+        - Validate that all hosts are healthy
+        - Validate the 'lvm-csi' application is in the initial 'uploaded' state
+        - Validate the 'lvm' storage backend is not already configured
+        - Capture a snapshot of the active alarms
+
+    Test Steps:
+        - Add the 'lvm' storage backend
+        - Assign the lvm-csi function to the shared cgts-vg (thin) and verify its thin pool
+        - Create the dedicated 'lvm-provisioner' thick volume group on a free disk
+        - Wait for the 'lvm-csi' application to be applied
+        - Verify both the cgts-vg (thin) and the dedicated (thick) volume group attributes
+        - Verify the topolvm-system pods are Running (including topolvm-scheduler)
+        - Create a Pod with two PVCs (cgts-vg thin + lvm-provisioner thick) and verify both are Bound
+        - Verify the cgts-vg thin pool has been used (Data% > 0) and the dedicated VG has a logical volume
+        - Verify no new alarms appeared during the test
+
+    Teardown:
+        - Delete the Pod, both PVCs and the manifest file
+        - Reset the cgts-vg function to 'none' and delete the dedicated volume group
+        - Delete the 'lvm' storage backend
+        - Remove the 'lvm-csi' application (back to 'uploaded')
+        - Verify no new alarms remain after the revert
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+
+    alarms_before = _setup_lvm()
+
+    # Register the teardown only after setup passed (setup is validation-only, nothing to revert if it fails).
+    def teardown():
+        _teardown_lvm_csi_coexistence(ssh_connection, alarms_before)
+
+    request.addfinalizer(teardown)
+
+    # Provision the shared cgts-vg (thin) first, then the dedicated lvm-provisioner (thick); the
+    # 'lvm' backend-add is idempotent, so running both back to back is safe.
+    _apply_lvm_csi_cgts_vg()
+    _apply_lvm_csi_dedicated_thick_vg()
+    _verify_topolvm_pods_running(ssh_connection)
+    _create_and_verify_coexistence_workload(ssh_connection)
+    _verify_lvmcsi_pool_used(ssh_connection)
+    _verify_dedicated_vg_lv_provisioned(ssh_connection)
+    _verify_no_new_alarms(ssh_connection, alarms_before)
