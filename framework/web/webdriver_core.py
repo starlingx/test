@@ -10,6 +10,7 @@ from framework.web.action.web_action_get_text import WebActionGetText
 from framework.web.action.web_action_hover import WebActionHover
 from framework.web.action.web_action_send_keys import WebActionSendKeys
 from framework.web.action.web_action_set_text import WebActionSetText
+from framework.web.action.web_action_set_text_js import WebActionSetTextJs
 from framework.web.condition.web_condition import WebCondition
 from framework.web.condition.web_condition_element_visible import WebConditionElementVisible
 from framework.web.condition.web_condition_text_equals import WebConditionTextEquals
@@ -186,6 +187,29 @@ class WebDriverCore:
         conditions_clone = [condition for condition in conditions]
         conditions_clone.append(WebConditionTextEquals(locator, text))
         action = WebActionSetText(self.driver, locator, conditions_clone)
+        action_executor = WebActionExecutor(action)
+        action_executor.execute_action(text)
+
+    def set_text_js(self, locator: WebLocator, text: str, conditions: List[WebCondition] = []) -> None:
+        """
+        Sets the value of the element using JavaScript, then validates the value equals the text.
+
+        Use this instead of set_text for framework-managed inputs and textareas where
+        incremental key entry races with the component's re-render and scrambles the
+        value (characters land out of order). The value is set atomically and native
+        input and change events are dispatched so the component registers the change.
+
+        Args:
+            locator (WebLocator): The locator of the element that we want to set the value of.
+            text (str): The text that we want to set.
+            conditions (List[WebCondition]): Conditions that must be satisfied for the Action to be declared successful.
+
+        Returns: None
+
+        """
+        conditions_clone = [condition for condition in conditions]
+        conditions_clone.append(WebConditionTextEquals(locator, text))
+        action = WebActionSetTextJs(self.driver, locator, conditions_clone)
         action_executor = WebActionExecutor(action)
         action_executor.execute_action(text)
 
@@ -434,3 +458,4 @@ class WebDriverCore:
             None
         """
         self.driver.set_window_size(width, height)
+
