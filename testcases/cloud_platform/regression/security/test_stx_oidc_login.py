@@ -22,6 +22,9 @@ from framework.logging.automation_logger import get_logger
 from framework.resources.resource_finder import get_stx_resource_path
 from framework.ssh.ssh_connection import SSHConnection
 from framework.validation.validation import validate_equals
+from keywords.cloud_platform.dcmanager.objects.dcmanger_subcloud_list_availability_enum import DcManagerSubcloudListAvailabilityEnum
+from keywords.cloud_platform.dcmanager.objects.dcmanger_subcloud_list_management_enum import DcManagerSubcloudListManagementEnum
+from keywords.cloud_platform.dcmanager.subcloud_picker_keywords import SubcloudPickerKeywords
 from keywords.cloud_platform.security.keycloak.keycloak_admin_keywords import KeycloakAdminKeywords
 from keywords.cloud_platform.security.oidc.dex_connector_keywords import DexConnectorKeywords
 from keywords.cloud_platform.security.oidc.oidc_environment_keywords import OidcEnvironmentKeywords
@@ -157,6 +160,27 @@ def _run_stx_via_browser(ssh_connection: SSHConnection, ctx: StxOidcRoleContext,
         is_keycloak=is_keycloak,
         totp_secret=totp_secret,
     )
+
+
+def _pick_managed_subcloud_name() -> str:
+    """Pick the name of a managed, online subcloud for RBAC-denial write tests.
+
+    Reuses the shared subcloud picker (with secondary system-controller fallback)
+    to select a real managed/online subcloud. Using a real subcloud name ensures a
+    reader/operator write command (e.g. 'dcmanager subcloud-backup create') is
+    rejected by RBAC with a Forbidden error rather than failing earlier with a
+    'subcloud not found' validation error.
+
+    Returns:
+        str: The name of a managed, online subcloud.
+    """
+    _, result = SubcloudPickerKeywords.pick_with_fallback(
+        management_status=DcManagerSubcloudListManagementEnum.MANAGED,
+        availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
+    )
+    subcloud_name = result.get_name()
+    get_logger().log_info(f"Selected subcloud '{subcloud_name}' for dcmanager RBAC-denial check")
+    return subcloud_name
 
 
 def _setup_wad_oidc_role(ssh_connection: SSHConnection, group_name: str, stx_role: str) -> StxOidcRoleContext:
@@ -612,3 +636,133 @@ def test_stx_oidc_login_keycloak_reader_role(request: FixtureRequest):
     write_result = _run_stx_via_browser(ssh_connection, ctx, "system application-apply dummy-app", is_keycloak=True, totp_secret=totp_secret)
     get_logger().log_info(f"Keycloak reader write output:\n{write_result.get_output()}")
     validate_equals(write_result.is_stx_forbidden(), True, "Reader must be denied 'system application-apply'")
+
+
+@mark.p2
+@mark.lab_has_subcloud
+def test_stx_oidc_login_ldap_dcmanager_reader_role(request: FixtureRequest):
+    """Verify the reader role via browser OIDC login for dcmanager: list allowed, write denied.
+
+    Only applicable to a Distributed Cloud (DC) lab where the 'dcmanager' CLI
+    exists on the system controller. Binds the LDAP group to the STX 'reader'
+    role, logs in through the browser DEX flow, then confirms the read command
+    'dcmanager subcloud list' succeeds while a write command
+    'dcmanager subcloud-backup create <sc>' is denied with a 403/Forbidden RBAC error.
+
+    Teardown:
+        - Delete the ClusterRoleBinding, LDAP user/group, working dir, role-bindings
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    ctx = _setup_ldap_oidc_role(ssh_connection, "Level1SystemReader", "reader")
+    # LIFO: register role-bindings teardown FIRST so it runs LAST (it restarts
+    # keystone); cleanup runs first while keystone is still up.
+    for teardown in ctx.get_teardowns():
+        request.addfinalizer(teardown)
+
+    subcloud_name = _pick_managed_subcloud_name()
+
+    get_logger().log_test_case_step("Reader (dcmanager): verify read command 'dcmanager subcloud list' is allowed")
+    read_result = _run_stx_via_browser(ssh_connection, ctx, "dcmanager subcloud list")
+    get_logger().log_info(f"dcmanager reader read output:\n{read_result.get_output()}")
+    validate_equals(read_result.is_stx_forbidden(), False, "Reader must NOT be denied 'dcmanager subcloud list'")
+
+    get_logger().log_test_case_step("Reader (dcmanager): verify write command 'dcmanager subcloud-backup create' is denied")
+    write_result = _run_stx_via_browser(ssh_connection, ctx, f"dcmanager subcloud-backup create --subcloud {subcloud_name}")
+    get_logger().log_info(f"dcmanager reader write output:\n{write_result.get_output()}")
+    validate_equals(write_result.is_stx_forbidden(), True, "Reader must be denied 'dcmanager subcloud-backup create'")
+
+
+@mark.p2
+@mark.lab_has_subcloud
+def test_stx_oidc_login_ldap_dcmanager_operator_role(request: FixtureRequest):
+    """Verify the operator role via browser OIDC login for dcmanager: list allowed, write denied.
+
+    Only applicable to a Distributed Cloud (DC) lab where the 'dcmanager' CLI
+    exists on the system controller. Binds the LDAP group to the STX 'operator'
+    role (which the framework maps to operator+reader), logs in through the
+    browser DEX flow, then confirms the read command 'dcmanager subcloud list'
+    succeeds while a write command 'dcmanager subcloud-backup create <sc>' is
+    denied with a 403/Forbidden RBAC error.
+
+    Teardown:
+        - Delete the ClusterRoleBinding, LDAP user/group, working dir, role-bindings
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    ctx = _setup_ldap_oidc_role(ssh_connection, "Level1SystemOperator", "operator")
+    # LIFO: register role-bindings teardown FIRST so it runs LAST (it restarts
+    # keystone); cleanup runs first while keystone is still up.
+    for teardown in ctx.get_teardowns():
+        request.addfinalizer(teardown)
+
+    subcloud_name = _pick_managed_subcloud_name()
+
+    get_logger().log_test_case_step("Operator (dcmanager): verify read command 'dcmanager subcloud list' is allowed")
+    read_result = _run_stx_via_browser(ssh_connection, ctx, "dcmanager subcloud list")
+    get_logger().log_info(f"dcmanager operator read output:\n{read_result.get_output()}")
+    validate_equals(read_result.is_stx_forbidden(), False, "Operator must NOT be denied 'dcmanager subcloud list'")
+
+    get_logger().log_test_case_step("Operator (dcmanager): verify write command 'dcmanager subcloud-backup create' is denied")
+    write_result = _run_stx_via_browser(ssh_connection, ctx, f"dcmanager subcloud-backup create --subcloud {subcloud_name}")
+    get_logger().log_info(f"dcmanager operator write output:\n{write_result.get_output()}")
+    validate_equals(write_result.is_stx_forbidden(), True, "Operator must be denied 'dcmanager subcloud-backup create'")
+
+
+@mark.p2
+def test_stx_oidc_login_ldap_sw_manager_reader_role(request: FixtureRequest):
+    """Verify the reader role via browser OIDC login for sw-manager: show allowed, write denied.
+
+    Binds the LDAP group to the STX 'reader' role, logs in through the browser
+    DEX flow, then confirms the read command 'sw-manager sw-deploy-strategy show'
+    succeeds while a write command 'sw-manager sw-deploy-strategy create <release>'
+    is denied with a 403/Forbidden RBAC error.
+
+    Teardown:
+        - Delete the ClusterRoleBinding, LDAP user/group, working dir, role-bindings
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    ctx = _setup_ldap_oidc_role(ssh_connection, "Level1SystemReader", "reader")
+    # LIFO: register role-bindings teardown FIRST so it runs LAST (it restarts
+    # keystone); cleanup runs first while keystone is still up.
+    for teardown in ctx.get_teardowns():
+        request.addfinalizer(teardown)
+
+    get_logger().log_test_case_step("Reader (sw-manager): verify read command 'sw-manager sw-deploy-strategy show' is allowed")
+    read_result = _run_stx_via_browser(ssh_connection, ctx, "sw-manager sw-deploy-strategy show")
+    get_logger().log_info(f"sw-manager reader read output:\n{read_result.get_output()}")
+    validate_equals(read_result.is_stx_forbidden(), False, "Reader must NOT be denied 'sw-manager sw-deploy-strategy show'")
+
+    get_logger().log_test_case_step("Reader (sw-manager): verify write command 'sw-manager sw-deploy-strategy create' is denied")
+    write_result = _run_stx_via_browser(ssh_connection, ctx, "sw-manager sw-deploy-strategy create starlingx-99.99.0")
+    get_logger().log_info(f"sw-manager reader write output:\n{write_result.get_output()}")
+    validate_equals(write_result.is_stx_forbidden(), True, "Reader must be denied 'sw-manager sw-deploy-strategy create'")
+
+
+@mark.p2
+def test_stx_oidc_login_ldap_sw_manager_operator_role(request: FixtureRequest):
+    """Verify the operator role via browser OIDC login for sw-manager: show allowed, write denied.
+
+    Binds the LDAP group to the STX 'operator' role (which the framework maps to
+    operator+reader), logs in through the browser DEX flow, then confirms the read
+    command 'sw-manager sw-deploy-strategy show' succeeds while a write command
+    'sw-manager sw-deploy-strategy create <release>' is denied with a 403/Forbidden
+    RBAC error.
+
+    Teardown:
+        - Delete the ClusterRoleBinding, LDAP user/group, working dir, role-bindings
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    ctx = _setup_ldap_oidc_role(ssh_connection, "Level1SystemOperator", "operator")
+    # LIFO: register role-bindings teardown FIRST so it runs LAST (it restarts
+    # keystone); cleanup runs first while keystone is still up.
+    for teardown in ctx.get_teardowns():
+        request.addfinalizer(teardown)
+
+    get_logger().log_test_case_step("Operator (sw-manager): verify read command 'sw-manager sw-deploy-strategy show' is allowed")
+    read_result = _run_stx_via_browser(ssh_connection, ctx, "sw-manager sw-deploy-strategy show")
+    get_logger().log_info(f"sw-manager operator read output:\n{read_result.get_output()}")
+    validate_equals(read_result.is_stx_forbidden(), False, "Operator must NOT be denied 'sw-manager sw-deploy-strategy show'")
+
+    get_logger().log_test_case_step("Operator (sw-manager): verify write command 'sw-manager sw-deploy-strategy create' is denied")
+    write_result = _run_stx_via_browser(ssh_connection, ctx, "sw-manager sw-deploy-strategy create starlingx-99.99.0")
+    get_logger().log_info(f"sw-manager operator write output:\n{write_result.get_output()}")
+    validate_equals(write_result.is_stx_forbidden(), True, "Operator must be denied 'sw-manager sw-deploy-strategy create'")
