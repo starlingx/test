@@ -61,10 +61,13 @@ class KubectlLabelNodeKeywords(K8sBaseKeyword):
         """
         # kubectl get nodes -l cpumanager=true -o jsonpath='{.items[*].metadata.name}'
         # Output: "compute-0 compute-1" → split into ["compute-0", "compute-1"]
+        # When no node matches, jsonpath prints nothing (or "[]"); both mean "no nodes".
         cmd = f"kubectl get nodes -l {label_key}={label_value} -o jsonpath='{{.items[*].metadata.name}}'"
         output = self.ssh_connection.send(self.k8s_config.export(cmd))
         self.validate_success_return_code(self.ssh_connection)
-        names_str = output[0].strip() if isinstance(output, list) and output else str(output).strip()
-        if not names_str:
-            return []
-        return names_str.split()
+        names_str = "\n".join(output) if isinstance(output, list) else str(output)
+        # Node names never contain shell/jsonpath punctuation. Filter to plausible
+        # node-name tokens so the echoed command line and an empty "[]" result do
+        # not get mistaken for a real node.
+        tokens = [token for token in names_str.split() if token and not any(char in token for char in "[]{}=/'")]
+        return tokens
