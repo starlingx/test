@@ -294,7 +294,7 @@ class SSHConnection:
                 elif action == "SEND_SUDO":
                     thread_manager.start_thread("SSH_Command", self._send_as_sudo, cmd)
                 elif action == "SEND_EXPECT_PROMPTS":
-                    thread_manager.start_thread("SSH_Command", self._send_expect_prompts, cmd, prompts)
+                    thread_manager.start_thread("SSH_Command", self._send_expect_prompts, cmd, prompts, timeout=command_timeout)
                 else:
                     raise ValueError(f"{action} is not a supported command for an SSHConnection.")
 

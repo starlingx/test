@@ -33,6 +33,19 @@ class TarKeywords(BaseKeyword):
         self.ssh_connection.send(f"tar -xzvf {file_name}")
         self.validate_success_return_code(self.ssh_connection)
 
+    def list_files_verbosely(self, file_name: str) -> str:
+        """Lists the contents of a tar file verbosely (``tar -tvf``).
+
+        Args:
+            file_name (str): the path to the tar file.
+
+        Returns:
+            str: the joined ``tar -tvf`` output listing the archive contents.
+        """
+        output = self.ssh_connection.send(f"tar -tvf {shlex.quote(file_name)}")
+        self.validate_success_return_code(self.ssh_connection)
+        return "".join(output)
+
     def decompress_tar_gz(self, file_name: str) -> None:
         """
         Decompresses a .tar.gz file into a .tar file without extracting contents.

@@ -118,7 +118,11 @@ class IPMIToolChassisPowerKeywords(BaseKeyword):
 
         for controller in controllers:
             self._power_off(controller.get_bm_ip(), controller.get_bm_username(), bm_password)
+            # Persist the BMC connection details so a subsequent power_on()
+            # (which reads self.bm_*) can target the same subcloud controller.
             self.bm_ip = controller.get_bm_ip()
+            self.bm_username = controller.get_bm_username()
+            self.bm_password = bm_password
 
     def power_cycle(self):
         """Powers off/on the host"""
