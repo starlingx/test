@@ -2,9 +2,9 @@
 
 from typing import List, Optional
 
+from framework.exceptions.keyword_exception import KeywordException
 from framework.logging.automation_logger import get_logger
 from keywords.base_keyword import BaseKeyword
-
 from keywords.openstack.connection.ace_openstack_connection import ACEOpenStackConnection
 from keywords.openstack.resources.projects.object.project_object import ProjectObject
 from keywords.openstack.resources.projects.object.user_object import UserObject
@@ -126,7 +126,7 @@ class ProjectKeywords(BaseKeyword):
             name=user_name,
             password=password,
             domain_id=domain,
-            default_project=project.id if project else None,
+            default_project_id=project.id if project else None,
             email=email,
         )
         obj = UserObject()
@@ -160,16 +160,11 @@ class ProjectKeywords(BaseKeyword):
             bool: True if role is already assigned.
         """
         identity = self.openstack_connection.get_identity()
-        role_assignments = list(identity.role_assignments(
-            project_id=project_id, user_id=user_id
-        ))
+        role_assignments = list(identity.role_assignments(project_id=project_id, user_id=user_id))
         role = identity.find_role(role_name)
         if not role:
             return False
-        return any(
-            getattr(ra, "role", {}).get("id") == role.id
-            for ra in role_assignments
-        )
+        return any(getattr(ra, "role", {}).get("id") == role.id for ra in role_assignments)
 
     def assign_role(self, project_name: str, user_name: str, role_name: str, domain: str = "default") -> None:
         """Assign a role to a user on a project. No-op if already assigned.
@@ -179,26 +174,31 @@ class ProjectKeywords(BaseKeyword):
             user_name (str): User name.
             role_name (str): Role name.
             domain (str): Domain ID or name.
+
+        Raises:
+            KeywordException: If the project, user, or role is not found. These
+                are setup errors that must surface loudly rather than silently
+                leaving the role unassigned.
         """
         identity = self.openstack_connection.get_identity()
         project = identity.find_project(project_name, domain_id=domain)
         if not project:
-            get_logger().log_warning(f"Cannot assign role '{role_name}': project '{project_name}' not found")
-            return
+            raise KeywordException(f"Cannot assign role '{role_name}': project '{project_name}' not found")
 
         user = identity.find_user(user_name, domain_id=domain)
         if not user:
-            get_logger().log_warning(f"Cannot assign role '{role_name}': user '{user_name}' not found")
-            return
+            raise KeywordException(f"Cannot assign role '{role_name}': user '{user_name}' not found")
 
         if self.is_role_assigned(project.id, user.id, role_name):
             get_logger().log_info(f"Role '{role_name}' already assigned to '{user_name}' on '{project_name}'")
             return
 
+        role = identity.find_role(role_name)
+        if not role:
+            raise KeywordException(f"Cannot assign role '{role_name}': role '{role_name}' not found")
+
         get_logger().log_info(f"Assigning role '{role_name}' to '{user_name}' on '{project_name}'")
-        identity.assign_project_role_to_user(
-            project=project.id, user=user.id, role=role_name
-        )
+        identity.assign_project_role_to_user(project=project.id, user=user.id, role=role.id)
 
     def get_user_role_names(self, project_id: str, user_id: str) -> List[str]:
         """Get the names of the roles a user holds on a project.
