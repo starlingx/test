@@ -5,7 +5,9 @@ cycle counter on a fixed interval. They are used to prove that a volume stays
 writable across disruptions such as host power cycles, lock/unlock, swact, etc.
 
 The PVC/pod YAML resources live under RESOURCE_DIR so they can be reused by any
-test. Supported storage types: 'cephfs' (ReadWriteMany) and 'rbd' (ReadWriteOnce).
+test. A storage type is the file name prefix of a PVC/pod pair in that directory
+(for example 'cephfs', 'rbd', 'dell-nfs' or 'netapp-nfs'); the pair carries the
+access mode and the default storage class for that backend.
 """
 
 import os
@@ -44,7 +46,7 @@ class KubectlContinuousWriteKeywords(K8sBaseKeyword):
         """
         super().__init__(ssh_connection, kubeconfig_path)
 
-    def start_continuous_write_pod(self, storage_type: str, node_name: str = None) -> tuple[str, str]:
+    def start_continuous_write_pod(self, storage_type: str, node_name: str = None, storage_class_name: str = None) -> tuple[str, str]:
         """Create a PVC and a pod that continuously writes to the volume.
 
         Uploads the reusable PVC/pod YAML resources for the given storage type,
@@ -57,15 +59,18 @@ class KubectlContinuousWriteKeywords(K8sBaseKeyword):
         pod keeps writing throughout.
 
         Args:
-            storage_type (str): either 'cephfs' (RWX) or 'rbd' (RWO).
+            storage_type (str): the file name prefix of a PVC/pod pair under RESOURCE_DIR,
+                e.g. 'cephfs' (RWX), 'rbd' (RWO) or 'netapp-nfs' (RWX).
             node_name (str, optional): node to pin the pod to (spec.nodeName). If None,
                 the scheduler places the pod on any eligible node.
+            storage_class_name (str, optional): storage class the PVC claims from. If None,
+                the one declared in the PVC resource YAML is used. Needed for backends whose
+                storage class name is chosen by the lab, such as NetApp.
 
         Returns:
             tuple[str, str]: the pod name and the pvc name created.
         """
-        pvc_name = f"{storage_type}-writer-pvc"
-        pod_name = f"{storage_type}-writer-pod"
+        pod_name, pvc_name = self._get_resource_names(storage_type)
         pvc_yaml_file = f"{storage_type}-writer-pvc.yaml"
         pod_yaml_file = f"{storage_type}-writer-pod.yaml"
         remote_pvc_yaml = f"{REMOTE_HOME}/{pvc_yaml_file}"
@@ -73,13 +78,14 @@ class KubectlContinuousWriteKeywords(K8sBaseKeyword):
 
         file_keywords = FileKeywords(self.ssh_connection)
 
+        # Build each YAML locally, injecting the requested spec fields, then upload the
+        # resulting file. Editing the parsed YAML (rather than an in-place sed on the
+        # controller) is layout-independent and cannot silently no-op.
         get_logger().log_info(f"Upload {storage_type} continuous-write PVC YAML to active controller")
-        file_keywords.upload_file(get_stx_resource_path(f"{RESOURCE_DIR}/{pvc_yaml_file}"), remote_pvc_yaml, overwrite=True)
+        local_pvc_yaml = self._render_resource_yaml(pvc_yaml_file, {"storageClassName": storage_class_name})
+        file_keywords.upload_file(local_pvc_yaml, remote_pvc_yaml, overwrite=True)
 
-        # Build the pod YAML locally, injecting spec.nodeName when pinning is requested,
-        # then upload the resulting file. Editing the parsed YAML (rather than an in-place
-        # sed on the controller) is layout-independent and cannot silently no-op.
-        local_pod_yaml = self._render_pod_yaml(pod_yaml_file, node_name)
+        local_pod_yaml = self._render_resource_yaml(pod_yaml_file, {"nodeName": node_name})
         file_keywords.upload_file(local_pod_yaml, remote_pod_yaml, overwrite=True)
 
         # Remove any leftover pod from a previous run before recreating: a Pod is largely
@@ -96,6 +102,36 @@ class KubectlContinuousWriteKeywords(K8sBaseKeyword):
         KubectlGetPodsKeywords(self.ssh_connection).wait_for_pod_status(pod_name, "Running")
 
         return pod_name, pvc_name
+
+    def ensure_continuous_write_pod(self, storage_type: str, node_name: str = None, storage_class_name: str = None) -> tuple[str, str]:
+        """Reuse the continuous-write pod of a storage type when it is already usable, create it otherwise.
+
+        A pod is reused only when it is Running with every container ready and, if
+        pinning was requested, already on the requested node. Readiness matters
+        because a pod can report Running while a container is still crash-looping,
+        and such a pod is not writing anything. A writer sitting on the node that is
+        about to be disrupted would not survive the disruption, so in that case it is
+        recreated on the right node.
+
+        Args:
+            storage_type (str): the file name prefix of a PVC/pod pair under RESOURCE_DIR.
+            node_name (str, optional): node the pod must run on (spec.nodeName). If None,
+                a Running pod on any node is reused.
+            storage_class_name (str, optional): storage class the PVC claims from when the
+                pod has to be created. If None, the one in the PVC resource YAML is used.
+
+        Returns:
+            tuple[str, str]: the pod name and the pvc name in use.
+        """
+        pod_name, pvc_name = self._get_resource_names(storage_type)
+        pods = KubectlGetPodsKeywords(self.ssh_connection).get_pods().get_pods()
+        usable_pod = next((pod for pod in pods if pod.get_name() == pod_name and pod.get_status() == "Running" and pod.is_ready()), None)
+
+        if usable_pod and (not node_name or usable_pod.get_node() == node_name):
+            get_logger().log_info(f"Reusing continuous-write pod {pod_name} already running on {usable_pod.get_node()}")
+            return pod_name, pvc_name
+
+        return self.start_continuous_write_pod(storage_type, node_name=node_name, storage_class_name=storage_class_name)
 
     def get_write_cycle_count(self, pod_name: str) -> int:
         """Read the current write-cycle counter from a continuous-write pod.
@@ -147,32 +183,43 @@ class KubectlContinuousWriteKeywords(K8sBaseKeyword):
             polling_sleep_time=polling_sleep_time,
         )
 
-    def _render_pod_yaml(self, pod_yaml_file: str, node_name: str = None) -> str:
-        """Produce a local pod YAML, optionally pinned to a node via spec.nodeName.
-
-        Reads the resource pod YAML, and when node_name is given, sets spec.nodeName
-        by editing the parsed document (layout-independent, unlike an in-place sed).
-        Returns the path to the local file to upload. When no pinning is requested,
-        the original resource file path is returned unchanged.
+    def _get_resource_names(self, storage_type: str) -> tuple[str, str]:
+        """Build the pod and PVC names used by the continuous-write resources of a storage type.
 
         Args:
-            pod_yaml_file (str): the pod YAML file name under RESOURCE_DIR.
-            node_name (str, optional): node to pin the pod to (spec.nodeName).
+            storage_type (str): the file name prefix of a PVC/pod pair under RESOURCE_DIR.
 
         Returns:
-            str: local path to the pod YAML to upload.
+            tuple[str, str]: the pod name and the pvc name.
         """
-        source_path = get_stx_resource_path(f"{RESOURCE_DIR}/{pod_yaml_file}")
-        if not node_name:
+        return f"{storage_type}-writer-pod", f"{storage_type}-writer-pvc"
+
+    def _render_resource_yaml(self, yaml_file: str, spec_overrides: dict) -> str:
+        """Produce a local copy of a resource YAML with the given spec fields overridden.
+
+        Overrides are applied by editing the parsed document (layout-independent, unlike
+        an in-place sed) and entries with an empty value are ignored. When nothing is left
+        to override, the original resource file path is returned unchanged.
+
+        Args:
+            yaml_file (str): the resource YAML file name under RESOURCE_DIR.
+            spec_overrides (dict): spec fields to set, e.g. {"nodeName": "controller-1"}.
+
+        Returns:
+            str: local path to the resource YAML to upload.
+        """
+        source_path = get_stx_resource_path(f"{RESOURCE_DIR}/{yaml_file}")
+        overrides = {key: value for key, value in spec_overrides.items() if value}
+        if not overrides:
             return source_path
 
         with open(source_path) as source_file:
-            pod = yaml.safe_load(source_file)
-        pod.setdefault("spec", {})["nodeName"] = node_name
+            resource = yaml.safe_load(source_file)
+        resource.setdefault("spec", {}).update(overrides)
 
-        target_path = os.path.join(tempfile.gettempdir(), pod_yaml_file)
+        target_path = os.path.join(tempfile.gettempdir(), yaml_file)
         with open(target_path, "w") as target_file:
-            yaml.safe_dump(pod, target_file, default_flow_style=False, sort_keys=False)
+            yaml.safe_dump(resource, target_file, default_flow_style=False, sort_keys=False)
         return target_path
 
     def _delete_pod_and_wait_gone(self, pod_name: str, timeout: int = 120, polling_sleep_time: int = 5) -> None:

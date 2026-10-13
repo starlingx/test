@@ -45,7 +45,7 @@ from keywords.cloud_platform.system.host.system_host_lvg_keywords import SystemH
 from keywords.cloud_platform.system.oam.objects.system_oam_show_output import SystemOamShowOutput
 from keywords.cloud_platform.system.oam.system_oam_show_keywords import SystemOamShowKeywords
 from keywords.k8s.storageclass.kubectl_get_storageclass_keywords import KubectlGetStorageclassKeywords
-from keywords.k8s.trident.kubectl_get_trident_backend_config_keywords import KubectlGetTridentBackendConfigKeywords
+from keywords.k8s.storageclass.storage_capability_keywords import StorageCapabilityKeywords
 from keywords.linux.lspci.lspci_keywords import LspciKeywords
 from testcases.conftest import log_configuration
 
@@ -1077,14 +1077,15 @@ def scan_storage_capabilities(lab_config: LabConfig) -> None:
     """Scan StorageClasses and TridentBackendConfigs to determine storage capabilities.
 
     Uses existing KubectlGetStorageclassKeywords for SC detection and
-    KubectlGetTridentBackendConfigKeywords for NetApp backend health validation.
+    StorageCapabilityKeywords for NetApp backend health validation.
 
     Capabilities added:
     - lab_has_cephfs: CephFS StorageClass present
+    - lab_has_ceph_rbd: Ceph RBD StorageClass present
     - lab_has_netapp: At least one NetApp StorageClass present
     - lab_has_netapp_nfs: ontap-nas SC + healthy TBC
-    - lab_has_netapp_iscsi: ontap-san SC + healthy TBC
-    - lab_has_netapp_fc: ontap-san-fc SC + healthy TBC
+    - lab_has_netapp_iscsi: ontap-san SC + healthy TBC with sanType iscsi
+    - lab_has_netapp_fc: ontap-san SC + healthy TBC with sanType fcp
 
     Args:
         lab_config (LabConfig): The lab configuration object.
@@ -1098,41 +1099,36 @@ def scan_storage_capabilities(lab_config: LabConfig) -> None:
         return
 
     available_types = sc_output.get_available_storage_types()
-    has_netapp = False
-    netapp_capabilities = []
 
     for storage_type in available_types:
         if storage_type == "cephfs":
             lab_config.add_lab_capability("lab_has_cephfs")
         elif storage_type == "ceph-rbd":
             lab_config.add_lab_capability("lab_has_ceph_rbd")
-        elif storage_type == "netapp-nfs":
-            has_netapp = True
-            netapp_capabilities.append(("lab_has_netapp_nfs", "ontap-nas"))
-        elif storage_type == "netapp-iscsi":
-            has_netapp = True
-            netapp_capabilities.append(("lab_has_netapp_iscsi", "ontap-san"))
-        elif storage_type == "netapp-fc":
-            has_netapp = True
-            netapp_capabilities.append(("lab_has_netapp_fc", "ontap-san-fc"))
 
-    if has_netapp:
-        lab_config.add_lab_capability("lab_has_netapp")
+    has_netapp_storage_class = any(storage_type.startswith("netapp-") for storage_type in available_types)
+    if not has_netapp_storage_class:
+        return
 
-    # Validate NetApp backends via TridentBackendConfig
-    if netapp_capabilities:
-        try:
-            tbc_output = KubectlGetTridentBackendConfigKeywords(ssh_connection).get_trident_backend_configs()
-        except Exception as e:
-            get_logger().log_warning(f"Could not query TridentBackendConfigs: {e}")
-            return
+    lab_config.add_lab_capability("lab_has_netapp")
 
-        for capability_name, driver_name in netapp_capabilities:
-            if tbc_output.has_healthy_backend_for_driver(driver_name):
-                lab_config.add_lab_capability(capability_name)
-                get_logger().log_info(f"Storage capability added: {capability_name}")
-            else:
-                get_logger().log_warning(f"StorageClass with driver '{driver_name}' exists but no healthy TBC — " f"capability '{capability_name}' NOT added")
+    # The protocol of a NetApp SAN StorageClass is only known once its
+    # TridentBackendConfig is read, so the capabilities are resolved by
+    # StorageCapabilityKeywords rather than from the StorageClass alone.
+    try:
+        netapp_capabilities = StorageCapabilityKeywords(ssh_connection).get_netapp_capabilities()
+    except Exception as e:
+        get_logger().log_warning(f"Could not resolve NetApp capabilities: {e}")
+        return
+
+    if not netapp_capabilities:
+        get_logger().log_warning("NetApp StorageClasses exist but no healthy TridentBackendConfig serves them")
+        return
+
+    for capability in netapp_capabilities:
+        capability_name = f"lab_has_{capability.replace('-', '_')}"
+        lab_config.add_lab_capability(capability_name)
+        get_logger().log_info(f"Storage capability added: {capability_name}")
 
 
 def write_config(lab_config: LabConfig) -> None:

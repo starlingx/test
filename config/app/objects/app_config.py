@@ -70,6 +70,10 @@ class AppConfig:
         if "dell_storage_app_name" in app_dict:
             self.dell_storage_app_name = app_dict["dell_storage_app_name"]
 
+        self.netapp_storage_app_name = "netapp-storage"
+        if "netapp_storage_app_name" in app_dict:
+            self.netapp_storage_app_name = app_dict["netapp_storage_app_name"]
+
         self.sriov_fec_operator_app_name = "sriov-fec-operator"
         if "sriov_fec_operator_app_name" in app_dict:
             self.sriov_fec_operator_app_name = app_dict["sriov_fec_operator_app_name"]
@@ -211,6 +215,16 @@ class AppConfig:
 
         """
         return self.platform_integ_app_tarball
+
+    def get_netapp_storage_app_name(self) -> str:
+        """
+        Getter for netapp-storage app name
+
+        Returns:
+            str: the netapp-storage app name
+
+        """
+        return self.netapp_storage_app_name
 
     def get_dell_storage_app_name(self) -> str:
         """
