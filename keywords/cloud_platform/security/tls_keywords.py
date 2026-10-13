@@ -12,6 +12,7 @@ from keywords.cloud_platform.security.objects.tls_endpoint_ips_object import Tls
 from keywords.cloud_platform.system.addrpool.system_addrpool_list_keywords import SystemAddrpoolListKeywords
 from keywords.cloud_platform.system.oam.system_oam_show_keywords import SystemOamShowKeywords
 from keywords.cloud_platform.system.service.system_service_parameter_keywords import SystemServiceParameterKeywords
+from keywords.k8s.k8s_command_wrapper import export_k8s_config
 
 CONFIG_OUT_OF_DATE_ALARM_ID = "250.001"
 KNOWN_OS_CODENAMES = ("bullseye", "bookworm", "trixie")
@@ -627,7 +628,7 @@ class TlsKeywords(BaseKeyword):
         Returns:
             str: The matching ConfigMap content.
         """
-        output = self.ssh_connection.send(f"kubectl get cm -n {NGINX_INGRESS_NAMESPACE} {NGINX_INGRESS_CONFIGMAP} -o yaml | grep {key}")  # no validation needed
+        output = self.ssh_connection.send(export_k8s_config(f"kubectl get cm -n {NGINX_INGRESS_NAMESPACE} {NGINX_INGRESS_CONFIGMAP} -o yaml | grep {key}"))  # no validation needed
         return str(output)
 
     def wait_for_port_ready(self, host: str, port: int, is_ipv6: bool = False, retries: int = 18, delay: int = 10) -> bool:
