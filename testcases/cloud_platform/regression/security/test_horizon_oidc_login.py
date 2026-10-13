@@ -17,13 +17,19 @@ import time
 from pytest import FixtureRequest, mark
 
 from config.configuration_manager import ConfigurationManager
+from config.lab.objects.lab_config import LabConfig
 from config.security.objects.dex_config import DexConfig
+from config.security.objects.dex_test_user import DexTestUser
+from config.security.objects.security_config import SecurityConfig
 from framework.logging.automation_logger import get_logger
 from framework.resources.resource_finder import get_stx_resource_path
 from framework.ssh.ssh_connection import SSHConnection
 from framework.validation.validation import validate_equals
+from keywords.cloud_platform.security.keycloak.keycloak_admin_keywords import KeycloakAdminKeywords
 from keywords.cloud_platform.security.oidc.dex_connector_keywords import DexConnectorKeywords
+from keywords.cloud_platform.security.oidc.oidc_environment_keywords import OidcEnvironmentKeywords
 from keywords.cloud_platform.security.oidc.oidc_setup_keywords import OidcSetupKeywords
+from keywords.cloud_platform.security.oidc.wad_connector_keywords import WadConnectorKeywords
 from keywords.cloud_platform.security.oidc_login.horizon_oidc_login_keywords import HorizonOidcLoginKeywords
 from keywords.cloud_platform.security.oidc_login.objects.stx_oidc_role_context import StxOidcRoleContext
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
@@ -158,6 +164,180 @@ def _setup_ldap_oidc_horizon(ssh_connection: SSHConnection, group_name: str, stx
     return StxOidcRoleContext(test_user, horizon_url, oam_ip, "ldap-1", [role_bindings_teardown, cleanup])
 
 
+def _setup_wad_oidc_horizon(ssh_connection: SSHConnection, group_name: str, stx_role: str) -> StxOidcRoleContext:
+    """Set up the WAD DEX connector + keystone role-bindings for a Horizon OIDC login test.
+
+    Unlike LDAP, the WAD user/group already exist in Active Directory, so this only
+    applies the WAD DEX connector override, ensures the WAD user's mail attribute,
+    sets the oidc-username-claim, and applies identity/stx role-bindings for the
+    given role. Horizon WebSSO authorizes via keystone role-bindings, so no
+    Kubernetes ClusterRoleBinding is created. The oauth2-proxy pods are refreshed
+    before login, and the Horizon URL (port 8443) is stored on the returned context.
+    Teardown callables are returned for the caller to register in LIFO order.
+
+    Args:
+        ssh_connection (SSHConnection): Active controller SSH connection.
+        group_name (str): WAD group name bound to the keystone role.
+        stx_role (str): STX role to bind (e.g. 'admin').
+
+    Returns:
+        StxOidcRoleContext: Context with the Horizon URL, user, and teardown callables.
+    """
+    lab_config = ConfigurationManager.get_lab_config()
+    dex_config = ConfigurationManager.get_security_config().get_dex_connector_config()
+    wad_connector = dex_config.get_wad_connector()
+    wad_user = dex_config.get_wad_test_user()
+
+    wad_keywords = WadConnectorKeywords(ssh_connection)
+    dex_keywords = DexConnectorKeywords(ssh_connection)
+    oidc_setup = OidcSetupKeywords(ssh_connection)
+    oam_ip = lab_config.get_floating_ip()
+
+    def cleanup():
+        ssh = LabConnectionKeywords().get_active_controller_ssh()
+        get_logger().log_teardown_step("Cleaning up WAD test resources")
+        FileKeywords(ssh).delete_directory(dex_config.get_working_dir())
+
+    get_logger().log_test_case_step("Configure the WAD DEX connector and re-apply oidc-auth-apps")
+    wad_keywords.apply_wad_override(dex_config, wad_connector.get_email_attr(), wad_connector.get_username_attr(), wad_connector.get_name_attr())
+    wad_keywords.ensure_wad_user_mail_attribute(dex_config, wad_user.get_username(), wad_user.get_email())
+    dex_keywords.set_oidc_username_claim(dex_config.get_oidc_username_claim().get_default())
+
+    get_logger().log_test_case_step(f"Set up identity/stx role-bindings ({group_name} -> {stx_role})")
+    role_bindings_teardown = oidc_setup.setup_role_bindings(group_name, stx_role)
+
+    # Re-applying oidc-auth-apps + restarting keystone can leave oauth2-proxy with
+    # a stale upstream connection. Refresh it before the browser login.
+    _refresh_oauth2_proxy(ssh_connection)
+
+    bracketed_ip = f"[{oam_ip}]" if ":" in oam_ip else oam_ip
+    horizon_url = f"https://{bracketed_ip}:8443"
+    # Order matters: [role_bindings_teardown, cleanup]. The caller registers them
+    # in this order so (LIFO) cleanup runs first (keystone up) and the
+    # keystone-restarting role-bindings teardown runs last.
+    return StxOidcRoleContext(wad_user, horizon_url, oam_ip, wad_connector.get_connector_id(), [role_bindings_teardown, cleanup])
+
+
+def _get_keycloak_admin(security_config: SecurityConfig) -> KeycloakAdminKeywords:
+    """Build a KeycloakAdminKeywords instance from security configuration.
+
+    Args:
+        security_config (SecurityConfig): Security configuration object.
+
+    Returns:
+        KeycloakAdminKeywords: Configured Keycloak admin keywords instance.
+    """
+    issuer_url = security_config.get_oidc_keycloak_external_idp_issuer_url()
+    return KeycloakAdminKeywords(
+        keycloak_url=issuer_url.rsplit("/realms", 1)[0],
+        realm=issuer_url.rsplit("/", 1)[-1],
+        admin_username=security_config.get_oidc_keycloak_admin_username(),
+        admin_password=security_config.get_oidc_keycloak_admin_password(),
+    )
+
+
+def _setup_oidc_keycloak_environment(ssh_connection: SSHConnection, security_config: SecurityConfig, lab_config: LabConfig) -> str:
+    """Set up the full OIDC Keycloak environment on the remote host.
+
+    Args:
+        ssh_connection (SSHConnection): Active controller SSH connection.
+        security_config (SecurityConfig): Security configuration object.
+        lab_config (LabConfig): Lab configuration object.
+
+    Returns:
+        str: Full path to the generated kubeconfig file on the remote host.
+    """
+    oam_ip = lab_config.get_floating_ip()
+    if lab_config.is_ipv6():
+        oam_ip = f"[{oam_ip}]"
+    return OidcEnvironmentKeywords(ssh_connection).setup(
+        oam_ip=oam_ip,
+        namespace=security_config.get_oidc_keycloak_namespace(),
+        secret_name=security_config.get_oidc_keycloak_upstream_idp_ca_secret_name(),
+        oidc_app_name="oidc-auth-apps",
+        working_dir=security_config.get_oidc_keycloak_working_dir(),
+        ca_cert_pem=security_config.get_oidc_keycloak_ca_cert(),
+        client_id=security_config.get_oidc_keycloak_client_id(),
+        client_secret=security_config.get_oidc_keycloak_client_secret(),
+        external_idp_issuer_url=security_config.get_oidc_keycloak_external_idp_issuer_url(),
+        ca_cert_filename=security_config.get_oidc_keycloak_system_local_ca_cert_filename(),
+        kubeconfig_filename=security_config.get_oidc_keycloak_kubeconfig_filename(),
+        oidc_client_id=security_config.get_oidc_keycloak_static_client_id(),
+        oidc_client_secret=security_config.get_oidc_keycloak_static_client_secret(),
+        crb_binding_name=security_config.get_oidc_keycloak_crb_binding_name(),
+        crb_cluster_role=security_config.get_oidc_keycloak_crb_cluster_role(),
+        crb_group=security_config.get_oidc_keycloak_crb_group(),
+    )
+
+
+def _cleanup_oidc_keycloak_environment(ssh_connection: SSHConnection, security_config: SecurityConfig) -> None:
+    """Clean up the OIDC Keycloak environment and restore the lab to a safe state.
+
+    Args:
+        ssh_connection (SSHConnection): Active controller SSH connection.
+        security_config (SecurityConfig): Security configuration object.
+    """
+    OidcEnvironmentKeywords(ssh_connection).teardown(
+        oidc_app_name="oidc-auth-apps",
+        namespace=security_config.get_oidc_keycloak_namespace(),
+    )
+
+
+def _setup_keycloak_oidc_horizon(ssh_connection: SSHConnection, security_config: SecurityConfig, lab_config: LabConfig, stx_role: str) -> StxOidcRoleContext:
+    """Set up the Keycloak OIDC environment + keystone role-bindings for a Horizon OIDC login test.
+
+    Resets the test user's OTP + brute-force lockout for a clean MFA enrollment,
+    sets up the full OIDC Keycloak environment (oidc-auth-apps + kubeconfig + CRB),
+    then binds the Keycloak keystone group (crb_group) to the given STX role so the
+    browser-login user is authorized for Horizon. The oauth2-proxy pods are
+    refreshed before login, and the Horizon URL (port 8443) is stored on the
+    returned context. Teardown callables are returned for the caller to register
+    in LIFO order.
+
+    Args:
+        ssh_connection (SSHConnection): Active controller SSH connection.
+        security_config (SecurityConfig): Security configuration object.
+        lab_config (LabConfig): Lab configuration object.
+        stx_role (str): STX role to bind (e.g. 'admin').
+
+    Returns:
+        StxOidcRoleContext: Context with the Horizon URL, user, and teardown callables.
+    """
+    username = security_config.get_oidc_keycloak_test_username()
+    password = security_config.get_oidc_keycloak_test_password()
+    group_name = security_config.get_oidc_keycloak_crb_group()
+    oidc_setup = OidcSetupKeywords(ssh_connection)
+
+    get_logger().log_test_case_step("Reset Keycloak OTP and clear brute-force lockout for the test user")
+    keycloak_admin = _get_keycloak_admin(security_config)
+    keycloak_admin.delete_user_otp_credentials(username)
+    keycloak_admin.clear_user_brute_force_lockout(username)
+
+    get_logger().log_test_case_step("Set up the OIDC Keycloak environment (oidc-auth-apps + kubeconfig + CRB)")
+    _setup_oidc_keycloak_environment(ssh_connection, security_config, lab_config)
+
+    def env_cleanup():
+        ssh = LabConnectionKeywords().get_active_controller_ssh()
+        get_logger().log_teardown_step("Restoring OIDC Keycloak environment")
+        _cleanup_oidc_keycloak_environment(ssh, security_config)
+
+    get_logger().log_test_case_step(f"Set up identity/stx role-bindings ({group_name} -> {stx_role})")
+    role_bindings_teardown = oidc_setup.setup_role_bindings(group_name, stx_role)
+
+    # Re-applying oidc-auth-apps + restarting keystone can leave oauth2-proxy with
+    # a stale upstream connection. Refresh it before the browser login.
+    _refresh_oauth2_proxy(ssh_connection)
+
+    oam_ip = lab_config.get_floating_ip()
+    bracketed_ip = f"[{oam_ip}]" if ":" in oam_ip else oam_ip
+    horizon_url = f"https://{bracketed_ip}:8443"
+    keycloak_user = DexTestUser({"username": username, "password": password})
+    # Order matters: [role_bindings_teardown, env_cleanup]. The caller registers
+    # them in this order so (LIFO) env_cleanup runs first while keystone is up and
+    # the keystone-restarting role-bindings teardown runs last.
+    return StxOidcRoleContext(keycloak_user, horizon_url, oam_ip, "keycloak", [role_bindings_teardown, env_cleanup])
+
+
 @mark.p1
 def test_horizon_oidc_login_ldap_backend(request: FixtureRequest):
     """Verify Horizon WebSSO OIDC login via the Local LDAP connector loads the dashboard.
@@ -188,3 +368,75 @@ def test_horizon_oidc_login_ldap_backend(request: FixtureRequest):
 
     get_logger().log_test_case_step("Validate the Horizon dashboard loaded after OIDC login")
     validate_equals(dashboard_loaded, True, "Horizon dashboard should load after LDAP OIDC browser login")
+
+
+@mark.p2
+def test_horizon_oidc_login_wad_backend(request: FixtureRequest):
+    """Verify Horizon WebSSO OIDC login via the WAD connector loads the dashboard.
+
+    Sets up the WAD DEX connector with the WAD group bound to the admin role, then
+    logs into Horizon through the browser OIDC flow (OpenID Connect auth method ->
+    DEX connector select -> DEX-native login -> Grant Access) as the AD test user
+    and validates the Horizon dashboard loads.
+
+    Teardown:
+        - Delete the working dir and role-bindings
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    ctx = _setup_wad_oidc_horizon(ssh_connection, "Level1SystemAdmin", "admin")
+    # LIFO: register role-bindings teardown FIRST so it runs LAST (it restarts
+    # keystone); cleanup runs first while keystone is still up.
+    for teardown in ctx.get_teardowns():
+        request.addfinalizer(teardown)
+
+    test_user = ctx.get_test_user()
+    get_logger().log_test_case_step("Log into Horizon via browser OIDC login (WAD connector)")
+    dashboard_loaded = HorizonOidcLoginKeywords(ssh_connection).login_to_horizon_via_oidc(
+        horizon_url=ctx.get_login_url(),
+        username=test_user.get_username(),
+        password=test_user.get_password(),
+        connector=ctx.get_connector_id(),
+    )
+
+    get_logger().log_test_case_step("Validate the Horizon dashboard loaded after OIDC login")
+    validate_equals(dashboard_loaded, True, "Horizon dashboard should load after WAD OIDC browser login")
+
+
+@mark.p2
+def test_horizon_oidc_login_keycloak_backend(request: FixtureRequest):
+    """Verify Horizon WebSSO OIDC login via the external Keycloak IdP loads the dashboard.
+
+    Sets up the OIDC Keycloak environment (oidc-auth-apps + kubeconfig + CRB),
+    resets OTP + brute-force lockout for a clean MFA enrollment, binds the Keycloak
+    keystone group to the admin role, then logs into Horizon through the browser
+    OIDC flow (OpenID Connect auth method -> DEX connector select -> Keycloak
+    redirect login with TOTP -> Grant Access) and validates the Horizon dashboard
+    loads.
+
+    Teardown:
+        - Remove the role-bindings, restore the OIDC Keycloak environment
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    security_config = ConfigurationManager.get_security_config()
+    lab_config = ConfigurationManager.get_lab_config()
+    totp_secret = security_config.get_oidc_keycloak_test_totp_secret()
+
+    ctx = _setup_keycloak_oidc_horizon(ssh_connection, security_config, lab_config, "admin")
+    # LIFO: register role-bindings teardown FIRST so it runs LAST (it restarts
+    # keystone); env_cleanup runs first while keystone is still up.
+    for teardown in ctx.get_teardowns():
+        request.addfinalizer(teardown)
+
+    test_user = ctx.get_test_user()
+    get_logger().log_test_case_step("Log into Horizon via browser OIDC login (Keycloak connector)")
+    dashboard_loaded = HorizonOidcLoginKeywords(ssh_connection).login_to_horizon_via_oidc(
+        horizon_url=ctx.get_login_url(),
+        username=test_user.get_username(),
+        password=test_user.get_password(),
+        connector=ctx.get_connector_id(),
+        is_keycloak=True,
+        totp_secret=totp_secret,
+    )
+
+    get_logger().log_test_case_step("Validate the Horizon dashboard loaded after OIDC login")
+    validate_equals(dashboard_loaded, True, "Horizon dashboard should load after Keycloak OIDC browser login")

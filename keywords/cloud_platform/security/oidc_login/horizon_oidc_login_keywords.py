@@ -2,13 +2,14 @@
 
 Drives a headless Selenium browser through the Horizon WebSSO flow: navigate to
 the Horizon login page, select the "OpenID Connect" authentication method, sign
-in, complete the DEX login (connector selection + DEX-native form for LDAP/WAD,
-plus the DEX "Grant Access" approval page), and confirm the Horizon dashboard
-loads.
+in, complete the DEX login (connector selection + DEX-native form for LDAP/WAD or
+the Keycloak redirect form with optional MFA for Keycloak, plus the DEX "Grant
+Access" approval page), and confirm the Horizon dashboard loads.
 
-Reuses DexLoginPage (connector selection, DEX-native login, Grant Access) and
-HorizonLoginPage (navigation, dashboard/logged-in check) so the DEX handling is
-shared with the STX-CLI OIDC login flow.
+Reuses DexLoginPage (connector selection, DEX-native login, Grant Access),
+HorizonLoginPage (navigation, dashboard/logged-in check), and KeycloakLoginPage
+(Keycloak credential + MFA form) so the DEX/Keycloak handling is shared with the
+STX-CLI OIDC login flow.
 """
 
 import time
@@ -21,10 +22,11 @@ from framework.web.webdriver_core import WebDriverCore
 from keywords.base_keyword import BaseKeyword
 from web_pages.dex.login.dex_login_page import DexLoginPage
 from web_pages.horizon.login.horizon_login_page import HorizonLoginPage
+from web_pages.keycloak.login.keycloak_login_page import KeycloakLoginPage
 
 
 class HorizonOidcLoginKeywords(BaseKeyword):
-    """Log into Horizon via browser-based OIDC (DEX) SSO for LDAP/WAD connectors."""
+    """Log into Horizon via browser-based OIDC (DEX) SSO for LDAP/WAD/Keycloak connectors."""
 
     def __init__(self, ssh_connection: SSHConnection):
         """Constructor.
@@ -36,20 +38,26 @@ class HorizonOidcLoginKeywords(BaseKeyword):
         """
         self.ssh_connection = ssh_connection
 
-    def login_to_horizon_via_oidc(self, horizon_url: str, username: str, password: str, connector: str = "") -> bool:
+    def login_to_horizon_via_oidc(self, horizon_url: str, username: str, password: str, connector: str = "", is_keycloak: bool = False, totp_secret: str = None) -> bool:
         """Log into Horizon through the browser OIDC (DEX) flow and confirm the dashboard loads.
 
         Opens a headless browser, navigates to Horizon, selects the OpenID Connect
-        auth method and signs in, completes the DEX login (connector selection +
-        DEX-native form + Grant Access approval), then verifies the Horizon
-        dashboard is loaded.
+        auth method and signs in, completes the DEX login (connector selection then
+        either the DEX-native form for LDAP/WAD or the Keycloak redirect form with
+        optional MFA for Keycloak, plus Grant Access approval), then verifies the
+        Horizon dashboard is loaded.
 
         Args:
             horizon_url (str): The Horizon base URL (e.g. https://[oam_ip]:8443).
-            username (str): OIDC/LDAP login username.
-            password (str): OIDC/LDAP login password.
-            connector (str): DEX connector to select (e.g. 'ldap-1', 'wad-1').
+            username (str): OIDC login username.
+            password (str): OIDC login password.
+            connector (str): DEX connector to select (e.g. 'ldap-1', 'wad-1', 'keycloak').
                 Empty selects the first connector or skips selection if only one.
+            is_keycloak (bool): True if the selected connector redirects to Keycloak
+                (uses the Keycloak login form + optional MFA). False for DEX-native
+                LDAP/WAD login forms.
+            totp_secret (str): Base32 TOTP secret for the Keycloak MFA challenge.
+                Pass None for the CONFIGURE_TOTP first-login flow. Ignored for LDAP/WAD.
 
         Returns:
             bool: True if the Horizon dashboard loaded after OIDC login.
@@ -66,9 +74,15 @@ class HorizonOidcLoginKeywords(BaseKeyword):
             get_logger().log_info("Selecting OpenID Connect auth method and signing in")
             self._select_oidc_and_sign_in(driver, horizon_login_page)
 
-            get_logger().log_info(f"Completing DEX login (connector='{connector}')")
+            get_logger().log_info(f"Completing DEX login (connector='{connector}', keycloak={is_keycloak})")
             dex_login_page.select_connector_if_present(connector)
-            dex_login_page.submit_native_login(username, password)
+            if is_keycloak:
+                # Selecting the Keycloak connector redirects to the Keycloak login
+                # form (+ optional MFA); the existing page object drives it.
+                KeycloakLoginPage(driver).login(username=username, password=password, totp_secret=totp_secret)
+            else:
+                # DEX-native login form for Local LDAP / WAD connectors.
+                dex_login_page.submit_native_login(username, password)
             dex_login_page.grant_access_if_present()
 
             is_loaded = self._wait_for_horizon_dashboard(driver, horizon_login_page, horizon_url)
