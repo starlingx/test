@@ -17,12 +17,15 @@ class KubectlDeleteServiceKeywords(K8sBaseKeyword):
         """
         super().__init__(ssh_connection, kubeconfig_path)
 
-    def delete_service(self, service_name: str, namespace: str = None) -> str:
+    def delete_service(self, service_name: str, namespace: str = None, ignore_not_found: bool = False) -> str:
         """Delete the given service.
 
         Args:
             service_name (str): The service name.
             namespace (str): The namespace. Optional.
+            ignore_not_found (bool): If True, add --ignore-not-found so a
+                missing service is a no-op rather than an error (useful for
+                idempotent teardown). Defaults to False.
 
         Returns:
             str: The output of the delete command.
@@ -30,6 +33,8 @@ class KubectlDeleteServiceKeywords(K8sBaseKeyword):
         cmd = f"kubectl delete service {service_name}"
         if namespace:
             cmd = f"{cmd} -n {namespace}"
+        if ignore_not_found:
+            cmd = f"{cmd} --ignore-not-found"
         output = self.ssh_connection.send(self.k8s_config.export(cmd))
         self.validate_success_return_code(self.ssh_connection)
 
