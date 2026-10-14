@@ -41,5 +41,12 @@
       "app_name": "oidc-auth-apps",
       "namespace": "kube-system",
     },
+    // No "versions" map here either, for the same reason as istio. The dell-storage test asserts
+    // the release prefix against the release the platform reports, so no per-release lookup is
+    // ever performed.
+    "app-dell-storage": {
+      "app_name": "dell-storage",
+      "namespace": "dell-storage",
+    },
   },
 }
