@@ -6,7 +6,7 @@ from pytest import FixtureRequest, mark
 from config.configuration_manager import ConfigurationManager
 from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
-from framework.validation.validation import validate_equals, validate_not_equals, validate_str_contains
+from framework.validation.validation import validate_equals, validate_equals_with_retry, validate_not_equals, validate_str_contains
 from keywords.ceph.ceph_status_keywords import CephStatusKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.cloud_platform.system.application.object.system_application_delete_input import SystemApplicationDeleteInput
@@ -836,3 +836,197 @@ def test_disable_and_re_enable_cephfs_provisioner_platform_integ_app(request: Fi
     count_after = continuous_write_keywords.wait_for_write_progress(pod_name, previous_count=counts_before)
     validate_not_equals(counts_before, count_after, "Making sure counts before and after are not equal (pod is writing)")
     get_logger().log_info(f"{pod_name} write-cycle count after: {count_after}")
+
+
+@mark.p2
+@mark.lab_has_ceph
+def test_modify_replica_count_for_platform_integ_app(request: FixtureRequest):
+    """
+    Modify the rbd-provisioner and cephfs-provisioner helm chart replicaCount and verify the
+    number of provisioner pods running for platform-integ-apps.
+
+    Test Steps:
+        - Make sure that platform-integ-apps is applied (setup)
+        - Remove platform-integ-apps
+        - Set rbd-provisioner and cephfs-provisioner helm overrides to replicaCount 2
+        - Apply platform-integ-apps and wait for it to reach the "applied" status
+        - Verify the cephfs provisioner pods are running
+        - Start cephfs and rbd continuous-write pods on the active controller and verify each is writing
+        - Verify there are 2 cephfs-provisioner pods running
+        - Verify there are 2 rbd-provisioner pods running
+        - Verify the cephfs and rbd writer pods are still writing
+        - Set rbd-provisioner and cephfs-provisioner helm overrides to replicaCount 1
+        - Apply platform-integ-apps and wait for it to reach the "applied" status
+        - Verify there is 1 cephfs-provisioner pod running
+        - Verify there is 1 rbd-provisioner pod running
+        - Teardown: restore replicaCount to 2, re-apply platform-integ-apps if needed, and
+          verify the provisioner pods and continuous-write pods are running
+
+    Args:
+        request (FixtureRequest): pytest request fixture for test setup and teardown
+    """
+
+    active_ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    system_host_list_keywords = SystemHostListKeywords(active_ssh_connection)
+    platform_integ_apps_name = setup(request, active_ssh_connection)
+
+    continuous_write_keywords = KubectlContinuousWriteKeywords(active_ssh_connection)
+    namespace = "kube-system"
+    cephfs_pod_names = ["cephfs-provisioner"]
+    kubectl_get_pods_keywords = KubectlGetPodsKeywords(active_ssh_connection)
+
+    writer_pods = {}
+
+    active_controller = system_host_list_keywords.get_active_controller()
+    active_host_name = active_controller.get_host_name()
+
+    def teardown():
+        get_logger().log_teardown_step("Check if application status is not applied and apply if needed")
+        app_list_keywords = SystemApplicationListKeywords(active_ssh_connection)
+
+        SystemHelmOverrideKeywords(active_ssh_connection).apply_if_changed(
+            desired_overrides="provisioner:\n  replicaCount: 2\n",
+            app_name="platform-integ-apps",
+            chart_name="rbd-provisioner",
+            namespace="kube-system",
+        )
+        SystemHelmOverrideKeywords(active_ssh_connection).apply_if_changed(
+            desired_overrides="provisioner:\n  replicaCount: 2\n",
+            app_name="platform-integ-apps",
+            chart_name="cephfs-provisioner",
+            namespace="kube-system",
+        )
+
+        if app_list_keywords.is_app_present(platform_integ_apps_name):
+            system_applications = app_list_keywords.get_system_application_list()
+            current_status = system_applications.get_application(platform_integ_apps_name).get_status()
+            if current_status != "applied":
+                get_logger().log_teardown_step("Apply platform-integ-apps")
+                SystemApplicationApplyKeywords(active_ssh_connection).system_application_apply(app_name=platform_integ_apps_name)
+
+        verify_provisioner(active_ssh_connection, cephfs_pod_names, "Running", namespace)
+
+        for storage_type in ["cephfs", "rbd"]:
+            get_logger().log_teardown_step(f"Start {storage_type} continuous-write pod on {active_host_name}.")
+            pod_name, pvc_name = continuous_write_keywords.start_continuous_write_pod(storage_type, node_name=active_host_name)
+            writer_pods[storage_type] = pod_name
+
+        for storage_type, pod_name in writer_pods.items():
+            get_logger().log_teardown_step(f"Verify {storage_type} writer pod {pod_name} is writing")
+            kubectl_get_pods_keywords.wait_for_pod_status(pod_name, "Running")
+            counts_before = continuous_write_keywords.wait_for_write_progress(pod_name, previous_count=0)
+            get_logger().log_info(f"{pod_name} write-cycle count before: {counts_before}")
+
+            kubectl_get_pods_keywords.wait_for_pod_status(pod_name, "Running")
+            count_after = continuous_write_keywords.wait_for_write_progress(pod_name, previous_count=counts_before)
+            validate_not_equals(counts_before, count_after, f"Making sure {storage_type} counts before and after are not equal (pod is writing)")
+            get_logger().log_info(f"{pod_name} write-cycle count after: {count_after}")
+
+    request.addfinalizer(teardown)
+
+    get_logger().log_test_case_step("Remove platform-integ-apps")
+    system_application_remove_input = SystemApplicationRemoveInput()
+    system_application_remove_input.set_app_name(platform_integ_apps_name)
+    SystemApplicationRemoveKeywords(active_ssh_connection).system_application_remove(system_application_remove_input)
+
+    get_logger().log_test_case_step("Set rbd-provisioner and cephfs-provisioner helm overrides to replicaCount 2")
+    SystemHelmOverrideKeywords(active_ssh_connection).apply_if_changed(
+        desired_overrides="provisioner:\n  replicaCount: 2\n",
+        app_name="platform-integ-apps",
+        chart_name="rbd-provisioner",
+        namespace="kube-system",
+    )
+
+    SystemHelmOverrideKeywords(active_ssh_connection).apply_if_changed(
+        desired_overrides="provisioner:\n  replicaCount: 2\n",
+        app_name="platform-integ-apps",
+        chart_name="cephfs-provisioner",
+        namespace="kube-system",
+    )
+
+    get_logger().log_test_case_step("Apply platform-integ-apps and wait for it to reach the applied status")
+    SystemApplicationApplyKeywords(active_ssh_connection).system_application_apply(app_name=platform_integ_apps_name, wait_for_applied=False)
+    app_status_list = ["applied"]
+    SystemApplicationListKeywords(active_ssh_connection).validate_app_status_in_list(platform_integ_apps_name, app_status_list, timeout=600, polling_sleep_time=20)
+
+    get_logger().log_test_case_step("Verify if platform-integ-apps cephfs provisioner pods are running")
+    verify_provisioner(active_ssh_connection, cephfs_pod_names, "Running", namespace)
+
+    for storage_type in ["cephfs", "rbd"]:
+        get_logger().log_test_case_step(f"Start {storage_type} continuous-write pod on {active_host_name}.")
+        pod_name, pvc_name = continuous_write_keywords.start_continuous_write_pod(storage_type, node_name=active_host_name)
+        writer_pods[storage_type] = pod_name
+        request.addfinalizer(lambda p=pod_name, v=pvc_name: continuous_write_keywords.cleanup_continuous_write_pod(p, v))
+
+    for storage_type, pod_name in writer_pods.items():
+        get_logger().log_test_case_step(f"Verify {storage_type} writer pod {pod_name} is writing")
+        kubectl_get_pods_keywords.wait_for_pod_status(pod_name, "Running")
+        counts_before = continuous_write_keywords.wait_for_write_progress(pod_name, previous_count=0)
+        get_logger().log_info(f"{pod_name} write-cycle count before: {counts_before}")
+
+        kubectl_get_pods_keywords.wait_for_pod_status(pod_name, "Running")
+        count_after = continuous_write_keywords.wait_for_write_progress(pod_name, previous_count=counts_before)
+        validate_not_equals(counts_before, count_after, f"Making sure {storage_type} counts before and after are not equal (pod is writing)")
+        get_logger().log_info(f"{pod_name} write-cycle count after: {count_after}")
+
+    get_logger().log_test_case_step("Check if the cephfs provisioner Pods are running")
+    validate_equals_with_retry(
+        function_to_execute=lambda: len([pod for pod in KubectlGetPodsKeywords(active_ssh_connection).get_pods(namespace=namespace).get_pods_with_status("Running") if pod.get_name().startswith("cephfs-provisioner")]),
+        expected_value=2,
+        validation_description="cephfs-provisioner pods in Running status should be equal to 2",
+        timeout=120,
+        polling_sleep_time=10,
+    )
+
+    get_logger().log_test_case_step("Check if the rbd provisioner Pods are running")
+    validate_equals_with_retry(
+        function_to_execute=lambda: len([pod for pod in KubectlGetPodsKeywords(active_ssh_connection).get_pods(namespace=namespace).get_pods_with_status("Running") if pod.get_name().startswith("rbd-provisioner")]),
+        expected_value=2,
+        validation_description="rbd-provisioner pods in Running status should be equal to 2",
+        timeout=120,
+        polling_sleep_time=10,
+    )
+
+    for storage_type, pod_name in writer_pods.items():
+        get_logger().log_test_case_step(f"Verify {storage_type} writer pod {pod_name} is still writing")
+        counts_before = continuous_write_keywords.wait_for_write_progress(pod_name, previous_count=0)
+        kubectl_get_pods_keywords.wait_for_pod_status(pod_name, "Running")
+        count_after = continuous_write_keywords.wait_for_write_progress(pod_name, previous_count=counts_before)
+        validate_not_equals(counts_before, count_after, f"Making sure {storage_type} counts before and after are not equal (pod is writing)")
+        get_logger().log_info(f"{pod_name} write-cycle count after: {count_after}")
+
+    get_logger().log_test_case_step("Set rbd-provisioner and cephfs-provisioner helm overrides to replicaCount 1")
+    SystemHelmOverrideKeywords(active_ssh_connection).apply_if_changed(
+        desired_overrides="provisioner:\n  replicaCount: 1\n",
+        app_name="platform-integ-apps",
+        chart_name="rbd-provisioner",
+        namespace="kube-system",
+    )
+
+    SystemHelmOverrideKeywords(active_ssh_connection).apply_if_changed(
+        desired_overrides="provisioner:\n  replicaCount: 1\n",
+        app_name="platform-integ-apps",
+        chart_name="cephfs-provisioner",
+        namespace="kube-system",
+    )
+
+    app_status_list = ["applied"]
+    SystemApplicationListKeywords(active_ssh_connection).validate_app_status_in_list(platform_integ_apps_name, app_status_list, timeout=600, polling_sleep_time=20)
+
+    get_logger().log_test_case_step("Check if the cephfs provisioner has 1 pod running")
+    validate_equals_with_retry(
+        function_to_execute=lambda: len([pod for pod in KubectlGetPodsKeywords(active_ssh_connection).get_pods(namespace=namespace).get_pods_with_status("Running") if pod.get_name().startswith("cephfs-provisioner")]),
+        expected_value=1,
+        validation_description="cephfs-provisioner pods in Running status should be equal to 1",
+        timeout=120,
+        polling_sleep_time=10,
+    )
+
+    get_logger().log_test_case_step("Check if the rbd provisioner has 1 pod running")
+    validate_equals_with_retry(
+        function_to_execute=lambda: len([pod for pod in KubectlGetPodsKeywords(active_ssh_connection).get_pods(namespace=namespace).get_pods_with_status("Running") if pod.get_name().startswith("rbd-provisioner")]),
+        expected_value=1,
+        validation_description="rbd-provisioner pods in Running status should be equal to 1",
+        timeout=120,
+        polling_sleep_time=10,
+    )
