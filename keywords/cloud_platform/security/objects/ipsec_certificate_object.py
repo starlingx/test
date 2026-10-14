@@ -94,12 +94,17 @@ class IPSecCertificateObject:
     def matches_md5(self, other_md5: str) -> bool:
         """Check if MD5 matches another hash.
 
+        Both hashes must be non-empty; two empty hashes (produced by a failed
+        openssl pipeline) must not be reported as a match.
+
         Args:
             other_md5 (str): Other MD5 hash to compare.
 
         Returns:
-            bool: True if MD5 hashes match.
+            bool: True if both MD5 hashes are non-empty and equal.
         """
+        if not self._md5_hash or not other_md5:
+            return False
         return self._md5_hash == other_md5
 
     def matches_issuer(self, other_issuer: str) -> bool:
