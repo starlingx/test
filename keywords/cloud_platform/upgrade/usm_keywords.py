@@ -201,16 +201,30 @@ class USMKeywords(BaseKeyword):
         )
         return upload_output
 
-    def software_deploy_delete(self, sudo: bool = False) -> str:
+    def software_deploy_delete(self, sudo: bool = False, only_if_present: bool = False) -> str:
         """
         This method executed the command 'software deploy delete'
 
         Args:
             sudo (bool): flag to check if it needs to be run as sudo.
+            only_if_present (bool): when True, checks 'software deploy show' first
+                and skips the delete (returning an empty string) if there is no
+                active deploy, instead of calling the CLI unconditionally and
+                relying on validate_success_return_code's AssertionError to signal
+                "nothing to delete". Defaults to False so existing callers are
+                unaffected.
 
         Returns:
-            str: output
+            str: output (empty string when only_if_present=True and there was
+                nothing to delete).
         """
+        if only_if_present:
+            deploy_show = SoftwareDeployShowKeywords(self.ssh_connection).get_software_deploy_show().get_software_deploy_show()
+            if deploy_show is None:
+                get_logger().log_info("No active deploy to delete, skipping")
+                return ""
+            get_logger().log_info("Deleting active deploy")
+
         timeout = self.usm_config.get_deploy_delete_timeout_sec()
         base_cmd = "software deploy delete"
         cmd = source_openrc(base_cmd)
@@ -584,25 +598,25 @@ class USMKeywords(BaseKeyword):
 
     def storage_host_upgrade_list(self) -> list[SystemHostObject]:
         """
-        This method returns the list of storage nodes, or an empty list if none exist.
+        This method returns the list of storage nodes sorted alphabetically by hostname, or an empty list if none exist.
 
         Returns:
-            list[SystemHostObject]: List of storage nodes objects
+            list[SystemHostObject]: Sorted (by hostname) list of storage node objects
         """
         system_host_list_keywords = SystemHostListKeywords(self.ssh_connection)
         output = system_host_list_keywords.get_system_host_with_extra_column(["capabilities"])
-        return [h for h in output.system_hosts if h.get_personality() == "storage"]
+        return sorted((h for h in output.system_hosts if h.get_personality() == "storage"), key=lambda h: h.get_host_name())
 
     def computes_host_upgrade_list(self) -> list[SystemHostObject]:
         """
-        This method returns the list of compute nodes, or an empty list if none exist.
+        This method returns the list of compute nodes sorted alphabetically by hostname, or an empty list if none exist.
 
         Returns:
-            list[SystemHostObject]: List of compute nodes objects
+            list[SystemHostObject]: Sorted (by hostname) list of compute node objects
         """
         system_host_list_keywords = SystemHostListKeywords(self.ssh_connection)
         output = system_host_list_keywords.get_system_host_with_extra_column(["capabilities"])
-        return [h for h in output.system_hosts if h.get_personality() == "worker"]
+        return sorted((h for h in output.system_hosts if h.get_personality() == "worker"), key=lambda h: h.get_host_name())
 
     def deploy_host_upgrade_order(self) -> list[str]:
         """
@@ -628,14 +642,12 @@ class USMKeywords(BaseKeyword):
 
         order.append(active.get_host_name())
 
-        # Storages (alphabetical)
-        storages = self.storage_host_upgrade_list()
-        storage_names = sorted(host.get_host_name() for host in storages)
+        # Storages (already sorted alphabetically by storage_host_upgrade_list())
+        storage_names = [host.get_host_name() for host in self.storage_host_upgrade_list()]
         order.extend(storage_names)
 
-        # Computes (alphabetical)
-        computes = self.computes_host_upgrade_list()
-        compute_names = sorted(host.get_host_name() for host in computes)
+        # Computes (already sorted alphabetically by computes_host_upgrade_list())
+        compute_names = [host.get_host_name() for host in self.computes_host_upgrade_list()]
         order.extend(compute_names)
 
         return order
