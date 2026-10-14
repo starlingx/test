@@ -1,0 +1,59 @@
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: lvm-pvc-coexist-cgts-vg
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: cgts-vg
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: lvm-pvc-coexist-dedicated
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: lvm-provisioner
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: lvm-pod-coexist
+spec:
+  shareProcessNamespace: true
+  restartPolicy: Always
+  containers:
+    - name: lvm-pod-coexist
+      image: busybox:1.37
+      # Write to both volumes at once: /mnt1 is the thin cgts-vg SC, /mnt2 is the thick dedicated SC.
+      command:
+        - /bin/sh
+        - -c
+        - |
+          while :; do
+            date
+            (dd if=/dev/urandom of=/mnt1/foo bs=1M count=100 conv=fsync; rm /mnt1/foo) &
+            (dd if=/dev/urandom of=/mnt2/foo bs=1M count=100 conv=fsync; rm /mnt2/foo) &
+            wait
+            sleep 10
+          done
+      volumeMounts:
+        - mountPath: /mnt1
+          name: pvc-cgts-vg
+        - mountPath: /mnt2
+          name: pvc-dedicated
+  volumes:
+    - name: pvc-cgts-vg
+      persistentVolumeClaim:
+        claimName: lvm-pvc-coexist-cgts-vg
+    - name: pvc-dedicated
+      persistentVolumeClaim:
+        claimName: lvm-pvc-coexist-dedicated
