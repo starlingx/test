@@ -38,14 +38,15 @@ class HorizonOidcLoginKeywords(BaseKeyword):
         """
         self.ssh_connection = ssh_connection
 
-    def login_to_horizon_via_oidc(self, horizon_url: str, username: str, password: str, connector: str = "", is_keycloak: bool = False, totp_secret: str = None) -> bool:
+    def login_to_horizon_via_oidc(self, horizon_url: str, username: str, password: str, connector: str = "", totp_secret: str = None) -> bool:
         """Log into Horizon through the browser OIDC (DEX) flow and confirm the dashboard loads.
 
         Opens a headless browser, navigates to Horizon, selects the OpenID Connect
         auth method and signs in, completes the DEX login (connector selection then
         either the DEX-native form for LDAP/WAD or the Keycloak redirect form with
-        optional MFA for Keycloak, plus Grant Access approval), then verifies the
-        Horizon dashboard is loaded.
+        optional MFA when the connector is 'keycloak', plus Grant Access approval),
+        then verifies the Horizon dashboard is loaded. The browser is always closed
+        before returning.
 
         Args:
             horizon_url (str): The Horizon base URL (e.g. https://[oam_ip]:8443).
@@ -53,9 +54,7 @@ class HorizonOidcLoginKeywords(BaseKeyword):
             password (str): OIDC login password.
             connector (str): DEX connector to select (e.g. 'ldap-1', 'wad-1', 'keycloak').
                 Empty selects the first connector or skips selection if only one.
-            is_keycloak (bool): True if the selected connector redirects to Keycloak
-                (uses the Keycloak login form + optional MFA). False for DEX-native
-                LDAP/WAD login forms.
+                A connector of 'keycloak' triggers the Keycloak redirect login flow.
             totp_secret (str): Base32 TOTP secret for the Keycloak MFA challenge.
                 Pass None for the CONFIGURE_TOTP first-login flow. Ignored for LDAP/WAD.
 
@@ -64,34 +63,93 @@ class HorizonOidcLoginKeywords(BaseKeyword):
         """
         driver = WebDriverCore()
         try:
-            horizon_login_page = HorizonLoginPage(driver)
-            dex_login_page = DexLoginPage(driver)
-
-            get_logger().log_info(f"Navigating to Horizon login page: {horizon_url}")
-            horizon_login_page.navigate_to_login_page_with_url(horizon_url)
-            time.sleep(2)
-
-            get_logger().log_info("Selecting OpenID Connect auth method and signing in")
-            self._select_oidc_and_sign_in(driver, horizon_login_page)
-
-            get_logger().log_info(f"Completing DEX login (connector='{connector}', keycloak={is_keycloak})")
-            dex_login_page.select_connector_if_present(connector)
-            if is_keycloak:
-                # Selecting the Keycloak connector redirects to the Keycloak login
-                # form (+ optional MFA); the existing page object drives it.
-                KeycloakLoginPage(driver).login(username=username, password=password, totp_secret=totp_secret)
-            else:
-                # DEX-native login form for Local LDAP / WAD connectors.
-                dex_login_page.submit_native_login(username, password)
-            dex_login_page.grant_access_if_present()
-
-            is_loaded = self._wait_for_horizon_dashboard(driver, horizon_login_page, horizon_url)
-            get_logger().log_info(f"Horizon dashboard loaded after OIDC login: {is_loaded} (url={driver.get_current_url()})")
+            is_loaded = self._perform_oidc_login(driver, horizon_url, {"username": username, "password": password, "connector": connector, "totp_secret": totp_secret})
             if not is_loaded:
                 self._log_landing_page_diagnostics(driver)
             return is_loaded
         finally:
             driver.quit()
+
+    def login_and_get_driver(self, horizon_url: str, username: str, password: str, connector: str = "", totp_secret: str = None) -> WebDriverCore:
+        """Log into Horizon via browser OIDC and return the live driver for further navigation.
+
+        Performs the same OIDC login flow as login_to_horizon_via_oidc, but keeps
+        the browser session open and returns the WebDriverCore so the caller can
+        drive Horizon page objects (e.g. navigate tabs, read tables, check RBAC
+        action availability). The caller is responsible for quitting the driver
+        (driver.quit()) in teardown.
+
+        Args:
+            horizon_url (str): The Horizon base URL (e.g. https://[oam_ip]:8443).
+            username (str): OIDC login username.
+            password (str): OIDC login password.
+            connector (str): DEX connector to select (e.g. 'ldap-1', 'wad-1', 'keycloak').
+                A connector of 'keycloak' triggers the Keycloak redirect login flow.
+            totp_secret (str): Base32 TOTP secret for the Keycloak MFA challenge, or None.
+
+        Returns:
+            WebDriverCore: The live browser session, logged into Horizon.
+
+        Raises:
+            AssertionError: If the Horizon dashboard did not load after login. The
+                driver is quit before raising so no browser session is leaked.
+        """
+        driver = WebDriverCore()
+        is_loaded = self._perform_oidc_login(driver, horizon_url, {"username": username, "password": password, "connector": connector, "totp_secret": totp_secret})
+        if not is_loaded:
+            self._log_landing_page_diagnostics(driver)
+            driver.quit()
+            raise AssertionError("Horizon dashboard did not load after OIDC login; cannot return a usable driver")
+        return driver
+
+    def _perform_oidc_login(self, driver: WebDriverCore, horizon_url: str, credentials: dict) -> bool:
+        """Drive the Horizon WebSSO OIDC login flow on the given driver (does not quit it).
+
+        Navigates to Horizon, selects the OpenID Connect auth method, completes the
+        DEX login (connector selection then DEX-native form for LDAP/WAD or the
+        Keycloak redirect form with optional MFA when the connector is 'keycloak',
+        plus Grant Access), and waits for the dashboard. Shared by
+        login_to_horizon_via_oidc and login_and_get_driver.
+
+        Args:
+            driver (WebDriverCore): The browser session to drive.
+            horizon_url (str): The Horizon base URL.
+            credentials (dict): Login values with keys 'username', 'password',
+                'connector' (a connector of 'keycloak' triggers the Keycloak flow),
+                and 'totp_secret' (Base32 TOTP for Keycloak MFA, or None).
+
+        Returns:
+            bool: True if the Horizon dashboard loaded after login.
+        """
+        username = credentials["username"]
+        password = credentials["password"]
+        connector = credentials.get("connector", "")
+        totp_secret = credentials.get("totp_secret")
+        is_keycloak = connector == "keycloak"
+        horizon_login_page = HorizonLoginPage(driver)
+        dex_login_page = DexLoginPage(driver)
+
+        get_logger().log_info(f"Navigating to Horizon login page: {horizon_url}")
+        horizon_login_page.navigate_to_login_page_with_url(horizon_url)
+        time.sleep(2)
+
+        get_logger().log_info("Selecting OpenID Connect auth method and signing in")
+        self._select_oidc_and_sign_in(driver, horizon_login_page)
+
+        get_logger().log_info(f"Completing DEX login (connector='{connector}', keycloak={is_keycloak})")
+        dex_login_page.select_connector_if_present(connector)
+        if is_keycloak:
+            # Selecting the Keycloak connector redirects to the Keycloak login
+            # form (+ optional MFA); the existing page object drives it.
+            KeycloakLoginPage(driver).login(username=username, password=password, totp_secret=totp_secret)
+        else:
+            # DEX-native login form for Local LDAP / WAD connectors.
+            dex_login_page.submit_native_login(username, password)
+        dex_login_page.grant_access_if_present()
+
+        is_loaded = self._wait_for_horizon_dashboard(driver, horizon_login_page, horizon_url)
+        get_logger().log_info(f"Horizon dashboard loaded after OIDC login: {is_loaded} (url={driver.get_current_url()})")
+        return is_loaded
 
     def _log_landing_page_diagnostics(self, driver: WebDriverCore) -> None:
         """Log the final URL, title, and page-source snippet to diagnose a failed login.

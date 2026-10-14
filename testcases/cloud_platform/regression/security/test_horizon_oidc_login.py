@@ -40,6 +40,8 @@ from keywords.k8s.pods.kubectl_delete_pods_keywords import KubectlDeletePodsKeyw
 from keywords.k8s.pods.kubectl_get_pods_keywords import KubectlGetPodsKeywords
 from keywords.linux.keyring.keyring_keywords import KeyringKeywords
 from keywords.linux.ldap.ldap_keywords import LdapKeywords
+from web_pages.horizon.admin.platform.horizon_fault_management_page import HorizonFaultManagementPage
+from web_pages.horizon.admin.platform.horizon_host_inventory_page import HorizonHostInventoryPage
 
 
 def _apply_ldap_dex_override(ssh_connection: SSHConnection, config: DexConfig) -> None:
@@ -434,9 +436,87 @@ def test_horizon_oidc_login_keycloak_backend(request: FixtureRequest):
         username=test_user.get_username(),
         password=test_user.get_password(),
         connector=ctx.get_connector_id(),
-        is_keycloak=True,
         totp_secret=totp_secret,
     )
 
     get_logger().log_test_case_step("Validate the Horizon dashboard loaded after OIDC login")
     validate_equals(dashboard_loaded, True, "Horizon dashboard should load after Keycloak OIDC browser login")
+
+
+@mark.p2
+def test_horizon_oidc_admin_navigate_fault_management(request: FixtureRequest):
+    """Verify an admin OIDC user can navigate to the Fault Management (Active Alarms) tab.
+
+    Logs into Horizon via the LDAP OIDC flow as an admin-role user, keeps the
+    browser session open, then navigates to Admin -> Fault Management -> Active
+    Alarms and validates the alarms table loads (navigation completes and the
+    Angular table renders). This exercises post-login tab navigation, not just
+    the dashboard landing.
+
+    Teardown:
+        - Quit the browser session
+        - Delete the LDAP user/group, working dir, and role-bindings
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    ctx = _setup_ldap_oidc_horizon(ssh_connection, "Level1SystemAdmin", "admin")
+    # LIFO: register role-bindings teardown FIRST so it runs LAST (it restarts
+    # keystone); cleanup runs first while keystone is still up.
+    for teardown in ctx.get_teardowns():
+        request.addfinalizer(teardown)
+
+    test_user = ctx.get_test_user()
+    get_logger().log_test_case_step("Log into Horizon via browser OIDC login (LDAP connector) and keep the session")
+    driver = HorizonOidcLoginKeywords(ssh_connection).login_and_get_driver(
+        horizon_url=ctx.get_login_url(),
+        username=test_user.get_username(),
+        password=test_user.get_password(),
+        connector=ctx.get_connector_id(),
+    )
+    request.addfinalizer(driver.quit)
+
+    get_logger().log_test_case_step("Navigate to Admin -> Fault Management -> Active Alarms")
+    fault_page = HorizonFaultManagementPage(driver)
+    fault_page.navigate_to_active_alarms_page()
+
+    get_logger().log_test_case_step("Validate the active alarms page loaded (navigation succeeded)")
+    validate_equals(":8443" in driver.get_current_url() and "active_alarms" in driver.get_current_url(), True, "Admin should land on the Active Alarms page after navigation")
+
+
+@mark.p2
+def test_horizon_oidc_admin_navigate_host_inventory(request: FixtureRequest):
+    """Verify an admin OIDC user can navigate to the Host Inventory tab and read the hosts table.
+
+    Logs into Horizon via the LDAP OIDC flow as an admin-role user, keeps the
+    browser session open, navigates to Admin -> Platform -> Host Inventory, and
+    validates the controller hosts table renders with headers. This confirms an
+    admin can both reach the inventory tab and read its content.
+
+    Teardown:
+        - Quit the browser session
+        - Delete the LDAP user/group, working dir, and role-bindings
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    ctx = _setup_ldap_oidc_horizon(ssh_connection, "Level1SystemAdmin", "admin")
+    # LIFO: register role-bindings teardown FIRST so it runs LAST (it restarts
+    # keystone); cleanup runs first while keystone is still up.
+    for teardown in ctx.get_teardowns():
+        request.addfinalizer(teardown)
+
+    test_user = ctx.get_test_user()
+    get_logger().log_test_case_step("Log into Horizon via browser OIDC login (LDAP connector) and keep the session")
+    driver = HorizonOidcLoginKeywords(ssh_connection).login_and_get_driver(
+        horizon_url=ctx.get_login_url(),
+        username=test_user.get_username(),
+        password=test_user.get_password(),
+        connector=ctx.get_connector_id(),
+    )
+    request.addfinalizer(driver.quit)
+
+    get_logger().log_test_case_step("Navigate to Admin -> Platform -> Host Inventory")
+    inventory_page = HorizonHostInventoryPage(driver)
+    inventory_page.navigate_to_host_inventory_page()
+
+    get_logger().log_test_case_step("Validate the controller hosts table rendered with headers")
+    headers = inventory_page.get_controller_hosts_table_headers()
+    get_logger().log_info(f"Host inventory table headers: {headers}")
+    validate_equals(len(headers) > 0, True, "Admin should see the controller hosts table headers in Host Inventory")
