@@ -36,6 +36,18 @@ class SystemHostCPUKeywords(BaseKeyword):
 
         return system_host_cpu_output
 
+    def get_platform_cores(self, hostname: str) -> list[int]:
+        """Return the logical core IDs whose assigned function is Platform.
+
+        Args:
+            hostname (str): Host to inspect, e.g. ``'controller-0'``.
+
+        Returns:
+            list[int]: Sorted list of Platform logical core IDs. Empty if the host has none.
+        """
+        cpu_output = self.get_system_host_cpu_list(hostname)
+        return sorted(cpu_output.get_log_cores_for_assigned_function("Platform"))
+
     def system_host_cpu_modify(self, hostname: str, function: str, num_cores_on_processor_0: int = -1, num_cores_on_processor_1: int = -1) -> SystemHostCPUOutput:
         """
         Run the "system host-cpu-modify" command with the specified arguments.
