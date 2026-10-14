@@ -182,7 +182,7 @@ class OpenSSLKeywords(BaseKeyword):
             san (str): Subject Alternative Name extension value
                 (e.g. "DNS:example.com"). If empty, no SAN is added.
         """
-        san_opt = f" -addext \"subjectAltName={san}\"" if san else ""
+        san_opt = f' -addext "subjectAltName={san}"' if san else ""
         self.ssh_connection.send(f'openssl req -new -key {key_path} -out {csr_path} -subj "{subj}"{san_opt}')
         self.validate_success_return_code(self.ssh_connection)
 
@@ -197,6 +197,35 @@ class OpenSSLKeywords(BaseKeyword):
             days (int): Certificate validity in days. Defaults to 365.
         """
         self.ssh_connection.send(f"openssl x509 -req -in {csr_path} -CA {ca_cert_path} " f"-CAkey {ca_key_path} -CAcreateserial -out {cert_path} -days {days}")
+        self.validate_success_return_code(self.ssh_connection)
+
+    def sign_certificate_with_extensions(self, paths: dict, ext_file_path: str, days: int = 365, extensions: str = "v3_ext") -> None:
+        """Sign a leaf certificate with a CA, applying X.509 v3 extensions.
+
+        Unlike sign_certificate, this applies an extensions file so the resulting
+        certificate carries subjectAltName, keyUsage, extendedKeyUsage, and
+        basicConstraints. This is required for certificates such as the K8s
+        apiserver certificate, which must include
+        'extendedKeyUsage = TLS Web Server Authentication' - signing without it
+        produces a certificate that kubeadm rejects with
+        'must specify at least one ExtKeyUsage'.
+
+        Args:
+            paths (dict): Required path keys - 'csr' (CSR path), 'ca_cert'
+                (CA certificate path), 'ca_key' (CA private key path), and
+                'cert' (output certificate path).
+            ext_file_path (str): Path to an openssl extensions file containing the
+                '[<extensions>]' section with subjectAltName/keyUsage/
+                extendedKeyUsage/basicConstraints.
+            days (int): Certificate validity in days. Defaults to 365.
+            extensions (str): Name of the extensions section in ext_file_path.
+                Defaults to 'v3_ext'.
+        """
+        csr_path = paths["csr"]
+        ca_cert_path = paths["ca_cert"]
+        ca_key_path = paths["ca_key"]
+        cert_path = paths["cert"]
+        self.ssh_connection.send(f"openssl x509 -req -in {csr_path} -CA {ca_cert_path} -CAkey {ca_key_path} " f"-CAcreateserial -out {cert_path} -days {days} -extfile {ext_file_path} -extensions {extensions}")
         self.validate_success_return_code(self.ssh_connection)
 
     def get_cert_info_from_file(self, cert_path: str) -> dict:
