@@ -132,3 +132,21 @@ class SystemHostRebootKeywords(BaseKeyword):
         """
         get_logger().log_info("Gracefully rebooting host")
         self.ssh_connection.send_as_sudo("reboot")
+
+    def host_force_reboot_no_wait(self) -> None:
+        """Fire ``sudo reboot -f`` without waiting for a command response.
+
+        ``reboot -f`` tears down the SSH session immediately, so the usual
+        send/read-and-reconnect flow would block for the full reconnect window
+        retrying against a host that is intentionally going down. This issues
+        the reboot with a short timeout and swallows the expected disconnect so
+        callers can proceed to detect the host going offline.
+
+        Initialize this class with an SSH connection to the TARGET host.
+        """
+        get_logger().log_info("Force rebooting host (fire-and-forget)")
+        try:
+            self.ssh_connection.send_as_sudo("reboot -f", command_timeout=10, reconnect_timeout=1)
+        except Exception as e:
+            # The connection dropping as the host reboots is expected.
+            get_logger().log_info(f"Reboot command connection closed as expected: {e}")

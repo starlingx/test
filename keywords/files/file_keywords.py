@@ -4,14 +4,15 @@ import shutil
 import time
 from typing import Optional
 
+from jinja2 import Template
+
+from config.configuration_manager import ConfigurationManager
 from framework.exceptions.keyword_exception import KeywordException
 from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
 from framework.validation.validation import validate_equals_with_retry, validate_less_than_or_equal
-from jinja2 import Template
 from keywords.base_keyword import BaseKeyword
-
-from config.configuration_manager import ConfigurationManager
+from keywords.linux.df.df_keywords import DfKeywords
 
 
 class FileKeywords(BaseKeyword):
@@ -689,6 +690,45 @@ class FileKeywords(BaseKeyword):
 
         remaining = get_remaining_space()
         validate_less_than_or_equal(remaining, 256, f"Remaining size is {remaining} MB. Expected <= 256 MB")
+        return path_to_file
+
+    def fill_disk_to_percentage(self, dest_dir: str, target_percentage: int, file_name: str = "collect_fill_file") -> str:
+        """Fill the filesystem backing ``dest_dir`` up to a target usage percentage.
+
+        Reads current usage via ``DfKeywords`` and writes a single file sized to
+        bring usage up to ``target_percentage``. If usage is already at or above
+        the target, no file is written and the (non-existent) path is still
+        returned so callers can delete it unconditionally in teardown.
+
+        Args:
+            dest_dir (str): Directory on the target filesystem to fill.
+            target_percentage (int): Desired filesystem usage percentage (e.g. 77).
+            file_name (str): Name of the fill file created in ``dest_dir``.
+
+        Returns:
+            str: Path of the fill file (``<dest_dir>/<file_name>``).
+        """
+        path_to_file = f"{dest_dir}/{file_name}"
+        usage = DfKeywords(self.ssh_connection).get_disk_usage(dest_dir).get_first_entry()
+        total_kb = usage.get_total_kb()
+        used_kb = usage.get_used_kb()
+        current_pct = usage.get_usage_percentage()
+        get_logger().log_info(f"'{dest_dir}' usage is {current_pct}% (used {used_kb} KB of {total_kb} KB); target {target_percentage}%")
+
+        if current_pct >= target_percentage:
+            get_logger().log_info(f"'{dest_dir}' already at/above {target_percentage}%; no fill needed")
+            return path_to_file
+
+        target_used_kb = int(total_kb * target_percentage / 100)
+        fill_mb = int((target_used_kb - used_kb) / 1024)
+        if fill_mb <= 0:
+            return path_to_file
+
+        dd_command_timeout = 600
+        get_logger().log_info(f"Writing {fill_mb} MB to '{path_to_file}' to reach {target_percentage}% usage")
+        self.ssh_connection.send_as_sudo(f"dd if=/dev/zero of={path_to_file} bs=1M count={fill_mb}", command_timeout=dd_command_timeout)
+        new_pct = DfKeywords(self.ssh_connection).get_disk_usage(dest_dir).get_first_entry().get_usage_percentage()
+        get_logger().log_info(f"'{dest_dir}' usage after fill: {new_pct}%")
         return path_to_file
 
     def remove_reserved_blocks(self, device: str) -> int:
