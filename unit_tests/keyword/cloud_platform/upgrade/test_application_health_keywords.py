@@ -5,6 +5,7 @@ failing when it is not applied, that the applied wait uses the configured budget
 300s default, that pod counts are scoped to a namespace, and that the alarm count excludes the
 alarms a deploy raises by design while still counting the ones that indicate a real problem.
 """
+
 import unittest
 from unittest.mock import MagicMock, NonCallableMagicMock, patch
 
@@ -19,13 +20,22 @@ class TestApplicationHealthKeywords(unittest.TestCase):
     IGNORED_ALARMS = ["900.020", "900.022", "900.023"]
 
     def setUp(self):
-        """Silence the BaseKeyword logger."""
+        """Silence the BaseKeyword logger and the keyword module's own logger.
+
+        The BaseKeyword patch covers the __getattribute__ hook, which logs every keyword call. The
+        second patch covers the logger the keywords call directly: get_not_ready_pod_count logs
+        when it reports the below-expected sentinel, and an unpatched get_logger raises without a
+        configured logger.
+        """
         self.logger_patcher = patch("keywords.base_keyword.get_logger")
         self.logger_patcher.start()
+        self.module_logger_patcher = patch("keywords.cloud_platform.upgrade.application_health_keywords.get_logger")
+        self.module_logger_patcher.start()
 
     def tearDown(self):
-        """Stop the logger patcher."""
+        """Stop the logger patchers."""
         self.logger_patcher.stop()
+        self.module_logger_patcher.stop()
 
     def _build_keywords(self, status="applied", pods=(), unhealthy=(), alarm_ids=(), version="26.03-69"):
         """Return an instance whose collaborators are mocked.
@@ -60,9 +70,7 @@ class TestApplicationHealthKeywords(unittest.TestCase):
         # get_unhealthy_pod_count delegates the retry to the k8s layer; here it passes straight
         # through to the reader so the count and namespace scoping are what is under test. The
         # retry itself is covered by the KubectlGetPodsKeywords tests.
-        pods_kw.get_pods_with_retry = MagicMock(
-            side_effect=lambda reader, timeout=None, poll_interval=None: reader()
-        )
+        pods_kw.get_pods_with_retry = MagicMock(side_effect=lambda reader, timeout=None, poll_interval=None: reader())
 
         alarms = NonCallableMagicMock()
         alarms.get_alarm_list = MagicMock(return_value=self._alarm_list_output(alarm_ids))
@@ -128,9 +136,7 @@ class TestApplicationHealthKeywords(unittest.TestCase):
         output = NonCallableMagicMock()
         output.alarms = alarms
         output.get_alarms = MagicMock(return_value=alarms)
-        output.get_alarms_excluding = MagicMock(
-            side_effect=lambda excluded=None: AlarmListOutput.get_alarms_excluding(output, excluded)
-        )
+        output.get_alarms_excluding = MagicMock(side_effect=lambda excluded=None: AlarmListOutput.get_alarms_excluding(output, excluded))
         return output
 
     def _patch_usm_config(self):

@@ -14,9 +14,8 @@ class ApplicationHealthKeywords(BaseKeyword):
 
     The checks are the ones a platform upgrade needs and that the plain status getters do not
     cover: waiting for 'applied' with a budget long enough for a post-activate re-apply, reading
-    the status without failing when it is not 'applied', counting pods in a namespace, and
-    counting the alarms that indicate a real application or deploy problem as opposed to the ones
-    a deploy raises by design.
+    the application version, counting pods in a namespace, and counting the alarms that indicate a
+    real application or deploy problem as opposed to the ones a deploy raises by design.
     """
 
     # The unhealthy-pod read is retried through KubectlGetPodsKeywords.get_pods_with_retry. These
