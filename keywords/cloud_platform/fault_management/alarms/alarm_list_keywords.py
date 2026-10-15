@@ -199,6 +199,51 @@ class AlarmListKeywords(BaseKeyword):
             polling_sleep_time=check_interval,
         )
 
+    def wait_for_mgmt_affecting_alarms_cleared(self, timeout: int = 600, check_interval: int = 120, additional_blocking_alarm_ids: list[str] = None) -> None:
+        """Wait until no management-affecting (or other specified blocking) alarms are active.
+
+        Non management-affecting alarms (for example subcloud 280.002 out-of-sync alarms,
+        which are expected during a multi-release upgrade) are ignored by default; only
+        alarms whose 'Management Affecting' column is 'True' are considered blocking. The
+        '--mgmt_affecting' flag adds a 'Management Affecting' column to 'fm alarm-list'
+        output without filtering rows, so this parses that column and waits until no row
+        reports 'True'.
+
+        Some transient alarms are NOT management affecting yet still block operations such as
+        sw-manager strategy build (for example 750.004 / 750.006 config-reapply alarms raised
+        after a Kubernetes hop while cert-manager / oidc-auth-apps reconcile). Pass their alarm
+        IDs in 'additional_blocking_alarm_ids' to also wait for those specific alarms to clear,
+        regardless of their management-affecting flag.
+
+        Args:
+            timeout (int): Maximum time to wait in seconds for the blocking alarms to clear.
+            check_interval (int): Seconds to wait between successive alarm checks.
+            additional_blocking_alarm_ids (list[str]): Extra alarm IDs that must also be clear
+                before returning, even when they are not management affecting (default: none).
+
+        Raises:
+            TimeoutError: If blocking alarms are still present after the timeout.
+        """
+        extra_blocking = additional_blocking_alarm_ids or []
+        now = time.time()
+        end_time = now + timeout
+        blocking_ids: list[str] = []
+        while now < end_time:
+            output = self._ssh_connection.send(source_openrc("fm alarm-list --nowrap --mgmt_affecting"))
+            self.validate_success_return_code(self._ssh_connection)
+            rows = [[cell.strip() for cell in line.split("|")[1:-1]] for line in output if line.strip().startswith("|")]
+            data_rows = [row for row in rows if row and "Alarm ID" not in row[0]]
+            mgmt_affecting_ids = [row[0] for row in data_rows if len(row) >= 4 and row[3] == "True"]
+            extra_present_ids = [row[0] for row in data_rows if row[0] in extra_blocking]
+            blocking_ids = mgmt_affecting_ids + [alarm_id for alarm_id in extra_present_ids if alarm_id not in mgmt_affecting_ids]
+            if not blocking_ids:
+                get_logger().log_info("No management-affecting or additional blocking alarms are active.")
+                return
+            get_logger().log_info(f"Blocking alarms still active: {', '.join(blocking_ids)}. Rechecking in {check_interval}s. Remaining time: {(end_time - now):.0f}s.")
+            time.sleep(check_interval)
+            now = time.time()
+        raise TimeoutError(f"Blocking alarms {', '.join(blocking_ids)} were not cleared within {timeout} seconds.")
+
     def wait_for_alarms_cleared(self, alarms: list[AlarmListObject]) -> None:
         """
         Wait for alarms be cleared
