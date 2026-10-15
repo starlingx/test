@@ -27,10 +27,12 @@ def test_reconfig_one_subcloud(request):
     """
 
     deployment_assets_config = ConfigurationManager.get_deployment_assets_config()
-    system_controller_ssh = LabConnectionKeywords().get_active_controller_ssh()
 
-    # Gets the lowest-id healthy subcloud that is also declared in the lab config.
-    subcloud_name = SubcloudPickerKeywords(system_controller_ssh).pick_one(management_status=DcManagerSubcloudListManagementEnum.MANAGED, availability=DcManagerSubcloudListAvailabilityEnum.ONLINE, in_sync=True).get_name()
+    # Gets the lowest-id healthy subcloud that is also declared in the lab config, together
+    # with the SSH connection of the system controller that owns it, so the reconfiguration
+    # is driven from the peer cloud when the subcloud has been rehomed to it.
+    system_controller_ssh, subcloud_pick = SubcloudPickerKeywords.pick_with_fallback(management_status=DcManagerSubcloudListManagementEnum.MANAGED, availability=DcManagerSubcloudListAvailabilityEnum.ONLINE, in_sync=True)
+    subcloud_name = subcloud_pick.get_name()
 
     subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
 
