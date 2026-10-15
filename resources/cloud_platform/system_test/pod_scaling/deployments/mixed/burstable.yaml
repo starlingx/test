@@ -62,6 +62,7 @@ spec:
               resourceFieldRef:
                 containerName: burstable-stress-mixed
                 resource: limits.memory
+      terminationGracePeriodSeconds: 0
       restartPolicy: Always
       imagePullSecrets:
       - name: regcred

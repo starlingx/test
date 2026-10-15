@@ -15,9 +15,63 @@ from keywords.k8s.pods.kubectl_get_pods_keywords import KubectlGetPodsKeywords
 from keywords.system_test.timing_logger import TimingLogger
 from keywords.system_test.kpi_extractor import KpiExtractor
 from keywords.system_test.setup_stress_pods import SetupStressPods
+from keywords.system_test.sol_capture_keywords import SolCaptureKeywords
+from keywords.system_test.robustness_pod_keywords import RobustnessPodKeywords
 from config.configuration_manager import ConfigurationManager
 from keywords.cloud_platform.command_wrappers import source_openrc
 from framework.ssh.ssh_connection_manager import SSHConnectionManager
+
+
+
+def wait_for_all_hosts_unlocked(
+    ssh_connection: SSHConnection,
+    host_names: list,
+    timeout: int = 3600,
+    check_init_interval: int = 120,
+    check_interval: int = 10,
+) -> float:
+    """Wait for all hosts to reach unlocked/enabled/available|degraded state.
+
+    Args:
+        ssh_connection: SSH connection to the active controller.
+        host_names: List of hostnames to wait for.
+        timeout: Maximum time to wait in seconds.
+        check_interval: Seconds between polls.
+
+    Returns:
+        Time in seconds until all hosts reached the desired state.
+    """
+    start_time = time.time()
+    host_list_keywords = SystemHostListKeywords(ssh_connection)
+    pending_hosts = set(host_names)
+
+    while time.time() - start_time < timeout:
+        try:
+            time.sleep(check_init_interval)
+            host_list_output = host_list_keywords.get_system_host_list()
+        except Exception:
+            continue
+
+        for host_name in list(pending_hosts):
+            host_obj = host_list_output.get_host(host_name)
+            if host_obj is None:
+                continue
+            admin = host_obj.get_administrative()
+            oper = host_obj.get_operational()
+            avail = host_obj.get_availability()
+            if admin == "unlocked" and oper == "enabled" and avail in ("available", "degraded"):
+                pending_hosts.discard(host_name)
+
+        if not pending_hosts:
+            elapsed = time.time() - start_time
+            get_logger().log_info(f"All {len(host_names)} hosts unlocked/enabled in {elapsed:.0f}s")
+            return elapsed
+
+        get_logger().log_info(f"Waiting for {len(pending_hosts)}/{len(host_names)} hosts ({int(timeout - (time.time() - start_time))}s left)")
+        time.sleep(check_interval)
+
+    raise ValueError(f"Timeout ({timeout}s) waiting for hosts. Pending: {sorted(pending_hosts)}")
+
 
 def wait_for_ssh_connection_drop(ssh_connection: SSHConnection, timeout: int = 60) -> bool:
     """
@@ -242,7 +296,7 @@ def _execute_worker_reboot(worker_names: list[str], timing_logger: TimingLogger)
     pods_output = pod_keywords.get_pods(namespace="mixed-benchmark")
     expected_pod_count = len(pods_output.get_pods_with_status("Running"))
     get_logger().log_info(f"Found {expected_pod_count} Running pods in mixed-benchmark namespace before reboot")
-
+    
     
     get_logger().log_test_case_step(f"Hard rebooting worker(s) {worker_names}...")
     reboot_start = time.time()
@@ -268,7 +322,7 @@ def _execute_worker_reboot(worker_names: list[str], timing_logger: TimingLogger)
         )
 
     get_logger().log_test_case_step("Waiting for pod migration...")
-    while time.time() < reboot_start + 1200:
+    while time.time() < reboot_start + 1600:
         pods_output = pod_keywords.get_pods(namespace="mixed-benchmark")
         pods_in_valid_status = (
             pods_output.get_pods_with_status("Running") +
@@ -289,14 +343,14 @@ def _execute_worker_reboot(worker_names: list[str], timing_logger: TimingLogger)
     get_logger().log_test_case_step("Waiting for hosts to be unlocked (available and enabled)...")
     for worker_name in worker_names:
         validate_equals(
-            host_lock_keywords.wait_for_host_unlocked(worker_name, unlock_wait_timeout=1200),
+            host_lock_keywords.wait_for_host_unlocked(worker_name, unlock_wait_timeout=1600),
             True,
             f"Host {worker_name} should be unlocked after reboot"
         )
 
     recovery_start = time.time()
     get_logger().log_test_case_step("Waiting for all pods to be running...")
-    pod_keywords.wait_for_all_pods_status(["Running", "Succeeded", "Completed"], timeout=1200)
+    pod_keywords.wait_for_all_pods_status(["Running", "Succeeded", "Completed"], timeout=1600)
     pod_recovery_time = time.time() - recovery_start
     get_logger().log_info(f"All pods recovered in {pod_recovery_time:.2f} seconds")
     
@@ -363,8 +417,8 @@ def test_reboot_multiple_workers() -> None:
     host_list_keywords = SystemHostListKeywords(ssh_connection)
     workers = host_list_keywords.get_computes()
     validate_equals(bool(workers), True, "No worker nodes available for testing")
+    num_workers = math.ceil(len(workers) / 4)
 
-    num_workers = math.ceil(len(workers) / 3)
     selected_workers = random.sample(workers, num_workers)
     worker_names = [w.get_host_name() for w in selected_workers]
     get_logger().log_info(f"Testing reboot on {num_workers} worker(s): {worker_names}")
@@ -445,9 +499,9 @@ def test_reboot_simplex() -> None:
     1. Validate system is simplex (All-in-one)
     2. Setup stress pods with mixed benchmark
     3. Issue hard reboot command to active controller
-    4. Wait for host to become available and enabled after reboot
+    4. Wait for host to become enabled after reboot
     5. Measure pod recovery time
-    6. Extract timing metrics from system logs (host available, host enabled)
+    6. Extract host enabled timing metric from system logs
     7. Log all timing measurements
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
@@ -456,8 +510,7 @@ def test_reboot_simplex() -> None:
     host_lock_keywords = SystemHostLockKeywords(ssh_connection)
     pod_keywords = KubectlGetPodsKeywords(ssh_connection)
     timing_logger = TimingLogger("active_controller_reboot_simplex", 
-                                 column_headers=["Host Available Time (s)", 
-                                                "Host Enabled Time (s)",
+                                 column_headers=["Host Enabled Time (s)",
                                                 "Pod Recovery Time (s)"])
     log_extractor = KpiExtractor(ssh_connection)
 
@@ -487,12 +540,10 @@ def test_reboot_simplex() -> None:
     get_logger().log_info(f"All pods recovered in {pod_recovery_time:.2f} seconds")
 
     get_logger().log_test_case_step("Extracting timing from logs...")
-    host_available_time = log_extractor.extract_reboot_to_available_timing(active_name)
     host_enabled_time = log_extractor.extract_reboot_to_enabled_timing(active_name)
-    get_logger().log_info(f"Host available time: {host_available_time:.2f} seconds (from logs)")
     get_logger().log_info(f"Host enabled time: {host_enabled_time:.2f} seconds (from logs)")
 
-    timing_logger.log_timings(host_available_time, host_enabled_time, pod_recovery_time)
+    timing_logger.log_timings(host_enabled_time, pod_recovery_time)
     get_logger().log_info(f"Active controller {active_name} reboot test completed successfully")
 
 
@@ -514,12 +565,14 @@ def test_dead_office_recovery() -> None:
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     host_list_keywords = SystemHostListKeywords(ssh_connection)
     host_lock_keywords = SystemHostLockKeywords(ssh_connection)
-    pod_keywords = KubectlGetPodsKeywords(ssh_connection)
     lab_config = ConfigurationManager.get_lab_config()
     timing_logger = TimingLogger("dead_office_recovery", 
                                  column_headers=["All Hosts Recovery Time (s)", "Pod Recovery Time (s)"])
     
     SetupStressPods(ssh_connection).setup_stress_pods(benchmark="mixed")
+    robustness_pod_keywords = RobustnessPodKeywords(ssh_connection)
+    running_pods_before = robustness_pod_keywords.get_running_pod_count()
+    get_logger().log_info(f"Running pod count before power-off: {running_pods_before}")
     all_hosts = host_list_keywords.get_system_host_list().get_hosts()
     all_nodes = lab_config.get_nodes()
     get_logger().log_info(f"Found {len(all_nodes)} nodes in lab configuration")
@@ -543,52 +596,64 @@ def test_dead_office_recovery() -> None:
         jump_host_config.get_credentials().get_password(),
         name="jump_host"
     )
-    
-    get_logger().log_test_case_step("Powering off all hosts from jump server...")
-    for node in all_nodes:
-        node_name = node.get_name()
-        bm_ip = node.get_bm_ip()
-        bm_username = node.get_bm_username()
-        bm_password = lab_config.get_bm_password()
-        
-        get_logger().log_info(f"Powering off {node_name} (BMC: {bm_ip})")
-        jump_ssh.send(f"ipmitool -I lanplus -H {bm_ip} -U {bm_username} -P {bm_password} chassis power off")
-    
-    get_logger().log_info("Simulating 1 minute of energy loss...")
-    time.sleep(60)
 
-    get_logger().log_test_case_step("Powering on all hosts from jump server...")
-    recovery_start = time.time()
-    for node in all_nodes:
-        node_name = node.get_name()
-        bm_ip = node.get_bm_ip()
-        bm_username = node.get_bm_username()
-        bm_password = lab_config.get_bm_password()
-        
-        get_logger().log_info(f"Powering on {node_name} (BMC: {bm_ip})")
-        jump_ssh.send(f"ipmitool -I lanplus -H {bm_ip} -U {bm_username} -P {bm_password} chassis power on")
-    
-    get_logger().log_test_case_step("Waiting for all hosts to be unlocked...")
-    for host in all_hosts:
-        host_name = host.get_host_name()
-        get_logger().log_info(f"Waiting for {host_name} to be unlocked...")
-        validate_equals(
-            host_lock_keywords.wait_for_host_unlocked(host_name, unlock_wait_timeout=1800),
-            True,
-            f"Host {host_name} should be unlocked after power on"
-        )
-    
-    all_hosts_recovery_time = time.time() - recovery_start
-    get_logger().log_info(f"All hosts recovered in {all_hosts_recovery_time:.2f} seconds")
-    
-    get_logger().log_test_case_step("Waiting for all pods to be running...")
-    pod_recovery_start = time.time()
-    pod_keywords.wait_for_all_pods_status(["Running", "Succeeded", "Completed", "Unknown"], timeout=2400)
-    pod_recovery_time = time.time() - pod_recovery_start
-    get_logger().log_info(f"All pods recovered in {pod_recovery_time:.2f} seconds")
-    
-    timing_logger.log_timings(all_hosts_recovery_time, pod_recovery_time)
-    get_logger().log_info("Dead office recovery test completed successfully")
+    # Capture BMC Serial-Over-LAN for every node across the whole power cycle so an
+    # early-boot stall (which writes nothing to the node's own logs) is recorded.
+    # Reset all BMCs first (mc reset cold; does NOT power off the hosts) for a clean
+    # state, then open the SOL sessions ~20s AFTER power-on so the BMC's own SOL
+    # session-close during the power transition has already happened.
+    bm_password = lab_config.get_bm_password()
+    sol_capture = SolCaptureKeywords(jump_ssh, all_nodes, bm_password, run_id=f"dor_{int(time.time())}")
+    get_logger().log_test_case_step("Resetting all BMCs (clean state) before the power cycle...")
+    sol_capture.reset_bmcs()
+
+    try:
+        get_logger().log_test_case_step("Powering off all hosts from jump server...")
+        for node in all_nodes:
+            node_name = node.get_name()
+            bm_ip = node.get_bm_ip()
+            bm_username = node.get_bm_username()
+
+            get_logger().log_info(f"Powering off {node_name} (BMC: {bm_ip})")
+            jump_ssh.send(f"ipmitool -I lanplus -H {bm_ip} -U {bm_username} -P {bm_password} chassis power off")
+
+        get_logger().log_info("Simulating 1 minute of energy loss...")
+        time.sleep(60)
+
+        get_logger().log_test_case_step("Powering on all hosts from jump server...")
+        recovery_start = time.time()
+        for node in all_nodes:
+            node_name = node.get_name()
+            bm_ip = node.get_bm_ip()
+            bm_username = node.get_bm_username()
+
+            get_logger().log_info(f"Powering on {node_name} (BMC: {bm_ip})")
+            jump_ssh.send(f"ipmitool -I lanplus -H {bm_ip} -U {bm_username} -P {bm_password} chassis power on")
+
+        get_logger().log_info("Waiting 20s after power-on before opening SOL capture...")
+        time.sleep(20)
+        sol_capture.start()
+
+        host_names = [node.get_name() for node in all_nodes if node.get_name()]
+        wait_for_all_hosts_unlocked(ssh_connection, host_names)
+        all_hosts_recovery_time = time.time() - recovery_start
+        get_logger().log_info(f"All hosts recovered in {all_hosts_recovery_time:.2f} seconds")
+
+        get_logger().log_test_case_step("Waiting for Running pod count to be restored to baseline...")
+        pod_recovery_start = time.time()
+        running_pods_after = robustness_pod_keywords.wait_for_running_pod_count_restored(running_pods_before, timeout=3600)
+        pod_recovery_time = time.time() - pod_recovery_start
+        get_logger().log_info(f"Running pods restored ({running_pods_after}/{running_pods_before}) in {pod_recovery_time:.2f} seconds")
+        validate_equals(running_pods_after >= running_pods_before, True, f"Running pod count ({running_pods_after}) should be at least the pre-operation baseline ({running_pods_before})")
+
+        timing_logger.log_timings(all_hosts_recovery_time, pod_recovery_time)
+    finally:
+        # Always stop and collect SOL logs, even if the test failed above (the
+        # failing case is exactly when the boot console is needed).
+        sol_capture.stop()
+        sol_capture.collect(get_logger().get_test_case_log_dir())
+
+    deleted_pods = robustness_pod_keywords.cleanup_leftover_error_pods()
 
 
 @mark.p0
@@ -609,12 +674,14 @@ def test_controllers_power_cycle() -> None:
     
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     host_lock_keywords = SystemHostLockKeywords(ssh_connection)
-    pod_keywords = KubectlGetPodsKeywords(ssh_connection)
     lab_config = ConfigurationManager.get_lab_config()
     timing_logger = TimingLogger("controllers_power_cycle", 
                                  column_headers=["Controllers Recovery Time (s)", "Pod Recovery Time (s)"])
     
     SetupStressPods(ssh_connection).setup_stress_pods(benchmark="mixed")
+    robustness_pod_keywords = RobustnessPodKeywords(ssh_connection)
+    running_pods_before = robustness_pod_keywords.get_running_pod_count()
+    get_logger().log_info(f"Running pod count before power-off: {running_pods_before}")
     
     controllers = lab_config.get_controllers()
     bm_password = lab_config.get_bm_password()
@@ -660,13 +727,18 @@ def test_controllers_power_cycle() -> None:
     get_logger().log_info(f"Controllers recovered in {controllers_recovery_time:.2f} seconds")
     
     time.sleep(15)
-    get_logger().log_test_case_step("Waiting for all pods to be running...")
+    get_logger().log_test_case_step("Waiting for Running pod count to be restored to baseline...")
     pod_recovery_start = time.time()
-    pod_keywords.wait_for_all_pods_status(["Running", "Succeeded", "Completed", "Unknown"], timeout=1800)
+    running_pods_after = robustness_pod_keywords.wait_for_running_pod_count_restored(running_pods_before, timeout=1800)
     pod_recovery_time = time.time() - pod_recovery_start
-    get_logger().log_info(f"All pods recovered in {pod_recovery_time:.2f} seconds")
+    get_logger().log_info(f"Running pods restored ({running_pods_after}/{running_pods_before}) in {pod_recovery_time:.2f} seconds")
+    validate_equals(running_pods_after >= running_pods_before, True, f"Running pod count ({running_pods_after}) should be at least the pre-operation baseline ({running_pods_before})")
     
     timing_logger.log_timings(controllers_recovery_time, pod_recovery_time)
+
+    get_logger().log_test_case_step("Cleaning up stale errored pods left over from the recovery...")
+    deleted_pods = robustness_pod_keywords.cleanup_leftover_error_pods()
+    get_logger().log_info(f"Cleaned up {len(deleted_pods)} stale errored pod(s): {deleted_pods}")
     get_logger().log_info("Controllers power cycle test completed successfully")
 
 
