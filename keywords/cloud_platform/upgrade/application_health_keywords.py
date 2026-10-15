@@ -95,18 +95,27 @@ class ApplicationHealthKeywords(BaseKeyword):
         """
         self.app_apply.wait_for_applied(app_name, timeout=timeout)
 
-    def get_pod_count(self, namespace: str) -> int:
+    def get_pod_count(self, namespace: str, label: str = None) -> int:
         """
-        Count all pods in a namespace.
+        Count all pods in a namespace, optionally narrowed to a label selector.
+
+        The label is needed for applications that share a namespace with the platform.
+        oidc-auth-apps installs into kube-system, so a namespace-only count there describes the
+        whole control plane rather than the application, and a floor derived from it would be
+        satisfied by the platform's own pods with the application entirely absent.
 
         Args:
             namespace(str): the namespace to count pods in.
+            label(str): an optional label selector, for example "app=dex". When None, every pod in
+                the namespace is counted. Note that an application's charts do not necessarily
+                share a common label, so a per-component selector may be needed rather than one
+                selector for the whole application.
 
         Returns:
-            int: the number of pods in the namespace.
+            int: the number of pods matching.
 
         """
-        return len(self.pods.get_pods(namespace=namespace).get_pods())
+        return len(self.pods.get_pods(namespace=namespace, label=label).get_pods())
 
     def get_unhealthy_pod_count(self, namespace: str) -> int:
         """
@@ -139,7 +148,7 @@ class ApplicationHealthKeywords(BaseKeyword):
         ).get_pods()
         return len([pod for pod in unhealthy if pod.get_namespace() == namespace])
 
-    def get_not_ready_pod_count(self, namespace: str, expected_min: int = 1) -> int:
+    def get_not_ready_pod_count(self, namespace: str, expected_min: int = 1, label: str = None) -> int:
         """
         Count the pods in a namespace that are not Running with all of their containers ready.
 
@@ -165,6 +174,9 @@ class ApplicationHealthKeywords(BaseKeyword):
             expected_min(int): the fewest pods that count as present. Below this the count is
                 reported as POD_COUNT_BELOW_EXPECTED so a caller's wait continues rather than
                 passing on too few pods. Defaults to 1.
+            label(str): an optional label selector. Needed for applications that share a namespace
+                with the platform: oidc-auth-apps installs into kube-system, where a namespace-only
+                read would report on the control plane rather than the application.
 
         Returns:
             int: the number of pods that are not fully ready, or POD_COUNT_BELOW_EXPECTED when fewer
@@ -175,7 +187,7 @@ class ApplicationHealthKeywords(BaseKeyword):
 
         """
         pods_output = self.pods.get_pods_with_retry(
-            lambda: self.pods.get_pods(namespace),
+            lambda: self.pods.get_pods(namespace, label=label),
             timeout=self.POD_READ_TIMEOUT,
             poll_interval=self.POD_READ_POLL_INTERVAL,
         )
