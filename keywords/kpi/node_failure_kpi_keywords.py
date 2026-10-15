@@ -16,6 +16,8 @@ from framework.logging.automation_logger import get_logger
 from framework.resources.resource_finder import get_stx_resource_path
 from framework.ssh.ssh_connection import SSHConnection
 from framework.validation.validation import validate_equals
+from keywords.cloud_platform.system.host.system_host_list_keywords import SystemHostListKeywords
+from keywords.cloud_platform.system.host.system_host_lock_keywords import SystemHostLockKeywords
 from keywords.docker.images.docker_images_keywords import DockerImagesKeywords
 from keywords.docker.images.docker_load_image_keywords import DockerLoadImageKeywords
 from keywords.k8s.namespace.kubectl_create_namespace_keywords import KubectlCreateNamespacesKeywords
@@ -293,6 +295,12 @@ spec:
       labels:
         app: kpi-test
     spec:
+      terminationGracePeriodSeconds: 5
+      tolerations:
+      - key: "node.kubernetes.io/not-ready"
+        operator: "Exists"
+        effect: "NoExecute"
+        tolerationSeconds: 5
       nodeSelector:
         kpi-test-node: "true"
       imagePullSecrets:
@@ -503,6 +511,89 @@ def remove_node_label(ssh_connection: SSHConnection, node_name: str, label_key: 
     ssh_connection.send(f"source /etc/platform/openrc; export KUBECONFIG=/etc/kubernetes/admin.conf; kubectl label nodes {node_name} {label_key}- --overwrite")
 
 
+def remove_label_from_all_nodes(ssh_connection: SSHConnection, label_key: str = "kpi-test-node"):
+    """
+    Removes the test label from ALL nodes in the cluster
+
+    Ensures a clean slate so pods can only be scheduled to nodes this test explicitly
+    labels. Guards against stray labels left by a crashed run or the other test variant.
+
+    Args:
+        ssh_connection (SSHConnection): SSH connection to the controller
+        label_key (str): label key to remove from all nodes
+
+    """
+    get_logger().log_info(f"Removing label '{label_key}' from all nodes to ensure a clean slate")
+    ssh_connection.send(f"source /etc/platform/openrc; export KUBECONFIG=/etc/kubernetes/admin.conf; kubectl label nodes --all {label_key}- --overwrite")
+
+
+def get_unhealthy_hosts(ssh_connection: SSHConnection) -> List[str]:
+    """
+    Returns the names of hosts that are not unlocked/enabled/available
+
+    A host is healthy when administrative==unlocked, operational==enabled and
+    availability==available (SystemHostObject.is_host_healthy()).
+
+    Args:
+        ssh_connection (SSHConnection): SSH connection to the controller
+
+    Returns:
+        List[str]: names of hosts that are not healthy
+
+    """
+    hosts = SystemHostListKeywords(ssh_connection).get_system_host_list().get_hosts()
+    return [host.get_host_name() for host in hosts if not host.is_host_healthy()]
+
+
+def wait_for_all_hosts_healthy(ssh_connection: SSHConnection, target_node: str) -> bool:
+    """
+    Waits for every host to return to unlocked/enabled/available after a node reboot
+
+    Uses SystemHostLockKeywords.wait_for_host_unlocked on any host that is not yet
+    healthy so the next test iteration never starts against an offline host.
+
+    Args:
+        ssh_connection (SSHConnection): SSH connection to the controller
+        target_node (str): the rebooted node to prioritize in the recovery wait
+
+    Returns:
+        bool: True if all hosts are healthy, False if any host did not recover
+
+    """
+    lock_keywords = SystemHostLockKeywords(ssh_connection)
+
+    get_logger().log_info(f"Waiting for rebooted node {target_node} to return to unlocked/enabled/available")
+    all_healthy = lock_keywords.wait_for_host_unlocked(target_node, unlock_wait_timeout=2800)
+
+    for host_name in get_unhealthy_hosts(ssh_connection):
+        get_logger().log_info(f"Waiting for host {host_name} to return to unlocked/enabled/available")
+        if not lock_keywords.wait_for_host_unlocked(host_name, unlock_wait_timeout=2800):
+            all_healthy = False
+
+    return all_healthy
+
+
+def get_nodes_with_label(ssh_connection: SSHConnection, label_key: str = "kpi-test-node", label_value: str = "true") -> List[str]:
+    """
+    Returns the list of node names currently carrying the given label
+
+    Args:
+        ssh_connection (SSHConnection): SSH connection to the controller
+        label_key (str): label key to match
+        label_value (str): label value to match
+
+    Returns:
+        List[str]: node names carrying the label
+
+    """
+    output = ssh_connection.send(
+        f"source /etc/platform/openrc; export KUBECONFIG=/etc/kubernetes/admin.conf; "
+        f"kubectl get nodes -l {label_key}={label_value} -o jsonpath='{{.items[*].metadata.name}}'"
+    )
+    names = "".join(output).split()
+    return [n for n in names if n]
+
+
 def cleanup_test_resources(ssh_connection: SSHConnection, namespace: str, target_node: str, backup_node: str):
     """
     Cleans up test deployment, namespace, and node labels
@@ -518,9 +609,6 @@ def cleanup_test_resources(ssh_connection: SSHConnection, namespace: str, target
     try:
         ssh_connection.send(f"source /etc/platform/openrc; export KUBECONFIG=/etc/kubernetes/admin.conf; kubectl delete deployment kpi-test-deployment -n {namespace} --ignore-not-found=true")
         ssh_connection.send(f"source /etc/platform/openrc; export KUBECONFIG=/etc/kubernetes/admin.conf; kubectl delete namespace {namespace} --ignore-not-found=true")
-        if target_node:
-            remove_node_label(ssh_connection, target_node)
-        if backup_node:
-            remove_node_label(ssh_connection, backup_node)
+        remove_label_from_all_nodes(ssh_connection)
     except Exception as e:
         get_logger().log_info(f"Error during cleanup: {e}")
