@@ -9,6 +9,7 @@ from framework.web.webdriver_core import WebDriverCore
 from keywords.cloud_platform.fault_management.alarms.alarm_list_keywords import AlarmListKeywords
 from keywords.cloud_platform.fault_management.alarms.objects.alarm_list_object import AlarmListObject
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
+from keywords.cloud_platform.system.host.system_host_list_keywords import SystemHostListKeywords
 from keywords.docker.images.docker_load_image_keywords import DockerLoadImageKeywords
 from keywords.files.file_keywords import FileKeywords
 from keywords.k8s.pods.kubectl_apply_pods_keywords import KubectlApplyPodsKeywords
@@ -55,26 +56,27 @@ def prepare_stress_ng_image(ssh_connection: SSHConnection) -> None:
     KubectlCreateSecretsKeywords(ssh_connection).create_secret_for_registry(local_registry, "local-secret")
 
 
-def deploy_stress_ng_pod(ssh_connection: SSHConnection, alloc: str) -> str:
-    """Deploy the stress-ng pod with the specified memory allocation.
+def deploy_stress_ng_pod(ssh_connection: SSHConnection, hostname: str, alloc: str) -> None:
+    """Deploy the stress-ng pod on a specific host with the specified memory allocation.
 
-    Uploads the stress-ng.yaml resource, replaces the PLACEHOLDER with
-    the actual memory allocation, applies it, and waits for it to be Running.
+    Uploads the stress-ng.yaml resource, replaces the host and memory
+    placeholders, applies it, and waits for it to be Running. The pod is pinned
+    to ``hostname`` via the manifest's nodeSelector, so the running node is
+    known to the caller and is not returned.
 
     Args:
         ssh_connection (SSHConnection): SSH connection to the active controller.
+        hostname (str): Host to pin the pod to (nodeSelector).
         alloc (str): Memory allocation string (e.g., '1234567k').
-
-    Returns:
-        str: The name of the node where the pod is running.
     """
     get_logger().log_test_case_step("Upload stress-ng.yaml to active controller")
     file_keywords = FileKeywords(ssh_connection)
     local_yaml_path = get_stx_resource_path(POD_YAML_RESOURCE)
     file_keywords.upload_file(local_yaml_path, REMOTE_POD_YAML_PATH)
 
-    get_logger().log_test_case_step(f"Configure stress-ng pod with memory allocation: {alloc}")
-    ssh_connection.send(f"sed -i 's/PLACEHOLDER/{alloc}/' {REMOTE_POD_YAML_PATH}")
+    get_logger().log_test_case_step(f"Configure stress-ng pod: host={hostname}, memory allocation={alloc}")
+    file_keywords.replace_line_matching(REMOTE_POD_YAML_PATH, "HOST_PLACEHOLDER", hostname)
+    file_keywords.replace_line_matching(REMOTE_POD_YAML_PATH, "PLACEHOLDER", alloc)
 
     get_logger().log_test_case_step("Deploy stress-ng pod")
     KubectlApplyPodsKeywords(ssh_connection).apply_from_yaml(REMOTE_POD_YAML_PATH)
@@ -86,19 +88,13 @@ def deploy_stress_ng_pod(ssh_connection: SSHConnection, alloc: str) -> str:
         f"Pod {POD_NAME} reached Running status",
     )
 
-    get_logger().log_test_case_step("Get the node where the stress-ng pod is running")
-    pods_output = KubectlGetPodsKeywords(ssh_connection).get_pods(namespace="default")
-    pod_node = pods_output.get_pod(POD_NAME).get_node()
-    get_logger().log_info(f"Pod {POD_NAME} is running on node: {pod_node}")
-
-    return pod_node
-
 
 def calculate_memory_allocation(ssh_connection: SSHConnection) -> str:
     """Calculate the memory allocation needed to exceed 91% usage on the host.
 
-    Reads MemTotal and MemAvailable from /proc/meminfo and computes
-    the additional memory needed to push usage past the 91% threshold.
+    Reads MemTotal and MemAvailable from /proc/meminfo on the active controller
+    (where the pod is pinned to run) and computes the additional memory needed
+    to push usage past the 91% threshold.
 
     Args:
         ssh_connection (SSHConnection): SSH connection to the active controller.
@@ -143,6 +139,11 @@ def test_memory_alarm_threshold(request: FixtureRequest):
     request.addfinalizer(cleanup)
 
     prepare_stress_ng_image(ssh_connection)
+
+    # The pod is pinned to the active controller (nodeSelector + tolerations in
+    # the YAML allow it to land on a controller on any lab type), so size the
+    # allocation against the active controller's memory.
+    hostname = SystemHostListKeywords(ssh_connection).get_active_controller().get_host_name()
     alloc = calculate_memory_allocation(ssh_connection)
 
     # Validate memory alarm is not already present before applying stress
@@ -154,7 +155,7 @@ def test_memory_alarm_threshold(request: FixtureRequest):
         f"Memory alarm {MEMORY_ALARM_ID} must not be present before stress is applied",
     )
 
-    pod_node = deploy_stress_ng_pod(ssh_connection, alloc)
+    deploy_stress_ng_pod(ssh_connection, hostname, alloc)
 
     # Wait for memory threshold alarm to appear
     get_logger().log_test_case_step("Wait for memory threshold alarm to appear")
@@ -215,6 +216,11 @@ def test_memory_alarm_threshold_gui(request: FixtureRequest):
     login_page.login_as_admin()
 
     prepare_stress_ng_image(ssh_connection)
+
+    # The pod is pinned to the active controller (nodeSelector + tolerations in
+    # the YAML allow it to land on a controller on any lab type), so size the
+    # allocation against the active controller's memory.
+    hostname = SystemHostListKeywords(ssh_connection).get_active_controller().get_host_name()
     alloc = calculate_memory_allocation(ssh_connection)
 
     # Validate memory alarm is not already present before applying stress
@@ -226,7 +232,7 @@ def test_memory_alarm_threshold_gui(request: FixtureRequest):
         f"Memory alarm {MEMORY_ALARM_ID} must not be present before stress is applied",
     )
 
-    deploy_stress_ng_pod(ssh_connection, alloc)
+    deploy_stress_ng_pod(ssh_connection, hostname, alloc)
 
     # Navigate to Active Alarms page and wait for alarm to appear
     get_logger().log_test_case_step("Navigate to Active Alarms page and wait for memory alarm to appear")

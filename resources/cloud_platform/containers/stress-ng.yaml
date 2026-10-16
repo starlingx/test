@@ -5,6 +5,12 @@ metadata:
   labels:
     app: stress-ng
 spec:
+  # Pin to the host whose memory we sized against, so stress runs where we measured.
+  nodeSelector:
+    kubernetes.io/hostname: HOST_PLACEHOLDER
+  # Tolerate all taints so the nodeSelector-pinned pod schedules onto the controller.
+  tolerations:
+  - operator: Exists
   containers:
   - name: stress-ng
     image: registry.local:9001/stress-ng
@@ -12,4 +18,3 @@ spec:
     args: ["--vm-bytes", "PLACEHOLDER", "--vm-keep", "-m", "1", "--timeout", "0"]
   imagePullSecrets:
   - name: local-secret
-
