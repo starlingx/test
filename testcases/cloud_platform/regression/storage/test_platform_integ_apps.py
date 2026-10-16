@@ -873,6 +873,7 @@ def test_modify_replica_count_for_platform_integ_app(request: FixtureRequest):
     continuous_write_keywords = KubectlContinuousWriteKeywords(active_ssh_connection)
     namespace = "kube-system"
     cephfs_pod_names = ["cephfs-provisioner"]
+    rbd_pod_names = ["rbd-provisioner"]
     kubectl_get_pods_keywords = KubectlGetPodsKeywords(active_ssh_connection)
 
     writer_pods = {}
@@ -905,6 +906,7 @@ def test_modify_replica_count_for_platform_integ_app(request: FixtureRequest):
                 SystemApplicationApplyKeywords(active_ssh_connection).system_application_apply(app_name=platform_integ_apps_name)
 
         verify_provisioner(active_ssh_connection, cephfs_pod_names, "Running", namespace)
+        verify_provisioner(active_ssh_connection, rbd_pod_names, "Running", namespace)
 
         for storage_type in ["cephfs", "rbd"]:
             get_logger().log_teardown_step(f"Start {storage_type} continuous-write pod on {active_host_name}.")
@@ -951,6 +953,9 @@ def test_modify_replica_count_for_platform_integ_app(request: FixtureRequest):
 
     get_logger().log_test_case_step("Verify if platform-integ-apps cephfs provisioner pods are running")
     verify_provisioner(active_ssh_connection, cephfs_pod_names, "Running", namespace)
+
+    get_logger().log_test_case_step("Verify if platform-integ-apps rbd provisioner pods are running")
+    verify_provisioner(active_ssh_connection, rbd_pod_names, "Running", namespace)
 
     for storage_type in ["cephfs", "rbd"]:
         get_logger().log_test_case_step(f"Start {storage_type} continuous-write pod on {active_host_name}.")
@@ -1013,20 +1018,44 @@ def test_modify_replica_count_for_platform_integ_app(request: FixtureRequest):
     app_status_list = ["applied"]
     SystemApplicationListKeywords(active_ssh_connection).validate_app_status_in_list(platform_integ_apps_name, app_status_list, timeout=600, polling_sleep_time=20)
 
+    def count_running_provisioner_pods(prefix: str) -> int:
+        """Count provisioner pods for the given prefix that have settled at the target replica count.
+
+        Scaling a provisioner deployment down from 2 replicas to 1 is not instantaneous: the extra
+        pod enters Terminating while still briefly reporting a Running phase, and there is also a
+        window where the surviving pod is momentarily not counted. Both transients make a strict
+        "exactly 1 Running" check flap between 2, 0 and 1. To avoid matching on a transient reading,
+        this only reports the Running count once the total number of provisioner pods (any status)
+        has settled to that same count, i.e. no extra pod is still terminating.
+
+        Args:
+            prefix (str): The provisioner pod name prefix (e.g. "cephfs-provisioner").
+
+        Returns:
+            int: The number of Running provisioner pods once the scale-down has settled, otherwise -1.
+        """
+        pods = KubectlGetPodsKeywords(active_ssh_connection).get_pods(namespace=namespace)
+        all_provisioner_pods = [pod for pod in pods.get_pods() if pod.get_name().startswith(prefix)]
+        running_provisioner_pods = [pod for pod in all_provisioner_pods if pod.get_status() == "Running"]
+        # Only trust the Running count once no extra pod is still terminating.
+        if len(all_provisioner_pods) != len(running_provisioner_pods):
+            return -1
+        return len(running_provisioner_pods)
+
     get_logger().log_test_case_step("Check if the cephfs provisioner has 1 pod running")
     validate_equals_with_retry(
-        function_to_execute=lambda: len([pod for pod in KubectlGetPodsKeywords(active_ssh_connection).get_pods(namespace=namespace).get_pods_with_status("Running") if pod.get_name().startswith("cephfs-provisioner")]),
+        function_to_execute=lambda: count_running_provisioner_pods("cephfs-provisioner"),
         expected_value=1,
         validation_description="cephfs-provisioner pods in Running status should be equal to 1",
-        timeout=120,
+        timeout=600,
         polling_sleep_time=10,
     )
 
     get_logger().log_test_case_step("Check if the rbd provisioner has 1 pod running")
     validate_equals_with_retry(
-        function_to_execute=lambda: len([pod for pod in KubectlGetPodsKeywords(active_ssh_connection).get_pods(namespace=namespace).get_pods_with_status("Running") if pod.get_name().startswith("rbd-provisioner")]),
+        function_to_execute=lambda: count_running_provisioner_pods("rbd-provisioner"),
         expected_value=1,
         validation_description="rbd-provisioner pods in Running status should be equal to 1",
-        timeout=120,
+        timeout=600,
         polling_sleep_time=10,
     )
