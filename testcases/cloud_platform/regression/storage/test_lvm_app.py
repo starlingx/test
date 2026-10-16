@@ -15,6 +15,8 @@ from keywords.cloud_platform.system.application.system_application_delete_keywor
 from keywords.cloud_platform.system.application.system_application_list_keywords import SystemApplicationListKeywords
 from keywords.cloud_platform.system.application.system_application_remove_keywords import SystemApplicationRemoveKeywords
 from keywords.cloud_platform.system.application.system_application_show_keywords import SystemApplicationShowKeywords
+from keywords.cloud_platform.system.helm.system_helm_chart_attribute_modify_keywords import SystemHelmChartAttributeModifyKeywords
+from keywords.cloud_platform.system.helm.system_helm_override_keywords import SystemHelmOverrideKeywords
 from keywords.cloud_platform.system.host.system_host_disk_keywords import SystemHostDiskKeywords
 from keywords.cloud_platform.system.host.system_host_list_keywords import SystemHostListKeywords
 from keywords.cloud_platform.system.host.system_host_lvg_keywords import SystemHostLvgKeywords
@@ -38,6 +40,16 @@ REMOTE_DIR = "/home/sysadmin"
 
 # topolvm pod name prefixes. The scheduler is only deployed on multi-node systems.
 TOPOLVM_POD_PREFIXES = ["lvm-csi-topolvm-controller", "lvm-csi-topolvm-lvmd", "lvm-csi-topolvm-node", "lvm-csi-topolvm-scheduler"]
+
+# lvm-csi helm override coordinates ('system helm-override-show lvm-csi lvm-csi topolvm-system')
+# and the expected device-class values rendered per provisioning mode.
+LVM_CSI_CHART = "lvm-csi"
+LVM_CSI_NAMESPACE = "topolvm-system"
+# Thin on the shared cgts-vg: device-class 'cgts-vg-thin' with the 'lvmcsi-pool' thin pool.
+CGTS_VG_THIN_DEVICE_CLASS = "cgts-vg-thin"
+LVM_CSI_THIN_POOL = "lvmcsi-pool"
+# Thick on the dedicated lvm-provisioner VG: device-class 'lvm-provisioner-thick', no thin pool.
+DEDICATED_THICK_DEVICE_CLASS = "lvm-provisioner-thick"
 
 # Constants specific to the cgts-vg (shared VG) scenario.
 LVM_VG = "cgts-vg"
@@ -264,6 +276,97 @@ def _verify_lvmcsi_pool_used(ssh_connection: SSHConnection):
     get_logger().log_test_case_step(f"Verify the '{LVM_CSI_POOL}' has been used (Data% > 0).")
     # Raises TimeoutError if the pool data usage never exceeds the threshold within the timeout.
     lvs_keywords.wait_for_lv_data_percent_above(LVM_CSI_POOL, threshold=0.0, timeout=180, polling_interval=10)
+
+
+def _verify_lvm_csi_overrides(ssh_connection: SSHConnection, device_class: str, lvm_type: str, volume_group: str):
+    """
+    Verify the lvm-csi system helm overrides rendered for a given provisioning mode.
+
+    Reads 'system helm-override-show lvm-csi lvm-csi topolvm-system' and validates the device-class
+    the app renders: its name, type and backing volume group. For thin, it additionally asserts the
+    thin-pool and its over-provisioning ratio are present; for thick, it asserts no thin-pool is
+    rendered. This is the "application override validation" check.
+
+    Args:
+        ssh_connection (SSHConnection): the active controller SSH connection.
+        device_class (str): expected device-class name (e.g. 'cgts-vg-thin', 'lvm-provisioner-thick').
+        lvm_type (str): expected provisioning type ('thin' or 'thick').
+        volume_group (str): expected backing volume group (e.g. 'cgts-vg', 'lvm-provisioner').
+    """
+    get_logger().log_test_case_step(f"Read the lvm-csi helm overrides and validate the '{device_class}' device-class.")
+    show_object = SystemHelmOverrideKeywords(ssh_connection).get_system_helm_override_show(LVM_CSI_APP, LVM_CSI_CHART, LVM_CSI_NAMESPACE).get_helm_override_show()
+    # 'system helm-override-show' is parsed as a vertical table, so system_overrides is the YAML text
+    # of the override block (not a nested dict). Validate the rendered device-class by its key fields
+    # appearing in that text.
+    system_overrides = str(show_object.get_system_overrides())
+    validate_equals(system_overrides.strip() not in ("", "None"), True, "lvm-csi system overrides should not be empty.")
+
+    validate_str_contains(system_overrides, device_class, "lvm-csi device-class name")
+    validate_str_contains(system_overrides, f"type: {lvm_type}", "lvm-csi device-class type")
+    validate_str_contains(system_overrides, f"volume-group: {volume_group}", "lvm-csi device-class volume-group")
+
+    if lvm_type == "thin":
+        get_logger().log_test_case_step("Validate the thin-pool and its over-provisioning ratio are rendered.")
+        validate_str_contains(system_overrides, LVM_CSI_THIN_POOL, "lvm-csi thin-pool name")
+        validate_str_contains(system_overrides, "overprovision-ratio", "lvm-csi thin-pool over-provisioning ratio")
+    else:
+        get_logger().log_test_case_step("Validate no thin-pool is rendered for the thick device-class.")
+        validate_equals("thin-pool" in system_overrides, False, "thick lvm-csi overrides should not render a thin-pool.")
+
+
+def _verify_lvm_csi_helm_override_and_chart_attribute(ssh_connection: SSHConnection):
+    """
+    Validate helm override update/delete and chart-attribute-modify on the lvm-csi chart.
+
+    These operations act on the 'lvm-csi' chart in 'topolvm-system' and are identical regardless of
+    the thin/thick provisioning mode (the mode only changes the rendered device-class, not these
+    operations). Shared by the thin and thick scenarios.
+
+    Args:
+        ssh_connection (SSHConnection): the active controller SSH connection.
+    """
+    helm_override_keywords = SystemHelmOverrideKeywords(ssh_connection)
+    helm_attribute_keywords = SystemHelmChartAttributeModifyKeywords(ssh_connection)
+
+    get_logger().log_test_case_step("Update a user helm override on the lvm-csi chart and verify it is recorded.")
+    helm_override_keywords.update_helm_override_via_set("scheduler.enabled=true", LVM_CSI_APP, LVM_CSI_CHART, LVM_CSI_NAMESPACE)
+    user_overrides = helm_override_keywords.get_system_helm_override_show(LVM_CSI_APP, LVM_CSI_CHART, LVM_CSI_NAMESPACE).get_helm_override_show().get_user_overrides()
+    validate_str_contains(str(user_overrides), "scheduler", "lvm-csi user override should record the scheduler override")
+
+    get_logger().log_test_case_step("Delete the user helm override and verify user_overrides is cleared.")
+    helm_override_keywords.delete_system_helm_override(LVM_CSI_APP, LVM_CSI_CHART, LVM_CSI_NAMESPACE)
+    cleared_overrides = helm_override_keywords.get_system_helm_override_show(LVM_CSI_APP, LVM_CSI_CHART, LVM_CSI_NAMESPACE).get_helm_override_show().get_user_overrides()
+    validate_equals(str(cleared_overrides).strip() in ("", "None"), True, "lvm-csi user_overrides should be cleared after delete.")
+
+    get_logger().log_test_case_step("Disable the lvm-csi chart and verify the attributes show 'enabled: false'.")
+    helm_attribute_keywords.helm_chart_attribute_modify_enabled("false", LVM_CSI_APP, LVM_CSI_CHART, LVM_CSI_NAMESPACE)
+    disabled_attributes = helm_override_keywords.get_system_helm_override_show(LVM_CSI_APP, LVM_CSI_CHART, LVM_CSI_NAMESPACE).get_helm_override_show().get_attributes()
+    validate_str_contains(str(disabled_attributes), "enabled: false", "lvm-csi chart attributes should contain 'enabled: false'")
+
+    get_logger().log_test_case_step("Re-enable the lvm-csi chart and verify the attributes show 'enabled: true'.")
+    helm_attribute_keywords.helm_chart_attribute_modify_enabled("true", LVM_CSI_APP, LVM_CSI_CHART, LVM_CSI_NAMESPACE)
+    enabled_attributes = helm_override_keywords.get_system_helm_override_show(LVM_CSI_APP, LVM_CSI_CHART, LVM_CSI_NAMESPACE).get_helm_override_show().get_attributes()
+    validate_str_contains(str(enabled_attributes), "enabled: true", "lvm-csi chart attributes should contain 'enabled: true'")
+
+
+def _teardown_lvm_csi_chart_overrides(ssh_connection: SSHConnection):
+    """
+    Re-enable the lvm-csi chart and clear any leftover user overrides.
+
+    Used by the helm-override/chart-attribute scenarios before the provisioning teardown, so a test
+    that fails mid-way does not leave the chart disabled or a user override behind.
+
+    Args:
+        ssh_connection (SSHConnection): the active controller SSH connection.
+    """
+    helm_override_keywords = SystemHelmOverrideKeywords(ssh_connection)
+    helm_attribute_keywords = SystemHelmChartAttributeModifyKeywords(ssh_connection)
+
+    get_logger().log_teardown_step("Re-enable the lvm-csi chart and clear any user overrides.")
+    helm_attribute_keywords.helm_chart_attribute_modify_enabled("true", LVM_CSI_APP, LVM_CSI_CHART, LVM_CSI_NAMESPACE)
+    current_user_overrides = helm_override_keywords.get_system_helm_override_show(LVM_CSI_APP, LVM_CSI_CHART, LVM_CSI_NAMESPACE).get_helm_override_show().get_user_overrides()
+    if current_user_overrides is not None and str(current_user_overrides).strip() not in ("", "None"):
+        helm_override_keywords.delete_system_helm_override(LVM_CSI_APP, LVM_CSI_CHART, LVM_CSI_NAMESPACE)
 
 
 def _verify_no_new_alarms(ssh_connection: SSHConnection, alarms_before: list):
@@ -1064,6 +1167,171 @@ def test_lvm_csi_thin_cgts_vg_compute(request):
     _verify_topolvm_pods_running(ssh_connection)
     _create_and_verify_pvc_and_pod(ssh_connection, CGTS_VG_WORKLOAD)
     _verify_lvmcsi_pool_used(ssh_connection)
+    _verify_no_new_alarms(ssh_connection, alarms_before)
+
+
+@mark.p2
+def test_lvm_csi_thin_override_validation(request):
+    """
+    Validate the lvm-csi application overrides rendered for thin cgts-vg provisioning.
+
+    Setup:
+        - Validate that all hosts are healthy
+        - Validate the 'lvm-csi' application is in the initial 'uploaded' state
+        - Validate the 'lvm' storage backend is not already configured
+        - Capture a snapshot of the active alarms
+
+    Test Steps:
+        - Add the 'lvm' storage backend and assign the lvm-csi function to the cgts-vg
+        - Wait for the 'lvm-csi' application to be applied
+        - Read the lvm-csi helm overrides and validate the thin device-class (name 'cgts-vg-thin',
+          type thin, volume-group cgts-vg, thin-pool name and over-provisioning ratio)
+        - Verify no new alarms appeared during the test
+
+    Teardown:
+        - Reset the cgts-vg function to 'none', delete the 'lvm' storage backend
+        - Remove the 'lvm-csi' application (back to 'uploaded')
+        - Verify no new alarms remain after the revert
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+
+    alarms_before = _setup_lvm()
+
+    # Register the teardown only after setup passed (setup is validation-only, nothing to revert if it fails).
+    def teardown():
+        _teardown_lvm_csi_resources(ssh_connection, alarms_before)
+
+    request.addfinalizer(teardown)
+
+    _apply_lvm_csi_cgts_vg()
+    _verify_lvm_csi_overrides(ssh_connection, device_class=CGTS_VG_THIN_DEVICE_CLASS, lvm_type="thin", volume_group=LVM_VG)
+    _verify_no_new_alarms(ssh_connection, alarms_before)
+
+
+@mark.p2
+@mark.lab_has_free_disk
+def test_lvm_csi_thick_override_validation(request):
+    """
+    Validate the lvm-csi application overrides rendered for thick dedicated-VG provisioning.
+
+    Setup:
+        - Validate that all hosts are healthy
+        - Validate the 'lvm-csi' application is in the initial 'uploaded' state
+        - Validate the 'lvm' storage backend is not already configured
+        - Capture a snapshot of the active alarms
+
+    Test Steps:
+        - Add the 'lvm' storage backend and create the dedicated 'lvm-provisioner' thick VG on a free disk
+        - Wait for the 'lvm-csi' application to be applied
+        - Read the lvm-csi helm overrides and validate the thick device-class (name
+          'lvm-provisioner-thick', type thick, volume-group lvm-provisioner, no thin-pool)
+        - Verify no new alarms appeared during the test
+
+    Teardown:
+        - Delete the dedicated volume group, delete the 'lvm' storage backend
+        - Remove the 'lvm-csi' application (back to 'uploaded')
+        - Verify no new alarms remain after the revert
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+
+    alarms_before = _setup_lvm()
+
+    # Register the teardown only after setup passed (setup is validation-only, nothing to revert if it fails).
+    def teardown():
+        _teardown_lvm_csi_dedicated_vg(ssh_connection, alarms_before)
+
+    request.addfinalizer(teardown)
+
+    _apply_lvm_csi_dedicated_thick_vg()
+    _verify_lvm_csi_overrides(ssh_connection, device_class=DEDICATED_THICK_DEVICE_CLASS, lvm_type="thick", volume_group=DEDICATED_VG)
+    _verify_no_new_alarms(ssh_connection, alarms_before)
+
+
+@mark.p2
+def test_lvm_csi_thin_helm_override_and_chart_attribute(request):
+    """
+    Validate helm override update and chart-attribute-modify on lvm-csi (thin cgts-vg).
+
+    Setup:
+        - Validate that all hosts are healthy
+        - Validate the 'lvm-csi' application is in the initial 'uploaded' state
+        - Validate the 'lvm' storage backend is not already configured
+        - Capture a snapshot of the active alarms
+
+    Test Steps:
+        - Add the 'lvm' storage backend and assign the lvm-csi function to the cgts-vg, apply lvm-csi
+        - Update a user helm override ('--set scheduler.enabled=true') and verify it is recorded in
+          the chart user_overrides
+        - Delete the user helm override and verify user_overrides is cleared
+        - Disable the lvm-csi chart ('helm-chart-attribute-modify --enabled false') and verify the
+          chart attributes show 'enabled: false'
+        - Re-enable the lvm-csi chart and verify the chart attributes show 'enabled: true'
+        - Verify no new alarms appeared during the test
+
+    Teardown:
+        - Delete any leftover user override and re-enable the chart
+        - Reset the cgts-vg function to 'none', delete the 'lvm' storage backend
+        - Remove the 'lvm-csi' application (back to 'uploaded')
+        - Verify no new alarms remain after the revert
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+
+    alarms_before = _setup_lvm()
+
+    # Register the teardown only after setup passed (setup is validation-only, nothing to revert if it fails).
+    def teardown():
+        _teardown_lvm_csi_chart_overrides(ssh_connection)
+        _teardown_lvm_csi_resources(ssh_connection, alarms_before)
+
+    request.addfinalizer(teardown)
+
+    _apply_lvm_csi_cgts_vg()
+    _verify_lvm_csi_helm_override_and_chart_attribute(ssh_connection)
+    _verify_no_new_alarms(ssh_connection, alarms_before)
+
+
+@mark.p2
+@mark.lab_has_free_disk
+def test_lvm_csi_thick_helm_override_and_chart_attribute(request):
+    """
+    Validate helm override update and chart-attribute-modify on lvm-csi (thick dedicated VG).
+
+    The helm override and chart-attribute operations act on the same 'lvm-csi' chart/namespace as
+    the thin case and are provisioning-agnostic; this covers them in the thick context for parity.
+
+    Setup:
+        - Validate that all hosts are healthy
+        - Validate the 'lvm-csi' application is in the initial 'uploaded' state
+        - Validate the 'lvm' storage backend is not already configured
+        - Capture a snapshot of the active alarms
+
+    Test Steps:
+        - Add the 'lvm' storage backend and create the dedicated 'lvm-provisioner' thick VG, apply lvm-csi
+        - Update a user helm override ('--set scheduler.enabled=true') and verify it is recorded
+        - Delete the user helm override and verify user_overrides is cleared
+        - Disable the lvm-csi chart and verify the attributes show 'enabled: false'
+        - Re-enable the lvm-csi chart and verify the attributes show 'enabled: true'
+        - Verify no new alarms appeared during the test
+
+    Teardown:
+        - Delete any leftover user override and re-enable the chart
+        - Delete the dedicated volume group, delete the 'lvm' storage backend
+        - Remove the 'lvm-csi' application (back to 'uploaded')
+        - Verify no new alarms remain after the revert
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+
+    alarms_before = _setup_lvm()
+
+    # Register the teardown only after setup passed (setup is validation-only, nothing to revert if it fails).
+    def teardown():
+        _teardown_lvm_csi_chart_overrides(ssh_connection)
+        _teardown_lvm_csi_dedicated_vg(ssh_connection, alarms_before)
+
+    request.addfinalizer(teardown)
+
+    _apply_lvm_csi_dedicated_thick_vg()
+    _verify_lvm_csi_helm_override_and_chart_attribute(ssh_connection)
     _verify_no_new_alarms(ssh_connection, alarms_before)
 
 
