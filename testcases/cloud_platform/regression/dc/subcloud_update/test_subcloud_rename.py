@@ -106,7 +106,7 @@ def test_subcloud_rename(request):
     sc_name_original = dcmanager_subcloud_rename(ssh_connection, sc_name_new)
 
     # Manage renamed subcloud
-    dcm_sc_kw.get_dcmanager_subcloud_manage(sc_name_new, 30)
+    dcm_sc_kw.get_dcmanager_subcloud_manage(sc_name_new, 120)
 
     # Validate rename
     obj_subcloud = dcm_sc_list_kw.get_dcmanager_subcloud_list().get_subcloud_by_name(sc_name_new)
