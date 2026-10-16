@@ -31,11 +31,16 @@ class TestApplicationHealthKeywords(unittest.TestCase):
         self.logger_patcher.start()
         self.module_logger_patcher = patch("keywords.cloud_platform.upgrade.application_health_keywords.get_logger")
         self.module_logger_patcher.start()
+        # validate_equals_with_retry logs through its own get_logger; patch it too so the
+        # retry-based wait tests do not need a Logger Configuration.
+        self.validation_logger_patcher = patch("framework.validation.validation.get_logger")
+        self.validation_logger_patcher.start()
 
     def tearDown(self):
         """Stop the logger patchers."""
         self.logger_patcher.stop()
         self.module_logger_patcher.stop()
+        self.validation_logger_patcher.stop()
 
     def _build_keywords(self, status="applied", pods=(), unhealthy=(), alarm_ids=(), version="26.03-69"):
         """Return an instance whose collaborators are mocked.
@@ -245,6 +250,66 @@ class TestApplicationHealthKeywords(unittest.TestCase):
         keywords = self._build_keywords(unhealthy=())
 
         self.assertEqual(keywords.get_unhealthy_pod_count("portieris"), 0)
+
+    # ---- wait_for_pods_present_and_healthy (generic present-and-healthy wait) ----
+
+    def test_wait_for_pods_present_and_healthy_retries_until_zero(self):
+        """Tolerates pods still coming up and returns once present and healthy."""
+        keywords = self._build_keywords()
+        unhealthy = MagicMock(side_effect=[2, 2, 0])
+        object.__setattr__(keywords, 'get_pod_count', MagicMock(return_value=8))
+        object.__setattr__(keywords, 'get_unhealthy_pod_count', unhealthy)
+
+        keywords.wait_for_pods_present_and_healthy("test-app", timeout=30, poll_interval=0)
+
+        self.assertEqual(unhealthy.call_count, 3)
+        for call in unhealthy.call_args_list:
+            self.assertEqual(call.args[0], "test-app")
+
+    def test_wait_for_pods_present_and_healthy_does_not_pass_on_empty_namespace(self):
+        """An empty namespace (0 pods) must NOT pass even though unhealthy count is 0."""
+        keywords = self._build_keywords()
+        pod_count = MagicMock(side_effect=[0, 0, 8])
+        object.__setattr__(keywords, 'get_pod_count', pod_count)
+        object.__setattr__(keywords, 'get_unhealthy_pod_count', MagicMock(return_value=0))
+
+        keywords.wait_for_pods_present_and_healthy("test-app", timeout=30, poll_interval=0)
+
+        # It kept polling past the empty-namespace reads instead of passing on the first (0,0).
+        self.assertEqual(pod_count.call_count, 3)
+
+    def test_wait_for_pods_present_and_healthy_raises_when_empty_namespace_persists(self):
+        """If the namespace never gets pods, the wait fails rather than passing on 0 unhealthy."""
+        from framework.exceptions.validation_failure_error import ValidationFailureError
+
+        keywords = self._build_keywords()
+        object.__setattr__(keywords, 'get_pod_count', MagicMock(return_value=0))
+        object.__setattr__(keywords, 'get_unhealthy_pod_count', MagicMock(return_value=0))
+
+        with self.assertRaises((TimeoutError, ValidationFailureError)):
+            keywords.wait_for_pods_present_and_healthy("test-app", timeout=1, poll_interval=0)
+
+    def test_wait_for_pods_present_and_healthy_raises_when_never_healthy(self):
+        """Raises (does not silently pass) when pods never become healthy."""
+        from framework.exceptions.validation_failure_error import ValidationFailureError
+
+        keywords = self._build_keywords()
+        object.__setattr__(keywords, 'get_pod_count', MagicMock(return_value=8))
+        object.__setattr__(keywords, 'get_unhealthy_pod_count', MagicMock(return_value=1))
+
+        with self.assertRaises((TimeoutError, ValidationFailureError)):
+            keywords.wait_for_pods_present_and_healthy("test-app", timeout=1, poll_interval=0)
+
+    def test_wait_for_pods_present_and_healthy_tolerates_transient_read_failure(self):
+        """A raising read (apiserver down) is swallowed and retried, then passes once healthy."""
+        keywords = self._build_keywords()
+        pod_count = MagicMock(side_effect=[Exception("connection refused"), 8, 8])
+        object.__setattr__(keywords, 'get_pod_count', pod_count)
+        object.__setattr__(keywords, 'get_unhealthy_pod_count', MagicMock(return_value=0))
+
+        keywords.wait_for_pods_present_and_healthy("test-app", timeout=30, poll_interval=0)
+
+        self.assertGreaterEqual(pod_count.call_count, 2)
 
 
 if __name__ == "__main__":

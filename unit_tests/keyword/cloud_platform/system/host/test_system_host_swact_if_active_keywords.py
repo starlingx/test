@@ -116,6 +116,59 @@ class TestSwactIfActive(unittest.TestCase):
         self.assertFalse(performed)
         self.host_swact_mock.assert_not_called()
 
+    # ---- wait_for_standby_available (generic standby-ready wait before a swact) ----
+
+    @staticmethod
+    def _standby_host(admin, oper, avail, name="controller-1"):
+        """Return a mock standby controller host with the given admin/oper/avail state."""
+        s = NonCallableMagicMock()
+        s.get_host_name = MagicMock(return_value=name)
+        s.get_administrative = MagicMock(return_value=admin)
+        s.get_operational = MagicMock(return_value=oper)
+        s.get_availability = MagicMock(return_value=avail)
+        return s
+
+    def _build_swact_only(self):
+        """Return a SystemHostSwactKeywords with just an ssh connection (host-list patched per test)."""
+        keywords = SystemHostSwactKeywords.__new__(SystemHostSwactKeywords)
+        object.__setattr__(keywords, "ssh_connection", NonCallableMagicMock())
+        return keywords
+
+    def test_wait_for_standby_available_returns_when_ready(self):
+        """Returns once the standby is unlocked/enabled/available."""
+        keywords = self._build_swact_only()
+        host_list = NonCallableMagicMock()
+        host_list.get_standby_controller = MagicMock(side_effect=[
+            self._standby_host("unlocked", "disabled", "offline"),
+            self._standby_host("unlocked", "disabled", "online"),
+            self._standby_host("unlocked", "enabled", "available"),
+        ])
+        with patch(f"{MODULE}.SystemHostListKeywords", return_value=host_list), \
+                patch("framework.validation.validation.get_logger"):
+            keywords.wait_for_standby_available(timeout=30, poll_interval=0)
+        self.assertEqual(host_list.get_standby_controller.call_count, 3)
+
+    def test_wait_for_standby_available_raises_when_never_ready(self):
+        """If the standby never becomes enabled, it fails rather than hanging forever."""
+        from framework.exceptions.validation_failure_error import ValidationFailureError
+
+        keywords = self._build_swact_only()
+        host_list = NonCallableMagicMock()
+        host_list.get_standby_controller = MagicMock(return_value=self._standby_host("unlocked", "disabled", "offline"))
+        with patch(f"{MODULE}.SystemHostListKeywords", return_value=host_list), \
+                patch("framework.validation.validation.get_logger"):
+            with self.assertRaises((TimeoutError, ValidationFailureError)):
+                keywords.wait_for_standby_available(timeout=1, poll_interval=0)
+
+    def test_wait_for_standby_available_noop_without_standby(self):
+        """On a single-controller system (no standby) it is a no-op and returns."""
+        keywords = self._build_swact_only()
+        host_list = NonCallableMagicMock()
+        host_list.get_standby_controller = MagicMock(side_effect=KeywordException("no standby"))
+        with patch(f"{MODULE}.SystemHostListKeywords", return_value=host_list), \
+                patch("framework.validation.validation.get_logger"):
+            keywords.wait_for_standby_available(timeout=1, poll_interval=0)  # must return, not raise
+
 
 if __name__ == "__main__":
     unittest.main()

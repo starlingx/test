@@ -161,3 +161,33 @@ def test_get_total_restart_count_table_source_raises():
         pod.get_total_restart_count()
     with pytest.raises(ValueError, match="not available"):
         pod.get_total_restart_count(include_init=True)
+
+
+def test_json_output_maps_container_name_to_image_and_tag():
+    """JSON parsing records a container-name -> image map; get_container_image/_tag use it.
+
+    get_container_image_tag returns the part after the last ':' (the tag), ignoring the registry
+    prefix, so a version comparison can rely on the tag alone. Picking by container name lets a
+    caller read one container's image when a pod has a sidecar too.
+    """
+    item = {
+        "metadata": {"name": "test-app-abc", "namespace": "test-app"},
+        "spec": {
+            "nodeName": "compute-0",
+            "containers": [
+                {"name": "test-app", "image": "registry.local:9001/docker.io/example/test-app:v1.2.3-4"},
+                {"name": "sidecar", "image": "gcr.io/example/sidecar:v0.15.0"},
+            ],
+        },
+        "status": {"phase": "Running"},
+    }
+    output = KubectlGetPodsOutput(_pods_json([item]), source="json")
+    pod = output.get_pods()[0]
+
+    # The main container image is picked by name, not the sidecar's.
+    assert pod.get_container_image("test-app").endswith("test-app:v1.2.3-4")
+    # The tag ignores the registry prefix (everything before the last colon).
+    assert pod.get_container_image_tag("test-app") == "v1.2.3-4"
+    assert pod.get_container_image_tag("sidecar") == "v0.15.0"
+    # Unknown container -> None, does not raise.
+    assert pod.get_container_image_tag("does-not-exist") is None

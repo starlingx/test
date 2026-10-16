@@ -5,6 +5,7 @@ from config.lab.objects.lab_type_enum import LabTypeEnum
 from framework.exceptions.keyword_exception import KeywordException
 from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
+from framework.validation.validation import validate_equals_with_retry
 from keywords.base_keyword import BaseKeyword
 from keywords.cloud_platform.command_wrappers import source_openrc
 from keywords.cloud_platform.system.host.objects.system_host_object import SystemHostObject
@@ -182,3 +183,50 @@ class SystemHostSwactKeywords(BaseKeyword):
         self.host_swact()
         self.wait_for_swact(active, standby)
         return True
+
+    def wait_for_standby_available(self, timeout: int = 300, poll_interval: int = 15) -> None:
+        """Wait until the standby controller is unlocked/enabled/available before a swact.
+
+        A swact is rejected by the platform ("<standby> is not enabled and has operational state
+        disabled. Standby controller must be operationally enabled.") whenever the standby
+        controller has not finished coming up - most commonly right after it was deployed/rebooted
+        during an upgrade or rollback. Issuing the swact in that window burns the swact retry budget
+        and fails the run even though the standby settles seconds later. This waits for the standby
+        to be administratively unlocked, operationally enabled, and available so the subsequent
+        swact can actually succeed.
+
+        No-op when there is no standby (single controller): get_standby_controller raises and this
+        returns, matching the simplex path where no swact happens. Generic: any swact-sensitive
+        caller can use it.
+
+        Args:
+            timeout (int): seconds to wait for the standby to become available.
+            poll_interval (int): seconds between polls.
+        """
+        host_list = SystemHostListKeywords(self.ssh_connection)
+
+        def standby_ready() -> bool:
+            try:
+                standby = host_list.get_standby_controller()
+            except KeywordException:
+                return True  # no standby to wait for (single controller)
+            ready = (
+                standby.get_administrative() == "unlocked"
+                and standby.get_operational() == "enabled"
+                and standby.get_availability() == "available"
+            )
+            if not ready:
+                get_logger().log_info(
+                    f"[swact-guard] waiting for standby {standby.get_host_name()} to be "
+                    f"unlocked/enabled/available (admin={standby.get_administrative()} "
+                    f"oper={standby.get_operational()} avail={standby.get_availability()})"
+                )
+            return ready
+
+        validate_equals_with_retry(
+            standby_ready,
+            True,
+            "standby controller is unlocked/enabled/available before swact",
+            timeout=timeout,
+            polling_sleep_time=poll_interval,
+        )

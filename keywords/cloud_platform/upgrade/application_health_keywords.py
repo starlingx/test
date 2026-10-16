@@ -1,6 +1,7 @@
 from config.configuration_manager import ConfigurationManager
 from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
+from framework.validation.validation import validate_equals_with_retry
 from keywords.base_keyword import BaseKeyword
 from keywords.cloud_platform.fault_management.alarms.alarm_list_keywords import AlarmListKeywords
 from keywords.cloud_platform.system.application.system_application_apply_keywords import SystemApplicationApplyKeywords
@@ -223,3 +224,45 @@ class ApplicationHealthKeywords(BaseKeyword):
         ignored.append("250.001")
         remaining = self.alarms.get_alarm_list().get_alarms_excluding(ignored)
         return len([alarm for alarm in remaining if str(alarm.get_alarm_id()).startswith(prefixes)])
+
+    def wait_for_pods_present_and_healthy(self, namespace: str, message: str = None, timeout: int = 600, poll_interval: int = 15) -> None:
+        """Wait until a namespace has pods AND none are unhealthy, retrying until the timeout.
+
+        'applied' only means the platform reports the app applied; it does not mean the app's pods
+        have reached Running. After a host rollback or upgrade a host has just rebooted, so the app
+        flips to 'applied' while the operator/webhook/daemonset pods are still Init/ContainerCreating.
+        Asserting the unhealthy count is zero at that instant is a race (observed non-zero moments
+        before the pods settle). It is also a race in the OTHER direction: right after a rollback the
+        pods may not exist yet, so "unhealthy count == 0" passes on an EMPTY namespace. This waits for
+        the namespace to have pods AND the unhealthy count to reach zero, and tolerates a transient
+        apiserver/kubectl read failure (activate/swact/reboots briefly restart the kube-apiserver), so
+        the check answers "did the expected pods come up healthy" rather than "were they up this
+        instant" or "is the namespace quiet because it is empty". Generic: usable by any app-health
+        caller for any namespace.
+
+        Args:
+            namespace (str): the namespace to check.
+            message (str, optional): assertion message; a default is used when None.
+            timeout (int): seconds to wait for the pods to become present and healthy.
+            poll_interval (int): seconds between polls.
+
+        Raises:
+            TimeoutError: when the pods are not present and healthy within the timeout.
+        """
+
+        def pods_present_and_healthy() -> bool:
+            try:
+                pod_count = self.get_pod_count(namespace)
+                unhealthy = self.get_unhealthy_pod_count(namespace)
+            except Exception as e:  # noqa: BLE001 - transient apiserver/kubectl read, retried
+                get_logger().log_info(f"transient apiserver/kubectl read failed for {namespace}, will retry: {e}")
+                return False
+            return pod_count > 0 and unhealthy == 0
+
+        validate_equals_with_retry(
+            pods_present_and_healthy,
+            True,
+            message or f"pods in {namespace} are present and all healthy",
+            timeout=timeout,
+            polling_sleep_time=poll_interval,
+        )

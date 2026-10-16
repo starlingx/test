@@ -130,6 +130,7 @@ class KubectlGetPodsOutput:
         containers = spec.get("containers", [])
         images = [c.get("image", "") for c in containers if c.get("image")]
         pod.set_images(images)
+        pod.set_container_images({c.get("name"): c.get("image", "") for c in containers if c.get("name")})
 
         # Ready count from containerStatuses
         container_statuses = status_data.get("containerStatuses", [])

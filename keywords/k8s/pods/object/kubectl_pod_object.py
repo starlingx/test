@@ -27,6 +27,7 @@ class KubectlPodObject:
         self.readiness_gates = None
         self.labels = {}
         self.images = []
+        self.container_images = {}
         self.owner_name = None
         self.owner_kind = None
 
@@ -443,6 +444,55 @@ class KubectlPodObject:
             list[str]: List of container image strings.
         """
         return self.images
+
+    def set_container_images(self, container_images: dict) -> None:
+        """Setter for the per-container image map (container name -> image).
+
+        Args:
+            container_images (dict): mapping of container name to its image reference.
+        """
+        self.container_images = container_images
+
+    def get_container_images(self) -> dict:
+        """Getter for the per-container image map.
+
+        Returns:
+            dict: mapping of container name to its image reference. Empty when the source output
+                did not carry container names (e.g. table-format parsing).
+        """
+        return self.container_images
+
+    def get_container_image(self, container_name: str) -> str:
+        """Return the image reference of a specific container by name.
+
+        Args:
+            container_name (str): the container name to look up.
+
+        Returns:
+            str: the image reference for that container, or None when the container is not present
+                or container names were not captured (table-format parsing).
+        """
+        return self.container_images.get(container_name)
+
+    def get_container_image_tag(self, container_name: str) -> str:
+        """Return the image TAG of a specific container (the part after the last ':').
+
+        The tag is the release signal when a container exposes no version field. The registry
+        prefix differs between a public pull and a registry.local mirror, so only the tag (after the
+        last colon of the image reference) is meaningful for a version comparison. Generic: any
+        caller that needs a container's image tag can use it.
+
+        Args:
+            container_name (str): the container name to look up.
+
+        Returns:
+            str: the image tag, or None when the container is not present / has no image / container
+                names were not captured.
+        """
+        image = self.get_container_image(container_name)
+        if not image or ":" not in image:
+            return None
+        return image.rsplit(":", 1)[-1]
 
     def __str__(self) -> str:
         """
