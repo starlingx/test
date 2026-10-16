@@ -4,13 +4,18 @@
   // Paths to tarballs of the applications that are in the previous version, to test application upgrade.
   // The paths should be accessible from the location of the agent running the test cases.
   // Example: resources/images/app.tgz
-  
+
   platform_integ_app_tarball: "fake_path",
   metrics_server_app_tarball: "fake_path",
   metrics_server_app_tarball_n2: "fake_path",
   rook_ceph_app_tarball: "fake_path",
   dell_storage_app_tarball: "fake_path",
   dell_storage_app_tarball_rollback: "fake_path",
+
+  // Independent audit lifecycle setup data; exact controller archive paths.
+  // Optional keys: baseline_artifact, artifact, version.
+  auditd_test_options: {},
+
   // Application tarball used for OIDC upload/write tests
   oidc_test_app_tarball: "auditd",
 

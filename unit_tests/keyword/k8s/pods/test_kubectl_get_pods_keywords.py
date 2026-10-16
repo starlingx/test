@@ -15,9 +15,9 @@ import json
 from unittest.mock import NonCallableMagicMock, patch
 
 import pytest
+
 from framework.exceptions.keyword_exception import KeywordException
 from framework.ssh.ssh_connection import SSHConnection
-
 from keywords.k8s.pods.kubectl_get_pods_keywords import KubectlGetPodsKeywords
 
 
@@ -152,3 +152,20 @@ def test_get_pod_restart_count_pod_not_found_raises(mock_get_logger):
 
     with pytest.raises(KeywordException, match="no pod with the name"):
         keyword.get_pod_restart_count("missing-pod", "test-ns")
+
+
+@patch("keywords.base_keyword.get_logger")
+def test_json_label_selector_preserves_all_phases(mock_get_logger: object) -> None:
+    """Read one safely quoted labelled snapshot without filtering pod phase.
+
+    Args:
+        mock_get_logger (object): Patched logger.
+    """
+    ssh = build_mock_ssh_connection(_pods_list_json([]))
+    keyword = KubectlGetPodsKeywords(ssh, kubeconfig_path="/tmp/fake-kubeconfig")
+    assert keyword.get_pods_json(namespace="kube-system", label="app in (auditd,other)").get_pod_records() == []
+    ssh.send.assert_called_once()
+    command = ssh.send.call_args.args[0]
+    assert "-n kube-system -l 'app in (auditd,other)' -o json" in command
+    assert "/tmp/fake-kubeconfig" in command
+    assert "field-selector" not in command
