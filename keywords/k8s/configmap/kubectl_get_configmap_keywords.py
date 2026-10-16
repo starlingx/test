@@ -33,3 +33,30 @@ class KubectlGetConfigmapKeywords(BaseKeyword):
         output = self.ssh_connection.send(self.k8s_config.export(cmd))
         self.validate_success_return_code(self.ssh_connection)
         return KubectlGetConfigmapOutput(output)
+
+    def get_configmap_names(self, namespace: str) -> list[str]:
+        """Return the names of all ConfigMaps in a namespace.
+
+        Args:
+            namespace (str): Namespace to list ConfigMaps from.
+
+        Returns:
+            list[str]: ConfigMap names in the namespace.
+        """
+        cmd = f"kubectl get configmap -n {namespace} -o jsonpath='{{.items[*].metadata.name}}'"
+        output = self.ssh_connection.send(self.k8s_config.export(cmd))
+        self.validate_success_return_code(self.ssh_connection)
+        text = "".join(output) if isinstance(output, list) else output
+        return text.split()
+
+    def has_configmap_matching(self, namespace: str, marker: str) -> bool:
+        """Return whether any ConfigMap name in a namespace contains a marker.
+
+        Args:
+            namespace (str): Namespace to search.
+            marker (str): Substring to match against ConfigMap names.
+
+        Returns:
+            bool: True if at least one ConfigMap name contains the marker.
+        """
+        return any(marker in name for name in self.get_configmap_names(namespace))
