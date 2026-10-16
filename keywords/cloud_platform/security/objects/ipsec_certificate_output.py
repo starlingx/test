@@ -51,22 +51,37 @@ class IPSecCertificateOutput:
 
         return subject, issuer
 
+    # MD5 of empty input - produced when the openssl pipeline fails (e.g. wrong key
+    # type) and emits nothing to stdout. Treated as "no hash" so callers do not get
+    # a false positive from two empty hashes comparing equal.
+    EMPTY_INPUT_MD5 = "d41d8cd98f00b204e9800998ecf8427e"
+
     def _extract_md5(self) -> str:
         """Extract MD5 hash from command output.
 
+        Returns the empty string if the pipeline produced the MD5 of empty input,
+        which indicates the openssl command failed (for example an unsupported key
+        type), so the hash must not be treated as valid.
+
         Returns:
-            str: Extracted MD5 hash.
+            str: Extracted MD5 hash, or empty string if no valid hash was produced.
         """
         for line in self.raw_output:
             if "MD5(" in line or line.startswith("MD5 "):
                 if "=" in line:
                     parts = line.split("=")
                     if len(parts) > 1:
-                        return parts[-1].strip()
+                        md5_hash = parts[-1].strip()
                 else:
                     parts = line.split()
                     if len(parts) > 1:
-                        return parts[-1].strip()
+                        md5_hash = parts[-1].strip()
+                    else:
+                        continue
+
+                if md5_hash == self.EMPTY_INPUT_MD5:
+                    return ""
+                return md5_hash
         return ""
 
     def get_certificate(self) -> IPSecCertificateObject:
