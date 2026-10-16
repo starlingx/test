@@ -2,6 +2,7 @@ from pytest import mark
 
 from framework.logging.automation_logger import get_logger
 from framework.validation.validation import validate_equals, validate_equals_with_retry, validate_greater_than, validate_str_contains
+from keywords.cloud_platform.fault_management.alarms.alarm_list_keywords import AlarmListKeywords
 from keywords.cloud_platform.security.ipsec_keywords import IPSecKeywords
 from keywords.cloud_platform.security.platform_certificate_rotation_keywords import PlatformCertificateRotationKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
@@ -770,3 +771,128 @@ def test_ipsec_survives_single_ca_rotation(request):
         f"All {expected_count} security associations should be established after CA rotation",
         timeout=600,
     )
+
+
+@mark.p2
+def test_ipsec_invalid_cert_rejected(request):
+    """Validate a certificate signed by a foreign CA is rejected by the IPSec CA.
+
+    Generates a self-signed certificate that is not signed by the platform
+    system-local-ca and confirms it fails verification against the current CA,
+    while the real IPSec leaf still verifies. The generated files live under
+    /tmp and the real IPSec certificates are never modified.
+
+    Steps:
+        - Generate a foreign self-signed certificate under /tmp
+        - Verify the foreign certificate fails verification against system-local-ca
+        - Verify the real IPSec leaf still verifies against system-local-ca
+
+    Teardown:
+        - Remove the generated temporary certificate files
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    system_hosts = SystemHostListKeywords(ssh_connection)
+    ipsec_keywords = IPSecKeywords(ssh_connection)
+    openssl_keywords = OpenSSLKeywords(ssh_connection)
+
+    foreign_key = "/tmp/ipsec_foreign.key"
+    foreign_cert = "/tmp/ipsec_foreign.crt"
+    current_ca = "/etc/swanctl/x509ca/system-local-ca-1.crt"
+
+    def cleanup():
+        get_logger().log_teardown_step("Remove temporary foreign certificate files")
+        new_ssh = LabConnectionKeywords().get_active_controller_ssh()
+        new_file_keywords = FileKeywords(new_ssh)
+        new_file_keywords.delete_file(foreign_key)
+        new_file_keywords.delete_file(foreign_cert)
+
+    request.addfinalizer(cleanup)
+
+    get_logger().log_test_case_step("Generate a foreign self-signed certificate")
+    openssl_keywords.generate_self_signed_cert(foreign_key, foreign_cert, subj="/CN=ipsec-foreign/O=Untrusted", days=1, algorithm="RSA", rsa_size=2048)
+
+    get_logger().log_test_case_step("Verify the foreign certificate is rejected by the current CA")
+    validate_equals(openssl_keywords.does_certificate_verify_against_ca(current_ca, foreign_cert), False, "Foreign certificate should NOT verify against system-local-ca")
+
+    get_logger().log_test_case_step("Verify the real IPSec leaf is issued by the local CA")
+    hostname = system_hosts.get_active_controller().get_host_name()
+    validate_equals(ipsec_keywords.is_ipsec_leaf_issued_by_local_ca(hostname), True, "Real IPSec leaf should be issued by the local CA")
+
+
+@mark.p2
+def test_ipsec_clock_sync_precondition():
+    """Validate time synchronization is healthy, a precondition for IPSec certs.
+
+    IPSec certificate validity depends on synchronized clocks across hosts; a
+    large clock skew makes freshly issued certificates appear not-yet-valid and
+    breaks security association establishment. This read-only test asserts the
+    NTP-not-reachable alarm is not present, indicating time sync is healthy.
+
+    Steps:
+        - Verify the NTP-not-reachable alarm is not present
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    alarm_keywords = AlarmListKeywords(ssh_connection)
+
+    get_logger().log_test_case_step("Verify NTP-not-reachable alarm is not present")
+    validate_equals(alarm_keywords.is_alarm_present("100.114"), False, "NTP-not-reachable alarm 100.114 should not be present (time sync healthy)")
+
+
+@mark.p2
+@mark.lab_has_standby_controller
+def test_ipsec_renewal_failure_handled_gracefully(request):
+    """Validate an IPSec certificate renewal failure is handled gracefully.
+
+    Stops the ipsec-server certificate signing service on both controllers and
+    runs a certificate renewal, which cannot reach the signing endpoint. The
+    renewal fails cleanly (connection refused) and, because the existing IPSec
+    certificates remain valid, the security associations stay established. The
+    ipsec-server service is restarted on both controllers in teardown so the
+    system returns to its starting state.
+
+    Steps:
+        - Stop ipsec-server on both controllers
+        - Attempt an IPSec certificate renewal and verify it fails cleanly
+        - Verify security associations remain established (existing certs valid)
+
+    Teardown:
+        - Start ipsec-server on both controllers
+        - Wait for security associations to remain established
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    system_hosts = SystemHostListKeywords(ssh_connection)
+    ipsec_keywords = IPSecKeywords(ssh_connection)
+    expected_count = ipsec_keywords.get_expected_security_association_count()
+    lab_connection_keywords = LabConnectionKeywords()
+
+    controller_names = [controller.get_host_name() for controller in system_hosts.get_system_host_list().get_controllers()]
+
+    def teardown():
+        get_logger().log_teardown_step("Start ipsec-server on all controllers and wait for recovery")
+        new_ssh = LabConnectionKeywords().get_active_controller_ssh()
+        for controller_name in controller_names:
+            controller_ssh = LabConnectionKeywords().get_ssh_for_hostname(controller_name)
+            IPSecKeywords(controller_ssh).start_ipsec_server()
+        recovery_ipsec_keywords = IPSecKeywords(new_ssh)
+        validate_equals_with_retry(
+            lambda: recovery_ipsec_keywords.are_all_security_associations_established(expected_count),
+            True,
+            f"All {expected_count} security associations should be established after recovery",
+            timeout=300,
+        )
+
+    request.addfinalizer(teardown)
+
+    get_logger().log_test_case_step("Stop ipsec-server on all controllers")
+    for controller_name in controller_names:
+        controller_ssh = lab_connection_keywords.get_ssh_for_hostname(controller_name)
+        IPSecKeywords(controller_ssh).stop_ipsec_server()
+
+    get_logger().log_test_case_step("Attempt IPSec certificate renewal while signing service is down")
+    renewal_output = ipsec_keywords.renew_ipsec_certificate_with_error()
+
+    get_logger().log_test_case_step("Verify the renewal failed because the signing endpoint is unreachable")
+    validate_str_contains(renewal_output, "ECONNREFUSED", "IPSec renewal should fail with connection refused while ipsec-server is down")
+
+    get_logger().log_test_case_step("Verify security associations remain established with existing certificates")
+    validate_equals(ipsec_keywords.are_all_security_associations_established(expected_count), True, f"All {expected_count} security associations should remain established while renewal is unavailable")

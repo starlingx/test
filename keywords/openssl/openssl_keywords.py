@@ -123,6 +123,27 @@ class OpenSSLKeywords(BaseKeyword):
         if "OK" not in raw:
             raise KeywordException(f"Certificate {cert_path} does not verify against CA {ca_cert_path}: {raw}")
 
+    def does_certificate_verify_against_ca(self, ca_cert_path: str, cert_path: str, is_sudo: bool = False) -> bool:
+        """Check whether a certificate verifies against a CA without raising.
+
+        Intended for negative tests that expect verification to fail (for
+        example, a certificate signed by a different CA). Returns the boolean
+        result instead of raising so the test can assert the expected outcome.
+
+        Args:
+            ca_cert_path (str): Path to the trusted CA PEM file.
+            cert_path (str): Path to the certificate to verify.
+            is_sudo (bool): Run openssl with sudo, required when the certificate
+                is readable only by root (e.g. /etc/swanctl). Defaults to False.
+
+        Returns:
+            bool: True if the certificate verifies against the CA, False otherwise.
+        """
+        command = f"openssl verify -CAfile {ca_cert_path} {cert_path}"
+        output = self.ssh_connection.send_as_sudo(command) if is_sudo else self.ssh_connection.send(command)
+        raw = "\n".join(output) if isinstance(output, list) else output
+        return "OK" in raw
+
     def create_certificate(self, key: str = None, crt: str = None, sys_domain_name: str = None) -> None:
         """
         Creates an SSL certificate file for the Kubernetes dashboard secret.
@@ -191,7 +212,7 @@ class OpenSSLKeywords(BaseKeyword):
             san (str): Subject Alternative Name extension value
                 (e.g. "DNS:example.com"). If empty, no SAN is added.
         """
-        san_opt = f" -addext \"subjectAltName={san}\"" if san else ""
+        san_opt = f' -addext "subjectAltName={san}"' if san else ""
         self.ssh_connection.send(f'openssl req -new -key {key_path} -out {csr_path} -subj "{subj}"{san_opt}')
         self.validate_success_return_code(self.ssh_connection)
 

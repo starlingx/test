@@ -201,6 +201,24 @@ class IPSecKeywords(BaseKeyword):
         self.validate_success_return_code(self.ssh_connection)
         return output
 
+    def renew_ipsec_certificate_with_error(self, pxe_controller: str = "pxecontroller") -> str:
+        """Attempt an IPsec certificate renewal without asserting success.
+
+        Runs the IPsec client renewal operation and returns the raw output
+        without validating the return code, so a negative test can exercise a
+        renewal that is expected to fail (for example, when the signing service
+        is unavailable).
+
+        Args:
+            pxe_controller (str): PXE controller hostname the IPsec client contacts.
+
+        Returns:
+            str: Raw command output from the IPsec client renewal operation.
+        """
+        get_logger().log_info("Attempting IPsec certificate renewal expected to fail (op code 2)")
+        output = self.ssh_connection.send_as_sudo(f"ipsec-client {pxe_controller} -o 2")
+        return "\n".join(output) if isinstance(output, list) else output
+
     def get_certificate_info_by_type(self, cert_type: str) -> IPSecCertificateOutput:
         """Get certificate information by certificate type with automatic path resolution.
 
@@ -330,6 +348,22 @@ class IPSecKeywords(BaseKeyword):
         service_name = self.get_ipsec_service_name()
         get_logger().log_info(f"Restarting IPSec service '{service_name}'")
         self.systemctl_keywords.systemctl_restart(service_name)
+        self.validate_success_return_code(self.ssh_connection)
+
+    def stop_ipsec_server(self) -> None:
+        """Stop the ipsec-server (certificate signing) service on the host.
+
+        Stopping ipsec-server disables the IPSec certificate signing endpoint,
+        which is used by negative tests to induce a certificate renewal failure.
+        """
+        get_logger().log_info("Stopping ipsec-server service")
+        self.systemctl_keywords.systemctl_stop("ipsec-server")
+        self.validate_success_return_code(self.ssh_connection)
+
+    def start_ipsec_server(self) -> None:
+        """Start the ipsec-server (certificate signing) service on the host."""
+        get_logger().log_info("Starting ipsec-server service")
+        self.systemctl_keywords.systemctl_start("ipsec-server")
         self.validate_success_return_code(self.ssh_connection)
 
     def is_luks_ipsec_keys_dir_present(self) -> bool:
