@@ -245,6 +245,24 @@ class IPSecKeywords(BaseKeyword):
         self.validate_success_return_code(self.ssh_connection)
         return IPSecCertificateOutput(output, "subject_issuer", "active_controller", cert_path)
 
+    def is_ipsec_leaf_issued_by_local_ca(self, hostname: str) -> bool:
+        """Check that a host's IPSec leaf is issued by the local signing CA.
+
+        Compares the IPSec leaf certificate issuer to the subject of the local
+        CA (system-local-ca-1). This is chain-agnostic and avoids building an
+        openssl verify chain, which varies between the self-signed and full CA
+        hierarchy scenarios.
+
+        Args:
+            hostname (str): Host whose IPSec leaf certificate is checked.
+
+        Returns:
+            bool: True if the leaf issuer matches the local CA subject.
+        """
+        leaf_cert = self.get_certificate_info_subject_issuer(self.get_ipsec_certificate_path(hostname)).get_certificate()
+        local_ca_cert = self.get_certificate_info_subject_issuer("/etc/swanctl/x509ca/system-local-ca-1.crt").get_certificate()
+        return leaf_cert.matches_issuer(local_ca_cert.get_subject())
+
     def get_certificate_info_cert_md5(self, cert_path: str) -> IPSecCertificateOutput:
         """Get the MD5 of the certificate's public key.
 
