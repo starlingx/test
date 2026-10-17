@@ -4,7 +4,7 @@ import time
 from typing import List, Optional
 
 from framework.logging.automation_logger import get_logger
-from framework.validation.validation import validate_equals, validate_not_equals
+from framework.validation.validation import validate_equals, validate_equals_with_retry, validate_not_equals
 from keywords.base_keyword import BaseKeyword
 from keywords.openstack.connection.ace_openstack_connection import ACEOpenStackConnection
 from keywords.openstack.resources.flavors.flavor_keywords import FlavorKeywords
@@ -106,13 +106,55 @@ class ServerKeywords(BaseKeyword):
         return ServerListOutput([server_detail.to_dict()])
 
     def list_servers(self) -> ServerListOutput:
-        """List all servers.
+        """List servers in the current project.
 
         Returns:
             ServerListOutput: Parsed server collection.
         """
         raw = [s.to_dict() for s in self.openstack_connection.get_compute().servers()]
         return ServerListOutput(raw)
+
+    def list_all_servers(self) -> ServerListOutput:
+        """List servers across all projects.
+
+        Uses ``all_projects=True`` so the listing is not limited to the
+        connection's own project. An admin-bound connection is required for the
+        other projects' servers to be returned.
+
+        Returns:
+            ServerListOutput: Parsed server collection across all projects.
+        """
+        raw = [s.to_dict() for s in self.openstack_connection.get_compute().servers(all_projects=True)]
+        return ServerListOutput(raw)
+
+    def delete_all_servers(self) -> None:
+        """Delete every server across all projects, waiting for each to be gone.
+
+        Intended for operations that require a server-free cloud, such as
+        removing the OpenStack application (which Nova rejects while any instance
+        exists). Each server is removed with the idempotent cleanup path, so a
+        server that disappears concurrently does not raise.
+
+        An admin-bound connection is required to see and delete servers owned by
+        other projects. After issuing the deletes, the cloud is polled until no
+        servers remain, so a server that fails to delete surfaces here rather
+        than in the later server-free operation.
+        """
+        servers = self.list_all_servers().get_servers()
+        if not servers:
+            get_logger().log_info("No servers to delete; cloud is already server-free")
+            return
+        get_logger().log_info(f"Deleting {len(servers)} server(s) across all projects before the server-free operation")
+        for server in servers:
+            get_logger().log_info(f"Deleting server '{server.get_name()}' ({server.get_id()}) in project {server.get_tenant_id()}")
+            self.cleanup_server(server.get_id())
+        validate_equals_with_retry(
+            lambda: len(self.list_all_servers().get_servers()),
+            0,
+            "All servers deleted across all projects",
+            timeout=300,
+            polling_sleep_time=10,
+        )
 
     def update_server(self, server_name_or_id: str, new_name: Optional[str] = None) -> ServerListOutput:
         """Update a server's name.
