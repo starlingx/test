@@ -16,6 +16,7 @@ def test_run_context_manager_defaults_to_no_context():
 
     assert run_context_manager.get_session_id() is None
     assert run_context_manager.get_jenkins_log_location() is None
+    assert run_context_manager.get_test_case_result_id() is None
 
 
 def test_run_context_manager_stores_the_session_id():
@@ -36,3 +37,13 @@ def test_run_context_manager_stores_the_jenkins_log_location():
     run_context_manager.set_jenkins_log_location("http://jenkins.example.com/job/example/1/")
 
     assert run_context_manager.get_jenkins_log_location() == "http://jenkins.example.com/job/example/1/"
+
+
+def test_run_context_manager_stores_the_test_case_result_id():
+    """
+    Tests that the test case result id set on the run context manager is the one returned.
+    """
+    run_context_manager = RunContextManagerClass()
+    run_context_manager.set_test_case_result_id(12345)
+
+    assert run_context_manager.get_test_case_result_id() == 12345
