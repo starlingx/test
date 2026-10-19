@@ -52,6 +52,8 @@ class KpiRecorderKeywords(BaseKeyword):
             get_logger().log_info("This run has no session id, so the KPI measures were not recorded.")
             return
 
+        test_case_result_id = RunContextManager.get_test_case_result_id()
+
         try:
             for measure in kpi_measures:
                 kpi = measure.get_kpi()
@@ -71,6 +73,7 @@ class KpiRecorderKeywords(BaseKeyword):
                     kpi_id=kpi_id,
                     session_id=session_id,
                     kpi_value=measure.get_kpi_value(),
+                    test_case_result_id=test_case_result_id,
                     kpi_measure_details=measure.get_kpi_measure_details(),
                     collected_at=measure.get_collected_at(),
                     notes=measure.get_notes(),

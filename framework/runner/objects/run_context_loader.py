@@ -24,6 +24,7 @@ class RunContextLoader:
         safe_parser.add_option("--session_id", action="store", dest="session_id", help="the id of the session that the results belong to")
         safe_parser.add_option("--jenkins_log_location", action="store", dest="jenkins_log_location", help="the URL of the jenkins job that started this run")
         safe_parser.add_option("--repository", action="store", dest="repository", help="the repository that owns the test cases of this run")
+        safe_parser.add_option("--test_case_result_id", action="store", dest="test_case_result_id", help="the id of the test case result that the KPI measures belong to")
 
     @staticmethod
     def load_from_pytest_session(session: Any):
@@ -42,3 +43,6 @@ class RunContextLoader:
 
         if session.config.getoption("--repository"):
             RunContextManager.set_repository(session.config.getoption("--repository"))
+
+        if session.config.getoption("--test_case_result_id"):
+            RunContextManager.set_test_case_result_id(int(session.config.getoption("--test_case_result_id")))

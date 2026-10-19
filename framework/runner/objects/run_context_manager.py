@@ -11,6 +11,27 @@ class RunContextManagerClass:
         self.session_id = None
         self.jenkins_log_location = None
         self.repository = "ace"
+        self.test_case_result_id = None
+
+    def get_test_case_result_id(self) -> int:
+        """
+        Getter for the test case result id.
+
+        Returns:
+            int: the test case result id of the run, None if the run wasn't given one.
+
+        """
+        return self.test_case_result_id
+
+    def set_test_case_result_id(self, test_case_result_id: int):
+        """
+        Setter for the test case result id.
+
+        Args:
+            test_case_result_id (int): the test case result id of the run.
+
+        """
+        self.test_case_result_id = test_case_result_id
 
     def get_session_id(self) -> str:
         """
