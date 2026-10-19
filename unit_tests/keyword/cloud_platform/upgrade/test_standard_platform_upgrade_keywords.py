@@ -7,6 +7,7 @@ debugging cycle: the rollback host order (workers/storage first, then controller
 across the active/standby role swap) and that a standby-ready wait precedes each controller swact.
 Collaborators are mocked.
 """
+
 import unittest
 from unittest.mock import MagicMock, NonCallableMagicMock, patch
 
@@ -59,6 +60,30 @@ class TestStandardPlatformUpgradeKeywords(unittest.TestCase):
         deploy.usm.active_controller_host_upgrade = MagicMock(return_value=self._named_host(active))
         deploy.usm.standby_controller_host_upgrade = MagicMock(return_value=self._named_host(standby) if standby else None)
         return deploy
+
+    def test_resume_uses_the_rollback_order_and_only_remaining_stages(self):
+        """Resume known states without re-aborting or applying upgrade host order."""
+        for state in ("deploy-activate-rollback-pending", "deploy-activate-rollback-done", "deploy-host-rollback-done", "deploy-host-rollback-failed"):
+            with self.subTest(state=state):
+                keywords = self._build_keywords()
+                deploy = self._deploy_with_roles(computes=["compute-1", "compute-0"], storages=[], active="controller-1", standby="controller-0")
+                deploy.get_current_deploy_state.return_value = state
+                keywords.resume_rollback_in_order(deploy)
+                deploy.usm.software_deploy_abort.assert_not_called()
+                if state == "deploy-activate-rollback-pending":
+                    deploy.usm.software_deploy_activate_rollback.assert_called_once_with(sudo=False)
+                else:
+                    deploy.usm.software_deploy_activate_rollback.assert_not_called()
+                if state in ("deploy-activate-rollback-pending", "deploy-activate-rollback-done"):
+                    self.assertEqual([call.args[0] for call in deploy.deploy_host_guarded.call_args_list], ["compute-0", "compute-1", "controller-0", "controller-1"])
+                    self.assertEqual(keywords.swact.wait_for_standby_available.call_count, 2)
+                else:
+                    deploy.deploy_host_guarded.assert_not_called()
+                    keywords.swact.wait_for_standby_available.assert_not_called()
+                if state == "deploy-host-rollback-failed":
+                    deploy.usm.software_deploy_delete.assert_not_called()
+                else:
+                    deploy.usm.software_deploy_delete.assert_called_once_with(sudo=False)
 
     def test_rollback_rolls_controllers_back_in_name_order_after_role_swap(self):
         """Rollback rolls workers first, then controllers by NAME (controller-0 before controller-1)."""

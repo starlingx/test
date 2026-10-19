@@ -14,6 +14,7 @@ expose the ordering issue, which is why the shared methods have not needed the d
 
 Generic: any Standard-lab upgrade/rollback test can use these; they are not tied to any one app.
 """
+
 from typing import TYPE_CHECKING
 
 from framework.exceptions.keyword_exception import KeywordException
@@ -106,18 +107,38 @@ class StandardPlatformUpgradeKeywords(BaseKeyword):
         """
         deploy.usm.software_deploy_abort(sudo=False)
         deploy.require_deploy_state("deploy-activate-rollback-pending")
-        deploy.usm.software_deploy_activate_rollback(sudo=False)
-        deploy.require_deploy_state("deploy-activate-rollback-done")
-        for host in self._rollback_host_order(deploy):
-            if "controller" in host:
-                # deploy_host_guarded swacts away from the active controller before locking it;
-                # wait for the standby to be operationally enabled so that swact is accepted.
-                self.swact.wait_for_standby_available()
-            deploy.deploy_host_guarded(host, rollback=True)
-        deploy.require_deploy_state("deploy-host-rollback-done")
-        deploy.usm.software_deploy_delete(sudo=False)
+        self._finish_rollback_in_order(deploy, "deploy-activate-rollback-pending")
 
-    def _rollback_host_order(self, deploy: "SoftwareDeploySequenceKeywords") -> list:
+    def resume_rollback_in_order(self, deploy: "SoftwareDeploySequenceKeywords") -> None:
+        """Resume a known rollback state using the same host order as the normal path.
+
+        Args:
+            deploy (SoftwareDeploySequenceKeywords): Shared deploy verbs and state waits.
+        """
+        self._finish_rollback_in_order(deploy, deploy.get_current_deploy_state())
+
+    def _finish_rollback_in_order(self, deploy: "SoftwareDeploySequenceKeywords", state: str) -> None:
+        """Complete the remaining rollback stages in platform host order.
+
+        Args:
+            deploy (SoftwareDeploySequenceKeywords): Shared deploy verbs and state waits.
+            state (str): Observed or verified rollback state from which to continue.
+        """
+        if state == "deploy-activate-rollback-pending":
+            deploy.usm.software_deploy_activate_rollback(sudo=False)
+            deploy.require_deploy_state("deploy-activate-rollback-done")
+            state = "deploy-activate-rollback-done"
+        if state == "deploy-activate-rollback-done":
+            for host in self._rollback_host_order(deploy):
+                if "controller" in host:
+                    self.swact.wait_for_standby_available()
+                deploy.deploy_host_guarded(host, rollback=True)
+            deploy.require_deploy_state("deploy-host-rollback-done")
+            state = "deploy-host-rollback-done"
+        if state == "deploy-host-rollback-done":
+            deploy.usm.software_deploy_delete(sudo=False)
+
+    def _rollback_host_order(self, deploy: "SoftwareDeploySequenceKeywords") -> list[str]:
         """
         Build the platform's rollback host order: workers, storage, then controllers by name.
 
@@ -168,9 +189,4 @@ class StandardPlatformUpgradeKeywords(BaseKeyword):
         alarms = self.alarms.alarm_list()
         if alarms:
             described = ", ".join(f"{alarm.get_alarm_id()} ({alarm.get_entity_id()})" for alarm in alarms)
-            raise KeywordException(
-                f"Refusing to start a deploy with {len(alarms)} active alarm(s): {described}. "
-                f"'software deploy start' rejects any alarm, so this would fail with only a count "
-                f"reported. Clear the alarms, or if they are test artifacts, remove whatever raised "
-                f"them before upgrading."
-            )
+            raise KeywordException(f"Refusing to start a deploy with {len(alarms)} active alarm(s): {described}. " f"'software deploy start' rejects any alarm, so this would fail with only a count " f"reported. Clear the alarms, or if they are test artifacts, remove whatever raised " f"them before upgrading.")

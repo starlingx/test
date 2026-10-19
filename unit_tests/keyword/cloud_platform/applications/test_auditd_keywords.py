@@ -187,8 +187,9 @@ def test_pod_command_failure(keywords: AuditdKeywords) -> None:
     """
     keywords.ssh_connection.send.return_value = '{"items": []}'
     keywords.ssh_connection.get_return_code.return_value = 1
-    with pytest.raises(AssertionError):
-        keywords.discover_pods()
+    with patch("keywords.k8s.pods.kubectl_get_pods_keywords.get_logger"), patch("keywords.k8s.pods.kubectl_get_pods_keywords.time.sleep"), patch("keywords.k8s.pods.kubectl_get_pods_keywords.time.time", side_effect=[0, 0, 61]):
+        with pytest.raises(KeywordException, match="Could not read the pod list"):
+            keywords.discover_pods()
 
 
 def test_wrong_node_exec_rejected(keywords: AuditdKeywords) -> None:
@@ -974,3 +975,48 @@ def test_interrupted_lock_uses_shared_recovery(keywords: AuditdKeywords) -> None
         keywords.set_kernel_audit("1", (HOSTS[0],))
         unlock.assert_called_once_with(HOSTS[0], unlock_accepted_timeout=300, exclude_alarm_ids=None)
         lock.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "status,output,accepted",
+    [
+        (1, "<no matches>\ncommand terminated with exit code 1\n", True),
+        (1, "permission denied\n<no matches>\ncommand terminated with exit code 1\n", False),
+        (1, "command terminated with exit code 1\n", False),
+        (2, "<no matches>\ncommand terminated with exit code 2\n", False),
+        (0, "<no matches>\ncommand terminated with exit code 1\n", False),
+    ],
+)
+def test_search_validates_real_pod_exec_output_and_status(keywords: AuditdKeywords, status: int, output: str, accepted: bool) -> None:
+    """Let the output parser distinguish no matches from exec failures.
+
+    Args:
+        keywords (AuditdKeywords): Keywords backed by the fake SSH channel.
+        status (int): Kubectl exec return code.
+        output (str): Combined container and kubectl output.
+        accepted (bool): Whether the output describes a valid empty result.
+    """
+    keywords.ssh_connection.send.return_value = output
+    keywords.ssh_connection.get_return_code.return_value = status
+    with patch.object(keywords, "wait_ready", return_value={host: pod(host) for host in HOSTS}):
+        if accepted:
+            assert keywords.search_syscall_events(HOSTS[0], HOSTS, "fresh", "rmdir").events == {}
+        else:
+            with pytest.raises(KeywordException):
+                keywords.search_syscall_events(HOSTS[0], HOSTS, "fresh", "rmdir")
+    command = keywords.ssh_connection.send.call_args.args[0]
+    assert "-- env LC_ALL=C ausearch --input-logs --interpret -k fresh -sc rmdir" in command
+    assert "case " not in command
+
+
+def test_pod_commands_still_reject_nonzero_status_by_default(keywords: AuditdKeywords) -> None:
+    """Only explicit output-parser callers may inspect a failed command themselves.
+
+    Args:
+        keywords (AuditdKeywords): Keywords backed by the fake SSH channel.
+    """
+    keywords.ssh_connection.send.return_value = "permission denied"
+    keywords.ssh_connection.get_return_code.return_value = 1
+    with patch.object(keywords, "wait_ready", return_value={host: pod(host) for host in HOSTS}):
+        with pytest.raises(AssertionError):
+            keywords.pod_command(HOSTS[0], HOSTS, "auditctl -s")

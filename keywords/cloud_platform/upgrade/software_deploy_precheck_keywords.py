@@ -58,6 +58,24 @@ class SoftwareDeployPrecheckKeywords(BaseKeyword):
         precheck_output = SoftwareDeployPrecheckOutput(output)
         return precheck_output
 
+    def precheck_release(self, release_id: str) -> SoftwareDeployPrecheckOutput:
+        """Require a successful, nonempty precheck for the exact platform release.
+
+        Unlike metapackage selection, a platform upgrade must pass its release ID
+        even when the configured metapackage mode is None.
+
+        Args:
+            release_id (str): Exact uploaded platform release.
+
+        Returns:
+            SoftwareDeployPrecheckOutput: Validated release health checks.
+        """
+        output = self._run_deploy_precheck(release_id)
+        self.validate_success_return_code(self.ssh_connection)
+        if not output.get_items() or output.get_failed_items() or output.has_unhealthy_metapackages():
+            raise KeywordException(f"Platform release precheck failed for {release_id}: {output.get_raw_output()}")
+        return output
+
     def deploy_precheck(self, release_id: str | None = None, sudo: bool = False) -> SoftwareDeployPrecheckOutput:
         """
         Run the deploy precheck for a software release and validate its result.
@@ -109,7 +127,7 @@ class SoftwareDeployPrecheckKeywords(BaseKeyword):
             sudo (bool): Option to pass the command with sudo.
 
         Returns:
-            bool | True if the item status is [OK], False if the item exists
+            bool | None: True if the item status is [OK], False if the item exists
                 but is not [OK], None if the item is not found in the output or
                 the precheck command failed.
 
@@ -141,4 +159,3 @@ class SoftwareDeployPrecheckKeywords(BaseKeyword):
 
         get_logger().log_info(f"Precheck item '{check.value}' not found in output")
         return None
-        
