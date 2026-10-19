@@ -502,8 +502,8 @@ def test_prestage_single_simplex_subcloud_for_install_retry_after_process_kill_n
     lab_config = ConfigurationManager.get_lab_config().get_subcloud(subcloud_name)
     subcloud_password = lab_config.get_admin_credentials().get_password()
 
-    prestage_subcloud(system_controller_ssh, subcloud_name, subcloud_password, kill_process=True, expect_fail=True)
-    prestage_subcloud(system_controller_ssh, subcloud_name, subcloud_password)
+    prestage_subcloud(system_controller_ssh, subcloud_name, subcloud_password, for_install=True, kill_process=True, expect_fail=True)
+    prestage_subcloud(system_controller_ssh, subcloud_name, subcloud_password, for_install=True)
 
 
 # --- Prestage for SW Deploy ---
