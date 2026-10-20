@@ -2,6 +2,8 @@
 
 import json
 import time
+from collections.abc import Callable
+from shlex import quote
 
 from framework.exceptions.keyword_exception import KeywordException
 from framework.logging.automation_logger import get_logger
@@ -56,19 +58,21 @@ class KubectlGetPodsKeywords(K8sBaseKeyword):
 
         return pods_list_output
 
-    def get_pods_json(self, namespace: str = None) -> KubectlGetPodsOutput:
+    def get_pods_json(self, namespace: str = None, label: str = None) -> KubectlGetPodsOutput:
         """Get pods using JSON output format.
 
         Provides richer data than table format, including container images.
 
         Args:
             namespace (str, optional): Namespace to search. If None, uses all namespaces.
+            label (str, optional): Label selector; includes matching pods in every phase.
 
         Returns:
             KubectlGetPodsOutput: Parsed pod output with source="json".
         """
-        ns_arg = f"-n {namespace}" if namespace else "--all-namespaces"
-        cmd = f"kubectl get pods {ns_arg} -o json"
+        ns_arg = f"-n {quote(namespace)}" if namespace else "--all-namespaces"
+        label_arg = f" -l {quote(label)}" if label else ""
+        cmd = f"kubectl get pods {ns_arg}{label_arg} -o json"
         output = self.ssh_connection.send(self.k8s_config.export(cmd))
         self.validate_success_return_code(self.ssh_connection)
         return KubectlGetPodsOutput(output, source="json")
@@ -148,7 +152,7 @@ class KubectlGetPodsKeywords(K8sBaseKeyword):
 
         return pods_list_output
 
-    def get_pods_with_retry(self, reader=None, timeout: int = 60, poll_interval: int = 10) -> KubectlGetPodsOutput:
+    def get_pods_with_retry(self, reader: Callable[[], KubectlGetPodsOutput] | None = None, timeout: int = 60, poll_interval: int = 10) -> KubectlGetPodsOutput:
         """
         Return a pod read, retrying the read itself when it fails transiently.
 
@@ -163,7 +167,7 @@ class KubectlGetPodsKeywords(K8sBaseKeyword):
         list pods for a minute is a real problem worth reporting rather than waiting out.
 
         Args:
-            reader (callable): the read to perform, returning a KubectlGetPodsOutput. Defaults to
+            reader (Callable[[], KubectlGetPodsOutput] | None): the read to perform, returning a KubectlGetPodsOutput. Defaults to
                 get_unhealthy_pods, the read this retry was introduced for.
             timeout (int): seconds to keep retrying before giving up.
             poll_interval (int): seconds to wait between attempts.
@@ -184,9 +188,7 @@ class KubectlGetPodsKeywords(K8sBaseKeyword):
                 return reader()
             except Exception as read_error:  # noqa: BLE001 - any read failure is worth one more try
                 last_error = read_error
-                get_logger().log_info(
-                    f"Reading the pod list failed ({read_error}); retrying in {poll_interval}s"
-                )
+                get_logger().log_info(f"Reading the pod list failed ({read_error}); retrying in {poll_interval}s")
                 time.sleep(poll_interval)
 
         raise KeywordException(f"Could not read the pod list: {last_error}")

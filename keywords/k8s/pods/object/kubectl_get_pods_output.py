@@ -1,4 +1,5 @@
 import json
+from copy import deepcopy
 from typing import Union
 
 from framework.exceptions.keyword_exception import KeywordException
@@ -31,6 +32,7 @@ class KubectlGetPodsOutput:
             raise ValueError(f"Invalid source '{source}'. Allowed sources: {sorted(self.ALLOWED_SOURCES)}")
 
         self.source = source
+        self.pod_records: list[dict] | None = None
         self.kubectl_pod: list[KubectlPodObject] = []
 
         if source == "table":
@@ -91,10 +93,30 @@ class KubectlGetPodsOutput:
         """
         raw_str = "\n".join(raw_output) if isinstance(raw_output, list) else raw_output
         data = json.loads(raw_str)
-        items = data.get("items", [])
+        if not isinstance(data, dict) or not isinstance(data.get("items"), list) or any(not isinstance(item, dict) for item in data["items"]):
+            raise KeywordException("Malformed pod list: expected an items array of pod objects")
+        items = data["items"]
+        self.pod_records = items
         for item in items:
             pod = self._build_pod_from_json(item)
             self.kubectl_pod.append(pod)
+
+    def get_pod_records(self) -> list[dict]:
+        """Return complete JSON records without dropping unhealthy pods or fields.
+
+        The snapshot preserves UIDs, deletion timestamps, declared containers and
+        readiness conditions for consumers that need more than the table model.
+        A copy prevents a consumer from changing the stored observation.
+
+        Returns:
+            list[dict]: Complete pod records from the JSON observation.
+
+        Raises:
+            ValueError: If this output was parsed from table text.
+        """
+        if self.pod_records is None:
+            raise ValueError("Pod records require JSON output; use get_pods_json()")
+        return deepcopy(self.pod_records)
 
     def _build_pod_from_json(self, item: dict) -> KubectlPodObject:
         """Build a KubectlPodObject from a single JSON item.

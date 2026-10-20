@@ -1,10 +1,12 @@
 import json
 
 import pytest
+
+from framework.exceptions.keyword_exception import KeywordException
 from keywords.k8s.pods.object.kubectl_get_pods_output import KubectlGetPodsOutput
 
 
-def _json_pod(name, container_restarts=None, init_restarts=None, include_status=True):
+def _json_pod(name: str, container_restarts: list = None, init_restarts: list = None, include_status: bool = True) -> dict:
     """Build a single kubectl pod JSON item with the given restart counts.
 
     Args:
@@ -191,3 +193,31 @@ def test_json_output_maps_container_name_to_image_and_tag():
     assert pod.get_container_image_tag("sidecar") == "v0.15.0"
     # Unknown container -> None, does not raise.
     assert pod.get_container_image_tag("does-not-exist") is None
+
+
+def test_complete_json_snapshot_preserves_unhealthy_pod_evidence():
+    """Preserve complete readiness evidence and isolate consumer mutations."""
+    item = _json_pod("pending-audit", include_status=False)
+    item["metadata"].update({"uid": "original", "deletionTimestamp": "now"})
+    item["status"] = {"phase": "Pending", "conditions": [{"type": "Ready", "status": "False"}]}
+    output = KubectlGetPodsOutput(_pods_json([item]), source="json")
+    snapshot = output.get_pod_records()
+    assert snapshot == [item]
+    snapshot[0]["metadata"]["uid"] = "changed"
+    assert output.get_pod_records()[0]["metadata"]["uid"] == "original"
+
+
+@pytest.mark.parametrize("document", [[], {}, {"items": None}, {"items": {}}, {"items": [None]}])
+def test_malformed_json_is_not_empty_inventory(document: object) -> None:
+    """Reject malformed observations rather than validating absence.
+
+    Args:
+        document (object): Invalid list document.
+    """
+    with pytest.raises(KeywordException, match="Malformed pod list"):
+        KubectlGetPodsOutput(json.dumps(document), source="json")
+
+
+def test_empty_json_snapshot_is_valid():
+    """An explicit empty items array confirms absence."""
+    assert KubectlGetPodsOutput(_pods_json([]), source="json").get_pod_records() == []

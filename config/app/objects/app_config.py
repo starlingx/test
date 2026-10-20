@@ -14,6 +14,9 @@ class AppConfig:
             raise
 
         app_dict = json5.load(json_data)
+        self.auditd_test_options = app_dict.get("auditd_test_options", {})
+        if not isinstance(self.auditd_test_options, dict):
+            raise ValueError("auditd_test_options must be an object")
         self.base_application_path = app_dict["base_application_path"]
         self.platform_integ_app_tarball = app_dict["platform_integ_app_tarball"]
         self.metrics_server_app_tarball = app_dict["metrics_server_app_tarball"]
@@ -343,3 +346,11 @@ class AppConfig:
 
         """
         return self.oidc_test_app_tarball
+
+    def get_auditd_test_options(self) -> dict:
+        """Get optional audit artifact paths and expected version for this lab.
+
+        Returns:
+            dict: Copy of the audit test options; empty for existing configurations.
+        """
+        return self.auditd_test_options.copy()
