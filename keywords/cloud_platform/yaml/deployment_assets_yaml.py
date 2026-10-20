@@ -6,6 +6,10 @@ class DeploymentAssetsHandler:
     A class for processing YAML files, including reading, writing, and updating values.
     """
 
+    # Name that exists in no registry and in no cache, so the bootstrap image
+    # download step cannot be satisfied locally.
+    FAULT_INJECTION_IMAGE = "registry.k8s.io/stx-ace-fault-injection/does-not-exist:v0.0.0-invalid"
+
     def __init__(self, local_file_yaml: str):
         """Initializes the YamlProcessor.
 
@@ -36,24 +40,18 @@ class DeploymentAssetsHandler:
             raise Exception(f"Error writing YAML file: {e}")
 
     def inject_wrong_bootstrap_value(self):
-        """Inject a wrong docker registry URL to force bootstrap failure.
+        """Inject an unresolvable image to force a bootstrap failure.
 
-        Corrupts the registry.k8s.io URL since core Kubernetes components
-        (kube-apiserver, etcd, coredns, etc.) are pulled from there during bootstrap.
-
-        Raises:
-            KeyError: If docker_registries or registry.k8s.io key is not found.
+        Appends a uniquely named, non-existent image to
+        additional_local_registry_images. The bootstrap image download step
+        fails on it, so the subcloud reliably reaches bootstrap-failed.
         """
-        if "docker_registries" not in self.data:
-            raise KeyError("'docker_registries' key not found in bootstrap YAML")
-
-        registries = self.data["docker_registries"]
-
-        if "registry.k8s.io" not in registries:
-            raise KeyError("'registry.k8s.io' key not found in docker_registries")
-
-        original_url = registries["registry.k8s.io"]["url"]
-        registries["registry.k8s.io"]["url"] = f"{original_url}.wrong"
+        images = self.data.get("additional_local_registry_images") or []
+        if not isinstance(images, list):
+            images = []
+        if self.FAULT_INJECTION_IMAGE not in images:
+            images = images + [self.FAULT_INJECTION_IMAGE]
+        self.data["additional_local_registry_images"] = images
         self.write_yaml()
 
     def modify_management_end_address(self) -> None:
