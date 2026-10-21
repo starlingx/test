@@ -7,7 +7,6 @@ from config.lab.objects.lab_config import LabConfig
 from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
 from framework.validation.validation import validate_equals, validate_equals_with_retry, validate_str_contains
-from keywords.cloud_platform.command_wrappers import source_openrc
 from keywords.cloud_platform.dcmanager.dcmanager_oidc_keywords import DcManagerOidcKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_prestage_strategy_keywords import DcmanagerPrestageStrategyKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_strategy_cleanup_keywords import DcmanagerStrategyCleanupKeywords
@@ -20,8 +19,13 @@ from keywords.cloud_platform.dcmanager.subcloud_picker_keywords import SubcloudP
 from keywords.cloud_platform.dcmanager.objects.dcmanger_subcloud_list_availability_enum import DcManagerSubcloudListAvailabilityEnum
 from keywords.cloud_platform.dcmanager.objects.dcmanger_subcloud_list_management_enum import DcManagerSubcloudListManagementEnum
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
+from keywords.cloud_platform.system.addrpool.system_addrpool_list_keywords import SystemAddrpoolListKeywords
+from keywords.cloud_platform.system.application.system_application_apply_keywords import SystemApplicationApplyKeywords
+from keywords.cloud_platform.system.helm.system_helm_override_keywords import SystemHelmOverrideKeywords
+from keywords.cloud_platform.system.oam.system_oam_show_keywords import SystemOamShowKeywords
 from keywords.cloud_platform.system.service.system_service_parameter_keywords import SystemServiceParameterKeywords
 from keywords.files.file_keywords import FileKeywords
+from keywords.k8s.pods.kubectl_get_pods_keywords import KubectlGetPodsKeywords
 from keywords.linux.keyring.keyring_keywords import KeyringKeywords
 from keywords.linux.ldap.ldap_keywords import LdapKeywords
 
@@ -98,10 +102,6 @@ def ensure_oidc_environment(ssh_connection: SSHConnection, lab_config: LabConfig
         ssh_connection (SSHConnection): Active controller SSH connection.
         lab_config (LabConfig): Lab configuration object.
     """
-    from keywords.cloud_platform.system.application.system_application_apply_keywords import SystemApplicationApplyKeywords
-    from keywords.cloud_platform.system.helm.system_helm_override_keywords import SystemHelmOverrideKeywords
-    from keywords.k8s.pods.kubectl_get_pods_keywords import KubectlGetPodsKeywords
-
     pods_kw = KubectlGetPodsKeywords(ssh_connection)
 
     # Quick check: are OIDC pods already running?
@@ -115,8 +115,6 @@ def ensure_oidc_environment(ssh_connection: SSHConnection, lab_config: LabConfig
     # Pods not ready — perform full setup
     get_logger().log_info("OIDC pods not ready, configuring environment")
 
-    from keywords.cloud_platform.system.addrpool.system_addrpool_list_keywords import SystemAddrpoolListKeywords
-
     ldap_admin_pw = KeyringKeywords(ssh_connection).get_keyring(service="ldap", identifier="ldapadmin")
     mgmt_ip = SystemAddrpoolListKeywords(ssh_connection).get_system_addrpool_list().get_management_floating_address()
     if ":" in mgmt_ip:
@@ -124,8 +122,9 @@ def ensure_oidc_environment(ssh_connection: SSHConnection, lab_config: LabConfig
 
     # Write override files to remote host
     override_content = DEX_LOCAL_LDAP_OVERRIDE.format(ldap_admin_pw=ldap_admin_pw, mgmt_ip=mgmt_ip)
-    ssh_connection.send(f"cat > /tmp/dex-dcm-oidc-override.yaml << 'EOFOVERRIDE'\n{override_content}EOFOVERRIDE")
-    ssh_connection.send(f"cat > /tmp/oidc-client-dcm-override.yaml << 'EOFOVERRIDE'\n{OIDC_CLIENT_OVERRIDE}EOFOVERRIDE")
+    file_kw = FileKeywords(ssh_connection)
+    file_kw.create_file_with_heredoc("/tmp/dex-dcm-oidc-override.yaml", override_content, delimiter="EOFOVERRIDE")
+    file_kw.create_file_with_heredoc("/tmp/oidc-client-dcm-override.yaml", OIDC_CLIENT_OVERRIDE, delimiter="EOFOVERRIDE")
 
     # Apply helm overrides using keyword
     helm_kw = SystemHelmOverrideKeywords(ssh_connection)
@@ -229,8 +228,6 @@ def pick_managed_subcloud() -> tuple:
     Returns:
         tuple: (SSHConnection to the owning SC, subcloud name, OAM floating IP of the owning SC).
     """
-    from keywords.cloud_platform.system.oam.system_oam_show_keywords import SystemOamShowKeywords
-
     owner_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
         management_status=DcManagerSubcloudListManagementEnum.MANAGED,
         availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
