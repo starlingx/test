@@ -196,11 +196,9 @@ def test_prestage_single_simplex_subcloud_for_install_n_release(request):
     subcloud_password = lab_config.get_admin_credentials().get_password()
 
     prestage_subcloud(system_controller_ssh, subcloud_name, subcloud_password, release=prestage_release, for_install=True)
-    prestage_status = DcManagerSubcloudShowKeywords(system_controller_ssh).get_dcmanager_subcloud_show(subcloud_name=subcloud_name).get_dcmanager_subcloud_show_object().get_prestage_status()
-    prestage_versions = DcManagerSubcloudShowKeywords(system_controller_ssh).get_dcmanager_subcloud_show(subcloud_name=subcloud_name).get_dcmanager_subcloud_show_object().get_prestage_versions()
-
-    for_install, for_sw_deploy = re.search(r"for-install: (\S+) - for-sw-deploy: (\S+)", prestage_versions).groups()
-    for_install_versions = for_install.split(",")
+    prestage_show_object = DcManagerSubcloudShowKeywords(system_controller_ssh).get_dcmanager_subcloud_show(subcloud_name=subcloud_name).get_dcmanager_subcloud_show_object()
+    prestage_status = prestage_show_object.get_prestage_status()
+    for_install_versions = prestage_show_object.get_for_install_prestage_versions()
     validate_equals(prestage_status, "complete", "Validate that the subcloud prestage operation has completed.")
     validate_list_contains(prestage_release, for_install_versions, "Validate that the subcloud was prestaged to the target version.")
 
@@ -235,11 +233,10 @@ def test_prestage_single_simplex_subcloud_for_sw_deploy_n_release(request):
     subcloud_password = lab_config.get_admin_credentials().get_password()
 
     prestage_subcloud(system_controller_ssh, subcloud_name, subcloud_password, release=prestage_release, for_sw_deploy=True)
-    prestage_status = DcManagerSubcloudShowKeywords(system_controller_ssh).get_dcmanager_subcloud_show(subcloud_name=subcloud_name).get_dcmanager_subcloud_show_object().get_prestage_status()
-    prestage_versions = DcManagerSubcloudShowKeywords(system_controller_ssh).get_dcmanager_subcloud_show(subcloud_name=subcloud_name).get_dcmanager_subcloud_show_object().get_prestage_versions()
-
-    for_install, for_sw_deploy = re.search(r"for-install: (\S+) - for-sw-deploy: (\S+)", prestage_versions).groups()
-    for_sw_deploy_versions = [re.search(r"(\d+\.\d+)", version).group(1) for version in for_sw_deploy.split(",")]
+    prestage_show_object = DcManagerSubcloudShowKeywords(system_controller_ssh).get_dcmanager_subcloud_show(subcloud_name=subcloud_name).get_dcmanager_subcloud_show_object()
+    prestage_status = prestage_show_object.get_prestage_status()
+    for_sw_deploy_raw = prestage_show_object.get_for_sw_deploy_prestage_versions()
+    for_sw_deploy_versions = [re.search(r"(\d+\.\d+)", version).group(1) for version in for_sw_deploy_raw]
     validate_equals(prestage_status, "complete", "Validate that the subcloud prestage operation has completed.")
     validate_list_contains(prestage_release, for_sw_deploy_versions, "Validate that the subcloud was prestaged to the target version.")
 
@@ -278,11 +275,9 @@ def test_prestage_single_simplex_subcloud_for_install_n_release_on_n_release(req
     request.addfinalizer(lambda: teardown_clear_prestage_data(system_controller_ssh, subcloud_name, required_release))
 
     prestage_subcloud(system_controller_ssh, subcloud_name, subcloud_password, release=required_release, for_install=True)
-    prestage_status = DcManagerSubcloudShowKeywords(system_controller_ssh).get_dcmanager_subcloud_show(subcloud_name=subcloud_name).get_dcmanager_subcloud_show_object().get_prestage_status()
-    prestage_versions = DcManagerSubcloudShowKeywords(system_controller_ssh).get_dcmanager_subcloud_show(subcloud_name=subcloud_name).get_dcmanager_subcloud_show_object().get_prestage_versions()
-
-    for_install, for_sw_deploy = re.search(r"for-install: (\S+) - for-sw-deploy: (\S+)", prestage_versions).groups()
-    for_install_versions = for_install.split(",")
+    prestage_show_object = DcManagerSubcloudShowKeywords(system_controller_ssh).get_dcmanager_subcloud_show(subcloud_name=subcloud_name).get_dcmanager_subcloud_show_object()
+    prestage_status = prestage_show_object.get_prestage_status()
+    for_install_versions = prestage_show_object.get_for_install_prestage_versions()
     validate_equals(prestage_status, "complete", "Validate that the subcloud prestage operation has completed.")
     validate_list_contains(required_release, for_install_versions, "Validate that the subcloud was prestaged to the target version.")
 
@@ -324,11 +319,9 @@ def test_prestage_single_simplex_subcloud_for_install_n_minus_one_release(reques
     request.addfinalizer(lambda: teardown_clear_prestage_data(system_controller_ssh, subcloud_name, required_release))
 
     prestage_subcloud(system_controller_ssh, subcloud_name, subcloud_password, release=required_release, for_install=True)
-    prestage_status = DcManagerSubcloudShowKeywords(system_controller_ssh).get_dcmanager_subcloud_show(subcloud_name=subcloud_name).get_dcmanager_subcloud_show_object().get_prestage_status()
-    prestage_versions = DcManagerSubcloudShowKeywords(system_controller_ssh).get_dcmanager_subcloud_show(subcloud_name=subcloud_name).get_dcmanager_subcloud_show_object().get_prestage_versions()
-
-    for_install, for_sw_deploy = re.search(r"for-install: (\S+) - for-sw-deploy: (\S+)", prestage_versions).groups()
-    for_install_versions = for_install.split(",")
+    prestage_show_object = DcManagerSubcloudShowKeywords(system_controller_ssh).get_dcmanager_subcloud_show(subcloud_name=subcloud_name).get_dcmanager_subcloud_show_object()
+    prestage_status = prestage_show_object.get_prestage_status()
+    for_install_versions = prestage_show_object.get_for_install_prestage_versions()
     validate_equals(prestage_status, "complete", "Validate that the subcloud prestage operation has completed.")
     validate_list_contains(required_release, for_install_versions, "Validate that the subcloud was prestaged to the target version.")
 
@@ -370,11 +363,9 @@ def test_prestage_single_simplex_subcloud_for_install_n_minus_two_release(reques
     request.addfinalizer(lambda: teardown_clear_prestage_data(system_controller_ssh, subcloud_name, required_release))
 
     prestage_subcloud(system_controller_ssh, subcloud_name, subcloud_password, release=required_release, for_install=True)
-    prestage_status = DcManagerSubcloudShowKeywords(system_controller_ssh).get_dcmanager_subcloud_show(subcloud_name=subcloud_name).get_dcmanager_subcloud_show_object().get_prestage_status()
-    prestage_versions = DcManagerSubcloudShowKeywords(system_controller_ssh).get_dcmanager_subcloud_show(subcloud_name=subcloud_name).get_dcmanager_subcloud_show_object().get_prestage_versions()
-
-    for_install, for_sw_deploy = re.search(r"for-install: (\S+) - for-sw-deploy: (\S+)", prestage_versions).groups()
-    for_install_versions = for_install.split(",")
+    prestage_show_object = DcManagerSubcloudShowKeywords(system_controller_ssh).get_dcmanager_subcloud_show(subcloud_name=subcloud_name).get_dcmanager_subcloud_show_object()
+    prestage_status = prestage_show_object.get_prestage_status()
+    for_install_versions = prestage_show_object.get_for_install_prestage_versions()
     validate_equals(prestage_status, "complete", "Validate that the subcloud prestage operation has completed.")
     validate_list_contains(required_release, for_install_versions, "Validate that the subcloud was prestaged to the target version.")
 
@@ -416,11 +407,9 @@ def test_prestage_single_simplex_subcloud_for_install_n_release_from_n_minus_two
     request.addfinalizer(lambda: teardown_clear_prestage_data(system_controller_ssh, subcloud_name, target_release))
 
     prestage_subcloud(system_controller_ssh, subcloud_name, subcloud_password, release=target_release, for_install=True)
-    prestage_status = DcManagerSubcloudShowKeywords(system_controller_ssh).get_dcmanager_subcloud_show(subcloud_name=subcloud_name).get_dcmanager_subcloud_show_object().get_prestage_status()
-    prestage_versions = DcManagerSubcloudShowKeywords(system_controller_ssh).get_dcmanager_subcloud_show(subcloud_name=subcloud_name).get_dcmanager_subcloud_show_object().get_prestage_versions()
-
-    for_install, for_sw_deploy = re.search(r"for-install: (\S+) - for-sw-deploy: (\S+)", prestage_versions).groups()
-    for_install_versions = for_install.split(",")
+    prestage_show_object = DcManagerSubcloudShowKeywords(system_controller_ssh).get_dcmanager_subcloud_show(subcloud_name=subcloud_name).get_dcmanager_subcloud_show_object()
+    prestage_status = prestage_show_object.get_prestage_status()
+    for_install_versions = prestage_show_object.get_for_install_prestage_versions()
     validate_equals(prestage_status, "complete", "Validate that the subcloud prestage operation has completed.")
     validate_list_contains(target_release, for_install_versions, "Validate that the subcloud was prestaged to the target version.")
 
@@ -462,11 +451,9 @@ def test_prestage_single_simplex_subcloud_for_install_n_release_from_n_minus_one
     request.addfinalizer(lambda: teardown_clear_prestage_data(system_controller_ssh, subcloud_name, target_release))
 
     prestage_subcloud(system_controller_ssh, subcloud_name, subcloud_password, release=target_release, for_install=True)
-    prestage_status = DcManagerSubcloudShowKeywords(system_controller_ssh).get_dcmanager_subcloud_show(subcloud_name=subcloud_name).get_dcmanager_subcloud_show_object().get_prestage_status()
-    prestage_versions = DcManagerSubcloudShowKeywords(system_controller_ssh).get_dcmanager_subcloud_show(subcloud_name=subcloud_name).get_dcmanager_subcloud_show_object().get_prestage_versions()
-
-    for_install, for_sw_deploy = re.search(r"for-install: (\S+) - for-sw-deploy: (\S+)", prestage_versions).groups()
-    for_install_versions = for_install.split(",")
+    prestage_show_object = DcManagerSubcloudShowKeywords(system_controller_ssh).get_dcmanager_subcloud_show(subcloud_name=subcloud_name).get_dcmanager_subcloud_show_object()
+    prestage_status = prestage_show_object.get_prestage_status()
+    for_install_versions = prestage_show_object.get_for_install_prestage_versions()
     validate_equals(prestage_status, "complete", "Validate that the subcloud prestage operation has completed.")
     validate_list_contains(target_release, for_install_versions, "Validate that the subcloud was prestaged to the target version.")
 
@@ -686,11 +673,10 @@ def test_verify_prestage_for_sw_deploy_option_n_minus_one_to_n(request):
     validate_list_contains(target_prestage_release, available_release_versions, "validate that the system controller has N release available")
 
     prestage_subcloud(central_ssh=system_controller_ssh, subcloud_name=subcloud_name, subcloud_password=subcloud_password, release=target_prestage_release, for_sw_deploy=True)
-    prestage_status = DcManagerSubcloudShowKeywords(system_controller_ssh).get_dcmanager_subcloud_show(subcloud_name=subcloud_name).get_dcmanager_subcloud_show_object().get_prestage_status()
-    prestage_versions = DcManagerSubcloudShowKeywords(system_controller_ssh).get_dcmanager_subcloud_show(subcloud_name=subcloud_name).get_dcmanager_subcloud_show_object().get_prestage_versions()
-
-    for_install, for_sw_deploy = re.search(r"for-install: (\S+) - for-sw-deploy: (\S+)", prestage_versions).groups()
-    for_sw_deploy_versions = [re.search(r"(\d+\.\d+)", version).group(1) for version in for_sw_deploy.split(",")]
+    prestage_show_object = DcManagerSubcloudShowKeywords(system_controller_ssh).get_dcmanager_subcloud_show(subcloud_name=subcloud_name).get_dcmanager_subcloud_show_object()
+    prestage_status = prestage_show_object.get_prestage_status()
+    for_sw_deploy_raw = prestage_show_object.get_for_sw_deploy_prestage_versions()
+    for_sw_deploy_versions = [re.search(r"(\d+\.\d+)", version).group(1) for version in for_sw_deploy_raw]
     validate_equals(prestage_status, "complete", "Validate that the subcloud prestage operation has completed.")
     validate_list_contains(target_prestage_release, for_sw_deploy_versions, "Validate that for-sw-deploy reflects the N release in prestage_versions.")
 
@@ -732,11 +718,10 @@ def test_verify_prestage_for_sw_deploy_option_n_minus_two_to_n(request):
     validate_list_contains(target_prestage_release, available_release_versions, "validate that the system controller has N release available")
 
     prestage_subcloud(central_ssh=system_controller_ssh, subcloud_name=subcloud_name, subcloud_password=subcloud_password, release=target_prestage_release, for_sw_deploy=True)
-    prestage_status = DcManagerSubcloudShowKeywords(system_controller_ssh).get_dcmanager_subcloud_show(subcloud_name=subcloud_name).get_dcmanager_subcloud_show_object().get_prestage_status()
-    prestage_versions = DcManagerSubcloudShowKeywords(system_controller_ssh).get_dcmanager_subcloud_show(subcloud_name=subcloud_name).get_dcmanager_subcloud_show_object().get_prestage_versions()
-
-    for_install, for_sw_deploy = re.search(r"for-install: (\S+) - for-sw-deploy: (\S+)", prestage_versions).groups()
-    for_sw_deploy_versions = [re.search(r"(\d+\.\d+)", version).group(1) for version in for_sw_deploy.split(",")]
+    prestage_show_object = DcManagerSubcloudShowKeywords(system_controller_ssh).get_dcmanager_subcloud_show(subcloud_name=subcloud_name).get_dcmanager_subcloud_show_object()
+    prestage_status = prestage_show_object.get_prestage_status()
+    for_sw_deploy_raw = prestage_show_object.get_for_sw_deploy_prestage_versions()
+    for_sw_deploy_versions = [re.search(r"(\d+\.\d+)", version).group(1) for version in for_sw_deploy_raw]
     validate_equals(prestage_status, "complete", "Validate that the subcloud prestage operation has completed.")
     validate_list_contains(target_prestage_release, for_sw_deploy_versions, "Validate that for-sw-deploy reflects the N release in prestage_versions.")
 
@@ -783,11 +768,9 @@ def test_verify_prestage_for_sw_deploy_option_n_patching(request):
     target_release_name = matching_release_names[0]
 
     prestage_subcloud(central_ssh=system_controller_ssh, subcloud_name=subcloud_name, subcloud_password=subcloud_password, for_sw_deploy=True)
-    prestage_status = DcManagerSubcloudShowKeywords(system_controller_ssh).get_dcmanager_subcloud_show(subcloud_name=subcloud_name).get_dcmanager_subcloud_show_object().get_prestage_status()
-    prestage_versions = DcManagerSubcloudShowKeywords(system_controller_ssh).get_dcmanager_subcloud_show(subcloud_name=subcloud_name).get_dcmanager_subcloud_show_object().get_prestage_versions()
-
-    for_install, for_sw_deploy = re.search(r"for-install: (\S+) - for-sw-deploy: (\S+)", prestage_versions).groups()
-    for_sw_deploy_versions = for_sw_deploy.split(",")
+    prestage_show_object = DcManagerSubcloudShowKeywords(system_controller_ssh).get_dcmanager_subcloud_show(subcloud_name=subcloud_name).get_dcmanager_subcloud_show_object()
+    prestage_status = prestage_show_object.get_prestage_status()
+    for_sw_deploy_versions = prestage_show_object.get_for_sw_deploy_prestage_versions()
     validate_equals(prestage_status, "complete", "Validate that the subcloud prestage operation has completed.")
     validate_list_contains(system_controller_patch, for_sw_deploy_versions, "Validate that the subcloud was prestaged to the target version.")
 
@@ -835,11 +818,9 @@ def test_verify_prestage_for_sw_deploy_option_n_minus_one_patching(request):
     validate_none(subcloud_patch, "Validate that the subcloud has no patch.")
 
     prestage_subcloud(central_ssh=system_controller_ssh, subcloud_name=subcloud_name, release=required_release, subcloud_password=subcloud_password, for_sw_deploy=True)
-    prestage_status = DcManagerSubcloudShowKeywords(system_controller_ssh).get_dcmanager_subcloud_show(subcloud_name=subcloud_name).get_dcmanager_subcloud_show_object().get_prestage_status()
-    prestage_versions = DcManagerSubcloudShowKeywords(system_controller_ssh).get_dcmanager_subcloud_show(subcloud_name=subcloud_name).get_dcmanager_subcloud_show_object().get_prestage_versions()
-
-    for_install, for_sw_deploy = re.search(r"for-install: (\S+) - for-sw-deploy: (\S+)", prestage_versions).groups()
-    for_sw_deploy_versions = for_sw_deploy.split(",")
+    prestage_show_object = DcManagerSubcloudShowKeywords(system_controller_ssh).get_dcmanager_subcloud_show(subcloud_name=subcloud_name).get_dcmanager_subcloud_show_object()
+    prestage_status = prestage_show_object.get_prestage_status()
+    for_sw_deploy_versions = prestage_show_object.get_for_sw_deploy_prestage_versions()
     validate_equals(prestage_status, "complete", "Validate that the subcloud prestage operation has completed.")
     validate_list_contains(target_release, for_sw_deploy_versions, "Validate that the subcloud was prestaged to the target version.")
 
@@ -878,11 +859,9 @@ def test_verify_prestage_for_sw_deploy_option_n_minus_two_patching(request):
     target_release = re.search(r"(\d+\.\d+\.\d+)", target_release_name).group(1)
 
     prestage_subcloud(central_ssh=system_controller_ssh, subcloud_name=subcloud_name, release=required_release, subcloud_password=subcloud_password, for_sw_deploy=True)
-    prestage_status = DcManagerSubcloudShowKeywords(system_controller_ssh).get_dcmanager_subcloud_show(subcloud_name=subcloud_name).get_dcmanager_subcloud_show_object().get_prestage_status()
-    prestage_versions = DcManagerSubcloudShowKeywords(system_controller_ssh).get_dcmanager_subcloud_show(subcloud_name=subcloud_name).get_dcmanager_subcloud_show_object().get_prestage_versions()
-
-    for_install, for_sw_deploy = re.search(r"for-install: (\S+) - for-sw-deploy: (\S+)", prestage_versions).groups()
-    for_sw_deploy_versions = for_sw_deploy.split(",")
+    prestage_show_object = DcManagerSubcloudShowKeywords(system_controller_ssh).get_dcmanager_subcloud_show(subcloud_name=subcloud_name).get_dcmanager_subcloud_show_object()
+    prestage_status = prestage_show_object.get_prestage_status()
+    for_sw_deploy_versions = prestage_show_object.get_for_sw_deploy_prestage_versions()
     validate_equals(prestage_status, "complete", "Validate that the subcloud prestage operation has completed.")
     validate_list_contains(target_release, for_sw_deploy_versions, "Validate that the subcloud was prestaged to the target version.")
 
@@ -1333,10 +1312,9 @@ def test_prestage_verify_prestage_version_for_sw_deploy(request):
     request.addfinalizer(lambda: teardown_clear_prestage_data(system_controller_ssh, subcloud_name, required_release))
 
     prestage_subcloud(system_controller_ssh, subcloud_name, subcloud_password, release=required_release, for_sw_deploy=True)
-    prestage_versions = DcManagerSubcloudShowKeywords(system_controller_ssh).get_dcmanager_subcloud_show(subcloud_name=subcloud_name).get_dcmanager_subcloud_show_object().get_prestage_versions()
+    for_sw_deploy_versions = DcManagerSubcloudShowKeywords(system_controller_ssh).get_dcmanager_subcloud_show(subcloud_name=subcloud_name).get_dcmanager_subcloud_show_object().get_for_sw_deploy_prestage_versions()
 
-    for_install, for_sw_deploy = re.search(r"for-install: (\S+) - for-sw-deploy: (\S+)", prestage_versions).groups()
-    validate_not_equals(for_sw_deploy, "None", "Validate that dcmanager subcloud show reports a non-None for-sw-deploy value.")
+    validate_not_equals(for_sw_deploy_versions, ["None"], "Validate that dcmanager subcloud show reports a non-None for-sw-deploy value.")
 
     # The "Print prestage versions" task header and its actual output value
     # ('msg: "prestage_versions: for-install: ... - for-sw-deploy: ..."')
@@ -1432,18 +1410,15 @@ def test_prestage_for_install_then_for_sw_deploy_preserves_for_install_version(r
 
     get_logger().log_test_case_step(f"Prestage subcloud {subcloud_name} with --for-install (release {required_release})")
     prestage_subcloud(system_controller_ssh, subcloud_name, subcloud_password, release=required_release, for_install=True)
-    prestage_versions = DcManagerSubcloudShowKeywords(system_controller_ssh).get_dcmanager_subcloud_show(subcloud_name=subcloud_name).get_dcmanager_subcloud_show_object().get_prestage_versions()
-    for_install_before, for_sw_deploy_before = re.search(r"for-install: (\S+) - for-sw-deploy: (\S+)", prestage_versions).groups()
-    for_install_before_versions = for_install_before.split(",")
+    for_install_before_versions = DcManagerSubcloudShowKeywords(system_controller_ssh).get_dcmanager_subcloud_show(subcloud_name=subcloud_name).get_dcmanager_subcloud_show_object().get_for_install_prestage_versions()
     validate_list_contains(required_release, for_install_before_versions, "Validate that for-install reflects the prestaged release.")
 
     get_logger().log_test_case_step(f"Prestage subcloud {subcloud_name} with --for-sw-deploy (release {target_prestage_release})")
     prestage_subcloud(system_controller_ssh, subcloud_name, subcloud_password, release=target_prestage_release, for_sw_deploy=True)
-    prestage_status = DcManagerSubcloudShowKeywords(system_controller_ssh).get_dcmanager_subcloud_show(subcloud_name=subcloud_name).get_dcmanager_subcloud_show_object().get_prestage_status()
-    prestage_versions = DcManagerSubcloudShowKeywords(system_controller_ssh).get_dcmanager_subcloud_show(subcloud_name=subcloud_name).get_dcmanager_subcloud_show_object().get_prestage_versions()
-
-    for_install_after, for_sw_deploy_after = re.search(r"for-install: (\S+) - for-sw-deploy: (\S+)", prestage_versions).groups()
-    for_sw_deploy_after_versions = for_sw_deploy_after.split(",")
+    prestage_show_object = DcManagerSubcloudShowKeywords(system_controller_ssh).get_dcmanager_subcloud_show(subcloud_name=subcloud_name).get_dcmanager_subcloud_show_object()
+    prestage_status = prestage_show_object.get_prestage_status()
+    for_install_after_versions = prestage_show_object.get_for_install_prestage_versions()
+    for_sw_deploy_after_versions = prestage_show_object.get_for_sw_deploy_prestage_versions()
 
     subcloud_software_list = SoftwareListKeywords(subcloud_ssh).get_software_list()
     subcloud_available_release = subcloud_software_list.get_release_name_by_state("available") + subcloud_software_list.get_release_name_by_state("deployed")
@@ -1451,7 +1426,7 @@ def test_prestage_for_install_then_for_sw_deploy_preserves_for_install_version(r
     validate_list_contains(target_prestage_release, subcloud_available_release_versions, "Validate that the subcloud has N release available.")
     for_sw_deploy_after_releases = [version.rsplit(".", 1)[0] for version in for_sw_deploy_after_versions]
     validate_equals(prestage_status, "complete", "Validate that the subcloud prestage operation has completed.")
-    validate_equals(for_install_after, for_install_before, "Validate that for-install value was preserved after the for-sw-deploy prestage.")
+    validate_equals(for_install_after_versions, for_install_before_versions, "Validate that for-install value was preserved after the for-sw-deploy prestage.")
     validate_list_contains(target_prestage_release, for_sw_deploy_after_releases, "Validate that for-sw-deploy value was updated to the new target release.")
 
 
@@ -1495,9 +1470,7 @@ def test_prestage_for_sw_deploy_then_for_install_preserves_for_sw_deploy_version
 
     get_logger().log_test_case_step(f"Prestage subcloud {subcloud_name} with --for-sw-deploy (release {target_prestage_release})")
     prestage_subcloud(system_controller_ssh, subcloud_name, subcloud_password, release=target_prestage_release, for_sw_deploy=True)
-    prestage_versions = DcManagerSubcloudShowKeywords(system_controller_ssh).get_dcmanager_subcloud_show(subcloud_name=subcloud_name).get_dcmanager_subcloud_show_object().get_prestage_versions()
-    for_install_before, for_sw_deploy_before = re.search(r"for-install: (\S+) - for-sw-deploy: (\S+)", prestage_versions).groups()
-    for_sw_deploy_before_versions = for_sw_deploy_before.split(",")
+    for_sw_deploy_before_versions = DcManagerSubcloudShowKeywords(system_controller_ssh).get_dcmanager_subcloud_show(subcloud_name=subcloud_name).get_dcmanager_subcloud_show_object().get_for_sw_deploy_prestage_versions()
     for_sw_deploy_before_releases = [version.rsplit(".", 1)[0] for version in for_sw_deploy_before_versions]
     validate_list_contains(target_prestage_release, for_sw_deploy_before_releases, "Validate that for-sw-deploy reflects the prestaged release.")
 
@@ -1508,14 +1481,13 @@ def test_prestage_for_sw_deploy_then_for_install_preserves_for_sw_deploy_version
 
     get_logger().log_test_case_step(f"Prestage subcloud {subcloud_name} with --for-install (release {required_release})")
     prestage_subcloud(system_controller_ssh, subcloud_name, subcloud_password, release=required_release, for_install=True)
-    prestage_status = DcManagerSubcloudShowKeywords(system_controller_ssh).get_dcmanager_subcloud_show(subcloud_name=subcloud_name).get_dcmanager_subcloud_show_object().get_prestage_status()
-    prestage_versions = DcManagerSubcloudShowKeywords(system_controller_ssh).get_dcmanager_subcloud_show(subcloud_name=subcloud_name).get_dcmanager_subcloud_show_object().get_prestage_versions()
-
-    for_install_after, for_sw_deploy_after = re.search(r"for-install: (\S+) - for-sw-deploy: (\S+)", prestage_versions).groups()
-    for_install_after_versions = for_install_after.split(",")
+    prestage_show_object = DcManagerSubcloudShowKeywords(system_controller_ssh).get_dcmanager_subcloud_show(subcloud_name=subcloud_name).get_dcmanager_subcloud_show_object()
+    prestage_status = prestage_show_object.get_prestage_status()
+    for_install_after_versions = prestage_show_object.get_for_install_prestage_versions()
+    for_sw_deploy_after_versions = prestage_show_object.get_for_sw_deploy_prestage_versions()
     validate_equals(prestage_status, "complete", "Validate that the subcloud prestage operation has completed.")
     validate_list_contains(required_release, for_install_after_versions, "Validate that for-install value was updated to the new target release.")
-    validate_equals(for_sw_deploy_after, for_sw_deploy_before, "Validate that for-sw-deploy value was preserved after the for-install prestage.")
+    validate_equals(for_sw_deploy_after_versions, for_sw_deploy_before_versions, "Validate that for-sw-deploy value was preserved after the for-install prestage.")
 
 
 @mark.p0
@@ -1550,9 +1522,10 @@ def test_prestage_for_sw_deploy_n_release_is_idempotent(request):
 
     get_logger().log_test_case_step(f"Prestage subcloud {subcloud_name} with --for-sw-deploy (release {target_prestage_release})")
     prestage_subcloud(system_controller_ssh, subcloud_name, subcloud_password, release=target_prestage_release, for_sw_deploy=True)
-    prestage_versions = DcManagerSubcloudShowKeywords(system_controller_ssh).get_dcmanager_subcloud_show(subcloud_name=subcloud_name).get_dcmanager_subcloud_show_object().get_prestage_versions()
-    for_install, for_sw_deploy = re.search(r"for-install: (\S+) - for-sw-deploy: (\S+)", prestage_versions).groups()
-    for_sw_deploy_releases = [version.rsplit(".", 1)[0] for version in for_sw_deploy.split(",")]
+    prestage_show_object = DcManagerSubcloudShowKeywords(system_controller_ssh).get_dcmanager_subcloud_show(subcloud_name=subcloud_name).get_dcmanager_subcloud_show_object()
+    prestage_versions = prestage_show_object.get_prestage_versions()
+    for_sw_deploy_versions = prestage_show_object.get_for_sw_deploy_prestage_versions()
+    for_sw_deploy_releases = [version.rsplit(".", 1)[0] for version in for_sw_deploy_versions]
     validate_list_contains(target_prestage_release, for_sw_deploy_releases, "Validate that for-sw-deploy reflects the prestaged release.")
 
     get_logger().log_test_case_step(f"Prestage subcloud {subcloud_name} again with --for-sw-deploy (release {target_prestage_release})")

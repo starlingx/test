@@ -1,3 +1,7 @@
+import re
+from typing import List, Tuple
+
+
 class DcManagerSubcloudShowObject:
     """This class represents a detailed subcloud as object.
 
@@ -314,6 +318,59 @@ class DcManagerSubcloudShowObject:
         Setter for the Prestage Versions
         """
         self.prestage_versions = prestage_versions
+
+    def get_for_install_prestage_versions(self) -> List[str]:
+        """Get the for-install prestage versions.
+
+        Parses the 'prestage_versions' field, which has the form
+        'for-install: <v1>,<v2> - for-sw-deploy: <v3>,<v4>', and returns the
+        comma-separated for-install versions as a list.
+
+        Returns:
+            List[str]: The for-install prestage versions.
+
+        Raises:
+            ValueError: If prestage_versions is empty/None or does not match the
+                expected 'for-install: ... - for-sw-deploy: ...' format.
+        """
+        return self._parse_prestage_versions()[0]
+
+    def get_for_sw_deploy_prestage_versions(self) -> List[str]:
+        """Get the for-sw-deploy prestage versions.
+
+        Parses the 'prestage_versions' field, which has the form
+        'for-install: <v1>,<v2> - for-sw-deploy: <v3>,<v4>', and returns the
+        comma-separated for-sw-deploy versions as a list.
+
+        Returns:
+            List[str]: The for-sw-deploy prestage versions.
+
+        Raises:
+            ValueError: If prestage_versions is empty/None or does not match the
+                expected 'for-install: ... - for-sw-deploy: ...' format.
+        """
+        return self._parse_prestage_versions()[1]
+
+    def _parse_prestage_versions(self) -> Tuple[List[str], List[str]]:
+        """Parse the 'prestage_versions' field into for-install and for-sw-deploy lists.
+
+        Returns:
+            Tuple[List[str], List[str]]: A tuple of (for_install_versions,
+                for_sw_deploy_versions).
+
+        Raises:
+            ValueError: If prestage_versions is empty/None or does not match the
+                expected 'for-install: ... - for-sw-deploy: ...' format.
+        """
+        if not self.prestage_versions:
+            raise ValueError(f"prestage_versions is empty or None; cannot parse prestage versions. Value was: {self.prestage_versions!r}")
+
+        match = re.search(r"for-install: (\S+) - for-sw-deploy: (\S+)", self.prestage_versions)
+        if match is None:
+            raise ValueError(f"prestage_versions did not match the expected 'for-install: <versions> - for-sw-deploy: <versions>' format. Value was: {self.prestage_versions!r}")
+
+        for_install, for_sw_deploy = match.groups()
+        return for_install.split(","), for_sw_deploy.split(",")
 
     def get_dc_cert_sync_status(self) -> str:
         """
