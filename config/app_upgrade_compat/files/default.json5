@@ -41,5 +41,12 @@
       "app_name": "dell-storage",
       "namespace": "dell-storage",
     },
+    // No "versions" map here either, for the same reason as istio: get_app_version() has no
+    // caller. The metrics-server test matches the release prefix against the release the
+    // platform reports, so no per-release lookup is performed.
+    "metrics-server": {
+      "app_name": "metrics-server",
+      "namespace": "metrics-server",
+    },
   },
 }
