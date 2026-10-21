@@ -88,13 +88,43 @@ def test_restore():
 @mark.lab_has_standby_controller
 def test_restore_multi_host():
     """
-    Test system restore using ansible playbook for multi host configuration
+    Test system restore using ansible playbook for multi host configuration (conventional restore).
 
     Test Steps:
       - Copy backup file to target controller
       - Run restore playbook
       - Unlock host
       - Validate restore completion
+    """
+    _run_multi_host_restore(restore_mode=None)
+
+
+@mark.p0
+@mark.lab_has_standby_controller
+def test_restore_multi_host_optimized():
+    """
+    Test optimized system restore using ansible playbook for multi host configuration.
+
+    Same workflow as test_restore_multi_host but runs the restore playbook in 'optimized'
+    mode. Kept as a separate test case so the conventional multi-host restore coverage is
+    preserved unchanged and the two modes report as distinct results.
+
+    Test Steps:
+      - Copy backup file to target controller
+      - Run restore playbook in optimized mode
+      - Unlock host
+      - Validate restore completion
+    """
+    _run_multi_host_restore(restore_mode="optimized")
+
+
+def _run_multi_host_restore(restore_mode: str = None):
+    """Shared multi-host restore workflow used by the conventional and optimized tests.
+
+    Args:
+        restore_mode (str): Restore mode passed to the restore playbook. Use None for the
+            conventional restore (the keyword omits restore_mode from the playbook) or
+            "optimized" for the optimized restore.
     """
 
     lab_type = ConfigurationManager.get_lab_config().get_lab_type()
@@ -115,8 +145,8 @@ def test_restore_multi_host():
 
     time_kpi_restore = TimeKPI(time.time())
 
-    get_logger().log_info("Run restore ansible playbook")
-    ansible_playbook_restore_output = AnsiblePlaybookKeywords(ssh_connection).ansible_playbook_restore(backup_dir)
+    get_logger().log_info(f"Run restore ansible playbook (restore_mode={restore_mode or 'default'})")
+    ansible_playbook_restore_output = AnsiblePlaybookKeywords(ssh_connection).ansible_playbook_restore(backup_dir, restore_mode)
     validate_equals(ansible_playbook_restore_output, True, "Ansible restore command execution")
 
     get_logger().log_info("Unlocking controller-0 host")
