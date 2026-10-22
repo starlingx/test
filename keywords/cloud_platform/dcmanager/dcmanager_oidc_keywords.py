@@ -1,5 +1,7 @@
 """Keywords for managing OIDC-authenticated SSH sessions for dcmanager commands."""
 
+import time
+
 from config.configuration_manager import ConfigurationManager
 from framework.exceptions.keyword_exception import KeywordException
 from framework.logging.automation_logger import get_logger
@@ -7,6 +9,14 @@ from framework.ssh.ssh_connection import SSHConnection
 from framework.ssh.ssh_connection_manager import SSHConnectionManager
 from keywords.base_keyword import BaseKeyword
 from keywords.cloud_platform.system.oam.system_oam_show_keywords import SystemOamShowKeywords
+
+# A freshly created LDAP user is not immediately usable for SSH password
+# login: after ldapusersetup, the forced initial password change, and
+# sss_cache -E, SSSD needs time to re-resolve the account. The first login
+# attempt therefore races with directory/cache propagation and can fail with
+# "Authentication failed". Poll the login until it succeeds or we time out.
+LDAP_LOGIN_TIMEOUT_SECONDS = 120
+LDAP_LOGIN_POLL_INTERVAL_SECONDS = 10
 
 
 class DcManagerOidcKeywords(BaseKeyword):
@@ -105,15 +115,29 @@ class DcManagerOidcKeywords(BaseKeyword):
         if lab_config.is_use_jump_server():
             jump_host_config = lab_config.get_jump_host_configuration()
 
-        get_logger().log_info(f"Creating SSH connection as LDAP user {username}@{lab_oam_ip}")
-        ssh = SSHConnectionManager.create_ssh_connection(
-            lab_oam_ip,
-            username,
-            password,
-            name=f"oidc-dcm-{username}",
-            ssh_port=lab_config.get_ssh_port(),
-            jump_host=jump_host_config,
-        )
-        if not ssh:
-            raise KeywordException(f"Failed to create SSH connection as LDAP user {username}@{lab_oam_ip}")
-        return ssh
+        get_logger().log_info(f"Creating SSH connection as LDAP user {username}@{lab_oam_ip} (timeout {LDAP_LOGIN_TIMEOUT_SECONDS}s)")
+
+        end_time = time.time() + LDAP_LOGIN_TIMEOUT_SECONDS
+        attempt = 0
+        while True:
+            attempt += 1
+            ssh = SSHConnectionManager.create_ssh_connection(
+                lab_oam_ip,
+                username,
+                password,
+                name=f"oidc-dcm-{username}",
+                ssh_port=lab_config.get_ssh_port(),
+                jump_host=jump_host_config,
+            )
+            if ssh and ssh.is_connected:
+                get_logger().log_info(f"SSH connection as LDAP user {username} established on attempt {attempt}")
+                return ssh
+
+            if ssh:
+                ssh.close()
+
+            if time.time() >= end_time:
+                raise KeywordException(f"Failed to establish SSH connection as LDAP user {username}@{lab_oam_ip} within {LDAP_LOGIN_TIMEOUT_SECONDS}s (LDAP/SSSD propagation)")
+
+            get_logger().log_info(f"LDAP user {username} not yet able to log in (attempt {attempt}); retrying in {LDAP_LOGIN_POLL_INTERVAL_SECONDS}s")
+            time.sleep(LDAP_LOGIN_POLL_INTERVAL_SECONDS)
