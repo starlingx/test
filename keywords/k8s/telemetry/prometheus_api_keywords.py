@@ -1,11 +1,15 @@
 """Keywords for querying the Prometheus HTTP API via Kubernetes Service."""
 
 import time
-from typing import List, Optional
+import shlex
+import uuid
+from urllib.parse import quote
+from typing import List
 
 from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
 from keywords.base_keyword import BaseKeyword
+from keywords.k8s.pods.kubectl_exec_in_pods_keywords import KubectlExecInPodsKeywords
 from keywords.k8s.telemetry.object.prometheus_api_query_output import PrometheusApiQueryOutput
 from keywords.k8s.telemetry.object.prometheus_targets_output import PrometheusTargetsOutput
 
@@ -46,7 +50,7 @@ class PrometheusApiKeywords(BaseKeyword):
             PrometheusApiQueryOutput: Parsed query response object.
                 Returns empty result if the service is temporarily unreachable.
         """
-        url = f"{self._base_url}/api/v1/query?query={promql}"
+        url = f"{self._base_url}/api/v1/query?query={quote(promql, safe='')}"
         cmd = f"curl -s '{url}'"
         output = self.ssh_connection.send(cmd)
         rc = self.ssh_connection.get_return_code()
@@ -57,6 +61,69 @@ class PrometheusApiKeywords(BaseKeyword):
         result = PrometheusApiQueryOutput(output_text)
         get_logger().log_info(f"Prometheus instant query '{promql}': has_data={result.has_data()}")
         return result
+
+    def query_instant_from_pod(self, promql: str, pod_name: str, container: str = "prometheus") -> PrometheusApiQueryOutput:
+        """Query one server replica independently of Kubernetes service routing.
+
+        Args:
+            promql (str): PromQL expression.
+            pod_name (str): Exact server pod name in this keyword's namespace.
+            container (str): Server container name.
+
+        Returns:
+            PrometheusApiQueryOutput: Response from the selected replica.
+        """
+        url = f"http://localhost:{self._port}/api/v1/query?query={quote(promql, safe='')}"
+        cmd = f"wget -qO- {shlex.quote(url)}"
+        output = KubectlExecInPodsKeywords(self.ssh_connection).run_pod_exec_cmd(
+            pod_name, cmd, options=f"-n {shlex.quote(self._namespace)} -c {shlex.quote(container)}",
+        )
+        return PrometheusApiQueryOutput("\n".join(output) if isinstance(output, list) else output)
+
+    def query_range_download(self, promql: str, start: int, end: int, step: str = "30s", connect_timeout: int = 5, query_timeout: int = 120, command_timeout: int = 150) -> PrometheusApiQueryOutput:
+        """Download a large range response over SFTP without SSH output buffering.
+
+        Args:
+            promql (str): PromQL expression, with labels preserved in the result.
+            start (int): Inclusive UTC start epoch in seconds.
+            end (int): Inclusive UTC end epoch in seconds.
+            step (str): Prometheus resolution, such as "30s" or "2".
+            connect_timeout (int): Curl connection timeout in seconds.
+            query_timeout (int): Curl total timeout in seconds.
+            command_timeout (int): SSH command timeout in seconds.
+
+        Returns:
+            PrometheusApiQueryOutput: Original labeled range response.
+
+        Raises:
+            ConnectionError: If the SFTP channel cannot be opened.
+            RuntimeError: If the HTTP request fails.
+        """
+        if any(isinstance(value, bool) or not isinstance(value, int) for value in (start, end, connect_timeout, query_timeout, command_timeout)):
+            raise ValueError("Range bounds and timeouts must be integers")
+        if end < start or min(connect_timeout, query_timeout, command_timeout) < 1:
+            raise ValueError("Range bounds must be ordered and timeouts positive")
+        url = f"{self._base_url}/api/v1/query_range?query={quote(promql, safe='')}&start={start}&end={end}&step={quote(str(step), safe='')}"
+        remote_path = f"/tmp/prometheus-range-{uuid.uuid4().hex}.json"
+        sftp = self.ssh_connection.get_sftp_client()
+        if sftp is None:
+            raise ConnectionError("Cannot open SFTP connection for Prometheus range response")
+        try:
+            cmd = f"umask 077 && curl -fsS --connect-timeout {connect_timeout} --max-time {query_timeout} --output '{remote_path}' {shlex.quote(url)}"
+            self.ssh_connection.send(cmd, command_timeout=command_timeout)
+            code = self.ssh_connection.get_return_code()
+            if code != 0:
+                raise RuntimeError(f"Prometheus range query failed (curl rc={code}, endpoint={self._base_url})")
+            with sftp.open(remote_path, "rb") as response:
+                raw = response.read().decode("utf-8")
+        finally:
+            try:
+                sftp.remove(remote_path)
+            except FileNotFoundError:
+                pass  # Curl may fail before creating the output file.
+            finally:
+                sftp.close()
+        return PrometheusApiQueryOutput(raw)
 
     def query_range(self, promql: str, start: int, end: int, step: int = 15) -> PrometheusApiQueryOutput:
         """Execute a range PromQL query via the Prometheus service.
@@ -71,7 +138,7 @@ class PrometheusApiKeywords(BaseKeyword):
             PrometheusApiQueryOutput: Parsed query response object.
                 Returns empty result if the service is temporarily unreachable.
         """
-        url = f"{self._base_url}/api/v1/query_range?query={promql}&start={start}&end={end}&step={step}"
+        url = f"{self._base_url}/api/v1/query_range?query={quote(promql, safe='')}&start={start}&end={end}&step={step}"
         cmd = f"curl -s '{url}'"
         output = self.ssh_connection.send(cmd)
         rc = self.ssh_connection.get_return_code()

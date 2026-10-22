@@ -1,6 +1,7 @@
 """Output object for Prometheus HTTP API query responses."""
 
 import json
+from typing import Dict, List
 
 
 class PrometheusApiQueryOutput:
@@ -23,6 +24,33 @@ class PrometheusApiQueryOutput:
             self._parsed = json.loads(raw_output)
         except (json.JSONDecodeError, TypeError):
             pass
+
+    def get_response(self) -> Dict:
+        """Return the successful response document for artifact generation.
+
+        Returns:
+            Dict: Original API response, retaining labels and samples.
+
+        Raises:
+            ValueError: If the API response failed or lacks a result list.
+        """
+        if not isinstance(self._parsed, dict) or self._parsed.get("status") != "success":
+            raise ValueError(f"Prometheus query failed: {self._parsed}")
+        data = self._parsed.get("data")
+        if not isinstance(data, dict) or not isinstance(data.get("result"), list):
+            raise ValueError("Prometheus query response has no valid result list")
+        return self._parsed
+
+    def get_series(self) -> List[Dict]:
+        """Return labeled series from a successful Prometheus response.
+
+        Returns:
+            List[Dict]: Original metric labels and timestamped samples.
+
+        Raises:
+            ValueError: If the response is unsuccessful or malformed.
+        """
+        return self.get_response()["data"]["result"]
 
     def has_data(self) -> bool:
         """Check if the response contains metric data.
