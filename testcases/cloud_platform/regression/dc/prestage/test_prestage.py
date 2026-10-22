@@ -1476,7 +1476,6 @@ def test_prestage_for_sw_deploy_then_for_install_preserves_for_sw_deploy_version
     system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
         availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
         lab_type=LabTypeEnum.SIMPLEX,
-        load=required_release,
     )
 
     subcloud_name = result.get_name()
