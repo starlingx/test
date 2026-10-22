@@ -1,6 +1,7 @@
 """Output parser for Prometheus-format metrics."""
 
 import re
+import math
 from typing import Dict, List, Optional
 
 
@@ -26,6 +27,26 @@ class PrometheusMetricsOutput:
             List[str]: All lines from the scrape output.
         """
         return self._lines
+
+    def get_metric_finiteness(self) -> Dict[str, bool]:
+        """Classify each metric using all its samples, including timestamped ones.
+
+        Returns:
+            Dict[str, bool]: Whether every observed sample of each metric is finite.
+        """
+        result = {}
+        pattern = r'^([a-zA-Z_:][a-zA-Z0-9_:]*)(?:\{(?:[^"{}]|"(?:\\.|[^"\\])*")*\})?\s+(\S+)(?:\s+\S+)?$'
+        for line in self._lines:
+            match = re.fullmatch(pattern, line.strip())
+            if match is None:
+                continue
+            name, sample = match.groups()
+            try:
+                finite = math.isfinite(float(sample))
+            except ValueError:
+                continue
+            result[name] = result.get(name, True) and finite
+        return result
 
     def get_metric_sum(self, metric_name: str) -> Optional[float]:
         """Sum all values for a given metric name across label combinations.

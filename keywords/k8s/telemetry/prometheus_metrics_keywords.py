@@ -2,6 +2,7 @@
 
 import shlex
 import time
+from typing import Optional
 
 from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
@@ -58,25 +59,33 @@ class PrometheusMetricsKeywords(K8sBaseKeyword):
 
         return self.scrape_metrics_from_url(f"http://{cluster_ip}:{self._port}/metrics", grep_pattern)
 
-    def scrape_metrics_from_url(self, endpoint_url: str, grep_pattern: str = "") -> PrometheusMetricsOutput:
+    def scrape_metrics_from_url(self, endpoint_url: str, grep_pattern: str = "", timeout: Optional[int] = None, fail_on_error: bool = False) -> PrometheusMetricsOutput:
         """Scrape a Prometheus exporter at an explicit URL.
 
         Args:
             endpoint_url (str): Full URL of the metrics endpoint.
+            timeout (Optional[int]): Optional total HTTP timeout in seconds.
+            fail_on_error (bool): Reject HTTP and transport failures.
             grep_pattern (str): Optional grep filter to reduce output size.
 
         Returns:
             PrometheusMetricsOutput: Parsed metrics output object.
         """
-        curl_cmd = f"curl -s {shlex.quote(endpoint_url)}"
+        options = "-fsS" if fail_on_error else "-s"
+        if timeout is not None:
+            if isinstance(timeout, bool) or not isinstance(timeout, int) or timeout < 1:
+                raise ValueError("Scrape timeout must be a positive integer")
+            options += f" --max-time {timeout}"
+        curl_cmd = f"curl {options} {shlex.quote(endpoint_url)}"
         if grep_pattern:
             curl_cmd += f" | grep {shlex.quote(grep_pattern)}"
 
         output = self.ssh_connection.send(curl_cmd)
+        if fail_on_error and self.ssh_connection.get_return_code() != 0:
+            raise RuntimeError(f"Metrics scrape failed for {endpoint_url}")
         lines = output if isinstance(output, list) else str(output).strip().splitlines()
         clean_lines = [line.strip() for line in lines if line.strip() and "curl" not in line]
         return PrometheusMetricsOutput(clean_lines)
-
 
     def measure_scrape_latency(self, samples: int = 5) -> float:
         """Measure the p95 scrape latency of the metrics endpoint.
