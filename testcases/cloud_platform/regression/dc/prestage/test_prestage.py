@@ -51,30 +51,55 @@ def teardown_clear_prestage_data(central_ssh: SSHConnection, subcloud_name: str,
     prestage_versions=null, prestage_status=null where name='<subcloud_name>'"
 
     Also removes any release metadata xml file left behind on the subcloud
-    under /opt/software/metadata/available/ (e.g.
-    /opt/software/metadata/available/starlingx-N.1-metadata.xml or
-    /opt/software/metadata/available/WRCP-N.1-metadata.xml) for the
-    releases used during the test's prestage calls.
+    under the release's '<base_dir>/available/' directory (e.g.
+    /opt/software/releases/metadata/available/<release_id>-metadata.xml for the
+    newer software subsystem, or the legacy
+    /opt/software/metadata/available/<release_id>-metadata.xml) for the
+    releases used during the test's prestage calls. The base directory is
+    detected per release so cleanup targets the location where the metadata
+    actually lives.
 
     Args:
         central_ssh (SSHConnection): SSH connection to the system controller.
         subcloud_name (str): Name of the subcloud to clear prestage data for.
         *releases (str): Release versions used during the test's prestage
             calls (e.g. the N release). Any metadata file whose name contains
-            '<release>' is removed, regardless of prefix (starlingx-, WRCP-, etc).
+            '<release>' is removed, regardless of the release ID prefix.
     """
-    metadata_dir = "/opt/software/metadata/available/"
     if releases:
         subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
         file_keywords = FileKeywords(subcloud_ssh)
-        metadata_files = file_keywords.get_files_in_dir(metadata_dir, is_sudo=True)
         for release in releases:
+            base_dir = resolve_metadata_base_dir(subcloud_ssh, release)
+            metadata_dir = f"{base_dir}/available/"
+            metadata_files = file_keywords.get_files_in_dir(metadata_dir, is_sudo=True)
             matching_files = [metadata_file for metadata_file in metadata_files if release in metadata_file]
             for metadata_file in matching_files:
                 file_keywords.delete_file(f"{metadata_dir}{metadata_file}")
 
     query = f"update subclouds set prestage_versions=null, prestage_status=null where name='{subcloud_name}'"
     PostgresqlKeywords(central_ssh).query_database("dcmanager", query)
+
+
+def _normalize_release_for_match(release: str) -> str:
+    """Reduce a release identifier to the bare numeric version used in filenames.
+
+    The release_id reported by 'software list' is a prefixed identifier such as
+    "<prefix>-26.10.0", but the per-component metadata files on disk are named
+    with the bare version only (e.g. "base_26.10.0-metadata.xml",
+    "swmgmt_26.10.0-metadata.xml"). Substring-matching the prefixed name against
+    those filenames never hits, so matching must use the bare version.
+
+    Args:
+        release (str): Release identifier, prefixed or bare
+            (e.g. a release_id from 'software list', "26.10.0", "26.10").
+
+    Returns:
+        str: The bare numeric version (e.g. "26.10.0"), or the original string
+            unchanged if no numeric version can be extracted.
+    """
+    match = re.search(r"\d+\.\d+(?:\.\d+)?", release)
+    return match.group(0) if match else release
 
 
 def find_release_metadata_files(ssh_connection: SSHConnection, base_dir: str, release: str) -> list[str]:
@@ -84,24 +109,98 @@ def find_release_metadata_files(ssh_connection: SSHConnection, base_dir: str, re
     if no match is found, since a prestaged release's metadata may land in
     either state directory depending on whether it's already deployed.
 
+    The release is normalized to its bare numeric version before matching, since
+    on-disk metadata filenames use the bare version (e.g.
+    "base_26.10.0-metadata.xml") rather than the prefixed release name
+    (the release_id reported by 'software list').
+
     Args:
         ssh_connection (SSHConnection): SSH connection to the host to search on.
         base_dir (str): Base metadata directory (e.g. "/opt/software/metadata"
             or "/opt/software/releases/metadata").
-        release (str): Release version substring to match against file names.
+        release (str): Release identifier to match against file names. May be
+            prefixed (the release_id from 'software list') or bare ("26.10.0").
 
     Returns:
         list[str]: Matching metadata file names from the first state
             subdirectory that has a match, or an empty list if none found.
     """
+    match_token = _normalize_release_for_match(release)
     file_keywords = FileKeywords(ssh_connection)
     for state in ("deployed", "available"):
         candidate_dir = f"{base_dir}/{state}/"
         metadata_files = file_keywords.get_files_in_dir(candidate_dir, is_sudo=True)
-        state_matches = [metadata_file for metadata_file in metadata_files if release in metadata_file]
+        state_matches = [metadata_file for metadata_file in metadata_files if match_token in metadata_file]
         if state_matches:
             return state_matches
     return []
+
+
+# Base directories where release metadata can live. The newer software
+# subsystem (StarlingX 12.0 / 26.10 and later) stores metadata under
+# /opt/software/releases/metadata; older releases used the legacy
+# /opt/software/metadata. Order matters: the newer location is preferred.
+METADATA_BASE_DIRS = ("/opt/software/releases/metadata", "/opt/software/metadata")
+
+
+def resolve_metadata_base_dir(ssh_connection: SSHConnection, release: str) -> str:
+    """Resolve which metadata base directory actually holds a release's metadata.
+
+    Detects the correct base directory by checking where the release's metadata
+    files actually exist on the host, rather than inferring it from the release
+    version. The newer /opt/software/releases/metadata location is preferred,
+    falling back to the legacy /opt/software/metadata. This matches on-disk
+    reality and avoids assumptions about version-to-path mapping.
+
+    Args:
+        ssh_connection (SSHConnection): SSH connection to the host to search on.
+        release (str): Release version substring to match against file names
+            (e.g. "26.10.0" or a release_id from 'software list').
+
+    Returns:
+        str: The base directory containing the release's metadata. If no base
+            directory contains a match, the newer location
+            (/opt/software/releases/metadata) is returned as the default.
+    """
+    for base_dir in METADATA_BASE_DIRS:
+        if find_release_metadata_files(ssh_connection, base_dir, release):
+            get_logger().log_info(f"Resolved metadata base dir for release '{release}': {base_dir}")
+            return base_dir
+
+    default_base_dir = METADATA_BASE_DIRS[0]
+    get_logger().log_info(f"No metadata found for release '{release}' in {list(METADATA_BASE_DIRS)}; defaulting to {default_base_dir}")
+    return default_base_dir
+
+
+def resolve_release_metadata_source_state(ssh_connection: SSHConnection, base_dir: str, release: str) -> str:
+    """Resolve the state subdirectory that holds a release's release-level metadata file.
+
+    The release-level metadata file (named exactly '<release>-metadata.xml') can
+    live either directly in the base directory root or under a state
+    subdirectory such as 'deployed'. In the newer software subsystem
+    (/opt/software/releases/metadata) the release-level file sits in the base
+    directory root, while the legacy layout placed it under 'deployed/'.
+
+    Args:
+        ssh_connection (SSHConnection): SSH connection to the host to search on.
+        base_dir (str): Base metadata directory.
+        release (str): Release name whose metadata file is sought (the exact
+            name used for '<release>-metadata.xml', i.e. the release_id from
+            'software list').
+
+    Returns:
+        str: The state subdirectory containing '<release>-metadata.xml', or an
+            empty string if the file is in the base directory root. Defaults to
+            "deployed" if the file is found in neither place, preserving the
+            historical behaviour.
+    """
+    file_keywords = FileKeywords(ssh_connection)
+    if file_keywords.file_exists(f"{base_dir}/{release}-metadata.xml"):
+        return ""
+    for state in ("deployed", "available"):
+        if file_keywords.file_exists(f"{base_dir}/{state}/{release}-metadata.xml"):
+            return state
+    return "deployed"
 
 
 def prestage_subcloud(central_ssh: SSHConnection, subcloud_name: str, subcloud_password: str, release: str = None, for_sw_deploy: bool = False, for_install: bool = False, force: bool = False, kill_process: bool = False, expect_fail: bool = False, expect_rejection: bool = False) -> str:
@@ -567,22 +666,33 @@ def test_prestage_single_simplex_subcloud_for_multiple_deployment_states(request
 
     # Check if there is already a release in "available" state on the subcloud
     available_releases = SoftwareListKeywords(subcloud_ssh).get_software_list().get_release_name_by_state("available")
+    # Release the metadata comes from: an available one, else the highest deployed one.
+    metadata_release = max(available_releases) if available_releases else max(SoftwareListKeywords(subcloud_ssh).get_software_list().get_release_name_by_state("deployed"))
+
+    # Release metadata lives under /opt/software/releases/metadata/ for the newer
+    # software subsystem (StarlingX 12.0 / 26.10+) and under the legacy
+    # /opt/software/metadata/ for older releases. Detect the correct base dir from
+    # where the release's metadata actually exists on disk rather than inferring it
+    # from the version string.
+    metadata_base_dir = resolve_metadata_base_dir(subcloud_ssh, metadata_release)
+
     if available_releases:
-        sw_release = max(available_releases)
+        sw_release = metadata_release
         fake_release_created = False
     else:
-        deployed_release = max(SoftwareListKeywords(subcloud_ssh).get_software_list().get_release_name_by_state("deployed"))
-        fake_release = f"{deployed_release}-fake"
-        MetadataKeywords(subcloud_ssh).create_fake_release_metadata(deployed_release, fake_release, source_state="deployed", target_state="available")
+        fake_release = f"{metadata_release}-fake"
+        source_state = resolve_release_metadata_source_state(subcloud_ssh, metadata_base_dir, metadata_release)
+        MetadataKeywords(subcloud_ssh).create_fake_release_metadata(metadata_release, fake_release, source_state=source_state, target_state="available", base_dir=metadata_base_dir)
         sw_release = fake_release
         fake_release_created = True
 
     get_logger().log_info(f"Release available: {sw_release}")
-    release_metadata = f"/opt/software/metadata/available/{sw_release}-metadata.xml"
+    release_metadata = f"{metadata_base_dir}/available/{sw_release}-metadata.xml"
     metadata_location = [release_metadata]
 
     if not FileKeywords(subcloud_ssh).file_exists(release_metadata):
-        fail(f"Release metadata file {release_metadata} does not exist on subcloud")
+        existing = find_release_metadata_files(subcloud_ssh, metadata_base_dir, sw_release)
+        fail(f"Release metadata file {release_metadata} does not exist on subcloud (resolved base dir '{metadata_base_dir}'; matches found under deployed/available: {existing})")
 
     def teardown():
         current_metadata = metadata_location[0]
@@ -590,54 +700,54 @@ def test_prestage_single_simplex_subcloud_for_multiple_deployment_states(request
             if fake_release_created:
                 FileKeywords(subcloud_ssh).delete_file(current_metadata)
             else:
-                FileKeywords(subcloud_ssh).copy_file(current_metadata, f"/opt/software/metadata/available/{sw_release}-metadata.xml", sudo=True)
+                FileKeywords(subcloud_ssh).copy_file(current_metadata, f"{metadata_base_dir}/available/{sw_release}-metadata.xml", sudo=True)
 
     request.addfinalizer(teardown)
 
     get_logger().log_test_case_step("Scenario 1: Prestage with release in 'deploying' state - expect failure")
     get_logger().log_info(f"Subcloud software list: {SoftwareListKeywords(subcloud_ssh).get_software_list()}")
-    FileKeywords(subcloud_ssh).create_directory_with_sudo("/opt/software/metadata/deploying")
-    FileKeywords(subcloud_ssh).move_file(source=release_metadata, destination="/opt/software/metadata/deploying/", sudo=True)
-    release_metadata = f"/opt/software/metadata/deploying/{sw_release}-metadata.xml"
+    FileKeywords(subcloud_ssh).create_directory_with_sudo(f"{metadata_base_dir}/deploying")
+    FileKeywords(subcloud_ssh).move_file(source=release_metadata, destination=f"{metadata_base_dir}/deploying/", sudo=True)
+    release_metadata = f"{metadata_base_dir}/deploying/{sw_release}-metadata.xml"
     metadata_location[0] = release_metadata
     prestage_subcloud(system_controller_ssh, subcloud_name, subcloud_password, for_sw_deploy=True, expect_fail=True)
     prestage_subcloud(system_controller_ssh, subcloud_name, subcloud_password, expect_fail=True)
 
     get_logger().log_test_case_step("Scenario 2: Prestage with release in 'removing' state - expect failure")
-    FileKeywords(subcloud_ssh).create_directory_with_sudo("/opt/software/metadata/removing")
-    FileKeywords(subcloud_ssh).move_file(source=release_metadata, destination="/opt/software/metadata/removing/", sudo=True)
-    release_metadata = f"/opt/software/metadata/removing/{sw_release}-metadata.xml"
+    FileKeywords(subcloud_ssh).create_directory_with_sudo(f"{metadata_base_dir}/removing")
+    FileKeywords(subcloud_ssh).move_file(source=release_metadata, destination=f"{metadata_base_dir}/removing/", sudo=True)
+    release_metadata = f"{metadata_base_dir}/removing/{sw_release}-metadata.xml"
     metadata_location[0] = release_metadata
     prestage_subcloud(system_controller_ssh, subcloud_name, subcloud_password, release=subcloud_sw_version, for_sw_deploy=True, expect_fail=True)
     prestage_subcloud(system_controller_ssh, subcloud_name, subcloud_password, release=subcloud_sw_version, expect_fail=True)
 
     get_logger().log_test_case_step("Scenario 3: Prestage with release in 'unavailable' state - expect success")
-    FileKeywords(subcloud_ssh).create_directory_with_sudo("/opt/software/metadata/unavailable")
-    FileKeywords(subcloud_ssh).move_file(source=release_metadata, destination="/opt/software/metadata/unavailable/", sudo=True)
-    release_metadata = f"/opt/software/metadata/unavailable/{sw_release}-metadata.xml"
+    FileKeywords(subcloud_ssh).create_directory_with_sudo(f"{metadata_base_dir}/unavailable")
+    FileKeywords(subcloud_ssh).move_file(source=release_metadata, destination=f"{metadata_base_dir}/unavailable/", sudo=True)
+    release_metadata = f"{metadata_base_dir}/unavailable/{sw_release}-metadata.xml"
     metadata_location[0] = release_metadata
     prestage_subcloud(system_controller_ssh, subcloud_name, subcloud_password, for_sw_deploy=True)
     prestage_subcloud(system_controller_ssh, subcloud_name, subcloud_password)
 
     get_logger().log_test_case_step("Scenario 4: Prestage with release in 'deployed' state - expect success")
-    FileKeywords(subcloud_ssh).create_directory_with_sudo("/opt/software/metadata/deployed")
-    FileKeywords(subcloud_ssh).move_file(source=release_metadata, destination="/opt/software/metadata/deployed/", sudo=True)
-    release_metadata = f"/opt/software/metadata/deployed/{sw_release}-metadata.xml"
+    FileKeywords(subcloud_ssh).create_directory_with_sudo(f"{metadata_base_dir}/deployed")
+    FileKeywords(subcloud_ssh).move_file(source=release_metadata, destination=f"{metadata_base_dir}/deployed/", sudo=True)
+    release_metadata = f"{metadata_base_dir}/deployed/{sw_release}-metadata.xml"
     metadata_location[0] = release_metadata
     prestage_subcloud(system_controller_ssh, subcloud_name, subcloud_password, for_sw_deploy=True)
     prestage_subcloud(system_controller_ssh, subcloud_name, subcloud_password)
 
     get_logger().log_test_case_step("Scenario 5: Prestage with release in 'committed' state - expect success")
-    FileKeywords(subcloud_ssh).create_directory_with_sudo("/opt/software/metadata/committed")
-    FileKeywords(subcloud_ssh).move_file(source=release_metadata, destination="/opt/software/metadata/committed/", sudo=True)
-    release_metadata = f"/opt/software/metadata/committed/{sw_release}-metadata.xml"
+    FileKeywords(subcloud_ssh).create_directory_with_sudo(f"{metadata_base_dir}/committed")
+    FileKeywords(subcloud_ssh).move_file(source=release_metadata, destination=f"{metadata_base_dir}/committed/", sudo=True)
+    release_metadata = f"{metadata_base_dir}/committed/{sw_release}-metadata.xml"
     metadata_location[0] = release_metadata
     prestage_subcloud(system_controller_ssh, subcloud_name, subcloud_password, for_sw_deploy=True)
     prestage_subcloud(system_controller_ssh, subcloud_name, subcloud_password)
 
     get_logger().log_test_case_step("Scenario 6: Prestage with release back in 'available' state - expect success")
-    FileKeywords(subcloud_ssh).move_file(source=release_metadata, destination="/opt/software/metadata/available/", sudo=True)
-    release_metadata = f"/opt/software/metadata/available/{sw_release}-metadata.xml"
+    FileKeywords(subcloud_ssh).move_file(source=release_metadata, destination=f"{metadata_base_dir}/available/", sudo=True)
+    release_metadata = f"{metadata_base_dir}/available/{sw_release}-metadata.xml"
     metadata_location[0] = release_metadata
     prestage_subcloud(system_controller_ssh, subcloud_name, subcloud_password)
 
@@ -970,22 +1080,21 @@ def test_prestage_blocked_when_subcloud_release_in_transient_state(request):
 
     target_release_name = max(candidate_releases, key=lambda release_name: [int(part) for part in re.findall(r"\d+", release_name)])
     target_release_version = re.search(r"(\d+\.\d+)", target_release_name).group(1)
-    target_release_state = system_controller_software_list.get_release_state_by_release_name(target_release_name)
 
-    # On the system controller, release metadata always lives under the
-    # legacy /opt/software/metadata/ path, regardless of release version.
-    system_controller_metadata_base_dir = "/opt/software/metadata"
-
-    # On the subcloud, metadata lives under /opt/software/releases/metadata/
-    # for release N, and under the legacy /opt/software/metadata/ for older
-    # ones (N-1, N-2).
-    target_version_obj = CloudPlatformVersionManagerClass().get_product_version_object(target_release_version)
-    subcloud_metadata_base_dir = "/opt/software/releases/metadata" if target_version_obj.is_after_or_equal_to(CloudPlatformSoftwareVersion.STARLINGX_12_0) else "/opt/software/metadata"
+    # Detect where the release metadata actually lives on each host rather than
+    # assuming a fixed path. The release-level metadata file ('<release>-metadata.xml')
+    # lives in the base-dir root for the newer software subsystem
+    # (/opt/software/releases/metadata) and under a state subdir for the legacy
+    # layout, so the source state is resolved per host as well.
+    system_controller_metadata_base_dir = resolve_metadata_base_dir(system_controller_ssh, target_release_name)
+    subcloud_metadata_base_dir = resolve_metadata_base_dir(subcloud_ssh, target_release_name)
 
     system_controller_file_keywords = FileKeywords(system_controller_ssh)
     subcloud_file_keywords = FileKeywords(subcloud_ssh)
 
-    source_metadata_path = f"{system_controller_metadata_base_dir}/{target_release_state}/{target_release_name}-metadata.xml"
+    source_state = resolve_release_metadata_source_state(system_controller_ssh, system_controller_metadata_base_dir, target_release_name)
+    source_state_segment = f"{source_state}/" if source_state else ""
+    source_metadata_path = f"{system_controller_metadata_base_dir}/{source_state_segment}{target_release_name}-metadata.xml"
     validate_equals(system_controller_file_keywords.file_exists(source_metadata_path), True, f"Validate that {source_metadata_path} exists on the system controller.")
 
     # No direct host-to-host scp keyword exists in the framework, so the
