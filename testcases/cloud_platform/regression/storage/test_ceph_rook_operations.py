@@ -240,28 +240,59 @@ def test_ceph_rook_capabilities_testing_open_model(request):
         validate_equals(pool_update, True, "Replicated min_size is updated.")
 
 
+@mark.lab_has_compute
 @mark.lab_has_rook_ceph
-def test_lock_unlock_multiple_hosts():
+def test_lock_unlock_multiple_hosts(request: FixtureRequest):
     """
-    Lock and unlock multiple nodes on a standard lab
+    Lock and unlock multiple nodes on a standard lab, while pods keep continuously
+    writing to CephFS and RBD volumes.
 
     Test Steps:
         - Make sure ceph-rook is storage backend
+        - Start continuous-write pods on CephFS (RWX) and RBD (RWO) volumes, pinned
+          to the active controller, the only host this test does not lock, so they
+          keep writing while the remaining hosts are locked and unlocked
+        - Record each pod's write-cycle count before the lock/unlock
         - Lock all hosts (excluding active controller)
         - Unlock all hosts
         - Check ceph-rook health OK
-    Args: None
+        - Verify each writer pod is still Running and its write-cycle count advanced
+          (i.e. the volumes stayed writable through the lock/unlock)
+
+    Teardown:
+        - Delete each continuous-write pod and its PVC, waiting for the PVC to be
+          gone, and remove the uploaded YAML files from the active controller
+
+    Args:
+        request (FixtureRequest): pytest request fixture for test setup and teardown
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
 
     system_host_keywords = SystemHostListKeywords(ssh_connection)
     full_host_list = system_host_keywords.get_system_host_with_extra_column(["capabilities"])
     host_names = full_host_list.get_host_names_except_active_controller()
+    active_controller_host_name = full_host_list.get_active_controller().get_host_name()
 
     ceph_status_keywords = CephStatusKeywords(ssh_connection)
+    kubectl_get_pods_keywords = KubectlGetPodsKeywords(ssh_connection)
+    continuous_write_keywords = KubectlContinuousWriteKeywords(ssh_connection)
 
     get_logger().log_test_case_step("Checking rook-ceph health before Lock/Unlock nodes.")
     ceph_status_keywords.wait_for_ceph_health_status(expect_health_status=True)
+
+    get_logger().log_info(f"Hosts to lock/unlock: {host_names}; writer pods pinned to active controller: {active_controller_host_name}")
+
+    writer_pods = {}
+    for storage_type in ["cephfs", "rbd"]:
+        get_logger().log_test_case_step(f"Start {storage_type} continuous-write pod on {active_controller_host_name}.")
+        pod_name, pvc_name = continuous_write_keywords.start_continuous_write_pod(storage_type, node_name=active_controller_host_name)
+        writer_pods[storage_type] = pod_name
+        request.addfinalizer(lambda p=pod_name, v=pvc_name: continuous_write_keywords.cleanup_continuous_write_pod(p, v))
+
+    write_counts = {}
+    for storage_type, pod_name in writer_pods.items():
+        write_counts[storage_type] = continuous_write_keywords.wait_for_write_progress(pod_name, previous_count=0)
+        get_logger().log_info(f"{pod_name} write-cycle count before Lock/Unlock nodes: {write_counts[storage_type]}")
 
     get_logger().log_test_case_step("Locking multiple nodes.")
     SystemHostLockKeywords.lock_multiple_hosts(ssh_connection, host_names)
@@ -271,6 +302,14 @@ def test_lock_unlock_multiple_hosts():
 
     get_logger().log_test_case_step("Checking ceph health after Lock/Unlock nodes.")
     ceph_status_keywords.wait_for_ceph_health_status(expect_health_status=True)
+
+    for storage_type, pod_name in writer_pods.items():
+        get_logger().log_test_case_step(f"Verify {pod_name} is still Running after Lock/Unlock nodes.")
+        kubectl_get_pods_keywords.wait_for_pod_status(pod_name, "Running")
+
+        get_logger().log_test_case_step(f"Verify {pod_name} kept writing after Lock/Unlock nodes.")
+        write_counts[storage_type] = continuous_write_keywords.wait_for_write_progress(pod_name, previous_count=write_counts[storage_type])
+        get_logger().log_info(f"{pod_name} write-cycle count after Lock/Unlock nodes: {write_counts[storage_type]}")
 
 
 @mark.p2
