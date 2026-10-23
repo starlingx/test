@@ -18,6 +18,7 @@ class KubectlTridentBackendConfigObject:
         self._svm: str = ""
         self._nfs_mount_options: str = ""
         self._credentials_secret_name: str = ""
+        self._san_type: str = ""
 
     def get_name(self) -> str:
         """Get the TBC resource name.
@@ -55,7 +56,9 @@ class KubectlTridentBackendConfigObject:
         """Get the storage driver name.
 
         Returns:
-            str: Driver name (e.g. 'ontap-nas', 'ontap-san', 'ontap-san-fc').
+            str: Driver name, either 'ontap-nas' or 'ontap-san'. The three SAN
+                protocols share the 'ontap-san' driver and are told apart by
+                the sanType, see get_san_type.
         """
         return self._storage_driver_name
 
@@ -214,6 +217,27 @@ class KubectlTridentBackendConfigObject:
         """
         self._credentials_secret_name = credentials_secret_name
 
+    def get_san_type(self) -> str:
+        """Get the SAN type from spec.
+
+        The netapp-storage chart maps each SAN protocol to the same 'ontap-san'
+        storage driver and sets the sanType to tell them apart: 'fcp' for Fibre
+        Channel, 'iscsi' for iSCSI and 'nvme' for NVMe/TCP. NAS backends do not
+        carry a sanType.
+
+        Returns:
+            str: SAN type (e.g. 'fcp', 'iscsi', 'nvme'), or '' when unset.
+        """
+        return self._san_type
+
+    def set_san_type(self, san_type: str) -> None:
+        """Set the SAN type.
+
+        Args:
+            san_type (str): SAN type from spec.sanType.
+        """
+        self._san_type = san_type
+
     def is_healthy(self) -> bool:
         """Check if the backend is healthy (lastOperationStatus == Success).
 
@@ -236,14 +260,4 @@ class KubectlTridentBackendConfigObject:
         Returns:
             str: String representation.
         """
-        return (
-            f"TridentBackendConfig(name={self._name}, "
-            f"driver={self._storage_driver_name}, "
-            f"managementLIF={self._management_lif}, "
-            f"dataLIF={self._data_lif}, "
-            f"svm={self._svm}, "
-            f"nfsMountOptions={self._nfs_mount_options}, "
-            f"credentialsSecret={self._credentials_secret_name}, "
-            f"phase={self._phase}, "
-            f"status={self._last_operation_status})"
-        )
+        return f"TridentBackendConfig(name={self._name}, " f"driver={self._storage_driver_name}, " f"sanType={self._san_type}, " f"managementLIF={self._management_lif}, " f"dataLIF={self._data_lif}, " f"svm={self._svm}, " f"nfsMountOptions={self._nfs_mount_options}, " f"credentialsSecret={self._credentials_secret_name}, " f"phase={self._phase}, " f"status={self._last_operation_status})"

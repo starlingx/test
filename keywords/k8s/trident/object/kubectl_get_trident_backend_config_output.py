@@ -50,7 +50,10 @@ class KubectlGetTridentBackendConfigOutput:
             tbc_obj.set_name(metadata.get("name", ""))
             tbc_obj.set_namespace(metadata.get("namespace", ""))
             tbc_obj.set_storage_driver_name(spec.get("storageDriverName", ""))
-            tbc_obj.set_backend_name(spec.get("backendName", ""))
+            # The chart does not render spec.backendName, so fall back to the name
+            # Trident reports once the backend is bound.
+            backend_name = spec.get("backendName", "") or status.get("backendInfo", {}).get("backendName", "")
+            tbc_obj.set_backend_name(backend_name)
             tbc_obj.set_management_lif(spec.get("managementLIF", ""))
             tbc_obj.set_data_lif(spec.get("dataLIF", ""))
             tbc_obj.set_svm(spec.get("svm", ""))
@@ -59,6 +62,7 @@ class KubectlGetTridentBackendConfigOutput:
             tbc_obj.set_last_operation_status(status.get("lastOperationStatus", ""))
             tbc_obj.set_message(status.get("message", ""))
             tbc_obj.set_phase(status.get("phase", ""))
+            tbc_obj.set_san_type(spec.get("sanType", ""))
 
             self._configs.append(tbc_obj)
 
@@ -70,38 +74,65 @@ class KubectlGetTridentBackendConfigOutput:
         """
         return self._configs
 
-    def get_configs_by_driver(self, driver_name: str) -> List[KubectlTridentBackendConfigObject]:
-        """Get TBCs filtered by storage driver name.
+    def get_configs_by_driver(self, driver_name: str, san_type: str = None) -> List[KubectlTridentBackendConfigObject]:
+        """Get TBCs filtered by storage driver name, and optionally by SAN type.
+
+        The three SAN protocols all use the 'ontap-san' driver, so the driver
+        alone does not identify a protocol; pass san_type to select one of them.
 
         Args:
-            driver_name (str): Driver name (e.g. 'ontap-nas', 'ontap-san').
+            driver_name (str): Driver name, either 'ontap-nas' or 'ontap-san'.
+            san_type (str, optional): SAN type to match ('fcp', 'iscsi', 'nvme').
+                If None, backends are matched on the driver name alone.
 
         Returns:
             List[KubectlTridentBackendConfigObject]: Matching TBCs.
         """
-        return [c for c in self._configs if c.get_storage_driver_name() == driver_name]
+        matching = [c for c in self._configs if c.get_storage_driver_name() == driver_name]
+        if san_type is None:
+            return matching
+        return [c for c in matching if self._normalize_san_type(c.get_san_type()) == san_type]
 
-    def get_healthy_configs_by_driver(self, driver_name: str) -> List[KubectlTridentBackendConfigObject]:
-        """Get healthy TBCs filtered by storage driver name.
+    def get_healthy_configs_by_driver(self, driver_name: str, san_type: str = None) -> List[KubectlTridentBackendConfigObject]:
+        """Get healthy TBCs filtered by storage driver name, and optionally by SAN type.
 
         Args:
-            driver_name (str): Driver name.
+            driver_name (str): Driver name, either 'ontap-nas' or 'ontap-san'.
+            san_type (str, optional): SAN type to match ('fcp', 'iscsi', 'nvme').
+                If None, backends are matched on the driver name alone.
 
         Returns:
-            List[KubectlTridentBackendConfigObject]: Healthy TBCs matching the driver.
+            List[KubectlTridentBackendConfigObject]: Healthy TBCs matching the filters.
         """
-        return [c for c in self._configs if c.get_storage_driver_name() == driver_name and c.is_healthy()]
+        return [c for c in self.get_configs_by_driver(driver_name, san_type) if c.is_healthy()]
 
-    def has_healthy_backend_for_driver(self, driver_name: str) -> bool:
-        """Check if at least one healthy backend exists for the given driver.
+    def has_healthy_backend_for_driver(self, driver_name: str, san_type: str = None) -> bool:
+        """Check if at least one healthy backend exists for the given driver and SAN type.
 
         Args:
-            driver_name (str): Driver name.
+            driver_name (str): Driver name, either 'ontap-nas' or 'ontap-san'.
+            san_type (str, optional): SAN type to match ('fcp', 'iscsi', 'nvme').
+                If None, backends are matched on the driver name alone.
 
         Returns:
             bool: True if a healthy backend exists.
         """
-        return len(self.get_healthy_configs_by_driver(driver_name)) > 0
+        return len(self.get_healthy_configs_by_driver(driver_name, san_type)) > 0
+
+    @staticmethod
+    def _normalize_san_type(san_type: str) -> str:
+        """Resolve an unset sanType to the Trident default.
+
+        Trident treats a SAN backend with no sanType as iSCSI, so an empty value
+        has to compare equal to 'iscsi' rather than to nothing.
+
+        Args:
+            san_type (str): SAN type as read from spec.sanType.
+
+        Returns:
+            str: The sanType, or 'iscsi' when it is unset.
+        """
+        return san_type or "iscsi"
 
     def get_bound_nas_backend(self) -> Optional[KubectlTridentBackendConfigObject]:
         """Get the first bound ontap-nas backend.
@@ -121,7 +152,4 @@ class KubectlGetTridentBackendConfigOutput:
         Returns:
             List[KubectlTridentBackendConfigObject]: List of bound SAN backends.
         """
-        return [
-            c for c in self._configs
-            if c.get_storage_driver_name() in ("ontap-san", "ontap-san-fc") and c.is_bound()
-        ]
+        return [c for c in self._configs if c.get_storage_driver_name() == "ontap-san" and c.is_bound()]

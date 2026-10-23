@@ -66,12 +66,17 @@ class KubectlGetStorageclassOutput:
         Classification rules:
         - cephfs: provisioner contains 'cephfs'
         - ceph-rbd: provisioner contains 'rbd' or 'ceph'
-        - netapp-iscsi: provisioner contains 'trident'/'netapp' + ontap-san + iscsi
-        - netapp-fc: provisioner contains 'trident'/'netapp' + ontap-san + fc
         - netapp-nfs: provisioner contains 'trident'/'netapp' + ontap-nas
+        - netapp-san: provisioner contains 'trident'/'netapp' + ontap-san
 
         Note: 'cephfs' must be checked before 'ceph'/'rbd' because the cephfs
         provisioner (rook-ceph.cephfs.csi.ceph.com) contains both 'cephfs' and 'ceph'.
+
+        Note: Fibre Channel, iSCSI and NVMe StorageClasses are indistinguishable
+        here, because the netapp-storage chart gives all three the same
+        'backendType: ontap-san' and puts the discriminating sanType on the
+        TridentBackendConfig instead. They therefore all classify as
+        'netapp-san'; use StorageCapabilityKeywords to resolve the protocol.
 
         Args:
             provisioner (str): The StorageClass provisioner string.
@@ -82,7 +87,6 @@ class KubectlGetStorageclassOutput:
         """
         provisioner_lower = provisioner.lower()
         backend_type = parameters.get("backendType", "")
-        san_type = parameters.get("sanType", "")
 
         if "cephfs" in provisioner_lower:
             return "cephfs"
@@ -92,9 +96,7 @@ class KubectlGetStorageclassOutput:
             if backend_type == "ontap-nas":
                 return "netapp-nfs"
             if backend_type == "ontap-san":
-                if san_type == "fc":
-                    return "netapp-fc"
-                return "netapp-iscsi"
+                return "netapp-san"
         return "unknown"
 
     def get_storageclasses(self) -> List[KubectlGetStorageclassObject]:
@@ -146,9 +148,9 @@ class KubectlGetStorageclassOutput:
         """Get available SAN storage types.
 
         Returns:
-            List[str]: List of detected SAN types (ceph-rbd, netapp-iscsi, netapp-fc).
+            List[str]: List of detected SAN types (ceph-rbd, netapp-san).
         """
-        san_types = {"ceph-rbd", "netapp-iscsi", "netapp-fc"}
+        san_types = {"ceph-rbd", "netapp-san"}
         return sorted(san_types & set(self.get_available_storage_types()))
 
     def get_available_nas(self) -> List[str]:
