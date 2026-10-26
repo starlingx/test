@@ -29,6 +29,9 @@ class HostProfileYamlKeywords:
         appended otherwise, since a host profile is not required to declare
         every filesystem present on the host.
 
+        The Host that consumes the profile is also marked for day-2
+        reconciliation, otherwise the new size is never applied.
+
         Args:
             searched_metadata (str): Metadata to be searched.
             fs (str): Desired filesystem to be modified.
@@ -42,11 +45,11 @@ class HostProfileYamlKeywords:
         with open(local_filename) as stream:
             list_doc = list(yaml.safe_load_all(stream))
 
+        documents = [document for document in list_doc if isinstance(document, dict)]
+
         profile_found = False
 
-        for document in list_doc:
-            if not isinstance(document, dict):
-                continue
+        for document in documents:
             if document.get("metadata", {}).get("name") != searched_metadata:
                 continue
 
@@ -62,13 +65,39 @@ class HostProfileYamlKeywords:
         if not profile_found:
             raise KeywordException(f"No document with metadata.name '{searched_metadata}' was found in {remote_filename}.")
 
-        documents = [document for document in list_doc if isinstance(document, dict)]
-
-        if "status" not in documents[-1]:
-            documents[-1]["status"] = {"deploymentScope": "principal"}
+        self.request_principal_scope_for_profile(documents, searched_metadata, remote_filename)
 
         self.write_yaml(documents, local_filename)
         self.upload_file(local_filename, remote_filename)
+
+    def request_principal_scope_for_profile(self, documents: list, profile_name: str, remote_filename: str):
+        """Mark the Host that uses a profile for day-2 reconciliation.
+
+        The Deployment Manager ignores configuration changes once the initial
+        synchronization has completed, unless the resource declares
+        'status.deploymentScope: principal'.
+
+        Args:
+            documents (list): Deployment config documents to be updated in place.
+            profile_name (str): Name of the host profile that was edited.
+            remote_filename (str): Name of the file, for error reporting.
+
+        Raises:
+            KeywordException: If no Host document references 'profile_name'.
+        """
+        host_found = False
+
+        for document in documents:
+            if document.get("kind") != "Host":
+                continue
+            if document.get("spec", {}).get("profile") != profile_name:
+                continue
+
+            host_found = True
+            document.setdefault("status", {})["deploymentScope"] = "principal"
+
+        if not host_found:
+            raise KeywordException(f"No Host document using profile '{profile_name}' was found in {remote_filename}.")
 
     def edit_yaml_host_interface_mtu(self, interface_name: str, mtu: int, remote_filename: str):
         """Edit the MTU of an ethernet interface in the Host kind overrides section.
@@ -180,5 +209,5 @@ class HostProfileYamlKeywords:
             data (dict): data formatted as dict.
             output_filename (str): file name
         """
-        with open(output_filename, 'w') as outfile:
+        with open(output_filename, "w") as outfile:
             yaml.dump(data, outfile, default_flow_style=False)
