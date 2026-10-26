@@ -1,4 +1,5 @@
 import re
+from time import sleep
 from typing import List
 
 from pytest import FixtureRequest, mark
@@ -24,10 +25,13 @@ from keywords.cloud_platform.system.application.system_application_upload_keywor
 from keywords.cloud_platform.system.helm.system_helm_chart_attribute_modify_keywords import SystemHelmChartAttributeModifyKeywords
 from keywords.cloud_platform.system.helm.system_helm_override_keywords import SystemHelmOverrideKeywords
 from keywords.cloud_platform.system.host.system_host_list_keywords import SystemHostListKeywords
+from keywords.cloud_platform.system.host.system_host_lock_keywords import SystemHostLockKeywords
 from keywords.files.file_keywords import FileKeywords
 from keywords.k8s.continuous_write.kubectl_continuous_write_keywords import KubectlContinuousWriteKeywords
+from keywords.k8s.pods.kubectl_exec_in_pods_keywords import KubectlExecInPodsKeywords
 from keywords.k8s.pods.kubectl_get_pods_keywords import KubectlGetPodsKeywords
 from keywords.linux.mount.mount_keywords import MountKeywords
+from keywords.server.power_keywords import PowerKeywords
 
 
 def setup(request, active_ssh_connection):
@@ -80,6 +84,43 @@ def test_remove_apply_platform_integ_app(request):
     SystemApplicationRemoveKeywords(active_ssh_connection).system_application_remove(system_application_remove_input)
     get_logger().log_test_case_step("Apply platform-integ-apps")
     SystemApplicationApplyKeywords(active_ssh_connection).system_application_apply(app_name=platform_integ_apps_name)
+
+
+def verify_file_created_on_pod_exists(ssh_connection: SSHConnection, namespace: str, pod_name: str, timeout: int = 600, poll_interval: int = 15) -> None:
+    """
+    Verify that the test.txt file previously created still exists inside the pod.
+
+    After a power-off/on cycle the StatefulSet pod is torn down and recreated. There is a
+    window where the pod name is reported Running but 'kubectl exec' still fails transiently
+    with "pod does not exist" (the sandbox is not ready to be exec'd into yet). A single exec
+    races against that window, so the exec is polled: any transient exec failure is retried,
+    and the file is considered present only once the exec succeeds with return code 0.
+
+    Test Steps:
+        - Wait for the pod to be Running so it can be exec'd into.
+        - Poll 'test -f /data/test.txt' inside the pod until it succeeds or the timeout elapses.
+
+    Args:
+        ssh_connection (SSHConnection): the ssh connection to the active controller.
+        namespace (str): the namespace the pod runs in.
+        pod_name (str): the name of the pod to check.
+        timeout (int): maximum time in seconds to wait for the file check to succeed.
+        poll_interval (int): time in seconds between exec attempts.
+    """
+    get_logger().log_test_case_step(f"Wait for pod {pod_name} to be Running before exec")
+    KubectlGetPodsKeywords(ssh_connection).wait_for_pod_status(pod_name, "Running", namespace, timeout=timeout)
+
+    kubectl_exec_in_pods = KubectlExecInPodsKeywords(ssh_connection)
+    options = f"-i -n {namespace}"
+    cmd = "sh -c 'test -f /data/test.txt'"
+
+    validate_equals_with_retry(
+        function_to_execute=lambda: (kubectl_exec_in_pods.run_pod_exec_cmd(pod_name, cmd, options=options, ignore_error=True), ssh_connection.get_return_code())[1],
+        expected_value=0,
+        validation_description=f"test.txt is on {pod_name} pod.",
+        timeout=timeout,
+        polling_sleep_time=poll_interval,
+    )
 
 
 @mark.p2
@@ -656,7 +697,7 @@ def test_disable_and_re_enable_rbd_provisioner_platform_integ_app(request: Fixtu
         count_after = continuous_write_keywords.wait_for_write_progress(pod_name, previous_count=counts_before)
         validate_not_equals(counts_before, count_after, "Making sure counts before and after are not equal (pod is writing)")
         get_logger().log_info(f"{pod_name} write-cycle count after: {count_after}")
-        continuous_write_keywords.cleanup_continuous_write_pod(pod_name, pvc_name, force=True)
+        continuous_write_keywords.cleanup_continuous_write_pod(pod_name, pvc_name)
 
     request.addfinalizer(teardown)
 
@@ -779,7 +820,7 @@ def test_disable_and_re_enable_cephfs_provisioner_platform_integ_app(request: Fi
         count_after = continuous_write_keywords.wait_for_write_progress(pod_name, previous_count=counts_before)
         get_logger().log_info(f"{pod_name} write-cycle count after: {count_after}")
         validate_not_equals(counts_before, count_after, "Making sure counts before and after are not equal (pod is writing)")
-        continuous_write_keywords.cleanup_continuous_write_pod(pod_name, pvc_name, force=True)
+        continuous_write_keywords.cleanup_continuous_write_pod(pod_name, pvc_name)
 
     request.addfinalizer(teardown)
 
@@ -1059,3 +1100,163 @@ def test_modify_replica_count_for_platform_integ_app(request: FixtureRequest):
         timeout=600,
         polling_sleep_time=10,
     )
+
+
+@mark.p2
+@mark.lab_has_ceph
+def test_dor_platform_integ_app_power_off_all_nodes(request: FixtureRequest):
+    """
+    Apply platform-integ-apps, create test pods and pvcs writing data and then power off/power on all the nodes simultaneously. Finally,
+    make sure that platform-integ-apps is applied and the pods/pvcs keep the data safe.
+
+    Test Steps:
+        - Check ceph status.
+        - Make sure that platform-integ-apps is applied.
+        - Make sure that the kube-system platform-integ-apps pods are running for both cephfs and rbd provisioners.
+        - Create cephfs-pvc/rbd-pvc, and cephfs-pod/rbd-pod. Make sure the pvc is Bound and the cephfs pod is running.
+        - Create some test data on the pods pointing to the pvc. Also keep the pod continously writing to the pvc.
+        - Power off all the nodes through the bmc commands
+        - Wait for some time (2 minutes)
+        - Power on all the nodes through the bmc commands
+        - Make sure that all the nodes are unlocked/enabled/online.
+        - Make sure that platform-integ-apps is applied.
+        - Verify that all the platform-integ-apps pods on the kube-system namespace are up.
+        - Make sure that the test PVCs are Bound
+        - Create new pods and make sure that the data created before are there.
+
+    Args:
+        request (FixtureRequest): pytest request fixture for test setup and teardown
+    """
+    active_ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    ceph_status_keywords = CephStatusKeywords(active_ssh_connection)
+    platform_integ_apps_name = setup(request, active_ssh_connection)
+    system_host_lock_keywords = SystemHostLockKeywords(active_ssh_connection)
+    system_host_list_keywords = SystemHostListKeywords(active_ssh_connection)
+    continuous_write_keywords = KubectlContinuousWriteKeywords(active_ssh_connection)
+    namespace = "kube-system"
+    power_chassis = PowerKeywords(None)
+    cephfs_pod_names = ["cephfs-provisioner"]
+    rbd_pod_names = ["rbd-provisioner"]
+    kubectl_get_pods_keywords = KubectlGetPodsKeywords(active_ssh_connection)
+
+    get_logger().log_test_case_step("Check ceph status.")
+    ceph_status_keywords.wait_for_ceph_health_status(expect_health_status=True)
+
+    active_controller = system_host_list_keywords.get_active_controller()
+    active_host_name = active_controller.get_host_name()
+    standby = system_host_list_keywords.get_standby_controller()
+    host_name = standby.get_host_name()
+    get_logger().log_info(f"Active controller (writer pods pinned here): {active_host_name}; standby to power-cycle: {host_name}")
+
+    def teardown():
+        get_logger().log_teardown_step("Check if application status is not applied and apply if needed")
+        app_list_keywords = SystemApplicationListKeywords(active_ssh_connection)
+
+        SystemHelmOverrideKeywords(active_ssh_connection).apply_if_changed(
+            desired_overrides="provisioner:\n  replicaCount: 2\n",
+            app_name="platform-integ-apps",
+            chart_name="rbd-provisioner",
+            namespace="kube-system",
+        )
+        SystemHelmOverrideKeywords(active_ssh_connection).apply_if_changed(
+            desired_overrides="provisioner:\n  replicaCount: 2\n",
+            app_name="platform-integ-apps",
+            chart_name="cephfs-provisioner",
+            namespace="kube-system",
+        )
+
+        if app_list_keywords.is_app_present(platform_integ_apps_name):
+            system_applications = app_list_keywords.get_system_application_list()
+            current_status = system_applications.get_application(platform_integ_apps_name).get_status()
+            if current_status != "applied":
+                get_logger().log_teardown_step("Apply platform-integ-apps")
+                SystemApplicationApplyKeywords(active_ssh_connection).system_application_apply(app_name=platform_integ_apps_name)
+
+        verify_provisioner(active_ssh_connection, cephfs_pod_names, "Running", namespace)
+        verify_provisioner(active_ssh_connection, rbd_pod_names, "Running", namespace)
+
+    request.addfinalizer(teardown)
+
+    get_logger().log_test_case_step("Make sure that platform-integ-apps is applied.")
+    app_status_list = ["applied"]
+    SystemApplicationListKeywords(active_ssh_connection).validate_app_status_in_list(platform_integ_apps_name, app_status_list, timeout=600, polling_sleep_time=20)
+
+    get_logger().log_test_case_step("Make sure that the kube-system platform-integ-apps pods are running for both cephfs and rbd provisioners.")
+    verify_provisioner(active_ssh_connection, cephfs_pod_names, "Running", namespace)
+    verify_provisioner(active_ssh_connection, rbd_pod_names, "Running", namespace)
+
+    get_logger().log_test_case_step("Create a cephfs-pvc and a cephfs-pod. Make sure the pvc is Bound and the cephfs pod is running.")
+    writer_pods = {}
+    for storage_type in ["cephfs", "rbd"]:
+        get_logger().log_test_case_step("Create some test data on the pods pointing to the pvc. Also keep the pod continously writing to the pvc.")
+        pod_name, pvc_name = continuous_write_keywords.start_continuous_write_pod(storage_type, node_name=active_host_name)
+        kubectl_get_pods_keywords.wait_for_pod_status(pod_name, "Running")
+
+        writer_pods[storage_type] = pod_name
+        request.addfinalizer(lambda p=pod_name, v=pvc_name: continuous_write_keywords.cleanup_continuous_write_pod(p, v))
+
+    for storage_type, pod_name in writer_pods.items():
+        counts_before = continuous_write_keywords.wait_for_write_progress(pod_name, previous_count=0)
+        get_logger().log_info(f"{pod_name} write-cycle count before: {counts_before}")
+        kubectl_get_pods_keywords.wait_for_pod_status(pod_name, "Running")
+        count_after = continuous_write_keywords.wait_for_write_progress(pod_name, previous_count=counts_before)
+        validate_not_equals(counts_before, count_after, f"Making sure {storage_type} counts before and after are not equal (pod is writing)")
+        get_logger().log_info(f"{pod_name} write-cycle count after: {count_after}")
+        get_logger().log_test_case_step("Write a test file on Pod")
+        KubectlExecInPodsKeywords(active_ssh_connection).run_pod_exec_cmd(pod_name, "sh -c 'touch /data/test.txt'", options="-i")
+        verify_file_created_on_pod_exists(active_ssh_connection, "default", pod_name)
+
+    get_logger().log_test_case_step("Power off all the nodes through the bmc commands")
+    hosts = SystemHostListKeywords(active_ssh_connection).get_system_host_list()
+    all_host_names = [h.get_host_name() for h in hosts.get_hosts()]
+
+    for host_name in all_host_names:
+        get_logger().log_test_case_step(f"Power Off {host_name} through IPMITOOLS")
+        power_off_rc = power_chassis.power_off_from_localhost(host_name, ignore_error=True)
+        validate_equals(power_off_rc, 0, f"{host_name} IPMI power off command was not accepted by the BMC")
+
+    get_logger().log_test_case_step("Wait for some time (2 minutes)")
+    sleep(120)
+
+    get_logger().log_test_case_step("Power on all the nodes through the bmc commands")
+
+    for host_name in all_host_names:
+        get_logger().log_test_case_step(f"Power On {host_name} through IPMITOOLS")
+        power_on_rc = power_chassis.power_on_from_localhost(host_name, ignore_error=True)
+        validate_equals(power_on_rc, 0, f"{host_name} IPMI power on command was not accepted by the BMC")
+
+    get_logger().log_test_case_step("Make sure that all the nodes come up again")
+    active_ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    system_host_lock_keywords = SystemHostLockKeywords(active_ssh_connection)
+
+    for host_name in all_host_names:
+        host_back = system_host_lock_keywords.wait_for_host_unlocked(host_name, unlock_wait_timeout=3200)
+        validate_equals(host_back, True, f"{host_name} did not come back online after Powering Off and then Powering On")
+
+    get_logger().log_test_case_step("Make sure that platform-integ-apps is applied.")
+    app_status_list = ["applied"]
+    SystemApplicationListKeywords(active_ssh_connection).validate_app_status_in_list(platform_integ_apps_name, app_status_list, timeout=600, polling_sleep_time=20)
+
+    get_logger().log_test_case_step("Make sure that the kube-system platform-integ-apps pods are running for both cephfs and rbd provisioners.")
+    verify_provisioner(active_ssh_connection, cephfs_pod_names, "Running", namespace)
+    verify_provisioner(active_ssh_connection, rbd_pod_names, "Running", namespace)
+
+    get_logger().log_test_case_step("Create a cephfs-pvc and a cephfs-pod. Make sure the pvc is Bound and the cephfs pod is running.")
+    writer_pods = {}
+    for storage_type in ["cephfs", "rbd"]:
+        get_logger().log_test_case_step("Create some test data on the pods pointing to the pvc. Also keep the pod continously writing to the pvc.")
+        pod_name, pvc_name = continuous_write_keywords.start_continuous_write_pod(storage_type, node_name=active_host_name)
+        kubectl_get_pods_keywords.wait_for_pod_status(pod_name, "Running")
+
+        writer_pods[storage_type] = pod_name
+        request.addfinalizer(lambda p=pod_name, v=pvc_name: continuous_write_keywords.cleanup_continuous_write_pod(p, v))
+
+    for storage_type, pod_name in writer_pods.items():
+        counts_before = continuous_write_keywords.wait_for_write_progress(pod_name, previous_count=0)
+        get_logger().log_info(f"{pod_name} write-cycle count before: {counts_before}")
+        kubectl_get_pods_keywords.wait_for_pod_status(pod_name, "Running")
+        count_after = continuous_write_keywords.wait_for_write_progress(pod_name, previous_count=counts_before)
+        validate_not_equals(counts_before, count_after, f"Making sure {storage_type} counts before and after are not equal (pod is writing)")
+        get_logger().log_info(f"{pod_name} write-cycle count after: {count_after}")
+        KubectlExecInPodsKeywords(active_ssh_connection).run_pod_exec_cmd(pod_name, "sh -c 'touch /data/test.txt'", options="-i")
+        verify_file_created_on_pod_exists(active_ssh_connection, "default", pod_name)
