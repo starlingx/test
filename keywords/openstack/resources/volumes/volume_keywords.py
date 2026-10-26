@@ -263,6 +263,15 @@ class VolumeKeywords(BaseKeyword):
 
     # ── Backup operations (generic SDK) ──────────────────────────────
 
+    def list_backups(self) -> BackupListOutput:
+        """List all volume backups.
+
+        Returns:
+            BackupListOutput: Parsed backup collection.
+        """
+        raw = [b.to_dict() for b in self.openstack_connection.get_block_storage().backups(details=True)]
+        return BackupListOutput(raw)
+
     def delete_backup(self, backup_name_or_id: str) -> None:
         """Delete a volume backup.
 

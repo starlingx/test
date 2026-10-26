@@ -4,12 +4,43 @@
 class ServerObject:
     """Holds the parsed fields from a Nova server."""
 
+    # Compute power-state enum. The SDK exposes power_state as the raw numeric
+    # code (int, e.g. 1), not a human-readable label, so callers that compare
+    # against "Running" need the mapping. Unknown codes are stringified so the
+    # caller still sees what was reported.
+    _POWER_STATE_LABELS = {
+        0: "NOSTATE",
+        1: "Running",
+        3: "Paused",
+        4: "Shutdown",
+        6: "Crashed",
+        7: "Suspended",
+    }
+
+    @staticmethod
+    def power_state_label(raw: object) -> str:
+        """Map a numeric compute power_state code to its human-readable label.
+
+        Args:
+            raw (object): The raw power_state value (int code, stringified int,
+                or an already human-readable label).
+
+        Returns:
+            str: The mapped label (e.g. 'Running'), or the stringified input
+                when the code is unknown or not numeric.
+        """
+        try:
+            return ServerObject._POWER_STATE_LABELS[int(raw)]
+        except (TypeError, ValueError, KeyError):
+            return str(raw)
+
     def __init__(self):
         """Initialize ServerObject with explicit fields."""
         self.id = None
         self.name = None
         self.status = None
         self.host = None
+        self.power_state = None
         self.instance_name = None
         self.availability_zone = None
         self.flavor_id = None
@@ -85,6 +116,30 @@ class ServerObject:
             str: Hostname of the compute node.
         """
         return self.host
+
+    def set_power_state(self, power_state: object) -> None:
+        """Set the power state, mapping a raw numeric code to its label.
+
+        Accepts the raw SDK value (numeric code, stringified int, or an already
+        human-readable label) and stores the mapped label so callers always read
+        a human-readable value (e.g. 'Running'). None is stored as an empty
+        string; an unknown code is stored stringified.
+
+        Args:
+            power_state (object): Raw power_state value from the SDK.
+        """
+        if power_state is None:
+            self.power_state = ""
+        else:
+            self.power_state = self.power_state_label(power_state)
+
+    def get_power_state(self) -> str:
+        """Get the power-state label.
+
+        Returns:
+            str: Power-state label (e.g. 'Running', 'Paused', 'Shutdown').
+        """
+        return self.power_state
 
     def set_instance_name(self, instance_name: str) -> None:
         """Set the libvirt instance name.
@@ -283,4 +338,4 @@ class ServerObject:
         Returns:
             str: Human-readable server summary.
         """
-        return f"[ID: {self.get_id()}, Name: {self.get_name()}, Status: {self.get_status()}, Host: {self.get_host()}]"
+        return f"[ID: {self.get_id()}, Name: {self.get_name()}, Status: {self.get_status()}, Power: {self.get_power_state()}, Host: {self.get_host()}]"

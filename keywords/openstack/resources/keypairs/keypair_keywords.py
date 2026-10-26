@@ -50,3 +50,18 @@ class KeypairKeywords(BaseKeyword):
         compute = self.openstack_connection.get_compute()
         kp = compute.find_keypair(keypair_name, ignore_missing=False)
         compute.delete_keypair(kp)
+
+    def cleanup_keypair(self, keypair_name: str) -> None:
+        """Delete a keypair only if it exists (idempotent).
+
+        Safe to call when the keypair may or may not be present: a no-op when it
+        is already gone. Useful before (re)creating a named keypair so a re-run
+        after a mid-test failure does not hit a 'already exists' conflict.
+
+        Args:
+            keypair_name (str): Keypair name.
+        """
+        if self.list_keypairs().is_keypair_present(keypair_name):
+            self.delete_keypair(keypair_name)
+        else:
+            get_logger().log_info(f"Keypair '{keypair_name}' not present, nothing to delete")
