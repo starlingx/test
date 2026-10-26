@@ -29,6 +29,7 @@ class NetworkListOutput:
             network.set_router_external(raw.get("is_router_external", raw.get("router:external", False)))
             network.set_port_security_enabled(raw.get("is_port_security_enabled", raw.get("port_security_enabled")))
             network.set_dns_domain(raw.get("dns_domain", ""))
+            network.set_provider_physical_network(raw.get("provider_physical_network", raw.get("provider:physical_network")))
             self._networks.append(network)
 
     def get_networks(self) -> List[NetworkObject]:
@@ -99,6 +100,35 @@ class NetworkListOutput:
                 get_logger().log_info(f"Discovered external network: {network.get_name()} ({network.get_id()})")
                 return network
         get_logger().log_warning("No external network found")
+        return None
+
+    def discover_bindable_internal_network(self, bindable_physnets: List[str]) -> Optional[NetworkObject]:
+        """Discover the first non-external network a VM port can bind on.
+
+        A network is bindable when it has no provider physnet (tenant overlay,
+        e.g. VXLAN - always bindable) or its provider physnet is in the OVS
+        agent bridge_mappings. Networks on a provider physnet with no bridge
+        mapping are skipped because every VM port on them fails to bind
+        (PortBindingFailed -> instance ERROR).
+
+        Args:
+            bindable_physnets (List[str]): Physnets the OVS agent can bind on
+                (the physnets present in the OVS agent bridge_mappings), as
+                resolved by the caller.
+
+        Returns:
+            Optional[NetworkObject]: First bindable internal network, or None
+            if no internal network qualifies.
+        """
+        for network in self._networks:
+            if network.is_router_external():
+                continue
+            physnet = network.get_provider_physical_network()
+            if not physnet or physnet in bindable_physnets:
+                get_logger().log_info(f"Discovered bindable internal network: {network.get_name()} ({network.get_id()}), physnet='{physnet or 'none'}'")
+                return network
+            get_logger().log_info(f"Skipping internal network '{network.get_name()}' on unbindable physnet '{physnet}'")
+        get_logger().log_warning(f"No bindable internal network found (bindable physnets: {bindable_physnets})")
         return None
 
     def __object_to_string__(self) -> str:

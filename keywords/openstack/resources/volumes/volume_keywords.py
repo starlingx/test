@@ -409,10 +409,12 @@ class VolumeKeywords(BaseKeyword):
     def create_volume_type(self, name: str) -> None:
         """Create a volume type, replacing any pre-existing type of the same name.
 
-        A volume type left behind by a prior run (for example when teardown could
-        not delete it because a volume still referenced it) would otherwise make
-        this call fail with a 409 conflict. Deleting any existing type of the same
-        name first makes creation idempotent and re-runnable.
+        A volume type left behind by a prior run would otherwise make this call
+        fail. Deleting any existing type of the same name first makes creation
+        idempotent and re-runnable. If the pre-existing type is still referenced
+        by one or more volumes, Cinder rejects the type deletion with a 400
+        ("Target volume type is still in use"); in that case the referencing
+        volumes are deleted first and the type deletion is retried.
 
         Args:
             name (str): Volume type name.
@@ -421,9 +423,41 @@ class VolumeKeywords(BaseKeyword):
         existing_type = storage.find_type(name, ignore_missing=True)
         if existing_type is not None:
             get_logger().log_info(f"Volume type '{name}' already exists; deleting it before re-creating")
-            storage.delete_type(existing_type.id)
+            self._delete_volume_type_freeing_volumes(existing_type)
         get_logger().log_info(f"Creating volume type '{name}'")
         storage.create_type(name=name)
+
+    def _delete_volume_type_freeing_volumes(self, volume_type: object) -> None:
+        """Delete a volume type, first removing any volumes that still reference it.
+
+        Cinder refuses to delete a volume type while volumes still use it, returning
+        a 400 "Target volume type is still in use". This deletes any referencing
+        volumes (leftovers from a prior run whose teardown did not complete) and
+        then polls the type deletion until it succeeds.
+
+        Args:
+            volume_type (object): SDK volume type object to delete.
+        """
+        storage = self.openstack_connection.get_block_storage()
+        type_id = volume_type.id
+        type_name = volume_type.name
+        referencing_volumes = [volume for volume in storage.volumes(details=True, all_projects=True) if volume.volume_type in (type_name, type_id)]
+        for volume in referencing_volumes:
+            get_logger().log_info(f"Deleting leftover volume '{volume.id}' still referencing volume type '{type_name}'")
+            storage.delete_volume(volume.id)
+            storage.wait_for_delete(volume)
+
+        storage.delete_type(type_id)
+
+        def _type_is_gone() -> bool:
+            """Check whether the volume type no longer exists.
+
+            Returns:
+                bool: True once the type has been removed.
+            """
+            return storage.find_type(type_id, ignore_missing=True) is None
+
+        validate_equals_with_retry(_type_is_gone, True, f"Volume type '{type_name}' deleted", timeout=60, polling_sleep_time=5)
 
     def set_volume_type_extra_specs(self, type_name_or_id: str, specs: Dict[str, str]) -> None:
         """Set extra-specs on a volume type.

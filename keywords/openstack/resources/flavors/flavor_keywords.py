@@ -21,12 +21,17 @@ class FlavorKeywords(BaseKeyword):
         self.openstack_connection = openstack_connection
 
     def list_flavors(self) -> FlavorListOutput:
-        """List all flavors.
+        """List all flavors, including their extra specs.
+
+        ``get_extra_specs=True`` makes the SDK populate each flavor's extra
+        specs (``hw:mem_page_size``, ``hw:cpu_policy``, ...) in the listing, so
+        callers can select a flavor by its scheduling-relevant properties
+        instead of inferring them from the flavor name.
 
         Returns:
             FlavorListOutput: Parsed flavor collection.
         """
-        raw_flavors = [f.to_dict() for f in self.openstack_connection.get_compute().flavors()]
+        raw_flavors = [f.to_dict() for f in self.openstack_connection.get_compute().flavors(get_extra_specs=True)]
         return FlavorListOutput(raw_flavors)
 
     def create_flavor(self, flavor_name: str, ram: int, vcpus: int, disk: int) -> FlavorListOutput:
