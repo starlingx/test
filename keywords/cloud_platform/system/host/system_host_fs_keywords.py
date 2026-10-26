@@ -1,5 +1,6 @@
 import time
 
+from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
 from keywords.base_keyword import BaseKeyword
 from keywords.cloud_platform.command_wrappers import source_openrc
@@ -101,6 +102,68 @@ class SystemHostFSKeywords(BaseKeyword):
         """
         self.ssh_connection.send(source_openrc(f"system host-fs-delete {hostname} {fs_name}"))
         self.validate_success_return_code(self.ssh_connection)
+
+    def needs_host_fs_grow(self, hostname: str, fs_name: str, target_size: int) -> bool:
+        """
+        Check whether a host filesystem must grow to reach a target size.
+
+        'system host-fs-modify' only accepts a size strictly greater than the current
+        one — a value equal to or below the current size is rejected, not a no-op. This
+        answers the "is there room / is it already allocated" question before any modify,
+        so a grow step can be made idempotent.
+
+        Args:
+            hostname (str): Host whose filesystem is checked.
+            fs_name (str): Host-fs name, for example "docker" or "kubelet".
+            target_size (int): Desired minimum size in GiB.
+
+        Returns:
+            bool: True when the filesystem exists and its current size is below
+                target_size (a grow is needed and allowed). False when the filesystem
+                is already at or above target_size (already allocated — skip).
+
+        Raises:
+            ValueError: When the host has no filesystem named fs_name.
+        """
+        fs = self.get_system_host_fs_list(hostname).get_host_fs(fs_name)
+        if fs is None:
+            raise ValueError(f"Host '{hostname}' has no filesystem named '{fs_name}'")
+        current_size = fs.get_size()
+        if current_size >= target_size:
+            get_logger().log_info(f"{hostname}: '{fs_name}' already {current_size} GiB (>= target {target_size}) — no grow needed")
+            return False
+        get_logger().log_info(f"{hostname}: '{fs_name}' is {current_size} GiB (< target {target_size}) — grow needed")
+        return True
+
+    def grow_host_fs_to(self, hostname: str, fs_name: str, target_size: int, timeout: int = 300, poll_interval: int = 15) -> None:
+        """
+        Grow one host filesystem to a target size, idempotently.
+
+        If the filesystem is already at or above target_size, this is a no-op (safe to
+        re-run). Otherwise it issues a single 'system host-fs-modify' and waits for the
+        filesystem to settle out of the transient 'Modifying' state. The settled steady
+        state is 'In-Use' (not 'Ready'), so this waits for any non-'Modifying' state
+        rather than matching a specific settled string. The grow is online and needs no
+        host lock or reboot.
+
+        Args:
+            hostname (str): Host whose filesystem is grown.
+            fs_name (str): Host-fs name, for example "docker" or "kubelet".
+            target_size (int): Desired minimum size in GiB.
+            timeout (int): Seconds to wait for the resize to settle.
+            poll_interval (int): Seconds between state polls.
+
+        Raises:
+            ValueError: When the host has no filesystem named fs_name.
+        """
+        if not self.needs_host_fs_grow(hostname, fs_name, target_size):
+            return
+
+        get_logger().log_info(f"{hostname}: growing '{fs_name}' to {target_size} GiB")
+        self.system_host_fs_modify(hostname, fs_name, target_size)
+        # The settled steady state after a grow is 'In-Use' (not 'Ready'). Reuse the
+        # existing wait_for_fs_state keyword with that state.
+        self.wait_for_fs_state(hostname, fs_name, expected_state="In-Use", timeout=timeout, sleep_time=poll_interval)
 
     def wait_for_fs_state(self, hostname: str, fs_name: str, expected_state: str = "Ready", timeout: int = 300, sleep_time: int = 30) -> None:
         """

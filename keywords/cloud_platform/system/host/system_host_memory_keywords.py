@@ -38,32 +38,39 @@ class SystemHostMemoryKeywords(BaseKeyword):
         processor: int,
         hugepages_1g: int = None,
         hugepages_2m: int = None,
+        platform_reserved_mib: int = None,
     ) -> None:
         """Modify memory allocation for a host processor/NUMA node.
 
-        Runs: system host-memory-modify <hostname> <processor> [-1G <count>] [-2M <count>]
+        Runs: system host-memory-modify [-m <MiB>] [-1G <count>] [-2M <count>] <hostname> <processor>
 
-        At least one of hugepages_1g or hugepages_2m must be provided.
-        The host must be locked for this change to take effect.
+        At least one of hugepages_1g, hugepages_2m, or platform_reserved_mib must be
+        provided. The host must be locked for this change to take effect.
 
         Args:
             hostname (str): Host to modify.
             processor (int): Processor/NUMA node number (e.g. 0, 1).
             hugepages_1g (int): Number of 1G hugepages to allocate. Optional.
             hugepages_2m (int): Number of 2M hugepages to allocate. Optional.
+            platform_reserved_mib (int): Platform reserved memory in MiB (the '-m'
+                flag). Applies to the single processor/NUMA node given — a host with two
+                nodes needs one call per node. Optional.
 
         Raises:
-            ValueError: If neither hugepages_1g nor hugepages_2m is provided.
+            ValueError: If none of hugepages_1g, hugepages_2m, or platform_reserved_mib
+                is provided.
         """
-        if hugepages_1g is None and hugepages_2m is None:
-            raise ValueError("At least one of hugepages_1g or hugepages_2m must be provided")
+        if hugepages_1g is None and hugepages_2m is None and platform_reserved_mib is None:
+            raise ValueError("At least one of hugepages_1g, hugepages_2m, or platform_reserved_mib must be provided")
 
         args = ""
+        if platform_reserved_mib is not None:
+            args += f" -m {platform_reserved_mib}"
         if hugepages_1g is not None:
             args += f" -1G {hugepages_1g}"
         if hugepages_2m is not None:
             args += f" -2M {hugepages_2m}"
 
-        cmd = source_openrc(f"system host-memory-modify {hostname} {processor}{args}")
+        cmd = source_openrc(f"system host-memory-modify{args} {hostname} {processor}")
         self.ssh_connection.send(cmd)
         self.validate_success_return_code(self.ssh_connection)

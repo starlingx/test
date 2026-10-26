@@ -4,7 +4,7 @@ import os
 import tempfile
 import time
 import urllib.request
-from typing import Optional
+from typing import Dict, Optional
 
 from framework.logging.automation_logger import get_logger
 from keywords.base_keyword import BaseKeyword
@@ -55,6 +55,7 @@ class ImageKeywords(BaseKeyword):
         source_image: Optional[str] = None,
         hw_firmware_type: Optional[str] = None,
         hw_machine_type: Optional[str] = None,
+        properties: Optional[Dict[str, str]] = None,
     ) -> ImageObject:
         """Create an image.
 
@@ -69,6 +70,10 @@ class ImageKeywords(BaseKeyword):
             source_image (Optional[str]): Path to local image file to upload.
             hw_firmware_type (Optional[str]): Firmware type property (e.g. 'uefi').
             hw_machine_type (Optional[str]): Machine type property (e.g. 'q35').
+            properties (Optional[Dict[str, str]]): Additional Glance image
+                properties to set at creation (e.g.
+                ``{"img_config_drive": "mandatory", "os_type": "windows"}``).
+                Merged on top of hw_firmware_type / hw_machine_type.
 
         Returns:
             ImageObject: Created image details.
@@ -79,6 +84,8 @@ class ImageKeywords(BaseKeyword):
             extra["hw_firmware_type"] = hw_firmware_type
         if hw_machine_type:
             extra["hw_machine_type"] = hw_machine_type
+        if properties:
+            extra.update(properties)
 
         image_service = self.openstack_connection.get_image()
         if source_image:
@@ -280,6 +287,29 @@ class ImageKeywords(BaseKeyword):
             updated = image_service.update_image(image.id, **attrs)
             return ImageListOutput([updated.to_dict()]).get_images()[0]
         return ImageListOutput([image.to_dict()]).get_images()[0]
+
+    def set_image_properties(self, image_name_or_id: str, properties: Dict[str, str]) -> ImageObject:
+        """Set arbitrary Glance properties on an existing image.
+
+        Unlike set_image_metadata (which only accepts the two well-known
+        hardware properties), this sets any property key the caller passes,
+        e.g. ``img_config_drive``, ``os_type``, ``hw_disk_bus``,
+        ``hw_qemu_guest_agent``.
+
+        Args:
+            image_name_or_id (str): Image name or ID.
+            properties (Dict[str, str]): Property name/value pairs to set.
+
+        Returns:
+            ImageObject: Updated image details.
+        """
+        image_service = self.openstack_connection.get_image()
+        image = image_service.find_image(image_name_or_id, ignore_missing=False)
+        if not properties:
+            return ImageListOutput([image.to_dict()]).get_images()[0]
+        get_logger().log_info(f"Setting properties on image '{image_name_or_id}': {properties}")
+        updated = image_service.update_image(image.id, **properties)
+        return ImageListOutput([updated.to_dict()]).get_images()[0]
 
     def set_image_visibility(self, image_name_or_id: str, visibility: str) -> ImageObject:
         """Change image visibility.
