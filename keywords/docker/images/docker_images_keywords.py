@@ -89,5 +89,5 @@ class DockerImagesKeywords(BaseKeyword):
         Returns:
             bool: True if image exists
         """
-        output = self.ssh_connection.send_as_sudo(f"docker manifest inspect {registry.get_registry_url()}/{image}:{tag}")
-        return "no such manifest" not in output
+        self.ssh_connection.send_as_sudo_non_interactive(f"docker manifest inspect --insecure {registry.get_registry_url()}/{image}:{tag}")
+        return self.ssh_connection.get_return_code() == 0
