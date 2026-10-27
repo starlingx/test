@@ -9,8 +9,10 @@ from keywords.cloud_platform.dcmanager.dcmanager_subcloud_add_keywords import Dc
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_delete_keywords import DcManagerSubcloudDeleteKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_list_keywords import DcManagerSubcloudListKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_manager_keywords import DcManagerSubcloudManagerKeywords
+from keywords.cloud_platform.health.health_keywords import HealthKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.cloud_platform.version_info.cloud_platform_version_manager import CloudPlatformVersionManagerClass
+
 
 def validate_subcloud_is_undeployed(ssh_connection: SSHConnection) -> str:
     """Validates if config subcloud is undeployed. Delete if it
@@ -45,9 +47,14 @@ def validate_subcloud_is_undeployed(ssh_connection: SSHConnection) -> str:
 
     return config_subcloud_name
 
+
 def subcloud_addn_minus_release(subcloud_name: str, release_id: str):
     """Add a subcloud to the system, expecting out-of-sync status
     since it is an N-1 or N-2 release.
+
+    After the subcloud is managed, validates its cluster health so the subcloud is fully
+    settled before the next test case runs. The sync-status check stays 'out-of-sync',
+    which is the expected state for an N-minus release.
 
     Args:
         subcloud_name (str): name of the subcloud to be added
@@ -76,6 +83,10 @@ def subcloud_addn_minus_release(subcloud_name: str, release_id: str):
 
     DcManagerSubcloudListKeywords(ssh_connection).validate_subcloud_sync_status(subcloud_name, "out-of-sync")
 
+    get_logger().log_test_case_step(f"Validate subcloud '{subcloud_name}' health")
+    subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
+    HealthKeywords(subcloud_ssh).validate_healty_cluster()
+
 
 @mark.p0
 def test_dc_subcloud_add_n_1_simplex():
@@ -85,11 +96,13 @@ def test_dc_subcloud_add_n_1_simplex():
         - log onto system controller
         - add The subcloud
         - validate that the subcloud is added
+        - validate the subcloud cluster health
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     n_1_release = CloudPlatformVersionManagerClass().get_last_major_release()
     subcloud_name = validate_subcloud_is_undeployed(ssh_connection)
     subcloud_addn_minus_release(subcloud_name, release_id=str(n_1_release))
+
 
 @mark.p0
 def test_dc_subcloud_add_n_2_simplex():
@@ -99,6 +112,7 @@ def test_dc_subcloud_add_n_2_simplex():
         - log onto system controller
         - add The subcloud
         - validate that the subcloud is added
+        - validate the subcloud cluster health
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     n_2_release = CloudPlatformVersionManagerClass().get_second_last_major_release()

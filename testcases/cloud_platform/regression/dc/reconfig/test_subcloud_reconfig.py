@@ -9,6 +9,7 @@ from keywords.cloud_platform.dcmanager.objects.dcmanger_subcloud_list_availabili
 from keywords.cloud_platform.dcmanager.objects.dcmanger_subcloud_list_management_enum import DcManagerSubcloudListManagementEnum
 from keywords.cloud_platform.dcmanager.subcloud_picker_keywords import SubcloudPickerKeywords
 from keywords.cloud_platform.deployment_assets.host_profile_yaml_keywords import HostProfileYamlKeywords
+from keywords.cloud_platform.health.health_keywords import HealthKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.cloud_platform.system.host.system_host_fs_keywords import SystemHostFSKeywords
 from keywords.cloud_platform.system.host.system_host_list_keywords import SystemHostListKeywords
@@ -25,6 +26,7 @@ def test_reconfig_one_subcloud(request):
         - Increase the docker filesystem size by 1 GiB in the deployment config.
         - Run dcmanager subcloud deploy config command.
         - Verify that the docker storage size increased.
+        - Validate the subcloud cluster health.
     """
 
     deployment_assets_config = ConfigurationManager.get_deployment_assets_config()
@@ -71,3 +73,6 @@ def test_reconfig_one_subcloud(request):
         timeout=600,
         polling_sleep_time=30,
     )
+
+    get_logger().log_test_case_step(f"Validate subcloud '{subcloud_name}' health")
+    HealthKeywords(subcloud_ssh).validate_healty_cluster()

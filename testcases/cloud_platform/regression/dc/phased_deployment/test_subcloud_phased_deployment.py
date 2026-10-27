@@ -7,15 +7,21 @@ from config.configuration_manager import ConfigurationManager
 from framework.kpi.time_kpi import TimeKPI
 from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
-from framework.validation.validation import validate_equals
+from framework.validation.validation import validate_equals, validate_equals_with_retry
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_delete_keywords import DcManagerSubcloudDeleteKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_deploy_keywords import DCManagerSubcloudDeployKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_list_keywords import DcManagerSubcloudListKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_manager_keywords import DcManagerSubcloudManagerKeywords
 from keywords.cloud_platform.dcmanager.subcloud_picker_keywords import SubcloudPickerKeywords
+from keywords.cloud_platform.health.health_keywords import HealthKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.cloud_platform.yaml.deployment_assets_yaml import DeploymentAssetsHandler
 from keywords.files.file_keywords import FileKeywords
+
+# Bootstrap runs for several minutes before it completes, so waiting for the subcloud to report
+# 'bootstrapping' gives the abort step a real in-progress bootstrap to act on.
+BOOTSTRAP_START_TIMEOUT = 1800
+BOOTSTRAP_START_POLLING_INTERVAL = 30
 
 
 def _remove_subcloud(ssh_connection: SSHConnection, subcloud_name: str) -> None:
@@ -78,6 +84,8 @@ def test_phased_deployment(request):
         - execute the phased deployment config
         - execute the phased deployment complete
         - execute the subcloud manage
+        - validate the subcloud sync status is in-sync
+        - validate the subcloud cluster health
     """
     primary_ssh = LabConnectionKeywords().get_active_controller_ssh()
     subcloud_name = get_undeployed_subcloud_name()
@@ -114,6 +122,14 @@ def test_phased_deployment(request):
     manage_status = dcmanager_subcloud_manage_output.get_dcmanager_subcloud_manage_object().get_management()
     get_logger().log_info(f"The management state of the subcloud {subcloud_name} is {manage_status}")
 
+    get_logger().log_test_case_step(f"Validate subcloud '{subcloud_name}' sync status is in-sync")
+    DcManagerSubcloudListKeywords(primary_ssh).validate_subcloud_sync_status(subcloud_name, "in-sync")
+
+    get_logger().log_test_case_step(f"Validate subcloud '{subcloud_name}' health")
+    subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
+    HealthKeywords(subcloud_ssh).validate_healty_cluster()
+
+
 @mark.p0
 @mark.lab_has_subcloud
 def test_subcloud_deploy_abort_resume(request):
@@ -127,9 +143,12 @@ def test_subcloud_deploy_abort_resume(request):
         - execute the phased deployment create
         - execute the phased deployment install
         - execute the phased deployment bootstrap
-        - execute the phased deployment abort in some between 10 to 15 mins
+        - wait for the subcloud to report it is bootstrapping
+        - execute the phased deployment abort
         - execute the phased deployment resume
         - execute the subcloud manage
+        - validate the subcloud sync status is in-sync
+        - validate the subcloud cluster health
     """
     primary_ssh = LabConnectionKeywords().get_active_controller_ssh()
     subcloud_name = get_undeployed_subcloud_name()
@@ -147,15 +166,24 @@ def test_subcloud_deploy_abort_resume(request):
     # dcmanager subcloud deploy bootstrap
     get_logger().log_info(f"dcmanager subcloud deploy bootstrap {subcloud_name}.")
     dcm_sc_deploy_kw.dcmanager_subcloud_deploy_bootstrap(subcloud_name, wait_for_status=False)
-    # sleep 10 mins for bootstrap to proccess
-    # TODO: Find a better way than random sleep , EX tail log for x number of line
-    sleep_time = 600
-    get_logger().log_info(f"Sleeping for {sleep_time/60} Minutes.")
-    time.sleep(sleep_time)
+
+    # Wait for the subcloud to actually enter 'bootstrapping' before aborting. Waiting on the
+    # reported state rather than a fixed sleep means the abort is issued as soon as bootstrap is
+    # genuinely in progress, and the test fails fast if bootstrap never starts.
+    dcm_sc_list_kw = DcManagerSubcloudListKeywords(primary_ssh)
+    get_logger().log_info(f"Waiting for subcloud {subcloud_name} to report 'bootstrapping'.")
+    validate_equals_with_retry(
+        function_to_execute=lambda: dcm_sc_list_kw.get_dcmanager_subcloud_list().get_subcloud_by_name(subcloud_name).get_deploy_status(),
+        expected_value="bootstrapping",
+        validation_description=f"Subcloud {subcloud_name} deploy status is bootstrapping",
+        timeout=BOOTSTRAP_START_TIMEOUT,
+        polling_sleep_time=BOOTSTRAP_START_POLLING_INTERVAL,
+        failure_values=["bootstrap-failed", "bootstrap-complete"],
+    )
+
     # dcmanager subcloud deploy abort
     dcm_sc_deploy_kw.dcmanager_subcloud_deploy_abort(subcloud_name)
     get_logger().log_info(f"dcmanager subcloud deploy abort {subcloud_name}.")
-    dcm_sc_list_kw = DcManagerSubcloudListKeywords(primary_ssh)
     dcm_sc_list_kw.validate_subcloud_status(subcloud_name, "bootstrap-aborted")
     # dcmanager subcloud deploy resume
     time_kpi_start_resume = TimeKPI(time.time())
@@ -167,6 +195,14 @@ def test_subcloud_deploy_abort_resume(request):
     dcmanager_subcloud_manage_output = dcm_sc_manager_kw.get_dcmanager_subcloud_manage(subcloud_name, timeout=60)
     manage_status = dcmanager_subcloud_manage_output.get_dcmanager_subcloud_manage_object().get_management()
     get_logger().log_info(f"The management state of the subcloud {subcloud_name} is {manage_status}")
+
+    get_logger().log_test_case_step(f"Validate subcloud '{subcloud_name}' sync status is in-sync")
+    dcm_sc_list_kw.validate_subcloud_sync_status(subcloud_name, "in-sync")
+
+    get_logger().log_test_case_step(f"Validate subcloud '{subcloud_name}' health")
+    subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
+    HealthKeywords(subcloud_ssh).validate_healty_cluster()
+
 
 @mark.lab_has_subcloud
 def test_bootstrap_failure_replay():
@@ -187,6 +223,8 @@ def test_bootstrap_failure_replay():
         - restore original bootstrap values yaml file
         - execute the phased deployment resume
         - execute the subcloud manage
+        - validate the subcloud sync status is in-sync
+        - validate the subcloud cluster health
     """
     primary_ssh = LabConnectionKeywords().get_active_controller_ssh()
     subcloud_name = get_undeployed_subcloud_name()
@@ -246,6 +284,13 @@ def test_bootstrap_failure_replay():
     manage_status = dcmanager_subcloud_manage_output.get_dcmanager_subcloud_manage_object().get_management()
     get_logger().log_info(f"The management state of the subcloud {subcloud_name} is {manage_status}")
 
+    get_logger().log_test_case_step(f"Validate subcloud '{subcloud_name}' sync status is in-sync")
+    dc_manager_sc_list_kw.validate_subcloud_sync_status(subcloud_name, "in-sync")
+
+    get_logger().log_test_case_step(f"Validate subcloud '{subcloud_name}' health")
+    subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
+    HealthKeywords(subcloud_ssh).validate_healty_cluster()
+
 
 @mark.p2
 @mark.lab_has_subcloud
@@ -280,6 +325,8 @@ def test_bootstrap_replay_after_successful_bootstrap(request):
         6. Re-run bootstrap (replay) and validate it completes successfully
         7. Execute phased deploy config and validate the subcloud reaches complete
         8. Manage the subcloud and validate it is managed
+        9. Validate the subcloud sync status is in-sync
+        10. Validate the subcloud cluster health
 
     Teardown:
         - Restore the original bootstrap-values.yaml
@@ -343,3 +390,10 @@ def test_bootstrap_replay_after_successful_bootstrap(request):
     dcmanager_subcloud_manage_output = dcm_sc_manager_kw.get_dcmanager_subcloud_manage(subcloud_name, timeout=60)
     manage_status = dcmanager_subcloud_manage_output.get_dcmanager_subcloud_manage_object().get_management()
     validate_equals(manage_status, "managed", "Subcloud management state after manage")
+
+    get_logger().log_test_case_step(f"Validate subcloud '{subcloud_name}' sync status is in-sync")
+    dc_manager_sc_list_kw.validate_subcloud_sync_status(subcloud_name, "in-sync")
+
+    get_logger().log_test_case_step(f"Validate subcloud '{subcloud_name}' health")
+    subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
+    HealthKeywords(subcloud_ssh).validate_healty_cluster()
