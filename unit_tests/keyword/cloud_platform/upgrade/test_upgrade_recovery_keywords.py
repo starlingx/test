@@ -5,6 +5,7 @@ left alone, that a full rollback runs from activate-done, that a partial rollbac
 than restarted, that an unverified deploy state is left in place, that a removed application is
 re-applied, and that a failure inside the teardown never propagates and mask the test's own failure.
 """
+
 import unittest
 from unittest.mock import MagicMock, NonCallableMagicMock, patch
 
@@ -18,9 +19,7 @@ class TestUpgradeRecoveryKeywords(unittest.TestCase):
         """Silence the BaseKeyword and module loggers."""
         self.logger_patcher = patch("keywords.base_keyword.get_logger")
         self.logger_patcher.start()
-        self.module_logger_patcher = patch(
-            "keywords.cloud_platform.upgrade.upgrade_recovery_keywords.get_logger"
-        )
+        self.module_logger_patcher = patch("keywords.cloud_platform.upgrade.upgrade_recovery_keywords.get_logger")
         self.module_logger_patcher.start()
 
     def tearDown(self):
@@ -28,7 +27,7 @@ class TestUpgradeRecoveryKeywords(unittest.TestCase):
         self.logger_patcher.stop()
         self.module_logger_patcher.stop()
 
-    def _build_keywords(self, deploy_state="", running="26.03", app_applied=True):
+    def _build_keywords(self, deploy_state: str = "", running: str = "26.03", app_applied: bool = True) -> tuple:
         """Return an instance whose deploy, health and apply collaborators are mocked.
 
         BaseKeyword.__getattribute__ wraps every callable attribute in a logging wrapper, so
@@ -58,7 +57,25 @@ class TestUpgradeRecoveryKeywords(unittest.TestCase):
         object.__setattr__(keywords, "deploy", deploy)
         object.__setattr__(keywords, "health", health)
         object.__setattr__(keywords, "app_apply", app_apply)
+        object.__setattr__(keywords, "platform_upgrade", None)
         return keywords, deploy, app_apply
+
+    def test_optional_driver_is_used_for_full_and_partial_recovery(self):
+        """Use the caller's host-order-aware driver instead of the legacy rollback order."""
+        for state in ("deploy-activate-done", *UpgradeRecoveryKeywords.RECOVERABLE_ROLLBACK_STATES):
+            with self.subTest(state=state):
+                keywords, deploy, _ = self._build_keywords(deploy_state=state, running="26.10")
+                driver = NonCallableMagicMock()
+                keywords.platform_upgrade = driver
+                keywords.restore_to_release("26.03")
+                if state == "deploy-activate-done":
+                    driver.rollback_platform_in_order.assert_called_once_with(deploy)
+                    driver.resume_rollback_in_order.assert_not_called()
+                else:
+                    driver.resume_rollback_in_order.assert_called_once_with(deploy)
+                    driver.rollback_platform_in_order.assert_not_called()
+                deploy.deploy_rollback.assert_not_called()
+                deploy.resume_partial_rollback.assert_not_called()
 
     def test_no_action_when_already_on_the_starting_release(self):
         """A system back on its starting release with no open deploy is left untouched."""
@@ -80,9 +97,7 @@ class TestUpgradeRecoveryKeywords(unittest.TestCase):
 
     def test_partial_rollback_is_resumed_not_restarted(self):
         """A rollback already under way is resumed, since abort is invalid from there."""
-        keywords, deploy, _ = self._build_keywords(
-            deploy_state="deploy-activate-rollback-done", running="26.10"
-        )
+        keywords, deploy, _ = self._build_keywords(deploy_state="deploy-activate-rollback-done", running="26.10")
 
         keywords.restore_to_release("26.03")
 

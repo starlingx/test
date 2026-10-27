@@ -4,6 +4,7 @@ from keywords.base_keyword import BaseKeyword
 from keywords.cloud_platform.system.application.system_application_apply_keywords import SystemApplicationApplyKeywords
 from keywords.cloud_platform.upgrade.application_health_keywords import ApplicationHealthKeywords
 from keywords.cloud_platform.upgrade.software_deploy_sequence_keywords import SoftwareDeploySequenceKeywords
+from keywords.cloud_platform.upgrade.standard_platform_upgrade_keywords import StandardPlatformUpgradeKeywords
 
 
 class UpgradeRecoveryKeywords(BaseKeyword):
@@ -29,18 +30,21 @@ class UpgradeRecoveryKeywords(BaseKeyword):
         "deploy-host-rollback-done",
     )
 
-    def __init__(self, ssh_connection: SSHConnection):
+    def __init__(self, ssh_connection: SSHConnection, platform_upgrade: StandardPlatformUpgradeKeywords = None):
         """
         Instance of the class.
 
         Args:
             ssh_connection(SSHConnection): An instance of an SSH connection.
+            platform_upgrade(StandardPlatformUpgradeKeywords): Optional host-order-aware driver;
+                used for rollback and partial-rollback recovery when supplied.
 
         """
         self.ssh_connection = ssh_connection
         self.deploy = SoftwareDeploySequenceKeywords(ssh_connection)
         self.health = ApplicationHealthKeywords(ssh_connection)
         self.app_apply = SystemApplicationApplyKeywords(ssh_connection)
+        self.platform_upgrade = platform_upgrade
 
     def restore_to_release(self, from_version: str, app_name: str = None, app_was_removed: bool = False) -> None:
         """
@@ -68,14 +72,17 @@ class UpgradeRecoveryKeywords(BaseKeyword):
             else:
                 get_logger().log_info(f"teardown: restoring to {from_version}; current deploy state={state!r}")
                 if state == "deploy-activate-done":
-                    self.deploy.deploy_rollback()
+                    if self.platform_upgrade is not None:
+                        self.platform_upgrade.rollback_platform_in_order(self.deploy)
+                    else:
+                        self.deploy.deploy_rollback()
                 elif state in self.RECOVERABLE_ROLLBACK_STATES:
-                    self.deploy.resume_partial_rollback()
+                    if self.platform_upgrade is not None:
+                        self.platform_upgrade.resume_rollback_in_order(self.deploy)
+                    else:
+                        self.deploy.resume_partial_rollback()
                 else:
-                    get_logger().log_error(
-                        f"teardown: deploy state {state!r} has no hardware-verified recovery path; "
-                        f"leaving the deploy in place for inspection rather than guessing"
-                    )
+                    get_logger().log_error(f"teardown: deploy state {state!r} has no hardware-verified recovery path; " f"leaving the deploy in place for inspection rather than guessing")
 
             if app_was_removed and app_name and not self.health.is_app_applied(app_name):
                 get_logger().log_info(f"teardown: re-applying {app_name}, which this run removed")

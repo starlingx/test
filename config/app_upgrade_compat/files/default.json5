@@ -10,6 +10,9 @@
   // when the target release changes.
   "to_version": "26.10",
   "applications": {
+    "auditd": {
+      "app_name": "auditd",
+    },
     "cert-manager": {
       "app_name": "cert-manager",
       "namespace": "cert-manager",

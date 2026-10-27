@@ -15,6 +15,7 @@ from framework.ssh.ssh_connection import SSHConnection
 from framework.ssh.ssh_connection_manager import SSHConnectionManager
 from framework.validation.validation import validate_equals_with_retry
 from framework.validation.validation_response import ValidationResponse
+from keywords.cloud_platform.applications.object.audit_event_output import AuditEventOutput
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.cloud_platform.system.application.object.system_application_delete_input import SystemApplicationDeleteInput
 from keywords.cloud_platform.system.application.object.system_application_remove_input import SystemApplicationRemoveInput
@@ -348,12 +349,14 @@ class AuditdKeywords(K8sBaseKeyword):
     def discover_pods(self) -> list[dict]:
         """Discover all audit pods, including Pending, Failed and terminating pods.
 
-        Reuse the shared JSON reader while retaining complete readiness evidence.
+        Reuse the shared bounded read retry for API outages during activation,
+        while retaining complete JSON readiness evidence.
 
         Returns:
             list[dict]: Kubernetes pod records.
         """
-        return KubectlGetPodsKeywords(self.ssh_connection, self.kubeconfig_path).get_pods_json(namespace="kube-system", label="app=auditd").get_pod_records()
+        pods = KubectlGetPodsKeywords(self.ssh_connection, self.kubeconfig_path)
+        return pods.get_pods_with_retry(reader=lambda: pods.get_pods_json(namespace="kube-system", label="app=auditd")).get_pod_records()
 
     def ready_pods(self, hosts: tuple[str, ...]) -> dict[str, dict]:
         """Discover and validate exact audit pod coverage, including unhealthy pods.
@@ -433,7 +436,7 @@ class AuditdKeywords(K8sBaseKeyword):
         except KeywordException as error:
             raise KeywordException(f"{error}; last readiness observation: {self._last_readiness_reason}") from error
 
-    def pod_command(self, hostname: str, hosts: tuple[str, ...], command: str, pods: dict[str, dict] | None = None) -> str:
+    def pod_command(self, hostname: str, hosts: tuple[str, ...], command: str, pods: dict[str, dict] | None = None, ignore_error: bool = False) -> str:
         """Run a checked command in the audit container on an exact node.
 
         Args:
@@ -441,6 +444,7 @@ class AuditdKeywords(K8sBaseKeyword):
             hosts (tuple[str, ...]): Complete expected inventory.
             command (str): Quoted command inside the container.
             pods (dict[str, dict] | None): Validated snapshot for this operation; rediscover when omitted.
+            ignore_error (bool): Leave return-code validation to the caller's output parser.
 
         Returns:
             str: Container command output.
@@ -455,7 +459,7 @@ class AuditdKeywords(K8sBaseKeyword):
         containers = [container["name"] for container in pod["spec"]["containers"]]
         if "auditd" not in containers:
             raise KeywordException(f"No auditd container on {hostname}: {containers}")
-        output = KubectlExecInPodsKeywords(self.ssh_connection, self.kubeconfig_path).run_pod_exec_cmd(quote(pod["metadata"]["name"]), command, options="-n kube-system -c auditd")
+        output = KubectlExecInPodsKeywords(self.ssh_connection, self.kubeconfig_path).run_pod_exec_cmd(quote(pod["metadata"]["name"]), command, options="-n kube-system -c auditd", ignore_error=ignore_error)
         return output_text(output)
 
     def verify_runtime(self, hosts: tuple[str, ...]) -> None:
@@ -631,3 +635,23 @@ class AuditdKeywords(K8sBaseKeyword):
         if current:
             terminal = ["uploaded", "applied", "upload-failed", "apply-failed", "remove-failed", "update-failed"]
             SystemApplicationListKeywords(self.ssh_connection).validate_app_status_in_list("auditd", terminal, timeout=300, polling_sleep_time=5)
+
+    def search_syscall_events(self, hostname: str, hosts: tuple[str, ...], key: str, syscall: str) -> AuditEventOutput:
+        """Read interpreted records, treating only an explicit no-match as pending.
+
+        Args:
+            hostname (str): Node whose audit container supplies the log.
+            hosts (tuple[str, ...]): Complete expected inventory.
+            key (str): Unique action key.
+            syscall (str): Syscall name to interpret and select.
+
+        Returns:
+            AuditEventOutput: Parsed records, empty when no event is recorded yet.
+        """
+        # Force file input because kubectl exec supplies a pipe for stdin.
+        search = f"env LC_ALL=C ausearch --input-logs --interpret -k {quote(key)} -sc {quote(syscall)}"
+        output = self.pod_command(hostname, hosts, search, ignore_error=True)
+        records = AuditEventOutput(output, self.ssh_connection.get_return_code())
+        if records.diagnostics:
+            get_logger().log_info(f"Ignored audit configuration diagnostics on {hostname}: {records.diagnostics}")
+        return records
