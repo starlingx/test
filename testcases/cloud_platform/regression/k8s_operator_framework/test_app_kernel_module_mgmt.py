@@ -106,8 +106,8 @@ def get_base_kernel_version(ssh_connection: SSHConnection) -> str:
 
     KMM matches a node's running kernel against the ``literal`` values in a Module's
     ``kernelMappings``. The Module templates append the ``-amd64`` and ``-rt-amd64``
-    suffixes themselves, so this returns the base version (e.g. ``6.18.15+deb13``)
-    derived from ``uname -r`` and injected into the templates as ``kernel_version``.
+    suffixes themselves, so this returns the base version derived from ``uname -r``
+    and injected into the templates as ``kernel_version``.
 
     Args:
         ssh_connection (SSHConnection): SSH connection to the target host.
