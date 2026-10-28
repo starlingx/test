@@ -64,6 +64,7 @@ def test_patching_apply_and_remove(request: pytest.FixtureRequest):
     build_id = build_info["BUILD_ID"]
     job = build_info["JOB"]
 
+    
     get_logger().log_test_case_step("Download available patches from build server")
     patch_files = patching_keywords.download_patch_files(job, build_id)
     validate_equals(len(patch_files) > 0, True, "At least one patch file should be downloaded")
@@ -84,13 +85,15 @@ def test_patching_apply_and_remove(request: pytest.FixtureRequest):
 
     request.addfinalizer(cleanup_resources)
 
+    get_logger().log_test_case_step("Clean up any pre-existing release before upload")
+    patching_keywords.cleanup_existing_release()
+
     get_logger().log_test_case_step("Upload patch file using 'software upload'")
     patch_file = patch_files[0]
     usm_keywords.upload_patch_file(patch_file, sudo=False)
-
-    get_logger().log_test_case_step("Verify patch is uploaded with 'software list'")
-    software_list_output = software_list_keywords.get_software_list(sudo=False)
-    available_release = patching_keywords.get_available_release_for_apply(software_list_output)
+    
+    get_logger().log_test_case_step("Wait for uploaded release to reach available state")
+    available_release = patching_keywords.wait_for_available_release(timeout=1200, polling_sleep_time=10)
     validate_equals(available_release is not None, True, "An available release should be found after patch upload")
 
     get_logger().log_test_case_step(f"Create sw-deploy strategy for {available_release} apply")
@@ -114,7 +117,7 @@ def test_patching_apply_and_remove(request: pytest.FixtureRequest):
     validate_equals(apply_success, True, "Strategy apply should succeed")
 
     get_logger().log_test_case_step("Monitor strategy until completion")
-    strategy_completed = sw_deploy_keywords.wait_for_state(["applied"], timeout=1800)
+    strategy_completed = sw_deploy_keywords.wait_for_state(["applied"], timeout=3600)  # 60 minutes: AIO-DX with 10 workers serializes host reboots and exceeds 30 min
     validate_equals(strategy_completed, True, "Strategy should complete successfully")
 
     get_logger().log_test_case_step("Extract detailed timing information for patch apply")
@@ -125,7 +128,7 @@ def test_patching_apply_and_remove(request: pytest.FixtureRequest):
     sw_deploy_keywords.get_sw_deploy_strategy_delete()
 
     get_logger().log_test_case_step("Verify system health after patch apply")
-    patching_keywords.verify_system_health(timeout=300)
+    patching_keywords.verify_system_health(timeout=1200)  # 20 min: AIO-DX with 10 workers respins many pods post-apply, 5 min is not enough for all namespaces to settle
 
     get_logger().log_test_case_step("Prepare for patch removal")
     software_list_output = software_list_keywords.get_software_list(sudo=False)
@@ -153,7 +156,7 @@ def test_patching_apply_and_remove(request: pytest.FixtureRequest):
     validate_equals(apply_success, True, "Removal strategy apply should succeed")
 
     get_logger().log_test_case_step("Monitor removal strategy until completion")
-    strategy_completed = sw_deploy_keywords.wait_for_state(["applied"], timeout=1800)  # 30 minutes
+    strategy_completed = sw_deploy_keywords.wait_for_state(["applied"], timeout=3600)  # 60 minutes: AIO-DX with 10 workers serializes host reboots and exceeds 30 min
     validate_equals(strategy_completed, True, "Removal strategy should complete successfully")
 
     get_logger().log_test_case_step("Extract detailed timing information for patch removal")
@@ -164,7 +167,7 @@ def test_patching_apply_and_remove(request: pytest.FixtureRequest):
     sw_deploy_keywords.get_sw_deploy_strategy_delete()
 
     get_logger().log_test_case_step("Verify system health after patch removal")
-    patching_keywords.verify_system_health(timeout=300)
+    patching_keywords.verify_system_health(timeout=1200)  # 20 min: AIO-DX with 10 workers respins many pods post-remove, 5 min is not enough for all namespaces to settle
 
     get_logger().log_test_case_step("Delete the removed release")
     software_list_output = software_list_keywords.get_software_list(sudo=False)

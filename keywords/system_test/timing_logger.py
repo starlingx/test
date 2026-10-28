@@ -3,11 +3,34 @@ import os
 from datetime import datetime
 from typing import Dict, List
 
+from config.configuration_manager import ConfigurationManager
 from framework.logging.automation_logger import get_logger
 from framework.validation.validation import validate_equals
 
 # Default directory for saving benchmark timing logs
 DEFAULT_BENCHMARK_LOG_DIR = "benchmark_results"
+
+
+def _get_lab_benchmark_dir(base_dir: str) -> str:
+    """Build a lab-specific benchmark directory path.
+
+    Uses the lab_name from the loaded lab config to create a subdirectory
+    under the base benchmark results dir. Falls back to the base dir if
+    no lab config is loaded.
+
+    Args:
+        base_dir: Base benchmark results directory.
+
+    Returns:
+        str: Path like 'benchmark_results/<lab_name>' or just 'benchmark_results'.
+    """
+    try:
+        lab_name = ConfigurationManager.get_lab_config().get_lab_name()
+        if lab_name:
+            return os.path.join(base_dir, lab_name)
+    except Exception:
+        pass
+    return base_dir
 
 
 HTML_REPORT_TEMPLATE = """
@@ -106,6 +129,8 @@ class TimingLogger:
         Args:
             benchmark_type (str): Name/type of benchmark (used in filenames)
             output_dir (str, optional): Directory to save files. Defaults to DEFAULT_BENCHMARK_LOG_DIR.
+                When using the default, a lab-specific subdirectory is created automatically
+                using the lab_name from the lab config (e.g. benchmark_results/<lab_name>/).
             column_headers (List[str], optional): Custom column headers. Defaults to ['Deploy Time (s)', 'Scale Up Time (s)', 'Scale Down Time (s)'].
 
         Creates:
@@ -114,13 +139,13 @@ class TimingLogger:
             - HTML file path: {output_dir}/{benchmark_type}_benchmark_timings.html
         """
         self.benchmark_type = benchmark_type
-        self.output_dir = output_dir
-        self.csv_file = os.path.join(output_dir, f"{benchmark_type}_benchmark_timings.csv")
-        self.html_file = os.path.join(output_dir, f"{benchmark_type}_benchmark_timings.html")
+        self.output_dir = _get_lab_benchmark_dir(output_dir) if output_dir == DEFAULT_BENCHMARK_LOG_DIR else output_dir
+        self.csv_file = os.path.join(self.output_dir, f"{benchmark_type}_benchmark_timings.csv")
+        self.html_file = os.path.join(self.output_dir, f"{benchmark_type}_benchmark_timings.html")
         self.column_headers = column_headers or ['Deploy Time (s)', 'Scale Up Time (s)', 'Scale Down Time (s)']
 
         # Ensure output directory exists
-        os.makedirs(output_dir, exist_ok=True)
+        os.makedirs(self.output_dir, exist_ok=True)
 
     def log_timings(self, *timing_values: float):
         """
@@ -238,11 +263,13 @@ class PatchingTimingLogger:
         """
         Initialize the PatchingTimingLogger.
 
+        Uses lab-specific subdirectory when using the default output_dir.
+
         Args:
             output_dir (str): Directory to save timing reports
         """
-        self.output_dir = output_dir
-        os.makedirs(output_dir, exist_ok=True)
+        self.output_dir = _get_lab_benchmark_dir(output_dir) if output_dir == DEFAULT_BENCHMARK_LOG_DIR else output_dir
+        os.makedirs(self.output_dir, exist_ok=True)
         self.execution_counter = self._get_next_execution_number()
 
     def _get_next_execution_number(self) -> int:

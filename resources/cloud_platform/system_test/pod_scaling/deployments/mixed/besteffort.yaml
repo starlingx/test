@@ -24,6 +24,7 @@ spec:
           - name: dummy
             mountPath: /etc/dummy
         resources: {}
+      terminationGracePeriodSeconds: 0
       restartPolicy: Always
       imagePullSecrets:
       - name: regcred

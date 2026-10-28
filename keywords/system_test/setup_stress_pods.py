@@ -10,6 +10,7 @@ from framework.validation.validation import validate_equals
 from keywords.docker.images.docker_images_keywords import DockerImagesKeywords
 from keywords.docker.images.docker_load_image_keywords import DockerLoadImageKeywords
 from keywords.docker.login.docker_login_keywords import DockerLoginKeywords
+from keywords.cloud_platform.system.host.system_host_list_keywords import SystemHostListKeywords
 from keywords.files.file_keywords import FileKeywords
 from keywords.k8s.deployments.kubectl_get_deployments_keywords import KubectlGetDeploymentsKeywords
 from keywords.k8s.deployments.kubectl_scale_deployements_keywords import KubectlScaleDeploymentsKeywords
@@ -19,6 +20,10 @@ from keywords.k8s.namespace.kubectl_get_namespaces_keywords import KubectlGetNam
 from keywords.k8s.pods.kubectl_apply_pods_keywords import KubectlApplyPodsKeywords
 from keywords.k8s.pods.kubectl_get_pods_keywords import KubectlGetPodsKeywords
 from keywords.k8s.secret.kubectl_create_secret_keywords import KubectlCreateSecretsKeywords
+
+# Number of stress pods to deploy per worker-capable node (a node is worker-capable
+# if it has the 'worker' subfunction, which includes AIO controllers).
+PODS_PER_WORKER = 30
 
 
 class SetupStressPods:
@@ -39,7 +44,14 @@ class SetupStressPods:
         self.ssh_connection = ssh_connection
         self.file_keywords = FileKeywords(ssh_connection)
         self.images = ["gcr.io/kubernetes-e2e-test-images/resource-consumer:1.4", "alexeiled/stress-ng", "centos/tools:latest", "xridge/fio:latest"]
-        self.scale_factor = 30
+        # scale_factor is the TOTAL number of stress pods to deploy, computed dynamically as
+        # PODS_PER_WORKER x (number of worker-capable nodes). A node is worker-capable if it has
+        # the 'worker' subfunction, which includes AIO controllers. Example: an AIO-DX with 10
+        # workers has 12 worker-capable nodes -> 30 x 12 = 360 pods.
+        worker_count = len(SystemHostListKeywords(ssh_connection).get_workers())
+        self.pods_per_worker = PODS_PER_WORKER
+        self.scale_factor = PODS_PER_WORKER * worker_count
+        get_logger().log_info(f"Stress pod scale_factor = {PODS_PER_WORKER} pods/worker x {worker_count} worker-capable nodes = {self.scale_factor} total pods")
         self.services_path = "resources/cloud_platform/system_test/pod_scaling/services"
         self.deployments_path = "resources/cloud_platform/system_test/pod_scaling/deployments"
 
@@ -69,13 +81,16 @@ class SetupStressPods:
         raw_namespace_obj = KubectlGetNamespacesKeywords(self.ssh_connection).get_namespaces()
         namespace_objs = raw_namespace_obj.get_namespaces()
         existing_namespaces = [ns.get_name() for ns in namespace_objs]
-        if namespace in existing_namespaces:
-            ns_destroyer = KubectlDeleteNamespaceKeywords(self.ssh_connection)
-            ns_destroyer.delete_namespace(namespace)
-            get_logger().log_info(f"Waiting for namespace '{namespace}' to be fully deleted...")
-            KubectlGetNamespacesKeywords(self.ssh_connection).wait_for_namespace_deleted(namespace)
-        ns_creator.create_namespaces(namespace)
 
+        ns_destroyer = KubectlDeleteNamespaceKeywords(self.ssh_connection)
+        ns_getter = KubectlGetNamespacesKeywords(self.ssh_connection)
+        for namespace_ in existing_namespaces:
+            if "-benchmark" in namespace_:
+                get_logger().log_info(f"Cleaning up stale benchmark namespace: {namespace_}")
+                ns_destroyer.delete_namespace(namespace_)
+                ns_getter.wait_for_namespace_deleted(namespace_)
+
+        ns_creator.create_namespaces(namespace)
         self._setup_docker_registry(namespace, self.images)
 
         get_logger().log_info("Apply services YAMLs....")

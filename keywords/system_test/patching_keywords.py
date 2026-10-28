@@ -7,7 +7,10 @@ from typing import Dict, List, Optional
 from framework.logging.automation_logger import get_logger
 from framework.resources.resource_finder import get_stx_resource_path
 from framework.validation.validation import validate_equals
-from keywords.cloud_platform.fault_management.alarms.alarm_list_keywords import AlarmListKeywords
+from framework.validation.validation import validate_equals_with_retry
+from keywords.cloud_platform.command_wrappers import source_openrc
+from keywords.cloud_platform.upgrade.software_list_keywords import SoftwareListKeywords
+from keywords.cloud_platform.upgrade.usm_keywords import USMKeywords
 from keywords.files.file_keywords import FileKeywords
 from keywords.k8s.pods.kubectl_get_pods_keywords import KubectlGetPodsKeywords
 from keywords.system_test.timing_logger import PatchingTimingLogger
@@ -102,7 +105,8 @@ class PatchingKeywords:
 
         file_keywords = FileKeywords(self.ssh_connection)
         all_files = file_keywords.get_files_in_dir(destination_path)
-        patch_files = [f"{destination_path}/{f}" for f in all_files if f.endswith('-software-rr.patch')]
+        patch_filename = os.path.basename(patch_config['patch_pattern'])
+        patch_files = [f"{destination_path}/{f}" for f in all_files if f == patch_filename]
 
         if patch_files:
             get_logger().log_info(f"Downloaded patch files: {patch_files}")
@@ -123,6 +127,86 @@ class PatchingKeywords:
         """
         available_releases = software_list_output.get_release_name_by_state("available")
         return available_releases[0] if available_releases else None
+
+    def cleanup_existing_release(self) -> None:
+        """
+        Remove any leftover uploaded patch release before starting a new upload.
+
+        This prevents a failed prior run from cascading into the next iteration,
+        where 'software upload' would error because the release already exists.
+
+        Handled states:
+            - 'available': deleted with 'software delete'.
+            - 'uploading': waited until 'available', then deleted.
+            - 'deployed' (patch deployed on top of base): fails fast with a clear
+              message so an operator can remove it manually. A patch removal is
+              intentionally NOT triggered here because it reboots the controller.
+
+        A single 'deployed' release (the base load) is expected and left untouched.
+        """
+        software_list_keywords = SoftwareListKeywords(self.ssh_connection)
+        software_list_output = software_list_keywords.get_software_list(sudo=False)
+
+        uploading_releases = software_list_output.get_release_name_by_state("uploading")
+        if uploading_releases:
+            get_logger().log_info(f"Found release(s) still uploading: {uploading_releases}. Waiting for available state before cleanup.")
+            self.wait_for_available_release(timeout=1000, polling_sleep_time=10)
+            software_list_output = software_list_keywords.get_software_list(sudo=False)
+
+        available_releases = software_list_output.get_release_name_by_state("available")
+        for release in available_releases:
+            get_logger().log_info(f"Deleting leftover uploaded release: {release}")
+            USMKeywords(self.ssh_connection).software_delete(release, sudo=False)
+
+        deployed_releases = software_list_output.get_release_name_by_state("deployed")
+        has_deployed_patch = len(deployed_releases) >= 2
+        validate_equals(
+            has_deployed_patch,
+            False,
+            f"A previously deployed patch was found ({deployed_releases}). "
+            f"Remove it manually (create/apply a sw-deploy removal strategy, then 'software delete') "
+            f"before running the patching test, as auto-removal would reboot the controller.",
+        )
+
+        get_logger().log_info("No blocking leftover patch release found. Ready to upload.")
+
+    def wait_for_available_release(self, timeout: int = 600, polling_sleep_time: int = 10) -> str:
+        """
+        Wait for an uploaded release to transition to the 'available' state.
+
+        After 'software upload', the release processes asynchronously and moves
+        from 'uploading' to 'available'. This polls 'software list' until a
+        release reaches the 'available' state.
+
+        Args:
+            timeout (int): Maximum time to wait in seconds. Defaults to 600 (10 minutes).
+            polling_sleep_time (int): Seconds between polls. Defaults to 10.
+
+        Returns:
+            str: The release name in 'available' state.
+        """
+        software_list_keywords = SoftwareListKeywords(self.ssh_connection)
+
+        def check_available() -> bool:
+            """
+            Check whether an available release exists.
+
+            Returns:
+                bool: True if a release is in the 'available' state, False otherwise.
+            """
+            software_list_output = software_list_keywords.get_software_list(sudo=False)
+            return self.get_available_release_for_apply(software_list_output) is not None
+
+        validate_equals_with_retry(
+            function_to_execute=check_available,
+            expected_value=True,
+            validation_description="Waiting for uploaded release to reach available state",
+            timeout=timeout,
+            polling_sleep_time=polling_sleep_time,
+        )
+
+        software_list_output = software_list_keywords.get_software_list(sudo=False)
+        return self.get_available_release_for_apply(software_list_output)
 
     def get_deployed_release_for_remove(self, software_list_output) -> Optional[str]:
         """
@@ -229,7 +313,11 @@ class PatchingKeywords:
 
     def verify_system_health(self, timeout: int = 300):
         """
-        Verify system health by checking pods status and alarms.
+        Verify system health by checking pods status and management-affecting alarms.
+
+        Only management-affecting alarms are considered here. Non management-affecting
+        alarms (e.g. a pre-existing PTP out-of-tolerance alarm 100.119 unrelated to
+        patching) are intentionally ignored so they do not fail the patching test.
 
         Args:
             timeout (int): Timeout for health checks
@@ -237,9 +325,45 @@ class PatchingKeywords:
         pod_keywords = KubectlGetPodsKeywords(self.ssh_connection)
         pod_keywords.wait_for_all_pods_status(["Running", "Succeeded", "Completed"], timeout=timeout)
 
-        alarm_keywords = AlarmListKeywords(self.ssh_connection)
-        alarm_keywords.set_timeout_in_seconds(timeout)
-        alarm_keywords.wait_for_all_alarms_cleared()
+        self._wait_for_mgmt_affecting_alarms_cleared(timeout=timeout)
+
+    def _wait_for_mgmt_affecting_alarms_cleared(self, timeout: int = 300, polling_sleep_time: int = 10) -> None:
+        """
+        Wait until no management-affecting alarms are active.
+
+        The '--mgmt_affecting' flag only adds a 'Management Affecting' column to the
+        'fm alarm-list' output; it does not filter rows. This parses that column and
+        treats only rows whose value is 'True' as management-affecting, so alarms marked
+        'False' (e.g. a pre-existing PTP 100.119) are ignored. Column positions are read
+        from the header row rather than hardcoded. No shared alarm classes are modified.
+
+        Args:
+            timeout (int): Maximum time to wait in seconds.
+            polling_sleep_time (int): Seconds between polls.
+        """
+
+        def no_mgmt_affecting_alarms() -> bool:
+            """
+            Check whether all management-affecting alarms are cleared.
+
+            Returns:
+                bool: True if no management-affecting alarms are active.
+            """
+            output = self.ssh_connection.send(source_openrc("fm alarm-list --nowrap --mgmt_affecting"))
+            rows = [[cell.strip() for cell in line.split("|")[1:-1]] for line in output if line.strip().startswith("|")]
+            data_rows = [row for row in rows if "Alarm ID" not in row]
+            header = next((row for row in rows if "Alarm ID" in row), [])
+            # No header row means the table is empty (no alarms at all) -> nothing to wait on.
+            if "Alarm ID" not in header or "Management Affecting" not in header:
+                return True
+            id_idx = header.index("Alarm ID")
+            mgmt_idx = header.index("Management Affecting")
+            active_ids = [row[id_idx] for row in data_rows if len(row) > mgmt_idx and row[mgmt_idx].lower() == "true"]
+            if active_ids:
+                get_logger().log_info(f"Active management-affecting alarms: {active_ids}. Waiting for them to clear.")
+            return not active_ids
+
+        validate_equals_with_retry(no_mgmt_affecting_alarms, True, "Waiting for all management-affecting alarms to clear", timeout=timeout, polling_sleep_time=polling_sleep_time)
 
     def collect_logs(self, output_dir: str = "benchmark_results", fail_ok: bool = True) -> str:
         """
@@ -301,11 +425,14 @@ class PatchingKeywords:
 
         cmd = [
             "sshpass", "-p", patch_config['password'],
-            "rsync", "-avzr",
+            "rsync", "-avzr", "--mkpath",
             "-e", "ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10",
             f"{local_dir}/",
             f"{patch_config['user']}@{remote_server}:{patch_config['log_path']}"
         ]
 
         get_logger().log_info(f"Copying files from {local_dir} to {remote_server}:{patch_config['log_path']}")
-        subprocess.run(cmd, check=True)
+        try:
+            subprocess.run(cmd, check=True)
+        except subprocess.CalledProcessError as e:
+            get_logger().log_warning(f"Results upload to {remote_server}:{patch_config['log_path']} failed (non-fatal): {e}. Local results remain in {local_dir}.")

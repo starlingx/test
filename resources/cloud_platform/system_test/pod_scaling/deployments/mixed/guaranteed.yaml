@@ -61,6 +61,7 @@ spec:
               resourceFieldRef:
                 containerName: guaranteed-fio-mixed
                 resource: requests.memory
+      terminationGracePeriodSeconds: 0
       restartPolicy: Always
       imagePullSecrets:
       - name: regcred
