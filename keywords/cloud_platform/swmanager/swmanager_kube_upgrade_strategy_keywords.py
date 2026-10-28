@@ -114,6 +114,21 @@ class SwManagerKubeUpgradeStrategyKeywords(BaseKeyword):
         self.ssh_connection.send(command)
         self.validate_success_return_code(self.ssh_connection)
 
+    def abort_kube_upgrade_strategy_with_error(self) -> str:
+        """Attempt to abort the Kubernetes upgrade strategy, expecting a rejection.
+
+        Returns:
+            str: The error/rejection message emitted by sw-manager.
+        """
+        get_logger().log_info("Attempting to abort Kubernetes upgrade strategy (expecting rejection)")
+        command = source_openrc("sw-manager kube-upgrade-strategy abort")
+        output = self.ssh_connection.send(command)
+        self.validate_cmd_rejection_return_code(self.ssh_connection)
+
+        if not output:
+            return "No output received from abort command"
+        return "\n".join(output) if isinstance(output, list) else str(output)
+
     def show_kube_upgrade_strategy(self) -> SwManagerKubeUpgradeStrategyShowOutput:
         """Show the Kubernetes upgrade strategy details.
 
@@ -377,4 +392,4 @@ class SwManagerKubeUpgradeStrategyKeywords(BaseKeyword):
                 get_logger().log_info("sw-manager service temporarily unavailable, retrying")
                 return False
 
-        validate_equals_with_retry(function_to_execute=check_step, expected_value=True, validation_description=f"Waiting for kube-upgrade-strategy step to reach {target_state}", timeout=timeout, polling_sleep_time=5)
+        validate_equals_with_retry(function_to_execute=check_step, expected_value=True, validation_description=f"Waiting for kube-upgrade-strategy step to reach {target_state}", timeout=timeout, polling_sleep_time=3)
