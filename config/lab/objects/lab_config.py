@@ -5,6 +5,7 @@ import json5
 from config.host.objects.host_configuration import HostConfiguration
 from config.lab.objects.credentials import Credentials
 from config.lab.objects.node import Node
+from config.networking.networking_config import NetworkingConfig
 from config.ovs.ovs_config import OvsConfig
 from framework.resources.resource_finder import get_stx_resource_path
 
@@ -108,6 +109,12 @@ class LabConfig:
         self.ovs_config: Optional[OvsConfig] = None
         if "ovs" in lab_dict and lab_dict["ovs"]:
             self.ovs_config = OvsConfig(lab_dict["ovs"], self.admin_credentials.get_password())
+
+        # Networking configuration (optional section for networking test tuning,
+        # e.g. the cross-host SR-IOV device plugin tests' VLAN)
+        self.networking_config: Optional[NetworkingConfig] = None
+        if "networking" in lab_dict and lab_dict["networking"]:
+            self.networking_config = NetworkingConfig(lab_dict["networking"])
 
     def get_floating_ip(self) -> str:
         """
@@ -635,3 +642,14 @@ class LabConfig:
             OvsConfig: OVS configuration object, or None if not configured.
         """
         return self.ovs_config
+
+    def get_networking_config(self) -> Optional[NetworkingConfig]:
+        """Get networking test configuration.
+
+        Optional "networking" section of the lab config, holding networking
+        test-tuning values such as the cross-host SR-IOV test VLAN.
+
+        Returns:
+            NetworkingConfig: Networking configuration object, or None if not configured.
+        """
+        return self.networking_config
