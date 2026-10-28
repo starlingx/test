@@ -63,12 +63,22 @@ class SecurityGroupObject:
     def has_allow_all_ingress_rule(self) -> bool:
         """Check if this security group has an allow-all ingress rule.
 
+        An allow-all ingress rule permits every protocol and port from any
+        source address (``0.0.0.0/0``). The stock ``default`` security group
+        ships with an ingress rule that has ``protocol=None`` and
+        ``remote_ip_prefix=0.0.0.0/0`` but also carries a ``remote_group_id``,
+        which restricts it to members of the same security group — that rule is
+        NOT allow-all and must be excluded here, otherwise this method falsely
+        reports allow-all and the real open rule is never created (leaving the
+        VMs unreachable over SSH/ping from a non-member monitor host).
+
         Returns:
-            bool: True if allow-all ingress rule exists.
+            bool: True if an unrestricted allow-all ingress rule exists.
         """
         for rule in self.rules:
             if (rule.get("direction") == "ingress" and
                     rule.get("protocol") is None and
+                    rule.get("remote_group_id") is None and
                     rule.get("remote_ip_prefix") in (None, "0.0.0.0/0")):
                 return True
         return False
