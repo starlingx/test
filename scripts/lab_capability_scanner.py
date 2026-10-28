@@ -795,6 +795,12 @@ def scan_hosts(lab_config: LabConfig, ssh_connection: SSHConnection) -> list[Nod
             node.append_node_capability("lab_has_processor_min_2")
             lab_config.add_lab_capability("lab_has_processor_min_2")
 
+        # Check for multi-NUMA workers using memory list (one row per NUMA node)
+        if node.get_type() == "worker" or "worker" in node.get_subfunctions():
+            if len(host_memory_output.system_host_memory_list) > 1:
+                node.append_node_capability("lab_has_multi_numa_worker")
+                lab_config.add_lab_capability("lab_has_multi_numa_worker")
+
         if host_memory_output.has_page_size_1gb():
             node.append_node_capability("lab_has_page_size_1gb")
             lab_config.add_lab_capability("lab_has_page_size_1gb")
