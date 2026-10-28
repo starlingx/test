@@ -552,3 +552,62 @@ def test_ipsec_cert_renewal_operation():
         f"All {expected_count} security associations should be established after certificate renewal",
         timeout=300,
     )
+
+
+@mark.p2
+def test_ipsec_survives_charon_restart():
+    """Validate IPSec security associations renegotiate after a charon restart.
+
+    Restarts the IPSec (StrongSwan/charon) service on the active controller and
+    verifies the service becomes active again and all security associations
+    renegotiate automatically.
+
+    Steps:
+        - Record the expected security-association count
+        - Restart the IPSec service on the active controller
+        - Verify the IPSec service becomes active again
+        - Wait for all security associations to renegotiate
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    ipsec_keywords = IPSecKeywords(ssh_connection)
+    expected_count = ipsec_keywords.get_expected_security_association_count()
+    ipsec_service = ipsec_keywords.get_ipsec_service_name()
+
+    get_logger().log_test_case_step(f"Restart IPSec service '{ipsec_service}' on active controller")
+    ipsec_keywords.restart_ipsec_service()
+
+    get_logger().log_test_case_step(f"Verify IPSec service '{ipsec_service}' active after restart")
+    systemctl_keywords = SystemCTLIsActiveKeywords(ssh_connection)
+    validate_equals_with_retry(lambda: systemctl_keywords.is_active(ipsec_service), "active", f"{ipsec_service} should be active after restart", timeout=120)
+
+    get_logger().log_test_case_step("Wait for security associations to renegotiate after charon restart")
+    validate_equals_with_retry(
+        lambda: ipsec_keywords.are_all_security_associations_established(expected_count),
+        True,
+        f"All {expected_count} security associations should be established after charon restart",
+        timeout=300,
+    )
+
+
+@mark.p2
+def test_ipsec_keys_backed_by_luks_vault():
+    """Validate IPSec keys are backed by the mounted LUKS vault.
+
+    The IPSec private keys live on the LUKS-encrypted vault and are symlinked
+    into /etc/swanctl/private. This test confirms the LUKS keys directory is
+    present (vault mounted) and the IPSec service is active as a result.
+
+    Steps:
+        - Verify the LUKS IPSec keys directory is present on the active controller
+        - Verify the IPSec service is active
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    ipsec_keywords = IPSecKeywords(ssh_connection)
+    ipsec_service = ipsec_keywords.get_ipsec_service_name()
+
+    get_logger().log_test_case_step("Verify LUKS IPSec keys directory is present")
+    validate_equals(ipsec_keywords.is_luks_ipsec_keys_dir_present(), True, "LUKS IPSec keys directory should be present (vault mounted)")
+
+    get_logger().log_test_case_step(f"Verify IPSec service '{ipsec_service}' is active")
+    systemctl_keywords = SystemCTLIsActiveKeywords(ssh_connection)
+    validate_equals(systemctl_keywords.is_active(ipsec_service), "active", f"{ipsec_service} should be active when LUKS vault is mounted")

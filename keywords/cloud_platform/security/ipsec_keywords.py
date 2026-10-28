@@ -12,6 +12,7 @@ from keywords.cloud_platform.system.host.system_host_list_keywords import System
 from keywords.cloud_platform.system.show.system_show_keywords import SystemShowKeywords
 from keywords.cloud_platform.version_info.cloud_platform_version_manager import CloudPlatformVersionManager
 from keywords.files.file_keywords import FileKeywords
+from keywords.linux.systemctl.systemctl_keywords import SystemCTLKeywords
 
 
 class IPSecKeywords(BaseKeyword):
@@ -33,6 +34,7 @@ class IPSecKeywords(BaseKeyword):
         self.system_show = SystemShowKeywords(ssh_connection)
         self.system_host_list = SystemHostListKeywords(ssh_connection)
         self.system_host_addr = SystemHostAddrKeywords(ssh_connection)
+        self.systemctl_keywords = SystemCTLKeywords(ssh_connection)
 
     def get_management_ips(self, mgmt_if_name: str = "mgmt0") -> set:
         """Get the set of per-host management-network IP addresses.
@@ -300,6 +302,29 @@ class IPSecKeywords(BaseKeyword):
             bool: True if valid, False otherwise.
         """
         return service_name in ["ipsec-server", "ipsec", "strongswan"]
+
+    def restart_ipsec_service(self) -> None:
+        """Restart the IPSec (StrongSwan/charon) service on the host.
+
+        Restarts the OS-appropriate IPSec service so the charon daemon is
+        bounced; security associations renegotiate automatically afterwards.
+        """
+        service_name = self.get_ipsec_service_name()
+        get_logger().log_info(f"Restarting IPSec service '{service_name}'")
+        self.systemctl_keywords.systemctl_restart(service_name)
+        self.validate_success_return_code(self.ssh_connection)
+
+    def is_luks_ipsec_keys_dir_present(self) -> bool:
+        """Check whether the LUKS-backed IPSec keys directory is present.
+
+        The IPSec private keys are stored on the LUKS-encrypted vault and
+        symlinked into /etc/swanctl/private. If the LUKS vault is not mounted,
+        this directory is absent and the IPSec service cannot read its keys.
+
+        Returns:
+            bool: True if the LUKS IPSec keys directory exists, False otherwise.
+        """
+        return self.file_keywords.validate_file_exists_with_sudo("/var/luks/stx/luks_fs/ipsec/keys")
 
     def get_ipsec_certificate_path(self, hostname: str) -> str:
         """Get full IPSec certificate path for hostname.
