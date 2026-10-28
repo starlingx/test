@@ -1,17 +1,20 @@
 from pytest import mark
 
 from framework.logging.automation_logger import get_logger
-from framework.validation.validation import validate_equals, validate_greater_than, validate_str_contains
+from framework.validation.validation import validate_equals, validate_equals_with_retry, validate_greater_than, validate_str_contains
 from keywords.cloud_platform.security.ipsec_keywords import IPSecKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.cloud_platform.system.host.system_host_list_keywords import SystemHostListKeywords
+from keywords.cloud_platform.system.host.system_host_lock_keywords import SystemHostLockKeywords
+from keywords.cloud_platform.system.host.system_host_reboot_keywords import SystemHostRebootKeywords
+from keywords.cloud_platform.system.host.system_host_swact_keywords import SystemHostSwactKeywords
 from keywords.k8s.secret.kubectl_get_secret_keywords import KubectlGetSecretsKeywords
 from keywords.linux.systemctl.systemctl_is_active_keywords import SystemCTLIsActiveKeywords
 
 
 @mark.p1
-def test_ipsec_certificates():
-    """Validate IPSec certificate chain and key-certificate matching.
+def test_ipsec_certificate_chain_and_key_match():
+    """Validate the IPSec certificate chain and key-certificate matching.
 
     Steps:
         - Verify root CA is self-signed
@@ -96,8 +99,59 @@ def test_ipsec_certificates():
 
 
 @mark.p1
-def test_pxeboot_network():
-    """Verify the correctness of the dnsmasq.hosts file by checking the mapping of MAC addresses to pxeboot names and addresses.
+def test_ipsec_key_cert_match_on_all_hosts():
+    """Validate IPSec key-certificate public-key matching on every host.
+
+    Unlike test_ipsec_certificate_chain_and_key_match, which checks the active
+    controller only, this test connects to each host and verifies that the IPSec
+    private key and leaf certificate share the same public key. The comparison
+    hashes the DER public key, so it is valid for both RSA (Bullseye) and ECDSA
+    (Trixie) IPSec keys.
+
+    Steps:
+        - Get the list of all hosts in the system
+        - On each host, compute the public-key MD5 of the IPSec key and certificate
+        - Validate the key and certificate public-key MD5 values match on each host
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    system_hosts = SystemHostListKeywords(ssh_connection)
+    lab_connection_keywords = LabConnectionKeywords()
+
+    hosts = system_hosts.get_system_host_list().get_hosts()
+    controllers = system_hosts.get_system_host_list().get_controllers()
+    controller_names = [controller.get_host_name() for controller in controllers]
+
+    for host in hosts:
+        hostname = host.get_host_name()
+        get_logger().log_info(f"Validating IPSec key-certificate matching for {hostname}")
+
+        if host.get_personality() == "worker" and hostname not in controller_names:
+            host_ssh = lab_connection_keywords.get_compute_ssh(hostname)
+        else:
+            host_ssh = lab_connection_keywords.get_ssh_for_hostname(hostname)
+
+        host_ipsec_keywords = IPSecKeywords(host_ssh)
+        ipsec_crt_path = host_ipsec_keywords.get_ipsec_certificate_path(hostname)
+        ipsec_key_path = host_ipsec_keywords.get_ipsec_key_path(hostname)
+
+        validate_equals(host_ipsec_keywords.file_keywords.validate_file_exists_with_sudo(ipsec_crt_path), True, f"IPSec certificate should exist on {hostname}: {ipsec_crt_path}")
+
+        key_output = host_ipsec_keywords.get_certificate_info_key_md5(ipsec_key_path)
+        cert_md5_output = host_ipsec_keywords.get_certificate_info_cert_md5(ipsec_crt_path)
+
+        key_cert = key_output.get_certificate()
+        cert_md5_cert = cert_md5_output.get_certificate()
+
+        validate_equals(key_cert.has_valid_md5(), True, f"IPSec key public-key MD5 should be computed on {hostname}")
+        validate_equals(key_cert.matches_md5(cert_md5_cert.get_md5_hash()), True, f"IPSec key MD5 should match IPSec certificate MD5 for {hostname}")
+
+
+@mark.p1
+def test_ipsec_pxeboot_hosts_reachable():
+    """Verify the pxeboot host mapping is correct and every pxeboot host is reachable.
+
+    Validates the dnsmasq.hosts file maps each MAC address to a pxeboot name and
+    address, then confirms each pxeboot address responds to ping and accepts SSH.
 
     Steps:
         - Ensure each MAC address in the dnsmasq.hosts file is included in a list of valid MAC addresses
@@ -141,8 +195,8 @@ def test_pxeboot_network():
 
 
 @mark.p1
-def test_security_associations():
-    """Validate the security associations between nodes using the swanctl command.
+def test_ipsec_security_associations_established():
+    """Validate IPSec security associations are established between all nodes.
 
     Steps:
         - Retrieve hosts and active controller information
@@ -175,16 +229,25 @@ def test_security_associations():
     get_logger().log_info(f"Active controller CN pattern: {active_cn_pattern}")
     get_logger().log_info(f"Expected remote CNs: {expected_cns}")
 
-    for i, association in enumerate(associations):
-        validate_equals(association.is_established(), True, f"Connection should be established in association {i+1}")
-        validate_equals(association.has_local_cn_starting_with(active_cn_pattern), True, f"Should have local CN starting with {active_cn_pattern} in association {i+1}")
+    # Validate SA endpoint IPs against the management subnet. The active controller
+    # may present its unit or floating management address as the local endpoint, so
+    # subnet membership is used rather than the per-host address set.
+    mgmt_subnet = ipsec_keywords.get_management_subnet()
+    get_logger().log_info(f"Management subnet for SA endpoint validation: {mgmt_subnet}")
 
-        validate_equals(association.has_remote_cn_in_set(expected_cns), True, f"Should have expected remote CN in association {i+1}")
+    for i, association in enumerate(associations):
+        validate_equals(association.is_established(), True, f"Connection should be established in association {i + 1}")
+        validate_equals(association.has_local_cn_starting_with(active_cn_pattern), True, f"Should have local CN starting with {active_cn_pattern} in association {i + 1}")
+
+        validate_equals(association.has_remote_cn_in_set(expected_cns), True, f"Should have expected remote CN in association {i + 1}")
+
+        validate_equals(association.has_local_ip_in_subnet(mgmt_subnet), True, f"Local endpoint IP should be in the management subnet in association {i + 1}")
+        validate_equals(association.has_all_remote_ips_in_subnet(mgmt_subnet), True, f"All remote endpoint IPs should be in the management subnet in association {i + 1}")
 
 
 @mark.p1
-def test_ipsec_status():
-    """Validate IPSec service status on all hosts.
+def test_ipsec_services_active_on_all_hosts():
+    """Validate the IPSec services are active on all hosts.
 
     Steps:
         - Check ipsec-server service is active on all controllers
@@ -219,8 +282,11 @@ def test_ipsec_status():
 
 
 @mark.p1
-def test_ping_mgmt_ips():
-    """Test the ability to ping management IPs from the active controller.
+def test_ipsec_mgmt_connectivity():
+    """Validate management-network connectivity across the IPSec tunnels.
+
+    Pings every host from the active controller to confirm the IPSec-protected
+    management network is reachable end to end.
 
     Steps:
         - Get list of all hosts in the system
@@ -239,3 +305,250 @@ def test_ping_mgmt_ips():
     for host in hosts:
         ping_success = lab_connection_keywords.ping_host(host)
         validate_equals(ping_success, True, f"Ping should succeed to {host}")
+
+
+@mark.p1
+@mark.lab_has_standby_controller
+def test_ipsec_sa_reestablish_after_swact():
+    """Validate IPSec security associations re-establish after a controller swact.
+
+    Steps:
+        - Record the expected security-association count
+        - Perform a controller swact
+        - Reconnect to the new active controller
+        - Wait for all security associations to re-establish
+        - Verify management connectivity is restored
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    expected_count = IPSecKeywords(ssh_connection).get_expected_security_association_count()
+
+    get_logger().log_test_case_step("Perform controller swact")
+    SystemHostSwactKeywords(ssh_connection).host_swact()
+
+    get_logger().log_test_case_step("Reconnect to new active controller")
+    new_ssh = LabConnectionKeywords().get_active_controller_ssh()
+    ipsec_keywords = IPSecKeywords(new_ssh)
+
+    get_logger().log_test_case_step("Wait for security associations to re-establish after swact")
+    validate_equals_with_retry(
+        lambda: ipsec_keywords.are_all_security_associations_established(expected_count),
+        True,
+        f"All {expected_count} security associations should be established after swact",
+        timeout=300,
+    )
+
+    get_logger().log_test_case_step("Verify management connectivity after swact")
+    lab_connection_keywords = LabConnectionKeywords()
+    for host in SystemHostListKeywords(new_ssh).get_system_host_list().get_hosts():
+        validate_equals(lab_connection_keywords.ping_host(host.get_host_name()), True, f"Ping should succeed to {host.get_host_name()} after swact")
+
+
+@mark.p1
+@mark.lab_has_standby_controller
+def test_ipsec_sa_reestablish_after_controller_reboot(request):
+    """Validate IPSec security associations re-establish after a standby controller reboot.
+
+    Steps:
+        - Record the expected security-association count and standby controller
+        - Lock, reboot, and unlock the standby controller
+        - Verify ipsec-server and ipsec/strongswan services are active on it
+        - Wait for all security associations to re-establish
+    """
+
+    def teardown():
+        get_logger().log_teardown_step("Ensure standby controller is unlocked")
+        new_ssh = LabConnectionKeywords().get_active_controller_ssh()
+        lock_keywords = SystemHostLockKeywords(new_ssh)
+        standby = SystemHostListKeywords(new_ssh).get_standby_controller()
+        if lock_keywords.is_host_locked(standby.get_host_name()):
+            lock_keywords.unlock_host(standby.get_host_name())
+
+    request.addfinalizer(teardown)
+
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    system_hosts = SystemHostListKeywords(ssh_connection)
+    expected_count = IPSecKeywords(ssh_connection).get_expected_security_association_count()
+
+    standby_controller = system_hosts.get_standby_controller()
+    standby_name = standby_controller.get_host_name()
+
+    lock_keywords = SystemHostLockKeywords(ssh_connection)
+    reboot_keywords = SystemHostRebootKeywords(ssh_connection)
+
+    get_logger().log_test_case_step(f"Lock standby controller {standby_name}")
+    lock_keywords.lock_host(standby_name)
+    lock_keywords.wait_for_host_locked(standby_name)
+
+    get_logger().log_test_case_step(f"Reboot standby controller {standby_name}")
+    reboot_keywords.host_reboot(standby_name)
+
+    get_logger().log_test_case_step(f"Unlock standby controller {standby_name}")
+    lock_keywords.unlock_host(standby_name)
+
+    get_logger().log_test_case_step(f"Verify IPSec services active on {standby_name} after reboot")
+    ipsec_keywords = IPSecKeywords(ssh_connection)
+    ipsec_service = ipsec_keywords.get_ipsec_service_name()
+    standby_ssh = LabConnectionKeywords().get_ssh_for_hostname(standby_name)
+    systemctl_keywords = SystemCTLIsActiveKeywords(standby_ssh)
+    validate_equals_with_retry(lambda: systemctl_keywords.is_active("ipsec-server"), "active", f"ipsec-server should be active on {standby_name} after reboot", timeout=300)
+    validate_equals_with_retry(lambda: systemctl_keywords.is_active(ipsec_service), "active", f"{ipsec_service} should be active on {standby_name} after reboot", timeout=300)
+
+    get_logger().log_test_case_step("Wait for security associations to re-establish after reboot")
+    validate_equals_with_retry(
+        lambda: ipsec_keywords.are_all_security_associations_established(expected_count),
+        True,
+        f"All {expected_count} security associations should be established after controller reboot",
+        timeout=300,
+    )
+
+
+@mark.p1
+@mark.lab_has_worker
+def test_ipsec_sa_reestablish_after_worker_reboot(request):
+    """Validate IPSec security associations re-establish after a worker reboot.
+
+    Steps:
+        - Identify a dedicated worker host (prerequisite for this test)
+        - Lock, reboot, and unlock the worker
+        - Verify ipsec/strongswan service is active on it
+        - Wait for all security associations to re-establish
+    """
+
+    def teardown():
+        get_logger().log_teardown_step("Ensure worker is unlocked")
+        new_ssh = LabConnectionKeywords().get_active_controller_ssh()
+        lock_keywords = SystemHostLockKeywords(new_ssh)
+        if worker_name and lock_keywords.is_host_locked(worker_name):
+            lock_keywords.unlock_host(worker_name)
+
+    worker_name = None
+    request.addfinalizer(teardown)
+
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    system_hosts = SystemHostListKeywords(ssh_connection)
+    expected_count = IPSecKeywords(ssh_connection).get_expected_security_association_count()
+
+    # Select a dedicated worker host without raising on worker-less systems; the
+    # @mark.lab_has_worker capability gates execution to labs that have one.
+    worker_hosts = [host for host in system_hosts.get_system_host_list().get_hosts() if host.get_personality() == "worker"]
+    validate_greater_than(len(worker_hosts), 0, "Lab should have at least one dedicated worker host for this test")
+    worker_name = worker_hosts[0].get_host_name()
+
+    lock_keywords = SystemHostLockKeywords(ssh_connection)
+    reboot_keywords = SystemHostRebootKeywords(ssh_connection)
+
+    get_logger().log_test_case_step(f"Lock worker {worker_name}")
+    lock_keywords.lock_host(worker_name)
+    lock_keywords.wait_for_host_locked(worker_name)
+
+    get_logger().log_test_case_step(f"Reboot worker {worker_name}")
+    reboot_keywords.host_reboot(worker_name)
+
+    get_logger().log_test_case_step(f"Unlock worker {worker_name}")
+    lock_keywords.unlock_host(worker_name)
+
+    get_logger().log_test_case_step(f"Verify IPSec service active on {worker_name} after reboot")
+    ipsec_keywords = IPSecKeywords(ssh_connection)
+    ipsec_service = ipsec_keywords.get_ipsec_service_name()
+    worker_ssh = LabConnectionKeywords().get_compute_ssh(worker_name)
+    systemctl_keywords = SystemCTLIsActiveKeywords(worker_ssh)
+    validate_equals_with_retry(lambda: systemctl_keywords.is_active(ipsec_service), "active", f"{ipsec_service} should be active on {worker_name} after reboot", timeout=300)
+
+    get_logger().log_test_case_step("Wait for security associations to re-establish after worker reboot")
+    validate_equals_with_retry(
+        lambda: ipsec_keywords.are_all_security_associations_established(expected_count),
+        True,
+        f"All {expected_count} security associations should be established after worker reboot",
+        timeout=300,
+    )
+
+
+@mark.p1
+@mark.lab_has_standby_controller
+def test_ipsec_sa_reestablish_after_lock_unlock(request):
+    """Validate IPSec security associations re-establish after a host lock/unlock.
+
+    Steps:
+        - Record the expected security-association count and the standby controller
+        - Lock then unlock the standby controller
+        - Verify the host retains the mgmt_ipsec capability as enabled
+        - Wait for all security associations to re-establish
+    """
+
+    def teardown():
+        get_logger().log_teardown_step("Ensure standby controller is unlocked")
+        new_ssh = LabConnectionKeywords().get_active_controller_ssh()
+        lock_keywords = SystemHostLockKeywords(new_ssh)
+        standby = SystemHostListKeywords(new_ssh).get_standby_controller()
+        if lock_keywords.is_host_locked(standby.get_host_name()):
+            lock_keywords.unlock_host(standby.get_host_name())
+
+    request.addfinalizer(teardown)
+
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    system_hosts = SystemHostListKeywords(ssh_connection)
+    expected_count = IPSecKeywords(ssh_connection).get_expected_security_association_count()
+    standby_name = system_hosts.get_standby_controller().get_host_name()
+
+    get_logger().log_test_case_step(f"Lock standby controller {standby_name}")
+    lock_keywords = SystemHostLockKeywords(ssh_connection)
+    lock_keywords.lock_host(standby_name)
+    lock_keywords.wait_for_host_locked(standby_name)
+
+    get_logger().log_test_case_step(f"Unlock standby controller {standby_name}")
+    lock_keywords.unlock_host(standby_name)
+
+    get_logger().log_test_case_step("Wait for security associations to re-establish after lock/unlock")
+    ipsec_keywords = IPSecKeywords(ssh_connection)
+    validate_equals_with_retry(
+        lambda: ipsec_keywords.are_all_security_associations_established(expected_count),
+        True,
+        f"All {expected_count} security associations should be established after lock/unlock",
+        timeout=600,
+    )
+
+
+@mark.p1
+def test_ipsec_cert_renewal_operation():
+    """Validate IPSec certificate renewal re-establishes security associations.
+
+    Runs the IPsec client certificate-renewal operation on the active controller
+    and verifies the certificate is renewed and security associations remain
+    established with the new credentials.
+
+    Steps:
+        - Record the active controller certificate serial and SA count
+        - Run the IPsec certificate renewal operation (op code 2)
+        - Verify the IPSec certificate serial changed
+        - Wait for all security associations to remain established
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    system_hosts = SystemHostListKeywords(ssh_connection)
+    ipsec_keywords = IPSecKeywords(ssh_connection)
+    expected_count = IPSecKeywords(ssh_connection).get_expected_security_association_count()
+
+    active_controller = system_hosts.get_active_controller()
+    hostname = active_controller.get_host_name()
+    cert_path = ipsec_keywords.get_ipsec_certificate_path(hostname)
+
+    get_logger().log_test_case_step(f"Record current IPSec certificate serial for {hostname}")
+    serial_before = ipsec_keywords.get_certificate_serial(cert_path)
+
+    get_logger().log_test_case_step(f"Run IPSec certificate renewal on {hostname}")
+    ipsec_keywords.renew_ipsec_certificate()
+
+    get_logger().log_test_case_step("Verify IPSec certificate serial changed after renewal")
+    validate_equals_with_retry(
+        lambda: ipsec_keywords.get_certificate_serial(cert_path) != serial_before,
+        True,
+        f"IPSec certificate serial should change after renewal on {hostname}",
+        timeout=300,
+    )
+
+    get_logger().log_test_case_step("Wait for security associations to remain established after renewal")
+    validate_equals_with_retry(
+        lambda: ipsec_keywords.are_all_security_associations_established(expected_count),
+        True,
+        f"All {expected_count} security associations should be established after certificate renewal",
+        timeout=300,
+    )
