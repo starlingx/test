@@ -26,6 +26,19 @@ class GetFmKeywords(BaseKeyword):
         self.validate_success_status_code(response)
         return FmAlarmOutput(response)
 
+    def get_mgmt_affecting_alarms(self) -> list:
+        """Get only the management-affecting alarms from the FM REST API.
+
+        Queries 'GET /alarms' and filters to the alarms whose management-
+        affecting flag is True. Management-affecting alarms are the class that
+        blocks a sw-deploy-strategy precheck during an orchestrated
+        patch/upgrade.
+
+        Returns:
+            list: AlarmListObject instances that are management-affecting.
+        """
+        return self.get_alarms().get_mgmt_affecting_alarms()
+
     def get_v1(self) -> FmV1Output:
         """Get FM API v1 root.
 
@@ -65,7 +78,6 @@ class GetFmKeywords(BaseKeyword):
         Returns:
             RestResponse: The raw response for error validation.
         """
-        from framework.rest.rest_response import RestResponse
         response = CloudRestClient().get(f"{self.fm_base_url}/alarms/{alarm_id}")
         return response
 
