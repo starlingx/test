@@ -702,10 +702,19 @@ class SubcloudPickerKeywords(BaseKeyword):
         This supports post-rehoming scenarios where subclouds may have moved
         to the peer cloud.
 
+        The primary is probed with ``is_reachable()`` before it is used, so an
+        unreachable primary falls through to the secondary instead of running
+        the pick against a dead connection (which would retry the lost SSH
+        session for minutes before failing).
+
+        Both reasons for not getting a subcloud from the primary (unreachable,
+        or reachable with no match) converge on the same fallback, and the
+        primary's reason is included in every failure message so a failure on
+        the secondary is not mistaken for the only cause. The secondary
+        connection is only established when the fallback is actually needed.
+
         When no secondary system controller is configured, behaves identically
-        to calling SubcloudPickerKeywords.pick_one() directly. If the secondary is
-        configured but unreachable, the original "no match on primary" error is
-        raised instead of blocking on a dead connection.
+        to calling SubcloudPickerKeywords.pick_one() directly.
 
         Args:
             availability (Optional[DcManagerSubcloudListAvailabilityEnum]): Availability filter.
@@ -726,9 +735,46 @@ class SubcloudPickerKeywords(BaseKeyword):
                 controller that owns the subcloud, and the pick result.
 
         Raises:
-            KeywordException: If no subcloud matches on either system controller.
+            KeywordException: If no subcloud matches on either system controller,
+                or if neither system controller is reachable.
         """
         system_controller_ssh = LabConnectionKeywords().get_active_controller_ssh()
+
+        # Probe the primary before using it.
+        primary_available = system_controller_ssh.is_reachable()
+        if not primary_available:
+            get_logger().log_warning("Primary system controller is unreachable")
+
+        if primary_available:
+            try:
+                result = SubcloudPickerKeywords(system_controller_ssh).pick_one(
+                    availability=availability,
+                    management_status=management_status,
+                    in_sync=in_sync,
+                    load=load,
+                    lab_type=lab_type,
+                    present_in_config=present_in_config,
+                    multiple_releases=multiple_releases,
+                    backup_mode=backup_mode,
+                    backup_release=backup_release,
+                )
+                return system_controller_ssh, result
+            except KeywordException:
+                get_logger().log_info("No matching subcloud on primary system controller")
+
+        # The primary yielded nothing: either unreachable, or reachable with no match.
+        secondary_config = ConfigurationManager.get_lab_config().get_secondary_system_controller_config()
+        secondary_ssh = LabConnectionKeywords().get_secondary_active_controller_ssh() if secondary_config is not None else None
+        secondary_available = secondary_ssh is not None and secondary_ssh.is_reachable()
+
+        # The primary's reason travels into every failure message.
+        primary_reason = "is unreachable" if not primary_available else "has no subcloud matching the filters"
+
+        if not secondary_available:
+            raise KeywordException(f"Cannot pick a subcloud: the primary system controller {primary_reason}, and no reachable secondary system controller is available.")
+
+        get_logger().log_info(f"Falling back to secondary system controller because the primary {primary_reason}")
+        system_controller_ssh = secondary_ssh
 
         try:
             result = SubcloudPickerKeywords(system_controller_ssh).pick_one(
@@ -742,25 +788,7 @@ class SubcloudPickerKeywords(BaseKeyword):
                 backup_mode=backup_mode,
                 backup_release=backup_release,
             )
-            return system_controller_ssh, result
-        except KeywordException:
-            secondary_config = ConfigurationManager.get_lab_config().get_secondary_system_controller_config()
-            if secondary_config is None:
-                raise
-            get_logger().log_info("No matching subcloud on primary SC, falling back to secondary system controller")
-            system_controller_ssh = LabConnectionKeywords().get_secondary_active_controller_ssh()
-            if not system_controller_ssh.is_reachable():
-                get_logger().log_warning("Secondary system controller is configured but unreachable; cannot fall back to it")
-                raise
-            result = SubcloudPickerKeywords(system_controller_ssh).pick_one(
-                availability=availability,
-                management_status=management_status,
-                in_sync=in_sync,
-                load=load,
-                lab_type=lab_type,
-                present_in_config=present_in_config,
-                multiple_releases=multiple_releases,
-                backup_mode=backup_mode,
-                backup_release=backup_release,
-            )
-            return system_controller_ssh, result
+        except KeywordException as e:
+            raise KeywordException(f"Cannot pick a subcloud: the primary system controller {primary_reason}, and the secondary system controller has no subcloud matching the filters.") from e
+
+        return system_controller_ssh, result
