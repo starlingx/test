@@ -402,7 +402,7 @@ class SSHConnection:
                 if is_prompt_match and prompt.get_prompt_response():
                     self.__send_in_channel(channel, prompt.get_prompt_response())
 
-        self.last_return_code = None if code == 0 else code
+        self.last_return_code = code
 
         complete_output = prompts[-1].get_complete_output()
 
