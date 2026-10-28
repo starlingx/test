@@ -8,6 +8,7 @@ from framework.resources.resource_finder import get_stx_resource_path
 from framework.validation.validation import validate_equals, validate_equals_with_retry, validate_greater_than, validate_list_contains, validate_str_contains, validate_str_contains_with_retry
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_list_keywords import DcManagerSubcloudListKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_show_keywords import DcManagerSubcloudShowKeywords
+from keywords.cloud_platform.fault_management.alarms.alarm_list_keywords import AlarmListKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.cloud_platform.system.application.object.system_application_status_enum import SystemApplicationStatusEnum
 from keywords.cloud_platform.system.application.system_application_apply_keywords import SystemApplicationApplyKeywords
@@ -389,14 +390,8 @@ def test_cert_mon_sync_in_dc_environment(request: FixtureRequest):
 
     get_logger().log_test_case_step("Getting subcloud name and region_name from dcmanager")
     subcloud_list = DcManagerSubcloudListKeywords(central_ssh).get_dcmanager_subcloud_list()
-    managed_online_subclouds = [
-        sc for sc in subcloud_list.get_dcmanager_subcloud_list_objects()
-        if sc.get_management() == "managed" and sc.get_availability() == "online"
-    ]
-    validate_greater_than(
-        len(managed_online_subclouds), 0,
-        "No managed/online subclouds available for DC cert sync test"
-    )
+    managed_online_subclouds = [sc for sc in subcloud_list.get_dcmanager_subcloud_list_objects() if sc.get_management() == "managed" and sc.get_availability() == "online"]
+    validate_greater_than(len(managed_online_subclouds), 0, "No managed/online subclouds available for DC cert sync test")
     subcloud = managed_online_subclouds[0]
     subcloud_name = subcloud.get_name()
 
@@ -484,3 +479,67 @@ def test_cert_mon_sync_in_dc_environment(request: FixtureRequest):
     raw_describe = "\n".join(describe_output) if isinstance(describe_output, list) else describe_output
     validate_str_contains(raw_describe, "cert-manager", "Certificate description should reference cert-manager")
     validate_str_contains(raw_describe, "Issuing", "Certificate events should contain Issuing event from cert-manager")
+
+
+@mark.p1
+def test_cert_mon_concurrent_certificate_renewal():
+    """Verify cert-mon renews all three platform certs when their secrets are deleted concurrently.
+
+    Verifies that when the registry, openldap, and restapi-gui
+    platform certificate secrets are deleted at the same time, cert-mon must serialize
+    the renewals (via the cert-mon lock introduced by the fix) so all three are renewed
+    without a race condition. Each certificate must receive a new serial number and a
+    later expiry, and no certificate-expiry alarms (500.200 / 500.210) may be raised.
+
+    Steps:
+        - For each of the 3 platform certs, read the original serial and notAfter
+        - Delete all 3 certificate secrets back-to-back to trigger simultaneous renewal
+        - Wait for cert-mon to renew each certificate (serial changes)
+        - Verify each renewed certificate has a later notAfter than the original
+        - Verify no 500.200 / 500.210 certificate alarms are raised
+        - Repeat for the configured number of iterations
+    """
+    certs = [
+        {"name": "registry", "cert_path": "/etc/ssl/private/registry-cert.crt", "secret": "system-registry-local-certificate"},
+        {"name": "openldap", "cert_path": "/etc/ldap/certs/openldap-cert.crt", "secret": "system-openldap-local-certificate"},
+        {"name": "restapi-gui", "cert_path": "/etc/ssl/private/server-cert.pem", "secret": "system-restapi-gui-certificate"},
+    ]
+    namespace = "deployment"
+    cert_alarm_ids = ["500.200", "500.210"]
+    iterations = 5
+    renewal_timeout = 300
+
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    openssl_keywords = OpenSSLKeywords(ssh_connection)
+    delete_keywords = KubectlDeleteResourceKeywords(ssh_connection)
+    alarm_keywords = AlarmListKeywords(ssh_connection)
+
+    for iteration in range(1, iterations + 1):
+        get_logger().log_test_case_step(f"Iteration {iteration}/{iterations}: reading original certificate info for all 3 platform certs")
+        for cert in certs:
+            original = openssl_keywords.get_cert_info_from_file(cert["cert_path"])
+            cert["orig_serial"] = original.get("serial")
+            cert["orig_not_after"] = original.get("not_after")
+            get_logger().log_test_case_step(f"{cert['name']}: serial={cert['orig_serial']}, notAfter={cert['orig_not_after']}")
+
+        get_logger().log_test_case_step(f"Iteration {iteration}: deleting all 3 certificate secrets to trigger simultaneous renewal")
+        for cert in certs:
+            delete_keywords.delete_resource("secret", cert["secret"], namespace)
+
+        for cert in certs:
+            get_logger().log_test_case_step(f"Iteration {iteration}: waiting for {cert['name']} certificate to renew")
+
+            def serial_has_changed(c=cert):
+                renewed = openssl_keywords.get_cert_info_from_file(c["cert_path"])
+                return renewed.get("serial") != c["orig_serial"]
+
+            validate_equals_with_retry(serial_has_changed, True, f"Verify {cert['name']} certificate serial changed after concurrent renewal", renewal_timeout, 10)
+
+            renewed = openssl_keywords.get_cert_info_from_file(cert["cert_path"])
+            get_logger().log_test_case_step(f"{cert['name']}: renewed serial={renewed.get('serial')}, notAfter={renewed.get('not_after')}")
+            validate_equals(renewed.get("serial") != cert["orig_serial"], True, f"Renewed {cert['name']} certificate serial should differ from original")
+            validate_equals(renewed.get("not_after") > cert["orig_not_after"], True, f"Renewed {cert['name']} certificate notAfter should be later than original")
+
+        get_logger().log_test_case_step(f"Iteration {iteration}: verifying no certificate-expiry alarms (500.200 / 500.210) are raised")
+        for alarm_id in cert_alarm_ids:
+            validate_equals(alarm_keywords.is_alarm_present(alarm_id), False, f"Certificate alarm {alarm_id} should not be present after concurrent renewal")
