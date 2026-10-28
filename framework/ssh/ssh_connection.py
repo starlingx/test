@@ -19,6 +19,15 @@ class SSHConnection:
     This class holds information and actions for an ssh connection.
     """
 
+    # Marker used to capture the remote command's real exit status on the
+    # interactive prompt path. After the expected prompts have matched, the
+    # shell is back at its prompt, so `echo $?` reports the exit status of the
+    # command that was just run. The value is wrapped in a unique marker so it
+    # can be recovered from the surrounding console noise (echoed command,
+    # prompt, ANSI, etc.). See _capture_interactive_return_code.
+    _RC_MARKER = "__ACE_RC__"
+    _RC_PATTERN = re.compile(r"__ACE_RC__(\d{1,3})__ACE_RC__")
+
     def __init__(
         self,
         name: str,
@@ -402,7 +411,10 @@ class SSHConnection:
                 if is_prompt_match and prompt.get_prompt_response():
                     self.__send_in_channel(channel, prompt.get_prompt_response())
 
-        self.last_return_code = code
+        if code == 0:
+            self.last_return_code = self._capture_interactive_return_code(channel, timeout)
+        else:
+            self.last_return_code = code
 
         complete_output = prompts[-1].get_complete_output()
 
@@ -411,6 +423,54 @@ class SSHConnection:
         output_list = [line + "\n" for line in complete_output.split("\n") if line]
 
         return output_list
+
+    def _capture_interactive_return_code(self, channel: paramiko.Channel, timeout: int) -> Optional[int]:
+        """
+        Read the exit status of the last command run on an interactive channel.
+
+        After the expected prompts have matched, the interactive shell is back
+        at its prompt, so running ``echo <marker>$?<marker>`` reports the exit
+        status of the command that just finished. The value is wrapped in a
+        unique marker so it can be recovered from surrounding console noise (the
+        echoed command, the shell prompt, ANSI sequences, etc.). The ``echo``
+        command string itself also contains the literal marker, so the LAST
+        match in the output is taken: that is the command's output line, not the
+        echoed command.
+
+        This is what makes ``get_return_code()`` report the remote command's
+        real exit status on the interactive path rather than the channel-read
+        status.
+
+        Args:
+            channel (paramiko.Channel): The interactive shell channel the
+                command was run on, already back at a shell prompt.
+            timeout (int): Per-read timeout in seconds, matching the prompt loop.
+
+        Returns:
+            Optional[int]: The remote command's exit status, or ``None`` if it
+            could not be read back (e.g. the probe timed out or produced no
+            parseable marker).
+        """
+        probe = f"echo {self._RC_MARKER}$?{self._RC_MARKER}"
+        self.__send_in_channel(channel, probe)
+
+        # Accumulate reads until the value-bearing marker pair appears or we run
+        # out of time. The echoed command shows the marker with the literal
+        # "$?" between the markers; the real value line shows digits, so we only
+        # accept a match whose middle group is numeric (the regex enforces \d).
+        collected = ""
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            code, buffer = self.__read_from_channel(channel, timeout)
+            if code != 0:
+                break
+            collected += buffer
+            matches = self._RC_PATTERN.findall(collected)
+            if matches:
+                return int(matches[-1])
+
+        get_logger().log_warning("Could not read back the interactive command's exit status; returning None.")
+        return None
 
     def __send_in_channel(self, ssh_channel: paramiko.Channel, cmd: str) -> None:
         """
@@ -498,6 +558,15 @@ class SSHConnection:
     def get_return_code(self) -> Optional[int]:
         """
         Return the last return code captured by this SSH connection.
+
+        This is the remote command's real exit status on both paths:
+        - Non-interactive (``send`` / ``send_as_sudo_non_interactive``): taken
+          from ``recv_exit_status()``.
+        - Interactive (``send_as_sudo`` / ``send_expect_prompts``): read back
+          from the shell with ``echo $?`` once the expected prompts matched. 
+          Returns ``None`` only if that value could not be read
+          back (e.g. the probe timed out), and ``-1`` if the prompt read itself
+          failed (timeout / closed channel).
 
         Returns:
             Optional[int]: The last return code from the most recent SSH command.
