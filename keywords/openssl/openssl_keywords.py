@@ -1,5 +1,7 @@
 """OpenSSLKeywords keywords."""
 
+import base64
+
 from datetime import datetime, timezone
 
 from framework.exceptions.keyword_exception import KeywordException
@@ -100,7 +102,7 @@ class OpenSSLKeywords(BaseKeyword):
         if "OK" not in raw:
             raise KeywordException(f"Certificate chain verification failed for {cert_path}: {raw}")
 
-    def verify_certificate_against_ca(self, ca_cert_path: str, cert_path: str) -> None:
+    def verify_certificate_against_ca(self, ca_cert_path: str, cert_path: str, is_sudo: bool = False) -> None:
         """Verify a certificate directly against its signing CA.
 
         For a two-level chain with no intermediate. Use verify_cert_chain when an
@@ -109,11 +111,14 @@ class OpenSSLKeywords(BaseKeyword):
         Args:
             ca_cert_path (str): Path to the trusted CA PEM file.
             cert_path (str): Path to the certificate to verify.
+            is_sudo (bool): Run openssl with sudo, required when the certificate
+                is readable only by root (e.g. /etc/swanctl). Defaults to False.
 
         Raises:
             KeywordException: If verification fails.
         """
-        output = self.ssh_connection.send(f"openssl verify -CAfile {ca_cert_path} {cert_path}")
+        command = f"openssl verify -CAfile {ca_cert_path} {cert_path}"
+        output = self.ssh_connection.send_as_sudo(command) if is_sudo else self.ssh_connection.send(command)
         raw = "\n".join(output) if isinstance(output, list) else output
         if "OK" not in raw:
             raise KeywordException(f"Certificate {cert_path} does not verify against CA {ca_cert_path}: {raw}")
@@ -163,13 +168,17 @@ class OpenSSLKeywords(BaseKeyword):
     def create_self_signed_ca_certificate(self, key_path: str, cert_path: str, subj: str, days: int = 1024) -> None:
         """Create a self-signed CA certificate.
 
+        The certificate includes the basic constraints and key usage extensions
+        required for it to act as a signing CA (CA:TRUE, keyCertSign).
+
         Args:
             key_path (str): Path to the CA private key.
             cert_path (str): Path to write the CA certificate.
             subj (str): Certificate subject string.
             days (int): Certificate validity in days. Defaults to 1024.
         """
-        self.ssh_connection.send(f"openssl req -x509 -new -nodes -key {key_path} -days {days} " f'-out {cert_path} -outform PEM -subj "{subj}"')
+        ca_extensions = '-addext "basicConstraints=critical,CA:TRUE" -addext "keyUsage=critical,digitalSignature,keyCertSign,cRLSign"'
+        self.ssh_connection.send(f"openssl req -x509 -new -nodes -key {key_path} -days {days} " f'-out {cert_path} -outform PEM -subj "{subj}" {ca_extensions}')
         self.validate_success_return_code(self.ssh_connection)
 
     def create_certificate_signing_request(self, key_path: str, csr_path: str, subj: str, san: str = "") -> None:
@@ -186,7 +195,7 @@ class OpenSSLKeywords(BaseKeyword):
         self.ssh_connection.send(f'openssl req -new -key {key_path} -out {csr_path} -subj "{subj}"{san_opt}')
         self.validate_success_return_code(self.ssh_connection)
 
-    def sign_certificate(self, csr_path: str, ca_cert_path: str, ca_key_path: str, cert_path: str, days: int = 365) -> None:
+    def sign_certificate(self, csr_path: str, ca_cert_path: str, ca_key_path: str, cert_path: str, days: int = 365, is_ca: bool = False) -> None:
         """Sign a certificate with a CA.
 
         Args:
@@ -195,8 +204,16 @@ class OpenSSLKeywords(BaseKeyword):
             ca_key_path (str): Path to the CA private key.
             cert_path (str): Path to write the signed certificate.
             days (int): Certificate validity in days. Defaults to 365.
+            is_ca (bool): Sign the certificate as a CA (adds the basic constraints
+                and key usage extensions required for a signing CA). Defaults to False.
         """
-        self.ssh_connection.send(f"openssl x509 -req -in {csr_path} -CA {ca_cert_path} " f"-CAkey {ca_key_path} -CAcreateserial -out {cert_path} -days {days}")
+        extensions_option = ""
+        if is_ca:
+            ext_file = "/tmp/_openssl_ca_ext.cnf"
+            ext_contents = "basicConstraints=critical,CA:TRUE\n" "keyUsage=critical,digitalSignature,keyCertSign,cRLSign\n"
+            FileKeywords(self.ssh_connection).create_file_with_heredoc(ext_file, ext_contents)
+            extensions_option = f" -extfile {ext_file}"
+        self.ssh_connection.send(f"openssl x509 -req -in {csr_path} -CA {ca_cert_path} " f"-CAkey {ca_key_path} -CAcreateserial -out {cert_path} -days {days}{extensions_option}")
         self.validate_success_return_code(self.ssh_connection)
 
     def sign_certificate_with_extensions(self, paths: dict, ext_file_path: str, days: int = 365, extensions: str = "v3_ext") -> None:
@@ -333,10 +350,6 @@ class OpenSSLKeywords(BaseKeyword):
         Returns:
             CertKeyInfoObject: Parsed key info from the embedded client certificate.
         """
-        import base64 as b64
-
-        from keywords.files.file_keywords import FileKeywords
-
         file_kw = FileKeywords(self.ssh_connection)
         conf_content = file_kw.read_file_with_sudo(kubeconfig_path)
         cert_b64_line = ""
@@ -344,7 +357,7 @@ class OpenSSLKeywords(BaseKeyword):
             if "client-certificate-data" in line:
                 cert_b64_line = line.strip().split()[-1]
                 break
-        cert_pem = b64.b64decode(cert_b64_line).decode("utf-8")
+        cert_pem = base64.b64decode(cert_b64_line).decode("utf-8")
         file_kw.create_file_with_heredoc("/tmp/_kubeconfig_cert.pem", cert_pem)
         raw = self.get_cert_text_from_file("/tmp/_kubeconfig_cert.pem")
         file_kw.delete_file("/tmp/_kubeconfig_cert.pem")

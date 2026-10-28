@@ -3,13 +3,16 @@ from pytest import mark
 from framework.logging.automation_logger import get_logger
 from framework.validation.validation import validate_equals, validate_equals_with_retry, validate_greater_than, validate_str_contains
 from keywords.cloud_platform.security.ipsec_keywords import IPSecKeywords
+from keywords.cloud_platform.security.platform_certificate_rotation_keywords import PlatformCertificateRotationKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.cloud_platform.system.host.system_host_list_keywords import SystemHostListKeywords
 from keywords.cloud_platform.system.host.system_host_lock_keywords import SystemHostLockKeywords
 from keywords.cloud_platform.system.host.system_host_reboot_keywords import SystemHostRebootKeywords
 from keywords.cloud_platform.system.host.system_host_swact_keywords import SystemHostSwactKeywords
+from keywords.files.file_keywords import FileKeywords
 from keywords.k8s.secret.kubectl_get_secret_keywords import KubectlGetSecretsKeywords
 from keywords.linux.systemctl.systemctl_is_active_keywords import SystemCTLIsActiveKeywords
+from keywords.openssl.openssl_keywords import OpenSSLKeywords
 
 
 @mark.p1
@@ -611,3 +614,159 @@ def test_ipsec_keys_backed_by_luks_vault():
     get_logger().log_test_case_step(f"Verify IPSec service '{ipsec_service}' is active")
     systemctl_keywords = SystemCTLIsActiveKeywords(ssh_connection)
     validate_equals(systemctl_keywords.is_active(ipsec_service), "active", f"{ipsec_service} should be active when LUKS vault is mounted")
+
+
+@mark.p1
+@mark.lab_has_standby_controller
+def test_ipsec_reissue_certificates_keeps_sas():
+    """Validate platform certificate re-issue keeps IPSec security associations.
+
+    Runs update_platform_certificates with no CA overrides, which re-issues
+    platform leaf certificates while keeping the existing system-local-ca. With
+    no CA override the IPSec node certificates are not re-signed, so this test
+    verifies the run completes without disrupting IPSec: the security
+    associations remain established and the IPSec leaf still verifies against the
+    current CA. The signing CA is unchanged, so no CA restore is required.
+
+    Steps:
+        - Re-issue platform certificates (CA unchanged)
+        - Verify all security associations remain established
+        - Verify the IPSec leaf still verifies against the current CA
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    system_hosts = SystemHostListKeywords(ssh_connection)
+    ipsec_keywords = IPSecKeywords(ssh_connection)
+    rotation_keywords = PlatformCertificateRotationKeywords(ssh_connection)
+    expected_count = ipsec_keywords.get_expected_security_association_count()
+
+    hostname = system_hosts.get_active_controller().get_host_name()
+
+    get_logger().log_test_case_step("Re-issue platform certificates keeping the existing CA")
+    rotation_keywords.reissue_platform_certificates()
+
+    get_logger().log_test_case_step("Verify security associations remain established after re-issue")
+    validate_equals_with_retry(
+        lambda: ipsec_keywords.are_all_security_associations_established(expected_count),
+        True,
+        f"All {expected_count} security associations should be established after certificate re-issue",
+        timeout=300,
+    )
+
+    get_logger().log_test_case_step("Verify IPSec leaf is still issued by the local CA")
+    validate_equals(ipsec_keywords.is_ipsec_leaf_issued_by_local_ca(hostname), True, "IPSec leaf should be issued by the local CA after re-issue")
+
+
+@mark.p2
+@mark.lab_has_standby_controller
+def test_ipsec_dual_ca_trust_window():
+    """Validate the IPSec dual-CA trust window is present.
+
+    The IPSec trust store keeps two CA certificates (previous and current) so
+    that security associations survive a CA rotation. This read-only test
+    verifies both the current and previous CA trust files exist and the IPSec
+    leaf certificate verifies against the current CA.
+
+    Steps:
+        - Verify the current CA trust file system-local-ca-1.crt is present
+        - Verify the previous CA trust file system-local-ca-0.crt is present
+        - Verify the active controller IPSec leaf verifies against the current CA
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    system_hosts = SystemHostListKeywords(ssh_connection)
+    ipsec_keywords = IPSecKeywords(ssh_connection)
+    rotation_keywords = PlatformCertificateRotationKeywords(ssh_connection)
+
+    get_logger().log_test_case_step("Verify current CA trust file is present")
+    validate_equals(rotation_keywords.is_ca_trust_file_present("system-local-ca-1.crt"), True, "Current CA system-local-ca-1.crt should be present")
+
+    get_logger().log_test_case_step("Verify previous CA trust file is present")
+    validate_equals(rotation_keywords.is_ca_trust_file_present("system-local-ca-0.crt"), True, "Previous CA system-local-ca-0.crt should be present")
+
+    get_logger().log_test_case_step("Verify IPSec leaf is issued by the current local CA")
+    hostname = system_hosts.get_active_controller().get_host_name()
+    validate_equals(ipsec_keywords.is_ipsec_leaf_issued_by_local_ca(hostname), True, "IPSec leaf should be issued by the current local CA")
+
+
+@mark.p1
+@mark.lab_has_standby_controller
+def test_ipsec_survives_single_ca_rotation(request):
+    """Validate IPSec survives a single system-local-ca rotation.
+
+    Captures the current signing CA, rotates system-local-ca to a newly
+    generated CA via update_platform_certificates, verifies the IPSec leaf is
+    re-issued under the new CA and security associations re-establish, then
+    restores the original CA so the system returns to its starting state.
+
+    Steps:
+        - Capture the current system-local-ca secret for restore
+        - Verify the captured backup is valid before any CA mutation
+        - Generate a new root and intermediate CA
+        - Rotate system-local-ca to the new CA
+        - Verify the IPSec leaf verifies against the new CA and SAs re-establish
+
+    Teardown:
+        - Restore the original system-local-ca and re-issue certificates
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    system_hosts = SystemHostListKeywords(ssh_connection)
+    ipsec_keywords = IPSecKeywords(ssh_connection)
+    rotation_keywords = PlatformCertificateRotationKeywords(ssh_connection)
+    openssl_keywords = OpenSSLKeywords(ssh_connection)
+    file_keywords = FileKeywords(ssh_connection)
+    expected_count = ipsec_keywords.get_expected_security_association_count()
+
+    ca_backup_path = "/home/sysadmin/ipsec_ca_rotation_backup.yaml"
+
+    def teardown():
+        get_logger().log_teardown_step("Restore original system-local-ca and re-issue certificates")
+        new_ssh = LabConnectionKeywords().get_active_controller_ssh()
+        restore_keywords = PlatformCertificateRotationKeywords(new_ssh)
+        restore_keywords.restore_system_local_ca_secret(ca_backup_path)
+        restore_keywords.reissue_platform_certificates()
+
+    request.addfinalizer(teardown)
+
+    get_logger().log_test_case_step("Capture current system-local-ca secret for restore")
+    rotation_keywords.capture_system_local_ca_secret(ca_backup_path)
+
+    get_logger().log_test_case_step("Verify the CA backup is valid before mutating the signing CA")
+    validate_equals(
+        rotation_keywords.is_ca_secret_backup_valid(ca_backup_path),
+        True,
+        "A valid non-empty system-local-ca backup is required before rotating; aborting rotation to keep the system recoverable",
+    )
+
+    get_logger().log_test_case_step("Generate new root and intermediate CA for rotation")
+    new_root_key = "/tmp/ipsec_new_root_ca.key"
+    new_root_cert = "/tmp/ipsec_new_root_ca.crt"
+    new_ica_key = "/tmp/ipsec_new_local_ca.key"
+    new_ica_csr = "/tmp/ipsec_new_local_ca.csr"
+    new_ica_cert = "/tmp/ipsec_new_local_ca.crt"
+    # update_platform_certificates rejects a system-local-ca with less than three
+    # years remaining validity, so the generated root and intermediate CAs are
+    # created with a long validity well beyond that minimum.
+    ca_validity_days = 4015
+    openssl_keywords.generate_rsa_key(new_root_key, bits=4096)
+    openssl_keywords.create_self_signed_ca_certificate(new_root_key, new_root_cert, subj="/CN=ipsec-test-root-ca/O=StarlingX", days=ca_validity_days)
+    openssl_keywords.generate_rsa_key(new_ica_key, bits=4096)
+    openssl_keywords.create_certificate_signing_request(new_ica_key, new_ica_csr, subj="/CN=ipsec-test-local-ca/O=StarlingX")
+    openssl_keywords.sign_certificate(new_ica_csr, new_root_cert, new_root_key, new_ica_cert, days=ca_validity_days, is_ca=True)
+
+    root_ca_b64 = file_keywords.read_file_as_base64(new_root_cert)
+    local_ca_b64 = file_keywords.read_file_as_base64(new_ica_cert)
+    local_ca_key_b64 = file_keywords.read_file_as_base64(new_ica_key)
+
+    get_logger().log_test_case_step("Rotate system-local-ca to the new CA")
+    rotation_keywords.rotate_system_local_ca(root_ca_b64, local_ca_b64, local_ca_key_b64)
+
+    get_logger().log_test_case_step("Verify IPSec leaf is issued by the new local CA")
+    hostname = system_hosts.get_active_controller().get_host_name()
+    validate_equals(ipsec_keywords.is_ipsec_leaf_issued_by_local_ca(hostname), True, "IPSec leaf should be issued by the new local CA after rotation")
+
+    get_logger().log_test_case_step("Wait for security associations to re-establish after rotation")
+    validate_equals_with_retry(
+        lambda: ipsec_keywords.are_all_security_associations_established(expected_count),
+        True,
+        f"All {expected_count} security associations should be established after CA rotation",
+        timeout=600,
+    )
