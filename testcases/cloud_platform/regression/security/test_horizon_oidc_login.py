@@ -5,7 +5,7 @@ connector: the Horizon login page offers the OpenID Connect auth method, a
 headless browser completes the DEX login (connector selection, DEX-native form,
 and Grant Access approval), and the Horizon dashboard loads.
 
-Follows the TCPG-5002 STX-CLI OIDC pattern: the LDAP user/group, DEX ldap-1
+Follows the STX-CLI OIDC pattern: the LDAP user/group, DEX ldap-1
 connector, and identity/stx role-bindings are set up the same way, and the DEX
 handling is reused via DexLoginPage. Horizon authorizes the session through the
 keystone role-bindings (no Kubernetes ClusterRoleBinding is required for the
@@ -520,3 +520,49 @@ def test_horizon_oidc_admin_navigate_host_inventory(request: FixtureRequest):
     headers = inventory_page.get_controller_hosts_table_headers()
     get_logger().log_info(f"Host inventory table headers: {headers}")
     validate_equals(len(headers) > 0, True, "Admin should see the controller hosts table headers in Host Inventory")
+
+
+@mark.p2
+def test_horizon_oidc_reader_host_inventory_rbac(request: FixtureRequest):
+    """Verify a reader OIDC user can view Host Inventory but has no Edit Host action (RBAC).
+
+    Logs into Horizon via the LDAP OIDC flow as a reader-role user, navigates to
+    Admin -> Platform -> Host Inventory, and validates RBAC: the reader can VIEW
+    the controller hosts table (headers render), but the write action 'Edit Host'
+    is NOT available (Horizon hides/omits the action for the reader role). This
+    contrasts with the admin, who can both view and edit.
+
+    Teardown:
+        - Quit the browser session
+        - Delete the LDAP user/group, working dir, and role-bindings
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    ctx = _setup_ldap_oidc_horizon(ssh_connection, "Level1SystemReader", "reader")
+    # LIFO: register role-bindings teardown FIRST so it runs LAST (it restarts
+    # keystone); cleanup runs first while keystone is still up.
+    for teardown in ctx.get_teardowns():
+        request.addfinalizer(teardown)
+
+    test_user = ctx.get_test_user()
+    get_logger().log_test_case_step("Log into Horizon via browser OIDC login (LDAP connector, reader role) and keep the session")
+    driver = HorizonOidcLoginKeywords(ssh_connection).login_and_get_driver(
+        horizon_url=ctx.get_login_url(),
+        username=test_user.get_username(),
+        password=test_user.get_password(),
+        connector=ctx.get_connector_id(),
+    )
+    request.addfinalizer(driver.quit)
+
+    get_logger().log_test_case_step("Navigate to Admin -> Platform -> Host Inventory")
+    inventory_page = HorizonHostInventoryPage(driver)
+    inventory_page.navigate_to_host_inventory_page()
+
+    get_logger().log_test_case_step("Reader: verify the controller hosts table is viewable")
+    headers = inventory_page.get_controller_hosts_table_headers()
+    get_logger().log_info(f"Reader host inventory table headers: {headers}")
+    validate_equals(len(headers) > 0, True, "Reader should be able to view the controller hosts table in Host Inventory")
+
+    get_logger().log_test_case_step("Reader: verify the 'Edit Host' action is NOT available (RBAC-restricted)")
+    edit_present = inventory_page.is_edit_host_button_present("controller-0")
+    get_logger().log_info(f"Reader 'Edit Host' button present for controller-0: {edit_present}")
+    validate_equals(edit_present, False, "Reader must NOT have the 'Edit Host' action in Host Inventory")
