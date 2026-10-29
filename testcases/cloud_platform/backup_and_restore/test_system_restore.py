@@ -28,6 +28,11 @@ def test_restore():
     """
     Test system restore using ansible playbook
 
+    Whether the registry filesystem is restored is driven by the backup_restore
+    configuration (``restore_registry``), which defaults to True. Supply a backup_restore
+    config file with ``restore_registry`` set to false (via ``--backup_restore_config_file``)
+    to run the restore without the registry filesystem.
+
     Test Steps:
       - Copy backup file to target controller
       - Run restore playbook
@@ -35,6 +40,7 @@ def test_restore():
       - Validate restore completion
     """
 
+    restore_registry = ConfigurationManager.get_backup_restore_config().get_restore_registry()
     lab_type = ConfigurationManager.get_lab_config().get_lab_type()
     lab_name = ConfigurationManager.get_lab_config().get_lab_name()
     backup_dir = "/home/sysadmin"
@@ -53,8 +59,10 @@ def test_restore():
     get_logger().log_info("Backup file copy to controller completed successfully")
 
     time_kpi_restore = TimeKPI(time.time())
-    get_logger().log_info("Run restore ansible playbook")
-    ansible_playbook_restore_output = AnsiblePlaybookKeywords(ssh_connection).ansible_playbook_restore(backup_dir, restore_mode)
+    get_logger().log_info(f"Run restore ansible playbook (restore_registry={restore_registry})")
+    # Optimized restore also restores the registry filesystem (superset of the legacy docker-image step)
+    # when restore_registry is True. The value comes from the backup_restore config and defaults to True.
+    ansible_playbook_restore_output = AnsiblePlaybookKeywords(ssh_connection).ansible_playbook_restore(backup_dir, restore_mode, restore_registry=restore_registry)
     validate_equals(ansible_playbook_restore_output, True, "Ansible restore command execution")
 
     get_logger().log_info("Unlocking controller host")
@@ -145,8 +153,15 @@ def _run_multi_host_restore(restore_mode: str = None):
 
     time_kpi_restore = TimeKPI(time.time())
 
-    get_logger().log_info(f"Run restore ansible playbook (restore_mode={restore_mode or 'default'})")
-    ansible_playbook_restore_output = AnsiblePlaybookKeywords(ssh_connection).ansible_playbook_restore(backup_dir, restore_mode)
+    # Restore the registry filesystem (restore_registry_filesystem=true) only on the optimized path,
+    # which is a superset of the legacy docker-image restore step. The conventional path is left
+    # unflagged so its behaviour is unchanged.
+    restore_registry = restore_mode == "optimized"
+    # Multi-host restores reinstall the standby controller and compute/storage nodes and bring up
+    # networking and Ceph, which runs well past the simplex default. Allow up to 60 minutes.
+    multi_host_restore_timeout = 3600
+    get_logger().log_info(f"Run restore ansible playbook (restore_mode={restore_mode or 'default'}, restore_registry={restore_registry})")
+    ansible_playbook_restore_output = AnsiblePlaybookKeywords(ssh_connection).ansible_playbook_restore(backup_dir, restore_mode, restore_registry=restore_registry, timeout=multi_host_restore_timeout)
     validate_equals(ansible_playbook_restore_output, True, "Ansible restore command execution")
 
     get_logger().log_info("Unlocking controller-0 host")
