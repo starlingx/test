@@ -4,22 +4,28 @@ Provides reusable class-based keywords for OIDC test suites (FM, software, syste
 using existing framework keywords instead of raw SSH commands.
 """
 
-
 from framework.exceptions.keyword_exception import KeywordException
 from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
 from framework.validation.validation import validate_equals_with_retry
 from keywords.base_keyword import BaseKeyword
 from keywords.cloud_platform.security.oidc.dex_connector_keywords import DexConnectorKeywords
+from keywords.cloud_platform.security.oidc.oidc_auth_keywords import OidcAuthKeywords
 from keywords.cloud_platform.system.addrpool.system_addrpool_list_keywords import SystemAddrpoolListKeywords
 from keywords.cloud_platform.system.application.system_application_apply_keywords import SystemApplicationApplyKeywords
 from keywords.cloud_platform.system.application.system_application_list_keywords import SystemApplicationListKeywords
 from keywords.cloud_platform.system.helm.system_helm_override_keywords import SystemHelmOverrideKeywords
 from keywords.cloud_platform.system.service.system_service_parameter_keywords import SystemServiceParameterKeywords
 from keywords.files.file_keywords import FileKeywords
+from keywords.k8s.pods.kubectl_delete_pods_keywords import KubectlDeletePodsKeywords
 from keywords.k8s.pods.kubectl_get_pods_keywords import KubectlGetPodsKeywords
 from keywords.linux.keyring.keyring_keywords import KeyringKeywords
 from keywords.linux.ldap.ldap_keywords import LdapKeywords
+
+OIDC_DEX_POD_LABEL = "app.kubernetes.io/name=dex"
+OIDC_CLIENT_POD_LABEL = "app=stx-oidc-client"
+OIDC_POD_LABELS = (OIDC_DEX_POD_LABEL, OIDC_CLIENT_POD_LABEL)
+OIDC_POD_NAME_PREFIXES = ("oidc-dex", "stx-oidc-client")
 
 DEX_LOCAL_LDAP_OVERRIDE = """config:
   connectors:
@@ -93,6 +99,7 @@ class OidcSetupKeywords(BaseKeyword):
         self.addrpool_kw = SystemAddrpoolListKeywords(ssh_connection)
         self.dex_kw = DexConnectorKeywords(ssh_connection)
         self.kubectl_pods_kw = KubectlGetPodsKeywords(ssh_connection)
+        self.delete_pods_kw = KubectlDeletePodsKeywords(ssh_connection)
         self.svc_param_kw = SystemServiceParameterKeywords(ssh_connection)
         self.ldap_kw = None
 
@@ -273,3 +280,69 @@ class OidcSetupKeywords(BaseKeyword):
         """
         ldap_kw = LdapKeywords(self.ssh_connection, password)
         return not ldap_kw.user_exists_in_ldap(username)
+
+    def get_oidc_pod_names(self) -> list[str]:
+        """Get the current dex and oidc-client pod names.
+
+        Returns:
+            list[str]: Names of the dex and stx-oidc-client pods in the OIDC namespace.
+        """
+        pod_names = []
+        for pod_label in OIDC_POD_LABELS:
+            pods = self.kubectl_pods_kw.get_pods(namespace=OIDC_NAMESPACE, label=pod_label).get_pods()
+            pod_names.extend(pod.get_name() for pod in pods)
+        return pod_names
+
+    def delete_oidc_pods_and_wait_ready(self, pod_names: list, timeout: int = 300) -> None:
+        """Delete the given OIDC pods and wait for replacements to reach Running.
+
+        Args:
+            pod_names (list): Pod names to delete (dex and/or oidc-client).
+            timeout (int): Maximum wait for deletion and readiness in seconds.
+        """
+        for pod_name in pod_names:
+            self.delete_pods_kw.delete_pod(pod_name, namespace=OIDC_NAMESPACE)
+        self.wait_for_oidc_pods_recycled(pod_names, timeout=timeout)
+
+    def wait_for_oidc_pods_recycled(self, old_pod_names: list, timeout: int = 300) -> None:
+        """Wait for old OIDC pods to be gone and new dex/oidc-client pods to be Running.
+
+        Args:
+            old_pod_names (list): Pod names expected to be replaced.
+            timeout (int): Maximum wait in seconds.
+        """
+        self.kubectl_pods_kw.wait_for_pods_to_be_deleted(namespace=OIDC_NAMESPACE, pod_names=old_pod_names, timeout=timeout)
+        self.kubectl_pods_kw.wait_for_pods_to_reach_status(expected_status="Running", pod_names=list(OIDC_POD_NAME_PREFIXES), namespace=OIDC_NAMESPACE, timeout=timeout)
+        DexConnectorKeywords(self.ssh_connection).wait_for_dex_ready(namespace=OIDC_NAMESPACE, raise_on_timeout=True)
+
+    def verify_user_access(self, oam_ip: str, username: str, password: str, timeout: int = 300) -> None:
+        """Verify an LDAP user authenticated via OIDC can act on the Kubernetes API.
+
+        Waits for dex to be serving OIDC requests, then retries the authenticate +
+        kubectl access until it succeeds within the timeout. A fresh login can be
+        refused briefly after the dex pod is recreated (new signing keys, trust
+        re-sync), so a single attempt is not reliable right after a pod recycle.
+
+        Args:
+            oam_ip (str): Lab OAM floating IP.
+            username (str): LDAP username.
+            password (str): LDAP user password.
+            timeout (int): Maximum time in seconds to keep retrying access.
+        """
+        DexConnectorKeywords(self.ssh_connection).wait_for_dex_ready(namespace=OIDC_NAMESPACE, raise_on_timeout=True)
+
+        def attempt_access() -> bool:
+            # A fresh oidc-auth login is refused for a short window after the dex
+            # pod is recreated (new signing keys, trust re-sync). The failure
+            # surfaces as an AssertionError (non-zero return code from oidc-auth)
+            # or a connection error while establishing the user session; both mean
+            # "not ready yet", so retry rather than fail.
+            try:
+                ldap_ssh = OidcAuthKeywords.create_ldap_user_ssh(oam_ip, username, password)
+                KubectlGetPodsKeywords(ldap_ssh).get_pods()
+                return True
+            except (AssertionError, OSError, EOFError) as access_error:
+                get_logger().log_info(f"OIDC user access not ready yet, retrying: {access_error}")
+                return False
+
+        validate_equals_with_retry(attempt_access, True, f"LDAP user {username} should gain OIDC access to the Kubernetes API", timeout=timeout, polling_sleep_time=15)
