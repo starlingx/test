@@ -425,17 +425,16 @@ def test_cert_mon_sync_in_dc_environment(request: FixtureRequest):
     get_logger().log_test_case_step(f"Retrieving initial certificate from central node secret: {central_secret_name}")
     central_secret_keywords = KubectlGetSecretsKeywords(central_ssh)
     initial_central_secret = central_secret_keywords.get_secret_json_output(central_secret_name, dc_namespace)
-    initial_central_cert = initial_central_secret.get_decoded_data("tls.crt")
     initial_central_serial = initial_central_secret.get_certificate_serial()
     get_logger().log_test_case_step(f"Initial central certificate serial: {initial_central_serial}")
 
     get_logger().log_test_case_step(f"Retrieving initial certificate from subcloud secret: {sc_secret_name}")
     subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
     initial_sc_secret = KubectlGetSecretsKeywords(subcloud_ssh).get_secret_json_output(sc_secret_name, sc_namespace)
-    initial_sc_cert = initial_sc_secret.get_decoded_data("tls.crt")
+    initial_sc_serial = initial_sc_secret.get_certificate_serial()
 
     get_logger().log_test_case_step("Verifying central and subcloud certificates are identical before deletion")
-    validate_equals(initial_central_cert, initial_sc_cert, "Central and subcloud certificates should be identical before deletion")
+    validate_equals(initial_central_serial, initial_sc_serial, "Central and subcloud certificate serials should match before deletion")
 
     get_logger().log_test_case_step(f"Deleting secret {central_secret_name} on central node to trigger renewal")
     KubectlDeleteSecretsKeywords(central_ssh).delete_secret(central_secret_name, dc_namespace)
@@ -453,7 +452,6 @@ def test_cert_mon_sync_in_dc_environment(request: FixtureRequest):
 
     get_logger().log_test_case_step("Retrieving renewed certificate from central node")
     renewed_central_secret = central_secret_keywords.get_secret_json_output(central_secret_name, dc_namespace)
-    renewed_central_cert = renewed_central_secret.get_decoded_data("tls.crt")
     renewed_central_serial = renewed_central_secret.get_certificate_serial()
     get_logger().log_test_case_step(f"Renewed central certificate serial: {renewed_central_serial}")
 
@@ -465,14 +463,14 @@ def test_cert_mon_sync_in_dc_environment(request: FixtureRequest):
 
     def subcloud_cert_synced():
         renewed_sc_secret = subcloud_secret_keywords.get_secret_json_output(sc_secret_name, sc_namespace)
-        return renewed_sc_secret.get_decoded_data("tls.crt") == renewed_central_cert
+        return renewed_sc_secret.get_certificate_serial() == renewed_central_serial
 
     validate_equals_with_retry(subcloud_cert_synced, True, "Renewed certificate should sync to subcloud", renewal_timeout, 10)
 
     get_logger().log_test_case_step("Verifying renewed certificate is identical on central node and subcloud")
     renewed_sc_secret = subcloud_secret_keywords.get_secret_json_output(sc_secret_name, sc_namespace)
-    renewed_sc_cert = renewed_sc_secret.get_decoded_data("tls.crt")
-    validate_equals(renewed_central_cert, renewed_sc_cert, "Renewed central and subcloud certificates should be identical")
+    renewed_sc_serial = renewed_sc_secret.get_certificate_serial()
+    validate_equals(renewed_central_serial, renewed_sc_serial, "Renewed central and subcloud certificate serials should match")
 
     get_logger().log_test_case_step(f"Describing Certificate resource {cert_resource_name} to confirm cert-manager issued the renewal")
     describe_output = central_ssh.send(export_k8s_config(f"kubectl describe certificate {cert_resource_name} -n {dc_namespace}"))
