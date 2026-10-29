@@ -2,8 +2,11 @@ from pytest import FixtureRequest, mark
 
 from config.configuration_manager import ConfigurationManager
 from framework.logging.automation_logger import get_logger
-from framework.validation.validation import validate_equals, validate_equals_with_retry, validate_str_contains
+from framework.validation.validation import validate_equals, validate_equals_with_retry, validate_greater_than_or_equal, validate_str_contains
+from keywords.ceph.ceph_crush_rule_keywords import CephCrushRuleKeywords
+from keywords.ceph.ceph_osd_keywords import CephOsdKeywords
 from keywords.ceph.ceph_osd_pool_ls_detail_keywords import CephOsdPoolLsDetailKeywords
+from keywords.ceph.ceph_rbd_image_keywords import CephRbdImageKeywords
 from keywords.ceph.ceph_status_keywords import CephStatusKeywords
 from keywords.cloud_platform.fault_management.alarms.alarm_list_keywords import AlarmListKeywords
 from keywords.cloud_platform.fault_management.alarms.objects.alarm_list_output import AlarmListOutput
@@ -21,7 +24,10 @@ from keywords.cloud_platform.system.host.system_host_stor_keywords import System
 from keywords.cloud_platform.system.host.system_host_swact_keywords import SystemHostSwactKeywords
 from keywords.cloud_platform.system.storage.system_storage_backend_keywords import SystemStorageBackendKeywords
 from keywords.k8s.continuous_write.kubectl_continuous_write_keywords import KubectlContinuousWriteKeywords
+from keywords.k8s.deployments.kubectl_scale_deployements_keywords import KubectlScaleDeploymentsKeywords
 from keywords.k8s.pods.kubectl_get_pods_keywords import KubectlGetPodsKeywords
+from keywords.k8s.pv.kubectl_get_pv_keywords import KubectlGetPvKeywords
+from keywords.k8s.pvc.kubectl_get_pvc_keywords import KubectlGetPvcKeywords
 
 
 @mark.p2
@@ -310,6 +316,153 @@ def test_lock_unlock_multiple_hosts(request: FixtureRequest):
         get_logger().log_test_case_step(f"Verify {pod_name} kept writing after Lock/Unlock nodes.")
         write_counts[storage_type] = continuous_write_keywords.wait_for_write_progress(pod_name, previous_count=write_counts[storage_type])
         get_logger().log_info(f"{pod_name} write-cycle count after Lock/Unlock nodes: {write_counts[storage_type]}")
+
+
+@mark.p2
+@mark.lab_has_rook_ceph
+@mark.lab_has_min_2_osd
+def test_ceph_rook_failure_domain_osd(request: FixtureRequest) -> None:
+    """
+    Validate ceph-rook resilience to a single OSD failure (failure domain = osd).
+
+    Confirms, via 'ceph osd map' on a real stored data object, that a workload's
+    RBD-backed data is actually placed across more than one OSD (not just
+    inferred), then takes one of those OSDs out of service and verifies the
+    workload keeps writing and the cluster stays available, recovering once the
+    OSD is restored.
+
+    Note: the OSD is taken out of service by scaling its rook-ceph Deployment
+    to 0 replicas (killing the daemon), not just 'ceph osd down', since the
+    daemon would otherwise re-mark itself up on the next heartbeat.
+
+    Test Steps:
+        - Make sure ceph-rook is storage backend and the cluster is HEALTH_OK
+        - Start a continuous-write pod on the RBD (kube-rbd) storage class
+        - Record its write-cycle count
+        - Resolve the pod's RBD pool/image
+        - Check the failure domain of the pool's CRUSH rule; if it is not
+          'osd', create an 'osd' rule and switch the pool to it
+        - Confirm, via 'ceph osd map' on one of its stored data objects, that
+          the acting OSD set spans >= 2 distinct OSDs
+        - Take one of those OSDs out of service: 'ceph osd out' and scale its
+          rook-ceph-osd Deployment to 0 replicas
+        - Verify ceph health degrades to WARN (not ERR/unreachable)
+        - Verify the writer pod is still Running and its write-cycle count
+          advances while the OSD is down
+        - Restore the OSD: scale its Deployment back to 1 replica and
+          'ceph osd in'
+        - Verify ceph health returns to OK
+
+    Teardown:
+        - Ensure the OSD Deployment is scaled back to 1 and marked 'in' even
+          if an assertion failed mid-test
+        - Restore the pool's original CRUSH rule and remove the 'osd' rule if
+          this test created it
+        - Delete the continuous-write pod and its PVC
+
+    Args:
+        request (FixtureRequest): pytest request fixture for test setup and teardown
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+
+    system_storage_backend_keywords = SystemStorageBackendKeywords(ssh_connection)
+    ceph_status_keywords = CephStatusKeywords(ssh_connection)
+    ceph_crush_rule_keywords = CephCrushRuleKeywords(ssh_connection)
+    ceph_osd_keywords = CephOsdKeywords(ssh_connection)
+    ceph_rbd_image_keywords = CephRbdImageKeywords(ssh_connection)
+    continuous_write_keywords = KubectlContinuousWriteKeywords(ssh_connection)
+    kubectl_get_pods_keywords = KubectlGetPodsKeywords(ssh_connection)
+    scale_deployments_keywords = KubectlScaleDeploymentsKeywords(ssh_connection)
+
+    get_logger().log_test_case_step("Check whether rook-ceph is configured as storage backend.")
+    if not system_storage_backend_keywords.get_system_storage_backend_list().is_backend_configured("ceph-rook"):
+        get_logger().log_test_case_step("Add rook-ceph as storage backend.")
+        system_storage_backend_keywords.system_storage_backend_add(backend="ceph-rook", confirmed=True)
+
+    get_logger().log_test_case_step("Checking rook-ceph health before failure injection.")
+    ceph_status_keywords.wait_for_ceph_health_status(expect_health_status=True)
+
+    get_logger().log_test_case_step("Start rbd continuous-write pod.")
+    pod_name, pvc_name = continuous_write_keywords.start_continuous_write_pod("rbd")
+    request.addfinalizer(lambda: continuous_write_keywords.cleanup_continuous_write_pod(pod_name, pvc_name))
+
+    write_count = continuous_write_keywords.wait_for_write_progress(pod_name, previous_count=0)
+    get_logger().log_info(f"{pod_name} write-cycle count before OSD failure: {write_count}")
+
+    get_logger().log_test_case_step("Resolve the pod's RBD pool/image.")
+    pv_name = KubectlGetPvcKeywords(ssh_connection).get_pvc(pvc_name).get_pvc_by_name(pvc_name).get_volume()
+    rbd_volume = KubectlGetPvKeywords(ssh_connection).get_rbd_volume(pv_name)
+    pool = rbd_volume.get_pool()
+    image_name = rbd_volume.get_image_name()
+
+    get_logger().log_test_case_step(f"Make sure the failure domain of pool '{pool}' is 'osd', switching its CRUSH rule if it is not.")
+    original_rule = ceph_crush_rule_keywords.get_pool_crush_rule_name(pool)
+    original_rule_output = ceph_crush_rule_keywords.get_crush_rule(original_rule)
+    original_failure_domain = original_rule_output.get_failure_domain()
+    get_logger().log_info(f"Pool '{pool}' uses CRUSH rule '{original_rule}' with failure domain '{original_failure_domain}'.")
+
+    if original_failure_domain != "osd":
+        osd_rule = f"{original_rule}_osd"
+        osd_rule_created = not ceph_crush_rule_keywords.rule_exists(osd_rule)
+
+        def teardown_restore_crush_rule() -> None:
+            get_logger().log_teardown_step(f"Restore pool '{pool}' to CRUSH rule '{original_rule}'.")
+            ceph_crush_rule_keywords.set_pool_crush_rule(pool, original_rule)
+            if osd_rule_created:
+                ceph_crush_rule_keywords.delete_rule(osd_rule)
+            ceph_status_keywords.wait_for_ceph_health_status(expect_health_status=True)
+
+        request.addfinalizer(teardown_restore_crush_rule)
+
+        if osd_rule_created:
+            ceph_crush_rule_keywords.create_replicated_rule(osd_rule, original_rule_output.get_root(), "osd", original_rule_output.get_device_class())
+        ceph_crush_rule_keywords.set_pool_crush_rule(pool, osd_rule)
+        ceph_status_keywords.wait_for_ceph_health_status(expect_health_status=True)
+
+    current_rule = ceph_crush_rule_keywords.get_pool_crush_rule_name(pool)
+    validate_equals(ceph_crush_rule_keywords.get_crush_rule(current_rule).get_failure_domain(), "osd", f"Pool '{pool}' should use a CRUSH rule with failure domain 'osd' (rule '{current_rule}').")
+
+    get_logger().log_test_case_step("Confirm the pod's data spans >= 2 OSDs.")
+    data_object = ceph_rbd_image_keywords.get_existing_data_object(pool, image_name)
+    acting_osd_ids = ceph_osd_keywords.get_acting_osd_ids(pool, data_object)
+    get_logger().log_info(f"Object '{data_object}' in pool '{pool}' is placed on OSDs {acting_osd_ids}.")
+    validate_greater_than_or_equal(len(set(acting_osd_ids)), 2, f"Object should be replicated across >= 2 distinct OSDs, got {acting_osd_ids}")
+
+    target_osd_id = acting_osd_ids[0]
+    deployment_name = ceph_osd_keywords.get_osd_deployment_name(target_osd_id)
+    rook_ceph_namespace = "rook-ceph"
+
+    def teardown_restore_osd() -> None:
+        get_logger().log_teardown_step(f"Restore osd.{target_osd_id} if it was left out of service.")
+        scale_deployments_keywords.scale_deployment(deployment_name, replicas=1, namespace=rook_ceph_namespace)
+        ceph_osd_keywords.wait_for_osd_up(target_osd_id)
+        ceph_osd_keywords.mark_osd_in(target_osd_id)
+        ceph_status_keywords.wait_for_ceph_health_status(expect_health_status=True)
+
+    request.addfinalizer(teardown_restore_osd)
+
+    get_logger().log_test_case_step(f"Take osd.{target_osd_id} out of service.")
+    ceph_osd_keywords.mark_osd_out(target_osd_id)
+    scale_deployments_keywords.scale_deployment(deployment_name, replicas=0, namespace=rook_ceph_namespace)
+    ceph_osd_keywords.wait_for_osd_down(target_osd_id)
+
+    get_logger().log_test_case_step(f"Check ceph health degrades to WARN (not ERR) with osd.{target_osd_id} down.")
+    ceph_status_keywords.wait_for_ceph_health_status(expect_health_status=False)
+    ceph_health = ceph_status_keywords.ceph_status().get_ceph_cluster_output().get_ceph_cluster_object().get_health()
+    validate_str_contains(ceph_health, "HEALTH_WARN", f"Ceph health with osd.{target_osd_id} down should be HEALTH_WARN, not HEALTH_ERR.")
+
+    get_logger().log_test_case_step("Verify the writer pod is still Running and kept writing with the OSD down.")
+    kubectl_get_pods_keywords.wait_for_pod_status(pod_name, "Running")
+    write_count = continuous_write_keywords.wait_for_write_progress(pod_name, previous_count=write_count)
+    get_logger().log_info(f"{pod_name} write-cycle count with osd.{target_osd_id} down: {write_count}")
+
+    get_logger().log_test_case_step(f"Restore osd.{target_osd_id}.")
+    scale_deployments_keywords.scale_deployment(deployment_name, replicas=1, namespace=rook_ceph_namespace)
+    ceph_osd_keywords.wait_for_osd_up(target_osd_id)
+    ceph_osd_keywords.mark_osd_in(target_osd_id)
+
+    get_logger().log_test_case_step("Check ceph health returns to OK after restoring the OSD.")
+    ceph_status_keywords.wait_for_ceph_health_status(expect_health_status=True)
 
 
 @mark.p2
