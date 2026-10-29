@@ -1,3 +1,4 @@
+import shlex
 from typing import Optional
 
 from config.configuration_manager import ConfigurationManager
@@ -130,7 +131,75 @@ class DcManagerSubcloudAddKeywords(BaseKeyword):
         self.ssh_connection.send(cmd)
         self.validate_success_return_code(self.ssh_connection)
 
-    def dcmanager_subcloud_add_enroll(self, subcloud_name: str, bootstrap_values: str, install_values: str, deploy_config_file: str):
+    def build_jcnr_cloud_init_config(self, cloud_init_config_dir: str, configlet_file: str, sysadmin_password: str) -> str:
+        """Assemble the JCNR cloud-init-config tarball on the system controller.
+
+        Copies the shared JCNR bundle, overlays this subcloud's configlet, injects
+        the base64-encoded sysadmin password into the secret, and tars the result.
+        The returned path is what --cloud-init-config expects.
+
+        Args:
+            cloud_init_config_dir (str): Path to the shared JCNR bundle on the SC.
+            configlet_file (str): Path to this subcloud's configlet on the SC.
+            sysadmin_password (str): Subcloud sysadmin password to encode into the
+                JCNR secret.
+
+        Returns:
+            str: Path on the SC to the assembled cloud-init-config tarball.
+        """
+        build_root = "/tmp/jcnr_cloud_init_build"
+        config_dir = f"{build_root}/cloud-init-config"
+        dest_scripts = f"{config_dir}/scripts"
+        tarball = f"{build_root}/cloud-init-config.tar"
+        secret_file = f"{dest_scripts}/jcnr-secrets.yaml"
+
+        # Fail fast if a required input is missing, rather than producing a
+        # partial tarball the enroll playbook rejects later.
+        for required in (cloud_init_config_dir, configlet_file):
+            self.ssh_connection.send(f"test -e {shlex.quote(required)}")
+            self.validate_success_return_code(self.ssh_connection)
+
+        # Fresh build dir, then copy the generic bundle in (preserving its layout).
+        self.ssh_connection.send(f"rm -rf {build_root} && mkdir -p {config_dir}")
+        self.validate_success_return_code(self.ssh_connection)
+        self.ssh_connection.send(f"cp -a {shlex.quote(cloud_init_config_dir)}/. {config_dir}/")
+        self.validate_success_return_code(self.ssh_connection)
+
+        # Overlay this subcloud's configlet onto the bundle's placeholder.
+        self.ssh_connection.send(f"cp {shlex.quote(configlet_file)} {dest_scripts}/configlet.yaml")
+        self.validate_success_return_code(self.ssh_connection)
+
+        # Inject the base64 sysadmin password into the JCNR secret's root-password.
+        # Feed the password on stdin (shlex-quoted) so a special character in it
+        # cannot break the command or inject shell.
+        quoted_password = shlex.quote(sysadmin_password)
+        b64_output = self.ssh_connection.send(f"sh -c {shlex.quote(f'printf %s {quoted_password} | base64 -w0')}")
+        self.validate_success_return_code(self.ssh_connection)
+        b64_password = ("".join(b64_output) if isinstance(b64_output, list) else str(b64_output)).strip()
+        # Replace the value after 'root-password:' with the freshly-encoded one.
+        self.ssh_connection.send(f"sed -i -E 's#(root-password:).*#\\1 {b64_password}#' {secret_file}")
+        self.validate_success_return_code(self.ssh_connection)
+
+        # Apply script must be executable for cloud-init.
+        self.ssh_connection.send(f"chmod +x {dest_scripts}/20-jcnr-config")
+        self.validate_success_return_code(self.ssh_connection)
+
+        # Tar the cloud-init-config directory (preserving that top folder).
+        self.ssh_connection.send(f"sh -c 'cd {build_root} && tar czf {tarball} cloud-init-config'")
+        self.validate_success_return_code(self.ssh_connection)
+
+        return tarball
+
+    def cleanup_jcnr_cloud_init_config(self) -> None:
+        """Remove the JCNR cloud-init-config build dir from the system controller.
+
+        The build dir holds the assembled bundle including the secret with the
+        encoded sysadmin password, so a test that calls
+        build_jcnr_cloud_init_config should register this as a finalizer.
+        """
+        self.ssh_connection.send("rm -rf /tmp/jcnr_cloud_init_build")
+
+    def dcmanager_subcloud_add_enroll(self, subcloud_name: str, bootstrap_values: str, install_values: str, deploy_config_file: str, cloud_init_config: Optional[str] = None, release: Optional[str] = None):
         """Runs 'dcmanager subcloud add --enroll' command.
 
         Args:
@@ -138,13 +207,23 @@ class DcManagerSubcloudAddKeywords(BaseKeyword):
             bootstrap_values (str): Bootstrap values file name.
             install_values (str): Install values file name.
             deploy_config_file (str): Deployment config file name.
+            cloud_init_config (Optional[str]): Path to the cloud-init-config
+                tarball. Required for a JCNR/vCSR enrollment (carries the JCNR
+                configlet, secret and apply script); omitted for a standard
+                enrollment.
+            release (Optional[str]): Subcloud software release (e.g. "26.03").
+                Passed as --release for an N-1/N-2 enroll so the enroll playbook
+                targets the subcloud's load rather than the system controller's.
+                Omitted for a same-load (N) enroll.
         """
         lab_config = ConfigurationManager.get_lab_config()
         subcloud_obj = lab_config.get_subcloud(subcloud_name)
         subcloud_ip = subcloud_obj.get_floating_ip()
         subcloud_psswr = subcloud_obj.get_admin_credentials().get_password()
         bmc_psswr = subcloud_obj.get_bm_password() or subcloud_psswr
-        cmd = f"dcmanager subcloud add --enroll" f" --bootstrap-address {subcloud_ip}" f" --bootstrap-values {bootstrap_values}" f" --install-values {install_values}" f" --deploy-config {deploy_config_file}" f" --sysadmin-password {subcloud_psswr}" f" --bmc-password {bmc_psswr}"
+        cloud_init_arg = f" --cloud-init-config {cloud_init_config}" if cloud_init_config else ""
+        release_arg = f" --release {release}" if release else ""
+        cmd = f"dcmanager subcloud add --enroll" f"{cloud_init_arg}" f"{release_arg}" f" --bootstrap-address {subcloud_ip}" f" --bootstrap-values {bootstrap_values}" f" --install-values {install_values}" f" --deploy-config {deploy_config_file}" f" --sysadmin-password {subcloud_psswr}" f" --bmc-password {bmc_psswr}"
         self.ssh_connection.send(source_openrc(cmd))
         self.validate_success_return_code(self.ssh_connection)
 
