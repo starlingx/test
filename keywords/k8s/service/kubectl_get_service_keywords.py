@@ -79,6 +79,33 @@ class KubectlGetServiceKeywords(K8sBaseKeyword):
 
         return None
 
+    def get_service_node_port_by_name(self, service_name: str, port_name: str, namespace: str = None) -> Optional[str]:
+        """Get the nodePort of a named port on a service.
+
+        Unlike get_service_node_port, which always reads ``spec.ports[0]``, this
+        resolves the nodePort of the port whose ``name`` matches ``port_name``.
+        Needed where a service exposes multiple nodePorts (e.g. oidc-dex exposes
+        http, telemetry and https) and a specific named port must be asserted.
+
+        Args:
+            service_name (str): Name of the service.
+            port_name (str): Name of the port (e.g. 'telemetry', 'http', 'https').
+            namespace (str): Namespace of the service. Defaults to None.
+
+        Returns:
+            Optional[str]: The nodePort value for the named port, or None if not found.
+        """
+        jsonpath = 'jsonpath="{.spec.ports[?(@.name==\\"' + port_name + '\\")].nodePort}"'
+        cmd = f"kubectl get service {service_name} -o {jsonpath}"
+        if namespace:
+            cmd = f"kubectl get service {service_name} -n {namespace} -o {jsonpath}"
+        node_port = self.ssh_connection.send(self.k8s_config.export(cmd))
+        self.validate_success_return_code(self.ssh_connection)
+        if len(node_port) > 0 and node_port[0].strip():
+            return node_port[0].strip()
+
+        return None
+
     def get_service_endpoint(self, service_name: str, namespace: str = None) -> Optional[str]:
         """Get the endpoint (IP:PORT) of a service via kubectl describe.
 
