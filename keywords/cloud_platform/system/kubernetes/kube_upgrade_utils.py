@@ -15,6 +15,41 @@ def parse_minor_version(version: str) -> int:
     return int(version.lstrip("v").split(".")[1])
 
 
+def parse_version_key(version: str) -> List[int]:
+    """Build a sortable key from a Kubernetes version string.
+
+    Args:
+        version (str): Kubernetes version string (e.g. 'v1.19.13').
+
+    Returns:
+        List[int]: Integer components for ordering (e.g. [1, 19, 13]).
+    """
+    return list(map(int, version.lstrip("v").split(".")))
+
+
+def resolve_next_hop_candidates(active_version: str, available_versions: List[str], final_target: str) -> List[str]:
+    """Resolve the ordered Kubernetes versions eligible as the next upgrade hop.
+
+    Legacy (pre-USM) Kubernetes upgrade only exposes the immediate next version as
+    'available'; intermediate versions become available one at a time as each hop
+    completes. This returns the available versions that are above the active version
+    and do not overshoot the final target, sorted ascending, so the caller can take
+    the lowest as the next single-minor-version hop.
+
+    Args:
+        active_version (str): Current active Kubernetes version (e.g. 'v1.18.1').
+        available_versions (List[str]): Versions reported as 'available' by kube-version-list.
+        final_target (str): Final Kubernetes version to reach (e.g. 'v1.21.8').
+
+    Returns:
+        List[str]: Eligible next-hop versions sorted ascending (empty if none qualify).
+    """
+    final_key = parse_version_key(final_target)
+    active_key = parse_version_key(active_version)
+    candidates = [v for v in available_versions if active_key < parse_version_key(v) <= final_key]
+    return sorted(candidates, key=parse_version_key)
+
+
 def build_control_plane_batches(active_version: str, target_version: str, all_versions: List[str]) -> List[List[str]]:
     """Build batches of control-plane upgrade versions respecting the 3-version skew policy.
 
