@@ -70,13 +70,12 @@ class SystemVerticalTableParser:
         """
         self.system_output = system_output
 
-    def get_output_values_dict(
-        self,
-    ):
+    def get_output_values_dict(self) -> dict:
         """
         Getter for output values dict.
 
-        Returns: the output values dict
+        Returns:
+            dict: Parsed property values.
 
         """
         # Regex to validate the pattern "+---+---+", with varying dashes
@@ -129,10 +128,16 @@ class SystemVerticalTableParser:
         previous_key = None
         for row in self.system_output[3:last_row]:  # Ignore the first three rows and the last row.
 
+            # Helm override cells contain YAML; their indentation and newlines
+            # are data, unlike ordinary table values wrapped for display.
+            property_name = row.split("|", 2)[1].strip() if "|" in row else ""
+            value_property = property_name or previous_key
+            preserve_value_format = value_property in {"user_overrides", "system_overrides", "combined_overrides"}
+
             # Detect regex syntax patterns
             regex_indicators = ["regexp:", "regex:", r"\^/", r"\$\|/", r"\([^)]*\|[^)]*\)"]  # Explicit regex keywords  # Start anchor with path  # End anchor with pipe  # Parentheses containing pipes
 
-            if "!!binary" in row:
+            if "!!binary" in row and not preserve_value_format:
                 row = row.replace("!!binary |", "")
 
             has_regex = any(re.search(pattern, str(row)) for pattern in regex_indicators)
@@ -141,10 +146,14 @@ class SystemVerticalTableParser:
                 raise KeywordException("It is expected that a table have at least two columns.")
 
             parts = row.split("|", 3)
+            if preserve_value_format:
+                # Remove only table padding, retaining YAML indentation and literal pipes.
+                property_cell, value_cell = row.rstrip("\r\n")[1:-1].split("|", 1)
+                parts = ["", property_cell, value_cell.removeprefix(" ").rstrip()]
 
             if len(parts) > 2:
                 key = parts[1].strip()
-                value = parts[2].strip()
+                value = parts[2] if preserve_value_format else parts[2].strip()
                 if key:
                     output_values_dict[key] = value
                     previous_key = key
@@ -152,7 +161,7 @@ class SystemVerticalTableParser:
                     # This 'else' block handles cases where the property name spans multiple lines, ensuring proper parsing.
                     if data_row_number == 0:
                         raise KeywordException("The property name in the first data row cannot be empty.")
-                    output_values_dict[previous_key] = output_values_dict[previous_key] + " " + value
+                    output_values_dict[previous_key] = output_values_dict[previous_key] + ("\n" if preserve_value_format else " ") + value
             data_row_number += 1
 
         return output_values_dict

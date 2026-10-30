@@ -5,6 +5,7 @@ from framework.exceptions.keyword_exception import KeywordException
 from framework.ssh.ssh_connection import SSHConnection
 from keywords.base_keyword import BaseKeyword
 from keywords.k8s.pods.kubectl_exec_in_pods_keywords import KubectlExecInPodsKeywords
+from keywords.linux.ip.object.host_interface_inventory_output import HostInterfaceInventoryOutput
 from keywords.linux.ip.object.ip_br_addr_output import IPBrAddrOutput
 from keywords.linux.ip.object.ip_link_show_output import IPLinkShowOutput
 
@@ -16,6 +17,16 @@ class IPKeywords(BaseKeyword):
 
     def __init__(self, ssh_connection: SSHConnection):
         self.ssh_connection = ssh_connection
+
+    def get_host_interface_links(self) -> HostInterfaceInventoryOutput:
+        """Read detailed link flags and types for independent host inventory.
+
+        Returns:
+            HostInterfaceInventoryOutput: Parsed eligible host interface links.
+        """
+        output = self.ssh_connection.send("ip -d -j link show")
+        self.validate_success_return_code(self.ssh_connection)
+        return HostInterfaceInventoryOutput(output)
 
     def ip_link_show_interface(self, interface_name: str) -> IPLinkShowOutput:
         """

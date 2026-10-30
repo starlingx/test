@@ -176,3 +176,20 @@ class SystemApplicationListKeywords(BaseKeyword):
 
         message = f"Application {application_name}'s version is {version}"
         validate_str_contains(application_version, version, message)
+
+    def get_application_state(self, application_name: str) -> tuple[str, str] | None:
+        """Read version/status from one checked inventory snapshot.
+
+        CLI/parser failures propagate; only a successful list can establish absence.
+
+        Args:
+            application_name (str): Exact application name.
+
+        Returns:
+            tuple[str, str] | None: Version/status, or confirmed absence.
+        """
+        applications = self.get_system_application_list()
+        if not applications.application_exists(application_name):
+            return None
+        application = applications.get_application(application_name)
+        return application.get_version(), application.get_status()
