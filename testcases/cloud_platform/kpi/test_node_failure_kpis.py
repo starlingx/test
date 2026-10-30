@@ -17,14 +17,17 @@ from framework.ssh.ssh_connection import SSHConnection
 from framework.validation.validation import validate_equals, validate_greater_than_or_equal, validate_not_none, validate_equals_with_retry
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.cloud_platform.system.host.system_host_list_keywords import SystemHostListKeywords
-from keywords.cloud_platform.system.host.system_host_lock_keywords import SystemHostLockKeywords
 from keywords.k8s.node.kubectl_nodes_keywords import KubectlNodesKeywords
 from keywords.k8s.pods.kubectl_get_pods_keywords import KubectlGetPodsKeywords
 from keywords.kpi.node_failure_kpi_keywords import cleanup_test_resources
 from keywords.kpi.node_failure_kpi_keywords import create_html_report
 from keywords.kpi.node_failure_kpi_keywords import create_test_deployment
+from keywords.kpi.node_failure_kpi_keywords import get_nodes_with_label
+from keywords.kpi.node_failure_kpi_keywords import get_unhealthy_hosts
 from keywords.kpi.node_failure_kpi_keywords import label_node
 from keywords.kpi.node_failure_kpi_keywords import read_existing_iterations
+from keywords.kpi.node_failure_kpi_keywords import remove_label_from_all_nodes
+from keywords.kpi.node_failure_kpi_keywords import wait_for_all_hosts_healthy
 from keywords.kpi.node_failure_kpi_keywords import setup_namespace_and_image
 from keywords.kpi.node_failure_kpi_keywords import wait_for_node_status
 from keywords.kpi.node_failure_kpi_keywords import wait_for_pods_rescheduled
@@ -120,6 +123,13 @@ def execute_node_failure_kpi_test(request, ssh_connection: SSHConnection, target
     
     get_logger().log_info(f"Starting node failure KPI test on {node_type} nodes: target={target_node}, backup={backup_node}")
     
+    get_logger().log_test_case_step("Verify all hosts are unlocked/enabled/available before starting")
+    unhealthy_hosts = get_unhealthy_hosts(ssh_connection)
+    validate_equals(unhealthy_hosts, [], f"All hosts must be unlocked/enabled/available before the test; unhealthy hosts: {unhealthy_hosts}")
+    
+    get_logger().log_test_case_step("Ensure no stray test label remains on any node before labeling")
+    remove_label_from_all_nodes(ssh_connection)
+
     get_logger().log_test_case_step(f"Label target {node_type} node for pod placement")
     label_node(ssh_connection, target_node)
 
@@ -128,8 +138,17 @@ def execute_node_failure_kpi_test(request, ssh_connection: SSHConnection, target
     local_registry = ConfigurationManager.get_docker_config().get_local_registry().get_registry_url()
 
     def cleanup_deployment():
-        """Finalizer to cleanup deployment and wait for node"""
+        """Finalizer to cleanup resources and wait for all hosts to recover.
+
+        Runs whether the test passes or fails so the rebooted node is always brought
+        back to unlocked/enabled/available before the next iteration starts.
+        """
         cleanup_test_resources(ssh_connection, namespace, target_node, backup_node)
+        all_healthy = wait_for_all_hosts_healthy(ssh_connection, target_node)
+        if all_healthy:
+            get_logger().log_info("All hosts are unlocked/enabled/available after cleanup")
+        else:
+            get_logger().log_info("WARNING: one or more hosts did not return to unlocked/enabled/available within timeout")
 
     request.addfinalizer(cleanup_deployment)
     
@@ -181,6 +200,10 @@ def execute_node_failure_kpi_test(request, ssh_connection: SSHConnection, target
     label_node(ssh_connection, backup_node)
     get_logger().log_info(f"Backup node {backup_node} labeled for pod rescheduling")
     
+    get_logger().log_test_case_step("Verify only the intended target and backup nodes carry the test label")
+    labeled_nodes = get_nodes_with_label(ssh_connection)
+    validate_equals(sorted(labeled_nodes), sorted([target_node, backup_node]), f"Only {target_node} and {backup_node} should carry the kpi-test-node label, found {labeled_nodes}")
+    
     get_logger().log_test_case_step(f"Record failure start time and reboot the {node_type} node")
     failure_start_time = time.time()
     failure_time_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -216,13 +239,7 @@ def execute_node_failure_kpi_test(request, ssh_connection: SSHConnection, target
     rescheduling_duration = recovery_time - detection_time
     get_logger().log_info(f"KPI #2 - Workload rescheduling time: {rescheduling_duration:.2f} seconds")
     
-    get_logger().log_test_case_step(f"Wait for {target_node} to be unlocked, enabled, and available")
-    get_logger().log_info(f"Waiting for {target_node} to complete reboot and return to service...")
-    is_unlocked = SystemHostLockKeywords(ssh_connection).wait_for_host_unlocked(target_node, unlock_wait_timeout=2800)
-    if is_unlocked:
-        get_logger().log_info(f"{target_node} is now unlocked, enabled, and available")
-    else:
-        get_logger().log_info(f"WARNING: {target_node} did not return to unlocked/enabled/available state within timeout")
+    get_logger().log_info(f"{target_node} reboot recovery is handled by the cleanup finalizer (waits for all hosts healthy)")
     
     get_logger().log_test_case_step("Update KPI report with both measurements")
     existing_iterations = read_existing_iterations(node_type)
