@@ -12,9 +12,7 @@ import yaml
 
 from framework.ssh.ssh_connection import SSHConnection
 from framework.validation.validation import validate_equals_with_retry
-from framework.validation.validation_response import ValidationResponse
 from keywords.cloud_platform.applications.object.exporter_http_output import ExporterHttpOutput
-from keywords.cloud_platform.applications.object.exporter_workload_output import ExporterWorkloadOutput
 from keywords.cloud_platform.applications.object.interface_metrics_output import InterfaceMetricsOutput
 from keywords.cloud_platform.system.application.object.system_application_delete_input import SystemApplicationDeleteInput
 from keywords.cloud_platform.system.application.object.system_application_remove_input import SystemApplicationRemoveInput
@@ -27,10 +25,13 @@ from keywords.cloud_platform.system.application.system_application_upload_keywor
 from keywords.cloud_platform.system.helm.system_helm_chart_attribute_modify_keywords import SystemHelmChartAttributeModifyKeywords
 from keywords.cloud_platform.system.helm.system_helm_override_keywords import SystemHelmOverrideKeywords
 from keywords.cloud_platform.system.host.system_host_list_keywords import SystemHostListKeywords
+from keywords.k8s.daemonsets.kubectl_get_daemonsets_keywords import KubectlGetDaemonsetsKeywords
 from keywords.k8s.get_resource.kubectl_get_resource_keywords import KubectlGetResourceKeywords
 from keywords.k8s.k8s_base_keyword import K8sBaseKeyword
 from keywords.k8s.node.kubectl_label_node_keywords import KubectlLabelNodeKeywords
 from keywords.k8s.pods.kubectl_get_pods_keywords import KubectlGetPodsKeywords
+from keywords.k8s.pods.kubectl_wait_pod_keywords import KubectlWaitPodKeywords
+from keywords.k8s.pods.object.daemonset_workload_output import DaemonSetWorkloadOutput
 from keywords.linux.ip.host_interface_inventory_keywords import HostInterfaceInventoryKeywords
 
 APPLICATION_NAME = "node-interface-metrics-exporter"
@@ -91,20 +92,15 @@ class NodeInterfaceMetricsExporterKeywords(K8sBaseKeyword):
             raise ValueError(f"Exporter metrics returned HTTP {response.get_status_code()}")
         return InterfaceMetricsOutput(response.get_body())
 
-    def workload(self) -> ExporterWorkloadOutput:
+    def workload(self) -> DaemonSetWorkloadOutput:
         """Read rendered scheduling and cross-check Kubernetes nodes with platform inventory.
 
         Returns:
-            ExporterWorkloadOutput: Fresh workload and inventory snapshot.
+            DaemonSetWorkloadOutput: Fresh workload and inventory snapshot.
         """
-        resource_keywords = KubectlGetResourceKeywords(self.ssh_connection, self.kubeconfig_path)
-        daemonsets = json.loads(resource_keywords.get_resource_field("daemonsets", "", "{@}", APPLICATION_NAME))["items"]
-        if len(daemonsets) != 1:
-            raise ValueError("Expected exactly one exporter DaemonSet")
-        nodes = json.loads(resource_keywords.get_resource_field("nodes", "", "{@}"))["items"]
+        workload = KubectlGetDaemonsetsKeywords(self.ssh_connection, self.kubeconfig_path).get_daemonset_workload(APPLICATION_NAME)
         inventory = {host.get_host_name() for host in SystemHostListKeywords(self.ssh_connection).get_system_host_list().get_hosts()}
-        workload = ExporterWorkloadOutput(daemonsets[0], nodes)
-        if not set(workload.eligible_nodes()) <= inventory:
+        if not set(workload.get_eligible_nodes()) <= inventory:
             raise ValueError("Exporter nodes are missing from platform host inventory")
         return workload
 
@@ -118,14 +114,12 @@ class NodeInterfaceMetricsExporterKeywords(K8sBaseKeyword):
             dict[str, dict]: Ready pods indexed by node.
         """
 
-        def observe() -> ValidationResponse:
-            workload = self.workload()
-            label = workload.get_label_selector()
-            pods = KubectlGetPodsKeywords(self.ssh_connection, self.kubeconfig_path).get_pods_json(namespace=APPLICATION_NAME, label=label).get_pod_records()
-            ready_pods = workload.ready_pods(pods)
-            return ValidationResponse(bool(ready_pods), ready_pods)
-
-        return validate_equals_with_retry(observe, True, "Exporter pods ready on every eligible node", timeout=timeout, polling_sleep_time=5)
+        self.workload()
+        pods = KubectlWaitPodKeywords(self.ssh_connection, self.kubeconfig_path).wait_for_daemonset_ready(APPLICATION_NAME, timeout=timeout)
+        inventory = {host.get_host_name() for host in SystemHostListKeywords(self.ssh_connection).get_system_host_list().get_hosts()}
+        if not set(pods) <= inventory:
+            raise ValueError("Exporter nodes are missing from platform host inventory")
+        return pods
 
     def verify_candidate(self, version: str, images: dict[str, str]) -> dict[str, dict]:
         """Verify requested app version and immutable image identities on all nodes.

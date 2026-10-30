@@ -6,9 +6,9 @@ import pytest
 import yaml
 
 from keywords.cloud_platform.applications.object.exporter_http_output import ExporterHttpOutput
-from keywords.cloud_platform.applications.object.exporter_workload_output import ExporterWorkloadOutput
 from keywords.cloud_platform.applications.object.interface_metrics_output import InterfaceMetricsOutput
 from keywords.cloud_platform.system.system_vertical_table_parser import SystemVerticalTableParser
+from keywords.k8s.pods.object.daemonset_workload_output import DaemonSetWorkloadOutput
 from keywords.linux.ip.object.host_interface_inventory_output import HostInterfaceInventoryOutput
 
 
@@ -64,12 +64,12 @@ def test_http_accessors_preserve_status_and_body():
 def test_selector_getter_rejects_unsupported_queries(selector):
     """Keep selector validation in the output object."""
     with pytest.raises(ValueError):
-        ExporterWorkloadOutput({"spec": {"selector": selector}}, []).get_label_selector()
+        DaemonSetWorkloadOutput({"spec": {"selector": selector}}, []).get_label_selector()
 
 
 def test_selector_getter_is_deterministic():
     """Return an equality selector without changing eligibility or readiness."""
-    output = ExporterWorkloadOutput({"spec": {"selector": {"matchLabels": {"z": "2", "a": "1"}}}}, [])
+    output = DaemonSetWorkloadOutput({"spec": {"selector": {"matchLabels": {"z": "2", "a": "1"}}}}, [])
     assert output.get_label_selector() == "a=1,z=2"
 
 

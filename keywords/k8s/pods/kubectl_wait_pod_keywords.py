@@ -2,7 +2,11 @@
 
 from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
+from framework.validation.validation import validate_equals_with_retry
+from framework.validation.validation_response import ValidationResponse
+from keywords.k8s.daemonsets.kubectl_get_daemonsets_keywords import KubectlGetDaemonsetsKeywords
 from keywords.k8s.k8s_base_keyword import K8sBaseKeyword
+from keywords.k8s.pods.kubectl_get_pods_keywords import KubectlGetPodsKeywords
 
 
 class KubectlWaitPodKeywords(K8sBaseKeyword):
@@ -53,3 +57,29 @@ class KubectlWaitPodKeywords(K8sBaseKeyword):
         cmd = f"kubectl wait --for=condition=Ready pod --all -n {namespace} --timeout={timeout}s"
         self.ssh_connection.send(self.k8s_config.export(cmd))
         self.validate_success_return_code(self.ssh_connection)
+
+    def wait_for_daemonset_ready(self, namespace: str, daemonset_name: str | None = None, timeout: int = 300, polling_sleep_time: int = 5) -> dict[str, dict]:
+        """Wait for the current DaemonSet rollout on every independently eligible node.
+
+        Check observed generation, rollout counts, ownership, revision consistency
+        and every declared container. Unsupported scheduling fails explicitly.
+        Refresh scheduling and pod evidence on every poll.
+        Existing pod-only waits retain their behavior.
+
+        Args:
+            namespace (str): Namespace containing the DaemonSet and its pods.
+            daemonset_name (str | None): DaemonSet name; None requires exactly one in the namespace.
+            timeout (int): Maximum polling duration in seconds.
+            polling_sleep_time (int): Delay between readiness observations in seconds.
+
+        Returns:
+            dict[str, dict]: Current ready pods indexed by eligible node name.
+        """
+
+        def observe() -> ValidationResponse:
+            workload = KubectlGetDaemonsetsKeywords(self.ssh_connection, self.k8s_config.get_kubeconfig_path()).get_daemonset_workload(namespace, daemonset_name)
+            pods = KubectlGetPodsKeywords(self.ssh_connection, self.k8s_config.get_kubeconfig_path()).get_pods_json(namespace=namespace, label=workload.get_label_selector()).get_pod_records()
+            ready_pods = workload.get_ready_pods(pods)
+            return ValidationResponse(bool(ready_pods), ready_pods)
+
+        return validate_equals_with_retry(observe, True, "DaemonSet pods ready on every eligible node", timeout=timeout, polling_sleep_time=polling_sleep_time)
