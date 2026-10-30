@@ -67,3 +67,18 @@ class KubectlCreateClusterRoleBindingKeywords(K8sBaseKeyword):
         self.ssh_connection.send(self.k8s_config.export(cmd))
         self.validate_success_return_code(self.ssh_connection)
         get_logger().log_info(f"ClusterRoleBinding '{binding_name}' deleted.")
+
+    def cleanup_clusterrolebinding(self, binding_name: str) -> None:
+        """Best-effort delete of a cluster role binding for teardown.
+
+        Unlike delete_clusterrolebinding, this does not validate the return code
+        and never raises, so it is safe to register as a finalizer even when the
+        target apiserver may be transiently unavailable (e.g. a subcloud
+        kube-apiserver still restarting after an OIDC service-parameter apply).
+
+        Args:
+            binding_name (str): Name of the cluster role binding to delete.
+        """
+        cmd = f"kubectl delete clusterrolebinding {binding_name} --ignore-not-found"
+        self.ssh_connection.send(self.k8s_config.export(cmd))
+        get_logger().log_info(f"Best-effort cleanup of ClusterRoleBinding '{binding_name}' attempted.")
