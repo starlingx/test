@@ -166,15 +166,21 @@ def _setup_lvm() -> list:
     return alarms_before
 
 
-def _apply_lvm_csi_cgts_vg():
+def _apply_lvm_csi_cgts_vg(pool_size: int | None = None):
     """
     - Add the 'lvm' storage backend
     - Capture the cgts-vg total size before assigning the lvm-csi function
-    - Add the 'lvm-csi' function to the cgts-vg local volume group
+    - Add the 'lvm-csi' function to the cgts-vg local volume group (optionally setting the thin pool size)
     - Wait for the 'lvm-csi' application to be applied
     - Verify the 'lvmcsi-pool' thin pool exists
     - Verify the cgts-vg attributes (name, state, function, type, pool size)
-    - Verify the cgts-vg available size dropped to ~50% after provisioning the thin pool
+    - Verify the cgts-vg available size dropped to ~50% after provisioning the thin pool (default pool size only)
+
+    Args:
+        pool_size (int | None): optional thin pool size in GiB to set while assigning the lvm-csi function
+            ('-s' option, in the same host-lvg-modify call). When None, the thin pool defaults to
+            ~50% of the VG; when set, the pool is provisioned at the requested size and that exact
+            size is validated instead of the ~50% available-size drop.
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     system_storage_backend_keywords = SystemStorageBackendKeywords(ssh_connection)
@@ -191,8 +197,13 @@ def _apply_lvm_csi_cgts_vg():
     get_logger().log_test_case_step(f"Capture the '{LVM_VG}' available size before assigning the lvm-csi function")
     avail_size_before = float(system_host_lvg_keywords.get_system_host_lvg_show(active_controller, LVM_VG).get_system_host_lvg().get_avail_size())
 
-    get_logger().log_test_case_step(f"Add the '{LVM_CSI_APP}' function to '{LVM_VG}' on {active_controller}")
-    system_host_lvg_keywords.system_host_lvg_modify(host_id=active_controller, lvg_name=LVM_VG, lvm_function="lvm-csi")
+    if pool_size is not None:
+        get_logger().log_test_case_step(f"Verify '{LVM_VG}' has at least {pool_size} GiB available before assigning the lvm-csi function (available {avail_size_before} GiB).")
+        validate_equals(avail_size_before >= pool_size, True, f"'{LVM_VG}' should have at least {pool_size} GiB available, got {avail_size_before} GiB.")
+        get_logger().log_test_case_step(f"Add the '{LVM_CSI_APP}' function to '{LVM_VG}' with a {pool_size} GiB thin pool size in a single operation on {active_controller}")
+    else:
+        get_logger().log_test_case_step(f"Add the '{LVM_CSI_APP}' function to '{LVM_VG}' on {active_controller}")
+    system_host_lvg_keywords.system_host_lvg_modify(host_id=active_controller, lvg_name=LVM_VG, lvm_function="lvm-csi", lvm_pool_size=pool_size)
 
     get_logger().log_test_case_step(f"Wait for the '{LVM_CSI_APP}' application to be applied")
     application_show_keywords.validate_app_progress_contains(LVM_CSI_APP, "completed")
@@ -208,19 +219,31 @@ def _apply_lvm_csi_cgts_vg():
     validate_equals(lvg.get_state(), "provisioned", f"'{LVM_VG}' state should be 'provisioned'.")
     validate_equals(lvg.get_lvm_function(), "lvm-csi", f"'{LVM_VG}' function should be 'lvm-csi'.")
     validate_equals(lvg.get_lvm_type(), "thin", f"'{LVM_VG}' type should be 'thin'.")
-    pool_size = lvg.get_lvm_pool_size()
-    validate_equals(pool_size > 0, True, f"'{LVM_VG}' lvm_pool_size should be greater than 0, got '{pool_size}'.")
+    pool_size_after = lvg.get_lvm_pool_size()
+    validate_equals(pool_size_after > 0, True, f"'{LVM_VG}' lvm_pool_size should be greater than 0, got '{pool_size_after}'.")
 
-    get_logger().log_test_case_step(f"Verify the '{LVM_VG}' available size dropped to ~50% after provisioning the thin pool.")
+    if pool_size is not None:
+        # The thin pool size is set synchronously by host-lvg-modify, so the lvg read above already
+        # reflects it; validate the pool size captured in 'pool_size_after' directly.
+        get_logger().log_test_case_step(f"Verify the '{LVM_VG}' lvm_pool_size reflects the requested {pool_size} GiB.")
+        validate_equals(pool_size_after, pool_size, f"'{LVM_VG}' lvm_pool_size should be {pool_size} GiB, got {pool_size_after}.")
 
-    def is_avail_size_halved() -> bool:
-        # sysinv updates the VG available size asynchronously, so poll until it drops to ~50% (with tolerance).
-        current_avail_size = float(system_host_lvg_keywords.get_system_host_lvg_show(active_controller, LVM_VG).get_system_host_lvg().get_avail_size())
-        remaining_ratio = (current_avail_size / avail_size_before) if avail_size_before else 0
-        get_logger().log_info(f"'{LVM_VG}' available size is {current_avail_size} GiB (was {avail_size_before} GiB, ratio {remaining_ratio:.2%}).")
-        return 0.45 <= remaining_ratio <= 0.55
+        get_logger().log_test_case_step(f"Verify the '{LVM_CSI_POOL}' actual size (lvs) reflects the requested {pool_size} GiB.")
+        # The thin pool is provisioned together with the (synchronous) pool-size change, so read its
+        # actual size once and validate it matches the requested size (within a 1 GiB tolerance).
+        pool_lsize = lvs_keywords.get_lvs().get_logical_volume(LVM_CSI_POOL).get_lsize_gib()
+        validate_equals(abs(pool_lsize - pool_size) <= 1, True, f"'{LVM_CSI_POOL}' actual size should be ~{pool_size} GiB, got {pool_lsize} GiB.")
+    else:
+        get_logger().log_test_case_step(f"Verify the '{LVM_VG}' available size dropped to ~50% after provisioning the thin pool.")
 
-    validate_equals_with_retry(is_avail_size_halved, True, f"'{LVM_VG}' available size to drop to ~50% of {avail_size_before} GiB", timeout=300, polling_sleep_time=10)
+        def is_avail_size_halved() -> bool:
+            # sysinv updates the VG available size asynchronously, so poll until it drops to ~50% (with tolerance).
+            current_avail_size = float(system_host_lvg_keywords.get_system_host_lvg_show(active_controller, LVM_VG).get_system_host_lvg().get_avail_size())
+            remaining_ratio = (current_avail_size / avail_size_before) if avail_size_before else 0
+            get_logger().log_info(f"'{LVM_VG}' available size is {current_avail_size} GiB (was {avail_size_before} GiB, ratio {remaining_ratio:.2%}).")
+            return 0.45 <= remaining_ratio <= 0.55
+
+        validate_equals_with_retry(is_avail_size_halved, True, f"'{LVM_VG}' available size to drop to ~50% of {avail_size_before} GiB", timeout=300, polling_sleep_time=10)
 
 
 def _verify_topolvm_pods_running(ssh_connection: SSHConnection):
@@ -451,11 +474,11 @@ def _create_and_restore_snapshot(ssh_connection: SSHConnection, source_workload:
     validate_equals(ssh_connection.get_return_code(), 0, f"'{SNAPSHOT_TEST_FILE}' should be present in the restored Pod (snapshot restored).")
 
 
-def _setup_lvm_csi_snapshot() -> list:
+def _setup_lvm_csi_already_applied() -> list:
     """
     Verify the lvm-csi (TopoLVM) thin provisioning is already applied on the lab.
 
-    This scenario does NOT add or apply lvm-csi; it assumes the lab already has it configured. The
+    This setup does NOT add or apply lvm-csi; it assumes the lab already has it configured. The
     lvm-csi thin volume group (cgts-vg or the dedicated lvm-provisioner) is guaranteed by the test's
     capability mark (lab_has_lvm_thin_cgts_vg / lab_has_lvm_thin_dedicated), so this setup only
     validates the remaining runtime state and fails (via validate_equals) if any check is not met:
@@ -1661,7 +1684,7 @@ def test_lvm_csi_thin_snapshot_cgts_vg_sx(request):
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
 
-    alarms_before = _setup_lvm_csi_snapshot()
+    alarms_before = _setup_lvm_csi_already_applied()
 
     # Register the teardown only after setup passed (setup is validation-only, nothing to revert if it fails).
     def teardown():
@@ -1707,7 +1730,7 @@ def test_lvm_csi_thin_snapshot_cgts_vg_dx(request):
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
 
-    alarms_before = _setup_lvm_csi_snapshot()
+    alarms_before = _setup_lvm_csi_already_applied()
 
     # Register the teardown only after setup passed (setup is validation-only, nothing to revert if it fails).
     def teardown():
@@ -1754,7 +1777,7 @@ def test_lvm_csi_thin_snapshot_cgts_vg_compute(request):
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
 
-    alarms_before = _setup_lvm_csi_snapshot()
+    alarms_before = _setup_lvm_csi_already_applied()
 
     # Register the teardown only after setup passed (setup is validation-only, nothing to revert if it fails).
     def teardown():
@@ -1799,7 +1822,7 @@ def test_lvm_csi_thin_snapshot_dedicated_vg_sx(request):
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
 
-    alarms_before = _setup_lvm_csi_snapshot()
+    alarms_before = _setup_lvm_csi_already_applied()
 
     # Register the teardown only after setup passed (setup is validation-only, nothing to revert if it fails).
     def teardown():
@@ -1844,7 +1867,7 @@ def test_lvm_csi_thin_snapshot_dedicated_vg_dx(request):
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
 
-    alarms_before = _setup_lvm_csi_snapshot()
+    alarms_before = _setup_lvm_csi_already_applied()
 
     # Register the teardown only after setup passed (setup is validation-only, nothing to revert if it fails).
     def teardown():
@@ -1890,7 +1913,7 @@ def test_lvm_csi_thin_snapshot_dedicated_vg_compute(request):
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
 
-    alarms_before = _setup_lvm_csi_snapshot()
+    alarms_before = _setup_lvm_csi_already_applied()
 
     # Register the teardown only after setup passed (setup is validation-only, nothing to revert if it fails).
     def teardown():
@@ -1937,7 +1960,7 @@ def test_lvm_csi_force_remove_auto_apply(request):
     lvs_keywords = LvsKeywords(ssh_connection)
     active_controller = SystemHostListKeywords(ssh_connection).get_active_controller().get_host_name()
 
-    alarms_before = _setup_lvm_csi_snapshot()
+    alarms_before = _setup_lvm_csi_already_applied()
 
     def teardown():
         _verify_no_new_alarms(ssh_connection, alarms_before)
@@ -2004,7 +2027,7 @@ def test_lvm_csi_delete_app(request):
     lvs_keywords = LvsKeywords(ssh_connection)
     active_controller = SystemHostListKeywords(ssh_connection).get_active_controller().get_host_name()
 
-    alarms_before = _setup_lvm_csi_snapshot()
+    alarms_before = _setup_lvm_csi_already_applied()
 
     def teardown():
         # sysinv self-heals the managed app; apply manually only as a fallback if it did not re-apply.
@@ -2080,7 +2103,7 @@ def test_lvm_csi_abort_apply(request):
     system_application_abort_keywords = SystemApplicationAbortKeywords(ssh_connection)
     system_application_apply_keywords = SystemApplicationApplyKeywords(ssh_connection)
 
-    alarms_before = _setup_lvm_csi_snapshot()
+    alarms_before = _setup_lvm_csi_already_applied()
 
     def teardown():
         # Recover the aborted app back to its original 'applied' state (sysinv would eventually
@@ -2142,7 +2165,7 @@ def test_lvm_csi_resize_thin_pool_cgts_vg(request):
     lvs_keywords = LvsKeywords(ssh_connection)
     active_controller = SystemHostListKeywords(ssh_connection).get_active_controller().get_host_name()
 
-    alarms_before = _setup_lvm_csi_snapshot()
+    alarms_before = _setup_lvm_csi_already_applied()
 
     def teardown():
         # A thin pool cannot be shrunk, so there is nothing to restore; just confirm no new alarms.
@@ -2215,7 +2238,7 @@ def test_lvm_csi_shrink_thin_pool_rejected_cgts_vg(request):
     system_host_lvg_keywords = SystemHostLvgKeywords(ssh_connection)
     active_controller = SystemHostListKeywords(ssh_connection).get_active_controller().get_host_name()
 
-    alarms_before = _setup_lvm_csi_snapshot()
+    alarms_before = _setup_lvm_csi_already_applied()
 
     def teardown():
         # Nothing was modified (the shrink is rejected), so just confirm no new alarms.
@@ -2236,6 +2259,270 @@ def test_lvm_csi_shrink_thin_pool_rejected_cgts_vg(request):
     get_logger().log_test_case_step(f"Verify the '{LVM_VG}' lvm_pool_size is unchanged ({pool_size_before} GiB).")
     pool_size_after = int(system_host_lvg_keywords.get_system_host_lvg_show(active_controller, LVM_VG).get_system_host_lvg().get_lvm_pool_size())
     validate_equals(pool_size_after, pool_size_before, f"'{LVM_VG}' lvm_pool_size should be unchanged after the rejected shrink.")
+
+
+@mark.p2
+def test_lvm_csi_remove_thin_provisioning_cgts_vg(request):
+    """
+    Validate removing thin provisioning from the cgts-vg by resetting its LVM function to 'none'.
+
+    Provisions lvm-csi thin on the shared cgts-vg from scratch, then removes the thin provisioning
+    with 'system host-lvg-modify -f none' and verifies the LVM function and type are reset to None.
+    The function cannot be reset while sysinv still counts provisioned thin logical volumes, so the
+    test first waits for 'thin_cur_lv' to reach 0. The cgts-vg is confirmed present via
+    'host-lvg-list'; the function/type reset is read from 'host-lvg-show' (host-lvg-list does not
+    expose those fields). The teardown reverts the remaining lvm-csi setup (backend and application).
+
+    Setup:
+        - Validate that all hosts are healthy
+        - Validate the 'lvm-csi' application is in the initial 'uploaded' state
+        - Validate the 'lvm' storage backend is not already configured
+        - Capture a snapshot of the active alarms
+
+    Test Steps:
+        - Add the 'lvm' storage backend and assign the lvm-csi thin function to the cgts-vg, apply lvm-csi
+        - Wait for the cgts-vg thin_cur_lv to reach 0 (the function cannot be reset while thin LVs exist)
+        - Remove the thin provisioning by resetting the cgts-vg function to 'none' (host-lvg-modify -f none)
+        - Verify the cgts-vg is still present in host-lvg-list
+        - Verify the cgts-vg function and type are reset to None (via host-lvg-show)
+
+    Teardown:
+        - Reset the cgts-vg function to 'none' (if still set), delete the 'lvm' storage backend
+        - Remove the 'lvm-csi' application (back to 'uploaded')
+        - Verify no new alarms remain after the revert
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    system_host_lvg_keywords = SystemHostLvgKeywords(ssh_connection)
+    active_controller = SystemHostListKeywords(ssh_connection).get_active_controller().get_host_name()
+
+    alarms_before = _setup_lvm()
+
+    # Register the teardown only after setup passed (setup is validation-only, nothing to revert if it fails).
+    def teardown():
+        _teardown_lvm_csi_resources(ssh_connection, alarms_before)
+
+    request.addfinalizer(teardown)
+
+    # Provision lvm-csi thin on the cgts-vg from scratch so there is thin provisioning to remove.
+    _apply_lvm_csi_cgts_vg()
+
+    get_logger().log_test_case_step(f"Verify '{LVM_VG}' currently has the lvm-csi thin function on {active_controller}.")
+    lvg_before = system_host_lvg_keywords.get_system_host_lvg_show(active_controller, LVM_VG).get_system_host_lvg()
+    validate_equals(lvg_before.get_lvm_function(), "lvm-csi", f"'{LVM_VG}' function should be 'lvm-csi' before the removal.")
+    validate_equals(lvg_before.get_lvm_type(), "thin", f"'{LVM_VG}' type should be 'thin' before the removal.")
+
+    # 'host-lvg-modify -f none' is rejected while sysinv still counts thin LVs, so wait for thin_cur_lv to reach 0.
+    get_logger().log_test_case_step(f"Wait for '{LVM_VG}' thin_cur_lv to reach 0 on {active_controller}.")
+    system_host_lvg_keywords.wait_for_thin_cur_lv_zero(active_controller, LVM_VG)
+
+    get_logger().log_test_case_step(f"Remove the thin provisioning by resetting the '{LVM_VG}' function to 'none' on {active_controller}.")
+    system_host_lvg_keywords.system_host_lvg_modify(host_id=active_controller, lvg_name=LVM_VG, lvm_function="none")
+
+    get_logger().log_test_case_step(f"Verify '{LVM_VG}' is still present in host-lvg-list on {active_controller}.")
+    lvg_names = [lvg.get_lvg_name() for lvg in system_host_lvg_keywords.get_system_host_lvg_list(active_controller).get_system_host_lvg()]
+    validate_equals(LVM_VG in lvg_names, True, f"'{LVM_VG}' should still be present in host-lvg-list after removing the thin provisioning.")
+
+    get_logger().log_test_case_step(f"Verify the '{LVM_VG}' function and type are reset to None on {active_controller}.")
+    lvg_after = system_host_lvg_keywords.get_system_host_lvg_show(active_controller, LVM_VG).get_system_host_lvg()
+    validate_equals(lvg_after.get_lvm_function(), "none", f"'{LVM_VG}' function should be reset to 'none'.")
+    validate_equals(lvg_after.get_lvm_type() in (None, "None"), True, f"'{LVM_VG}' type should be reset to None, got '{lvg_after.get_lvm_type()}'.")
+
+
+@mark.p2
+@mark.lab_has_free_disk
+def test_lvm_csi_remove_dedicated_thin_vg(request):
+    """
+    Validate removing a dedicated lvm-csi thin volume group with host-lvg-delete.
+
+    This scenario needs one free disk (lab_has_free_disk). It provisions a dedicated 'lvm-provisioner'
+    thin volume group on a spare disk, creates a workload so a logical volume is provisioned, then
+    removes the volume group with 'system host-lvg-delete' and verifies the VG and its physical volume
+    are gone. The removal is checked both at the sysinv level (host-lvg-list no longer lists the VG,
+    host-pv-list reports no PV backing it) and at the LVM level on the active controller
+    ('sudo lvs -a' shows no logical volume belonging to the removed VG).
+
+    Setup:
+        - Validate that all hosts are healthy
+        - Validate the 'lvm-csi' application is in the initial 'uploaded' state
+        - Validate the 'lvm' storage backend is not already configured
+        - Capture a snapshot of the active alarms
+
+    Test Steps:
+        - Add the 'lvm' storage backend and create the dedicated 'lvm-provisioner' thin VG on a free disk
+        - Create an LVM PVC on the lvm-provisioner storage class and a Pod, and verify a logical volume is provisioned
+        - Delete the Pod and PVC and wait for the dedicated VG to report Current LVs = 0
+        - Remove the dedicated volume group with 'system host-lvg-delete' (this also frees its physical volume)
+        - Verify the dedicated VG is no longer present in host-lvg-list
+        - Verify host-pv-list reports no physical volume backing the dedicated VG
+        - Verify 'sudo lvs -a' on the active controller shows no logical volume belonging to the dedicated VG
+
+    Teardown:
+        - Delete the dedicated volume group if it still exists (idempotent), delete the 'lvm' storage backend
+        - Remove the 'lvm-csi' application (back to 'uploaded')
+        - Verify no new alarms remain after the revert
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    kubectl_file_delete_keywords = KubectlFileDeleteKeywords(ssh_connection)
+    file_keywords = FileKeywords(ssh_connection)
+    kubectl_get_pods_keywords = KubectlGetPodsKeywords(ssh_connection)
+    kubectl_get_pvc_keywords = KubectlGetPvcKeywords(ssh_connection)
+    system_host_lvg_keywords = SystemHostLvgKeywords(ssh_connection)
+    system_host_pv_keywords = SystemHostPvKeywords(ssh_connection)
+    lvs_keywords = LvsKeywords(ssh_connection)
+    active_controller = SystemHostListKeywords(ssh_connection).get_active_controller().get_host_name()
+
+    alarms_before = _setup_lvm()
+
+    # Register the teardown only after setup passed (setup is validation-only, nothing to revert if it fails).
+    def teardown():
+        _teardown_lvm_csi_dedicated_vg(ssh_connection, alarms_before)
+
+    request.addfinalizer(teardown)
+
+    # Provision the dedicated thin VG and a workload so there is a real VG (with a provisioned LV) to remove.
+    _apply_lvm_csi_dedicated_thin_vg()
+    _create_and_verify_pvc_and_pod(ssh_connection, DEDICATED_WORKLOAD)
+    _verify_dedicated_vg_lv_provisioned(ssh_connection)
+
+    get_logger().log_test_case_step("Delete the test Pod, PVC and manifest files.")
+    for yaml_path in (DEDICATED_WORKLOAD["pod_yaml_path"], DEDICATED_WORKLOAD["pvc_yaml_path"]):
+        if file_keywords.file_exists(yaml_path):
+            kubectl_file_delete_keywords.delete_resources(yaml_path, ignore_not_found=True)
+            file_keywords.delete_file(yaml_path)
+
+    get_logger().log_test_case_step(f"Confirm the '{DEDICATED_WORKLOAD['pod_name']}' Pod and '{DEDICATED_WORKLOAD['pvc_name']}' PVC are deleted.")
+    kubectl_get_pods_keywords.wait_for_pods_to_be_deleted(namespace="default", pod_names=[DEDICATED_WORKLOAD["pod_name"]])
+    kubectl_get_pvc_keywords.wait_for_pvc_to_be_deleted(DEDICATED_WORKLOAD["pvc_name"], namespace="default")
+
+    # 'host-lvg-delete' is rejected while the VG still has a provisioned LV, so wait for Current LVs to reach 0.
+    get_logger().log_test_case_step(f"Wait for '{DEDICATED_VG}' Current LVs to reach 0 on {active_controller}.")
+    validate_equals_with_retry(
+        lambda: int(system_host_lvg_keywords.get_system_host_lvg_show(active_controller, DEDICATED_VG).get_system_host_lvg().get_current_lvs()) == 0,
+        True,
+        f"'{DEDICATED_VG}' Current LVs to reach 0",
+        timeout=300,
+        polling_sleep_time=10,
+    )
+
+    get_logger().log_test_case_step(f"Remove the dedicated '{DEDICATED_VG}' volume group with host-lvg-delete on {active_controller}.")
+    system_host_lvg_keywords.system_host_lvg_delete(active_controller, DEDICATED_VG)
+
+    # host-lvg-delete is asynchronous: the VG (and its PV) first go to 'removing' and are only
+    # dropped from the list once sysinv completes the removal, so poll until the VG is gone.
+    get_logger().log_test_case_step(f"Verify '{DEDICATED_VG}' is no longer present in host-lvg-list on {active_controller}.")
+    validate_equals_with_retry(
+        lambda: DEDICATED_VG in [lvg.get_lvg_name() for lvg in system_host_lvg_keywords.get_system_host_lvg_list(active_controller).get_system_host_lvg()],
+        False,
+        f"'{DEDICATED_VG}' to be removed from host-lvg-list after host-lvg-delete",
+        timeout=300,
+        polling_sleep_time=10,
+    )
+
+    get_logger().log_test_case_step(f"Verify host-pv-list reports no physical volume backing '{DEDICATED_VG}' on {active_controller}.")
+    validate_equals(system_host_pv_keywords.count_pvs_in_lvg(active_controller, DEDICATED_VG), 0, f"'{DEDICATED_VG}' should have no physical volume after host-lvg-delete.")
+
+    get_logger().log_test_case_step(f"Verify 'sudo lvs -a' shows no logical volume belonging to '{DEDICATED_VG}' on {active_controller}.")
+    dedicated_vg_lvs = [lv.get_lv_name() for lv in lvs_keywords.get_lvs().get_logical_volumes() if lv.get_vg_name() == DEDICATED_VG]
+    validate_equals(dedicated_vg_lvs, [], f"'{DEDICATED_VG}' should have no logical volumes in lvs after host-lvg-delete, found {dedicated_vg_lvs}.")
+
+
+@mark.p2
+@mark.lab_has_free_disk
+def test_lvm_csi_remove_dedicated_thick_vg(request):
+    """
+    Validate removing a dedicated lvm-csi thick volume group with host-lvg-delete.
+
+    Same as test_lvm_csi_remove_dedicated_thin_vg but for a THICK dedicated volume group. It needs one
+    free disk (lab_has_free_disk). It provisions a dedicated 'lvm-provisioner' thick volume group on
+    a spare disk, creates a workload so a logical volume is provisioned, then removes the volume group
+    with 'system host-lvg-delete' and verifies the VG and its physical volume are gone. The removal is
+    checked both at the sysinv level (host-lvg-list no longer lists the VG, host-pv-list reports no PV
+    backing it) and at the LVM level on the active controller ('sudo lvs -a' shows no logical volume
+    belonging to the removed VG).
+
+    Setup:
+        - Validate that all hosts are healthy
+        - Validate the 'lvm-csi' application is in the initial 'uploaded' state
+        - Validate the 'lvm' storage backend is not already configured
+        - Capture a snapshot of the active alarms
+
+    Test Steps:
+        - Add the 'lvm' storage backend and create the dedicated 'lvm-provisioner' thick VG on a free disk
+        - Create an LVM PVC on the lvm-provisioner storage class and a Pod, and verify a logical volume is provisioned
+        - Delete the Pod and PVC and wait for the dedicated VG to report Current LVs = 0
+        - Remove the dedicated volume group with 'system host-lvg-delete' (this also frees its physical volume)
+        - Verify the dedicated VG is no longer present in host-lvg-list
+        - Verify host-pv-list reports no physical volume backing the dedicated VG
+        - Verify 'sudo lvs -a' on the active controller shows no logical volume belonging to the dedicated VG
+
+    Teardown:
+        - Delete the dedicated volume group if it still exists (idempotent), delete the 'lvm' storage backend
+        - Remove the 'lvm-csi' application (back to 'uploaded')
+        - Verify no new alarms remain after the revert
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    kubectl_file_delete_keywords = KubectlFileDeleteKeywords(ssh_connection)
+    file_keywords = FileKeywords(ssh_connection)
+    kubectl_get_pods_keywords = KubectlGetPodsKeywords(ssh_connection)
+    kubectl_get_pvc_keywords = KubectlGetPvcKeywords(ssh_connection)
+    system_host_lvg_keywords = SystemHostLvgKeywords(ssh_connection)
+    system_host_pv_keywords = SystemHostPvKeywords(ssh_connection)
+    lvs_keywords = LvsKeywords(ssh_connection)
+    active_controller = SystemHostListKeywords(ssh_connection).get_active_controller().get_host_name()
+
+    alarms_before = _setup_lvm()
+
+    # Register the teardown only after setup passed (setup is validation-only, nothing to revert if it fails).
+    def teardown():
+        _teardown_lvm_csi_dedicated_vg(ssh_connection, alarms_before)
+
+    request.addfinalizer(teardown)
+
+    # Provision the dedicated thick VG and a workload so there is a real VG (with a provisioned LV) to remove.
+    _apply_lvm_csi_dedicated_thick_vg()
+    _create_and_verify_pvc_and_pod(ssh_connection, DEDICATED_WORKLOAD)
+    _verify_dedicated_vg_lv_provisioned(ssh_connection)
+
+    get_logger().log_test_case_step("Delete the test Pod, PVC and manifest files.")
+    for yaml_path in (DEDICATED_WORKLOAD["pod_yaml_path"], DEDICATED_WORKLOAD["pvc_yaml_path"]):
+        if file_keywords.file_exists(yaml_path):
+            kubectl_file_delete_keywords.delete_resources(yaml_path, ignore_not_found=True)
+            file_keywords.delete_file(yaml_path)
+
+    get_logger().log_test_case_step(f"Confirm the '{DEDICATED_WORKLOAD['pod_name']}' Pod and '{DEDICATED_WORKLOAD['pvc_name']}' PVC are deleted.")
+    kubectl_get_pods_keywords.wait_for_pods_to_be_deleted(namespace="default", pod_names=[DEDICATED_WORKLOAD["pod_name"]])
+    kubectl_get_pvc_keywords.wait_for_pvc_to_be_deleted(DEDICATED_WORKLOAD["pvc_name"], namespace="default")
+
+    # 'host-lvg-delete' is rejected while the VG still has a provisioned LV, so wait for Current LVs to reach 0.
+    get_logger().log_test_case_step(f"Wait for '{DEDICATED_VG}' Current LVs to reach 0 on {active_controller}.")
+    validate_equals_with_retry(
+        lambda: int(system_host_lvg_keywords.get_system_host_lvg_show(active_controller, DEDICATED_VG).get_system_host_lvg().get_current_lvs()) == 0,
+        True,
+        f"'{DEDICATED_VG}' Current LVs to reach 0",
+        timeout=300,
+        polling_sleep_time=10,
+    )
+
+    get_logger().log_test_case_step(f"Remove the dedicated '{DEDICATED_VG}' volume group with host-lvg-delete on {active_controller}.")
+    system_host_lvg_keywords.system_host_lvg_delete(active_controller, DEDICATED_VG)
+
+    # host-lvg-delete is asynchronous: the VG (and its PV) first go to 'removing' and are only
+    # dropped from the list once sysinv completes the removal, so poll until the VG is gone.
+    get_logger().log_test_case_step(f"Verify '{DEDICATED_VG}' is no longer present in host-lvg-list on {active_controller}.")
+    validate_equals_with_retry(
+        lambda: DEDICATED_VG in [lvg.get_lvg_name() for lvg in system_host_lvg_keywords.get_system_host_lvg_list(active_controller).get_system_host_lvg()],
+        False,
+        f"'{DEDICATED_VG}' to be removed from host-lvg-list after host-lvg-delete",
+        timeout=300,
+        polling_sleep_time=10,
+    )
+
+    get_logger().log_test_case_step(f"Verify host-pv-list reports no physical volume backing '{DEDICATED_VG}' on {active_controller}.")
+    validate_equals(system_host_pv_keywords.count_pvs_in_lvg(active_controller, DEDICATED_VG), 0, f"'{DEDICATED_VG}' should have no physical volume after host-lvg-delete.")
+
+    get_logger().log_test_case_step(f"Verify 'sudo lvs -a' shows no logical volume belonging to '{DEDICATED_VG}' on {active_controller}.")
+    dedicated_vg_lvs = [lv.get_lv_name() for lv in lvs_keywords.get_lvs().get_logical_volumes() if lv.get_vg_name() == DEDICATED_VG]
+    validate_equals(dedicated_vg_lvs, [], f"'{DEDICATED_VG}' should have no logical volumes in lvs after host-lvg-delete, found {dedicated_vg_lvs}.")
 
 
 @mark.p2
@@ -2503,4 +2790,167 @@ def test_lvm_csi_thin_cgts_vg_and_thick_dedicated_coexistence_compute(request):
     _create_and_verify_coexistence_workload(ssh_connection)
     _verify_lvmcsi_pool_used(ssh_connection)
     _verify_dedicated_vg_lv_provisioned(ssh_connection)
+    _verify_no_new_alarms(ssh_connection, alarms_before)
+
+
+@mark.p2
+@mark.lab_is_simplex
+def test_lvm_csi_thin_cgts_vg_set_pool_size_on_assign_sx(request):
+    """
+    Validate setting the lvm-csi thin pool size while assigning the LVM function on the cgts-vg on AIO-SX.
+
+    Unlike the default cgts-vg scenario (where the thin pool defaults to ~50% of the VG), this assigns
+    the lvm-csi function AND the thin pool size in a single 'system host-lvg-modify -f lvm-csi -s <size>'
+    operation, so the pool is provisioned at the requested size.
+
+    Setup:
+        - Validate that all hosts are healthy
+        - Validate the 'lvm-csi' application is in the initial 'uploaded' state
+        - Validate the 'lvm' storage backend is not already configured
+        - Capture a snapshot of the active alarms
+
+    Test Steps:
+        - Add the 'lvm' storage backend
+        - Verify the cgts-vg has at least the requested pool size available
+        - Assign the lvm-csi function AND set the thin pool size in a single host-lvg-modify operation
+        - Wait for the 'lvm-csi' application to be applied
+        - Verify the 'lvmcsi-pool' thin pool exists and the cgts-vg attributes (name, state, function, type)
+        - Verify the cgts-vg lvm_pool_size equals the requested size and the pool's actual size (lvs) matches
+        - Create an LVM PVC on the cgts-vg (thin) storage class and a Pod that writes to it
+        - Verify the Pod is Running and the PVC is Bound
+        - Verify the lvmcsi-pool has been used (Data% > 0)
+        - Verify no new alarms appeared during the test
+
+    Teardown:
+        - Delete the Pod, PVC and manifest files
+        - Reset the cgts-vg function to 'none'
+        - Delete the 'lvm' storage backend
+        - Remove the 'lvm-csi' application (back to 'uploaded')
+        - Verify no new alarms remain after the revert
+    """
+    pool_size_gib = 2
+
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+
+    alarms_before = _setup_lvm()
+
+    # Register the teardown only after setup passed (setup is validation-only, nothing to revert if it fails).
+    def teardown():
+        _teardown_lvm_csi_resources(ssh_connection, alarms_before)
+
+    request.addfinalizer(teardown)
+
+    _apply_lvm_csi_cgts_vg(pool_size_gib)
+    _create_and_verify_pvc_and_pod(ssh_connection, CGTS_VG_WORKLOAD)
+    _verify_lvmcsi_pool_used(ssh_connection)
+    _verify_no_new_alarms(ssh_connection, alarms_before)
+
+
+@mark.p2
+@mark.lab_is_duplex
+def test_lvm_csi_thin_cgts_vg_set_pool_size_on_assign_dx(request):
+    """
+    Validate setting the lvm-csi thin pool size while assigning the LVM function on the cgts-vg on AIO-DX.
+
+    Unlike the default cgts-vg scenario (where the thin pool defaults to ~50% of the VG), this assigns
+    the lvm-csi function AND the thin pool size in a single 'system host-lvg-modify -f lvm-csi -s <size>'
+    operation, so the pool is provisioned at the requested size.
+
+    Setup:
+        - Validate that all hosts are healthy
+        - Validate the 'lvm-csi' application is in the initial 'uploaded' state
+        - Validate the 'lvm' storage backend is not already configured
+        - Capture a snapshot of the active alarms
+
+    Test Steps:
+        - Add the 'lvm' storage backend
+        - Verify the cgts-vg has at least the requested pool size available
+        - Assign the lvm-csi function AND set the thin pool size in a single host-lvg-modify operation
+        - Wait for the 'lvm-csi' application to be applied
+        - Verify the 'lvmcsi-pool' thin pool exists and the cgts-vg attributes (name, state, function, type)
+        - Verify the cgts-vg lvm_pool_size equals the requested size and the pool's actual size (lvs) matches
+        - Verify the topolvm-system pods are Running (including topolvm-scheduler)
+        - Create an LVM PVC on the cgts-vg (thin) storage class and a Pod that writes to it
+        - Verify the Pod is Running and the PVC is Bound
+        - Verify the lvmcsi-pool has been used (Data% > 0)
+        - Verify no new alarms appeared during the test
+
+    Teardown:
+        - Delete the Pod, PVC and manifest files
+        - Reset the cgts-vg function to 'none'
+        - Delete the 'lvm' storage backend
+        - Remove the 'lvm-csi' application (back to 'uploaded')
+        - Verify no new alarms remain after the revert
+    """
+    pool_size_gib = 2
+
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+
+    alarms_before = _setup_lvm()
+
+    # Register the teardown only after setup passed (setup is validation-only, nothing to revert if it fails).
+    def teardown():
+        _teardown_lvm_csi_resources(ssh_connection, alarms_before)
+
+    request.addfinalizer(teardown)
+
+    _apply_lvm_csi_cgts_vg(pool_size_gib)
+    _verify_topolvm_pods_running(ssh_connection)
+    _create_and_verify_pvc_and_pod(ssh_connection, CGTS_VG_WORKLOAD)
+    _verify_lvmcsi_pool_used(ssh_connection)
+    _verify_no_new_alarms(ssh_connection, alarms_before)
+
+
+@mark.p2
+@mark.lab_has_compute
+def test_lvm_csi_thin_cgts_vg_set_pool_size_on_assign_compute(request):
+    """
+    Validate setting the lvm-csi thin pool size while assigning the LVM function on the cgts-vg on a lab with compute.
+
+    Unlike the default cgts-vg scenario (where the thin pool defaults to ~50% of the VG), this assigns
+    the lvm-csi function AND the thin pool size in a single 'system host-lvg-modify -f lvm-csi -s <size>'
+    operation, so the pool is provisioned at the requested size.
+
+    Setup:
+        - Validate that all hosts are healthy
+        - Validate the 'lvm-csi' application is in the initial 'uploaded' state
+        - Validate the 'lvm' storage backend is not already configured
+        - Capture a snapshot of the active alarms
+
+    Test Steps:
+        - Add the 'lvm' storage backend
+        - Verify the cgts-vg has at least the requested pool size available
+        - Assign the lvm-csi function AND set the thin pool size in a single host-lvg-modify operation
+        - Wait for the 'lvm-csi' application to be applied
+        - Verify the 'lvmcsi-pool' thin pool exists and the cgts-vg attributes (name, state, function, type)
+        - Verify the cgts-vg lvm_pool_size equals the requested size and the pool's actual size (lvs) matches
+        - Verify the topolvm-system pods are Running (including topolvm-scheduler)
+        - Create an LVM PVC on the cgts-vg (thin) storage class and a Pod that writes to it
+        - Verify the Pod is Running and the PVC is Bound
+        - Verify the lvmcsi-pool has been used (Data% > 0)
+        - Verify no new alarms appeared during the test
+
+    Teardown:
+        - Delete the Pod, PVC and manifest files
+        - Reset the cgts-vg function to 'none'
+        - Delete the 'lvm' storage backend
+        - Remove the 'lvm-csi' application (back to 'uploaded')
+        - Verify no new alarms remain after the revert
+    """
+    pool_size_gib = 2
+
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+
+    alarms_before = _setup_lvm()
+
+    # Register the teardown only after setup passed (setup is validation-only, nothing to revert if it fails).
+    def teardown():
+        _teardown_lvm_csi_resources(ssh_connection, alarms_before)
+
+    request.addfinalizer(teardown)
+
+    _apply_lvm_csi_cgts_vg(pool_size_gib)
+    _verify_topolvm_pods_running(ssh_connection)
+    _create_and_verify_pvc_and_pod(ssh_connection, CGTS_VG_WORKLOAD)
+    _verify_lvmcsi_pool_used(ssh_connection)
     _verify_no_new_alarms(ssh_connection, alarms_before)

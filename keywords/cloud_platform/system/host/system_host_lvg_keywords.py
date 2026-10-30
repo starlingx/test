@@ -54,7 +54,7 @@ class SystemHostLvgKeywords(BaseKeyword):
         system_host_lvg_output = SystemHostLvgShowOutput(output)
         return system_host_lvg_output
 
-    def system_host_lvg_modify(self, host_id: str, lvg_name: str, lvm_function: str = None, lvm_pool_size: int = None) -> SystemHostLvgShowOutput:
+    def system_host_lvg_modify(self, host_id: str, lvg_name: str, lvm_function: str | None = None, lvm_pool_size: int | None = None) -> SystemHostLvgShowOutput:
         """
         Run 'system host-lvg-modify' to set the LVM function and/or thin pool size on a local volume group.
 
@@ -64,8 +64,8 @@ class SystemHostLvgKeywords(BaseKeyword):
         Args:
             host_id (str): name or id of the host (e.g. 'controller-0').
             lvg_name (str): name or uuid of the local volume group (e.g. 'cgts-vg').
-            lvm_function (str): optional LVM function to assign (e.g. 'lvm-csi'). Defaults to none.
-            lvm_pool_size (int): optional thin pool size in GiB to set via '-s'. Defaults to none.
+            lvm_function (str | None): optional LVM function to assign (e.g. 'lvm-csi'). Defaults to none.
+            lvm_pool_size (int | None): optional thin pool size in GiB to set via '-s'. Defaults to none.
 
         Returns:
             SystemHostLvgShowOutput: object representing the modified lvg.
@@ -140,7 +140,7 @@ class SystemHostLvgKeywords(BaseKeyword):
             TimeoutError: If 'thin_cur_lv' does not reach 0 within the timeout.
         """
 
-        def get_thin_cur_lv() -> int:
+        def get_thin_cur_lv() -> int | None:
             return self.get_system_host_lvg_show(host_id, lvg_name).get_system_host_lvg().get_thin_cur_lv()
 
         # get_thin_cur_lv() returns None when the value is unknown; 'None == 0' is False, so an
@@ -172,7 +172,7 @@ class SystemHostLvgKeywords(BaseKeyword):
 
         validate_equals_with_retry(is_total_size_increased, True, f"'{lvg_name}' on {host_id} total size to grow above {baseline_size_gib} GiB", timeout=timeout, polling_sleep_time=polling_interval)
 
-    def system_host_lvg_modify_with_error(self, host_id: str, lvg_name: str, lvm_function: str = None, lvm_pool_size: int = None) -> str:
+    def system_host_lvg_modify_with_error(self, host_id: str, lvg_name: str, lvm_function: str | None = None, lvm_pool_size: int | None = None) -> str:
         """
         Run 'system host-lvg-modify' allowing errors, for negative testing.
 
@@ -182,8 +182,8 @@ class SystemHostLvgKeywords(BaseKeyword):
         Args:
             host_id (str): name or id of the host (e.g. 'controller-0').
             lvg_name (str): name or uuid of the local volume group (e.g. 'cgts-vg').
-            lvm_function (str): optional LVM function to assign (e.g. 'lvm-csi'). Defaults to none.
-            lvm_pool_size (int): optional thin pool size in GiB to set via '-s'. Defaults to none.
+            lvm_function (str | None): optional LVM function to assign (e.g. 'lvm-csi'). Defaults to none.
+            lvm_pool_size (int | None): optional thin pool size in GiB to set via '-s'. Defaults to none.
 
         Returns:
             str: raw CLI output (may contain the error/rejection message).
