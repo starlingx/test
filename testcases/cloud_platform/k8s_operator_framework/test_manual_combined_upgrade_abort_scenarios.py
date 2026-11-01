@@ -36,11 +36,11 @@ from keywords.cloud_platform.fault_management.alarms.alarm_list_keywords import 
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.cloud_platform.system.host.system_host_list_keywords import SystemHostListKeywords
 from keywords.cloud_platform.system.host.system_host_lock_keywords import SystemHostLockKeywords
-from keywords.cloud_platform.system.kubernetes.etcd_keywords import EtcdKeywords
 from keywords.cloud_platform.system.kubernetes.kube_host_upgrade_keywords import KubeHostUpgradeKeywords
 from keywords.cloud_platform.system.kubernetes.kube_host_upgrade_list_keywords import KubeHostUpgradeListKeywords
 from keywords.cloud_platform.system.kubernetes.kube_upgrade_keywords import KubeUpgradeKeywords
 from keywords.cloud_platform.system.kubernetes.kube_upgrade_show_keywords import KubeUpgradeShowKeywords
+from keywords.cloud_platform.system.kubernetes.kube_upgrade_verification import get_control_plane_version, get_etcd_version, verify_kube_and_etcd_versions_rolled_back
 from keywords.cloud_platform.system.kubernetes.kubernetes_version_list_keywords import SystemKubernetesListKeywords
 from keywords.cloud_platform.upgrade.software_deploy_show_keywords import SoftwareDeployShowKeywords
 from keywords.cloud_platform.upgrade.software_list_keywords import SoftwareListKeywords
@@ -72,62 +72,6 @@ KUBE_STATE_UPGRADE_COMPLETE = "upgrade-complete"
 # NOTE: the CLI 'kube-upgrade-show' may display 'kube-post-application-updated',
 # but the automation framework (and every other test) waits on 'post-updated-apps'.
 KUBE_STATE_POST_UPDATED_APPS = "post-updated-apps"
-
-
-# =============================================================================
-# Helpers: version record / verify
-# =============================================================================
-
-
-def _get_control_plane_version(ssh_connection: SSHConnection, hostname: str) -> str:
-    """Get the current control-plane version for a host.
-
-    Args:
-        ssh_connection (SSHConnection): SSH connection to the active controller.
-        hostname (str): Hostname to query the control-plane version for.
-
-    Returns:
-        str: The control-plane version string (e.g. 'v1.31.9').
-    """
-    kube_host_upgrade_list_keywords = KubeHostUpgradeListKeywords(ssh_connection)
-    return kube_host_upgrade_list_keywords.kube_host_upgrade_list().get_host_upgrade_by_hostname(hostname).get_control_plane_version()
-
-
-def _get_etcd_version(ssh_connection: SSHConnection) -> str:
-    """Get the current etcd version.
-
-    Args:
-        ssh_connection (SSHConnection): SSH connection to the active controller.
-
-    Returns:
-        str: The etcd version string.
-    """
-    etcd_keywords = EtcdKeywords(ssh_connection)
-    return etcd_keywords.get_etcd_version()
-
-
-def _verify_kube_and_etcd_versions_rolled_back(hostname: str, original_control_plane_version: str, original_etcd_version: str) -> None:
-    """Verify control-plane (kubernetes) and etcd versions rolled back to their originals.
-
-    Establishes a fresh SSH connection to the active controller (the connection may
-    have been reset by the abort/rollback) and validates both versions.
-
-    Args:
-        hostname (str): Hostname to query the control-plane version for.
-        original_control_plane_version (str): Control-plane version recorded before upgrade.
-        original_etcd_version (str): Etcd version recorded before upgrade.
-    """
-    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
-
-    get_logger().log_test_case_step("Verify control-plane version rolled back to original")
-    rollback_version = _get_control_plane_version(ssh_connection, hostname)
-    get_logger().log_info(f"Control-plane version after abort: {rollback_version}")
-    validate_equals(rollback_version, original_control_plane_version, "Control-plane version rolled back to original")
-
-    get_logger().log_test_case_step("Verify etcd version rolled back to original")
-    rollback_etcd_version = _get_etcd_version(ssh_connection)
-    get_logger().log_info(f"Etcd version after abort: {rollback_etcd_version}")
-    validate_equals(rollback_etcd_version, original_etcd_version, "Etcd version rolled back to original")
 
 
 # =============================================================================
@@ -1078,16 +1022,16 @@ def test_combined_upgrade_abort_after_host_upgrade_control_plane_completed(reque
     active_controller = SystemHostListKeywords(ssh_connection).get_active_controller().get_host_name()
 
     get_logger().log_setup_step("Record control-plane version before upgrade")
-    original_control_plane_version = _get_control_plane_version(ssh_connection, active_controller)
+    original_control_plane_version = get_control_plane_version(ssh_connection, active_controller)
     get_logger().log_info(f"Control-plane version before upgrade: {original_control_plane_version}")
 
     get_logger().log_setup_step("Record etcd version before upgrade")
-    original_etcd_version = _get_etcd_version(ssh_connection)
+    original_etcd_version = get_etcd_version(ssh_connection)
     get_logger().log_info(f"Etcd version before upgrade: {original_etcd_version}")
 
     _run_combined_upgrade_until(request, STEP_CONTROL_PLANE, wait_for_completion=True)
 
-    _verify_kube_and_etcd_versions_rolled_back(active_controller, original_control_plane_version, original_etcd_version)
+    verify_kube_and_etcd_versions_rolled_back(active_controller, original_control_plane_version, original_etcd_version)
 
 
 # =============================================================================
@@ -1127,16 +1071,16 @@ def test_combined_upgrade_abort_after_deploy_start(request: FixtureRequest) -> N
     active_controller = SystemHostListKeywords(ssh_connection).get_active_controller().get_host_name()
 
     get_logger().log_setup_step("Record control-plane version before upgrade")
-    original_control_plane_version = _get_control_plane_version(ssh_connection, active_controller)
+    original_control_plane_version = get_control_plane_version(ssh_connection, active_controller)
     get_logger().log_info(f"Control-plane version before upgrade: {original_control_plane_version}")
 
     get_logger().log_setup_step("Record etcd version before upgrade")
-    original_etcd_version = _get_etcd_version(ssh_connection)
+    original_etcd_version = get_etcd_version(ssh_connection)
     get_logger().log_info(f"Etcd version before upgrade: {original_etcd_version}")
 
     _run_combined_upgrade_until(request, STEP_DEPLOY_START, wait_for_completion=True)
 
-    _verify_kube_and_etcd_versions_rolled_back(active_controller, original_control_plane_version, original_etcd_version)
+    verify_kube_and_etcd_versions_rolled_back(active_controller, original_control_plane_version, original_etcd_version)
 
 
 # =============================================================================
@@ -1178,16 +1122,16 @@ def test_combined_upgrade_abort_after_host_lock(request: FixtureRequest) -> None
     active_controller = SystemHostListKeywords(ssh_connection).get_active_controller().get_host_name()
 
     get_logger().log_setup_step("Record control-plane version before upgrade")
-    original_control_plane_version = _get_control_plane_version(ssh_connection, active_controller)
+    original_control_plane_version = get_control_plane_version(ssh_connection, active_controller)
     get_logger().log_info(f"Control-plane version before upgrade: {original_control_plane_version}")
 
     get_logger().log_setup_step("Record etcd version before upgrade")
-    original_etcd_version = _get_etcd_version(ssh_connection)
+    original_etcd_version = get_etcd_version(ssh_connection)
     get_logger().log_info(f"Etcd version before upgrade: {original_etcd_version}")
 
     _run_combined_upgrade_until(request, STEP_HOST_LOCK, wait_for_completion=True)
 
-    _verify_kube_and_etcd_versions_rolled_back(active_controller, original_control_plane_version, original_etcd_version)
+    verify_kube_and_etcd_versions_rolled_back(active_controller, original_control_plane_version, original_etcd_version)
 
 
 # =============================================================================
@@ -1229,16 +1173,16 @@ def test_combined_upgrade_abort_after_deploy_host(request: FixtureRequest) -> No
     active_controller = SystemHostListKeywords(ssh_connection).get_active_controller().get_host_name()
 
     get_logger().log_setup_step("Record control-plane version before upgrade")
-    original_control_plane_version = _get_control_plane_version(ssh_connection, active_controller)
+    original_control_plane_version = get_control_plane_version(ssh_connection, active_controller)
     get_logger().log_info(f"Control-plane version before upgrade: {original_control_plane_version}")
 
     get_logger().log_setup_step("Record etcd version before upgrade")
-    original_etcd_version = _get_etcd_version(ssh_connection)
+    original_etcd_version = get_etcd_version(ssh_connection)
     get_logger().log_info(f"Etcd version before upgrade: {original_etcd_version}")
 
     _run_combined_upgrade_until(request, STEP_DEPLOY_HOST, wait_for_completion=True, timeout=DEPLOY_PHASE_TIMEOUT)
 
-    _verify_kube_and_etcd_versions_rolled_back(active_controller, original_control_plane_version, original_etcd_version)
+    verify_kube_and_etcd_versions_rolled_back(active_controller, original_control_plane_version, original_etcd_version)
 
 
 # =============================================================================
@@ -1280,16 +1224,16 @@ def test_combined_upgrade_abort_after_host_unlock(request: FixtureRequest) -> No
     active_controller = SystemHostListKeywords(ssh_connection).get_active_controller().get_host_name()
 
     get_logger().log_setup_step("Record control-plane version before upgrade")
-    original_control_plane_version = _get_control_plane_version(ssh_connection, active_controller)
+    original_control_plane_version = get_control_plane_version(ssh_connection, active_controller)
     get_logger().log_info(f"Control-plane version before upgrade: {original_control_plane_version}")
 
     get_logger().log_setup_step("Record etcd version before upgrade")
-    original_etcd_version = _get_etcd_version(ssh_connection)
+    original_etcd_version = get_etcd_version(ssh_connection)
     get_logger().log_info(f"Etcd version before upgrade: {original_etcd_version}")
 
     _run_combined_upgrade_until(request, STEP_HOST_UNLOCK, wait_for_completion=True, timeout=DEPLOY_PHASE_TIMEOUT)
 
-    _verify_kube_and_etcd_versions_rolled_back(active_controller, original_control_plane_version, original_etcd_version)
+    verify_kube_and_etcd_versions_rolled_back(active_controller, original_control_plane_version, original_etcd_version)
 
 
 # =============================================================================
@@ -1330,16 +1274,16 @@ def test_combined_upgrade_abort_after_deploy_activate(request: FixtureRequest) -
     active_controller = SystemHostListKeywords(ssh_connection).get_active_controller().get_host_name()
 
     get_logger().log_setup_step("Record control-plane version before upgrade")
-    original_control_plane_version = _get_control_plane_version(ssh_connection, active_controller)
+    original_control_plane_version = get_control_plane_version(ssh_connection, active_controller)
     get_logger().log_info(f"Control-plane version before upgrade: {original_control_plane_version}")
 
     get_logger().log_setup_step("Record etcd version before upgrade")
-    original_etcd_version = _get_etcd_version(ssh_connection)
+    original_etcd_version = get_etcd_version(ssh_connection)
     get_logger().log_info(f"Etcd version before upgrade: {original_etcd_version}")
 
     _run_combined_upgrade_until(request, STEP_DEPLOY_ACTIVATE, wait_for_completion=True, timeout=DEPLOY_PHASE_TIMEOUT)
 
-    _verify_kube_and_etcd_versions_rolled_back(active_controller, original_control_plane_version, original_etcd_version)
+    verify_kube_and_etcd_versions_rolled_back(active_controller, original_control_plane_version, original_etcd_version)
 
 
 # =============================================================================
@@ -1379,16 +1323,16 @@ def test_combined_upgrade_abort_after_deploy_complete(request: FixtureRequest) -
     active_controller = SystemHostListKeywords(ssh_connection).get_active_controller().get_host_name()
 
     get_logger().log_setup_step("Record control-plane version before upgrade")
-    original_control_plane_version = _get_control_plane_version(ssh_connection, active_controller)
+    original_control_plane_version = get_control_plane_version(ssh_connection, active_controller)
     get_logger().log_info(f"Control-plane version before upgrade: {original_control_plane_version}")
 
     get_logger().log_setup_step("Record etcd version before upgrade")
-    original_etcd_version = _get_etcd_version(ssh_connection)
+    original_etcd_version = get_etcd_version(ssh_connection)
     get_logger().log_info(f"Etcd version before upgrade: {original_etcd_version}")
 
     _run_combined_upgrade_until(request, STEP_DEPLOY_COMPLETE, wait_for_completion=True, timeout=DEPLOY_PHASE_TIMEOUT)
 
-    _verify_kube_and_etcd_versions_rolled_back(active_controller, original_control_plane_version, original_etcd_version)
+    verify_kube_and_etcd_versions_rolled_back(active_controller, original_control_plane_version, original_etcd_version)
 
 
 # =============================================================================
@@ -1428,16 +1372,16 @@ def test_combined_upgrade_abort_after_kube_upgrade_complete(request: FixtureRequ
     active_controller = SystemHostListKeywords(ssh_connection).get_active_controller().get_host_name()
 
     get_logger().log_setup_step("Record control-plane version before upgrade")
-    original_control_plane_version = _get_control_plane_version(ssh_connection, active_controller)
+    original_control_plane_version = get_control_plane_version(ssh_connection, active_controller)
     get_logger().log_info(f"Control-plane version before upgrade: {original_control_plane_version}")
 
     get_logger().log_setup_step("Record etcd version before upgrade")
-    original_etcd_version = _get_etcd_version(ssh_connection)
+    original_etcd_version = get_etcd_version(ssh_connection)
     get_logger().log_info(f"Etcd version before upgrade: {original_etcd_version}")
 
     _run_combined_upgrade_until(request, STEP_KUBE_UPGRADE_COMPLETE, wait_for_completion=True, timeout=DEPLOY_PHASE_TIMEOUT)
 
-    _verify_kube_and_etcd_versions_rolled_back(active_controller, original_control_plane_version, original_etcd_version)
+    verify_kube_and_etcd_versions_rolled_back(active_controller, original_control_plane_version, original_etcd_version)
 
 
 # =============================================================================
@@ -1479,16 +1423,16 @@ def test_combined_upgrade_abort_after_kube_post_application_update(request: Fixt
     active_controller = SystemHostListKeywords(ssh_connection).get_active_controller().get_host_name()
 
     get_logger().log_setup_step("Record control-plane version before upgrade")
-    original_control_plane_version = _get_control_plane_version(ssh_connection, active_controller)
+    original_control_plane_version = get_control_plane_version(ssh_connection, active_controller)
     get_logger().log_info(f"Control-plane version before upgrade: {original_control_plane_version}")
 
     get_logger().log_setup_step("Record etcd version before upgrade")
-    original_etcd_version = _get_etcd_version(ssh_connection)
+    original_etcd_version = get_etcd_version(ssh_connection)
     get_logger().log_info(f"Etcd version before upgrade: {original_etcd_version}")
 
     _run_combined_upgrade_until(request, STEP_KUBE_POST_APPLICATION_UPDATE, wait_for_completion=True, timeout=DEPLOY_PHASE_TIMEOUT)
 
-    _verify_kube_and_etcd_versions_rolled_back(active_controller, original_control_plane_version, original_etcd_version)
+    verify_kube_and_etcd_versions_rolled_back(active_controller, original_control_plane_version, original_etcd_version)
 
 
 # =============================================================================
@@ -1532,13 +1476,13 @@ def test_combined_upgrade_abort_after_kube_upgrade_delete(request: FixtureReques
     active_controller = SystemHostListKeywords(ssh_connection).get_active_controller().get_host_name()
 
     get_logger().log_setup_step("Record control-plane version before upgrade")
-    original_control_plane_version = _get_control_plane_version(ssh_connection, active_controller)
+    original_control_plane_version = get_control_plane_version(ssh_connection, active_controller)
     get_logger().log_info(f"Control-plane version before upgrade: {original_control_plane_version}")
 
     get_logger().log_setup_step("Record etcd version before upgrade")
-    original_etcd_version = _get_etcd_version(ssh_connection)
+    original_etcd_version = get_etcd_version(ssh_connection)
     get_logger().log_info(f"Etcd version before upgrade: {original_etcd_version}")
 
     _run_combined_upgrade_until(request, STEP_KUBE_UPGRADE_DELETE, wait_for_completion=True, timeout=DEPLOY_PHASE_TIMEOUT)
 
-    _verify_kube_and_etcd_versions_rolled_back(active_controller, original_control_plane_version, original_etcd_version)
+    verify_kube_and_etcd_versions_rolled_back(active_controller, original_control_plane_version, original_etcd_version)
