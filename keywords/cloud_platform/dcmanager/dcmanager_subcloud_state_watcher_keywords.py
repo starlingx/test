@@ -197,6 +197,67 @@ class DcManagerSubcloudStateWatcherKeywords(BaseKeyword):
             polling_interval=polling_interval,
         )
 
+    def watch_single_subcloud_log_on_change(
+        self,
+        subcloud_name: str,
+        field_to_watch: str,
+        complete_state: str,
+        failed_states: Optional[List[str]] = None,
+        timeout: int = 4800,
+        polling_interval: int = 30,
+    ) -> float:
+        """Poll a subcloud field quietly, logging only when the value changes.
+
+        Unlike watch_single_subcloud (which logs a status summary every poll),
+        this logs one line per transition, so the run output reads as a clean
+        timeline of phases. Still polls (dcmanager has no event stream); it just
+        suppresses the unchanged reads. Any value that is neither the complete
+        state nor a failed state is treated as still in progress, so no explicit
+        in-progress list is required.
+
+        Args:
+            subcloud_name (str): Name of the subcloud to watch.
+            field_to_watch (str): Field to monitor (deploy_status, availability,
+                sync, management, backup_status, prestage_status).
+            complete_state (str): Target value that ends the watch successfully.
+            failed_states (Optional[List[str]]): Values that end the watch with a
+                failure. If None, any value containing "failed" is a failure.
+            timeout (int): Maximum seconds to wait. Defaults to 4800.
+            polling_interval (int): Seconds between polls. Defaults to 30.
+
+        Returns:
+            float: Seconds elapsed from the first observed state to complete_state.
+
+        Raises:
+            TimeoutError: If complete_state is not reached within timeout.
+            Exception: If a failed state is observed.
+        """
+        start_time = time.time()
+        end_time = start_time + timeout
+        last_state = None
+
+        get_logger().log_info(f"Watching '{subcloud_name}' {field_to_watch} until '{complete_state}' (logging only on change)")
+
+        while time.time() < end_time:
+            sc_list_output = self._list_kw.get_dcmanager_subcloud_list()
+            if sc_list_output.is_subcloud_in_output(subcloud_name):
+                sc_obj = sc_list_output.get_subcloud_by_name(subcloud_name)
+                current_state = self._get_field_value(sc_obj, field_to_watch)
+
+                if current_state != last_state:
+                    elapsed = time.time() - start_time
+                    get_logger().log_info(f"[{elapsed:7.1f}s] {subcloud_name} {field_to_watch}: {last_state or '(start)'} -> {current_state}")
+                    last_state = current_state
+
+                if current_state == complete_state:
+                    return time.time() - start_time
+                if self._is_failed_state(current_state, failed_states):
+                    raise Exception(f"Subcloud '{subcloud_name}' {field_to_watch} entered failed state '{current_state}'")
+
+            time.sleep(polling_interval)
+
+        raise TimeoutError(f"Subcloud '{subcloud_name}' {field_to_watch} did not reach '{complete_state}' within {timeout}s (last: {last_state})")
+
     def watch_strategy_steps(
         self,
         subcloud_names: List[str],

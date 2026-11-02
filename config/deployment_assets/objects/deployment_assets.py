@@ -48,6 +48,33 @@ class DeploymentAssets:
         if "prestage_images_file" in deployment_assets_dict:
             self.prestage_images_file = deployment_assets_dict["prestage_images_file"]
 
+        # Path to the shared JCNR cloud-init-config bundle; set only for a JCNR
+        # enrollment.
+        self.cloud_init_config_dir = None
+        if "cloud_init_config_dir" in deployment_assets_dict:
+            self.cloud_init_config_dir = deployment_assets_dict["cloud_init_config_dir"]
+
+        # Path to this subcloud's JCNR configlet, overlaid onto the bundle at enroll.
+        self.cloud_init_configlet_file = None
+        if "cloud_init_configlet_file" in deployment_assets_dict:
+            self.cloud_init_configlet_file = deployment_assets_dict["cloud_init_configlet_file"]
+
+    def get_cloud_init_config_dir(self) -> str:
+        """Getter for the generic JCNR cloud-init-config bundle dir (on the SC).
+
+        Returns:
+            str: The bundle dir path, or None if not configured.
+        """
+        return self.cloud_init_config_dir.strip() if self.cloud_init_config_dir else self.cloud_init_config_dir
+
+    def get_cloud_init_configlet_file(self) -> str:
+        """Getter for this subcloud's JCNR configlet file (on the SC).
+
+        Returns:
+            str: The configlet file path, or None if not configured.
+        """
+        return self.cloud_init_configlet_file.strip() if self.cloud_init_configlet_file else self.cloud_init_configlet_file
+
     def get_bootstrap_file(self) -> str:
         """
         Getter for the boostrap_file
