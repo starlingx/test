@@ -145,6 +145,15 @@ class SystemHostMemoryOutput:
 
             self.system_host_memory_list.append(system_host_memory_object)
 
+    def get_memory_list(self) -> list[SystemHostMemoryObject]:
+        """
+        Gets the per-processor (NUMA node) memory objects for the host.
+
+        Returns:
+            list[SystemHostMemoryObject]: One entry per processor/NUMA node.
+        """
+        return self.system_host_memory_list
+
     def has_page_size_1gb(self) -> bool:
         """
         This function will look for a processor in the list of processors that has memory HugePage enabled 1 GB.

@@ -1,5 +1,6 @@
 """Server CRUD keywords via OpenStack SDK."""
 
+import base64
 import time
 from typing import List, Optional
 
@@ -33,6 +34,10 @@ class ServerKeywords(BaseKeyword):
         network: Optional[str] = None,
         availability_zone: Optional[str] = None,
         block_device_mapping_v2: Optional[List[dict]] = None,
+        scheduler_hints: Optional[dict] = None,
+        config_drive: Optional[bool] = None,
+        user_data: Optional[str] = None,
+        key_name: Optional[str] = None,
     ) -> ServerListOutput:
         """Create a server.
 
@@ -46,6 +51,18 @@ class ServerKeywords(BaseKeyword):
             network (Optional[str]): Network name. Auto-discovered if None.
             availability_zone (Optional[str]): Availability zone (e.g. 'nova:controller-0').
             block_device_mapping_v2 (Optional[List[dict]]): Block device mappings for boot-from-volume.
+            scheduler_hints (Optional[dict]): Nova scheduler hints, e.g.
+                ``{"group": <server_group_id>}`` to place the server in a
+                soft-anti-affinity group.
+            config_drive (Optional[bool]): When True, attach a config drive so
+                the instance can read metadata/user-data on a network with no
+                metadata service. Omitted when None.
+            user_data (Optional[str]): Plain-text cloud-init user data (e.g. a
+                workload script). Base64-encoded before it is sent to Nova.
+                Omitted when None.
+            key_name (Optional[str]): Keypair name to inject into the guest so
+                it is reachable over key-based SSH. Nova rejects a null-valued
+                key_name, so it is omitted from the request when None.
 
         Returns:
             ServerListOutput: Created server output.
@@ -87,6 +104,17 @@ class ServerKeywords(BaseKeyword):
             attrs["availability_zone"] = availability_zone
         if block_device_mapping_v2 is not None:
             attrs["block_device_mapping"] = block_device_mapping_v2
+        if scheduler_hints is not None:
+            attrs["scheduler_hints"] = scheduler_hints
+        if config_drive is not None:
+            attrs["config_drive"] = config_drive
+        if user_data is not None:
+            # Nova expects user data base64-encoded on the create call.
+            attrs["user_data"] = base64.b64encode(user_data.encode("utf-8")).decode("utf-8")
+        if key_name is not None:
+            # Nova rejects a null key_name (400 "None is not of type 'string'"),
+            # so only include it when a keypair was supplied.
+            attrs["key_name"] = key_name
 
         server = compute.create_server(**attrs)
         return ServerListOutput([server.to_dict()])
