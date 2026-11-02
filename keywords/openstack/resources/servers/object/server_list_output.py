@@ -25,6 +25,10 @@ class ServerListOutput:
                 or raw.get("host")
                 or raw.get("compute_host", "")
             )
+            raw_power = raw.get("power_state")
+            if raw_power is None:
+                raw_power = raw.get("OS-EXT-STS:power_state")
+            server.set_power_state(raw_power)
             server.set_instance_name(
                 raw.get("OS-EXT-SRV-ATTR:instance_name")
                 or raw.get("instance_name", "")
