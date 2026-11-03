@@ -22,6 +22,8 @@ CENTRAL_BACKUP_PATH = "/opt/dc-vault/backups/"
 LOCAL_BACKUP_PATH = "/opt/platform-backup/backups/"
 COMPLETE_CENTRAL_STATUS = "complete-central"
 COMPLETE_LOCAL_STATUS = "complete-local"
+BACKUP_FAILED_STATUS = "failed"
+BACKUP_PREP_FAILED_STATUS = "backup-prep-failed"
 RESTORE_COMPLETE_STATUS = "complete"
 
 
@@ -84,6 +86,7 @@ class DcManagerSubcloudBackupKeywords(BaseKeyword):
         registry: bool = False,
         subcloud_list: Optional[list] = None,
         expect_cmd_rejection: Optional[bool] = False,
+        expected_statuses: Optional[List[str]] = None,
     ) -> None:
         # fmt: on
         """
@@ -99,6 +102,7 @@ class DcManagerSubcloudBackupKeywords(BaseKeyword):
             registry (bool): Option to add the registry backup in the same task. Defaults to False.
             subcloud_list (Optional[list]): List of subcloud names when backing up a group. Defaults to None.
             expect_cmd_rejection (Optional[bool]): Expect backup command to be rejected if True. Default to False
+            expected_statuses (Optional[List[str]]): Backup statuses accepted as the expected failure. Defaults to ["failed"].
 
         Returns:
             None:
@@ -127,10 +131,10 @@ class DcManagerSubcloudBackupKeywords(BaseKeyword):
                 for subcloud_name in subcloud_list:
                     ssh_connection = LabConnectionKeywords().get_subcloud_ssh(subcloud_name) if local_only else con_ssh
 
-                    self.wait_for_backup_failure(ssh_connection, subcloud_name)
+                    self.wait_for_backup_failure(ssh_connection, subcloud_name, expected_statuses=expected_statuses)
 
             else:
-                self.wait_for_backup_failure(con_ssh, subcloud)
+                self.wait_for_backup_failure(con_ssh, subcloud, expected_statuses=expected_statuses)
 
     def wait_for_backup_failure(
         self,
@@ -138,6 +142,7 @@ class DcManagerSubcloudBackupKeywords(BaseKeyword):
         subcloud: Optional[str],
         check_interval: int = 30,
         timeout: int = 300,
+        expected_statuses: Optional[List[str]] = None,
     ) -> None:
         """
         Waits for backup operation to fail
@@ -147,10 +152,13 @@ class DcManagerSubcloudBackupKeywords(BaseKeyword):
             subcloud (Optional[str]): The name of the subcloud to check.
             check_interval (int): Time interval (in seconds) to check for file creation. Defaults to 30.
             timeout (int): Maximum time (in seconds) to wait for file creation. Defaults to 120.
+            expected_statuses (Optional[List[str]]): Backup statuses accepted as the expected failure. Defaults to ["failed"].
 
         Returns:
             None:
         """
+        if expected_statuses is None:
+            expected_statuses = [BACKUP_FAILED_STATUS]
 
         def check_for_failure() -> bool:
             """
@@ -160,12 +168,9 @@ class DcManagerSubcloudBackupKeywords(BaseKeyword):
                 bool: True if operation failed, False if didn't.
             """
             bckp_status = DcManagerSubcloudShowKeywords(con_ssh).get_dcmanager_subcloud_show(subcloud_name=subcloud).get_dcmanager_subcloud_show_object().get_backup_status()
-            if bckp_status == "failed":
-                return True
-            else:
-                return False
+            return bckp_status in expected_statuses
 
-        validate_equals_with_retry(function_to_execute=check_for_failure, expected_value=True, validation_description="Backup creation failed.", timeout=timeout, polling_sleep_time=check_interval)
+        validate_equals_with_retry(function_to_execute=check_for_failure, expected_value=True, validation_description=f"Backup creation failed with status in {expected_statuses}.", timeout=timeout, polling_sleep_time=check_interval)
 
     # fmt: off
     def create_subcloud_backup(
