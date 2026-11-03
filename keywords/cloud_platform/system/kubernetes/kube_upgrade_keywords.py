@@ -134,6 +134,22 @@ class KubeUpgradeKeywords(BaseKeyword):
         self.validate_success_return_code(self.ssh_connection)
         return KubeUpgradeShowOutput(output)
 
+    def kube_upgrade_abort_with_error(self) -> str:
+        """Executes the 'system kube-upgrade-abort' command expecting a rejection.
+
+        Sends the command without validating a successful return code, asserting
+        instead that the command was rejected (non-zero return code), and returns
+        the raw output for error message validation in negative tests. Used when
+        aborting is not permitted at the current upgrade stage (e.g. after
+        kube-upgrade-complete or during kube-post-application-update).
+
+        Returns:
+            str: Raw command output containing the rejection error message.
+        """
+        output = self.ssh_connection.send(source_openrc("system kube-upgrade-abort"))
+        self.validate_cmd_rejection_return_code(self.ssh_connection)
+        return output
+
     def kube_upgrade_complete(self) -> KubeUpgradeShowOutput:
         """Executes the 'system kube-upgrade-complete' command.
 
