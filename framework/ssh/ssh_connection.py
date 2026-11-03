@@ -301,7 +301,7 @@ class SSHConnection:
                 if action == "SEND":
                     thread_manager.start_thread("SSH_Command", self._send, cmd, get_pty=get_pty)
                 elif action == "SEND_SUDO":
-                    thread_manager.start_thread("SSH_Command", self._send_as_sudo, cmd)
+                    thread_manager.start_thread("SSH_Command", self._send_as_sudo, cmd, command_timeout=command_timeout)
                 elif action == "SEND_EXPECT_PROMPTS":
                     thread_manager.start_thread("SSH_Command", self._send_expect_prompts, cmd, prompts, timeout=command_timeout)
                 else:
@@ -345,12 +345,13 @@ class SSHConnection:
 
         return output
 
-    def _send_as_sudo(self, cmd: str) -> str:
+    def _send_as_sudo(self, cmd: str, command_timeout: int = None) -> str:
         """
         Sends the specified command using sudo and handles the password prompt.
 
         Args:
             cmd (str): The command to execute with sudo.
+            command_timeout (int): Optional timeout in seconds for the command execution. Defaults to None, which uses the default timeout.
 
         Returns:
             str: The output of the command.
@@ -360,7 +361,7 @@ class SSHConnection:
         sudo_password_prompt = PromptResponse("assword", self.password)
         sudo_completed = PromptResponse("@")
         sudo_prompts = [sudo_password_prompt, sudo_completed]
-        return self.send_expect_prompts("sudo {}".format(cmd), sudo_prompts)
+        return self.send_expect_prompts("sudo {}".format(cmd), sudo_prompts, command_timeout=command_timeout)
 
     def _send_expect_prompts(self, cmd: str, prompts: List[PromptResponse], timeout: int = 30) -> str:
         """
