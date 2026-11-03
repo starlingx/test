@@ -405,6 +405,10 @@ def test_rehome_single_duplex_subcloud_n_minus_2_release():
     get_logger().log_info(f"Validating subcloud {subcloud_name} is healthy after rehome")
     verify_subcloud_healthy(destination_system_controller_ssh, subcloud_name, check_sync=False)
 
+    # verify_subcloud_healthy above only inspects the system controller's view of the
+    # subcloud. Check the subcloud's own IPSec services, which the rehome re-establishes.
+    HealthKeywords(subcloud_ssh).validate_service_health()
+
     get_logger().log_info("Validating updated host route and floating addresses after rehome")
     validate_updated_host_route(destination_system_controller_ssh, subcloud_ssh, subcloud_name, mgmt_floating_address_before_rehome, oam_floating_address_before_rehome)
 
@@ -464,6 +468,11 @@ def test_rehome_single_simplex_subcloud_n_minus_2_release():
 
     get_logger().log_info("Validating subcloud health and counting pods after rehoming")
     verify_subcloud_healthy(destination_system_controller_ssh, subcloud_name, check_sync=False)
+
+    # verify_subcloud_healthy above only inspects the system controller's view of the
+    # subcloud. Check the subcloud's own IPSec services, which the rehome re-establishes.
+    HealthKeywords(subcloud_ssh).validate_service_health()
+
     pods_after_rehome = count_pods_on_subcloud(subcloud_ssh)
     validate_equals(pods_before_rehome, pods_after_rehome, "Pod count should remain consistent after rehoming")
 

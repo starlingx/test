@@ -8,6 +8,7 @@ from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
 from framework.validation.validation import validate_equals, validate_not_equals
 from keywords.cloud_platform.dcmanager.rehoming_utils import determine_rehome_direction, perform_batch_rehome_operation, verify_subcloud_healthy
+from keywords.cloud_platform.health.health_keywords import HealthKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.cloud_platform.system.host.system_host_swact_keywords import SystemHostSwactKeywords
 from keywords.cloud_platform.version_info.cloud_platform_version_manager import CloudPlatformVersionManagerClass
@@ -265,6 +266,12 @@ def test_rehome_subclouds_in_batch_n_minus_2_release():
     for subcloud_name in selected_subcloud_names:
         get_logger().log_info(f"Validating subcloud {subcloud_name} is healthy after rehome")
         verify_subcloud_healthy(destination_ssh, subcloud_name, check_sync=False)
+
+        # verify_subcloud_healthy above only inspects the system controller's view of the
+        # subcloud. Check the subcloud's own IPSec services, which the rehome re-establishes.
+        # subcloud_ssh is loop-scoped here, so it is acquired per subcloud.
+        subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
+        HealthKeywords(subcloud_ssh).validate_service_health()
 
     get_logger().log_test_case_step("Verify pod counts are consistent after batch rehoming")
     for subcloud_name in selected_subcloud_names:
