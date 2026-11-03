@@ -131,6 +131,46 @@ class DcManagerSubcloudAddKeywords(BaseKeyword):
         self.ssh_connection.send(cmd)
         self.validate_success_return_code(self.ssh_connection)
 
+    def dcmanager_subcloud_add_migrate_with_error(
+        self,
+        subcloud_name: str,
+        bootstrap_values: str,
+        install_values: str,
+        release_id: Optional[str] = None,
+    ) -> tuple:
+        """Runs 'dcmanager subcloud add --migrate' and returns output and rc without asserting.
+
+        Used for negative testing where the migrate is expected to be rejected. A
+        non-asserting variant is needed because the point of such a test is the
+        message the CLI returns, which the asserting form above discards.
+
+        Args:
+            subcloud_name (str): Subcloud name (used to look up IP and credentials).
+            bootstrap_values (str): Bootstrap values file name.
+            install_values (str): Install values file name.
+            release_id (Optional[str]): Release ID for the subcloud. Defaults to None.
+
+        Returns:
+            tuple: (output_str, return_code_int).
+        """
+        lab_config = ConfigurationManager.get_lab_config()
+        subcloud_obj = lab_config.get_subcloud(subcloud_name)
+
+        subcloud_ip = subcloud_obj.get_floating_ip()
+        subcloud_psswr = subcloud_obj.get_admin_credentials().get_password()
+        bmc_psswr = subcloud_obj.get_bm_password()
+        release = "" if release_id is None else f"--release {release_id}"
+
+        cmd = source_openrc(f"dcmanager subcloud add --migrate --bootstrap-address {subcloud_ip} " f"--bootstrap-values {bootstrap_values} --install-values {install_values}" f" --sysadmin-password {subcloud_psswr} --bmc-password {bmc_psswr} {release}")
+
+        output = self.ssh_connection.send(cmd)
+        rc = self.ssh_connection.get_return_code()
+
+        if isinstance(output, list):
+            output = "\n".join(str(line).strip() for line in output)
+
+        return output, rc
+
     def build_jcnr_cloud_init_config(self, cloud_init_config_dir: str, configlet_file: str, sysadmin_password: str) -> str:
         """Assemble the JCNR cloud-init-config tarball on the system controller.
 
