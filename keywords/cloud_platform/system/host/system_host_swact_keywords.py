@@ -10,6 +10,7 @@ from keywords.base_keyword import BaseKeyword
 from keywords.cloud_platform.command_wrappers import source_openrc
 from keywords.cloud_platform.system.host.objects.system_host_object import SystemHostObject
 from keywords.cloud_platform.system.host.system_host_list_keywords import SystemHostListKeywords
+from keywords.cloud_platform.system.servicegroup.system_servicegroup_keywords import SystemServiceGroupKeywords
 
 
 class SystemHostSwactKeywords(BaseKeyword):
@@ -182,7 +183,44 @@ class SystemHostSwactKeywords(BaseKeyword):
         active = host_list.get_active_controller()
         self.host_swact()
         self.wait_for_swact(active, standby)
+        self.wait_for_services_settled()
         return True
+
+    def wait_for_services_settled(self, timeout: int = 300, poll_interval: int = 10) -> None:
+        """Wait until every service group has settled (no go-active/go-standby) after a swact.
+
+        wait_for_swact only confirms the controller ROLES have flipped in host-list; the Service
+        Manager then keeps migrating the singleton service groups (horizon, etc.) off the old active
+        for several more seconds. Locking the just-swacted-away controller in that window is rejected
+        with 'Service <x> is only running on <host> ... please use "force lock" command' (rc=1),
+        which fails an upgrade/rollback run even though the services drain moments later. This waits
+        until no service group is in a transitional 'go-active'/'go-standby' state, i.e. the SM has
+        finished the migration and a normal lock of the standby will be accepted.
+
+        No-op-friendly: on a single controller there are no transitional groups so it returns at
+        once. Generic: any swact-sensitive caller can use it.
+
+        Args:
+            timeout (int): seconds to wait for all service groups to leave transitional states.
+            poll_interval (int): seconds between polls.
+        """
+
+        def services_settled() -> bool:
+            groups = SystemServiceGroupKeywords(self.ssh_connection).get_system_servicegroup_list().system_servicegroup_list
+            transitional = [g for g in groups if g.get_state() in ("go-active", "go-standby")]
+            if transitional:
+                names = ", ".join(f"{g.service_group_name}@{g.get_hostname()}={g.get_state()}" for g in transitional)
+                get_logger().log_info(f"[swact-settle] waiting for service groups to settle after swact: {names}")
+                return False
+            return True
+
+        validate_equals_with_retry(
+            services_settled,
+            True,
+            "all service groups settled (no go-active/go-standby) after swact",
+            timeout=timeout,
+            polling_sleep_time=poll_interval,
+        )
 
     def wait_for_standby_available(self, timeout: int = 300, poll_interval: int = 15) -> None:
         """Wait until the standby controller is unlocked/enabled/available before a swact.

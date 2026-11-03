@@ -1,13 +1,25 @@
 from framework.exceptions.keyword_exception import KeywordException
+from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
+from framework.validation.validation import validate_equals_with_retry
 from keywords.base_keyword import BaseKeyword
 from keywords.cloud_platform.fault_management.alarms.alarm_list_keywords import AlarmListKeywords
 from keywords.cloud_platform.system.host.system_host_lock_keywords import SystemHostLockKeywords
 from keywords.cloud_platform.system.host.system_host_swact_keywords import SystemHostSwactKeywords
 from keywords.cloud_platform.system.show.system_show_keywords import SystemShowKeywords
+from keywords.cloud_platform.upgrade.software_deploy_host_list_keywords import SoftwareDeployHostListKeywords
 from keywords.cloud_platform.upgrade.software_deploy_show_keywords import SoftwareDeployShowKeywords
 from keywords.cloud_platform.upgrade.software_list_keywords import SoftwareListKeywords
 from keywords.cloud_platform.upgrade.usm_keywords import USMKeywords
+
+# Retry budget for the per-host lock during a deploy/rollback. A transient sysinv-side
+# 'system host-lock' error (e.g. an internal "'str' object has no attribute 'get'", or a
+# "did not lock in the required time" that nonetheless locks the host) has been observed on the
+# last host of a long run; retrying absorbs it. These are passed to the shared lock_host keyword's
+# opt-in retry, so only this deploy flow retries - every other lock_host caller keeps the default
+# single-attempt behaviour.
+_LOCK_RETRIES = 2
+_LOCK_RETRY_DELAY = 20
 
 
 class SoftwareDeploySequenceKeywords(BaseKeyword):
@@ -157,14 +169,83 @@ class SoftwareDeploySequenceKeywords(BaseKeyword):
 
         """
         self.host_swact.swact_if_active(host)
-        self.host_lock.lock_host(host)
+        # Retry a transient sysinv-side 'system host-lock' error (opt-in on the shared keyword; the
+        # default single-attempt behaviour is unchanged for every other caller). swact_if_active has
+        # already swacted away, so a genuine 'cannot lock active controller' rejection cannot occur
+        # here; a persistent failure still raises after the attempts are exhausted.
+        self.host_lock.lock_host(host, retries=_LOCK_RETRIES, retry_delay=_LOCK_RETRY_DELAY)
+        deploy_error = None
         try:
             if rollback:
                 self.usm.software_deploy_host_rollback(host, sudo=False)
+                self._wait_for_host_deploy_done(host, "deploy-host-rollback-deployed")
             else:
                 self.usm.software_deploy_host(host, sudo=False)
+                self._wait_for_host_deploy_done(host, "deploy-host-deployed")
+        except Exception as error:
+            # Remember the real failure (e.g. a host-rollback that timed out in the USM agent)
+            # so the unlock below cannot mask it. Without this, the unlock in the finally is
+            # rejected with "software deploy to <host> has not completed" and raises its own
+            # "Timeout: failed to unlock host" exception, hiding the actual deploy error.
+            deploy_error = error
+            raise
         finally:
-            self.host_lock.unlock_host(host)
+            # Always attempt the unlock: a failure part-way through the deploy must not leave the
+            # host locked (that wedges the system - on a single-controller system it takes the
+            # whole platform out). But if the deploy step already failed, a failure of this
+            # recovery unlock must not replace the original error.
+            try:
+                self.host_lock.unlock_host(host)
+            except Exception as unlock_error:
+                if deploy_error is None:
+                    raise
+                get_logger().log_error(
+                    f"Recovery unlock of {host} failed after the deploy step already failed; "
+                    f"keeping the original deploy error. Unlock error: {unlock_error}"
+                )
+
+    def _wait_for_host_deploy_done(self, host: str, deployed_state: str, timeout: int = 2400, poll_interval: int = 20) -> None:
+        """
+        Wait for one host's software-deploy state to reach the per-host 'deployed' state.
+
+        'software deploy host <host>' (and host-rollback) is ASYNCHRONOUS: the command returns as
+        soon as the deploy is accepted, while the host keeps pulling/applying the release for
+        minutes afterwards. Unlocking in that window is rejected with
+        'host-unlock rejected: software deploy to <host> has not completed' (rc=1); the unlock
+        keyword retries but eventually times out and fails the run. This waits on the per-host state
+        in 'software deploy host-list' until the host reaches its deployed state, so the subsequent
+        unlock is accepted. A 'failed' per-host state is raised immediately rather than waited out.
+
+        Args:
+            host(str): the host whose per-host deploy state is awaited (e.g. "controller-0").
+            deployed_state(str): the terminal per-host state to wait for - 'deploy-host-deployed'
+                for an upgrade, 'deploy-host-rollback-deployed' for a rollback.
+            timeout(int): seconds to wait for the host to reach the deployed state.
+            poll_interval(int): seconds between polls.
+
+        Raises:
+            KeywordException: when the host's per-host deploy state becomes 'failed'.
+        """
+        host_list_kw = SoftwareDeployHostListKeywords(self.ssh_connection)
+
+        def host_deployed() -> bool:
+            state = host_list_kw.get_software_deploy_host_list().get_state_by_host(host)
+            if state and "failed" in state:
+                raise KeywordException(
+                    f"Per-host software deploy for {host} reported state {state!r}; the host deploy "
+                    f"failed - inspect 'software deploy host-list' and the deploy log."
+                )
+            if state != deployed_state:
+                get_logger().log_info(f"[deploy-host] waiting for {host} to reach {deployed_state} (current={state})")
+            return state == deployed_state
+
+        validate_equals_with_retry(
+            host_deployed,
+            True,
+            f"{host} reached {deployed_state} before unlock",
+            timeout=timeout,
+            polling_sleep_time=poll_interval,
+        )
 
     def deploy_upgrade(self, version: str, leave_at_activate_done: bool = False) -> None:
         """
