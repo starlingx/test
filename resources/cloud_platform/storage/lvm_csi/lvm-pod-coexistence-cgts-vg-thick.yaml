@@ -28,6 +28,17 @@ kind: Pod
 metadata:
   name: lvm-pod-coexist
 spec:
+  # Both VGs (cgts-vg and the dedicated lvm-provisioner) live on the controller(s); tolerate the
+  # control-plane taint and target a control-plane node so this pod schedules on STD and AIO labs.
+  tolerations:
+    - key: node-role.kubernetes.io/master
+      operator: Exists
+      effect: NoSchedule
+    - key: node-role.kubernetes.io/control-plane
+      operator: Exists
+      effect: NoSchedule
+  nodeSelector:
+    node-role.kubernetes.io/control-plane: ""
   shareProcessNamespace: true
   restartPolicy: Always
   containers:

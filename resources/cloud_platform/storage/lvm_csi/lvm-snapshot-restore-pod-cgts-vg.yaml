@@ -20,6 +20,17 @@ kind: Pod
 metadata:
   name: lvm-snap-restore-pod-cgts-vg
 spec:
+  # cgts-vg lives on the controller(s); tolerate the control-plane taint and target a
+  # control-plane node so this pod schedules on both STD (dedicated workers) and AIO labs.
+  tolerations:
+    - key: node-role.kubernetes.io/master
+      operator: Exists
+      effect: NoSchedule
+    - key: node-role.kubernetes.io/control-plane
+      operator: Exists
+      effect: NoSchedule
+  nodeSelector:
+    node-role.kubernetes.io/control-plane: ""
   restartPolicy: Always
   containers:
     - name: lvm-snap-restore-pod-cgts-vg
