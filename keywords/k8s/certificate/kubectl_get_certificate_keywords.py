@@ -68,6 +68,31 @@ class KubectlGetCertStatusKeywords(K8sBaseKeyword):
 
         validate_equals_with_retry(get_cert_status, is_ready, "Verify the certs status issued", timeout=600)
 
+    def get_certificate_not_after(self, certs_name: str, namespace: str = None) -> str:
+        """Get the notAfter (expiry) timestamp from a certificate's status.
+
+        Reads ``.status.notAfter`` via jsonpath. Comparing this value before and
+        after a renewal window lets a caller detect that a certificate was
+        renewed (the timestamp advances on renewal).
+
+        Args:
+            certs_name (str): Name of the certificate resource.
+            namespace (str): Namespace of the certificate. Defaults to None.
+
+        Returns:
+            str: The notAfter timestamp, or an empty string if not set.
+        """
+        jsonpath = 'jsonpath="{.status.notAfter}"'
+        cmd = f"kubectl get certificate {certs_name} -o {jsonpath}"
+        if namespace:
+            cmd = f"kubectl get certificate {certs_name} -n {namespace} -o {jsonpath}"
+        output = self.ssh_connection.send(self.k8s_config.export(cmd))
+        self.validate_success_return_code(self.ssh_connection)
+        if len(output) > 0 and output[0].strip():
+            return output[0].strip()
+
+        return ""
+
     def get_certificates_with_extra_columns(self, namespace: str, columns_to_add: list) -> KubectlGetCertsOutput:
         """Get certificates with extra spec/status columns appended.
 
