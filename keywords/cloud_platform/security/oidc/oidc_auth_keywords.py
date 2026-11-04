@@ -80,7 +80,7 @@ class OidcAuthKeywords(BaseKeyword):
             # Broad by design: teardown must not raise. See method docstring.
             get_logger().log_error(f"restore_admin_kubeconfig failed (non-fatal): {exc}")
 
-    def authenticate_ldap_user(self, password: str) -> None:
+    def authenticate_ldap_user(self, password: str, oidc_client_ip: str = "") -> None:
         """Authenticate as LDAP user via oidc-auth.
 
         Assumes the SSH session is already connected as the LDAP user
@@ -88,9 +88,13 @@ class OidcAuthKeywords(BaseKeyword):
 
         Args:
             password (str): LDAP user password.
+            oidc_client_ip (str): OIDC client host for centralized DC auth (the
+                System Controller OAM). When set, oidc-auth targets that dex via
+                -c; otherwise the local system's dex is used. Defaults to "".
         """
         self.setup_kubeconfig()
-        self.ssh_connection.send(f"oidc-auth -p {password}")
+        client_flag = f" -c {oidc_client_ip}" if oidc_client_ip else ""
+        self.ssh_connection.send(f"oidc-auth -p {password}{client_flag}")
         self.validate_success_return_code(self.ssh_connection)
 
     def authenticate_wad_user(self, username: str, password: str, backend: str = "wad") -> None:
@@ -106,7 +110,7 @@ class OidcAuthKeywords(BaseKeyword):
         self.validate_success_return_code(self.ssh_connection)
 
     @staticmethod
-    def create_ldap_user_ssh(oam_ip: str, username: str, password: str) -> SSHConnection:
+    def create_ldap_user_ssh(oam_ip: str, username: str, password: str, oidc_client_ip: str = "") -> SSHConnection:
         """Create SSH session as LDAP user and authenticate via oidc-auth.
 
         SSHes as the LDAP user directly so oidc-auth auto-detects the username
@@ -114,9 +118,11 @@ class OidcAuthKeywords(BaseKeyword):
         readonly fields.
 
         Args:
-            oam_ip (str): Lab OAM IP address.
+            oam_ip (str): Lab OAM IP address to SSH into.
             username (str): LDAP username.
             password (str): LDAP password.
+            oidc_client_ip (str): OIDC client host for centralized DC auth (the
+                System Controller OAM). Defaults to "" (local dex).
 
         Returns:
             SSHConnection: Authenticated SSH session with OIDC token.
@@ -125,5 +131,5 @@ class OidcAuthKeywords(BaseKeyword):
         ldap_ssh.connect()
         get_logger().log_info(f"Created LDAP user SSH session for {username}")
         oidc_keywords = OidcAuthKeywords(ldap_ssh)
-        oidc_keywords.authenticate_ldap_user(password)
+        oidc_keywords.authenticate_ldap_user(password, oidc_client_ip=oidc_client_ip)
         return ldap_ssh
