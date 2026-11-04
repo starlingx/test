@@ -21,20 +21,27 @@ class SecurityGroupKeywords(BaseKeyword):
         """
         self.openstack_connection = openstack_connection
 
-    def list_security_groups(self, name: Optional[str] = None) -> SecurityGroupOutput:
-        """List security groups, optionally filtered by name.
+    def list_security_groups(self, name: Optional[str] = None, project_id: Optional[str] = None) -> SecurityGroupOutput:
+        """List security groups, optionally filtered by name and/or project.
+
+        On a multi-project lab there is one security group named ``default`` per
+        project, so filtering by name alone is ambiguous. Pass ``project_id`` to
+        resolve the group that belongs to a specific project.
 
         Args:
             name (Optional[str]): Filter by security group name.
+            project_id (Optional[str]): Filter by owning project (tenant) id.
 
         Returns:
             SecurityGroupOutput: Parsed security group collection.
         """
         network = self.openstack_connection.get_network()
+        query = {}
         if name:
-            sgs = list(network.security_groups(name=name))
-        else:
-            sgs = list(network.security_groups())
+            query["name"] = name
+        if project_id:
+            query["project_id"] = project_id
+        sgs = list(network.security_groups(**query))
 
         objects = []
         for sg in sgs:
@@ -46,29 +53,41 @@ class SecurityGroupKeywords(BaseKeyword):
 
         return SecurityGroupOutput(objects)
 
-    def create_allow_all_ingress_rule(self, security_group_name: str) -> Optional[str]:
+    def create_allow_all_ingress_rule(self, security_group_name: str, project_id: Optional[str] = None) -> Optional[str]:
         """Add an allow-all ingress rule to a security group.
 
         Checks if the rule already exists before creating. No-op if present.
 
+        The lookup is scoped to a single project. When ``project_id`` is not
+        given it defaults to the project the OpenStack connection is
+        authenticated as. This disambiguates the per-project ``default`` groups:
+        on a multi-project lab several groups are named ``default``, and an
+        unscoped name lookup could return the wrong project's group and land the
+        rule on a security group the workload VMs never use.
+
         Args:
             security_group_name (str): Security group name.
+            project_id (Optional[str]): Owning project (tenant) id to scope the
+                lookup to. Defaults to the connection's current project.
 
         Returns:
             Optional[str]: Created rule ID, or None if already exists or SG not found.
         """
-        output = self.list_security_groups(name=security_group_name)
+        if project_id is None:
+            project_id = self.openstack_connection.get_auth_details().get("project_id")
+
+        output = self.list_security_groups(name=security_group_name, project_id=project_id)
         sg_obj = output.find_by_name(security_group_name)
 
         if not sg_obj:
-            get_logger().log_warning(f"Security group '{security_group_name}' not found")
+            get_logger().log_warning(f"Security group '{security_group_name}' not found in project '{project_id}'")
             return None
 
         if sg_obj.has_allow_all_ingress_rule():
             get_logger().log_info(f"Allow-all ingress rule already exists on '{security_group_name}'")
             return None
 
-        get_logger().log_info(f"Adding allow-all ingress rule to '{security_group_name}'")
+        get_logger().log_info(f"Adding allow-all ingress rule to '{security_group_name}' (id={sg_obj.get_id()}, project={project_id})")
         network = self.openstack_connection.get_network()
         rule = network.create_security_group_rule(
             security_group_id=sg_obj.get_id(),
