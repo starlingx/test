@@ -779,13 +779,14 @@ class DcManagerSubcloudBackupKeywords(BaseKeyword):
 
         DcManagerSubcloudStateWatcherKeywords(self.ssh_connection).watch_single_subcloud(subcloud_name=subcloud_name, field_to_watch="backup_status", in_progress_states=BACKUP_IN_PROGRESS_STATES, complete_state=COMPLETE_CENTRAL_STATUS)
 
-    def create_local_backup(self, subcloud_name: str, custom_path: bool = False, backup_values: bool = False) -> None:
+    def create_local_backup(self, subcloud_name: str, custom_path: bool = False, backup_values: bool = False, registry: bool = False) -> None:
         """Create a subcloud backup on local storage and wait for completion.
 
         Args:
             subcloud_name (str): Subcloud to back up.
             custom_path (bool): If True, redirect the backup to the home directory. Defaults to False.
             backup_values (bool): If True, pass a backup-values yaml with exclude_dirs. Defaults to False.
+            registry (bool): If True, include the subcloud local registry images in the backup. Defaults to False.
         """
         lab_config = ConfigurationManager.get_lab_config().get_subcloud(subcloud_name)
         password = lab_config.get_admin_credentials().get_password()
@@ -803,10 +804,10 @@ class DcManagerSubcloudBackupKeywords(BaseKeyword):
             home_user = lab_config.get_admin_credentials().get_user_name()
             home_path = f"/home/{home_user}/"
             backup_yaml = self._create_backup_values_yaml(subcloud_name, f"backup_dir: {home_path}")
-            self.create_subcloud_backup(password, subcloud_ssh, path=f"{home_path}{subcloud_name}_platform_backup_*.tgz", subcloud=subcloud_name, local_only=True, backup_yaml=backup_yaml, wait=False)
+            self.create_subcloud_backup(password, subcloud_ssh, path=f"{home_path}{subcloud_name}_platform_backup_*.tgz", subcloud=subcloud_name, local_only=True, backup_yaml=backup_yaml, registry=registry, wait=False)
         else:
             backup_path = f"{LOCAL_BACKUP_PATH}{sw_version}/"
-            self.create_subcloud_backup(password, subcloud_ssh, path=f"{backup_path}{subcloud_name}_platform_backup_*.tgz", subcloud=subcloud_name, local_only=True, release=sw_version, backup_yaml=backup_yaml, wait=False)
+            self.create_subcloud_backup(password, subcloud_ssh, path=f"{backup_path}{subcloud_name}_platform_backup_*.tgz", subcloud=subcloud_name, local_only=True, release=sw_version, backup_yaml=backup_yaml, registry=registry, wait=False)
 
         DcManagerSubcloudStateWatcherKeywords(self.ssh_connection).watch_single_subcloud(subcloud_name=subcloud_name, field_to_watch="backup_status", in_progress_states=BACKUP_IN_PROGRESS_STATES, complete_state=COMPLETE_LOCAL_STATUS)
 
@@ -860,7 +861,7 @@ class DcManagerSubcloudBackupKeywords(BaseKeyword):
 
         DcManagerSubcloudStateWatcherKeywords(self.ssh_connection).watch_single_subcloud(subcloud_name=subcloud_name, field_to_watch="deploy_status", in_progress_states=RESTORE_IN_PROGRESS_STATES, complete_state=RESTORE_COMPLETE_STATUS)
 
-    def restore_local_backup(self, subcloud_name: str, release: str, override_values: Optional[str] = None, with_install: bool = True) -> None:
+    def restore_local_backup(self, subcloud_name: str, release: str, override_values: Optional[str] = None, with_install: bool = True, registry: bool = False) -> None:
         """Restore a subcloud from its local backup of the given release.
 
         The release identifies which backup to restore; it is independent of the
@@ -872,13 +873,15 @@ class DcManagerSubcloudBackupKeywords(BaseKeyword):
             release (str): Release of the backup to restore (e.g. the N-1 or N-2 backup).
             override_values (Optional[str]): Path to a restore-values yaml. Defaults to None.
             with_install (bool): If True, reinstall before restoring. Defaults to True.
+            registry (bool): If True, also restore the subcloud local registry images. The
+                backup must have been created with registry images. Defaults to False.
         """
         release = self._resolve_backup_release(release)
         password = self._get_subcloud_password(subcloud_name)
         self._unmanage_subcloud_for_restore(subcloud_name)
         self._power_off_if_duplex_install(subcloud_name, with_install)
         get_logger().log_info(f"Restore local backup (release {release}) for subcloud '{subcloud_name}'")
-        self.restore_subcloud_backup(password, self.ssh_connection, subcloud=subcloud_name, local_only=True, with_install=with_install, release=release, restore_values_path=override_values, wait=False)
+        self.restore_subcloud_backup(password, self.ssh_connection, subcloud=subcloud_name, local_only=True, with_install=with_install, release=release, restore_values_path=override_values, registry=registry, wait=False)
 
         DcManagerSubcloudStateWatcherKeywords(self.ssh_connection).watch_single_subcloud(subcloud_name=subcloud_name, field_to_watch="deploy_status", in_progress_states=RESTORE_IN_PROGRESS_STATES, complete_state=RESTORE_COMPLETE_STATUS)
 

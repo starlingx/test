@@ -3,14 +3,16 @@
 Verifies restore of a single subcloud backup from central and local storage,
 across simplex and duplex topologies and active/N-1/N-2 loads. Covers install
 and no-install restores, restore-values overrides, auto-restore, factory-restore,
-and restores executed from the standby system controller. Duplex subclouds are
-powered off automatically by the restore keyword before an install-based restore.
+local restores with registry images, and restores executed from the standby
+system controller. Duplex subclouds are powered off automatically by the restore
+keyword before an install-based restore.
 Each restore is followed by a manage and a subcloud cluster health check.
 
 Prerequisites:
     - System controller accessible (--lab_config_file)
     - A backup must already exist for the target subcloud (produced by the
-      corresponding backup-create tests)
+      corresponding backup-create tests). The registry images restore tests
+      need a local backup created with registry images
     - At least one managed, online subcloud matching the target release/topology
 
 Run with:
@@ -348,6 +350,78 @@ def test_backup_restore_local_single_simplex_subcloud_n_minus_2_release_with_res
     )
     FileKeywords(system_controller_ssh).create_file_with_echo("restore_values.yaml", 'wipe_ceph_osds: "false"')
     DcManagerSubcloudBackupKeywords(system_controller_ssh).restore_local_backup(result.get_name(), backup_release, override_values="restore_values.yaml")
+    manage_and_validate_health(system_controller_ssh, result.get_name())
+
+
+# --- Local Restore With Registry Images - Simplex ---
+
+
+@mark.p2
+@mark.lab_has_subcloud
+@mark.subcloud_lab_is_simplex
+def test_backup_restore_local_single_simplex_subcloud_n_release_with_registry_images(request):
+    """Restore a simplex subcloud running N release from a local backup with registry images.
+
+    Test Steps:
+        1. Select an online simplex subcloud with a local backup available
+        2. Restore the subcloud from its local backup including registry images and verify it completes
+        3. Manage the restored subcloud
+        4. Validate the subcloud cluster is healthy
+    """
+    backup_release = "N"
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
+        availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
+        backup_mode="local",
+        backup_release=backup_release,
+        lab_type=LabTypeEnum.SIMPLEX,
+    )
+    DcManagerSubcloudBackupKeywords(system_controller_ssh).restore_local_backup(result.get_name(), backup_release, registry=True)
+    manage_and_validate_health(system_controller_ssh, result.get_name())
+
+
+@mark.p2
+@mark.lab_has_subcloud
+@mark.subcloud_lab_is_simplex
+def test_backup_restore_local_single_simplex_subcloud_n_minus_1_release_with_registry_images(request):
+    """Restore a simplex subcloud running N-1 release from a local backup with registry images.
+
+    Test Steps:
+        1. Select an online simplex subcloud with a local backup available
+        2. Restore the subcloud from its local backup including registry images and verify it completes
+        3. Manage the restored subcloud
+        4. Validate the subcloud cluster is healthy
+    """
+    backup_release = "N-1"
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
+        availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
+        backup_mode="local",
+        backup_release=backup_release,
+        lab_type=LabTypeEnum.SIMPLEX,
+    )
+    DcManagerSubcloudBackupKeywords(system_controller_ssh).restore_local_backup(result.get_name(), backup_release, registry=True)
+    manage_and_validate_health(system_controller_ssh, result.get_name())
+
+
+@mark.p2
+@mark.lab_has_subcloud
+@mark.subcloud_lab_is_simplex
+def test_backup_restore_local_single_simplex_subcloud_n_minus_2_release_with_registry_images(request):
+    """Restore a simplex subcloud running N-2 release from a local backup with registry images.
+
+    Test Steps:
+        1. Select an online simplex subcloud with a local backup available
+        2. Restore the subcloud from its local backup including registry images and verify it completes
+        3. Manage the restored subcloud
+        4. Validate the subcloud cluster is healthy
+    """
+    backup_release = "N-2"
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
+        availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
+        backup_mode="local",
+        backup_release=backup_release,
+        lab_type=LabTypeEnum.SIMPLEX,
+    )
+    DcManagerSubcloudBackupKeywords(system_controller_ssh).restore_local_backup(result.get_name(), backup_release, registry=True)
     manage_and_validate_health(system_controller_ssh, result.get_name())
 
 
