@@ -945,3 +945,70 @@ def test_dc_ldap_oidc_on_subcloud(request):
     ldap_ssh = _create_ldap_ssh(test_user.get_username(), test_user.get_password(), subcloud_oam_ip, client_ip=sc_oam_ip)
     _verify_kubectl_and_stx_access(ldap_ssh, expect_success=True)
     ldap_ssh.close()
+
+
+@mark.p2
+def test_oidc_app_with_single_connector(request):
+    """Verify oidc-auth-apps applies with a single backend connector and a user can authenticate.
+
+    Applies a dex override that defines exactly one backend connector (local LDAP),
+    re-applies oidc-auth-apps, and confirms the single-connector configuration is active
+    and that a user from that connector can authenticate and run kubectl.
+
+    Test Steps:
+        - Create an LDAP user with a mail attribute
+        - Apply a single-connector (local LDAP) dex override and reapply oidc-auth-apps
+        - Set oidc-username-claim and create the user clusterrolebinding
+        - SSH as the LDAP user, oidc-auth, and verify kubectl access
+    """
+    config = _load_dex_config()
+    test_user = _get_test_user_config()
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    lab_config = ConfigurationManager.get_lab_config()
+    ldap_keywords = LdapKeywords(ssh_connection, lab_config.get_admin_credentials().get_password())
+    dex_keywords = DexConnectorKeywords(ssh_connection)
+    crb_keywords = KubectlCreateClusterRoleBindingKeywords(ssh_connection)
+    yaml_keywords = YamlKeywords(ssh_connection)
+    file_keywords = FileKeywords(ssh_connection)
+
+    oam_ip = lab_config.get_floating_ip()
+
+    def cleanup():
+        ssh = LabConnectionKeywords().get_active_controller_ssh()
+        get_logger().log_teardown_step("Cleaning up test resources")
+        KubectlCreateClusterRoleBindingKeywords(ssh).delete_clusterrolebinding(test_user.get_crb_name())
+        LdapKeywords(ssh, lab_config.get_admin_credentials().get_password()).delete_user(test_user.get_username())
+        FileKeywords(ssh).delete_directory(config.get_working_dir())
+
+    request.addfinalizer(cleanup)
+
+    get_logger().log_info(f"Creating LDAP user: {test_user.get_username()} (role={test_user.get_role()})")
+    ldap_keywords.create_user(test_user.get_username(), test_user.get_password(), user_role=test_user.get_role())
+    ldap_keywords.add_mail_attribute(test_user.get_username(), test_user.get_email())
+
+    get_logger().log_test_case_step("Apply a single-connector (local LDAP) dex override and reapply oidc-auth-apps")
+    working_dir = config.get_working_dir()
+    file_keywords.create_directory(working_dir)
+    template = get_stx_resource_path("resources/cloud_platform/security/oidc/dex-single-connector-overrides.yaml")
+    mgmt_ip = SystemAddrpoolListKeywords(ssh_connection).get_system_addrpool_list().get_management_floating_address()
+    if ":" in mgmt_ip:
+        mgmt_ip = f"[{mgmt_ip}]"
+    replacements = {
+        "mgmt_ip": mgmt_ip,
+        "bind_pw": KeyringKeywords(ssh_connection).get_keyring(service="ldap", identifier="ldapadmin"),
+    }
+    override_file = yaml_keywords.generate_yaml_file_from_template(template, replacements, "dex-single-connector.yaml", working_dir)
+    dex_keywords.apply_dex_override_and_reapply(override_file, config.get_oidc_app_name(), config.get_namespace())
+
+    get_logger().log_test_case_step("Confirm the single-connector override is active in dex")
+    dex_keywords.helm_override_keywords.verify_helm_user_override("ldap-1", config.get_oidc_app_name(), "dex", config.get_namespace())
+
+    get_logger().log_test_case_step("Set oidc-username-claim and create the user clusterrolebinding")
+    dex_keywords.set_oidc_username_claim(config.get_oidc_username_claim().get_default())
+    bracketed_ip = f"[{oam_ip}]" if ":" in oam_ip else oam_ip
+    oidc_issuer = f"https://{bracketed_ip}:30556/dex"
+    crb_keywords.create_clusterrolebinding_for_user(test_user.get_crb_name(), "cluster-admin", f"{oidc_issuer}#{test_user.get_username()}")
+
+    get_logger().log_test_case_step("SSH as the LDAP user, oidc-auth, and verify kubectl access with the single connector")
+    ldap_ssh = _create_ldap_ssh(test_user.get_username(), test_user.get_password(), oam_ip)
+    _verify_kubectl_and_stx_access(ldap_ssh, expect_success=True, expected_username=test_user.get_username(), expected_email=test_user.get_email())
