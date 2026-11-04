@@ -1,3 +1,6 @@
+import yaml
+
+from framework.exceptions.keyword_exception import KeywordException
 from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
 from framework.validation.validation import validate_str_contains
@@ -244,3 +247,22 @@ class SystemHelmOverrideKeywords(BaseKeyword):
             app_apply_kw.system_application_apply(app_name, timeout=timeout, polling_sleep_time=polling_sleep_time)
         finally:
             self.ssh_connection.send(f"rm -rf {tmpdir}")
+
+    def get_user_override_values(self, app_name: str, chart_name: str, namespace: str) -> dict:
+        """Read complete user values as a mapping, preserving empty overrides.
+
+        Args:
+            app_name (str): Application name.
+            chart_name (str): Chart name.
+            namespace (str): Chart namespace.
+
+        Returns:
+            dict: Parsed user overrides, or an empty mapping when unset.
+        """
+        raw_user_override_content = self.get_system_helm_override_show(app_name, chart_name, namespace).get_helm_override_show().get_user_overrides()
+        values = yaml.safe_load(raw_user_override_content) if isinstance(raw_user_override_content, str) else raw_user_override_content
+        if values is None or values == "None":
+            return {}
+        if not isinstance(values, dict):
+            raise KeywordException(f"Invalid user override mapping for {app_name}/{chart_name}: {values!r}")
+        return values
