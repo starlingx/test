@@ -1,5 +1,7 @@
+from typing import List, Optional
+
 from framework.logging.automation_logger import get_logger
-from keywords.cloud_platform.dcmanager.dcmanager_subcloud_backup_keywords import DcManagerSubcloudBackupKeywords
+from keywords.cloud_platform.dcmanager.dcmanager_subcloud_backup_keywords import BACKUP_FAILED_STATUS, BACKUP_PREP_FAILED_STATUS, DcManagerSubcloudBackupKeywords
 from keywords.cloud_platform.dcmanager.objects.dcmanger_subcloud_list_availability_enum import DcManagerSubcloudListAvailabilityEnum
 from keywords.cloud_platform.dcmanager.subcloud_picker_keywords import SubcloudPickerKeywords
 from keywords.cloud_platform.health.health_keywords import HealthKeywords
@@ -13,12 +15,13 @@ from config.lab.objects.lab_type_enum import LabTypeEnum
 default_central_backup_path = "/opt/dc-vault/backups/"
 
 
-def backup_create_failure_local(subcloud_name: str, local: bool = False):
+def backup_create_failure_local(subcloud_name: str, local: bool = False, expected_statuses: Optional[List[str]] = None):
     """Function to run backup operation for local back up.
 
     Args:
         subcloud_name (str): subcloud name to back up.
         local (bool): If the backup should be stored on subcloud.
+        expected_statuses (Optional[List[str]]): Backup statuses accepted as the expected failure. Defaults to None, which expects "failed".
     """
     central_ssh = LabConnectionKeywords().get_active_controller_ssh()
 
@@ -29,7 +32,7 @@ def backup_create_failure_local(subcloud_name: str, local: bool = False):
 
     # Create a subcloud backup and verify the subcloud backup fails.
     get_logger().log_info(f"Attempt creation of {subcloud_name} backup.")
-    dc_manager_backup.create_subcloud_backup_expect_fail(subcloud_password, central_ssh, subcloud=subcloud_name, local_only=local)
+    dc_manager_backup.create_subcloud_backup_expect_fail(subcloud_password, central_ssh, subcloud=subcloud_name, local_only=local, expected_statuses=expected_statuses)
 
 
 def teardown_local(subcloud_name: str, created_file_path: str):
@@ -98,6 +101,11 @@ def test_verify_backup_space_failure(request):
 def test_verify_backup_space_failure_default_storage(request):
     """Forced failure of a subcloud backup due to lack of space on local storage.
 
+    The central vault is filled. Depending on which step runs out of space
+    first, dcmanager reports backup-prep-failed (failure while preparing the
+    backup) or failed (failure while transferring the backup file to the
+    central vault). Both are valid outcomes of this scenario.
+
     Test Steps:
         - Attempt subcloud backup with no space left on local storage.
 
@@ -124,7 +132,7 @@ def test_verify_backup_space_failure_default_storage(request):
         teardown_central(f"{default_central_backup_path}{subcloud_name}/", created_file_path)
 
     request.addfinalizer(teardown)
-    backup_create_failure_local(subcloud_name)
+    backup_create_failure_local(subcloud_name, expected_statuses=[BACKUP_PREP_FAILED_STATUS, BACKUP_FAILED_STATUS])
 
 
 @mark.p0
