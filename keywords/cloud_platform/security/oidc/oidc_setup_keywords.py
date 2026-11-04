@@ -387,6 +387,33 @@ class OidcSetupKeywords(BaseKeyword):
             get_logger().log_info(f"User access is denied (token likely expired): {access_error}")
             return True
 
+    def is_oidc_login_denied(self, oam_ip: str, username: str, password: str, oidc_client_ip: str = "") -> bool:
+        """Check whether a fresh OIDC login for a user is denied (e.g. after revocation).
+
+        Attempts a brand-new oidc-auth login and kubectl call. A revoked user can
+        no longer obtain a usable token or act on the API, so this returns True
+        when the login or the subsequent kubectl call is rejected.
+
+        Args:
+            oam_ip (str): OAM floating IP to SSH into.
+            username (str): LDAP username.
+            password (str): LDAP user password.
+            oidc_client_ip (str): OIDC client host for centralized DC auth (SC OAM). Defaults to "".
+
+        Returns:
+            bool: True if the fresh login/access is denied, False if it still succeeds.
+        """
+        try:
+            ldap_ssh = OidcAuthKeywords.create_ldap_user_ssh(oam_ip, username, password, oidc_client_ip=oidc_client_ip)
+            if not ldap_ssh.is_connected:
+                get_logger().log_info("Fresh SSH login failed for revoked user (authentication rejected)")
+                return True
+            KubectlGetPodsKeywords(ldap_ssh).get_pods()
+            return False
+        except (AssertionError, OSError, EOFError, AttributeError) as access_error:
+            get_logger().log_info(f"Fresh OIDC login denied for revoked user: {access_error}")
+            return True
+
     def configure_subcloud_oidc_issuer(self, subcloud_ssh: SSHConnection, sc_oidc_issuer: str, username_claim: str = "preferred_username") -> None:
         """Point a subcloud kube-apiserver at the System Controller's dex for centralized OIDC.
 

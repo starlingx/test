@@ -129,6 +129,8 @@ class OidcAuthKeywords(BaseKeyword):
         """
         ldap_ssh = SSHConnectionManager.create_ssh_connection(oam_ip, username, password)
         ldap_ssh.connect()
+        if not ldap_ssh.is_connected:
+            raise ConnectionError(f"SSH login failed for user {username} (authentication rejected)")
         get_logger().log_info(f"Created LDAP user SSH session for {username}")
         oidc_keywords = OidcAuthKeywords(ldap_ssh)
         oidc_keywords.authenticate_ldap_user(password, oidc_client_ip=oidc_client_ip)
