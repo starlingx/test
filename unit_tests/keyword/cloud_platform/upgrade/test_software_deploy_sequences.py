@@ -80,6 +80,9 @@ class TestSoftwareDeploySequences(unittest.TestCase):
         object.__setattr__(keywords, "host_lock", host_lock)
         object.__setattr__(keywords, "host_swact", host_swact)
         object.__setattr__(keywords, "alarms", alarms)
+        # The async per-host deploy wait hits 'software deploy host-list' on a lab; stub it so the
+        # sequence tests stay offline. Its own behaviour is covered by dedicated tests below.
+        object.__setattr__(keywords, "_wait_for_host_deploy_done", MagicMock())
         return keywords, usm, host_lock, host_swact
 
     @staticmethod
@@ -104,8 +107,31 @@ class TestSoftwareDeploySequences(unittest.TestCase):
 
         keywords.deploy_host_guarded("controller-0")
 
-        host_lock.lock_host.assert_called_once_with("controller-0")
+        host_lock.lock_host.assert_called_once()
+        self.assertEqual(host_lock.lock_host.call_args.args[0], "controller-0")
         host_lock.unlock_host.assert_called_once_with("controller-0")
+
+    def test_deploy_waits_for_host_deployed_before_unlocking(self):
+        """deploy_host_guarded waits for the per-host deployed state before unlocking (async deploy)."""
+        keywords, usm, host_lock, _ = self._build_keywords()
+        order = []
+        usm.software_deploy_host = MagicMock(side_effect=lambda h, **k: order.append("deploy"))
+        object.__setattr__(keywords, "_wait_for_host_deploy_done", MagicMock(side_effect=lambda *a, **k: order.append("wait")))
+        host_lock.unlock_host = MagicMock(side_effect=lambda h, *a, **k: order.append("unlock"))
+
+        keywords.deploy_host_guarded("controller-0")
+
+        self.assertEqual(order, ["deploy", "wait", "unlock"])
+
+    def test_rollback_waits_for_host_rollback_deployed_before_unlocking(self):
+        """On rollback the per-host wait targets the rollback-deployed state before the unlock."""
+        keywords, usm, _, _ = self._build_keywords()
+        wait = MagicMock()
+        object.__setattr__(keywords, "_wait_for_host_deploy_done", wait)
+
+        keywords.deploy_host_guarded("controller-0", rollback=True)
+
+        wait.assert_called_once_with("controller-0", "deploy-host-rollback-deployed")
 
     def test_host_is_unlocked_even_when_the_deploy_fails(self):
         """A failing deploy still unlocks the host, so the system is not left wedged."""
@@ -117,12 +143,31 @@ class TestSoftwareDeploySequences(unittest.TestCase):
 
         host_lock.unlock_host.assert_called_once_with("controller-0")
 
+    def test_deploy_failure_is_not_masked_by_a_failing_recovery_unlock(self):
+        """When the deploy fails and the recovery unlock also fails, the original deploy error wins.
+
+        A failed host-rollback leaves the deploy not-completed, so the recovery unlock in the
+        finally is rejected and raises its own "failed to unlock" error. That must not replace the
+        real deploy failure, otherwise the surfaced error points at the unlock instead of the
+        actual host-rollback/host-install failure.
+        """
+        keywords, usm, host_lock, _ = self._build_keywords()
+        usm.software_deploy_host_rollback = MagicMock(side_effect=KeywordException("host-rollback timed out"))
+        host_lock.unlock_host = MagicMock(side_effect=KeywordException("Timeout: failed to unlock host controller-0"))
+
+        with patch("keywords.cloud_platform.upgrade.software_deploy_sequence_keywords.get_logger"):
+            with self.assertRaises(KeywordException) as raised:
+                keywords.deploy_host_guarded("controller-0", rollback=True)
+
+        self.assertIn("host-rollback timed out", str(raised.exception))
+        host_lock.unlock_host.assert_called_once_with("controller-0")
+
     def test_active_controller_is_swacted_before_being_locked(self):
         """The swact check runs before the lock, since an active controller cannot be locked."""
         keywords, _, host_lock, host_swact = self._build_keywords()
         order = []
         host_swact.swact_if_active = MagicMock(side_effect=lambda h: order.append("swact"))
-        host_lock.lock_host = MagicMock(side_effect=lambda h: order.append("lock"))
+        host_lock.lock_host = MagicMock(side_effect=lambda h, *a, **k: order.append("lock"))
 
         keywords.deploy_host_guarded("controller-0")
 
@@ -264,6 +309,57 @@ class TestSoftwareDeploySequences(unittest.TestCase):
         usm.software_deploy_activate_rollback.assert_not_called()
         usm.software_deploy_host_rollback.assert_not_called()
         usm.software_deploy_delete.assert_not_called()
+
+    # ---- per-host lock uses the shared keyword's opt-in retry ----
+
+    def test_deploy_host_locks_with_retry_opt_in(self):
+        """deploy_host_guarded locks via lock_host's opt-in retry, not a single no-retry lock.
+
+        The transient-'system host-lock'-error retry now lives in the shared SystemHostLockKeywords
+        keyword as an opt-in (retries>0); the deploy flow is the caller that opts in. The detailed
+        retry behaviour is covered by the SystemHostLockKeywords unit tests.
+        """
+        keywords, usm, host_lock, _ = self._build_keywords()
+        keywords.deploy_host_guarded("controller-0")
+        self.assertEqual(host_lock.lock_host.call_count, 1)
+        call = host_lock.lock_host.call_args
+        self.assertEqual(call.args[0], "controller-0")
+        self.assertGreater(call.kwargs.get("retries", 0), 0)
+
+    # ---- _wait_for_host_deploy_done (async per-host deploy wait before unlock) ----
+
+    MODULE = "keywords.cloud_platform.upgrade.software_deploy_sequence_keywords"
+
+    def _wait_only_keywords(self):
+        """Return an instance with just an ssh connection for _wait_for_host_deploy_done tests."""
+        keywords = SoftwareDeploySequenceKeywords.__new__(SoftwareDeploySequenceKeywords)
+        object.__setattr__(keywords, "ssh_connection", NonCallableMagicMock())
+        return keywords
+
+    def _host_list_kw(self, states):
+        """Return a mock SoftwareDeployHostListKeywords whose get_state_by_host yields the states."""
+        out = NonCallableMagicMock()
+        out.get_state_by_host = MagicMock(side_effect=states)
+        kw = NonCallableMagicMock()
+        kw.get_software_deploy_host_list = MagicMock(return_value=out)
+        return kw
+
+    def test_wait_for_host_deploy_done_returns_when_deployed(self):
+        """Returns once the host's per-host state reaches the deployed state."""
+        keywords = self._wait_only_keywords()
+        host_list_kw = self._host_list_kw(["deploy-host", "deploy-host", "deploy-host-deployed"])
+        with patch(f"{self.MODULE}.SoftwareDeployHostListKeywords", return_value=host_list_kw), \
+                patch(f"{self.MODULE}.get_logger"), patch("framework.validation.validation.get_logger"):
+            keywords._wait_for_host_deploy_done("controller-0", "deploy-host-deployed", timeout=30, poll_interval=0)
+
+    def test_wait_for_host_deploy_done_raises_on_failed_state(self):
+        """A 'failed' per-host state raises immediately rather than waiting out the timeout."""
+        keywords = self._wait_only_keywords()
+        host_list_kw = self._host_list_kw(["deploy-host-failed"])
+        with patch(f"{self.MODULE}.SoftwareDeployHostListKeywords", return_value=host_list_kw), \
+                patch(f"{self.MODULE}.get_logger"), patch("framework.validation.validation.get_logger"):
+            with self.assertRaises(KeywordException):
+                keywords._wait_for_host_deploy_done("controller-0", "deploy-host-deployed", timeout=30, poll_interval=0)
 
 
 if __name__ == "__main__":

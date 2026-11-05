@@ -1,4 +1,5 @@
 import time
+import time
 
 from framework.exceptions.keyword_exception import KeywordException
 from framework.logging.automation_logger import get_logger
@@ -28,9 +29,73 @@ class SystemHostLockKeywords(BaseKeyword):
         """
         self.ssh_connection = ssh_connection
 
-    def lock_host(self, host_name: str) -> bool:
+    def lock_host(self, host_name: str, retries: int = 0, retry_delay: int = 20) -> bool:
         """
         Locks the given host name. It's expected that the host will already be unlocked
+
+        By default (retries=0) this issues a single 'system host-lock', asserts the command
+        succeeded, and waits for the host to reach the locked state - the behaviour every existing
+        caller relies on. Callers that run during a platform deploy/rollback can opt in to retrying
+        a TRANSIENT server-side error (for example a sysinv-internal "'str' object has no attribute
+        'get'" or a "did not lock in the required time" timeout that nonetheless locks the host)
+        by passing retries > 0. The opt-in path is additive: with retries=0 the control flow and the
+        raised exceptions are exactly as before, so the shared contract is unchanged for all other
+        callers.
+
+        Args:
+            host_name (str): the name of the host
+            retries (int): extra attempts to make if 'system host-lock' raises a transient error.
+                0 (default) preserves the single-attempt, no-retry behaviour.
+            retry_delay (int): seconds to wait between attempts when retries > 0.
+
+        Returns:
+            bool: True if it's successful
+
+        Raises:
+            KeywordException: If lock does not occur in the given amount of time, or if the host
+                cannot be locked after all attempts when retries > 0.
+
+        """
+        if retries <= 0:
+            return self._lock_host_once(host_name)
+
+        attempts = retries + 1
+        last_error: Exception | None = None
+        for attempt in range(1, attempts + 1):
+            if attempt > 1 and self.is_host_locked(host_name):
+                get_logger().log_info(f"[lock-retry] {host_name} is already locked after a transient error; continuing")
+                return True
+            try:
+                return self._lock_host_once(host_name)
+            except Exception as error:  # noqa: BLE001 - a transient sysinv-side lock error is retryable
+                last_error = error
+                get_logger().log_info(
+                    f"[lock-retry] 'system host-lock {host_name}' failed on attempt {attempt}/{attempts} "
+                    f"({error}); this is usually a transient sysinv error."
+                )
+                if attempt < attempts:
+                    get_logger().log_info(f"[lock-retry] retrying in {retry_delay}s")
+                    time.sleep(retry_delay)
+
+        # A late attempt (or a 'did not lock in the required time' timeout) may have actually locked
+        # the host; the per-attempt check only runs before attempts 2..N, so check once more here
+        # before giving up rather than raise on an already-locked host.
+        if self.is_host_locked(host_name):
+            get_logger().log_info(f"[lock-retry] {host_name} is locked despite the last error; continuing")
+            return True
+
+        raise KeywordException(
+            f"Could not lock {host_name} after {attempts} attempts; last error: {last_error}. "
+            f"This is not the usual transient 'system host-lock' error - inspect sysinv on the "
+            f"active controller."
+        )
+
+    def _lock_host_once(self, host_name: str) -> bool:
+        """
+        Issue a single 'system host-lock' and wait for the host to reach the locked state.
+
+        This is the original single-attempt lock behaviour, factored out so lock_host can offer an
+        opt-in retry without changing this path.
 
         Args:
             host_name (str): the name of the host
@@ -39,7 +104,7 @@ class SystemHostLockKeywords(BaseKeyword):
             bool: True if it's successful
 
         Raises:
-            KeywordException: If lock does not occur in the given amount of time
+            KeywordException: If lock does not occur in the required time.
 
         """
         self.ssh_connection.send(source_openrc(f"system host-lock {host_name}"))

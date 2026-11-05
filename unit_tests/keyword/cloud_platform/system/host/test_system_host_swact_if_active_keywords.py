@@ -48,8 +48,10 @@ class TestSwactIfActive(unittest.TestCase):
         object.__setattr__(keywords, "ssh_connection", NonCallableMagicMock())
         self.host_swact_mock = MagicMock(return_value=True)
         self.wait_for_swact_mock = MagicMock()
+        self.wait_for_services_settled_mock = MagicMock()
         object.__setattr__(keywords, "host_swact", self.host_swact_mock)
         object.__setattr__(keywords, "wait_for_swact", self.wait_for_swact_mock)
+        object.__setattr__(keywords, "wait_for_services_settled", self.wait_for_services_settled_mock)
 
         active_host = NonCallableMagicMock()
         active_host.get_host_name = MagicMock(return_value=active)
@@ -93,17 +95,18 @@ class TestSwactIfActive(unittest.TestCase):
         self.wait_for_swact_mock.assert_called_once()
 
     def test_swact_waits_after_issuing_not_before(self):
-        """wait_for_swact is called after host_swact, so the lock cannot race the role switch."""
+        """swact, then wait_for_swact, then wait_for_services_settled - lock cannot race the switch."""
         keywords, host_list, patcher = self._build_keywords()
         host_list.is_active_controller = MagicMock(return_value=True)
         order = []
         self.host_swact_mock.side_effect = lambda *a, **k: order.append("swact")
         self.wait_for_swact_mock.side_effect = lambda *a, **k: order.append("wait")
+        self.wait_for_services_settled_mock.side_effect = lambda *a, **k: order.append("settle")
 
         with patcher:
             keywords.swact_if_active("controller-0")
 
-        self.assertEqual(order, ["swact", "wait"])
+        self.assertEqual(order, ["swact", "wait", "settle"])
 
     def test_swact_is_skipped_when_no_standby_exists(self):
         """On a single-controller system the swact is skipped rather than failing."""
@@ -168,6 +171,52 @@ class TestSwactIfActive(unittest.TestCase):
         with patch(f"{MODULE}.SystemHostListKeywords", return_value=host_list), \
                 patch("framework.validation.validation.get_logger"):
             keywords.wait_for_standby_available(timeout=1, poll_interval=0)  # must return, not raise
+
+
+    # ---- wait_for_services_settled (post-swact SM service migration wait) ----
+
+    @staticmethod
+    def _svc_group(name, hostname, state):
+        """Return a mock service-group row with name/hostname/state."""
+        g = NonCallableMagicMock()
+        g.service_group_name = name
+        g.get_hostname = MagicMock(return_value=hostname)
+        g.get_state = MagicMock(return_value=state)
+        return g
+
+    def _servicegroup_output(self, groups):
+        """Return a mock SystemServiceGroupOutput exposing system_servicegroup_list."""
+        out = NonCallableMagicMock()
+        out.system_servicegroup_list = groups
+        return out
+
+    def test_wait_for_services_settled_returns_when_no_transitional_groups(self):
+        """Returns once all service groups are active/standby (none go-active/go-standby)."""
+        keywords = self._build_swact_only()
+        sg = NonCallableMagicMock()
+        sg.get_system_servicegroup_list = MagicMock(side_effect=[
+            self._servicegroup_output([self._svc_group("controller-services", "controller-0", "go-active")]),
+            self._servicegroup_output([self._svc_group("controller-services", "controller-0", "active"),
+                                       self._svc_group("controller-services", "controller-1", "standby")]),
+        ])
+        with patch(f"{MODULE}.SystemServiceGroupKeywords", return_value=sg), \
+                patch("framework.validation.validation.get_logger"):
+            keywords.wait_for_services_settled(timeout=30, poll_interval=0)
+        self.assertEqual(sg.get_system_servicegroup_list.call_count, 2)
+
+    def test_wait_for_services_settled_raises_when_never_settles(self):
+        """If a group stays go-active forever, it fails rather than hanging."""
+        from framework.exceptions.validation_failure_error import ValidationFailureError
+
+        keywords = self._build_swact_only()
+        sg = NonCallableMagicMock()
+        sg.get_system_servicegroup_list = MagicMock(
+            return_value=self._servicegroup_output([self._svc_group("controller-services", "controller-0", "go-standby")])
+        )
+        with patch(f"{MODULE}.SystemServiceGroupKeywords", return_value=sg), \
+                patch("framework.validation.validation.get_logger"):
+            with self.assertRaises((TimeoutError, ValidationFailureError)):
+                keywords.wait_for_services_settled(timeout=1, poll_interval=0)
 
 
 if __name__ == "__main__":
