@@ -1,4 +1,5 @@
 import os
+import re
 import shlex
 import shutil
 import time
@@ -12,6 +13,7 @@ from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
 from framework.validation.validation import validate_equals_with_retry, validate_less_than_or_equal
 from keywords.base_keyword import BaseKeyword
+from keywords.files.object.head_files_output import HeadFilesOutput
 from keywords.linux.df.df_keywords import DfKeywords
 
 
@@ -321,6 +323,44 @@ class FileKeywords(BaseKeyword):
             list[str]: The lines of the file.
         """
         return self.ssh_connection.send_as_sudo(f"cat {file_path}")
+
+    def read_file_patterns(self, file_patterns: list[str], max_file_bytes: int = 4096, use_sudo: bool = False) -> HeadFilesOutput:
+        """Read many small files in one SSH command using ``head -v``.
+
+        Patterns that match nothing are expected on heterogeneous hardware, so a
+        missing file is ignored and only the files that exist are returned. Every
+        other failure, such as a permission error or a failed SSH command, raises.
+
+        Args:
+            file_patterns (list[str]): Absolute paths or glob patterns to expand remotely.
+            max_file_bytes (int): Maximum bytes read from each matching file.
+            use_sudo (bool): Read as root, for root-only files such as some ``/sys/module`` parameters.
+                Defaults to False.
+
+        Returns:
+            HeadFilesOutput: Parsed path-to-content mapping.
+
+        Raises:
+            ValueError: If no patterns are given, a pattern contains unsupported characters, or the limit is not positive.
+            KeywordException: If ``head`` exits with a status other than 0 (all files read)
+                or 1 (some files missing), or reports an error other than a missing file.
+        """
+        if not file_patterns or max_file_bytes <= 0:
+            raise ValueError("File patterns and a positive byte limit are required")
+        if any(not re.fullmatch(r"/[A-Za-z0-9_./*?\[\]-]+", pattern) for pattern in file_patterns):
+            raise ValueError("File patterns must be absolute paths with supported characters")
+        command = f"head -v -c {max_file_bytes} -- {' '.join(file_patterns)} 2>&1"
+        if use_sudo:
+            # The inner shell keeps head's diagnostics on stdout; the sudo wrapper discards only sudo's own stderr.
+            raw_output = self.ssh_connection.send_as_sudo_non_interactive(f"sh -c {shlex.quote(command)}")
+        else:
+            raw_output = self.ssh_connection.send(command)
+        output = HeadFilesOutput(raw_output)
+        return_code = self.ssh_connection.get_return_code()
+        # head exits 1 when any pattern is unmatched, which is expected here.
+        if return_code not in (0, 1) or output.get_errors():
+            raise KeywordException(f"Failed to read files {file_patterns}: return code {return_code}, errors {output.get_errors()}")
+        return output
 
     def read_file_with_pattern_range(self, file_path: str, start: str, end: str, grep_pattern: str = None) -> list[str]:
         """

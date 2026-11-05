@@ -553,3 +553,16 @@ class SystemInfo:
             trusted_module = TrustedModule(firmware_version=tm_data.get("FirmwareVersion", ""), interface_type=tm_data.get("InterfaceType", ""), status=tm_status)
             trusted_modules_list.append(trusted_module)
         return trusted_modules_list
+
+    def to_bios_identity_dictionary(self) -> dict:
+        """Describe the BIOS version and identity of the computer system.
+
+        Returns:
+            dict: System ID, BIOS version, manufacturer and model.
+        """
+        return {
+            "id": self.get_id(),
+            "bios_version": self.get_bios_version(),
+            "manufacturer": self.get_manufacturer(),
+            "model": self.get_model(),
+        }

@@ -50,6 +50,14 @@ class ProcCmdlineOutput:
         value = self.get_isolcpus()
         return value is not None and "nohz" in value.split(",")
 
+    def get_cmdline(self) -> str:
+        """Return the full kernel command line.
+
+        Returns:
+            str: Space-separated kernel arguments.
+        """
+        return " ".join(self.tokens)
+
     def has_nohz_full(self) -> bool:
         """Return True if a nohz_full= argument is present.
 

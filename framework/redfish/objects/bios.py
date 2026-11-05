@@ -196,3 +196,15 @@ class Bios:
             no apply-time list is advertised at all (unknown support).
         """
         return apply_time in self.supported_apply_times
+
+    def to_dictionary(self) -> dict:
+        """Describe the BIOS attributes currently in effect.
+
+        Returns:
+            dict: Resource URI, attribute registry name and current attributes.
+        """
+        return {
+            "id": self.get_id(),
+            "attribute_registry": self.get_attribute_registry(),
+            "attributes": self.get_attributes(),
+        }

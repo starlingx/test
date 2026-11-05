@@ -25,7 +25,8 @@ class IsIPMIToolKeywords(BaseKeyword):
 
         """
         output = self.ssh_connection.send_as_sudo("ipmitool")
-        if len(output) > 1 and output[0].strip() == "No command provided!":
+        # ipmitool may print warnings such as "Get Device ID command failed" before the usage banner.
+        if any(line.strip() == "No command provided!" for line in output):
             return True
 
         # Output is either "ipmitool: command not found" or, if sudo isn't used:
