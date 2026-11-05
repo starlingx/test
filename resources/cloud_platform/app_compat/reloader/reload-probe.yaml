@@ -1,0 +1,114 @@
+# Reload-delivery probe for the reloader platform-upgrade compatibility check.
+#
+# Two workloads, identical except for one thing: the probe carries the reloader auto annotation and
+# the control does not. Both consume their own ConfigMap and Secret, and both consume them through
+# envFrom rather than a volume mount. That is the load-bearing choice: the kubelet syncs projected
+# ConfigMap and Secret volumes in place, so a file read inside a running, never-restarted container
+# changes on its own and would pass with reloader deleted. Environment variables are fixed when the
+# container starts, so a pod whose environment holds the new value must have started after the
+# change.
+#
+# The probe and the control have separate ConfigMaps and Secrets on purpose, and both sets are
+# changed in the same apply. Separate, so the probe's delivered-value assertion is unambiguous.
+# Changed together, so the control is a real control: if its resources never moved, a reloader that
+# ignored annotations entirely would still leave it alone and the check would pass. Because they do
+# move, a correct reloader has to tell the two workloads apart by annotation, and one that cannot
+# rolls both and fails.
+#
+# One container each, because reloader's default reload strategy injects its hash environment
+# variable into the first container of the pod template. One replica with the Recreate strategy, so
+# there is never more than one pod and the pod-identity comparison cannot read the wrong one.
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{probe_name}}-config
+  namespace: {{namespace}}
+data:
+  {{value_key}}: "{{configmap_value}}"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{probe_name}}-secret
+  namespace: {{namespace}}
+type: Opaque
+stringData:
+  {{secret_key}}: "{{secret_value}}"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{probe_name}}
+  namespace: {{namespace}}
+  annotations:
+    reloader.stakater.com/auto: "true"
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: {{probe_name}}
+  template:
+    metadata:
+      labels:
+        app: {{probe_name}}
+    spec:
+      imagePullSecrets:
+        - name: {{pull_secret}}
+      containers:
+        - name: probe
+          image: {{image}}
+          command: ["sleep", "3600"]
+          envFrom:
+            - configMapRef:
+                name: {{probe_name}}-config
+            - secretRef:
+                name: {{probe_name}}-secret
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{control_name}}-config
+  namespace: {{namespace}}
+data:
+  {{value_key}}: "{{control_configmap_value}}"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{control_name}}-secret
+  namespace: {{namespace}}
+type: Opaque
+stringData:
+  {{secret_key}}: "{{control_secret_value}}"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{control_name}}
+  namespace: {{namespace}}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: {{control_name}}
+  template:
+    metadata:
+      labels:
+        app: {{control_name}}
+    spec:
+      imagePullSecrets:
+        - name: {{pull_secret}}
+      containers:
+        - name: control
+          image: {{image}}
+          command: ["sleep", "3600"]
+          envFrom:
+            - configMapRef:
+                name: {{control_name}}-config
+            - secretRef:
+                name: {{control_name}}-secret

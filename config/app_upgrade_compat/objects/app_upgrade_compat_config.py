@@ -26,15 +26,42 @@ class AppUpgradeCompatConfig:
         self.to_version = config_dict.get("to_version")
         self.applications = config_dict.get("applications", {})
 
-    def get_to_version(self) -> str:
+    def get_to_version(self, app_key: str = None) -> str:
         """
         Get the short platform version the tests upgrade to.
+
+        When app_key is given and that application carries its own to_version, the application's
+        value is returned; otherwise the shared value is. This lets one application target a
+        different release without moving every other application in the file - which matters when an
+        application did not exist on the shared target's baseline releases, so the shared target has
+        no valid starting point for it.
+
+        The argument defaults to None so that callers reading the shared value are unaffected.
+
+        Args:
+            app_key(str): the configured application key, or None for the shared value.
 
         Returns:
             str: the target platform version, for example "26.10".
 
+        Raises:
+            ValueError: when app_key is not configured, or carries an empty to_version.
+
         """
-        return self.to_version
+        if app_key is None:
+            return self.to_version
+
+        app = self._get_app(app_key)
+        if "to_version" not in app:
+            return self.to_version
+
+        app_to_version = str(app["to_version"]).strip()
+        if not app_to_version:
+            # A blank override silently falling through to the shared target is the failure this
+            # whole test family exists to catch: the run would pass while exercising a release
+            # nobody chose. Refused loudly instead.
+            raise ValueError(f"Application {app_key!r} carries an empty to_version override in the application upgrade compatibility config")
+        return app_to_version
 
     def get_app_name(self, app_key: str) -> str:
         """
@@ -83,10 +110,7 @@ class AppUpgradeCompatConfig:
 
         """
         if app_key not in self.applications:
-            raise ValueError(
-                f"Application {app_key!r} is not in the application upgrade compatibility config; "
-                f"configured applications: {sorted(self.applications)}"
-            )
+            raise ValueError(f"Application {app_key!r} is not in the application upgrade compatibility config; " f"configured applications: {sorted(self.applications)}")
         return self.applications[app_key]
 
     def get_ipsec_traffic_image(self) -> str:

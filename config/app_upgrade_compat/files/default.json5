@@ -3,11 +3,13 @@
   //
   // Data only. The test cases hold the steps and the assertions; nothing here decides what a test
   // does, which probe it runs, or which phases it exercises. A test reads the release it is
-  // upgrading to, and the name and namespace of the application to act on, and nothing else.
+  // upgrading to, and the name and namespace of the application to act on.
   //
   // The release a test starts from is not configured here; it is read from the platform at
-  // runtime. The release a test upgrades to is "to_version" below, which does have to be updated
-  // when the target release changes.
+  // runtime. The release a test upgrades to is the shared "to_version" below, which does have to be
+  // updated when the target release changes. An application whose history makes the shared target
+  // wrong for it may carry its own "to_version", which overrides the shared one for that
+  // application only; the entry that does so explains why.
   "to_version": "26.10",
   "applications": {
     // IPsec compatibility requires an applied baseline on an exclusive DX or
@@ -70,6 +72,14 @@
     "node-feature-discovery": {
       "app_name": "node-feature-discovery",
       "namespace": "node-feature-discovery",
+    },
+    // reloader did not exist before 26.10, so the shared target has no valid baseline for it: one
+    // release back from 26.10 is 26.03, which does not carry the application. Overridden here
+    // rather than moving "to_version", which every other application in this file reads.
+    "reloader": {
+      "app_name": "reloader",
+      "namespace": "reloader",
+      "to_version": "27.03",
     },
   },
 }
