@@ -51,5 +51,20 @@
       "app_name": "metrics-server",
       "namespace": "metrics-server",
     },
+    // kubernetes-power-manager is an upstream app that is not part of the install baseline, so its
+    // test uploads and applies it first if it is not already installed. It needs a duplex lab. No
+    // "versions" map, for the same reason as the entries above: the test matches the release
+    // prefix against the release the platform reports.
+    "kubernetes-power-manager": {
+      "app_name": "kubernetes-power-manager",
+      "namespace": "intel-power",
+    },
+    // node-feature-discovery is kubernetes-power-manager's dependent app (declared "warn" in KPM's
+    // metadata): the power-node-agent relies on the node feature labels NFD publishes. The KPM test
+    // ensures NFD is applied first, so it is listed here for its name and namespace.
+    "node-feature-discovery": {
+      "app_name": "node-feature-discovery",
+      "namespace": "node-feature-discovery",
+    },
   },
 }

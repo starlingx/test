@@ -109,7 +109,7 @@ class TestSoftwareDeploySequences(unittest.TestCase):
 
         host_lock.lock_host.assert_called_once()
         self.assertEqual(host_lock.lock_host.call_args.args[0], "controller-0")
-        host_lock.unlock_host.assert_called_once_with("controller-0")
+        host_lock.unlock_host.assert_called_once_with("controller-0", exclude_alarm_ids=None)
 
     def test_deploy_waits_for_host_deployed_before_unlocking(self):
         """deploy_host_guarded waits for the per-host deployed state before unlocking (async deploy)."""
@@ -141,7 +141,7 @@ class TestSoftwareDeploySequences(unittest.TestCase):
         with self.assertRaises(KeywordException):
             keywords.deploy_host_guarded("controller-0")
 
-        host_lock.unlock_host.assert_called_once_with("controller-0")
+        host_lock.unlock_host.assert_called_once_with("controller-0", exclude_alarm_ids=None)
 
     def test_deploy_failure_is_not_masked_by_a_failing_recovery_unlock(self):
         """When the deploy fails and the recovery unlock also fails, the original deploy error wins.
@@ -160,7 +160,23 @@ class TestSoftwareDeploySequences(unittest.TestCase):
                 keywords.deploy_host_guarded("controller-0", rollback=True)
 
         self.assertIn("host-rollback timed out", str(raised.exception))
-        host_lock.unlock_host.assert_called_once_with("controller-0")
+        host_lock.unlock_host.assert_called_once_with("controller-0", exclude_alarm_ids=["250.001"])
+
+    def test_rollback_unlock_excludes_config_out_of_date_but_forward_does_not(self):
+        """The rollback unlock ignores 250.001 (expected until the peer rolls); a forward unlock does not.
+
+        On an AIO-DX the first controller to roll back carries a config-out-of-date alarm that only
+        clears once its peer also rolls - the very next step - so blocking the unlock on it is a
+        circular stall. The exclusion is scoped to the rollback unlock; a forward deploy keeps the
+        default blocking behaviour.
+        """
+        keywords, _, host_lock, _ = self._build_keywords()
+        keywords.deploy_host_guarded("controller-0", rollback=True)
+        self.assertEqual(host_lock.unlock_host.call_args.kwargs.get("exclude_alarm_ids"), ["250.001"])
+
+        keywords, _, host_lock, _ = self._build_keywords()
+        keywords.deploy_host_guarded("controller-0", rollback=False)
+        self.assertIsNone(host_lock.unlock_host.call_args.kwargs.get("exclude_alarm_ids"))
 
     def test_active_controller_is_swacted_before_being_locked(self):
         """The swact check runs before the lock, since an active controller cannot be locked."""
@@ -179,7 +195,11 @@ class TestSoftwareDeploySequences(unittest.TestCase):
 
         keywords.deploy_host_guarded("controller-0", rollback=True)
 
-        usm.software_deploy_host_rollback.assert_called_once_with("controller-0", sudo=False)
+        usm.software_deploy_host_rollback.assert_called_once()
+        call = usm.software_deploy_host_rollback.call_args
+        self.assertEqual(call.args[0], "controller-0")
+        self.assertEqual(call.kwargs.get("sudo"), False)
+        self.assertGreater(call.kwargs.get("retries", 0), 0)
         usm.software_deploy_host.assert_not_called()
 
     def test_upgrade_completes_the_deploy_when_no_rollback_follows(self):
