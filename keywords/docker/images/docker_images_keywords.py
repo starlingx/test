@@ -48,8 +48,13 @@ class DockerImagesKeywords(BaseKeyword):
 
         Args:
             image (str): the image to pull
+
+        Raises:
+            AssertionError: If the pull returns a non-zero return code (for example
+                'unauthorized: authentication required' or 'manifest unknown').
         """
         self.ssh_connection.send_as_sudo(f"docker image pull {image}")
+        self.validate_success_return_code(self.ssh_connection)
 
     def prune_dangling_images(self) -> None:
         """
