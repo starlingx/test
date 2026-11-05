@@ -1,0 +1,49 @@
+# Template for DEX helm overrides with a SINGLE backend connector (local LDAP).
+# Used to verify that a single-connector dex configuration applies cleanly and
+# that a user from that connector can still authenticate.
+# Variables:
+#   mgmt_ip:    Management IP of the lab (IPv4 or [IPv6])
+#   bind_pw:    LDAP bind password
+config:
+  connectors:
+  - config:
+      bindDN: CN=ldapadmin,DC=cgcs,DC=local
+      bindPW: '{{ bind_pw }}'
+      groupSearch:
+        baseDN: ou=Group,dc=cgcs,dc=local
+        filter: (objectClass=posixGroup)
+        nameAttr: cn
+        userMatchers:
+        - groupAttr: memberUid
+          userAttr: uid
+      host: '{{ mgmt_ip }}:636'
+      insecureNoSSL: false
+      insecureSkipVerify: false
+      rootCA: /etc/ssl/certs/adcert/ca.crt
+      userSearch:
+        baseDN: ou=People,dc=cgcs,dc=local
+        emailAttr: mail
+        filter: (objectClass=posixAccount)
+        idAttr: DN
+        nameAttr: cn
+        preferredUsernameAttr: uid
+        username: uid
+      usernamePrompt: Username
+    id: ldap-1
+    name: ldap-1
+    type: ldap
+  expiry:
+    idTokens: 24h
+volumeMounts:
+- mountPath: /etc/ssl/certs/adcert
+  name: certdir
+- mountPath: /etc/dex/tls
+  name: https-tls
+volumes:
+- name: certdir
+  secret:
+    secretName: oidc-auth-apps-certificate
+- name: https-tls
+  secret:
+    defaultMode: 420
+    secretName: oidc-auth-apps-certificate
