@@ -4,6 +4,7 @@ from framework.exceptions.keyword_exception import KeywordException
 from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
 from keywords.base_keyword import BaseKeyword
+from keywords.cloud_platform.command_wrappers import source_openrc
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_list_keywords import DcManagerSubcloudListKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_show_keywords import DcManagerSubcloudShowKeywords
 from keywords.cloud_platform.dcmanager.objects.dcmanager_subcloud_list_object import DcManagerSubcloudListObject
@@ -711,6 +712,41 @@ class SubcloudPickerKeywords(BaseKeyword):
         return "\n".join(lines)
 
     @staticmethod
+    def is_system_controller_usable(system_controller_ssh: SSHConnection, controller_label: str) -> bool:
+        """Check whether a system controller can answer dcmanager queries.
+
+        A system controller is only usable by the picker when both layers respond:
+        the host accepts an SSH session, and its dcmanager API serves a query. A host
+        can accept SSH while its platform services are down (for example Keystone
+        refusing connections on the management address), in which case every dcmanager
+        command exits non-zero. Probing both layers lets the picker skip such a
+        controller instead of running a query that would fail against it.
+
+        The probe reports the return code rather than asserting on it, so an unusable
+        controller is a return value the caller decides about, not a failure.
+
+        Args:
+            system_controller_ssh (SSHConnection): Connection to the system controller to probe.
+            controller_label (str): Role used in log messages, e.g. "primary" or "secondary".
+
+        Returns:
+            bool: True if the controller is SSH-reachable and its dcmanager API responds.
+
+        """
+        if not system_controller_ssh.is_reachable():
+            get_logger().log_warning(f"{controller_label} system controller is unreachable over SSH")
+            return False
+
+        system_controller_ssh.send(source_openrc("dcmanager subcloud list"))
+        return_code = system_controller_ssh.get_return_code()
+
+        if return_code != 0:
+            get_logger().log_warning(f"{controller_label} system controller is SSH-reachable but its dcmanager API is not ready (return code {return_code})")
+            return False
+
+        return True
+
+    @staticmethod
     def pick_undeployed_with_fallback() -> Optional[str]:
         """Find a config subcloud that is not deployed on any system controller.
 
@@ -719,10 +755,11 @@ class SubcloudPickerKeywords(BaseKeyword):
         configured, also checks there. Returns the first subcloud name that is absent
         from both.
 
-        If the secondary system controller is configured but unreachable (SSH
-        connection fails), it is skipped and treated as having no deployed subclouds,
-        rather than blocking on a dead connection. A warning is logged so the skip is
-        visible in the test logs.
+        If the secondary system controller is configured but unusable - SSH not
+        responding, or SSH-reachable with its dcmanager API not ready - it is
+        disregarded and the primary's answer is used on its own, with a warning so
+        the skip is visible in the test logs. A broken secondary cannot fail a pick
+        the primary already answered.
 
         This supports phased deployment tests that need a "clean" subcloud name to
         deploy from scratch.
@@ -749,10 +786,10 @@ class SubcloudPickerKeywords(BaseKeyword):
         secondary_list = None
         if secondary_config is not None:
             secondary_ssh = LabConnectionKeywords().get_secondary_active_controller_ssh()
-            if secondary_ssh.is_reachable():
+            if SubcloudPickerKeywords.is_system_controller_usable(secondary_ssh, "secondary"):
                 secondary_list = DcManagerSubcloudListKeywords(secondary_ssh).get_dcmanager_subcloud_list()
             else:
-                get_logger().log_warning("pick_undeployed_with_fallback: secondary system controller is configured but unreachable; treating it as having no deployed subclouds")
+                get_logger().log_warning("pick_undeployed_with_fallback: disregarding the secondary system controller and using the primary only")
 
         for subcloud_name in config_subcloud_names:
             on_primary = primary_list.is_subcloud_in_output(subcloud_name)
@@ -774,8 +811,9 @@ class SubcloudPickerKeywords(BaseKeyword):
 
         Checks the primary system controller first. If the subcloud is not found
         and a secondary system controller is provided, checks there as well. If the
-        secondary connection is not established (unreachable), the secondary is
-        skipped and a warning is logged rather than blocking on a dead connection.
+        secondary is unusable - SSH not responding, or SSH-reachable with its
+        dcmanager API not ready - it is disregarded and a warning is logged rather
+        than failing the lookup.
 
         Args:
             subcloud_name (str): Subcloud to find.
@@ -792,8 +830,8 @@ class SubcloudPickerKeywords(BaseKeyword):
             return primary_ssh
 
         if secondary_ssh is not None:
-            if not secondary_ssh.is_reachable():
-                get_logger().log_warning(f"find_subcloud_owner: secondary system controller is unreachable; cannot check ownership of '{subcloud_name}' there")
+            if not SubcloudPickerKeywords.is_system_controller_usable(secondary_ssh, "secondary"):
+                get_logger().log_warning(f"find_subcloud_owner: disregarding the secondary system controller; cannot check ownership of '{subcloud_name}' there")
                 return None
             secondary_list = DcManagerSubcloudListKeywords(secondary_ssh).get_dcmanager_subcloud_list()
             if secondary_list.is_subcloud_in_output(subcloud_name):
@@ -823,10 +861,13 @@ class SubcloudPickerKeywords(BaseKeyword):
         This supports post-rehoming scenarios where subclouds may have moved
         to the peer cloud.
 
-        The primary is probed with ``is_reachable()`` before it is used, so an
-        unreachable primary falls through to the secondary instead of running
-        the pick against a dead connection (which would retry the lost SSH
-        session for minutes before failing).
+        Each system controller is probed with ``is_system_controller_usable()``
+        before it is used, so a controller that is SSH-unresponsive or whose
+        dcmanager API is not ready is disregarded instead of having the pick run
+        against it. An unusable primary falls through to the secondary, and an
+        unusable secondary leaves the primary's result standing. Only when both
+        are unusable does the pick fail, and it fails fast on the probe rather
+        than on a query against a dead controller.
 
         Both reasons for not getting a subcloud from the primary (unreachable,
         or reachable with no match) converge on the same fallback, and the
@@ -867,10 +908,8 @@ class SubcloudPickerKeywords(BaseKeyword):
         """
         system_controller_ssh = LabConnectionKeywords().get_active_controller_ssh()
 
-        # Probe the primary before using it.
-        primary_available = system_controller_ssh.is_reachable()
-        if not primary_available:
-            get_logger().log_warning("Primary system controller is unreachable")
+        # Probe the primary before using it: SSH plus a dcmanager query.
+        primary_available = SubcloudPickerKeywords.is_system_controller_usable(system_controller_ssh, "primary")
 
         if primary_available:
             try:
@@ -894,13 +933,13 @@ class SubcloudPickerKeywords(BaseKeyword):
         # The primary yielded nothing: either unreachable, or reachable with no match.
         secondary_config = ConfigurationManager.get_lab_config().get_secondary_system_controller_config()
         secondary_ssh = LabConnectionKeywords().get_secondary_active_controller_ssh() if secondary_config is not None else None
-        secondary_available = secondary_ssh is not None and secondary_ssh.is_reachable()
+        secondary_available = secondary_ssh is not None and SubcloudPickerKeywords.is_system_controller_usable(secondary_ssh, "secondary")
 
         # The primary's reason travels into every failure message.
-        primary_reason = "is unreachable" if not primary_available else "has no subcloud matching the filters"
+        primary_reason = "is unusable (SSH unresponsive or dcmanager API not ready)" if not primary_available else "has no subcloud matching the filters"
 
         if not secondary_available:
-            raise KeywordException(f"Cannot pick a subcloud: the primary system controller {primary_reason}, and no reachable secondary system controller is available.")
+            raise KeywordException(f"Cannot pick a subcloud: the primary system controller {primary_reason}, and no usable secondary system controller is available.")
 
         get_logger().log_info(f"Falling back to secondary system controller because the primary {primary_reason}")
         system_controller_ssh = secondary_ssh
