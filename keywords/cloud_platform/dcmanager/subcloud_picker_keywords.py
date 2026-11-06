@@ -13,6 +13,7 @@ from keywords.cloud_platform.dcmanager.objects.dcmanger_subcloud_list_availabili
 from keywords.cloud_platform.dcmanager.objects.dcmanger_subcloud_list_management_enum import DcManagerSubcloudListManagementEnum
 from keywords.cloud_platform.dcmanager.objects.subcloud_pick_result import SubcloudPickResult
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
+from keywords.cloud_platform.system.storage.system_storage_backend_keywords import SystemStorageBackendKeywords
 from keywords.cloud_platform.upgrade.software_list_keywords import SoftwareListKeywords
 from keywords.cloud_platform.version_info.cloud_platform_version_manager import CloudPlatformVersionManagerClass
 from keywords.files.file_keywords import FileKeywords
@@ -27,6 +28,15 @@ LOCAL_BACKUP_PATH = "/opt/platform-backup/backups/"
 BACKUP_MODE_CENTRAL = "central"
 BACKUP_MODE_LOCAL = "local"
 _VALID_BACKUP_MODES = (BACKUP_MODE_CENTRAL, BACKUP_MODE_LOCAL)
+
+# Storage backend names accepted by the storage_backend filter. The set is closed
+# deliberately: an unrecognised name would report "not configured" on every
+# candidate, so a typo combined with storage_backend_configured=False would select
+# every subcloud instead of failing.
+STORAGE_BACKEND_CEPH = "ceph"
+STORAGE_BACKEND_CEPH_ROOK = "ceph-rook"
+STORAGE_BACKEND_LVM = "lvm"
+_VALID_STORAGE_BACKENDS = (STORAGE_BACKEND_CEPH, STORAGE_BACKEND_CEPH_ROOK, STORAGE_BACKEND_LVM)
 
 
 class SubcloudPickerKeywords(BaseKeyword):
@@ -71,6 +81,8 @@ class SubcloudPickerKeywords(BaseKeyword):
         multiple_releases: str = None,
         backup_mode: Optional[str] = None,
         backup_release: Optional[str] = None,
+        storage_backend: Optional[str] = None,
+        storage_backend_configured: Optional[bool] = None,
     ) -> SubcloudPickResult:
         """Return the lowest-id subcloud satisfying every supplied filter.
 
@@ -115,6 +127,20 @@ class SubcloudPickerKeywords(BaseKeyword):
                 ``backup_mode`` is set. Accepts ``"N"``, ``"N-1"``, ``"N-2"`` (resolved
                 against the central cloud version manager) or an explicit version
                 string. Required when ``backup_mode`` is set.
+            storage_backend (Optional[str]): Storage backend to test for on each
+                candidate subcloud: ``"ceph"``, ``"ceph-rook"`` or ``"lvm"``.
+                Requires ``storage_backend_configured`` to state which sense is
+                wanted. The backend is read with ``system storage-backend-list``
+                over a connection to the subcloud itself, since the central
+                cloud's own backends say nothing about a subcloud's. When None
+                (default), the storage backend is not checked.
+            storage_backend_configured (Optional[bool]): Required state of
+                ``storage_backend``. When True, only subclouds that have the
+                backend configured are kept; when False, only subclouds that do
+                not have it. Required when ``storage_backend`` is set, and has no
+                default on purpose: selecting a subcloud *without* a backend is a
+                first-class case, so the sense must be stated rather than
+                inferred.
 
         Returns:
             SubcloudPickResult: The selected subcloud.
@@ -133,6 +159,8 @@ class SubcloudPickerKeywords(BaseKeyword):
             multiple_releases=multiple_releases,
             backup_mode=backup_mode,
             backup_release=backup_release,
+            storage_backend=storage_backend,
+            storage_backend_configured=storage_backend_configured,
         )
         return results[0]
 
@@ -148,6 +176,8 @@ class SubcloudPickerKeywords(BaseKeyword):
         multiple_releases: str = None,
         backup_mode: Optional[str] = None,
         backup_release: Optional[str] = None,
+        storage_backend: Optional[str] = None,
+        storage_backend_configured: Optional[bool] = None,
     ) -> List[SubcloudPickResult]:
         """Return all subclouds satisfying every supplied filter, ordered by id.
 
@@ -161,6 +191,8 @@ class SubcloudPickerKeywords(BaseKeyword):
             multiple_releases: see ``pick_one``.
             backup_mode: see ``pick_one``.
             backup_release: see ``pick_one``.
+            storage_backend: see ``pick_one``.
+            storage_backend_configured: see ``pick_one``.
 
         Returns:
             List[SubcloudPickResult]: Selected subclouds, sorted by numeric
@@ -180,6 +212,8 @@ class SubcloudPickerKeywords(BaseKeyword):
                 multiple_releases=multiple_releases,
                 backup_mode=backup_mode,
                 backup_release=backup_release,
+                storage_backend=storage_backend,
+                storage_backend_configured=storage_backend_configured,
             )
         )
 
@@ -195,6 +229,8 @@ class SubcloudPickerKeywords(BaseKeyword):
         multiple_releases: str = None,
         backup_mode: Optional[str] = None,
         backup_release: Optional[str] = None,
+        storage_backend: Optional[str] = None,
+        storage_backend_configured: Optional[bool] = None,
     ) -> List[SubcloudPickResult]:
         """Run the full filter pipeline. See ``pick_one``/``pick_all``."""
         self.validate_argument(
@@ -207,6 +243,8 @@ class SubcloudPickerKeywords(BaseKeyword):
             multiple_releases=multiple_releases,
             backup_mode=backup_mode,
             backup_release=backup_release,
+            storage_backend=storage_backend,
+            storage_backend_configured=storage_backend_configured,
         )
         load_resolved = self._resolve_load(load)
         backup_release_resolved = self._resolve_load(backup_release) if backup_mode is not None else None
@@ -227,6 +265,8 @@ class SubcloudPickerKeywords(BaseKeyword):
             "multiple_releases": multiple_releases,
             "backup_mode": backup_mode,
             "backup_release": self._format_load_for_log(backup_release, backup_release_resolved) if backup_mode is not None else None,
+            "storage_backend": storage_backend,
+            "storage_backend_configured": storage_backend_configured,
         }
         get_logger().log_info(f"SubcloudPickerKeywords: applied filters: {filter_set}")
 
@@ -267,6 +307,13 @@ class SubcloudPickerKeywords(BaseKeyword):
                 backup_release=backup_release_resolved,
             )
             rejections.extend(backup_rejections)
+        if storage_backend is not None:
+            survivors, storage_rejections = self._apply_storage_backend_filter(
+                survivors=survivors,
+                storage_backend=storage_backend,
+                storage_backend_configured=storage_backend_configured,
+            )
+            rejections.extend(storage_rejections)
 
         if not survivors:
             raise KeywordException(self._format_rejection_report(filter_set, rejections))
@@ -286,6 +333,8 @@ class SubcloudPickerKeywords(BaseKeyword):
         multiple_releases: Optional[str] = None,
         backup_mode: Optional[str] = None,
         backup_release: Optional[str] = None,
+        storage_backend: Optional[str] = None,
+        storage_backend_configured: Optional[bool] = None,
     ) -> None:
         """Reject invalid parameter types before any SSH activity occurs."""
         if management_status is not None and not isinstance(management_status, DcManagerSubcloudListManagementEnum):
@@ -320,6 +369,16 @@ class SubcloudPickerKeywords(BaseKeyword):
             raise KeywordException("SubcloudPickerKeywords: invalid parameter combination: 'backup_mode' requires 'backup_release' " "so the picker knows which release's backup to look for.")
         if backup_release is not None and backup_mode is None:
             raise KeywordException("SubcloudPickerKeywords: invalid parameter combination: 'backup_release' requires 'backup_mode' " "to indicate whether to look for a central or local backup.")
+        if storage_backend is not None and not isinstance(storage_backend, str):
+            raise KeywordException("SubcloudPickerKeywords: invalid parameter 'storage_backend': " f"expected None or str, received {type(storage_backend).__name__} ({storage_backend!r}).")
+        if isinstance(storage_backend, str) and storage_backend not in _VALID_STORAGE_BACKENDS:
+            raise KeywordException("SubcloudPickerKeywords: invalid parameter 'storage_backend': " f"must be None or one of {_VALID_STORAGE_BACKENDS}, received {storage_backend!r}.")
+        if storage_backend_configured is not None and type(storage_backend_configured) is not bool:
+            raise KeywordException("SubcloudPickerKeywords: invalid parameter 'storage_backend_configured': " f"expected None or bool, received {type(storage_backend_configured).__name__} ({storage_backend_configured!r}).")
+        if storage_backend is not None and storage_backend_configured is None:
+            raise KeywordException("SubcloudPickerKeywords: invalid parameter combination: 'storage_backend' requires " "'storage_backend_configured' to state whether the backend must be present or absent.")
+        if storage_backend_configured is not None and storage_backend is None:
+            raise KeywordException("SubcloudPickerKeywords: invalid parameter combination: 'storage_backend_configured' requires " "'storage_backend' to indicate which backend to test for.")
 
     def _resolve_load(self, load: Optional[str]) -> Optional[str]:
         """Resolve the ``load`` filter into a concrete software version string.
@@ -550,6 +609,66 @@ class SubcloudPickerKeywords(BaseKeyword):
         files = FileKeywords(subcloud_ssh).get_files_in_dir(local_dir, is_sudo=True)
         return any(file_name.startswith(archive_prefix) and file_name.endswith(".tgz") for file_name in files)
 
+    def _apply_storage_backend_filter(
+        self,
+        *,
+        survivors: List[Tuple[DcManagerSubcloudListObject, Optional[DcManagerSubcloudShowObject]]],
+        storage_backend: str,
+        storage_backend_configured: bool,
+    ) -> Tuple[List[Tuple[DcManagerSubcloudListObject, Optional[DcManagerSubcloudShowObject]]], List[Tuple[str, str]]]:
+        """Keep only subclouds whose storage backend state matches the requested sense.
+
+        Supports both senses, because selecting a subcloud that does *not* have a
+        given backend is as useful as selecting one that does. The backend is read
+        from the subcloud itself rather than the central cloud, whose own backends
+        say nothing about a subcloud's. Each surviving candidate therefore costs one
+        SSH connection to that subcloud, so this filter runs after the cheaper
+        list-based ones.
+
+        Args:
+            survivors: Candidate subclouds surviving the earlier filters.
+            storage_backend (str): Backend name to test for.
+            storage_backend_configured (bool): True keeps only subclouds that have
+                the backend configured; False keeps only those that do not.
+
+        Returns:
+            Tuple of (survivors, rejections).
+        """
+        new_survivors: List[Tuple[DcManagerSubcloudListObject, Optional[DcManagerSubcloudShowObject]]] = []
+        rejections: List[Tuple[str, str]] = []
+
+        required_state = "configured" if storage_backend_configured else "not configured"
+
+        for list_obj, show_obj in survivors:
+            name = list_obj.get_name()
+            is_configured = self._is_storage_backend_configured(name, storage_backend)
+            if is_configured != storage_backend_configured:
+                observed_state = "configured" if is_configured else "not configured"
+                rejections.append(
+                    (
+                        name,
+                        f"storage backend '{storage_backend}' is {observed_state}, required {required_state}",
+                    )
+                )
+                continue
+            new_survivors.append((list_obj, show_obj))
+
+        return new_survivors, rejections
+
+    def _is_storage_backend_configured(self, subcloud_name: str, storage_backend: str) -> bool:
+        """Return True if the named storage backend is configured on the subcloud.
+
+        Args:
+            subcloud_name (str): Subcloud whose storage backends are inspected.
+            storage_backend (str): Backend name to look for.
+
+        Returns:
+            bool: True if the subcloud reports the backend as configured.
+        """
+        subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
+        storage_backends = SystemStorageBackendKeywords(subcloud_ssh).get_system_storage_backend_list()
+        return storage_backends.is_backend_configured(storage_backend)
+
     @staticmethod
     def _build_result(
         list_obj: DcManagerSubcloudListObject,
@@ -694,6 +813,8 @@ class SubcloudPickerKeywords(BaseKeyword):
         multiple_releases: str = None,
         backup_mode: Optional[str] = None,
         backup_release: Optional[str] = None,
+        storage_backend: Optional[str] = None,
+        storage_backend_configured: Optional[bool] = None,
     ) -> Tuple[SSHConnection, "SubcloudPickResult"]:
         """Pick a subcloud with automatic fallback to secondary system controller.
 
@@ -729,6 +850,12 @@ class SubcloudPickerKeywords(BaseKeyword):
                 Requires ``backup_release``.
             backup_release (Optional[str]): Release of the backup to look for when
                 ``backup_mode`` is set ("N", "N-1", "N-2" or explicit version).
+            storage_backend (Optional[str]): Storage backend to test for on each
+                candidate ("ceph", "ceph-rook" or "lvm"). Requires
+                ``storage_backend_configured``.
+            storage_backend_configured (Optional[bool]): Required state of
+                ``storage_backend``: True keeps subclouds that have it, False keeps
+                only those that do not. Required when ``storage_backend`` is set.
 
         Returns:
             Tuple[SSHConnection, SubcloudPickResult]: The SSH connection to the system
@@ -757,6 +884,8 @@ class SubcloudPickerKeywords(BaseKeyword):
                     multiple_releases=multiple_releases,
                     backup_mode=backup_mode,
                     backup_release=backup_release,
+                    storage_backend=storage_backend,
+                    storage_backend_configured=storage_backend_configured,
                 )
                 return system_controller_ssh, result
             except KeywordException:
@@ -787,6 +916,8 @@ class SubcloudPickerKeywords(BaseKeyword):
                 multiple_releases=multiple_releases,
                 backup_mode=backup_mode,
                 backup_release=backup_release,
+                storage_backend=storage_backend,
+                storage_backend_configured=storage_backend_configured,
             )
         except KeywordException as e:
             raise KeywordException(f"Cannot pick a subcloud: the primary system controller {primary_reason}, and the secondary system controller has no subcloud matching the filters.") from e

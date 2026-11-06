@@ -4,7 +4,7 @@ from config.configuration_manager import ConfigurationManager
 from config.lab.objects.lab_type_enum import LabTypeEnum
 from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
-from framework.validation.validation import validate_equals, validate_none, validate_not_equals, validate_not_none
+from framework.validation.validation import validate_equals, validate_none, validate_not_equals, validate_not_none, validate_str_contains
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_add_keywords import DcManagerSubcloudAddKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_delete_keywords import DcManagerSubcloudDeleteKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_list_keywords import DcManagerSubcloudListKeywords
@@ -664,3 +664,125 @@ def test_rehome_simplex_subcloud_fails_with_alarm_and_succeeds_after_clear(reque
     get_logger().log_info("Performing final pod count validation")
     pods_after_rehome = count_pods_on_subcloud(subcloud_ssh)
     validate_equals(pods_before_rehome, pods_after_rehome, "Pod count must remain consistent before and after successful rehoming")
+
+
+@mark.p2
+def test_rehome_to_same_controller_error():
+    """
+    Verify a migrate onto the system controller that already owns the subcloud is refused clearly.
+
+    A rehome is driven by 'dcmanager subcloud add --migrate' on the destination
+    system controller. Running it against the controller that already owns the
+    subcloud must be refused with a message naming the real problem, the duplicate
+    subcloud name. A previous defect reported "Unable to retrieve subcloud region"
+    instead, which sends the reader looking at region configuration rather than at
+    the name collision.
+
+    Only one system controller is needed, because the rejection comes from the
+    owner itself.
+
+    Prerequisites:
+        - At least one online subcloud declared in the lab config.
+
+    Test Steps:
+        1. Select an online subcloud owned by the primary system controller
+        2. Run 'dcmanager subcloud add --migrate' against that same controller
+        3. Validate the command fails
+        4. Validate the message reports the duplicate subcloud name
+        5. Validate the message is not the misleading region error
+        6. Validate the subcloud was left untouched by the rejected request
+    """
+    system_controller_ssh = LabConnectionKeywords().get_active_controller_ssh()
+
+    get_logger().log_info("Selecting an online subcloud owned by the primary system controller")
+    result = SubcloudPickerKeywords(system_controller_ssh).pick_one(
+        availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
+    )
+    subcloud_name = result.get_name()
+
+    deployment_assets_config = ConfigurationManager.get_deployment_assets_config()
+    subcloud_assets = deployment_assets_config.get_subcloud_deployment_assets(subcloud_name)
+    subcloud_bootstrap_values = subcloud_assets.get_bootstrap_file()
+    subcloud_install_values = subcloud_assets.get_install_file()
+
+    get_logger().log_info(f"Attempting to rehome {subcloud_name} onto the controller that already owns it")
+    output, return_code = DcManagerSubcloudAddKeywords(system_controller_ssh).dcmanager_subcloud_add_migrate_with_error(
+        subcloud_name,
+        subcloud_bootstrap_values,
+        subcloud_install_values,
+    )
+
+    validate_not_equals(return_code, 0, "Rehoming a subcloud onto its current system controller should be rejected")
+    validate_str_contains(output, "already exists", f"Rejection message should report that subcloud {subcloud_name} already exists")
+
+    # Assert the specific misleading message is gone, not merely that some error
+    # appeared, otherwise a regression to that message would still pass.
+    validate_equals(
+        "Unable to retrieve subcloud region" in output,
+        False,
+        "Rejection message should not be the misleading 'Unable to retrieve subcloud region'",
+    )
+
+    get_logger().log_info(f"Validating subcloud {subcloud_name} was left untouched by the rejected request")
+    verify_subcloud_healthy(system_controller_ssh, subcloud_name, check_sync=False)
+
+
+@mark.p2
+@mark.lab_has_secondary_system_controller
+def test_rehome_subcloud_without_ceph_configured():
+    """
+    Verify a subcloud with no ceph storage backend rehomes successfully.
+
+    Rehoming previously failed on subclouds where ceph-manager was not enabled,
+    because the flow assumed a ceph backend was present. Selecting the subcloud by
+    the *absence* of the backend is what makes this exercise that path; picking any
+    online subcloud would likely land on a ceph-enabled one and pass without
+    covering the case.
+
+    Prerequisites:
+        - An online subcloud with no ceph storage backend configured.
+        - A secondary system controller.
+
+    Test Steps:
+        1. Select an online subcloud that has no ceph storage backend
+        2. Count pods before rehoming
+        3. Perform the rehome operation
+        4. Validate the subcloud is healthy on the destination system controller
+        5. Validate pod counts are the same before and after rehoming
+
+    Teardown:
+        - Ensure subcloud is managed on whichever cloud owns it
+    """
+    cloud_a_ssh = LabConnectionKeywords().get_active_controller_ssh()
+    cloud_b_ssh = LabConnectionKeywords().get_secondary_active_controller_ssh()
+
+    get_logger().log_info("Selecting an online subcloud with no ceph storage backend configured")
+    origin_system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
+        availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
+        storage_backend="ceph",
+        storage_backend_configured=False,
+    )
+    subcloud_name = result.get_name()
+
+    # Destination is whichever cloud is NOT the origin (compare by host IP, not object identity)
+    destination_system_controller_ssh = cloud_b_ssh if origin_system_controller_ssh.host == cloud_a_ssh.host else cloud_a_ssh
+
+    subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
+
+    deployment_assets_config = ConfigurationManager.get_deployment_assets_config()
+    subcloud_assets = deployment_assets_config.get_subcloud_deployment_assets(subcloud_name)
+    subcloud_bootstrap_values = subcloud_assets.get_bootstrap_file()
+    subcloud_install_values = subcloud_assets.get_install_file()
+
+    get_logger().log_info("Counting pods before rehoming")
+    pods_before_rehome = count_pods_on_subcloud(subcloud_ssh)
+
+    get_logger().log_info(f"Rehoming subcloud {subcloud_name} with no ceph backend to destination system controller")
+    perform_rehome_operation(origin_system_controller_ssh, destination_system_controller_ssh, subcloud_name, subcloud_bootstrap_values, subcloud_install_values)
+
+    get_logger().log_info(f"Validating subcloud {subcloud_name} is healthy after rehome")
+    verify_subcloud_healthy(destination_system_controller_ssh, subcloud_name, check_sync=False)
+
+    get_logger().log_info("Counting pods after rehoming")
+    pods_after_rehome = count_pods_on_subcloud(subcloud_ssh)
+    validate_equals(pods_before_rehome, pods_after_rehome, "Pod count should remain consistent after rehoming")
