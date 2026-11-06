@@ -3,16 +3,26 @@ from framework.ssh.ssh_connection import SSHConnection
 from framework.validation.validation import validate_equals_with_retry
 from keywords.base_keyword import BaseKeyword
 from keywords.cloud_platform.fault_management.alarms.alarm_list_keywords import AlarmListKeywords
+from keywords.cloud_platform.security.ipsec_keywords import IPSecKeywords
 from keywords.cloud_platform.system.application.system_application_list_keywords import SystemApplicationListKeywords
 from keywords.cloud_platform.system.health_query.system_health_query_keywords import SystemHealthQueryKeywords
 from keywords.cloud_platform.system.host.system_host_list_keywords import SystemHostListKeywords
 from keywords.cloud_platform.system.storage.system_storage_backend_keywords import SystemStorageBackendKeywords
 from keywords.k8s.pods.kubectl_get_pods_keywords import KubectlGetPodsKeywords
+from keywords.linux.systemctl.systemctl_is_active_keywords import SystemCTLIsActiveKeywords
 
 # The ceph storage backend pulls in platform-integ-apps. When it is configured,
 # platform-integ-apps is expected to be present and applied.
 CEPH_STORAGE_BACKEND = "ceph"
 PLATFORM_INTEG_APPS_NAME = "platform-integ-apps"
+
+# Alarm raised when an IPSec connection between hosts cannot be established.
+IPSEC_CONNECTION_FAILURE_ALARM_ID = "400.100"
+# systemd unit providing IPSec certificate authentication. Its unit description is
+# "IPSec Authentication Service"; there is no separate authentication client unit.
+IPSEC_AUTHENTICATION_SERVICE_NAME = "ipsec-server"
+SERVICE_STATE_ACTIVE = "active"
+SERVICE_STATE_INACTIVE = "inactive"
 
 
 class HealthKeywords(BaseKeyword):
@@ -48,6 +58,95 @@ class HealthKeywords(BaseKeyword):
         # Validate system health-query is fully OK last (e.g. host configurations are current). An
         # alarm can clear before health-query reports current configurations, so check this too.
         self.validate_system_health()
+
+    def validate_service_health(self, timeout: int = 300, polling_sleep_time: int = 15):
+        """Validate the IPSec service stack on the system this connection points at.
+
+        Complements validate_healty_cluster, which covers hosts, applications, pods, alarms and
+        'system health-query' but does not inspect the IPSec services or their security
+        associations. This is kept as a separate, explicitly invoked check rather than being
+        folded into validate_healty_cluster, so that callers which have no reason to care about
+        IPSec are unaffected.
+
+        Intended to be called with a connection to the system whose IPSec stack is under test
+        (for a subcloud, the subcloud's own connection) after an operation that tears down and
+        re-establishes IPSec, such as a rehome.
+
+        Validates:
+            1. The IPSec IKE daemon is active ('strongswan' on Trixie, 'ipsec' on Bullseye).
+            2. The IPSec authentication service is active.
+            3. No IPSec connection failure alarm is present.
+            4. On multi-host systems, every expected security association is established.
+
+        Security associations are formed between hosts of the same system, two per host pair, so
+        a single-host system legitimately has none. The association check is skipped there and
+        the reason logged, rather than asserting an expected count of zero, which would pass
+        without exercising anything.
+
+        Args:
+            timeout (int): Maximum time in seconds to wait for each check. Defaults to 300.
+            polling_sleep_time (int): Seconds between polls. Defaults to 15.
+        """
+        ipsec_keywords = IPSecKeywords(self.ssh_connection)
+
+        # The IKE daemon was renamed between releases, so resolve it rather than hardcoding it.
+        ike_service_name = ipsec_keywords.get_ipsec_service_name()
+        for service_name in (ike_service_name, IPSEC_AUTHENTICATION_SERVICE_NAME):
+            self._validate_service_is_active(service_name, timeout, polling_sleep_time)
+
+        validate_equals_with_retry(
+            function_to_execute=lambda: AlarmListKeywords(self.ssh_connection).is_alarm_present(IPSEC_CONNECTION_FAILURE_ALARM_ID),
+            expected_value=False,
+            validation_description=f"No IPSec connection failure alarm ({IPSEC_CONNECTION_FAILURE_ALARM_ID}) is present",
+            timeout=timeout,
+            polling_sleep_time=polling_sleep_time,
+        )
+
+        expected_association_count = ipsec_keywords.get_expected_security_association_count()
+        if expected_association_count <= 0:
+            get_logger().log_info("Single-host system: no IPSec security associations are expected, so the association check is skipped.")
+            return
+
+        validate_equals_with_retry(
+            function_to_execute=lambda: ipsec_keywords.are_all_security_associations_established(expected_association_count),
+            expected_value=True,
+            validation_description=f"All {expected_association_count} IPSec security associations are established",
+            timeout=timeout,
+            polling_sleep_time=polling_sleep_time,
+        )
+
+    def _validate_service_is_active(self, service_name: str, timeout: int, polling_sleep_time: int):
+        """Wait for a systemd service to report 'active'.
+
+        'systemctl is-active' exits non-zero for a unit that is not active, which
+        SystemCTLIsActiveKeywords surfaces as a return-code failure rather than returning the
+        state. The state is normalised to a string here so that an inactive or missing unit
+        produces a readable validation failure naming the service, instead of an opaque
+        return-code error. Polling is used because these services are restarted by the
+        operations this check follows and may still be coming up.
+
+        Args:
+            service_name (str): Name of the systemd service to check.
+            timeout (int): Maximum time in seconds to wait.
+            polling_sleep_time (int): Seconds between polls.
+        """
+        is_active_keywords = SystemCTLIsActiveKeywords(self.ssh_connection)
+
+        def get_service_state() -> str:
+            try:
+                return is_active_keywords.is_active(service_name)
+            except Exception as exception:
+                # Covers both a non-zero exit for an inactive unit and an unparsable response.
+                get_logger().log_info(f"Could not read the state of service {service_name}, treating it as not active: {exception}")
+                return SERVICE_STATE_INACTIVE
+
+        validate_equals_with_retry(
+            function_to_execute=get_service_state,
+            expected_value=SERVICE_STATE_ACTIVE,
+            validation_description=f"Service {service_name} is active",
+            timeout=timeout,
+            polling_sleep_time=polling_sleep_time,
+        )
 
     def validate_system_health(self, timeout: int = 600, polling_sleep_time: int = 15):
         """Wait for 'system health-query' to report all checks OK.
