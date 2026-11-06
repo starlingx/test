@@ -18,12 +18,37 @@ Markers:
     - @mark.lab_has_subcloud: requires at least one subcloud
 """
 
-from keywords.cloud_platform.dcmanager.dcmanager_subcloud_backup_keywords import DcManagerSubcloudBackupKeywords
+from framework.logging.automation_logger import get_logger
+from framework.validation.validation import validate_equals
+from keywords.cloud_platform.dcmanager.dcmanager_subcloud_backup_keywords import LOCAL_BACKUP_PATH, DcManagerSubcloudBackupKeywords
 from keywords.cloud_platform.dcmanager.objects.dcmanger_subcloud_list_availability_enum import DcManagerSubcloudListAvailabilityEnum
 from keywords.cloud_platform.dcmanager.subcloud_picker_keywords import SubcloudPickerKeywords
+from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
+from keywords.files.file_keywords import FileKeywords
 from pytest import mark
 
 from config.lab.objects.lab_type_enum import LabTypeEnum
+
+# --- Helpers ---
+
+
+def validate_registry_backup_created(subcloud_name: str, release: str) -> None:
+    """Validate that a local backup includes the registry images archive.
+
+    A local backup created with registry images writes an ``image_registry``
+    archive next to the platform backup.
+
+    Args:
+        subcloud_name (str): Subcloud that was backed up.
+        release (str): Software version of the backup (name of the backup directory).
+    """
+    get_logger().log_test_case_step(f"Validate registry images archive in local backup of subcloud '{subcloud_name}'")
+    subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
+    backup_dir = f"{LOCAL_BACKUP_PATH}{release}/"
+    backup_files = FileKeywords(subcloud_ssh).get_files_in_dir(backup_dir, is_sudo=True)
+    has_registry_archive = any("image_registry" in file_name for file_name in backup_files)
+    validate_equals(has_registry_archive, True, f"Registry images archive found in {backup_dir}")
+
 
 # --- Central Backup - Simplex ---
 
@@ -263,6 +288,68 @@ def test_backup_create_local_single_simplex_subcloud_n_minus_2_release(request):
         lab_type=LabTypeEnum.SIMPLEX,
     )
     DcManagerSubcloudBackupKeywords(system_controller_ssh).create_local_backup(result.get_name())
+
+
+# --- Local Backup With Registry Images - Simplex ---
+
+
+@mark.p0
+@mark.subcloud_lab_is_simplex
+def test_backup_create_local_single_simplex_subcloud_n_release_with_registry_images(request):
+    """Create a local backup with registry images for a simplex subcloud running N release.
+
+    Test Steps:
+        1. Select an online simplex subcloud running N release
+        2. Create a local backup including registry images and verify it completes
+        3. Validate the backup contains the registry images archive
+    """
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
+        availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
+        load="N",
+        lab_type=LabTypeEnum.SIMPLEX,
+    )
+    DcManagerSubcloudBackupKeywords(system_controller_ssh).create_local_backup(result.get_name(), registry=True)
+    validate_registry_backup_created(result.get_name(), result.get_software_version())
+
+
+@mark.p2
+@mark.lab_has_subcloud
+@mark.subcloud_lab_is_simplex
+def test_backup_create_local_single_simplex_subcloud_n_minus_1_release_with_registry_images(request):
+    """Create a local backup with registry images for a simplex subcloud running N-1 release.
+
+    Test Steps:
+        1. Select an online simplex subcloud running N-1 release
+        2. Create a local backup including registry images and verify it completes
+        3. Validate the backup contains the registry images archive
+    """
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
+        availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
+        load="N-1",
+        lab_type=LabTypeEnum.SIMPLEX,
+    )
+    DcManagerSubcloudBackupKeywords(system_controller_ssh).create_local_backup(result.get_name(), registry=True)
+    validate_registry_backup_created(result.get_name(), result.get_software_version())
+
+
+@mark.p2
+@mark.lab_has_subcloud
+@mark.subcloud_lab_is_simplex
+def test_backup_create_local_single_simplex_subcloud_n_minus_2_release_with_registry_images(request):
+    """Create a local backup with registry images for a simplex subcloud running N-2 release.
+
+    Test Steps:
+        1. Select an online simplex subcloud running N-2 release
+        2. Create a local backup including registry images and verify it completes
+        3. Validate the backup contains the registry images archive
+    """
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
+        availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
+        load="N-2",
+        lab_type=LabTypeEnum.SIMPLEX,
+    )
+    DcManagerSubcloudBackupKeywords(system_controller_ssh).create_local_backup(result.get_name(), registry=True)
+    validate_registry_backup_created(result.get_name(), result.get_software_version())
 
 
 # --- Local Backup - Duplex ---

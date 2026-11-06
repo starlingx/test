@@ -19,10 +19,10 @@ REHOME_IN_PROGRESS_STATES = ["pre-rehome", "rehoming"]
 ENROLL_IN_PROGRESS_STATES = ["pre-enroll", "start-enroll-init", "initiating-enroll", "enrolling"]
 
 # Backup operation in-progress states (dcmanager subcloud-backup create)
-BACKUP_IN_PROGRESS_STATES = ["validating", "backing-up"]
+BACKUP_IN_PROGRESS_STATES = ["validating", "pre-backup", "backing-up"]
 
 # Restore operation in-progress states (dcmanager subcloud-backup restore)
-RESTORE_IN_PROGRESS_STATES = ["pre-install", "installing", "restoring"]
+RESTORE_IN_PROGRESS_STATES = ["pre-restore", "pre-install", "installing", "restoring"]
 
 # Onsite restore without reinstall states. The subcloud STARTS at
 # "factory-restore-complete" (the seed is mounted while in this state), transitions
