@@ -14,6 +14,7 @@ from keywords.k8s.k8s_base_keyword import K8sBaseKeyword
 from keywords.k8s.namespace.kubectl_create_namespace_keywords import KubectlCreateNamespacesKeywords
 from keywords.k8s.pods.kubectl_exec_in_pods_keywords import KubectlExecInPodsKeywords
 from keywords.k8s.pods.kubectl_get_pods_keywords import KubectlGetPodsKeywords
+from keywords.k8s.pvc.kubectl_get_pvc_keywords import KubectlGetPvcKeywords
 from keywords.k8s.secret.kubectl_create_secret_keywords import KubectlCreateSecretsKeywords
 from keywords.k8s.secret.kubectl_get_secret_keywords import KubectlGetSecretsKeywords
 
@@ -52,6 +53,7 @@ class OpenBaoKeywords(BaseKeyword):
         self.kubectl_delete = KubectlDeleteResourceKeywords(ssh_connection)
         self.kubectl_create_namespace = KubectlCreateNamespacesKeywords(ssh_connection)
         self.kubectl_create_secret = KubectlCreateSecretsKeywords(ssh_connection)
+        self.kubectl_pvc = KubectlGetPvcKeywords(ssh_connection)
 
     def get_current_gen_secret_name(self) -> str:
         """Resolve the current unseal-key generation secret name.
@@ -296,6 +298,9 @@ class OpenBaoKeywords(BaseKeyword):
                 return json.loads(response_text)
             get_logger().log_info(f"OpenBao returned empty response, retrying in {retry_delay}s (attempt {attempt + 1}/{retries})")
             time.sleep(retry_delay)
+        if not response_text.strip():
+            get_logger().log_info(f"OpenBao returned an empty response for {path} after {retries} attempts")
+            return {}
         return json.loads(response_text)
 
     def create_secret_cli(self, path: str, data: dict, token: str) -> None:
@@ -392,3 +397,37 @@ class OpenBaoKeywords(BaseKeyword):
             name (str): Name of the cluster role binding to delete.
         """
         self.kubectl_delete.delete_resource("clusterrolebinding", name)
+
+    def get_openbao_pvc_names(self) -> list[str]:
+        """Get the names of all PVCs in the OpenBao namespace.
+
+        Returns:
+            list[str]: PVC names bound in the OpenBao namespace (empty if none).
+        """
+        pvcs = self.kubectl_pvc.get_pvc(namespace=self.NAMESPACE).get_pvcs()
+        return [pvc.get_name() for pvc in pvcs]
+
+    def is_gen_secret_immutable(self, gen_secret_name: str) -> bool:
+        """Check whether an unseal-key generation secret is immutable.
+
+        Args:
+            gen_secret_name (str): Name of the generation secret (e.g. "openbao-unseal-gen-001").
+
+        Returns:
+            bool: True if the secret's ``immutable`` field is true.
+        """
+        raw = self.kubectl_secrets.get_secret_with_custom_output(gen_secret_name, self.NAMESPACE, "jsonpath", "'{.immutable}'")
+        return raw.strip().strip("'") == "true"
+
+    def get_gen_secret_keys(self, gen_secret_name: str) -> list[str]:
+        """Get the inner data keys stored in an unseal-key generation secret.
+
+        Args:
+            gen_secret_name (str): Name of the generation secret (e.g. "openbao-unseal-gen-001").
+
+        Returns:
+            list[str]: The keys present in the secret's decoded ``.data.data`` payload
+                (e.g. "keys", "keys_base64", "root_token").
+        """
+        raw = self.kubectl_secrets.get_secret_with_custom_output(gen_secret_name, self.NAMESPACE, "jsonpath", "'{.data.data}'", base64=True)
+        return list(json.loads(raw.strip().strip("'")).keys())
