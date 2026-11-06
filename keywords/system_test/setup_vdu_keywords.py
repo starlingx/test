@@ -1,7 +1,7 @@
 """VDU (Virtual Deployment Unit) Setup Keywords.
 
 Provides reusable methods for downloading VDU test data and running
-the install_all.sh script on system test labs.
+the install scripts on system test labs.
 """
 
 import time
@@ -18,12 +18,19 @@ from keywords.k8s.pods.kubectl_get_pods_keywords import KubectlGetPodsKeywords
 class SetupVduKeywords:
     """Keywords for setting up VDU workload on labs.
 
-    Downloads VDU test data from a remote server and runs the install script
+    Downloads VDU test data from a remote server and runs the install scripts
     to deploy images, apps, and VDU workloads.
 
     Args:
         ssh_connection: SSH connection to the target host (central cloud or subcloud).
     """
+
+    # Test-data folders whose install.sh runs in each mode, in execution order.
+    MODE_FOLDERS = {
+        "vdu_only": ["vdu"],
+        "stx_apps": ["stx-apps"],
+        "all_data": ["cpu-metrics", "stx-apps", "vdu"],
+    }
 
     def __init__(self, ssh_connection: SSHConnection):
         self.ssh_connection = ssh_connection
@@ -32,29 +39,35 @@ class SetupVduKeywords:
     def __str__(self) -> str:
         return "SetupVduKeywords"
 
-    def deploy_vdu(self, fail_ok_override: bool = None, stx_apps_only: bool = False) -> None:
-        """Download VDU test data and run the install script.
+    def deploy_vdu(self, fail_ok_override: bool = None, mode_override: str = None) -> None:
+        """Download VDU test data and run the install scripts for the mode set in the config.
 
-        Downloads the test-data folder from the configured server,
-        then runs install_all.sh -i to deploy VDU workloads.
+        The mode is the VDU_MODE value in default_vdu.json5 (vdu_only, stx_apps or all_data).
 
         Args:
             fail_ok_override: If provided, overrides the fail_ok value from config.
                               Useful for DC deployments where the SC should always be fail_ok=True.
-            stx_apps_only: If True, only run stx-apps/install.sh (upload/apply platform apps).
-                           Useful for system controller where only app images are needed.
+            mode_override: If provided, overrides the VDU_MODE value from config.
+                           Useful for DC deployments where the SC only needs stx_apps.
+
+        Raises:
+            ValueError: If the mode is not a valid install mode.
         """
         vdu_config = self._load_vdu_config()
+        mode = mode_override or vdu_config.get_vdu_mode()
+        if mode not in self.MODE_FOLDERS:
+            raise ValueError(f"Invalid VDU install mode '{mode}'. Expected one of {list(self.MODE_FOLDERS)}.")
 
-        if stx_apps_only:
-            get_logger().log_info("Downloading stx-apps folder only (SC mode)")
-            self._download_vdu_files(vdu_config, subfolder="stx-apps")
+        destination = vdu_config.get_destination_path()
+        if mode == "stx_apps":
+            # The full test-data folder is 5+ GB, so this mode downloads only its own folder
+            subfolder, scripts_dir = "stx-apps", destination
         else:
-            get_logger().log_info("Downloading full VDU test data")
-            self._download_vdu_files(vdu_config)
+            subfolder, scripts_dir = None, f"{destination}/test-data"
 
-        get_logger().log_info("Running install scripts")
-        self._run_install_script(vdu_config, fail_ok_override=fail_ok_override, stx_apps_only=stx_apps_only)
+        get_logger().log_info(f"Deploying VDU test data (mode={mode})")
+        self._download_vdu_files(vdu_config, subfolder=subfolder)
+        self._run_install_script(vdu_config, mode, scripts_dir, fail_ok_override=fail_ok_override)
 
     def _load_vdu_config(self) -> VduConfig:
         """Load the VDU configuration from the config file.
@@ -77,8 +90,6 @@ class SetupVduKeywords:
             subfolder: If provided, only download this subfolder from test-data.
         """
         server = vdu_config.get_server()
-        user = vdu_config.get_user()
-        password = vdu_config.get_password()
         base_path = vdu_config.get_base_path()
         destination = vdu_config.get_destination_path()
         download_timeout = vdu_config.get_download_timeout()
@@ -94,8 +105,8 @@ class SetupVduKeywords:
 
         self.file_keywords.rsync_from_remote_server(
             remote_server=server,
-            remote_user=user,
-            remote_password=password,
+            remote_user=vdu_config.get_user(),
+            remote_password=vdu_config.get_password(),
             remote_path=remote_path,
             local_dest_path=local_path,
             recursive=True,
@@ -104,59 +115,36 @@ class SetupVduKeywords:
 
         get_logger().log_info(f"VDU files downloaded to {local_path}")
 
-    def _run_install_script(self, vdu_config: VduConfig, fail_ok_override: bool = None, stx_apps_only: bool = False) -> None:
-        """Run the install scripts.
+    def _run_install_script(self, vdu_config: VduConfig, mode: str, scripts_dir: str, fail_ok_override: bool = None) -> None:
+        """Run the install scripts for the selected mode.
 
         The scripts take 10-15 minutes to complete. They load container images,
-        push them to the local registry, upload and apply platform apps,
+        push them to the local registry, optionally upload and apply platform apps,
         and deploy VDU workloads. Output is redirected to a log file and
         monitored periodically.
 
         Args:
             vdu_config: VDU configuration object.
+            mode: One of vdu_only, stx_apps, all_data.
+            scripts_dir: Directory on the lab that holds the downloaded install folders.
             fail_ok_override: If provided, overrides the fail_ok value from config.
-            stx_apps_only: If True, only run stx-apps/install.sh.
         """
-        destination = vdu_config.get_destination_path()
         fail_ok = fail_ok_override if fail_ok_override is not None else vdu_config.get_fail_ok()
-        if stx_apps_only:
-            log_file = f"{destination}/stx-apps/install.log"
-        else:
-            log_file = f"{destination}/test-data/install_all.log"
+        log_file = f"{scripts_dir}/install.log"
         rc_file = f"{log_file}.rc"
 
-        self.ssh_connection.send(f"rm -f {rc_file}")
+        steps = []
+        for folder in self.MODE_FOLDERS[mode]:
+            self.file_keywords.make_executable(f"{scripts_dir}/{folder}/install.sh")
+            steps.append(f"cd {scripts_dir}/{folder} && ./install.sh" + (" -i" if folder == "vdu" else ""))
+        get_logger().log_info(f"Executing install steps {steps} (output: {log_file})")
+
+        # Source openrc and set KUBECONFIG so kubectl/system commands have proper auth context
+        install_cmd = f"source /etc/platform/openrc && export KUBECONFIG=/etc/kubernetes/admin.conf && {'; '.join(steps)}"
 
         # Launch script in background, write exit code to .rc file when done
-        # Source openrc and set KUBECONFIG so kubectl/system commands have proper auth context
-        # Pass -i to each sub-script individually since install_all.sh doesn't forward args
-        if stx_apps_only:
-            script_path = f"{destination}/stx-apps/install.sh"
-            get_logger().log_info(f"Making script executable: {script_path}")
-            self.file_keywords.make_executable(script_path)
-
-            get_logger().log_info(f"Executing: stx-apps/install.sh only (output: {log_file})")
-            install_cmd = (
-                f"source /etc/platform/openrc && export KUBECONFIG=/etc/kubernetes/admin.conf && "
-                f"cd {destination}/stx-apps && ./install.sh"
-            )
-        else:
-            script_path = f"{destination}/test-data/install_all.sh"
-            get_logger().log_info(f"Making script executable: {script_path}")
-            self.file_keywords.make_executable(script_path)
-
-            get_logger().log_info(f"Executing: all install scripts with -i (output: {log_file})")
-            install_cmd = (
-                f"source /etc/platform/openrc && export KUBECONFIG=/etc/kubernetes/admin.conf && "
-                f"cd {destination}/test-data && "
-                f"cd cpu-metrics && ./install.sh; "
-                f"cd ../stx-apps && ./install.sh; "
-                f"cd ../vdu && ./install.sh -i; "
-                f"cd ../"
-            )
-        self.ssh_connection.send(
-            f"nohup bash -c '({install_cmd}) > {log_file} 2>&1; echo $? > {rc_file}' </dev/null >/dev/null 2>&1 &"
-        )
+        self.ssh_connection.send(f"rm -f {rc_file}")
+        self.ssh_connection.send(f"nohup bash -c '({install_cmd}) > {log_file} 2>&1; echo $? > {rc_file}' </dev/null >/dev/null 2>&1 &")
 
         rc = self._monitor_install_progress(log_file, rc_file, timeout=1200, interval=60)
 
@@ -165,7 +153,7 @@ class SetupVduKeywords:
 
         # Log the last 30 lines of the install log for visibility
         tail_output = self.ssh_connection.send(f"tail -30 {log_file} 2>/dev/null")
-        get_logger().log_info(f"[install_all.sh final output]\n{tail_output}")
+        get_logger().log_info(f"[install final output]\n{tail_output}")
 
         if not fail_ok:
             validate_equals(0, rc, f"script failed, check log output in {log_file}")
@@ -177,7 +165,6 @@ class SetupVduKeywords:
                 timeout=300,
             )
             get_logger().log_info("All VDU pods are in Running state")
-
 
     def _monitor_install_progress(self, log_file: str, rc_file: str, timeout: int, interval: int) -> int:
         """Monitor the install script by checking for the rc file and tailing the log.
@@ -206,12 +193,12 @@ class SetupVduKeywords:
 
             # Check if rc file exists (script finished)
             if self.file_keywords.file_exists(rc_file):
-                get_logger().log_info(f"install_all.sh finished after {elapsed}s")
+                get_logger().log_info(f"Install finished after {elapsed}s")
                 return self._read_exit_code(rc_file)
 
-            get_logger().log_info(f"install_all.sh still running... ({elapsed}s elapsed)")
+            get_logger().log_info(f"Install still running... ({elapsed}s elapsed)")
 
-        get_logger().log_warning(f"install_all.sh monitoring timed out after {timeout}s")
+        get_logger().log_warning(f"Install monitoring timed out after {timeout}s")
         return 1
 
     def _read_exit_code(self, rc_file: str) -> int:
@@ -225,5 +212,3 @@ class SetupVduKeywords:
         """
         output = self.ssh_connection.send(f"cat {rc_file}")
         return int(output[0].strip())
-
-

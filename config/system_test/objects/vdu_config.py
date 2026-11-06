@@ -27,6 +27,7 @@ class VduConfig:
         self.connection_timeout = vdu_dict.get("connection_timeout", 30)
         self.download_timeout = vdu_dict.get("download_timeout", 600)
         self.fail_ok = vdu_dict.get("fail_ok", True)
+        self.vdu_mode = vdu_dict.get("VDU_MODE", "vdu_only")
 
     def __str__(self) -> str:
         """Return string representation of the VDU config.
@@ -103,3 +104,11 @@ class VduConfig:
             bool: True if partial failures are acceptable.
         """
         return self.fail_ok
+
+    def get_vdu_mode(self) -> str:
+        """Get which install scripts to run.
+
+        Returns:
+            str: One of vdu_only, stx_apps, all_data.
+        """
+        return self.vdu_mode

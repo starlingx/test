@@ -8,6 +8,11 @@
   "destination_path": "/home/sysadmin",
   "connection_timeout": 30,
   "download_timeout": 1800,
-  // If true, the test will pass even if install_all.sh exits with non-zero
-  "fail_ok": false
+  // If true, the test will pass even if the install script exits with non-zero
+  "fail_ok": false,
+  // Install scripts to run on the host. Allowed values:
+  //   "vdu_only" - vdu/install.sh only (default)
+  //   "stx_apps" - stx-apps/install.sh only
+  //   "all_data" - cpu-metrics, stx-apps and vdu install scripts
+  "VDU_MODE": "vdu_only"
 }
