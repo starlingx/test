@@ -62,3 +62,16 @@ class RedFishChassisPowerKeywords(object):
         success = self._reset_system(reset_types.pop())
         if not success:
             raise RuntimeError("Failed to power cycle the server.")
+
+    def get_power_state(self) -> str:
+        """Get the current power state of the server using redfish API.
+
+        The system information is queried again on every call rather than reusing
+        the instance captured in the constructor, because the power state is what
+        power_on, power_off and power_cycle change. A cached value would report
+        the state as it was before those calls.
+
+        Returns:
+            str: The PowerState reported by RedFish, such as "On" or "Off".
+        """
+        return self.get_system_info.get_system_info().get_power_state()
