@@ -220,6 +220,12 @@
             "secret_username": "pvtest"
         },
 
+        // OpenBao test configuration
+        "openbao_test": {
+            "secret_password": "openbao_test_password",
+            "secret_username": "pvtest"
+        },
+
         // Kube rootca update test configuration
         "kube_rootca_update": {
             "cert_validity_years": 5,
