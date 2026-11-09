@@ -1,9 +1,5 @@
-import subprocess
 from typing import Optional, Type
 
-from config.configuration_manager import ConfigurationManager
-from framework.exceptions.keyword_exception import KeywordException
-from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
 from keywords.base_keyword import BaseKeyword
 from keywords.server.power_keywords_implementation import PowerKeywordsImplementation
@@ -132,6 +128,41 @@ class PowerKeywords(BaseKeyword):
         """
         return self.implementation.power_off_from_localhost(host_name, ignore_error=ignore_error)
 
+    def is_chassis_power_off_from_localhost(self, host_name: str) -> bool:
+        """Check that the host's chassis power is off by running ``ipmitool`` locally against its BMC.
+
+        Runs the IPMI command on the machine executing the automation
+        (localhost) rather than over the SSH connection, so it works while
+        the node is powered off. It is a single check, not a wait: poll it
+        (for example with ``validate_equals_with_retry``) to wait for power off.
+
+        Args:
+            host_name (str): The name of the host whose BMC to target.
+
+        Returns:
+            bool: True only if the BMC reports the chassis power is off. False
+            if it reports on, or if the status could not be read.
+        """
+        return self.implementation.is_chassis_power_off_from_localhost(host_name)
+
+    def is_chassis_power_on_from_localhost(self, host_name: str) -> bool:
+        """Check that the host's chassis power is on by running ``ipmitool`` locally against its BMC.
+
+        Runs the IPMI command on the machine executing the automation
+        (localhost) rather than over the SSH connection. It is a single check,
+        not a wait, and only reflects the BMC chassis state, not that the node
+        has booted: poll it (for example with ``validate_equals_with_retry``)
+        and use the host availability checks for the boot.
+
+        Args:
+            host_name (str): The name of the host whose BMC to target.
+
+        Returns:
+            bool: True only if the BMC reports the chassis power is on. False
+            if it reports off, or if the status could not be read.
+        """
+        return self.implementation.is_chassis_power_on_from_localhost(host_name)
+
     def power_off(self, host_name: str) -> bool:
         """Power off the host.
 
@@ -185,4 +216,3 @@ class PowerKeywords(BaseKeyword):
             bool: True if the boot device was successfully set to PXE.
         """
         return self.implementation.set_boot_device_pxe(host_name)
-

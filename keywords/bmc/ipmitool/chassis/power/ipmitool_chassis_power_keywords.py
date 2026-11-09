@@ -1,19 +1,22 @@
 import subprocess
 import time
+from typing import Optional
 
+from config.configuration_manager import ConfigurationManager
 from framework.exceptions.keyword_exception import KeywordException
 from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
 from keywords.base_keyword import BaseKeyword
 from keywords.bmc.ipmitool.bmc_credentials import resolve_bmc_credentials
 
-from config.configuration_manager import ConfigurationManager
-
 # Retry configuration for transient IPMI session failures
 _IPMI_POWER_CMD_MAX_RETRIES = 3
 _IPMI_POWER_CMD_RETRY_DELAY_SECONDS = 10
 
 _IPMI_NOT_SUPPORTED_IN_PRESENT_STATE = "not supported in present state"
+
+# An unreachable BMC would otherwise block subprocess.run until the OS gives up on the socket.
+_IPMI_STATUS_TIMEOUT_SECONDS = 60
 
 
 class IPMIToolChassisPowerKeywords(BaseKeyword):
@@ -205,6 +208,81 @@ class IPMIToolChassisPowerKeywords(BaseKeyword):
             raise KeywordException(f"ipmitool chassis power on for {host_name} ({bm_ip}) failed with return code {result.returncode}: {result.stderr.strip()}")
 
         return result.returncode
+
+    def is_chassis_power_off_from_localhost(self, host_name: str) -> bool:
+        """Check, with ``ipmitool chassis power status`` run locally, that a host's chassis power is off.
+
+        Read-only companion to :meth:`power_off_from_localhost` and
+        :meth:`power_on_from_localhost`. The command is executed on the machine
+        running the automation (localhost) rather than over an SSH connection,
+        so it keeps working while the node, and any SSH session to it, is down.
+
+        The power-off command only reports that the BMC accepted the request, not
+        that the chassis is off. This reports what the BMC says the chassis state
+        is. When the BMC cannot be queried (session failure, timeout) the chassis
+        is not confirmed off, so this returns False; callers that poll it simply
+        try again.
+
+        Args:
+            host_name (str): The name of the host whose BMC to target
+                (e.g. "controller-0").
+
+        Returns:
+            bool: True only if the BMC reports "Chassis Power is off". False if it
+            reports the chassis is on, or if the status could not be read.
+        """
+        return self._read_chassis_power_state_from_localhost(host_name) == "off"
+
+    def is_chassis_power_on_from_localhost(self, host_name: str) -> bool:
+        """Check, with ``ipmitool chassis power status`` run locally, that a host's chassis power is on.
+
+        Counterpart of :meth:`is_chassis_power_off_from_localhost`. It is not the
+        negation of it: when the BMC cannot be queried the state is unknown, so
+        neither check is True and a caller that polls either one simply tries again.
+
+        Args:
+            host_name (str): The name of the host whose BMC to target
+                (e.g. "controller-0").
+
+        Returns:
+            bool: True only if the BMC reports "Chassis Power is on". False if it
+            reports the chassis is off, or if the status could not be read.
+        """
+        return self._read_chassis_power_state_from_localhost(host_name) == "on"
+
+    def _read_chassis_power_state_from_localhost(self, host_name: str) -> Optional[str]:
+        """Read a host's chassis power state with ``ipmitool chassis power status`` run locally.
+
+        Args:
+            host_name (str): The name of the host whose BMC to target.
+
+        Returns:
+            Optional[str]: "on" or "off" as reported by the BMC, or None if the
+            command failed, timed out or printed something unrecognised.
+        """
+        lab_config = ConfigurationManager.get_lab_config()
+        node = lab_config.get_node(host_name)
+        bmc = resolve_bmc_credentials(node, password_fallback_config=lab_config)
+        bm_ip = bmc.get_bm_ip()
+
+        cmd = ["ipmitool", "-I", "lanplus", "-H", bm_ip, "-U", bmc.get_bm_username(), "-P", bmc.get_bm_password(), "chassis", "power", "status"]
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=_IPMI_STATUS_TIMEOUT_SECONDS)
+        except subprocess.TimeoutExpired:
+            get_logger().log_info(f"ipmitool chassis power status for {host_name} ({bm_ip}) timed out after {_IPMI_STATUS_TIMEOUT_SECONDS}s")
+            return None
+
+        get_logger().log_info(f"ipmitool chassis power status for {host_name} ({bm_ip}) " f"rc={result.returncode} out={result.stdout.strip()} err={result.stderr.strip()}")
+
+        if result.returncode != 0:
+            return None
+
+        output = result.stdout.lower()
+        if "chassis power is off" in output:
+            return "off"
+        if "chassis power is on" in output:
+            return "on"
+        return None
 
     def reset_from_localhost(self, host_name: str, subcloud_name: str = None, ignore_error: bool = False) -> int:
         """Run ``ipmitool chassis power reset`` locally against a host's BMC.

@@ -222,6 +222,39 @@ class PowerKeywordsImplementation:
         """
         return IPMIToolChassisPowerKeywords(self.ssh_connection, host_name).power_off_from_localhost(host_name, ignore_error=ignore_error)
 
+    def is_chassis_power_off_from_localhost(self, host_name: str) -> bool:
+        """Check that the host's chassis power is off by running ``ipmitool`` locally against its BMC.
+
+        The IPMI command runs on the machine executing the automation
+        (localhost) rather than over the SSH connection, so it works while
+        the node is powered off.
+
+        Args:
+            host_name (str): The name of the host whose BMC to target.
+
+        Returns:
+            bool: True only if the BMC reports the chassis power is off. False
+            if it reports on, or if the status could not be read.
+        """
+        return IPMIToolChassisPowerKeywords(self.ssh_connection, host_name).is_chassis_power_off_from_localhost(host_name)
+
+    def is_chassis_power_on_from_localhost(self, host_name: str) -> bool:
+        """Check that the host's chassis power is on by running ``ipmitool`` locally against its BMC.
+
+        The IPMI command runs on the machine executing the automation
+        (localhost) rather than over the SSH connection. This is only the BMC
+        chassis state, not that the node has booted: use the host availability
+        checks for that.
+
+        Args:
+            host_name (str): The name of the host whose BMC to target.
+
+        Returns:
+            bool: True only if the BMC reports the chassis power is on. False
+            if it reports off, or if the status could not be read.
+        """
+        return IPMIToolChassisPowerKeywords(self.ssh_connection, host_name).is_chassis_power_on_from_localhost(host_name)
+
     def power_off(self, host_name: str) -> bool:
         """Power off the host.
 
