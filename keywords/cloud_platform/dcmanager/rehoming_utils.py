@@ -226,9 +226,15 @@ def rehome_operation_cleanup(
     """
     Cleanup after rehome operation. Remove from one system DB and manage and check sync in the other
 
+    The two connections are not interchangeable. The subcloud is managed and its availability
+    validated on keep_subcloud_ssh, and only then is its record deleted from remove_subcloud_ssh.
+    Callers pass them in either order depending on where the subcloud actually ended up: after a
+    successful rehome it lives on the destination, while a failed rehome leaves it on the origin,
+    so the connection to remove from differs between those paths.
+
     Args:
-        remove_subcloud_ssh (SSHConnection): SSH connection to the system controller that will keep the subcloud.
-        keep_subcloud_ssh (SSHConnection): SSH connection to the system controller that needs the subcloud removed.
+        remove_subcloud_ssh (SSHConnection): SSH connection to the system controller the subcloud record is removed from.
+        keep_subcloud_ssh (SSHConnection): SSH connection to the system controller that keeps the subcloud.
         subcloud_name (str): Name of the subcloud that was rehomed.
     """
     dcm_sc_list_kw = DcManagerSubcloudListKeywords(keep_subcloud_ssh)
@@ -237,7 +243,7 @@ def rehome_operation_cleanup(
     dcm_sc_list_kw.validate_subcloud_availability_status(subcloud_name)
     dcm_sc_kw.get_dcmanager_subcloud_manage(subcloud_name, timeout=30)
 
-    get_logger().log_info(f"Deleting subcloud from {remove_subcloud_ssh}")
+    get_logger().log_info(f"Deleting subcloud {subcloud_name} from system controller {remove_subcloud_ssh.host}")
     DcManagerSubcloudDeleteKeywords(remove_subcloud_ssh).dcmanager_subcloud_delete(subcloud_name)
 
 
