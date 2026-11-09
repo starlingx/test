@@ -1,31 +1,31 @@
-"""Exporter scheduling and readiness evidence independent of discovered pods."""
+"""DaemonSet scheduling and readiness evidence independent of discovered pods."""
 
 
-class ExporterWorkloadOutput:
+class DaemonSetWorkloadOutput:
     """Resolve eligible nodes from the rendered DaemonSet and node inventory."""
 
     def __init__(self, daemonset: dict, nodes: list[dict]):
         """Capture a Kubernetes scheduling snapshot.
 
         Args:
-            daemonset (dict): Rendered exporter DaemonSet.
+            daemonset (dict): Rendered DaemonSet.
             nodes (list[dict]): Complete Kubernetes node inventory.
         """
         self.daemonset = daemonset
         self.nodes = nodes
 
     def get_label_selector(self) -> str:
-        """Return the validated label selector used to query exporter pods.
+        """Return the validated label selector used to query DaemonSet pods.
 
         Returns:
             str: Comma-separated Kubernetes equality selectors.
         """
         selector = self.daemonset["spec"]["selector"]
         if selector.get("matchExpressions") or not selector.get("matchLabels"):
-            raise ValueError("Exporter requires a nonempty matchLabels selector")
+            raise ValueError("DaemonSet requires a nonempty matchLabels selector")
         return ",".join(f"{key}={value}" for key, value in sorted(selector["matchLabels"].items()))
 
-    def eligible_nodes(self) -> tuple[str, ...]:
+    def get_eligible_nodes(self) -> tuple[str, ...]:
         """Evaluate supported scheduling constraints without deriving coverage from pods.
 
         Unsupported affinity is rejected explicitly before consumers mutate state.
@@ -35,10 +35,10 @@ class ExporterWorkloadOutput:
         """
         spec = self.daemonset["spec"]["template"]["spec"]
         if spec.get("affinity") or spec.get("nodeName") or spec.get("schedulerName", "default-scheduler") != "default-scheduler":
-            raise ValueError("Exporter scheduling uses unsupported affinity, nodeName or scheduler")
+            raise ValueError("DaemonSet scheduling uses unsupported affinity, nodeName or scheduler")
         selector = spec.get("nodeSelector", {})
         if not isinstance(selector, dict):
-            raise ValueError("Invalid exporter nodeSelector")
+            raise ValueError("Invalid DaemonSet nodeSelector")
         eligible_node_names = []
         seen_node_names = set()
         automatically_tolerated_taint_keys = {"node.kubernetes.io/not-ready", "node.kubernetes.io/unreachable", "node.kubernetes.io/disk-pressure", "node.kubernetes.io/memory-pressure", "node.kubernetes.io/pid-pressure", "node.kubernetes.io/unschedulable"}
@@ -60,10 +60,10 @@ class ExporterWorkloadOutput:
             if not has_untolerated_taint:
                 eligible_node_names.append(name)
         if not eligible_node_names:
-            raise ValueError("No eligible exporter nodes in rendered scheduling and inventory")
+            raise ValueError("No eligible DaemonSet nodes in rendered scheduling and inventory")
         return tuple(sorted(eligible_node_names))
 
-    def ready_pods(self, pods: list[dict]) -> dict[str, dict]:
+    def get_ready_pods(self, pods: list[dict]) -> dict[str, dict]:
         """Require one current ready DaemonSet pod per independently eligible node.
 
         Args:
@@ -72,7 +72,7 @@ class ExporterWorkloadOutput:
         Returns:
             dict[str, dict]: Ready pods by node, or empty during convergence.
         """
-        expected_node_names = set(self.eligible_nodes())
+        expected_node_names = set(self.get_eligible_nodes())
         daemonset_generation = self.daemonset["metadata"].get("generation")
         rollout_status = self.daemonset.get("status", {})
         if type(daemonset_generation) is not int or daemonset_generation < 1 or rollout_status.get("observedGeneration") != daemonset_generation:
@@ -90,7 +90,7 @@ class ExporterWorkloadOutput:
         for pod in pods:
             metadata, spec, status = pod["metadata"], pod["spec"], pod.get("status", {})
             if not any(owner.get("uid") == daemonset_uid and owner.get("controller") is True for owner in metadata.get("ownerReferences", [])):
-                raise ValueError("Exporter selector matched a pod outside the selected DaemonSet")
+                raise ValueError("DaemonSet selector matched a pod outside the selected DaemonSet")
             revision_hash = metadata.get("labels", {}).get("controller-revision-hash")
             if not revision_hash:
                 return {}
