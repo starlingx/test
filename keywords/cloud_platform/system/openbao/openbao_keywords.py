@@ -8,6 +8,8 @@ from framework.exceptions.keyword_exception import KeywordException
 from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
 from keywords.base_keyword import BaseKeyword
+from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
+from keywords.cloud_platform.system.host.system_host_list_keywords import SystemHostListKeywords
 from keywords.files.file_keywords import FileKeywords
 from keywords.k8s.delete_resource.kubectl_delete_resource_keywords import KubectlDeleteResourceKeywords
 from keywords.k8s.get_resource.kubectl_get_resource_keywords import KubectlGetResourceKeywords
@@ -18,6 +20,8 @@ from keywords.k8s.pods.kubectl_get_pods_keywords import KubectlGetPodsKeywords
 from keywords.k8s.pvc.kubectl_get_pvc_keywords import KubectlGetPvcKeywords
 from keywords.k8s.secret.kubectl_create_secret_keywords import KubectlCreateSecretsKeywords
 from keywords.k8s.secret.kubectl_get_secret_keywords import KubectlGetSecretsKeywords
+from keywords.linux.systemctl.systemctl_is_active_keywords import SystemCTLIsActiveKeywords
+from keywords.linux.systemctl.systemctl_status_keywords import SystemCTLStatusKeywords
 
 
 class OpenBaoKeywords(BaseKeyword):
@@ -35,6 +39,13 @@ class OpenBaoKeywords(BaseKeyword):
     CA_SECRET = "openbao-ca"
     POD_BAO_ADDR = "https://127.0.0.1:8200"
     POD_CA_CERT = "/openbao/userconfig/openbao-server-tls/ca.crt"
+    HOST_SERVICE_NAME = "openbao"
+    HOST_HCL_PATH = "/etc/openbao/stx_openbao_configs.hcl"
+    HOST_CERT_PATH = "/etc/openbao/certs/openbao-cert.crt"
+    HOST_CA_ANCHORS_DIR = "/etc/pki/ca-trust/source/anchors"
+    HOST_BAO_ADDR = "https://[::1]:8200"
+    HOST_ADMIN_PW_FILE = "/var/luks/stx/luks_fs/controller/.openbao/users/admin/pw"
+    HOST_LUKS_KEY_PATH = "/var/luks/stx/luks_fs/controller/.openbao/auto-unseal/stx-initial.key"
 
     def __init__(self, ssh_connection: SSHConnection, ssh_user_home: str = "/home/sysadmin"):
         """Initialize OpenBao keywords.
@@ -542,3 +553,224 @@ class OpenBaoKeywords(BaseKeyword):
             time.sleep(15)
         get_logger().log_info("OpenBao sealed-state wait timed out")
         return False
+
+    def is_host_service_active(self, ssh_connection: SSHConnection = None) -> bool:
+        """Check whether the host OpenBao systemd service is active.
+
+        Args:
+            ssh_connection (SSHConnection): Target host SSH; defaults to the
+                connection this keyword was constructed with (active controller).
+
+        Returns:
+            bool: True if ``systemctl is-active openbao`` reports active.
+        """
+        target = ssh_connection if ssh_connection is not None else self.ssh_connection
+        return SystemCTLIsActiveKeywords(target).is_active(self.HOST_SERVICE_NAME) == "active"
+
+    def is_host_service_enabled(self, ssh_connection: SSHConnection = None) -> bool:
+        """Check whether the host OpenBao systemd service is enabled at boot.
+
+        The enabled state is read from the ``Loaded:`` line of ``systemctl
+        status`` so no additional command is required.
+
+        Args:
+            ssh_connection (SSHConnection): Target host SSH; defaults to the
+                connection this keyword was constructed with (active controller).
+
+        Returns:
+            bool: True if the unit is reported as enabled.
+        """
+        target = ssh_connection if ssh_connection is not None else self.ssh_connection
+        status_lines = SystemCTLStatusKeywords(target).get_status(self.HOST_SERVICE_NAME)
+        for line in status_lines:
+            if "Loaded:" in line and "enabled" in line:
+                return True
+        return False
+
+    def is_host_service_enabled_on_all_controllers(self) -> bool:
+        """Check the host OpenBao service is enabled on every controller.
+
+        Works on SX (one controller), DX and Standard (two controllers): the
+        service is preset-enabled on all controllers so it persists reboot.
+
+        Returns:
+            bool: True if the service is enabled on all controllers.
+        """
+        lab_connection = LabConnectionKeywords()
+        controllers = SystemHostListKeywords(self.ssh_connection).get_controllers()
+        for controller in controllers:
+            host_ssh = lab_connection.get_ssh_for_hostname(controller.get_host_name())
+            if not self.is_host_service_enabled(host_ssh):
+                get_logger().log_info(f"Host OpenBao service not enabled on {controller.get_host_name()}")
+                return False
+        return True
+
+    def is_host_service_disabled_on_non_controllers(self) -> bool:
+        """Check the host OpenBao service is NOT enabled on workers/storage.
+
+        The host service runs on controllers only. Hosts are enumerated from
+        the full host list and filtered by personality, so a system with no
+        worker or storage nodes (such as SX) has nothing to check and returns
+        True without error.
+
+        Returns:
+            bool: True if no non-controller node has the service enabled.
+        """
+        lab_connection = LabConnectionKeywords()
+        all_hosts = SystemHostListKeywords(self.ssh_connection).get_system_host_list().get_hosts()
+        non_controllers = [host for host in all_hosts if "controller" not in host.get_personality()]
+        for host in non_controllers:
+            host_ssh = lab_connection.get_ssh_for_hostname(host.get_host_name())
+            if self.is_host_service_enabled(host_ssh):
+                get_logger().log_info(f"Host OpenBao service unexpectedly enabled on {host.get_host_name()}")
+                return False
+        return True
+
+    def validate_host_hcl_config(self) -> bool:
+        """Validate the host OpenBao HCL config with ``bao operator validate-config``.
+
+        Returns:
+            bool: True if the validator reports a successful config.
+        """
+        output = self.ssh_connection.send_as_sudo(f"/usr/bin/bao operator validate-config -config {self.HOST_HCL_PATH}")
+        joined = " ".join(output)
+        return "success" in joined.lower()
+
+    def get_host_hcl_content(self) -> str:
+        """Read the host OpenBao HCL config file contents.
+
+        Returns:
+            str: The HCL file content as a single string.
+        """
+        return "".join(FileKeywords(self.ssh_connection).read_file_with_sudo(self.HOST_HCL_PATH))
+
+    def _host_bao(self, bao_args: str, token: str = None) -> str:
+        """Run a host ``bao`` command over sudo with strict TLS.
+
+        Args:
+            bao_args (str): Arguments passed to the ``bao`` CLI.
+            token (str): Optional BAO_TOKEN to authenticate the call.
+
+        Returns:
+            str: The joined command output.
+        """
+        env = f"BAO_ADDR={self.HOST_BAO_ADDR} BAO_CACERT={self.HOST_CERT_PATH}"
+        if token:
+            env += f" BAO_TOKEN={token}"
+        output = self.ssh_connection.send_as_sudo_non_interactive(f"env {env} /usr/bin/bao {bao_args}")
+        return "".join(output)
+
+    def host_bao_admin_login(self) -> str:
+        """Log in to the host OpenBao as admin using the encrypted-filesystem password.
+
+        Returns:
+            str: The client token returned by the userpass login (empty on failure).
+        """
+        output = self._host_bao(f"login -field=token -no-store -method=userpass username=admin password=@{self.HOST_ADMIN_PW_FILE}")
+        return output.strip()
+
+    def host_bao_auth_methods(self, token: str) -> str:
+        """List the host OpenBao auth methods.
+
+        Args:
+            token (str): BAO_TOKEN to authenticate the call.
+
+        Returns:
+            str: The ``bao auth list`` output.
+        """
+        return self._host_bao("auth list", token)
+
+    def host_bao_secret_mounts(self, token: str) -> str:
+        """List the host OpenBao secret engine mounts.
+
+        Args:
+            token (str): BAO_TOKEN to authenticate the call.
+
+        Returns:
+            str: The ``bao secrets list`` output.
+        """
+        return self._host_bao("secrets list", token)
+
+    def host_bao_policies(self, token: str) -> str:
+        """List the host OpenBao policies.
+
+        Args:
+            token (str): BAO_TOKEN to authenticate the call.
+
+        Returns:
+            str: The ``bao policy list`` output.
+        """
+        return self._host_bao("policy list", token)
+
+    def get_host_file_owner_mode(self, path: str) -> str:
+        """Get ``owner:group mode`` for a host file via sudo stat.
+
+        Args:
+            path (str): Absolute path to the file.
+
+        Returns:
+            str: A string of the form ``"openbao:openbao 640"`` (empty on error).
+        """
+        output = self.ssh_connection.send_as_sudo_non_interactive(f"stat -c '%U:%G %a' {path}")
+        return "".join(output).strip()
+
+    def sysadmin_can_read(self, path: str) -> bool:
+        """Check whether the non-privileged SSH user can read a file.
+
+        Reads the file without sudo and treats a permission error as "cannot
+        read". Used to confirm that service-owned secrets are not world or
+        sysadmin readable.
+
+        Args:
+            path (str): Absolute path to the file.
+
+        Returns:
+            bool: True if the file content is readable without sudo.
+        """
+        output = "".join(self.ssh_connection.send(f"cat {path} 2>&1"))
+        return "Permission denied" not in output and "No such file" not in output
+
+    def host_bao_status_with_ca(self) -> str:
+        """Query host ``bao status`` over TLS trusting the server CA cert.
+
+        Returns:
+            str: The ``bao status`` output (includes the seal state when the
+            TLS handshake succeeds).
+        """
+        return self._host_bao("status")
+
+    def host_server_cert_verifies(self) -> bool:
+        """Check the host OpenBao server certificate verifies against the system CA.
+
+        Runs ``openssl verify`` of the server leaf certificate against the
+        platform trust-anchor directory (``-CApath``) so verification succeeds
+        regardless of which anchor CA issued the cert, and checks for the
+        authoritative ``: OK`` verdict (not the per-depth ``verify return``
+        callback lines).
+
+        Returns:
+            bool: True if openssl reports the leaf verifies against a trusted CA.
+        """
+        cmd = f'bash -c "openssl verify -CApath {self.HOST_CA_ANCHORS_DIR} {self.HOST_CERT_PATH} 2>&1"'
+        output = "".join(self.ssh_connection.send_as_sudo_non_interactive(cmd))
+        return f"{self.HOST_CERT_PATH}: OK" in output
+
+    def is_host_server_cert_ca_issued(self) -> bool:
+        """Check the host OpenBao server certificate is CA-issued (not self-signed).
+
+        A CA-issued certificate has an issuer distinct from its subject; a
+        self-signed certificate has issuer == subject. The specific issuing CA
+        CN is lab-dependent (system-local-ca on standard labs, a custom
+        intermediate CA on others), so CA-issuance is asserted by issuer !=
+        subject rather than a fixed CN. Trust against the platform anchors is
+        covered separately by host_server_cert_verifies.
+
+        Returns:
+            bool: True if the cert has a non-empty issuer that differs from its subject.
+        """
+        cmd = f"openssl x509 -in {self.HOST_CERT_PATH} -noout -issuer -subject"
+        output = "".join(self.ssh_connection.send_as_sudo_non_interactive(cmd))
+        lines = output.splitlines()
+        issuer = next((line[len("issuer=") :].strip() for line in lines if line.startswith("issuer=")), "")
+        subject = next((line[len("subject=") :].strip() for line in lines if line.startswith("subject=")), "")
+        return bool(issuer) and issuer != subject
