@@ -1643,3 +1643,41 @@ def test_prestage_for_sw_deploy_n_release_is_idempotent(request):
 
     validate_equals(prestage_status, "complete", "Validate that the subcloud prestage operation has completed.")
     validate_equals(prestage_versions_after, prestage_versions, "Validate that prestage_versions is unchanged after repeating the prestage.")
+
+
+# --- Cleanup ---
+
+
+@mark.p0
+@mark.lab_has_subcloud
+def test_prestage_cleanup_platform_backup_release_folders():
+    """Remove all release folders under /opt/platform-backup on the subcloud.
+
+    Test Steps:
+        1. List the release folders under /opt/platform-backup
+        2. Remove them
+        3. Validate that none is left
+    """
+    platform_backup_dir = "/opt/platform-backup"
+    release_folder_pattern = re.compile(r"^\d+\.\d+$")
+
+    _, result = SubcloudPickerKeywords.pick_with_fallback(
+        availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
+        lab_type=LabTypeEnum.SIMPLEX,
+    )
+
+    subcloud_name = result.get_name()
+    subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
+    file_keywords = FileKeywords(subcloud_ssh)
+
+    get_logger().log_test_case_step(f"List {platform_backup_dir} on subcloud {subcloud_name}")
+    release_folders = [entry for entry in file_keywords.get_files_in_dir(platform_backup_dir, is_sudo=True) if release_folder_pattern.match(entry)]
+    get_logger().log_info(f"Release folders found under {platform_backup_dir}: {release_folders}")
+
+    get_logger().log_test_case_step(f"Remove release folders from {platform_backup_dir} on subcloud {subcloud_name}")
+    for release_folder in release_folders:
+        file_keywords.delete_folder_with_sudo(f"{platform_backup_dir}/{release_folder}")
+
+    get_logger().log_test_case_step(f"Validate no release folder is left in {platform_backup_dir}")
+    remaining_release_folders = [entry for entry in file_keywords.get_files_in_dir(platform_backup_dir, is_sudo=True) if release_folder_pattern.match(entry)]
+    validate_equals(remaining_release_folders, [], f"No release folders remain under {platform_backup_dir}.")
