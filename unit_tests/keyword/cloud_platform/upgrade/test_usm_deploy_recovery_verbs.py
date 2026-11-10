@@ -85,6 +85,44 @@ class TestUSMDeployRecoveryVerbs(unittest.TestCase):
         self.assertEqual(ssh.send.call_args[1]["command_timeout"], self.HOST_TIMEOUT)
         self.assertEqual(result, "Host rollback has started")
 
+    def test_host_rollback_default_is_single_attempt(self):
+        """retries=0 (default) runs the command once and does not retry on failure."""
+        keywords, ssh = self._build_keywords(output=("Host rollback has started",))
+        object.__setattr__(keywords, "validate_success_return_code", MagicMock(side_effect=Exception("host deployment failed")))
+        with self.assertRaises(Exception):
+            keywords.software_deploy_host_rollback("controller-1")
+        self.assertEqual(ssh.send.call_count, 1)
+
+    def test_host_rollback_retries_transient_failure_then_succeeds(self):
+        """With retries>0 a transient failure is retried and the next attempt succeeds."""
+        keywords, ssh = self._build_keywords(output=("Host rollback has started",))
+        # First validate raises (umount busy race), second returns cleanly.
+        object.__setattr__(keywords, "validate_success_return_code", MagicMock(side_effect=[Exception("umount /opt/platform busy"), None]))
+        with patch("keywords.cloud_platform.upgrade.usm_keywords.time.sleep"), patch("keywords.cloud_platform.upgrade.usm_keywords.get_logger"):
+            result = keywords.software_deploy_host_rollback("controller-0", retries=2, retry_delay=0)
+        self.assertEqual(ssh.send.call_count, 2)
+        self.assertEqual(result, "Host rollback has started")
+
+    def test_host_rollback_raises_after_exhausting_retries(self):
+        """A known-transient host-rollback failure that never clears re-raises after all attempts."""
+        keywords, ssh = self._build_keywords(output=("Host rollback has started",))
+        object.__setattr__(keywords, "validate_success_return_code", MagicMock(side_effect=Exception("host deployment failed")))
+        with patch("keywords.cloud_platform.upgrade.usm_keywords.time.sleep"), patch("keywords.cloud_platform.upgrade.usm_keywords.get_logger"):
+            with self.assertRaises(Exception):
+                keywords.software_deploy_host_rollback("controller-0", retries=2, retry_delay=0)
+        self.assertEqual(ssh.send.call_count, 3)  # retries=2 -> 3 attempts
+
+    def test_host_rollback_does_not_retry_a_non_transient_failure(self):
+        """A failure that is not a known-transient signature re-raises on the first attempt."""
+        keywords, ssh = self._build_keywords(output=("Host rollback has started",))
+        # A genuine business rejection, not the umount/busy host-rollback race.
+        object.__setattr__(keywords, "validate_success_return_code", MagicMock(side_effect=Exception("operation not permitted in current state")))
+        with patch("keywords.cloud_platform.upgrade.usm_keywords.time.sleep") as sleep, patch("keywords.cloud_platform.upgrade.usm_keywords.get_logger"):
+            with self.assertRaises(Exception):
+                keywords.software_deploy_host_rollback("controller-0", retries=2, retry_delay=0)
+        self.assertEqual(ssh.send.call_count, 1)  # no retry despite retries=2
+        sleep.assert_not_called()
+
     def test_sudo_uses_the_sudo_send_path(self):
         """With sudo=True the command goes through send_as_sudo, not send."""
         keywords, ssh = self._build_keywords()

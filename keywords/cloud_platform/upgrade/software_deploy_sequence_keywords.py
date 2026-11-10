@@ -21,6 +21,24 @@ from keywords.cloud_platform.upgrade.usm_keywords import USMKeywords
 _LOCK_RETRIES = 2
 _LOCK_RETRY_DELAY = 20
 
+# Retry budget for the per-host rollback. 'software deploy host-rollback' has been observed to fail
+# transiently on an AIO-DX controller (the agent_hooks 'umount /opt/platform: device is busy' race),
+# and to succeed on a plain re-issue of the same command. Passed to the shared keyword's opt-in
+# retry, so only this deploy flow retries - every other host-rollback caller keeps the default
+# single attempt.
+_HOST_ROLLBACK_RETRIES = 2
+_HOST_ROLLBACK_RETRY_DELAY = 30
+
+# Alarms that are expected and non-blocking while a host-rollback is unlocking, so the unlock's
+# post-unlock health check must not treat them as failures. On an AIO-DX the first controller to
+# roll back lands on the from-release while its peer is still on the target release; sysinv then
+# skips the config re-apply ('No hosts with matching software_version found') until BOTH controllers
+# are on the same release, so controller config-out-of-date (250.001) cannot clear until the peer
+# also rolls - which is the very next step. Without excluding it, wait_for_host_unlocked blocks on
+# an alarm that by design only clears after the step it is blocking, a circular stall. Only applied
+# on the rollback unlock; a forward deploy keeps the default (250.001 blocking).
+_ROLLBACK_UNLOCK_EXCLUDE_ALARM_IDS = ["250.001"]
+
 
 class SoftwareDeploySequenceKeywords(BaseKeyword):
     """
@@ -177,7 +195,10 @@ class SoftwareDeploySequenceKeywords(BaseKeyword):
         deploy_error = None
         try:
             if rollback:
-                self.usm.software_deploy_host_rollback(host, sudo=False)
+                # Retry a transient host-rollback failure (opt-in on the shared keyword; the default
+                # is a single attempt for every other caller). Observed on an AIO-DX controller as
+                # the agent_hooks 'umount /opt/platform busy' race, which clears on a re-issue.
+                self.usm.software_deploy_host_rollback(host, sudo=False, retries=_HOST_ROLLBACK_RETRIES, retry_delay=_HOST_ROLLBACK_RETRY_DELAY)
                 self._wait_for_host_deploy_done(host, "deploy-host-rollback-deployed")
             else:
                 self.usm.software_deploy_host(host, sudo=False)
@@ -195,7 +216,11 @@ class SoftwareDeploySequenceKeywords(BaseKeyword):
             # whole platform out). But if the deploy step already failed, a failure of this
             # recovery unlock must not replace the original error.
             try:
-                self.host_lock.unlock_host(host)
+                # On a rollback unlock, ignore the config-out-of-date alarm the first rolled
+                # controller legitimately carries until its peer also rolls; otherwise the default
+                # blocking-alarm set applies.
+                unlock_exclude = _ROLLBACK_UNLOCK_EXCLUDE_ALARM_IDS if rollback else None
+                self.host_lock.unlock_host(host, exclude_alarm_ids=unlock_exclude)
             except Exception as unlock_error:
                 if deploy_error is None:
                     raise

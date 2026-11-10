@@ -16,6 +16,23 @@ from keywords.cloud_platform.upgrade.software_deploy_show_keywords import Softwa
 from keywords.cloud_platform.upgrade.software_list_keywords import SoftwareListKeywords
 
 
+# Known-transient host-rollback failure signatures. 'software deploy host-rollback' on an AIO-DX
+# controller has been observed to fail when the target-release agent hooks run
+# 'umount /opt/platform' during the rollback and it comes back 'device is busy' (rc 16); the same
+# command succeeds on a plain re-issue. The deep cause is logged in the host's software.log as the
+# umount/busy line, but what surfaces to this command is the generic wrapper ('host deployment
+# failed on <host>', rc 1), so the signatures cover both the wrapper seen at this layer and the
+# root-cause text. The retry only fires when the failure text matches one of these; anything else
+# (a genuine business rejection or a different error) re-raises immediately instead of costing
+# retries x retry_delay.
+_TRANSIENT_HOST_ROLLBACK_SIGNATURES = (
+    "host deployment failed",
+    "device is busy",
+    "umount",
+    "/opt/platform",
+)
+
+
 class USMKeywords(BaseKeyword):
     """
     Keywords for USM software operations.
@@ -290,7 +307,7 @@ class USMKeywords(BaseKeyword):
         self.validate_success_return_code(self.ssh_connection)
         return "".join(output)
 
-    def software_deploy_host_rollback(self, host: str, sudo: bool = False, lock_unlock: bool = False, exclude_alarm_ids: list[str] = None) -> str:
+    def software_deploy_host_rollback(self, host: str, sudo: bool = False, lock_unlock: bool = False, exclude_alarm_ids: list[str] = None, retries: int = 0, retry_delay: int = 30) -> str:
         """
         Execute the command 'software deploy host-rollback <host>'.
 
@@ -306,6 +323,15 @@ class USMKeywords(BaseKeyword):
           host-rollback <host> -> system host-unlock <host> (host reboots into
           N-1). Use for reboot-required patches / upgrades.
 
+        By default (retries=0) the host-rollback command is run once, which is
+        what every existing caller relies on. A caller driving a multi-host
+        upgrade/rollback can opt in to retrying a TRANSIENT host-rollback
+        failure (observed on an AIO-DX controller rollback as the agent_hooks
+        'umount /opt/platform: device is busy' race, which succeeds on a plain
+        re-issue of the same command) by passing retries > 0. The opt-in is
+        additive: with retries=0 the behaviour and exceptions are exactly as
+        before for all other callers.
+
         Args:
             host (str): host to roll back.
             sudo (bool): flag to check if it needs to be run as sudo.
@@ -313,6 +339,10 @@ class USMKeywords(BaseKeyword):
                 after the rollback (reboot-required flow).
             exclude_alarm_ids (list[str]): alarm IDs to ignore on unlock; only
                 used when lock_unlock is True.
+            retries (int): extra attempts to make if the host-rollback command
+                fails transiently. 0 (default) preserves the single-attempt,
+                no-retry behaviour.
+            retry_delay (int): seconds to wait between attempts when retries > 0.
 
         Returns:
             str: software deploy host-rollback output.
@@ -321,20 +351,76 @@ class USMKeywords(BaseKeyword):
         if lock_unlock:
             lock_keywords.lock_host(host)
 
-        timeout = self.usm_config.get_deploy_host_timeout_sec()
-        base_cmd = f"software deploy host-rollback {host}"
-        cmd = source_openrc(base_cmd)
-        if sudo:
-            output = self.ssh_connection.send_as_sudo(cmd, command_timeout=timeout, reconnect_timeout=timeout)
-        else:
-            output = self.ssh_connection.send(cmd, command_timeout=timeout, reconnect_timeout=timeout, get_pty=True)
-        self.validate_success_return_code(self.ssh_connection)
-        output = [line.strip() for line in output if line.strip()]
+        output = self._run_host_rollback_with_retries(host, sudo, retries, retry_delay)
 
         if lock_unlock:
             lock_keywords.unlock_host(host, exclude_alarm_ids=exclude_alarm_ids)
 
         return output[-1] if output else ""
+
+    def _run_host_rollback_with_retries(self, host: str, sudo: bool, retries: int, retry_delay: int) -> list[str]:
+        """
+        Issue 'software deploy host-rollback <host>', optionally retrying a known transient failure.
+
+        Factored out so the lock/unlock contract of the caller is unchanged while the bare
+        host-rollback command can be retried when the caller opts in (retries > 0). Only a failure
+        whose text matches a known-transient host-rollback signature is retried; any other failure
+        (a genuine rejection or an unrelated error) re-raises immediately so a real failure surfaces
+        at once instead of costing retries x retry_delay.
+
+        Args:
+            host (str): host to roll back.
+            sudo (bool): run the command with sudo.
+            retries (int): extra attempts on a known-transient failure (0 = single attempt).
+            retry_delay (int): seconds between attempts.
+
+        Returns:
+            list[str]: the stripped, non-empty output lines of the successful attempt.
+
+        Raises:
+            Exception: the last failure when all attempts are exhausted, or immediately if the
+                failure is not a known-transient one.
+        """
+        timeout = self.usm_config.get_deploy_host_timeout_sec()
+        cmd = source_openrc(f"software deploy host-rollback {host}")
+        attempts = retries + 1
+        last_error: Exception | None = None
+        for attempt in range(1, attempts + 1):
+            try:
+                if sudo:
+                    output = self.ssh_connection.send_as_sudo(cmd, command_timeout=timeout, reconnect_timeout=timeout)
+                else:
+                    output = self.ssh_connection.send(cmd, command_timeout=timeout, reconnect_timeout=timeout, get_pty=True)
+                self.validate_success_return_code(self.ssh_connection)
+                return [line.strip() for line in output if line.strip()]
+            except Exception as error:  # noqa: BLE001 - only a known-transient host-rollback failure is retried
+                last_error = error
+                is_last_attempt = attempt >= attempts
+                if is_last_attempt or not self._is_transient_host_rollback_error(error):
+                    raise
+                get_logger().log_info(
+                    f"[host-rollback-retry] 'software deploy host-rollback {host}' failed on attempt "
+                    f"{attempt}/{attempts} ({error}); retrying in {retry_delay}s - matches a known "
+                    f"transient agent-side host-rollback error that clears on a re-issue."
+                )
+                time.sleep(retry_delay)
+        raise last_error
+
+    @staticmethod
+    def _is_transient_host_rollback_error(error: Exception) -> bool:
+        """Return True when a host-rollback failure matches a known-transient signature.
+
+        Args:
+            error (Exception): the failure raised by the host-rollback attempt.
+
+        Returns:
+            bool: True if the error text matches a known-transient host-rollback signature and is
+                therefore safe to retry; False for any other error (retry would just delay a real
+                failure).
+
+        """
+        text = str(error).lower()
+        return any(signature in text for signature in _TRANSIENT_HOST_ROLLBACK_SIGNATURES)
 
     def software_delete(self, release: str, sudo: bool = False) -> str:
         """
