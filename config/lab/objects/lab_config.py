@@ -32,9 +32,6 @@ class LabConfig:
         self.bm_password = lab_dict["bm_password"]
         self.use_jump_server = lab_dict["use_jump_server"]
 
-        self.factory_credentials = None
-        if "factory_credentials" in lab_dict:
-            self.factory_credentials = Credentials(lab_dict["factory_credentials"])
         if "jump_server_config" in lab_dict:
             jump_host_config_location = get_stx_resource_path(lab_dict["jump_server_config"])
             self.jump_server_config = HostConfiguration(jump_host_config_location)
@@ -125,15 +122,6 @@ class LabConfig:
 
         """
         return self.floating_ip
-
-    def get_factory_ip(self) -> str:
-        """
-        Getter for factory IP (pre-enrollment address). Falls back to floating_ip if not set.
-
-        Returns:
-            str: The factory IP address
-        """
-        return self.factory_ip if self.factory_ip else self.floating_ip
 
     def set_floating_ip(self, floating_ip: str) -> None:
         """
@@ -472,15 +460,6 @@ class LabConfig:
             str: The bm password
         """
         return self.bm_password
-
-    def get_factory_credentials(self) -> "Credentials":
-        """
-        Getter for factory credentials (used for SSH to subcloud in factory-install state).
-
-        Returns:
-            Credentials: The factory credentials, or None if not set.
-        """
-        return self.factory_credentials
 
     def get_system_controller_ip(self) -> str:
         """

@@ -165,22 +165,52 @@ class DCManagerSubcloudDeployKeywords(BaseKeyword):
             dc_manager_sc_list_kw = DcManagerSubcloudListKeywords(self.ssh_connection)
             dc_manager_sc_list_kw.validate_subcloud_status(subcloud_name, success_status)
 
-    def dcmanager_subcloud_enroll(self, subcloud_name: str, factory_restored: bool = False, wait_for_status: bool = True):
+    def dcmanager_subcloud_deploy_enroll(
+        self,
+        subcloud_name: str,
+        factory_restored: bool = False,
+        wait_for_status: bool = True,
+        bootstrap_address: Optional[str] = None,
+        bootstrap_values: Optional[str] = None,
+        install_values: Optional[str] = None,
+        bmc_password: Optional[str] = None,
+    ):
+        """Enrolls (or re-enrolls) a subcloud using 'dcmanager subcloud deploy enroll'.
 
+        With no overrides, the bootstrap address is the first controller's IP, the files come
+        from the deployment assets and the admin password is used for both --sysadmin-password
+        and --bmc-password. Pass the optional overrides to use different values, for example to
+        retry a failed enroll with the same address and BMC password that 'subcloud add --enroll'
+        used.
+
+        Args:
+            subcloud_name (str): Name of the subcloud to enroll.
+            factory_restored (bool): True if the subcloud was just restored to factory state, in
+                which case only the sysadmin password is passed. Defaults to False.
+            wait_for_status (bool): Whether to wait for the subcloud to reach 'enroll-complete'.
+                Defaults to True.
+            bootstrap_address (Optional[str]): Bootstrap address to use instead of the first
+                controller's IP.
+            bootstrap_values (Optional[str]): Bootstrap-values file to use instead of the one in
+                the deployment assets.
+            install_values (Optional[str]): Install-values file to use instead of the one in the
+                deployment assets.
+            bmc_password (Optional[str]): BMC password to use instead of the admin password.
+        """
         deployment_assets_config = ConfigurationManager.get_deployment_assets_config()
         sc_config = ConfigurationManager.get_lab_config().get_subcloud(subcloud_name)
         sc_assets = deployment_assets_config.get_subcloud_deployment_assets(subcloud_name)
 
         admin_creds = sc_config.get_admin_credentials()
-        install_file = sc_assets.get_install_file()
-        bootstrap_file = sc_assets.get_bootstrap_file()
+        install_file = install_values or sc_assets.get_install_file()
+        bootstrap_file = bootstrap_values or sc_assets.get_bootstrap_file()
         # Get the subcloud bootstrap address
-        boot_add = sc_config.get_first_controller().get_ip()
-        deploy_file = sc_assets.get_deployment_config_file()
+        boot_add = bootstrap_address or sc_config.get_first_controller().get_ip()
+        bmc_pass = bmc_password or admin_creds.get_password()
 
         cmd = f"dcmanager subcloud deploy enroll {subcloud_name} --sysadmin-password {admin_creds.get_password()}"
         if not factory_restored:
-            cmd += f" --bootstrap-address {boot_add} --bootstrap-values {bootstrap_file} --install-values {install_file} --bmc-password {admin_creds.get_password()}"
+            cmd += f" --bootstrap-address {boot_add} --bootstrap-values {bootstrap_file} --install-values {install_file} --bmc-password {bmc_pass}"
 
         self.ssh_connection.send(source_openrc(cmd))
         self.validate_success_return_code(self.ssh_connection)

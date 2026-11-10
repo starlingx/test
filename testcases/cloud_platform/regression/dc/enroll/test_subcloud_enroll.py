@@ -1,5 +1,5 @@
 import os
-from typing import Callable, List
+from typing import Callable, List, Tuple
 
 from pytest import fail, mark
 
@@ -8,7 +8,6 @@ from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_add_keywords import DcManagerSubcloudAddKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_backup_keywords import DcManagerSubcloudBackupKeywords
-from keywords.cloud_platform.dcmanager.dcmanager_subcloud_delete_keywords import DcManagerSubcloudDeleteKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_deploy_keywords import DCManagerSubcloudDeployKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_list_keywords import DcManagerSubcloudListKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_manager_keywords import DcManagerSubcloudManagerKeywords
@@ -16,6 +15,7 @@ from keywords.cloud_platform.dcmanager.dcmanager_subcloud_show_keywords import D
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_state_watcher_keywords import DcManagerSubcloudStateWatcherKeywords
 from keywords.cloud_platform.dcmanager.enroll_config import EnrollConfig
 from keywords.cloud_platform.dcmanager.subcloud_enroll_config_keywords import SubcloudEnrollConfigKeywords
+from keywords.cloud_platform.dcmanager.subcloud_factory_ready_keywords import SubcloudFactoryReadyKeywords
 from keywords.cloud_platform.health.health_keywords import HealthKeywords
 from keywords.cloud_platform.kpi.dc_kpi_recorder_keywords import DcKpiRecorderKeywords
 from keywords.cloud_platform.kpi.dcmanager_log_kpi_keywords import DCMANAGER_ENROLL_PHASES, DcManagerLogKpiKeywords
@@ -37,8 +37,6 @@ ENROLL_FAILED_STATES = [
     "rehome-failed",
 ]
 
-FACTORY_INSTALL_COMPLETE_MARKER = "/var/lib/factory-install/complete"
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -58,6 +56,24 @@ def _default_enroll_config(subcloud_name: str) -> EnrollConfig:
         install_values=assets.get_install_file(),
         deploy_config_file=assets.get_deployment_config_file(),
     )
+
+
+def _enroll_retry_address_and_bmc_password(subcloud_name: str) -> Tuple[str, str]:
+    """Get the bootstrap address and BMC password for retrying an enroll with 'deploy enroll'.
+
+    These are the same values 'dcmanager subcloud add --enroll' is given: the subcloud's floating
+    IP as the bootstrap address, and its BMC password (the admin password when the subcloud has
+    no separate BMC password).
+
+    Args:
+        subcloud_name (str): Subcloud being enrolled.
+
+    Returns:
+        Tuple[str, str]: The bootstrap address and the BMC password.
+    """
+    subcloud_config = ConfigurationManager.get_lab_config().get_subcloud(subcloud_name)
+    bmc_password = subcloud_config.get_bm_password() or subcloud_config.get_admin_credentials().get_password()
+    return subcloud_config.get_floating_ip(), bmc_password
 
 
 def _wait_for_enroll_online(system_controller_ssh: SSHConnection, subcloud_name: str) -> None:
@@ -247,7 +263,7 @@ def run_enroll_operations(system_controller_ssh: SSHConnection, subcloud_name: s
     if phased:
         deploy_kw = DCManagerSubcloudDeployKeywords(system_controller_ssh)
         get_logger().log_test_case_step(f"Enrolling {subcloud_name}")
-        deploy_kw.dcmanager_subcloud_enroll(subcloud_name)
+        deploy_kw.dcmanager_subcloud_deploy_enroll(subcloud_name)
         get_logger().log_test_case_step(f"Configuring {subcloud_name}")
         deploy_kw.dcmanager_subcloud_deploy_config(subcloud_name)
         return
@@ -366,27 +382,33 @@ def test_enroll_jcnr_sx_subcloud(request):
 @mark.p2
 @mark.lab_has_subcloud
 def test_retry_enroll_one_sx_subcloud(request):
-    """Enroll with a bad bootstrap file, confirm it fails, then enroll successfully.
+    """Enroll with a bad bootstrap file, then retry the enroll without deleting the subcloud.
 
-    Runs for every subcloud declared in the lab config.
+    After the first enroll fails, the retry runs 'dcmanager subcloud deploy enroll' on the
+    existing subcloud instead of deleting it and adding it again. The enroll then needs
+    'dcmanager subcloud deploy config' to finish the configuration. Runs for every subcloud
+    declared in the lab config.
 
     Test Steps:
-        - Validate the subcloud is factory-installed.
+        - Connect at the factory IP and validate the subcloud is factory-installed.
+        - Run health pre-checks on the subcloud.
         - Enroll with an invalid bootstrap file and verify enroll-failed.
-        - Delete the subcloud and re-enroll with the valid config.
+        - Retry with 'dcmanager subcloud deploy enroll' using the valid files, without
+          deleting the subcloud, and wait for enroll-complete.
+        - Run 'dcmanager subcloud deploy config' and wait for complete.
+        - Verify the subcloud comes online and manage it.
+        - Connect at the enrolled IP and run health post-checks (alarms, pods and apps).
     """
     deployment_assets_config = ConfigurationManager.get_deployment_assets_config()
     system_controller_ssh = LabConnectionKeywords().get_active_controller_ssh()
+    deploy_keywords = DCManagerSubcloudDeployKeywords(system_controller_ssh)
+    subcloud_list_keywords = DcManagerSubcloudListKeywords(system_controller_ssh)
 
     for subcloud_name in _configured_subcloud_names():
-        subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
-
-        get_logger().log_test_case_step(f"Verify {subcloud_name} completed factory-install")
-        if not FileKeywords(subcloud_ssh).file_exists(FACTORY_INSTALL_COMPLETE_MARKER):
-            fail("This subcloud was not factory installed, unable to proceed with enroll.")
-
-        get_logger().log_info(f"Performing pre-checks on {subcloud_name}")
-        HealthKeywords(subcloud_ssh).validate_healty_cluster()
+        get_logger().log_test_case_step(f"Verify {subcloud_name} completed factory-install (connecting at its factory IP)")
+        # Before enrollment the subcloud answers only on its factory IP with the factory credentials.
+        # The keyword connects there, checks the factory-install marker and validates cluster health.
+        SubcloudFactoryReadyKeywords().validate_subcloud_factory_ready(subcloud_name)
 
         assets = deployment_assets_config.get_subcloud_deployment_assets(subcloud_name)
         bootstrap_values = assets.get_bootstrap_file()
@@ -396,17 +418,34 @@ def test_retry_enroll_one_sx_subcloud(request):
         fake_bootstrap_values = create_fake_bootstrap_values(bootstrap_values, system_controller_ssh)
         request.addfinalizer(_make_delete_file_finalizer(system_controller_ssh, fake_bootstrap_values))
 
+        get_logger().log_test_case_step(f"Enroll {subcloud_name} with an invalid bootstrap file and expect enroll-failed")
         run_enroll_operations(system_controller_ssh, subcloud_name, fake_bootstrap_values, install_values, deployment_config_file)
-        DcManagerSubcloudListKeywords(system_controller_ssh).validate_subcloud_status(subcloud_name=subcloud_name, status="enroll-failed")
-        DcManagerSubcloudDeleteKeywords(system_controller_ssh).dcmanager_subcloud_delete(subcloud_name)
+        subcloud_list_keywords.validate_subcloud_status(subcloud_name=subcloud_name, status="enroll-failed")
 
-        run_enroll_operations(system_controller_ssh, subcloud_name, bootstrap_values, install_values, deployment_config_file)
-        DcManagerSubcloudListKeywords(system_controller_ssh).validate_subcloud_status(subcloud_name=subcloud_name, status="complete")
-        DcManagerSubcloudListKeywords(system_controller_ssh).validate_subcloud_availability_status(subcloud_name)
+        # Retry on the existing subcloud with dcmanager deploy enroll . This will end with deploy config.
+        get_logger().log_test_case_step(f"Retry the enroll of {subcloud_name} with 'dcmanager subcloud deploy enroll' (no delete)")
+        bootstrap_address, bmc_password = _enroll_retry_address_and_bmc_password(subcloud_name)
+        deploy_keywords.dcmanager_subcloud_deploy_enroll(
+            subcloud_name,
+            bootstrap_address=bootstrap_address,
+            bootstrap_values=bootstrap_values,
+            install_values=install_values,
+            bmc_password=bmc_password,
+        )
+
+        get_logger().log_test_case_step(f"Configure {subcloud_name} with 'dcmanager subcloud deploy config'")
+        deploy_keywords.dcmanager_subcloud_deploy_config(subcloud_name)
+
+        get_logger().log_test_case_step(f"Verify {subcloud_name} comes online and manage it")
+        subcloud_list_keywords.validate_subcloud_availability_status(subcloud_name)
         DcManagerSubcloudManagerKeywords(system_controller_ssh).get_dcmanager_subcloud_manage(subcloud_name, 10)
 
-        get_logger().log_info(f"Performing post-enrollment checks on {subcloud_name}")
-        HealthKeywords(subcloud_ssh).validate_healty_cluster()
+        # The factory IP and factory credentials are only valid before enrollment. Afterwards the
+        # subcloud answers on its floating IP with the admin credentials, so open that session now. It is
+        # not opened up front: the floating IP is not up until enrollment completes, so an early connect fails.
+        get_logger().log_test_case_step(f"Performing post-enrollment checks on {subcloud_name}")
+        enrolled_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
+        HealthKeywords(enrolled_ssh).validate_healty_cluster()
 
 
 @mark.p2

@@ -105,15 +105,22 @@ class FileKeywords(BaseKeyword):
 
         Returns:
             bool: True if exists, False otherwise.
+
+        Raises:
+            KeywordException: If no SFTP client can be obtained (e.g. the host is unreachable). This is
+                deliberately not reported as "file does not exist".
         """
+        # Obtain the client outside the try block: only a failing stat() means the file is missing.
+        # A connection failure must surface as its own error, not as a false "does not exist".
+        sftp_client = self.ssh_connection.get_sftp_client()
         try:
-            sftp_client = self.ssh_connection.get_sftp_client()
             sftp_client.stat(file_name)
-            get_logger().log_info(f"{file_name} exists.")
-            return True
         except IOError:
             get_logger().log_info(f"{file_name} does not exist.")
             return False
+
+        get_logger().log_info(f"{file_name} exists.")
+        return True
 
     def is_valid_gzip(self, file_path: str) -> bool:
         """
