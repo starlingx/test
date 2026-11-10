@@ -15,6 +15,7 @@ from keywords.cloud_platform.dcmanager.subcloud_picker_keywords import SubcloudP
 from keywords.cloud_platform.health.health_keywords import HealthKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.cloud_platform.sync_files.sync_deployment_assets import SyncDeploymentAssets
+from keywords.cloud_platform.system.host.system_host_swact_keywords import SystemHostSwactKeywords
 from keywords.cloud_platform.version_info.cloud_platform_version_manager import CloudPlatformVersionManager
 
 
@@ -347,6 +348,372 @@ def test_deploy_single_duplex_subcloud_n_minus_2_release(request: FixtureRequest
     Teardown:
         - Restore N-release configs to default path
     """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+
+    get_logger().log_setup_step("Sync deployment assets")
+    SyncDeploymentAssets(ssh_connection).sync_assets()
+
+    n_minus_2_release = str(CloudPlatformVersionManager.get_second_last_major_release())
+    n_release_version = str(CloudPlatformVersionManager.get_sw_version())
+    subcloud_name = get_undeployed_subcloud_name()
+
+    get_logger().log_setup_step(f"Sync N-2 ({n_minus_2_release}) configs for '{subcloud_name}'")
+    config_sync_kw = SubcloudDeployConfigSyncKeywords(ssh_connection)
+    configs_swapped = config_sync_kw.sync_subcloud_configs_for_release(subcloud_name, n_minus_2_release, n_release_version)
+
+    if configs_swapped:
+        request.addfinalizer(
+            lambda: (
+                get_logger().log_teardown_step(f"Restore N-release configs for '{subcloud_name}'"),
+                config_sync_kw.restore_n_release_configs(subcloud_name, n_release_version),
+            )
+        )
+
+    deploy_subcloud(ssh_connection, subcloud_name, release_id=n_minus_2_release)
+    manage_subcloud(ssh_connection, subcloud_name)
+
+    get_logger().log_test_case_step(f"Validate subcloud '{subcloud_name}' health")
+    subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
+    HealthKeywords(subcloud_ssh).validate_healty_cluster()
+
+
+# --- Deploy From System Controller 1 - Simplex ---
+
+
+@mark.p0
+@mark.subcloud_lab_is_simplex
+@mark.lab_has_standby_controller
+def test_deploy_single_simplex_subcloud_n_release_from_system_controller_1(request: FixtureRequest):
+    """Deploy a single simplex subcloud on N release with controller-1 as the active system controller.
+
+    Preconditions:
+        - System controller is a duplex with an available standby controller
+        - At least one simplex subcloud is defined in the lab config
+
+    Setup:
+        - Swact the system controller so controller-1 is active
+        - Sync deployment assets to standby controller
+        - Find or free an undeployed subcloud
+
+    Test Steps:
+        1. Deploy subcloud using dcmanager subcloud add
+        2. Wait for subcloud to come online
+        3. Manage subcloud
+        4. Validate subcloud sync is in-sync
+        5. Validate subcloud cluster health
+
+    Teardown:
+        - Swact the system controller back to controller-0
+    """
+    central_ssh = LabConnectionKeywords().get_active_controller_ssh()
+    request.addfinalizer(
+        lambda: (
+            get_logger().log_teardown_step("Swact the system controller back to controller-0"),
+            SystemHostSwactKeywords(LabConnectionKeywords().get_active_controller_ssh()).ensure_controller_is_active("controller-0"),
+        )
+    )
+    get_logger().log_setup_step("Make controller-1 the active system controller")
+    SystemHostSwactKeywords(central_ssh).ensure_controller_is_active("controller-1")
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+
+    get_logger().log_setup_step("Sync deployment assets")
+    SyncDeploymentAssets(ssh_connection).sync_assets()
+
+    subcloud_name = get_undeployed_subcloud_name()
+
+    deploy_subcloud(ssh_connection, subcloud_name)
+    manage_subcloud(ssh_connection, subcloud_name)
+
+    get_logger().log_test_case_step(f"Validate subcloud '{subcloud_name}' sync status is in-sync")
+    DcManagerSubcloudListKeywords(ssh_connection).validate_subcloud_sync_status(subcloud_name, "in-sync")
+
+    get_logger().log_test_case_step(f"Validate subcloud '{subcloud_name}' health")
+    subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
+    HealthKeywords(subcloud_ssh).validate_healty_cluster()
+
+
+@mark.p0
+@mark.subcloud_lab_is_simplex
+@mark.lab_has_standby_controller
+def test_deploy_single_simplex_subcloud_n_minus_1_release_from_system_controller_1(request: FixtureRequest):
+    """Deploy a single simplex subcloud on N-1 release with controller-1 as the active system controller.
+
+    Preconditions:
+        - System controller is a duplex with an available standby controller
+        - At least one simplex subcloud is defined in the lab config
+
+    Setup:
+        - Swact the system controller so controller-1 is active
+        - Sync deployment assets to standby controller
+        - Find or free an undeployed subcloud
+        - Sync N-1 release configs into default path (if release folder exists)
+
+    Test Steps:
+        1. Deploy subcloud using dcmanager subcloud add with --release N-1
+        2. Wait for subcloud to come online
+        3. Manage subcloud
+        4. Validate subcloud cluster health
+
+    Teardown:
+        - Restore N-release configs to default path
+        - Swact the system controller back to controller-0
+    """
+    central_ssh = LabConnectionKeywords().get_active_controller_ssh()
+    request.addfinalizer(
+        lambda: (
+            get_logger().log_teardown_step("Swact the system controller back to controller-0"),
+            SystemHostSwactKeywords(LabConnectionKeywords().get_active_controller_ssh()).ensure_controller_is_active("controller-0"),
+        )
+    )
+    get_logger().log_setup_step("Make controller-1 the active system controller")
+    SystemHostSwactKeywords(central_ssh).ensure_controller_is_active("controller-1")
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+
+    get_logger().log_setup_step("Sync deployment assets")
+    SyncDeploymentAssets(ssh_connection).sync_assets()
+
+    n_minus_1_release = str(CloudPlatformVersionManager.get_last_major_release())
+    n_release_version = str(CloudPlatformVersionManager.get_sw_version())
+    subcloud_name = get_undeployed_subcloud_name()
+
+    get_logger().log_setup_step(f"Sync N-1 ({n_minus_1_release}) configs for '{subcloud_name}'")
+    config_sync_kw = SubcloudDeployConfigSyncKeywords(ssh_connection)
+    configs_swapped = config_sync_kw.sync_subcloud_configs_for_release(subcloud_name, n_minus_1_release, n_release_version)
+
+    if configs_swapped:
+        request.addfinalizer(
+            lambda: (
+                get_logger().log_teardown_step(f"Restore N-release configs for '{subcloud_name}'"),
+                config_sync_kw.restore_n_release_configs(subcloud_name, n_release_version),
+            )
+        )
+
+    deploy_subcloud(ssh_connection, subcloud_name, release_id=n_minus_1_release)
+    manage_subcloud(ssh_connection, subcloud_name)
+
+    get_logger().log_test_case_step(f"Validate subcloud '{subcloud_name}' health")
+    subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
+    HealthKeywords(subcloud_ssh).validate_healty_cluster()
+
+
+@mark.p0
+@mark.subcloud_lab_is_simplex
+@mark.lab_has_standby_controller
+def test_deploy_single_simplex_subcloud_n_minus_2_release_from_system_controller_1(request: FixtureRequest):
+    """Deploy a single simplex subcloud on N-2 release with controller-1 as the active system controller.
+
+    Preconditions:
+        - System controller is a duplex with an available standby controller
+        - At least one simplex subcloud is defined in the lab config
+
+    Setup:
+        - Swact the system controller so controller-1 is active
+        - Sync deployment assets to standby controller
+        - Find or free an undeployed subcloud
+        - Sync N-2 release configs into default path (if release folder exists)
+
+    Test Steps:
+        1. Deploy subcloud using dcmanager subcloud add with --release N-2
+        2. Wait for subcloud to come online
+        3. Manage subcloud
+        4. Validate subcloud cluster health
+
+    Teardown:
+        - Restore N-release configs to default path
+        - Swact the system controller back to controller-0
+    """
+    central_ssh = LabConnectionKeywords().get_active_controller_ssh()
+    request.addfinalizer(
+        lambda: (
+            get_logger().log_teardown_step("Swact the system controller back to controller-0"),
+            SystemHostSwactKeywords(LabConnectionKeywords().get_active_controller_ssh()).ensure_controller_is_active("controller-0"),
+        )
+    )
+    get_logger().log_setup_step("Make controller-1 the active system controller")
+    SystemHostSwactKeywords(central_ssh).ensure_controller_is_active("controller-1")
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+
+    get_logger().log_setup_step("Sync deployment assets")
+    SyncDeploymentAssets(ssh_connection).sync_assets()
+
+    n_minus_2_release = str(CloudPlatformVersionManager.get_second_last_major_release())
+    n_release_version = str(CloudPlatformVersionManager.get_sw_version())
+    subcloud_name = get_undeployed_subcloud_name()
+
+    get_logger().log_setup_step(f"Sync N-2 ({n_minus_2_release}) configs for '{subcloud_name}'")
+    config_sync_kw = SubcloudDeployConfigSyncKeywords(ssh_connection)
+    configs_swapped = config_sync_kw.sync_subcloud_configs_for_release(subcloud_name, n_minus_2_release, n_release_version)
+
+    if configs_swapped:
+        request.addfinalizer(
+            lambda: (
+                get_logger().log_teardown_step(f"Restore N-release configs for '{subcloud_name}'"),
+                config_sync_kw.restore_n_release_configs(subcloud_name, n_release_version),
+            )
+        )
+
+    deploy_subcloud(ssh_connection, subcloud_name, release_id=n_minus_2_release)
+    manage_subcloud(ssh_connection, subcloud_name)
+
+    get_logger().log_test_case_step(f"Validate subcloud '{subcloud_name}' health")
+    subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
+    HealthKeywords(subcloud_ssh).validate_healty_cluster()
+
+
+# --- Deploy From System Controller 1 - Duplex ---
+
+
+@mark.p0
+@mark.subcloud_lab_is_duplex
+@mark.lab_has_standby_controller
+def test_deploy_single_duplex_subcloud_n_release_from_system_controller_1(request: FixtureRequest):
+    """Deploy a single duplex subcloud on N release with controller-1 as the active system controller.
+
+    Preconditions:
+        - System controller is a duplex with an available standby controller
+        - At least one duplex subcloud is defined in the lab config
+
+    Setup:
+        - Swact the system controller so controller-1 is active
+        - Sync deployment assets to standby controller
+        - Find or free an undeployed subcloud
+
+    Test Steps:
+        1. Deploy subcloud using dcmanager subcloud add
+        2. Wait for subcloud to come online
+        3. Manage subcloud
+        4. Validate subcloud sync is in-sync
+        5. Validate subcloud cluster health
+
+    Teardown:
+        - Swact the system controller back to controller-0
+    """
+    central_ssh = LabConnectionKeywords().get_active_controller_ssh()
+    request.addfinalizer(
+        lambda: (
+            get_logger().log_teardown_step("Swact the system controller back to controller-0"),
+            SystemHostSwactKeywords(LabConnectionKeywords().get_active_controller_ssh()).ensure_controller_is_active("controller-0"),
+        )
+    )
+    get_logger().log_setup_step("Make controller-1 the active system controller")
+    SystemHostSwactKeywords(central_ssh).ensure_controller_is_active("controller-1")
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+
+    get_logger().log_setup_step("Sync deployment assets")
+    SyncDeploymentAssets(ssh_connection).sync_assets()
+
+    subcloud_name = get_undeployed_subcloud_name()
+
+    deploy_subcloud(ssh_connection, subcloud_name)
+    manage_subcloud(ssh_connection, subcloud_name)
+
+    get_logger().log_test_case_step(f"Validate subcloud '{subcloud_name}' sync status is in-sync")
+    DcManagerSubcloudListKeywords(ssh_connection).validate_subcloud_sync_status(subcloud_name, "in-sync")
+
+    get_logger().log_test_case_step(f"Validate subcloud '{subcloud_name}' health")
+    subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
+    HealthKeywords(subcloud_ssh).validate_healty_cluster()
+
+
+@mark.p0
+@mark.subcloud_lab_is_duplex
+@mark.lab_has_standby_controller
+def test_deploy_single_duplex_subcloud_n_minus_1_release_from_system_controller_1(request: FixtureRequest):
+    """Deploy a single duplex subcloud on N-1 release with controller-1 as the active system controller.
+
+    Preconditions:
+        - System controller is a duplex with an available standby controller
+        - At least one duplex subcloud is defined in the lab config
+
+    Setup:
+        - Swact the system controller so controller-1 is active
+        - Sync deployment assets to standby controller
+        - Find or free an undeployed subcloud
+        - Sync N-1 release configs into default path (if release folder exists)
+
+    Test Steps:
+        1. Deploy subcloud using dcmanager subcloud add with --release N-1
+        2. Wait for subcloud to come online
+        3. Manage subcloud
+        4. Validate subcloud cluster health
+
+    Teardown:
+        - Restore N-release configs to default path
+        - Swact the system controller back to controller-0
+    """
+    central_ssh = LabConnectionKeywords().get_active_controller_ssh()
+    request.addfinalizer(
+        lambda: (
+            get_logger().log_teardown_step("Swact the system controller back to controller-0"),
+            SystemHostSwactKeywords(LabConnectionKeywords().get_active_controller_ssh()).ensure_controller_is_active("controller-0"),
+        )
+    )
+    get_logger().log_setup_step("Make controller-1 the active system controller")
+    SystemHostSwactKeywords(central_ssh).ensure_controller_is_active("controller-1")
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+
+    get_logger().log_setup_step("Sync deployment assets")
+    SyncDeploymentAssets(ssh_connection).sync_assets()
+
+    n_minus_1_release = str(CloudPlatformVersionManager.get_last_major_release())
+    n_release_version = str(CloudPlatformVersionManager.get_sw_version())
+    subcloud_name = get_undeployed_subcloud_name()
+
+    get_logger().log_setup_step(f"Sync N-1 ({n_minus_1_release}) configs for '{subcloud_name}'")
+    config_sync_kw = SubcloudDeployConfigSyncKeywords(ssh_connection)
+    configs_swapped = config_sync_kw.sync_subcloud_configs_for_release(subcloud_name, n_minus_1_release, n_release_version)
+
+    if configs_swapped:
+        request.addfinalizer(
+            lambda: (
+                get_logger().log_teardown_step(f"Restore N-release configs for '{subcloud_name}'"),
+                config_sync_kw.restore_n_release_configs(subcloud_name, n_release_version),
+            )
+        )
+
+    deploy_subcloud(ssh_connection, subcloud_name, release_id=n_minus_1_release)
+    manage_subcloud(ssh_connection, subcloud_name)
+
+    get_logger().log_test_case_step(f"Validate subcloud '{subcloud_name}' health")
+    subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
+    HealthKeywords(subcloud_ssh).validate_healty_cluster()
+
+
+@mark.p0
+@mark.subcloud_lab_is_duplex
+@mark.lab_has_standby_controller
+def test_deploy_single_duplex_subcloud_n_minus_2_release_from_system_controller_1(request: FixtureRequest):
+    """Deploy a single duplex subcloud on N-2 release with controller-1 as the active system controller.
+
+    Preconditions:
+        - System controller is a duplex with an available standby controller
+        - At least one duplex subcloud is defined in the lab config
+
+    Setup:
+        - Swact the system controller so controller-1 is active
+        - Sync deployment assets to standby controller
+        - Find or free an undeployed subcloud
+        - Sync N-2 release configs into default path (if release folder exists)
+
+    Test Steps:
+        1. Deploy subcloud using dcmanager subcloud add with --release N-2
+        2. Wait for subcloud to come online
+        3. Manage subcloud
+        4. Validate subcloud cluster health
+
+    Teardown:
+        - Restore N-release configs to default path
+        - Swact the system controller back to controller-0
+    """
+    central_ssh = LabConnectionKeywords().get_active_controller_ssh()
+    request.addfinalizer(
+        lambda: (
+            get_logger().log_teardown_step("Swact the system controller back to controller-0"),
+            SystemHostSwactKeywords(LabConnectionKeywords().get_active_controller_ssh()).ensure_controller_is_active("controller-0"),
+        )
+    )
+    get_logger().log_setup_step("Make controller-1 the active system controller")
+    SystemHostSwactKeywords(central_ssh).ensure_controller_is_active("controller-1")
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
 
     get_logger().log_setup_step("Sync deployment assets")
