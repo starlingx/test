@@ -17,3 +17,15 @@ class String:
             bool: True if 'some_string' is empty, False otherwise.
         """
         return not some_string or some_string.strip() == ""
+
+    @staticmethod
+    def normalize_command_output(output: str | list[str]) -> str:
+        """Normalize SSH lines without adding blank lines or flattening content.
+
+        Args:
+            output (str | list[str]): SSH command output.
+
+        Returns:
+            str: Text with one newline separating returned lines.
+        """
+        return "\n".join(line.rstrip("\n") for line in output) if isinstance(output, list) else output

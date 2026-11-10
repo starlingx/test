@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: Pod
+metadata: $metadata
+spec:
+  nodeName: $node
+  restartPolicy: Never
+  activeDeadlineSeconds: $lifetime
+  automountServiceAccountToken: false
+  containers:
+    - name: $role
+      image: $image
+      command: $command
+      resources:
+        requests: {cpu: 10m, memory: 32Mi}
+        limits: {cpu: 100m, memory: 128Mi}
+      volumeMounts:
+        - name: script
+          mountPath: /probe
+          readOnly: true
+  volumes:
+    - name: script
+      configMap:
+        name: $script_name

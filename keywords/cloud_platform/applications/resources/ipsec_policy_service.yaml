@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata: $metadata
+spec:
+  ipFamilyPolicy: SingleStack
+  ipFamilies: [$family]
+  selector:
+    app: $server_name
+  ports:
+    - name: $protocol
+      protocol: $transport
+      port: $port
+      targetPort: $port

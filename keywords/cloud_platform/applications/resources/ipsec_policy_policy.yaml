@@ -1,0 +1,9 @@
+apiVersion: starlingx.io/v1
+kind: IPsecPolicy
+metadata: $metadata
+spec:
+  policies:
+    - name: $name
+      servicename: $service
+      servicens: $namespace
+      serviceports: $ports
