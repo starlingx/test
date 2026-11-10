@@ -10,7 +10,7 @@ For standalone systems, deploys only on the active controller.
 Prerequisites:
 - Lab is accessible
 - VDU server config (config/system_test/files/default_vdu.json5) is populated
-- The remote server has the test-data folder with install_all.sh
+- The remote server has the test-data folder with the VDU install scripts
 
 Run with:
     pytest testcases/cloud_platform/system_test/test_setup_vdu.py \
@@ -35,7 +35,7 @@ def test_setup_vdu() -> None:
     """
     lab_config = ConfigurationManager.get_lab_config()
     system_controller_ip = lab_config.get_system_controller_ip()
-    
+
     if system_controller_ip:
         # DC system — deploy on system controller first (always allow failures)
         ssh_user = lab_config.get_admin_credentials().get_user_name()
@@ -53,7 +53,7 @@ def test_setup_vdu() -> None:
             ssh_port=lab_config.get_ssh_port(),
             jump_host=jump_host_config,
         )
-        SetupVduKeywords(sc_ssh).deploy_vdu(fail_ok_override=True, stx_apps_only=True)
+        SetupVduKeywords(sc_ssh).deploy_vdu(fail_ok_override=True, mode_override="stx_apps")
 
     get_logger().log_test_case_step("Deploy VDU on host")
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
