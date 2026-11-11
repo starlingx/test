@@ -4,21 +4,37 @@ from config.configuration_manager import ConfigurationManager
 from config.lab.objects.lab_type_enum import LabTypeEnum
 from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
-from framework.validation.validation import validate_equals, validate_not_equals
+from framework.validation.validation import validate_equals, validate_equals_with_retry, validate_not_equals, validate_str_contains
 from keywords.cloud_platform.dcmanager.dcmanager_strategy_cleanup_keywords import DcmanagerStrategyCleanupKeywords
-from keywords.cloud_platform.dcmanager.dcmanager_sw_deploy_strategy_keywords import DcmanagerSwDeployStrategy
 from keywords.cloud_platform.dcmanager.dcmanager_strategy_step_keywords import DcmanagerStrategyStepKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_list_keywords import DcManagerSubcloudListKeywords
-from keywords.cloud_platform.dcmanager.dcmanager_subcloud_state_watcher_keywords import (
-    STRATEGY_STEP_IN_PROGRESS_STATES,
-    DcManagerSubcloudStateWatcherKeywords,
-)
+from keywords.cloud_platform.dcmanager.dcmanager_subcloud_show_keywords import DcManagerSubcloudShowKeywords
+from keywords.cloud_platform.dcmanager.dcmanager_subcloud_state_watcher_keywords import STRATEGY_STEP_IN_PROGRESS_STATES, DcManagerSubcloudStateWatcherKeywords
+from keywords.cloud_platform.dcmanager.dcmanager_sw_deploy_strategy_keywords import DcmanagerSwDeployStrategy
 from keywords.cloud_platform.dcmanager.objects.dcmanger_subcloud_list_availability_enum import DcManagerSubcloudListAvailabilityEnum
 from keywords.cloud_platform.dcmanager.subcloud_picker_keywords import SubcloudPickerKeywords
+from keywords.cloud_platform.fault_management.alarms.alarm_list_keywords import AlarmListKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
+from keywords.cloud_platform.upgrade.software_deploy_show_keywords import SoftwareDeployShowKeywords
 from keywords.cloud_platform.upgrade.software_list_keywords import SoftwareListKeywords
+from keywords.cloud_platform.upgrade.usm_keywords import USMKeywords
 from keywords.cloud_platform.version_info.cloud_platform_version_manager import CloudPlatformVersionManagerClass
 from keywords.files.file_keywords import FileKeywords
+
+# --- Constants ---
+
+# Alarm raised while a software release deploy is in progress. After a rollback
+# deletes the system-deploy entity this alarm has to clear on its own.
+DEPLOY_IN_PROGRESS_ALARM_ID = "900.023"
+
+# Substring printed by 'software system-deploy show' when no system-deploy entity
+# exists. Matched case-insensitively.
+NO_SYSTEM_DEPLOY_MARKER = "no system deploy in progress"
+
+# Time (seconds) allowed for alarm 900.023 to clear after the rollback deletes the
+# system-deploy entity. The fix clears it explicitly on delete, but the alarm is
+# also polled by the patch-alarm daemon, so allow for one poll cycle.
+ALARM_CLEAR_TIMEOUT = 180
 
 
 # --- Helper Functions ---
@@ -129,25 +145,71 @@ def run_sw_deploy_strategy(
     strategy_keywords.dcmanager_sw_deploy_strategy_apply(target=subcloud_name)
 
     # Verify strategy step completed
-    strategy_status = (
-        DcmanagerStrategyStepKeywords(system_controller_ssh)
-        .get_dcmanager_strategy_step_show(subcloud_name)
-        .get_dcmanager_strategy_step_show()
-        .get_state()
-    )
+    strategy_status = DcmanagerStrategyStepKeywords(system_controller_ssh).get_dcmanager_strategy_step_show(subcloud_name).get_dcmanager_strategy_step_show().get_state()
     validate_equals(strategy_status, "complete", f"Strategy step completed for subcloud {subcloud_name} [{mode_desc}]")
 
     # Verify subcloud deploy status is complete
-    subcloud = (
-        DcManagerSubcloudListKeywords(system_controller_ssh)
-        .get_dcmanager_subcloud_list()
-        .get_subcloud_by_name(subcloud_name)
-    )
+    subcloud = DcManagerSubcloudListKeywords(system_controller_ssh).get_dcmanager_subcloud_list().get_subcloud_by_name(subcloud_name)
     validate_equals(subcloud.get_deploy_status(), "complete", f"Subcloud {subcloud_name} deploy status should be complete [{mode_desc}]")
 
     # Delete strategy
     get_logger().log_info("Deleting sw-deploy-strategy")
     strategy_keywords.dcmanager_sw_deploy_strategy_delete()
+
+
+def run_rollback_and_validate_post_conditions(system_controller_ssh: SSHConnection, subcloud_name: str) -> None:
+    """Roll back a subcloud and validate the state the rollback has to leave behind.
+
+    Reads the deploy's originating release before rolling back, then verifies the
+    subcloud returns to it, that alarm 900.023 clears, and that the system-deploy
+    entity is gone. The entity is only created by a combined Platform & Kubernetes
+    deploy, so it is verified only when the subcloud has one to begin with.
+
+    Args:
+        system_controller_ssh (SSHConnection): SSH connection to the system controller.
+        subcloud_name (str): Name of the subcloud to roll back.
+    """
+    subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
+    usm_keywords = USMKeywords(subcloud_ssh)
+
+    deploy = SoftwareDeployShowKeywords(subcloud_ssh).get_software_deploy_show().get_software_deploy_show()
+    validate_not_equals(deploy, None, f"Subcloud {subcloud_name} has a deploy to roll back")
+    from_release = deploy.get_from_release()
+    had_system_deploy = NO_SYSTEM_DEPLOY_MARKER not in usm_keywords.system_deploy_show().lower()
+    get_logger().log_info(f"Subcloud {subcloud_name} before rollback: from_release={from_release}, system-deploy present={had_system_deploy}")
+
+    run_sw_deploy_strategy(system_controller_ssh, subcloud_name, rollback=True, with_delete=False)
+
+    get_logger().log_test_case_step(f"Validate subcloud {subcloud_name} is back on {from_release}")
+    version_after = DcManagerSubcloudShowKeywords(system_controller_ssh).get_dcmanager_subcloud_show(subcloud_name).get_dcmanager_subcloud_show_object().get_software_version()
+    validate_str_contains(from_release, version_after, f"Subcloud {subcloud_name} rolled back to {from_release}")
+
+    if had_system_deploy:
+        get_logger().log_test_case_step(f"Validate the system-deploy entity is gone on {subcloud_name}")
+        validate_equals(
+            NO_SYSTEM_DEPLOY_MARKER in usm_keywords.system_deploy_show().lower(),
+            True,
+            f"Subcloud {subcloud_name} reports no system-deploy entity after the rollback",
+        )
+
+    get_logger().log_test_case_step(f"Validate alarm {DEPLOY_IN_PROGRESS_ALARM_ID} cleared on subcloud {subcloud_name}")
+    alarm_keywords = AlarmListKeywords(subcloud_ssh)
+
+    def is_deploy_alarm_cleared() -> bool:
+        """Report whether alarm 900.023 is absent from the subcloud alarm list.
+
+        Returns:
+            bool: True when no alarm with the deploy-in-progress ID is raised.
+        """
+        return DEPLOY_IN_PROGRESS_ALARM_ID not in [alarm.get_alarm_id() for alarm in alarm_keywords.alarm_list()]
+
+    validate_equals_with_retry(
+        function_to_execute=is_deploy_alarm_cleared,
+        expected_value=True,
+        validation_description=f"Alarm {DEPLOY_IN_PROGRESS_ALARM_ID} cleared on subcloud {subcloud_name} after the rollback",
+        timeout=ALARM_CLEAR_TIMEOUT,
+        polling_sleep_time=15,
+    )
 
 
 # --- SW Deploy to N Release ---
@@ -452,7 +514,10 @@ def test_sw_deploy_strategy_rollback_single_simplex_subcloud(request):
         4. Validate strategy step completes successfully
         5. Validate subcloud deploy status returns to complete
         6. Validate K8s version on subcloud is rolled back
-        7. Delete strategy
+        7. Validate the subcloud is back on the release it was deployed from
+        8. Validate the system-deploy entity is gone, when the subcloud had one
+        9. Validate alarm 900.023 cleared on the subcloud
+        10. Delete strategy
 
     Teardown:
         - Delete strategy if still present
@@ -468,7 +533,7 @@ def test_sw_deploy_strategy_rollback_single_simplex_subcloud(request):
 
     get_logger().log_info(f"Selected simplex subcloud for rollback: {subcloud_name}")
 
-    run_sw_deploy_strategy(system_controller_ssh, subcloud_name, rollback=True, with_delete=False)
+    run_rollback_and_validate_post_conditions(system_controller_ssh, subcloud_name)
 
 
 @mark.p1
@@ -494,7 +559,10 @@ def test_sw_deploy_strategy_rollback_single_duplex_subcloud(request):
         4. Validate strategy step completes successfully
         5. Validate subcloud deploy status returns to complete
         6. Validate K8s version on subcloud is rolled back
-        7. Delete strategy
+        7. Validate the subcloud is back on the release it was deployed from
+        8. Validate the system-deploy entity is gone, when the subcloud had one
+        9. Validate alarm 900.023 cleared on the subcloud
+        10. Delete strategy
 
     Teardown:
         - Delete strategy if still present
@@ -510,7 +578,7 @@ def test_sw_deploy_strategy_rollback_single_duplex_subcloud(request):
 
     get_logger().log_info(f"Selected duplex subcloud for rollback: {subcloud_name}")
 
-    run_sw_deploy_strategy(system_controller_ssh, subcloud_name, rollback=True, with_delete=False)
+    run_rollback_and_validate_post_conditions(system_controller_ssh, subcloud_name)
 
 
 # --- Test Escapes ---
@@ -651,11 +719,7 @@ def test_sw_deploy_strategy_cleanup_single_subcloud(request):
     )
 
     # Validate the subcloud deploy status returned to complete.
-    subcloud = (
-        DcManagerSubcloudListKeywords(system_controller_ssh)
-        .get_dcmanager_subcloud_list()
-        .get_subcloud_by_name(subcloud_name)
-    )
+    subcloud = DcManagerSubcloudListKeywords(system_controller_ssh).get_dcmanager_subcloud_list().get_subcloud_by_name(subcloud_name)
     validate_equals(subcloud.get_deploy_status(), "complete", f"Subcloud {subcloud_name} deploy status should be complete after --cleanup")
 
     # Delete the cleanup strategy.

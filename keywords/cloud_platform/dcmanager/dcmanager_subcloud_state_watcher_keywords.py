@@ -359,6 +359,81 @@ class DcManagerSubcloudStateWatcherKeywords(BaseKeyword):
 
         get_logger().log_info(f"All {len(completed)} subcloud(s) strategy steps reached '{complete_state}'")
 
+    def watch_strategy_steps_for_window(
+        self,
+        subcloud_names: List[str],
+        window: int,
+        expect_failure: bool = False,
+        failed_states: Optional[List[str]] = None,
+        polling_interval: int = 30,
+    ) -> dict:
+        """Watch dcmanager strategy-step progress for a window and assert on failure.
+
+        Bounded counterpart of ``watch_strategy_steps``, for the cases where the
+        outcome under test is whether a step fails early rather than whether it
+        eventually completes. Waiting for the complete state is not usable there:
+        a step reaches 'applying' long before the work being judged has run, so a
+        single state read would pass even when the step is about to fail, while
+        waiting for 'complete' would mean running the whole operation.
+
+        Args:
+            subcloud_names (List[str]): Names of subclouds (strategy-step "cloud"
+                entries) to watch.
+            window (int): How long (seconds) to watch before concluding.
+            expect_failure (bool): When False, a failed state raises and surviving
+                the window is the success condition. When True, a failed state
+                ends the watch successfully and surviving the window raises.
+            failed_states (Optional[List[str]]): States indicating failure. If
+                None, any state containing "failed" or "aborted" is treated as a
+                failure.
+            polling_interval (int): Seconds between polls. Defaults to 30.
+
+        Returns:
+            dict: Mapping of subcloud name to its last observed step state.
+                Subclouds without a step entry yet are absent.
+
+        Raises:
+            ValueError: If subcloud_names is empty.
+            Exception: If a step fails while expect_failure is False, or if no
+                step fails within the window while expect_failure is True.
+        """
+        if not subcloud_names:
+            raise ValueError("subcloud_names must not be empty.")
+
+        watched = set(subcloud_names)
+        end_time = time.time() + window
+        last_states = {}
+
+        expectation = "a failure" if expect_failure else "no failure"
+        get_logger().log_info(f"Watching strategy steps for {len(subcloud_names)} subcloud(s) for {window}s, expecting {expectation}")
+
+        while True:
+            step_states = self._get_strategy_step_states()
+            last_states = {name: state for name, state in step_states.items() if name in watched}
+
+            for sc_name, current_state in last_states.items():
+                if self._is_failed_state(current_state, failed_states):
+                    if expect_failure:
+                        get_logger().log_info(f"Subcloud '{sc_name}' strategy step failed as expected: '{current_state}'")
+                        return last_states
+                    details = self._strategy_step_kw.get_dcmanager_strategy_step_show(sc_name).get_dcmanager_strategy_step_show().get_details() or ""
+                    msg = f"Subcloud '{sc_name}' strategy step entered failed state '{current_state}': {details}"
+                    get_logger().log_error(msg)
+                    raise Exception(msg)
+
+            if time.time() >= end_time:
+                break
+
+            time.sleep(polling_interval)
+
+        if expect_failure:
+            msg = f"No strategy step failed within {window}s. Last states: {last_states}"
+            get_logger().log_error(msg)
+            raise Exception(msg)
+
+        get_logger().log_info(f"No strategy step failed within {window}s. Last states: {last_states}")
+        return last_states
+
     def _get_strategy_step_states(self) -> dict:
         """Poll ``dcmanager strategy-step list`` and map each subcloud to its step state.
 
@@ -374,7 +449,7 @@ class DcManagerSubcloudStateWatcherKeywords(BaseKeyword):
         """Get the value of the specified field from a subcloud list object.
 
         Args:
-            sc_obj: DcManagerSubcloudListObject instance.
+            sc_obj (object): DcManagerSubcloudListObject instance.
             field_to_watch (str): Field name to retrieve.
 
         Returns:
@@ -420,7 +495,7 @@ class DcManagerSubcloudStateWatcherKeywords(BaseKeyword):
         """Log an aggregated status summary of all watched subclouds.
 
         Args:
-            sc_list_output: DcManagerSubcloudListOutput instance.
+            sc_list_output (object): DcManagerSubcloudListOutput instance.
             pending (set): Set of subcloud names still being watched.
             field_to_watch (str): Field being monitored.
             completed_count (int): Number of subclouds that have already completed.

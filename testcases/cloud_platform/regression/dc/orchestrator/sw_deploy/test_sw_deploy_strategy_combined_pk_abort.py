@@ -18,12 +18,19 @@ Test cases:
     - test_combined_pk_dcmanager_abort_queued_subclouds: abort the dcmanager
       strategy mid-apply with multiple subclouds queued; verify the executing
       subcloud continues and queued subclouds are cancelled.
+    - test_combined_pk_retry_strategy_after_kube_upgrade_abort: after a strategy
+      is aborted during the kube-upgrade steps, delete it and re-create it;
+      verify the retry is accepted and gets past the VIM strategy build.
 
 Notes:
     - Fault injection blocks the Kubernetes API server port (16443) via ip6tables
       on the subcloud during the control-plane upgrade. This is reliable and
       reproducible and does NOT require --snapshot (the ETCD snapshot is taken
       automatically by VIM; the abort happens before platform deploy-host).
+    - The retry-after-abort scenario depends on the fix that cleans up the
+      leftover system-deploy while building the new strategy. Without it, the
+      aborted run leaves an active system-deploy with no active kube-upgrade, so
+      alarm 900.023 is not ignored by the deploy precheck and the build fails.
 """
 
 import time
@@ -38,6 +45,7 @@ from framework.ssh.ssh_connection import SSHConnection
 from framework.validation.validation import validate_equals
 from keywords.cloud_platform.dcmanager.dcmanager_strategy_cleanup_keywords import DcmanagerStrategyCleanupKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_strategy_step_keywords import DcmanagerStrategyStepKeywords
+from keywords.cloud_platform.dcmanager.dcmanager_subcloud_state_watcher_keywords import DcManagerSubcloudStateWatcherKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_sw_deploy_strategy_keywords import DcmanagerSwDeployStrategy
 from keywords.cloud_platform.dcmanager.objects.dcmanger_subcloud_list_availability_enum import DcManagerSubcloudListAvailabilityEnum
 from keywords.cloud_platform.dcmanager.subcloud_picker_keywords import SubcloudPickerKeywords
@@ -65,6 +73,21 @@ STRATEGY_STEP_START_TIMEOUT = 900
 # deploy and reach the Kubernetes control-plane upgrade phase. Prestage alone can
 # take a long time, so this is deliberately generous.
 CONTROL_PLANE_PHASE_TIMEOUT = 5400
+
+# Time (seconds) allowed for the subcloud VIM to finish the auto-rollback and leave
+# the kube-upgrade in the aborted state.
+KUBE_UPGRADE_ABORT_TIMEOUT = 1800
+
+# Time (seconds) allowed for dcmanager to observe the aborted subcloud and mark the
+# strategy-step as failed.
+STRATEGY_STEP_FAILURE_TIMEOUT = 600
+
+# Time (seconds) to watch the re-created strategy for a build rejection. The build
+# runs on the subcloud early in the apply, before prestage, and a rejection shows up
+# within seconds of it starting, so this only has to cover dcmanager picking the step
+# up plus the remote build. Matches the window the negative tests use to observe a
+# build failure.
+RETRY_BUILD_WATCH_WINDOW = 900
 
 
 # --- Helper Functions ---
@@ -214,6 +237,75 @@ def wait_for_control_plane_phase_or_step_failure(
             raise TimeoutError(f"Timed out waiting for {subcloud_name}/{hostname} to reach 'upgrading-control-plane' (last host status: {host_status}, step state: {step_state})")
 
         time.sleep(polling_sleep_time)
+
+
+def drive_subcloud_to_kube_upgrade_abort(
+    system_controller_ssh: SSHConnection,
+    subcloud_ssh: SSHConnection,
+    subcloud_name: str,
+    hostname: str,
+    release: str,
+    kube_version: str,
+    fault_injection: IptablesFaultInjectionKeywords,
+) -> None:
+    """Drive a subcloud to a kube-upgrade left in the aborted state.
+
+    Runs a combined P&K strategy up to the Kubernetes control-plane upgrade, then
+    blocks the API server port so the subcloud VIM auto-aborts. On return the
+    subcloud has a kube-upgrade in 'upgrade-aborted' state and a leftover
+    system-deploy entity, which is the starting condition for the recovery paths
+    exercised by this module.
+
+    The fault-injection rule is removed before returning, so the subcloud is
+    reachable again for whatever the caller does next. Callers should still
+    register an idempotent unblock finalizer to cover a mid-way failure.
+
+    Args:
+        system_controller_ssh (SSHConnection): SSH to the system controller.
+        subcloud_ssh (SSHConnection): SSH to the target subcloud.
+        subcloud_name (str): Target subcloud name.
+        hostname (str): Subcloud host to watch (controller-0 for AIO-SX).
+        release (str): Target release id.
+        kube_version (str): Target Kubernetes version.
+        fault_injection (IptablesFaultInjectionKeywords): Fault injection keyword
+            bound to the subcloud connection.
+    """
+    strategy_keywords = DcmanagerSwDeployStrategy(system_controller_ssh)
+    create_combined_pk_strategy_apply_no_wait(strategy_keywords, subcloud_name, release, kube_version)
+
+    # Gate on the dcmanager strategy-step first: a combined P&K apply runs prestage
+    # and software deploy before the kube phase, so the kube-host list stays empty
+    # for a long while and polling it directly would be uninformative.
+    get_logger().log_test_case_step("Wait for subcloud strategy-step to begin applying")
+    DcmanagerStrategyStepKeywords(system_controller_ssh).wait_for_strategy_step_state(
+        subcloud_name=subcloud_name,
+        states=["applying", "complete", "failed"],
+        timeout=STRATEGY_STEP_START_TIMEOUT,
+        polling_sleep_time=15,
+    )
+
+    get_logger().log_test_case_step("Wait for subcloud to enter control-plane upgrade phase")
+    wait_for_control_plane_phase_or_step_failure(
+        system_controller_ssh=system_controller_ssh,
+        subcloud_ssh=subcloud_ssh,
+        subcloud_name=subcloud_name,
+        hostname=hostname,
+        timeout=CONTROL_PLANE_PHASE_TIMEOUT,
+        polling_sleep_time=15,
+    )
+
+    get_logger().log_test_case_step(f"Inject fault: block K8s API server port {KUBE_APISERVER_PORT} on {subcloud_name}")
+    fault_injection.block_port(KUBE_APISERVER_PORT)
+
+    get_logger().log_test_case_step("Wait for subcloud kube-upgrade to reach upgrade-aborted (auto-rollback)")
+    KubeUpgradeShowKeywords(subcloud_ssh).wait_for_kube_upgrade_state(
+        expected_state=KUBE_UPGRADE_ABORTED_STATE,
+        timeout=KUBE_UPGRADE_ABORT_TIMEOUT,
+        polling_sleep_time=15,
+    )
+
+    get_logger().log_test_case_step("Remove fault-injection rule")
+    fault_injection.unblock_port(KUBE_APISERVER_PORT)
 
 
 # --- Scenario 1: Subcloud VIM Auto-Rollback (Primary) ---
@@ -453,3 +545,140 @@ def test_combined_pk_dcmanager_abort_queued_subclouds(request):
             True,
             f"Queued subcloud {queued} was cancelled (state '{queued_state}' is not complete)",
         )
+
+
+# --- Scenario 3: Retry After Abort During kube-upgrade ---
+
+
+@mark.p2
+@mark.lab_has_subcloud
+@mark.subcloud_lab_is_simplex
+def test_combined_pk_retry_strategy_after_kube_upgrade_abort(request):
+    """Verify a combined P&K strategy can be re-created after being aborted during kube-upgrade.
+
+    Aborting a combined P&K strategy during the kube-upgrade steps leaves the
+    subcloud with a kube-upgrade in 'upgrade-aborted' state and an active
+    system-deploy entity. Retrying from there used to be rejected while building
+    the new strategy: the kube-upgrade is deleted as the next strategy is built,
+    but the still-active system-deploy kept alarm 900.023 raised, which the
+    software deploy precheck did not ignore.
+
+    The test drives the subcloud into that state, deletes the strategy and
+    re-creates it with the same parameters. It stops once the retry is past the
+    VIM strategy build, where the rejection happened; running the second upgrade
+    to completion is already covered by the happy-path tests.
+
+    Preconditions:
+        - System controller has N release deployed
+        - Target K8s version is available on system controller
+        - Subcloud is online and out-of-sync
+
+    Test Steps:
+        1. Pick an eligible simplex subcloud and resolve release + K8s version
+        2. Drive the subcloud to a kube-upgrade in 'upgrade-aborted' state
+        3. Validate dcmanager reports the aborted subcloud step as failed
+        4. Confirm the leftover kube-upgrade is present (the retry precondition)
+        5. Delete the failed dcmanager strategy
+        6. Re-create the strategy with the same release and K8s version
+        7. Apply it and validate the step is not rejected at the VIM strategy build
+
+    Teardown:
+        - Remove the ip6tables rule (idempotent)
+        - Delete strategy if still present
+    """
+    system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
+        availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
+        in_sync=False,
+        lab_type=LabTypeEnum.SIMPLEX,
+    )
+    subcloud_name = result.get_name()
+    request.addfinalizer(lambda: cleanup_strategy(system_controller_ssh))
+
+    subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
+    fault_injection = IptablesFaultInjectionKeywords(subcloud_ssh)
+    # Ensure the rule is always removed, even if the test fails mid-way.
+    request.addfinalizer(lambda: fault_injection.unblock_port(KUBE_APISERVER_PORT))
+
+    n_load = str(CloudPlatformVersionManagerClass().get_sw_version())
+    release = get_highest_release_for_load(system_controller_ssh, n_load, state="deployed")
+    kube_version = get_target_kube_version(system_controller_ssh)
+
+    kube_host_kw = KubeHostUpgradeListKeywords(subcloud_ssh)
+    hostname = kube_host_kw.kube_host_upgrade_list().get_kube_host_upgrade_list()[0].get_hostname()
+
+    # --- Phase 1: produce the aborted state the retry has to recover from ---
+
+    drive_subcloud_to_kube_upgrade_abort(
+        system_controller_ssh=system_controller_ssh,
+        subcloud_ssh=subcloud_ssh,
+        subcloud_name=subcloud_name,
+        hostname=hostname,
+        release=release,
+        kube_version=kube_version,
+        fault_injection=fault_injection,
+    )
+
+    strategy_step_kw = DcmanagerStrategyStepKeywords(system_controller_ssh)
+
+    get_logger().log_test_case_step("Validate dcmanager strategy-step reports the aborted subcloud as failed")
+    aborted_step = strategy_step_kw.wait_for_strategy_step_state(
+        subcloud_name=subcloud_name,
+        states=["failed"],
+        timeout=STRATEGY_STEP_FAILURE_TIMEOUT,
+        polling_sleep_time=15,
+    )
+    validate_equals(aborted_step.get_state(), "failed", f"dcmanager strategy-step for {subcloud_name} is failed after the abort")
+
+    # Confirm the precondition the defect depended on is actually in place. Without
+    # a leftover kube-upgrade the retry would not exercise the cleanup-on-build path
+    # at all, and a passing result would be meaningless.
+    get_logger().log_test_case_step("Confirm the subcloud still has the leftover kube-upgrade from the abort")
+    kube_upgrade_kw = KubeUpgradeShowKeywords(subcloud_ssh)
+    validate_equals(
+        kube_upgrade_kw.is_kube_upgrade_in_progress(),
+        True,
+        f"Subcloud {subcloud_name} has a leftover kube-upgrade after the abort",
+    )
+    validate_equals(
+        kube_upgrade_kw.kube_upgrade_show().get_kube_upgrade_show_object().get_state(),
+        KUBE_UPGRADE_ABORTED_STATE,
+        f"Subcloud {subcloud_name} kube-upgrade is in {KUBE_UPGRADE_ABORTED_STATE}",
+    )
+
+    # --- Phase 2: retry - delete the failed strategy and re-create it ---
+
+    strategy_keywords = DcmanagerSwDeployStrategy(system_controller_ssh)
+
+    get_logger().log_test_case_step("Delete the failed sw-deploy-strategy before retrying")
+    strategy_keywords.dcmanager_sw_deploy_strategy_delete()
+
+    # Re-create with the same parameters as the aborted run. The create keyword
+    # validates the return code and waits for the strategy to settle in 'initial',
+    # failing fast if it goes to 'failed', so a rejected retry surfaces here.
+    get_logger().log_test_case_step(f"Re-create the combined P&K strategy for {subcloud_name} after the abort")
+    create_combined_pk_strategy_apply_no_wait(strategy_keywords, subcloud_name, release, kube_version)
+
+    # --- Phase 3: the retry must get past the VIM strategy build ---
+
+    get_logger().log_test_case_step("Wait for the retried strategy-step to be picked up by dcmanager")
+    strategy_step_kw.wait_for_strategy_step_state(
+        subcloud_name=subcloud_name,
+        states=["applying", "complete", "failed"],
+        timeout=STRATEGY_STEP_START_TIMEOUT,
+        polling_sleep_time=15,
+    )
+
+    # The defect rejected the retry while building the VIM strategy on the subcloud,
+    # so the assertion is the absence of that failure over a window: the step
+    # reaches 'applying' before the remote build has run, so checking the state
+    # once would pass even on the old broken behaviour.
+    get_logger().log_test_case_step("Validate the retried strategy is not rejected at the VIM strategy build")
+    last_states = DcManagerSubcloudStateWatcherKeywords(system_controller_ssh).watch_strategy_steps_for_window(
+        subcloud_names=[subcloud_name],
+        window=RETRY_BUILD_WATCH_WINDOW,
+    )
+    validate_equals(
+        last_states.get(subcloud_name) != "failed",
+        True,
+        f"Retried strategy for {subcloud_name} was accepted and got past the VIM strategy build (last state '{last_states.get(subcloud_name)}')",
+    )
