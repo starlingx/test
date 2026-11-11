@@ -1,10 +1,14 @@
-from typing import Optional
+from typing import List, Optional
 
 from framework.ssh.ssh_connection import SSHConnection
 from keywords.cloud_platform.rest.configuration.system.get_system_keywords import GetSystemKeywords
 from keywords.cloud_platform.version_info.cloud_platform_software_version import CloudPlatformSoftwareVersion
 from keywords.linux.cat.cat_os_keywords import CatOSKeywords
 from keywords.python.product_version import ProductVersion
+
+# Version id assigned to a release observed on the system but not declared in
+# CloudPlatformSoftwareVersion. Sorts after every known release.
+UNKNOWN_VERSION_ID = 9999
 
 
 class CloudPlatformVersionManagerClass:
@@ -19,6 +23,22 @@ class CloudPlatformVersionManagerClass:
         self.sw_version: ProductVersion = None
         self._is_trixie: bool = None
 
+    def get_all_product_versions(self) -> List[ProductVersion]:
+        """Get every ProductVersion declared in CloudPlatformSoftwareVersion.
+
+        The declaring class is the single source of truth for the set of known
+        releases and their chronological order. Versions are returned sorted by
+        ascending version id (oldest release first).
+
+        Returns:
+            List[ProductVersion]: All known product versions, oldest first.
+        """
+        cloud_platform_software_version_vars = vars(CloudPlatformSoftwareVersion)
+        cloud_platform_product_version_names = [var_name for var_name in list(cloud_platform_software_version_vars.keys()) if "STARLINGX" in var_name]
+        cloud_platform_product_versions = [cloud_platform_software_version_vars.get(version_name) for version_name in cloud_platform_product_version_names]
+
+        return sorted(cloud_platform_product_versions, key=lambda version: version.get_id())
+
     def get_product_version_object(self, version_name: str) -> ProductVersion:
         """
         This function will find the Product Version object that matches the version_name provided.
@@ -29,16 +49,11 @@ class CloudPlatformVersionManagerClass:
         Returns:
             ProductVersion: The value from CloudPlatformSoftwareVersion matching the version_name provided
         """
-        # Build a list of all the ProductVersion available.
-        cloud_platform_software_version_vars = vars(CloudPlatformSoftwareVersion)
-        cloud_platform_product_version_names = [var_name for var_name in list(cloud_platform_software_version_vars.keys()) if "STARLINGX" in var_name]
-        cloud_platform_product_versions = [cloud_platform_software_version_vars.get(version_name) for version_name in cloud_platform_product_version_names]
-
         # If the version is not in the list of versions, create a default value.
-        product_version = ProductVersion(version_name, 9999)
+        product_version = ProductVersion(version_name, UNKNOWN_VERSION_ID)
 
         # Find and return the appropriate ProductVersion from the list if any.
-        for version in cloud_platform_product_versions:
+        for version in self.get_all_product_versions():
             if version_name == version.get_name():
                 product_version = version
                 break
@@ -71,29 +86,73 @@ class CloudPlatformVersionManagerClass:
             self.sw_version = self._get_sw_version_from_system()
         return self.sw_version
 
-    def get_last_major_release(self) -> ProductVersion:
-        """Get latest Product Version.
+    def get_major_release_relative(self, releases_back: int) -> ProductVersion:
+        """Get the major release a given number of releases before the running one.
 
-        This function will return the latest Product Version defined in CloudPlatformSoftwareVersion
-        class.
+        The target is derived from the version observed on the system rather
+        than from a hardcoded constant, so a new release shipping does not
+        require this method to be updated.
+
+        Args:
+            releases_back (int): How many releases to step back from the
+                running version. ``0`` returns the running release, ``1`` the
+                release before it (N-1), ``2`` the one before that (N-2).
+
+        Returns:
+            ProductVersion: The product version at the requested offset.
+
+        Raises:
+            ValueError: If releases_back is negative, if the running version is
+                not declared in CloudPlatformSoftwareVersion, or if no declared
+                release exists at the requested offset.
         """
-        return CloudPlatformSoftwareVersion.STARLINGX_11_0
+        if releases_back < 0:
+            raise ValueError(f"releases_back must be zero or positive, received {releases_back}")
+
+        sw_version = self.get_sw_version()
+        if sw_version.get_id() == UNKNOWN_VERSION_ID:
+            raise ValueError(f"Running version '{sw_version.get_name()}' is not declared in CloudPlatformSoftwareVersion, so releases relative to it cannot be resolved. Add it to the enumeration.")
+
+        target_id = sw_version.get_id() - releases_back
+        for version in self.get_all_product_versions():
+            if version.get_id() == target_id:
+                return version
+
+        known_versions = [version.get_name() for version in self.get_all_product_versions()]
+        raise ValueError(f"No product version declared at {releases_back} release(s) before running version '{sw_version.get_name()}' (looked for version id {target_id}). Known versions: {known_versions}")
+
+    def get_last_major_release(self) -> ProductVersion:
+        """Get the release immediately before the running one (N-1).
+
+        Returns:
+            ProductVersion: The release one step before the running version.
+
+        Raises:
+            ValueError: If no declared release exists at that offset.
+        """
+        return self.get_major_release_relative(1)
 
     def get_second_last_major_release(self) -> ProductVersion:
-        """Get second-latest Product Version.
+        """Get the release two steps before the running one (N-2).
 
-        This function will return the second-latest Product Version defined in
-        CloudPlatformSoftwareVersion class.
+        Returns:
+            ProductVersion: The release two steps before the running version.
+
+        Raises:
+            ValueError: If no declared release exists at that offset.
         """
-        return CloudPlatformSoftwareVersion.STARLINGX_10_0
+        return self.get_major_release_relative(2)
 
     def get_third_last_major_release(self) -> ProductVersion:
-        """Get third-latest Product Version.
+        """Get the release three steps before the running one (N-3).
 
-        This function will return the third-latest Product Version defined in
-        CloudPlatformSoftwareVersion class.
+        Returns:
+            ProductVersion: The release three steps before the running version.
+
+        Raises:
+            ValueError: If no declared release exists at that offset.
         """
-        return CloudPlatformSoftwareVersion.STARLINGX_9_0
+        return self.get_major_release_relative(3)
 
     def resolve_release_token(self, token: Optional[str]) -> Optional[str]:
         """Resolve a relative release token into a concrete software version string.
@@ -105,11 +164,8 @@ class CloudPlatformVersionManagerClass:
         Resolution rules:
             - ``None`` is returned unchanged (no release requested).
             - ``"N"`` resolves to the version currently running on the system.
-            - ``"N-1"`` resolves to the last major release, unless the running
-              version already is the last major release, in which case it steps
-              back to the second-last major release (so ``"N-1"`` is always the
-              release before the one running).
-            - ``"N-2"`` resolves to the second-last major release.
+            - ``"N-1"`` resolves to the release before the running one.
+            - ``"N-2"`` resolves to two releases before the running one.
             - Any other value is treated as an explicit version and returned
               unchanged.
 
@@ -120,21 +176,20 @@ class CloudPlatformVersionManagerClass:
         Returns:
             Optional[str]: ``None`` when no token was supplied, else a concrete
             software version string.
+
+        Raises:
+            ValueError: If a relative token is supplied and no declared release
+                exists at that offset from the running version.
         """
         if token is None:
             return None
         if token == "N":
             return self.get_sw_version().get_name()
+        if token == "N-1":
+            return self.get_major_release_relative(1).get_name()
         if token == "N-2":
-            return self.get_second_last_major_release().get_name()
-        if token != "N-1":
-            return token
-
-        sw_version_name = self.get_sw_version().get_name()
-        last_major_name = self.get_last_major_release().get_name()
-        if last_major_name != sw_version_name:
-            return last_major_name
-        return self.get_second_last_major_release().get_name()
+            return self.get_major_release_relative(2).get_name()
+        return token
 
     def is_trixie(self, ssh_connection: SSHConnection) -> bool:
         """Check if the system is running Debian Trixie (strongSwan 6.0).
