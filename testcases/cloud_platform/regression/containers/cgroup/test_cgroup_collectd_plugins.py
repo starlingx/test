@@ -1,7 +1,7 @@
-"""Tests for collectd plugins functionality with cgroup version.
+"""Tests for collectd plugins functionality under cgroup v2.
 
 Verifies collectd service is active and reporting metrics correctly
-regardless of cgroup version.
+on a cgroup v2 system.
 
 Reference: gnss_monitoring_keywords.py — calls collectd CLI via SSH.
 """
@@ -20,10 +20,9 @@ from keywords.linux.systemctl.systemctl_is_active_keywords import SystemCTLIsAct
 @mark.p2
 def test_collectd_service_active() -> None:
     """Verify collectd service is active."""
-    logger = get_logger()
     ssh = LabConnectionKeywords().get_active_controller_ssh()
 
-    logger.log_info("Checking collectd service status")
+    get_logger().log_test_case_step("Check collectd service status")
     is_active_keywords = SystemCTLIsActiveKeywords(ssh)
     status = is_active_keywords.is_active("collectd")
     validate_equals(status, "active", "collectd service is active")
@@ -32,15 +31,12 @@ def test_collectd_service_active() -> None:
 @mark.p2
 def test_collectd_no_cgroup_errors_in_log() -> None:
     """Verify no cgroup-related errors in collectd log."""
-    logger = get_logger()
     ssh = LabConnectionKeywords().get_active_controller_ssh()
 
-    logger.log_info("Checking collectd log for cgroup-related errors")
+    get_logger().log_test_case_step("Check collectd log for cgroup-related errors")
     grep_keywords = GrepKeywords(ssh)
-    count = grep_keywords.get_match_count(
-        "cgroup.*error\\|error.*cgroup", "/var/log/collectd.log"
-    )
-    logger.log_info(f"Cgroup-related errors in collectd.log: {count}")
+    count = grep_keywords.get_match_count("cgroup.*error\\|error.*cgroup", "/var/log/collectd.log")
+    get_logger().log_info(f"Cgroup-related errors in collectd.log: {count}")
     validate_equals(count, 0, "no cgroup-related errors in collectd log")
 
 
@@ -51,19 +47,16 @@ def test_collectd_metrics_reporting() -> None:
     Checks that collectd process is running and has recent activity
     in its log file.
     """
-    logger = get_logger()
     ssh = LabConnectionKeywords().get_active_controller_ssh()
 
-    logger.log_info("Checking collectd process is running")
+    get_logger().log_test_case_step("Check collectd process is running")
     pgrep_keywords = PgrepKeywords(ssh)
     count = pgrep_keywords.get_process_count("collectd")
-    logger.log_info(f"collectd process count: {count}")
+    get_logger().log_info(f"collectd process count: {count}")
     validate_greater_than(count, 0, "collectd process is running")
 
-    logger.log_info("Checking collectd log has recent entries (within last 5 minutes)")
+    get_logger().log_test_case_step("Check collectd log has recent entries within the last 5 minutes")
     find_keywords = FindKeywords(ssh)
-    recently_modified = find_keywords.is_file_modified_within(
-        "/var/log/collectd.log", minutes=5
-    )
-    logger.log_info(f"Collectd log modified in last 5 min: {recently_modified}")
+    recently_modified = find_keywords.is_file_modified_within("/var/log/collectd.log", minutes=5)
+    get_logger().log_info(f"Collectd log modified in last 5 min: {recently_modified}")
     validate_equals(recently_modified, True, "collectd log recently updated")
