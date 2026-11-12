@@ -1,5 +1,5 @@
 from contextlib import contextmanager
-from typing import Generator
+from typing import Generator, Optional
 
 from config.configuration_manager import ConfigurationManager
 from config.lab.objects.lab_config import LabConfig
@@ -17,13 +17,42 @@ class LabConnectionKeywords(BaseKeyword):
     Class to hold Lab connection keywords
     """
 
+    def __init__(self, lab_config: Optional[LabConfig] = None):
+        """Constructor.
+
+        By default every connection goes to the primary lab. Passing a lab config
+        makes every method of this instance connect to that lab instead, such as a
+        second system controller loaded from its own lab config file. All
+        connection settings, including the jump host, then come from that lab
+        config, because each lab config describes how to reach its own lab.
+
+        Args:
+            lab_config (Optional[LabConfig]): Lab config of the system to connect to.
+                Defaults to None, which uses the primary lab config.
+        """
+        self.lab_config = lab_config
+
+    def _get_lab_config(self) -> LabConfig:
+        """Get the lab config this instance connects to.
+
+        The primary lab config is read on every call rather than stored, so an
+        instance created without a lab config keeps following the primary lab
+        config, as before.
+
+        Returns:
+            LabConfig: The lab config given to the constructor, or the primary lab config.
+        """
+        if self.lab_config is not None:
+            return self.lab_config
+        return ConfigurationManager.get_lab_config()
+
     def get_active_controller_ssh(self) -> SSHConnection:
         """Gets the active controller ssh
 
         Returns:
             SSHConnection: the ssh for the active controller
         """
-        lab_config = ConfigurationManager.get_lab_config()
+        lab_config = self._get_lab_config()
 
         jump_host_config = None
         if lab_config.is_use_jump_server():
@@ -39,7 +68,6 @@ class LabConnectionKeywords(BaseKeyword):
 
         return connection
 
-
     def get_standby_controller_ssh(self) -> SSHConnection:
         """
         Gets the standby controller ssh
@@ -47,7 +75,7 @@ class LabConnectionKeywords(BaseKeyword):
         Returns:
             SSHConnection: the ssh for the standby controller
         """
-        lab_config = ConfigurationManager.get_lab_config()
+        lab_config = self._get_lab_config()
 
         # get the standby controller
         standby_controller = SystemHostListKeywords(self.get_active_controller_ssh()).get_standby_controller()
@@ -84,7 +112,7 @@ class LabConnectionKeywords(BaseKeyword):
             SSHConnection: the ssh for the hostname
 
         """
-        lab_config = ConfigurationManager.get_lab_config()
+        lab_config = self._get_lab_config()
 
         host_node = lab_config.get_node(hostname)
         if not host_node:
@@ -153,7 +181,7 @@ class LabConnectionKeywords(BaseKeyword):
         Returns:
             SSHConnection: A real SSH connection to the target node.
         """
-        lab_config = ConfigurationManager.get_lab_config()
+        lab_config = self._get_lab_config()
         credentials = lab_config.get_admin_credentials()
         username = credentials.get_user_name()
         password = credentials.get_password()
@@ -188,7 +216,7 @@ class LabConnectionKeywords(BaseKeyword):
         """
         connection = self.get_active_controller_ssh()
         connection.set_name(host_name)
-        lab_config = ConfigurationManager.get_lab_config()
+        lab_config = self._get_lab_config()
         credentials = lab_config.get_admin_credentials()
         # setup this connection to use ssh pass
         connection.setup_ssh_pass(host_name, credentials.get_user_name(), credentials.get_password())
@@ -205,7 +233,7 @@ class LabConnectionKeywords(BaseKeyword):
             SSHConnection: the SSH connection to the 'subcloud' node whose name is specified by the argument 'subcloud_name'.
 
         """
-        lab_config = ConfigurationManager.get_lab_config()
+        lab_config = self._get_lab_config()
         subcloud_config: LabConfig = lab_config.get_subcloud(subcloud_name)
 
         if not subcloud_config:
@@ -248,7 +276,7 @@ class LabConnectionKeywords(BaseKeyword):
         Raises:
             ValueError: If the subcloud is not defined or has no controller-0 node.
         """
-        lab_config = ConfigurationManager.get_lab_config()
+        lab_config = self._get_lab_config()
         subcloud_config: LabConfig = lab_config.get_subcloud(subcloud_name)
 
         if not subcloud_config:
@@ -286,7 +314,7 @@ class LabConnectionKeywords(BaseKeyword):
         Returns:
             SSHConnection: the SSH connection to the subcloud at its factory IP.
         """
-        lab_config = ConfigurationManager.get_lab_config()
+        lab_config = self._get_lab_config()
         subcloud_config: LabConfig = lab_config.get_subcloud(subcloud_name)
 
         if not subcloud_config:
@@ -320,7 +348,7 @@ class LabConnectionKeywords(BaseKeyword):
         Returns:
             SSHConnection: the ssh for the secondary active controller
         """
-        lab_config = ConfigurationManager.get_lab_config()
+        lab_config = self._get_lab_config()
         secondary_lab_config = lab_config.get_secondary_system_controller_config()
 
         if not secondary_lab_config:
@@ -365,7 +393,7 @@ class LabConnectionKeywords(BaseKeyword):
             bool: True if SSH connection succeeds, False otherwise.
         """
         connection = self.get_active_controller_ssh()
-        lab_config = ConfigurationManager.get_lab_config()
+        lab_config = self._get_lab_config()
         connection.setup_ssh_pass(hostname, lab_config.get_admin_credentials().get_user_name(), lab_config.get_admin_credentials().get_password())
         connection.send("echo 'connection_test'")
         return connection.get_return_code() == 0
@@ -388,7 +416,7 @@ class LabConnectionKeywords(BaseKeyword):
         Yields:
             SSHTunnel: ssh tunnel to bmc
         """
-        lab_config = ConfigurationManager.get_lab_config()
+        lab_config = self._get_lab_config()
         node = lab_config.get_node(lab_node_name=host_name)
         if not node:
             raise KeywordException(f"Node not found: '{host_name}'")
