@@ -360,6 +360,32 @@ def verify_file_created_on_pod_exists(ssh_connection: SSHConnection, namespace: 
     )
 
 
+# Max time for the single 'kubectl exec' that fills a PVC to 100%. The SSH layer default is 60 seconds and it
+# re-sends a command that times out, so a long fill must set its own timeout.
+PVC_FILL_COMMAND_TIMEOUT_SECONDS = 2800
+
+
+def exec_in_pod(ssh_connection: SSHConnection, pod_name: str, namespace: str, cmd: str, ignore_error: bool = False, command_timeout: int = None) -> str:
+    """
+    Run a command in a pod with 'kubectl exec' and return the output as a single string.
+
+    'run_pod_exec_cmd' may return the output as a list of lines, so the lines are joined.
+
+    Args:
+        ssh_connection (SSHConnection): SSH connection to the active controller.
+        pod_name (str): name of the pod to exec into.
+        namespace (str): namespace the pod runs in.
+        cmd (str): command to run in the pod.
+        ignore_error (bool): when True, a non-zero return code does not raise. Defaults to False.
+        command_timeout (int): timeout in seconds for this exec. Defaults to None (SSH layer default, 60 seconds).
+
+    Returns:
+        str: the command output.
+    """
+    output = KubectlExecInPodsKeywords(ssh_connection).run_pod_exec_cmd(pod_name, cmd, options=f"-i -n {namespace}", ignore_error=ignore_error, command_timeout=command_timeout)
+    return "".join(output) if isinstance(output, list) else str(output)
+
+
 def make_sure_dell_storage_application_applied():
     """
     To make sure dell-storage application is applied before testing start
@@ -4987,3 +5013,250 @@ def test_dell_storage_iscsi_lifecycle_coexistence_rook_ceph_sx(request: FixtureR
 
     KubectlExecInPodsKeywords(ssh_connection).run_pod_exec_cmd("csi-rbd-demo-pod", "bash -c 'test -f /data/test.txt'", options="-i")
     validate_equals(ssh_connection.get_return_code(), 0, "test.txt exists on csi-rbd-demo-pod")
+
+
+@mark.p3
+@mark.lab_dell_storage
+@mark.lab_is_simplex
+def test_dell_storage_iscsi_fill_up_pvc_100_sx(request: FixtureRequest):
+    """
+    Validate dell-storage iSCSI behavior when a PVC is filled up to 100%.
+
+    Test Steps:
+        1. Verify dell-storage is applied and all CSI driver pods are Running.
+        2. Create a 5Gi PVC and a test pod using the iSCSI dell-storage StorageClass.
+        3. Write a canary file and record its md5sum.
+        4. Fill the PVC filesystem until it reports 100% usage.
+        5. Verify a further write fails with 'No space left on device'.
+        6. Verify the canary file is intact and the pod is still Running.
+        7. Delete the pod, wait for it to be recreated and verify the data persisted.
+        8. Verify the PVC is still Bound and dell-storage is still applied.
+
+    Teardown:
+        - Remove the test pod, PVC and the dell-storage application.
+
+    Args:
+        request (FixtureRequest): pytest request fixture for test setup and teardown
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    namespace = "dell-storage"
+    dell_storage_app_name = "dell-storage"
+    chart_name = "csi-powerstore"
+
+    pvc_name = "pvol0"
+    pod_name = "powerstoretest-0"
+    mount_path = "/data0"
+    canary_content = "dell-enospc-canary"
+    pvc_size_gib = 5
+    pvc_size = f"{pvc_size_gib}Gi"
+    # Upper bound for the fill (2x the PVC): dd still ends with ENOSPC when the volume is enforced, and never runs unbounded.
+    fill_max_mib = 2 * pvc_size_gib * 1024
+    pod_recreate_timeout = 1800
+
+    pvc_keywords = KubectlGetPvcKeywords(ssh_connection)
+    pod_keywords = KubectlGetPodsKeywords(ssh_connection)
+
+    def md5_of(path: str) -> str:
+        return exec_in_pod(ssh_connection, pod_name, namespace, f"md5sum {path}").split()[0]
+
+    def teardown():
+        get_logger().log_teardown_step("Delete test pod and PVC")
+        KubectlFileDeleteKeywords(ssh_connection).delete_resources("/home/sysadmin/dell-storage-test-pod.yaml", ignore_not_found=True)
+        KubectlDeletePodsKeywords(ssh_connection).cleanup_pod(pod_name, namespace=namespace)
+        KubectlDeleteResourceKeywords(ssh_connection).delete_resource("pvc", pvc_name, namespace=namespace)
+        pvc_keywords.wait_for_pvc_to_be_deleted(pvc_name, namespace=namespace)
+
+    request.addfinalizer(common_dell_storage_teardown)
+    request.addfinalizer(teardown)
+
+    get_logger().log_test_case_step("Verify dell-storage application is applied")
+    system_applications = SystemApplicationListKeywords(ssh_connection).get_system_application_list()
+    dell_storage_app_status = system_applications.get_application(dell_storage_app_name).get_status()
+    common_verify_dell_app_status_iscsi_sx(ssh_connection, dell_storage_app_status, namespace, dell_storage_app_name, chart_name, False)
+
+    get_logger().log_test_case_step("Verify all csi-powerstore driver pods are Running")
+    csi_pod_names = pod_keywords.get_pods(namespace=namespace).get_unique_pod_matching_prefix(starts_with="csi-powerstore")
+    validate_equals(pod_keywords.wait_for_pod_status(csi_pod_names, "Running", namespace), True, "csi-powerstore driver pods are Running")
+
+    get_logger().log_test_case_step(f"Create a {pvc_size} PVC {pvc_name} and test pod {pod_name}")
+    test_pod_yaml = "dell-storage-test-pod.yaml"
+    local_path = get_stx_resource_path(f"resources/cloud_platform/storage/dell_storage/{test_pod_yaml}")
+    remote_yaml_path = f"/home/sysadmin/{test_pod_yaml}"
+    FileKeywords(ssh_connection).upload_file(local_path, remote_yaml_path, overwrite=True)
+    KubectlCreatePodsKeywords(ssh_connection).create_from_yaml(remote_yaml_path)
+
+    pvc_keywords.wait_for_pvcs_to_reach_status("Bound", pvc_names=pvc_name, namespace=namespace)
+    validate_equals(pod_keywords.wait_for_pod_status(pod_name, "Running", namespace), True, f"{pod_name} pod is Running")
+
+    get_logger().log_test_case_step("Write a canary file and record its md5sum")
+    canary_path = f"{mount_path}/canary.txt"
+    exec_in_pod(ssh_connection, pod_name, namespace, f"bash -c 'echo {canary_content} > {canary_path} && sync'")
+    canary_md5_before = md5_of(canary_path)
+    get_logger().log_info(f"Canary md5sum: {canary_md5_before}")
+
+    get_logger().log_test_case_step(f"Fill {mount_path} until the filesystem is 100% used")
+    # dd is expected to stop with 'No space left on device' (non-zero return code) once the volume is full.
+    fill_output = exec_in_pod(
+        ssh_connection,
+        pod_name,
+        namespace,
+        f"bash -c 'dd if=/dev/zero of={mount_path}/fill bs=1M count={fill_max_mib}; sync'",
+        ignore_error=True,
+        command_timeout=PVC_FILL_COMMAND_TIMEOUT_SECONDS,
+    )
+    validate_str_contains(fill_output, "No space left on device", "Fill write stopped because the volume is full")
+
+    df_output = exec_in_pod(ssh_connection, pod_name, namespace, f"df -h {mount_path}")
+    validate_str_contains(df_output, "100%", f"{mount_path} reports 100% usage")
+
+    get_logger().log_test_case_step("Verify an additional write fails with ENOSPC")
+    extra_output = exec_in_pod(ssh_connection, pod_name, namespace, f"bash -c 'echo x > {mount_path}/extra; echo RC=$?'", ignore_error=True)
+    validate_str_contains(extra_output, "No space left on device", "Additional write rejected with ENOSPC")
+    validate_str_contains(extra_output, "RC=1", "Additional write returned a non-zero code")
+
+    get_logger().log_test_case_step("Verify canary file is intact and the pod is still Running")
+    canary_output = exec_in_pod(ssh_connection, pod_name, namespace, f"cat {canary_path}")
+    validate_str_contains(canary_output, canary_content, "Canary content is intact on a full volume")
+    canary_md5_full = md5_of(canary_path)
+    validate_equals(canary_md5_full, canary_md5_before, "Canary md5sum unchanged on a full volume")
+    validate_equals(pod_keywords.wait_for_pod_status(pod_name, "Running", namespace), True, f"{pod_name} still Running with a full PVC")
+
+    get_logger().log_test_case_step(f"Delete pod {pod_name} and wait for the StatefulSet to recreate it")
+    KubectlDeletePodsKeywords(ssh_connection).delete_pod(pod_name, namespace=namespace)
+    validate_equals(pod_keywords.wait_for_pod_status(pod_name, "Running", namespace, timeout=pod_recreate_timeout), True, f"{pod_name} recreated and Running")
+
+    get_logger().log_test_case_step("Verify data persisted after pod recreation")
+    canary_md5_after = md5_of(canary_path)
+    validate_equals(canary_md5_after, canary_md5_before, "Canary md5sum unchanged after pod recreation")
+
+    get_logger().log_test_case_step("Verify PVC is still Bound and dell-storage is still applied")
+    pvc_keywords.wait_for_pvcs_to_reach_status("Bound", pvc_names=pvc_name, namespace=namespace)
+    app_status = SystemApplicationShowKeywords(ssh_connection).get_system_application_show(dell_storage_app_name).get_system_application_object().get_status()
+    validate_equals(app_status, SystemApplicationStatusEnum.APPLIED.value, "dell-storage is still applied")
+
+
+@mark.p3
+@mark.lab_dell_storage
+@mark.lab_is_simplex
+def test_dell_storage_nfs_fill_up_pvc_100_sx(request: FixtureRequest):
+    """
+    Validate dell-storage NFS behavior when a PVC is filled up to 100%.
+
+    Test Steps:
+        1. Verify dell-storage is applied and all CSI driver pods are Running.
+        2. Create a 5Gi PVC and a test pod using the NFS dell-storage StorageClass.
+        3. Write a canary file and record its md5sum.
+        4. Fill the PVC filesystem until it reports 100% usage.
+        5. Verify a further write fails with 'No space left on device'.
+        6. Verify the canary file is intact and the pod is still Running.
+        7. Delete the pod, wait for it to be recreated and verify the data persisted.
+        8. Verify the PVC is still Bound and dell-storage is still applied.
+
+    Teardown:
+        - Remove the test pod, PVC and the dell-storage application.
+
+    Args:
+        request (FixtureRequest): pytest request fixture for test setup and teardown
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    namespace = "dell-storage"
+    dell_storage_app_name = "dell-storage"
+    chart_name = "csi-powerstore"
+
+    pvc_name = "pvol0"
+    pod_name = "powerstoretest-0"
+    mount_path = "/data0"
+    canary_content = "dell-enospc-canary"
+    pvc_size_gib = 5
+    pvc_size = f"{pvc_size_gib}Gi"
+    # Upper bound for the fill (2x the PVC): dd still ends with ENOSPC when the volume is enforced, and never runs unbounded.
+    fill_max_mib = 2 * pvc_size_gib * 1024
+    pod_recreate_timeout = 1800
+    test_pod_yaml = "dell-storage-test-nfs-pod.yaml"
+
+    pvc_keywords = KubectlGetPvcKeywords(ssh_connection)
+    pod_keywords = KubectlGetPodsKeywords(ssh_connection)
+
+    def md5_of(path: str) -> str:
+        return exec_in_pod(ssh_connection, pod_name, namespace, f"md5sum {path}").split()[0]
+
+    def teardown():
+        get_logger().log_teardown_step("Delete test pod and PVC")
+        KubectlFileDeleteKeywords(ssh_connection).delete_resources(f"/home/sysadmin/{test_pod_yaml}", ignore_not_found=True)
+        KubectlDeletePodsKeywords(ssh_connection).cleanup_pod(pod_name, namespace=namespace)
+        KubectlDeleteResourceKeywords(ssh_connection).delete_resource("pvc", pvc_name, namespace=namespace)
+        pvc_keywords.wait_for_pvc_to_be_deleted(pvc_name, namespace=namespace)
+
+    request.addfinalizer(common_dell_storage_teardown)
+    request.addfinalizer(teardown)
+
+    get_logger().log_test_case_step("Verify dell-storage application is applied")
+    system_applications = SystemApplicationListKeywords(ssh_connection).get_system_application_list()
+    dell_storage_app_status = system_applications.get_application(dell_storage_app_name).get_status()
+    common_verify_dell_app_status_nfs_sx(ssh_connection, dell_storage_app_status, namespace, dell_storage_app_name, chart_name, False)
+
+    get_logger().log_test_case_step("Verify all csi-powerstore driver pods are Running")
+    csi_pod_names = pod_keywords.get_pods(namespace=namespace).get_unique_pod_matching_prefix(starts_with="csi-powerstore")
+    validate_equals(pod_keywords.wait_for_pod_status(csi_pod_names, "Running", namespace), True, "csi-powerstore driver pods are Running")
+
+    get_logger().log_test_case_step(f"Create a {pvc_size} PVC {pvc_name} and test pod {pod_name}")
+    local_path = get_stx_resource_path(f"resources/cloud_platform/storage/dell_storage/{test_pod_yaml}")
+    remote_yaml_path = f"/home/sysadmin/{test_pod_yaml}"
+    FileKeywords(ssh_connection).upload_file(local_path, remote_yaml_path, overwrite=True)
+    KubectlCreatePodsKeywords(ssh_connection).create_from_yaml(remote_yaml_path)
+
+    pvc_keywords.wait_for_pvcs_to_reach_status("Bound", pvc_names=pvc_name, namespace=namespace)
+    validate_equals(pod_keywords.wait_for_pod_status(pod_name, "Running", namespace), True, f"{pod_name} pod is Running")
+
+    get_logger().log_test_case_step("Write a canary file and record its md5sum")
+    canary_path = f"{mount_path}/canary.txt"
+    exec_in_pod(ssh_connection, pod_name, namespace, f"bash -c 'echo {canary_content} > {canary_path} && sync'")
+    canary_md5_before = md5_of(canary_path)
+    get_logger().log_info(f"Canary md5sum: {canary_md5_before}")
+
+    get_logger().log_test_case_step(f"Fill {mount_path} until the filesystem is 100% used")
+    # dd is expected to stop with 'No space left on device' (non-zero return code) once the volume is full.
+    fill_output = exec_in_pod(
+        ssh_connection,
+        pod_name,
+        namespace,
+        f"bash -c 'dd if=/dev/zero of={mount_path}/fill bs=1M count={fill_max_mib}; sync'",
+        ignore_error=True,
+        command_timeout=PVC_FILL_COMMAND_TIMEOUT_SECONDS,
+    )
+    validate_str_contains(fill_output, "No space left on device", "Fill write stopped because the volume is full")
+
+    # On NFS, df reports the underlying NAS filesystem (larger than the PVC request, with the limit
+    # enforced by the array), so Use% does not reach exactly 100%. Require it to be nearly full.
+    df_output = exec_in_pod(ssh_connection, pod_name, namespace, f"df -h {mount_path}")
+    get_logger().log_info(f"df output: {df_output}")
+    use_match = re.search(r"(\d+)%", df_output)
+    validate_not_equals(use_match, None, "df output reports a Use% value")
+    validate_equals(int(use_match.group(1)) >= 95, True, f"{mount_path} usage is at least 95% (observed {use_match.group(1)}%)")
+
+    get_logger().log_test_case_step("Verify an additional write fails with ENOSPC")
+    # A plain 'echo x > file' returns 0 on NFS because the client buffers the write and the error
+    # only surfaces on flush. Force a flush with conv=fsync so the ENOSPC is reported.
+    extra_output = exec_in_pod(ssh_connection, pod_name, namespace, f"bash -c 'dd if=/dev/zero of={mount_path}/extra bs=1M count=1 conv=fsync; echo RC=$?'", ignore_error=True)
+    validate_str_contains(extra_output, "No space left on device", "Additional write rejected with ENOSPC")
+    validate_str_contains(extra_output, "RC=1", "Additional write returned a non-zero code")
+
+    get_logger().log_test_case_step("Verify canary file is intact and the pod is still Running")
+    canary_output = exec_in_pod(ssh_connection, pod_name, namespace, f"cat {canary_path}")
+    validate_str_contains(canary_output, canary_content, "Canary content is intact on a full volume")
+    canary_md5_full = md5_of(canary_path)
+    validate_equals(canary_md5_full, canary_md5_before, "Canary md5sum unchanged on a full volume")
+    validate_equals(pod_keywords.wait_for_pod_status(pod_name, "Running", namespace), True, f"{pod_name} still Running with a full PVC")
+
+    get_logger().log_test_case_step(f"Delete pod {pod_name} and wait for the StatefulSet to recreate it")
+    KubectlDeletePodsKeywords(ssh_connection).delete_pod(pod_name, namespace=namespace)
+    validate_equals(pod_keywords.wait_for_pod_status(pod_name, "Running", namespace, timeout=pod_recreate_timeout), True, f"{pod_name} recreated and Running")
+
+    get_logger().log_test_case_step("Verify data persisted after pod recreation")
+    canary_md5_after = md5_of(canary_path)
+    validate_equals(canary_md5_after, canary_md5_before, "Canary md5sum unchanged after pod recreation")
+
+    get_logger().log_test_case_step("Verify PVC is still Bound and dell-storage is still applied")
+    pvc_keywords.wait_for_pvcs_to_reach_status("Bound", pvc_names=pvc_name, namespace=namespace)
+    app_status = SystemApplicationShowKeywords(ssh_connection).get_system_application_show(dell_storage_app_name).get_system_application_object().get_status()
+    validate_equals(app_status, SystemApplicationStatusEnum.APPLIED.value, "dell-storage is still applied")

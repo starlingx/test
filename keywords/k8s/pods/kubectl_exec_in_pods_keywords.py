@@ -24,6 +24,7 @@ class KubectlExecInPodsKeywords(K8sBaseKeyword):
         cmd: str,
         options: str = "",
         ignore_error: bool = False,
+        command_timeout: int = None,
     ) -> str:
         """
         Executes the given command in the pod
@@ -35,6 +36,9 @@ class KubectlExecInPodsKeywords(K8sBaseKeyword):
             ignore_error (bool): when False (default), a non-zero return code raises via
                 validate_success_return_code. When True, the return code is not asserted, so
                 callers can inspect it themselves (e.g. to retry transient exec failures).
+            command_timeout (int): timeout in seconds for this single exec. Defaults to None, which
+                uses the SSH layer default (60 seconds). A command that exceeds the timeout is re-sent
+                by the SSH layer, so long-running commands (e.g. filling a volume) must set this.
 
         Returns:
             str: the output
@@ -42,7 +46,10 @@ class KubectlExecInPodsKeywords(K8sBaseKeyword):
         """
         kubectl_cmd = f"kubectl exec {options} {pod_name} -- {cmd}"
 
-        output = self.ssh_connection.send(self.k8s_config.export(kubectl_cmd))
+        if command_timeout is None:
+            output = self.ssh_connection.send(self.k8s_config.export(kubectl_cmd))
+        else:
+            output = self.ssh_connection.send(self.k8s_config.export(kubectl_cmd), command_timeout=command_timeout)
         if not ignore_error:
             self.validate_success_return_code(self.ssh_connection)
 
