@@ -55,7 +55,7 @@ class SetupStressPods:
         self.services_path = "resources/cloud_platform/system_test/pod_scaling/services"
         self.deployments_path = "resources/cloud_platform/system_test/pod_scaling/deployments"
 
-    def setup_stress_pods(self, benchmark: str, namespace: Optional[str] = None) -> Tuple[float, float]:
+    def setup_stress_pods(self, benchmark: str, namespace: Optional[str] = None, preserve_namespaces: Optional[List[str]] = None) -> Tuple[float, float]:
         """
         Set up and scale stress pods for benchmark testing.
 
@@ -63,6 +63,9 @@ class SetupStressPods:
             benchmark (str): The benchmark type to set up
             namespace (Optional[str]): The Kubernetes namespace to use.
                 Defaults to '{benchmark}-benchmark' if not provided.
+            preserve_namespaces (Optional[List[str]]): Benchmark namespaces that must not be
+                deleted by the stale-namespace cleanup (e.g. a background load namespace).
+                Defaults to None, meaning every stale benchmark namespace is deleted.
 
         Returns:
             Tuple[float, float]: Tuple of deploy time and scale up time in seconds
@@ -84,7 +87,11 @@ class SetupStressPods:
 
         ns_destroyer = KubectlDeleteNamespaceKeywords(self.ssh_connection)
         ns_getter = KubectlGetNamespacesKeywords(self.ssh_connection)
+        preserved = preserve_namespaces or []
         for namespace_ in existing_namespaces:
+            if namespace_ in preserved:
+                get_logger().log_info(f"Preserving benchmark namespace: {namespace_}")
+                continue
             if "-benchmark" in namespace_:
                 get_logger().log_info(f"Cleaning up stale benchmark namespace: {namespace_}")
                 ns_destroyer.delete_namespace(namespace_)
