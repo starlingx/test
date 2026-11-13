@@ -10,6 +10,7 @@ class AlarmListObject:
         self.entity_id = None
         self.severity = None
         self.time_stamp = None
+        self.mgmt_affecting = None
 
     def __str__(self) -> str:
         """String representation of this object."""
@@ -113,6 +114,28 @@ class AlarmListObject:
             str: The time stamp.
         """
         return self.time_stamp
+
+    def set_mgmt_affecting(self, mgmt_affecting: bool):
+        """Setter for the management-affecting flag.
+
+        Args:
+            mgmt_affecting (bool): True if the alarm is management-affecting.
+        """
+        self.mgmt_affecting = mgmt_affecting
+
+    def get_mgmt_affecting(self) -> bool:
+        """Getter for the management-affecting flag.
+
+        A management-affecting alarm is one that cannot be ignored during an
+        orchestrated patch/upgrade operation and blocks a sw-deploy-strategy
+        precheck. Only populated when the alarm source provides the flag (the
+        FM 'GET /alarms' REST payload does).
+
+        Returns:
+            bool: True if the alarm is management-affecting, False if not, or
+            None if the source did not provide the flag.
+        """
+        return self.mgmt_affecting
 
     def __eq__(self, alarm_list_object):
         """Check equality based on alarm_id, severity, and entity_id."""
