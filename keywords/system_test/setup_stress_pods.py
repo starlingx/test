@@ -1,5 +1,5 @@
 import os
-import time
+from datetime import datetime, timezone
 from time import time
 from typing import Any, List, Optional, Tuple
 
@@ -54,6 +54,22 @@ class SetupStressPods:
         get_logger().log_info(f"Stress pod scale_factor = {PODS_PER_WORKER} pods/worker x {worker_count} worker-capable nodes = {self.scale_factor} total pods")
         self.services_path = "resources/cloud_platform/system_test/pod_scaling/services"
         self.deployments_path = "resources/cloud_platform/system_test/pod_scaling/deployments"
+        # Naive UTC time at which the first image push finished; resource metric
+        # windows start here so they exclude file upload, namespace cleanup and image push.
+        self.measurement_start_utc: Optional[datetime] = None
+
+    def get_measurement_start_utc(self) -> Optional[datetime]:
+        """
+        Get the start time of the resource metric window.
+
+        This is the naive UTC time at which the first image push to the local
+        registry finished, so a metric window starting here covers only the pod
+        deployment and scaling operations.
+
+        Returns:
+            Optional[datetime]: Naive UTC start time, or None if no image push has run yet.
+        """
+        return self.measurement_start_utc
 
     def setup_stress_pods(self, benchmark: str, namespace: Optional[str] = None, preserve_namespaces: Optional[List[str]] = None) -> Tuple[float, float]:
         """
@@ -239,6 +255,11 @@ class SetupStressPods:
             docker_loader.tag_docker_image_for_registry(image, image, local_registry)
             docker_loader.push_docker_image_to_registry(image, local_registry)
             get_logger().log_info(f"Successfully pushed {image} to {tagged_image}")
+
+        # Keep the first push only, so tests that push more than once still measure from the first deploy.
+        if self.measurement_start_utc is None:
+            self.measurement_start_utc = datetime.now(timezone.utc).replace(tzinfo=None)
+            get_logger().log_info(f"Metric measurement start (UTC): {self.measurement_start_utc}")
 
     def scale_deployments(self, replicas: int, namespace: str) -> float:
         """

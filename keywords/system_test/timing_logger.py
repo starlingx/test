@@ -1,6 +1,6 @@
 import csv
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, List
 
 from config.configuration_manager import ConfigurationManager
@@ -170,7 +170,9 @@ class TimingLogger:
             *timing_values (float): Variable number of timing values in seconds
 
         Creates CSV header if file doesn't exist. Each row contains:
-        timestamp, timing_value1, timing_value2, ...
+        timestamp (UTC), timing_value1, timing_value2, ...
+        Timestamps are UTC to match the UTC metric collection windows. A CSV
+        created before this change keeps its original 'Timestamp' header.
         """
         file_exists = os.path.exists(self.csv_file)
 
@@ -178,9 +180,9 @@ class TimingLogger:
             writer = csv.writer(csvfile)
 
             if not file_exists:
-                writer.writerow(['Timestamp'] + self.column_headers)
+                writer.writerow(['Timestamp (UTC)'] + self.column_headers)
 
-            timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            timestamp = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
             formatted_values = [f"{value:.2f}" for value in timing_values]
             writer.writerow([timestamp] + formatted_values)
 
@@ -190,7 +192,7 @@ class TimingLogger:
 
         Returns:
             List[Dict]: List of timing records, each as a dictionary with keys:
-                       'Timestamp', 'Deploy Time (s)', 'Scale Up Time (s)', 'Scale Down Time (s)'
+                       'Timestamp (UTC)', 'Deploy Time (s)', 'Scale Up Time (s)', 'Scale Down Time (s)'
                        Returns empty list if CSV file doesn't exist.
         """
         data = []
@@ -509,7 +511,7 @@ class PatchingTimingLogger:
 
         return HTML_REPORT_TEMPLATE.format(
             title=f"Patching {operation_type.title()} Timing Results",
-            timestamp=datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            timestamp=datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC'),
             header_cols=header_cols,
             table_rows=table_rows
         )
