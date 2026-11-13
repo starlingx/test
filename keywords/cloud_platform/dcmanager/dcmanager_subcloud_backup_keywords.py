@@ -1,3 +1,4 @@
+import time
 from typing import List, Optional
 
 from framework.logging.automation_logger import get_logger
@@ -11,7 +12,8 @@ from keywords.cloud_platform.dcmanager.dcmanager_subcloud_manager_keywords impor
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_show_keywords import DcManagerSubcloudShowKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_state_watcher_keywords import BACKUP_IN_PROGRESS_STATES, RESTORE_IN_PROGRESS_STATES, DcManagerSubcloudStateWatcherKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
-from keywords.cloud_platform.version_info.cloud_platform_version_manager import CloudPlatformVersionManagerClass
+from keywords.cloud_platform.kpi.dc_kpi_recorder_keywords import DcKpiRecorderKeywords
+from keywords.cloud_platform.version_info.cloud_platform_version_manager import CloudPlatformVersionManager, CloudPlatformVersionManagerClass
 from keywords.files.file_keywords import FileKeywords
 from keywords.server.power_keywords import PowerKeywords
 
@@ -762,6 +764,37 @@ class DcManagerSubcloudBackupKeywords(BaseKeyword):
         """
         return CloudPlatformVersionManagerClass().resolve_release_token(release)
 
+    def _record_backup_kpi(self, subcloud_name: str, subcloud_version: str, variant: str, kpi_group: str, name_prefix: str, duration_seconds: float) -> None:
+        """Record a subcloud backup's wall-clock duration as a KPI (best-effort).
+
+        Backup duration is measured by the test's own clock (the span from the
+        backup create request to the completed backup_status), not mined from log
+        markers, because the backup is a single bounded operation with no per-phase
+        breakdown worth separate KPIs. A record failure is logged and never fails
+        the backup.
+
+        Args:
+            subcloud_name (str): Subcloud that was backed up.
+            subcloud_version (str): Subcloud software version (KPI tag).
+            variant (str): Backup variant tag ("central" or "local").
+            kpi_group (str): KPI catalog group.
+            name_prefix (str): KPI name prefix.
+            duration_seconds (float): Measured backup duration in seconds.
+        """
+        try:
+            system_controller_version = CloudPlatformVersionManager.get_sw_version().get_name()
+            DcKpiRecorderKeywords().record_wall_clock_duration(
+                duration_seconds,
+                kpi_category="Backup_Restore",
+                kpi_group=kpi_group,
+                name_prefix=name_prefix,
+                subcloud_version=subcloud_version,
+                system_controller_version=system_controller_version,
+                extra_details={"variant": variant},
+            )
+        except Exception as kpi_error:
+            get_logger().log_info(f"Backup KPI recording skipped for {subcloud_name}: {kpi_error}")
+
     def create_central_backup(self, subcloud_name: str, backup_values: bool = False) -> None:
         """Create a subcloud backup on central storage and wait for completion.
 
@@ -779,9 +812,11 @@ class DcManagerSubcloudBackupKeywords(BaseKeyword):
 
         central_path = f"{CENTRAL_BACKUP_PATH}{subcloud_name}/{sw_version}"
         get_logger().log_info(f"Create central backup for subcloud '{subcloud_name}'")
+        start_time = time.monotonic()
         self.create_subcloud_backup(password, self.ssh_connection, path=central_path, subcloud=subcloud_name, release=sw_version, backup_yaml=backup_yaml, wait=False)
 
         DcManagerSubcloudStateWatcherKeywords(self.ssh_connection).watch_single_subcloud(subcloud_name=subcloud_name, field_to_watch="backup_status", in_progress_states=BACKUP_IN_PROGRESS_STATES, complete_state=COMPLETE_CENTRAL_STATUS)
+        self._record_backup_kpi(subcloud_name, sw_version, "central", "dcmanager_central_backup", "dcmanager-central-backup", time.monotonic() - start_time)
 
     def create_local_backup(self, subcloud_name: str, custom_path: bool = False, backup_values: bool = False, registry: bool = False) -> None:
         """Create a subcloud backup on local storage and wait for completion.
@@ -803,6 +838,7 @@ class DcManagerSubcloudBackupKeywords(BaseKeyword):
             backup_yaml = self._create_backup_values_yaml(subcloud_name, 'exclude_dirs: "/opt/patching/**/*"')
 
         get_logger().log_info(f"Create local backup for subcloud '{subcloud_name}'")
+        start_time = time.monotonic()
 
         if custom_path:
             home_user = lab_config.get_admin_credentials().get_user_name()
@@ -814,6 +850,7 @@ class DcManagerSubcloudBackupKeywords(BaseKeyword):
             self.create_subcloud_backup(password, subcloud_ssh, path=f"{backup_path}{subcloud_name}_platform_backup_*.tgz", subcloud=subcloud_name, local_only=True, release=sw_version, backup_yaml=backup_yaml, registry=registry, wait=False)
 
         DcManagerSubcloudStateWatcherKeywords(self.ssh_connection).watch_single_subcloud(subcloud_name=subcloud_name, field_to_watch="backup_status", in_progress_states=BACKUP_IN_PROGRESS_STATES, complete_state=COMPLETE_LOCAL_STATUS)
+        self._record_backup_kpi(subcloud_name, sw_version, "local", "dcmanager_local_backup", "dcmanager-local-backup", time.monotonic() - start_time)
 
     def create_group_central_backup(self, group_name: str, subcloud_names: List[str]) -> None:
         """Create a central backup for a subcloud group and wait for all to complete.
