@@ -5,8 +5,8 @@ Run test_setup_pvc_pod to deploy, test_teardown_pvc_pod to clean up.
 
 Prerequisites:
 - Lab is accessible and active controller is available
-- Storage backend (ceph or netapp) is configured
-- availability-test-pods-0.2.0.tgz is present in resources
+- Storage backend (ceph or lvm) is configured
+- availability-test-pods-0.2.0.tgz (ceph) and availability-test-pods-lvm-0.2.0.tgz (lvm) are present in resources
 
 Run with:
     python framework/runner/scripts/test_executor.py \
@@ -22,19 +22,38 @@ from pytest import mark
 
 from framework.logging.automation_logger import get_logger
 from framework.resources.resource_finder import get_stx_resource_path
+from framework.ssh.ssh_connection import SSHConnection
 from keywords.cloud_platform.helm.helm_release_keywords import HelmReleaseKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
+from keywords.cloud_platform.system.storage.system_storage_backend_keywords import SystemStorageBackendKeywords
 from keywords.files.file_keywords import FileKeywords
 from keywords.k8s.pods.kubectl_get_pods_keywords import KubectlGetPodsKeywords
 from keywords.k8s.pvc.kubectl_get_pvc_keywords import KubectlGetPvcKeywords
 
 
 REMOTE_PATH = "/home/sysadmin"
-CHART_RESOURCE_PATH = "resources/cloud_platform/storage/pvc_pod/availability-test-pods-0.2.0.tgz"
-CHART_FILENAME = "availability-test-pods-0.2.0.tgz"
+CHART_RESOURCE_DIR = "resources/cloud_platform/storage/pvc_pod"
+CEPH_CHART_FILENAME = "availability-test-pods-0.2.0.tgz"
+LVM_CHART_FILENAME = "availability-test-pods-lvm-0.2.0.tgz"
+LVM_STORAGE_BACKEND = "lvm"
 RELEASE_NAME = "availability-test-pods"
 RELEASE_NAMESPACE = "test-pods"
 POD_NAME_PREFIXES = ["availability-test-service", "availability-test-service-with-pvc"]
+
+
+def get_chart_filename(ssh_connection: SSHConnection) -> str:
+    """Select the chart file matching the configured storage backend.
+
+    Args:
+        ssh_connection (SSHConnection): SSH connection to the active controller.
+
+    Returns:
+        str: LVM chart filename if the lvm backend is configured, otherwise the ceph chart filename.
+    """
+    storage_backends = SystemStorageBackendKeywords(ssh_connection).get_system_storage_backend_list()
+    if storage_backends.is_backend_configured(LVM_STORAGE_BACKEND):
+        return LVM_CHART_FILENAME
+    return CEPH_CHART_FILENAME
 
 
 @mark.p0
@@ -64,9 +83,13 @@ def test_setup_pvc_pod() -> None:
     get_logger().log_setup_step("Establish SSH connection to active controller")
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
 
+    get_logger().log_setup_step("Select Helm chart based on storage backend")
+    chart_filename = get_chart_filename(ssh_connection)
+    get_logger().log_info(f"Selected chart: {chart_filename}")
+
     get_logger().log_setup_step("Upload Helm chart to controller")
-    local_chart_path = get_stx_resource_path(CHART_RESOURCE_PATH)
-    remote_chart_path = f"{REMOTE_PATH}/{CHART_FILENAME}"
+    local_chart_path = get_stx_resource_path(f"{CHART_RESOURCE_DIR}/{chart_filename}")
+    remote_chart_path = f"{REMOTE_PATH}/{chart_filename}"
     FileKeywords(ssh_connection).upload_file(local_chart_path, remote_chart_path, overwrite=True)
 
     get_logger().log_test_case_step("Install availability-test-pods Helm chart")
@@ -116,4 +139,4 @@ def test_teardown_pvc_pod() -> None:
     KubectlGetPodsKeywords(ssh_connection).wait_for_pods_to_be_deleted(namespace=RELEASE_NAMESPACE)
 
     get_logger().log_test_case_step("Remove the uploaded chart file from the controller")
-    FileKeywords(ssh_connection).delete_file(f"{REMOTE_PATH}/{CHART_FILENAME}")
+    FileKeywords(ssh_connection).delete_file(f"{REMOTE_PATH}/{get_chart_filename(ssh_connection)}")
