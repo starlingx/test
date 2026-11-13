@@ -43,10 +43,11 @@ def test_validate_hosts_reconciled_state():
     namespace = "deployment"
     ssh_connection = lab_connect_keywords.get_active_controller_ssh()
     host_output = KubectlHostsKeywords(ssh_connection).get_hosts(namespace=namespace)
+    validate_not_equals(len(host_output.get_hosts()), 0, "At least one host is returned")
 
-    for host in host_output.kubectl_hosts_objects:
-        validate_equals(host.reconcile, "true", f"Host {host.name} should be reconciled")
-        validate_equals(host.insync, "true", f"Host {host.name} should be insync")
+    for host in host_output.get_hosts():
+        validate_equals(host.get_reconcile(), "true", f"Host {host.get_name()} should be reconciled")
+        validate_equals(host.get_insync(), "true", f"Host {host.get_name()} should be insync")
 
 
 def test_platform_deployment_manager_pod_running_state():
