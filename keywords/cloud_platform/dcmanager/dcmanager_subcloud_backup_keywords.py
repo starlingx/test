@@ -25,6 +25,10 @@ COMPLETE_LOCAL_STATUS = "complete-local"
 BACKUP_FAILED_STATUS = "failed"
 BACKUP_PREP_FAILED_STATUS = "backup-prep-failed"
 RESTORE_COMPLETE_STATUS = "complete"
+# Terminal deploy_status values for a factory restore. Reaching one means the
+# restore finished, not that it worked: dcmanager can report 'install-failed'
+# on a no-SEL BMC even when it succeeded, so the subcloud itself is checked.
+FACTORY_RESTORE_TERMINAL_STATES = ["factory-restore-complete", "install-failed", "restore-failed"]
 
 
 class DcManagerSubcloudBackupKeywords(BaseKeyword):
@@ -920,13 +924,52 @@ class DcManagerSubcloudBackupKeywords(BaseKeyword):
     def factory_restore_backup(self, subcloud_name: str) -> None:
         """Factory-restore a subcloud from its factory backup.
 
+        Triggers the factory restore and waits for the subcloud's deploy_status to
+        reach a terminal state (one of FACTORY_RESTORE_TERMINAL_STATES), rather than
+        the shared restore wait, which does not recognise 'install-failed' and would
+        poll until timeout when the BMC has no SEL support. Reaching a terminal state
+        means the restore attempt finished; whether it actually succeeded is decided
+        by the caller validating the subcloud directly (factory-ready check), since
+        'install-failed' can be a false negative on a no-SEL system.
+
         Args:
             subcloud_name (str): Subcloud to restore.
         """
         password = self._get_subcloud_password(subcloud_name)
         self._unmanage_subcloud_for_restore(subcloud_name)
         get_logger().log_info(f"Factory-restore backup for subcloud '{subcloud_name}'")
-        self.restore_subcloud_backup(password, self.ssh_connection, subcloud=subcloud_name, factory=True)
+        self.restore_subcloud_backup(password, self.ssh_connection, subcloud=subcloud_name, factory=True, wait=False)
+        self._wait_for_factory_restore_terminal_state(subcloud_name)
+
+    def _wait_for_factory_restore_terminal_state(self, subcloud_name: str, check_interval: int = 60, timeout: int = 7200) -> None:
+        """Wait until a factory restore's deploy_status reaches a terminal state.
+
+        Returns as soon as deploy_status is one of FACTORY_RESTORE_TERMINAL_STATES.
+        This deliberately does not fail on 'install-failed' or 'restore-failed': the
+        caller validates actual success against the subcloud itself, because a
+        successful factory restore can report 'install-failed' on a no-SEL system.
+
+        Args:
+            subcloud_name (str): Subcloud whose factory restore is being waited on.
+            check_interval (int): Seconds between polls. Defaults to 60.
+            timeout (int): Maximum seconds to wait for a terminal state. Defaults to 7200.
+        """
+
+        def get_deploy_status() -> str:
+            """Return the subcloud's current deploy_status.
+
+            Returns:
+                str: The deploy_status reported by dcmanager.
+            """
+            return DcManagerSubcloudShowKeywords(self.ssh_connection).get_dcmanager_subcloud_show(subcloud_name).get_dcmanager_subcloud_show_object().get_deploy_status()
+
+        validate_equals_with_retry(
+            function_to_execute=lambda: get_deploy_status() in FACTORY_RESTORE_TERMINAL_STATES,
+            expected_value=True,
+            validation_description=f"Subcloud {subcloud_name} factory restore reached a terminal deploy_status {FACTORY_RESTORE_TERMINAL_STATES}.",
+            timeout=timeout,
+            polling_sleep_time=check_interval,
+        )
 
     def restore_group_central_backup(self, group_name: str, subcloud_names: List[str], release: str, with_install: bool = True) -> None:
         """Restore a subcloud group from central backups of the given release.

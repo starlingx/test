@@ -29,6 +29,7 @@ from framework.ssh.ssh_connection import SSHConnection
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_backup_keywords import DcManagerSubcloudBackupKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_manager_keywords import DcManagerSubcloudManagerKeywords
 from keywords.cloud_platform.dcmanager.objects.dcmanger_subcloud_list_availability_enum import DcManagerSubcloudListAvailabilityEnum
+from keywords.cloud_platform.dcmanager.subcloud_factory_ready_keywords import SubcloudFactoryReadyKeywords
 from keywords.cloud_platform.dcmanager.subcloud_picker_keywords import SubcloudPickerKeywords
 from keywords.cloud_platform.health.health_keywords import HealthKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
@@ -507,19 +508,24 @@ def test_backup_factory_restore_local_single_simplex_subcloud_n_release(request)
     """Factory-restore a simplex subcloud from its factory backup running N release.
 
     Test Steps:
-        1. Select an online simplex subcloud with a local backup available
-        2. Factory-restore the subcloud from its factory backup and verify it completes
-        3. Manage the restored subcloud
-        4. Validate the subcloud cluster is healthy
+        1. Select an online simplex subcloud with a factory backup available
+        2. Factory-restore the subcloud from its factory backup and wait for the restore to finish
+        3. Validate the subcloud is factory-ready (factory-install marker present, cluster healthy).
+           A factory-restored subcloud is not managed here: it is at factory baseline and must be
+           re-enrolled before it can be managed.
+
+    End state: the subcloud is left unmanaged at factory baseline, reachable only on its
+    factory IP with the factory credentials. A following test in the plan must re-enroll it
+    before managing it.
     """
     system_controller_ssh, result = SubcloudPickerKeywords.pick_with_fallback(
         availability=DcManagerSubcloudListAvailabilityEnum.ONLINE,
-        backup_mode="local",
+        backup_mode="factory",
         backup_release="N",
         lab_type=LabTypeEnum.SIMPLEX,
     )
     DcManagerSubcloudBackupKeywords(system_controller_ssh).factory_restore_backup(result.get_name())
-    manage_and_validate_health(system_controller_ssh, result.get_name())
+    SubcloudFactoryReadyKeywords().validate_subcloud_factory_ready(result.get_name())
 
 
 # --- Central Restore - Duplex ---
