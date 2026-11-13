@@ -18,17 +18,22 @@ from keywords.cloud_platform.system.storage.system_storage_backend_keywords impo
 from keywords.cloud_platform.upgrade.software_list_keywords import SoftwareListKeywords
 from keywords.cloud_platform.version_info.cloud_platform_version_manager import CloudPlatformVersionManagerClass
 from keywords.files.file_keywords import FileKeywords
-
 from config.configuration_manager import ConfigurationManager
 from config.lab.objects.lab_type_enum import LabTypeEnum
+
 
 # Default on-disk backup locations consulted by the backup_mode/backup_release filter.
 # Central backups live on the central cloud; local backups live on the subcloud.
 CENTRAL_BACKUP_PATH = "/opt/dc-vault/backups/"
 LOCAL_BACKUP_PATH = "/opt/platform-backup/backups/"
+# Factory backup lives on the subcloud in its own tree (created at factory-install
+# time), separate from the regular local backups: /opt/platform-backup/factory/<release>/factory_backup.tgz.
+FACTORY_BACKUP_PATH = "/opt/platform-backup/factory/"
+FACTORY_BACKUP_ARCHIVE_NAME = "factory_backup.tgz"
 BACKUP_MODE_CENTRAL = "central"
 BACKUP_MODE_LOCAL = "local"
-_VALID_BACKUP_MODES = (BACKUP_MODE_CENTRAL, BACKUP_MODE_LOCAL)
+BACKUP_MODE_FACTORY = "factory"
+_VALID_BACKUP_MODES = (BACKUP_MODE_CENTRAL, BACKUP_MODE_LOCAL, BACKUP_MODE_FACTORY)
 
 # Storage backend names accepted by the storage_backend filter. The set is closed
 # deliberately: an unrecognised name would report "not configured" on every
@@ -115,14 +120,19 @@ class SubcloudPickerKeywords(BaseKeyword):
             backup_mode (Optional[str]): Backup availability filter. ``"central"``
                 keeps only subclouds that have a central backup on disk for
                 ``backup_release``; ``"local"`` keeps only subclouds that have a
-                local backup on disk for ``backup_release``. Requires
+                local backup on disk for ``backup_release``; ``"factory"`` keeps
+                only subclouds that have a factory backup on disk for
+                ``backup_release``. A factory backup is created only on simplex
+                subclouds, so ``"factory"`` never selects a duplex subcloud. Requires
                 ``backup_release``. Unlike the transient ``backup_status`` column
                 from ``dcmanager subcloud list`` (which reflects only the most
                 recent backup operation), this checks the actual backup location:
                 central under ``/opt/dc-vault/backups/<subcloud>/<release>/`` on
                 the central cloud, local under
                 ``/opt/platform-backup/backups/<release>/<subcloud>_platform_backup_*.tgz``
-                on the subcloud. Default path only. When None (default), backup
+                on the subcloud, factory under
+                ``/opt/platform-backup/factory/<release>/factory_backup.tgz`` on
+                the subcloud. Default path only. When None (default), backup
                 availability is not checked.
             backup_release (Optional[str]): Release of the backup to look for when
                 ``backup_mode`` is set. Accepts ``"N"``, ``"N-1"``, ``"N-2"`` (resolved
@@ -361,7 +371,7 @@ class SubcloudPickerKeywords(BaseKeyword):
         if backup_mode is not None and not isinstance(backup_mode, str):
             raise KeywordException("SubcloudPickerKeywords: invalid parameter 'backup_mode': " f"expected None or str, received {type(backup_mode).__name__} ({backup_mode!r}).")
         if isinstance(backup_mode, str) and backup_mode not in _VALID_BACKUP_MODES:
-            raise KeywordException("SubcloudPickerKeywords: invalid parameter 'backup_mode': " f"must be None, '{BACKUP_MODE_CENTRAL}' or '{BACKUP_MODE_LOCAL}', received {backup_mode!r}.")
+            raise KeywordException("SubcloudPickerKeywords: invalid parameter 'backup_mode': " f"must be None, '{BACKUP_MODE_CENTRAL}', '{BACKUP_MODE_LOCAL}' or '{BACKUP_MODE_FACTORY}', received {backup_mode!r}.")
         if backup_release is not None and not isinstance(backup_release, str):
             raise KeywordException("SubcloudPickerKeywords: invalid parameter 'backup_release': " f"expected None or str, received {type(backup_release).__name__} ({backup_release!r}).")
         if isinstance(backup_release, str) and backup_release == "":
@@ -369,7 +379,7 @@ class SubcloudPickerKeywords(BaseKeyword):
         if backup_mode is not None and backup_release is None:
             raise KeywordException("SubcloudPickerKeywords: invalid parameter combination: 'backup_mode' requires 'backup_release' " "so the picker knows which release's backup to look for.")
         if backup_release is not None and backup_mode is None:
-            raise KeywordException("SubcloudPickerKeywords: invalid parameter combination: 'backup_release' requires 'backup_mode' " "to indicate whether to look for a central or local backup.")
+            raise KeywordException("SubcloudPickerKeywords: invalid parameter combination: 'backup_release' requires 'backup_mode' " "to indicate whether to look for a central, local or factory backup.")
         if storage_backend is not None and not isinstance(storage_backend, str):
             raise KeywordException("SubcloudPickerKeywords: invalid parameter 'storage_backend': " f"expected None or str, received {type(storage_backend).__name__} ({storage_backend!r}).")
         if isinstance(storage_backend, str) and storage_backend not in _VALID_STORAGE_BACKENDS:
@@ -548,9 +558,13 @@ class SubcloudPickerKeywords(BaseKeyword):
         ``/opt/platform-backup/backups/<release>/<subcloud>_platform_backup_*.tgz``
         and is checked over an SSH connection to that subcloud. Default path only.
 
+        A ``factory`` backup also lives on the subcloud, in its own tree under
+        ``/opt/platform-backup/factory/<release>/factory_backup.tgz`` (created at
+        factory-install time), and is checked over an SSH connection to the subcloud.
+
         Args:
             survivors: Candidate subclouds surviving the earlier filters.
-            backup_mode (str): ``"central"`` or ``"local"``.
+            backup_mode (str): ``"central"``, ``"local"`` or ``"factory"``.
             backup_release (str): Resolved release string of the backup to look for.
 
         Returns:
@@ -563,6 +577,8 @@ class SubcloudPickerKeywords(BaseKeyword):
             name = list_obj.get_name()
             if backup_mode == BACKUP_MODE_CENTRAL:
                 has_backup = self._has_central_backup(name, backup_release)
+            elif backup_mode == BACKUP_MODE_FACTORY:
+                has_backup = self._has_factory_backup(name, backup_release)
             else:
                 has_backup = self._has_local_backup(name, backup_release)
             if not has_backup:
@@ -609,6 +625,30 @@ class SubcloudPickerKeywords(BaseKeyword):
         archive_prefix = f"{subcloud_name}_platform_backup_"
         files = FileKeywords(subcloud_ssh).get_files_in_dir(local_dir, is_sudo=True)
         return any(file_name.startswith(archive_prefix) and file_name.endswith(".tgz") for file_name in files)
+
+    def _has_factory_backup(self, subcloud_name: str, release: str) -> bool:
+        """Return True if a factory backup for the subcloud/release exists on the subcloud.
+
+        The factory backup is created at factory-install time and stored on the
+        subcloud at ``/opt/platform-backup/factory/<release>/factory_backup.tgz``,
+        separate from the regular local backups under
+        ``/opt/platform-backup/backups/``. It is the archive a factory restore
+        (``dcmanager subcloud-backup restore --factory``) consumes.
+
+        Factory install creates this backup only on simplex systems and factory
+        restore supports only AIO-SX subclouds, so a duplex subcloud never has
+        one and is rejected as having no factory backup.
+
+        Args:
+            subcloud_name (str): Subcloud whose factory backup is checked.
+            release (str): Resolved release string of the backup.
+
+        Returns:
+            bool: True if the factory_backup.tgz archive is present for the release.
+        """
+        factory_archive = f"{FACTORY_BACKUP_PATH}{release}/{FACTORY_BACKUP_ARCHIVE_NAME}"
+        subcloud_ssh = LabConnectionKeywords().get_subcloud_ssh(subcloud_name)
+        return FileKeywords(subcloud_ssh).validate_file_exists_with_sudo(factory_archive)
 
     def _apply_storage_backend_filter(
         self,
