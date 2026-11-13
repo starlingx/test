@@ -42,6 +42,7 @@ from keywords.cloud_platform.dcmanager.subcloud_picker_keywords import SubcloudP
 from keywords.cloud_platform.health.health_keywords import HealthKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.cloud_platform.sync_files.sync_deployment_assets import SyncDeploymentAssets
+from keywords.cloud_platform.system.host.system_host_swact_keywords import SystemHostSwactKeywords
 from keywords.cloud_platform.version_info.cloud_platform_version_manager import CloudPlatformVersionManager
 from keywords.linux.ip.ip_route_keywords import IPRouteKeywords
 
@@ -329,6 +330,247 @@ def test_deploy_single_subcloud_n_minus_2_release_with_registry_routes(request: 
         - Restore N-release configs to default path
         - Restore original subcloud bootstrap values
     """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+
+    get_logger().log_setup_step("Sync deployment assets")
+    SyncDeploymentAssets(ssh_connection).sync_assets()
+
+    get_logger().log_setup_step("Find or free an undeployed subcloud")
+    subcloud_name = get_undeployed_subcloud_name()
+
+    n_minus_2_release = str(CloudPlatformVersionManager.get_second_last_major_release())
+    n_release_version = str(CloudPlatformVersionManager.get_sw_version())
+    get_logger().log_info(f"Target release: {n_minus_2_release}")
+
+    get_logger().log_setup_step(f"Sync N-2 ({n_minus_2_release}) configs for '{subcloud_name}'")
+    config_sync_kw = SubcloudDeployConfigSyncKeywords(ssh_connection)
+    configs_swapped = config_sync_kw.sync_subcloud_configs_for_release(subcloud_name, n_minus_2_release, n_release_version)
+
+    if configs_swapped:
+        request.addfinalizer(
+            lambda: (
+                get_logger().log_teardown_step(f"Restore N-release configs for '{subcloud_name}'"),
+                config_sync_kw.restore_n_release_configs(subcloud_name, n_release_version),
+            )
+        )
+
+    get_logger().log_setup_step("Backup and inject external registry into subcloud bootstrap values")
+    deployment_assets_config = ConfigurationManager.get_deployment_assets_config()
+    sc_assets = deployment_assets_config.get_subcloud_deployment_assets(subcloud_name)
+    subcloud_bootstrap_file = sc_assets.get_bootstrap_file()
+    bootstrap_values_kw = BootstrapValuesKeywords(ssh_connection)
+    backup_file = bootstrap_values_kw.inject_central_registry_into_bootstrap(subcloud_name, CENTRAL_BOOTSTRAP_FILE, REGISTRY_FIELDS)
+
+    request.addfinalizer(lambda: cleanup_subcloud_bootstrap(ssh_connection, backup_file, subcloud_bootstrap_file))
+
+    deploy_subcloud_phased_with_registry_routes(ssh_connection, subcloud_name, release_id=n_minus_2_release)
+    manage_subcloud(ssh_connection, subcloud_name)
+
+    get_logger().log_test_case_step(f"Validate subcloud '{subcloud_name}' health")
+    subcloud_ssh = LabConnectionKeywords().get_subcloud_controller0_ssh(subcloud_name)
+    HealthKeywords(subcloud_ssh).validate_healty_cluster()
+
+
+# --- Deploy From System Controller 1 ---
+
+
+@mark.p1
+@mark.lab_has_subcloud
+@mark.subcloud_lab_is_ipv6
+@mark.lab_has_standby_controller
+def test_deploy_single_subcloud_n_release_with_registry_routes_from_system_controller_1(request: FixtureRequest):
+    """Deploy a single subcloud on N release with external registry route injection, driven from controller-1.
+
+    Performs phased subcloud deployment with NAT64 route injection between
+    install and bootstrap. Configures the subcloud's bootstrap values with
+    the external registry from the system controller, then deploys.
+
+    Preconditions:
+        - System controller is a duplex with an available standby controller
+        - System controller has a working NAT64 route to external registry
+        - At least one subcloud is defined in the lab config
+
+    Setup:
+        - Swact the system controller so controller-1 is active
+        - Sync deployment assets
+        - Find or free an undeployed subcloud
+        - Backup and inject external registry into subcloud bootstrap values
+
+    Test Steps:
+        1. Create subcloud via dcmanager subcloud deploy create
+        2. Install subcloud via dcmanager subcloud deploy install
+        3. SSH to subcloud and add NAT64 route to external registry
+        4. Verify connectivity to external registry
+        5. Bootstrap subcloud via dcmanager subcloud deploy bootstrap
+        6. Configure subcloud via dcmanager subcloud deploy config
+        7. Manage subcloud
+        8. Validate subcloud health
+
+    Teardown:
+        - Restore original subcloud bootstrap values
+        - Swact the system controller back to controller-0
+    """
+    central_ssh = LabConnectionKeywords().get_active_controller_ssh()
+    request.addfinalizer(
+        lambda: (
+            get_logger().log_teardown_step("Swact the system controller back to controller-0"),
+            SystemHostSwactKeywords(LabConnectionKeywords().get_active_controller_ssh()).ensure_controller_is_active("controller-0"),
+        )
+    )
+    get_logger().log_setup_step("Make controller-1 the active system controller")
+    SystemHostSwactKeywords(central_ssh).ensure_controller_is_active("controller-1")
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+
+    get_logger().log_setup_step("Sync deployment assets")
+    SyncDeploymentAssets(ssh_connection).sync_assets()
+
+    get_logger().log_setup_step("Find or free an undeployed subcloud")
+    subcloud_name = get_undeployed_subcloud_name()
+
+    get_logger().log_setup_step("Backup and inject external registry into subcloud bootstrap values")
+    deployment_assets_config = ConfigurationManager.get_deployment_assets_config()
+    sc_assets = deployment_assets_config.get_subcloud_deployment_assets(subcloud_name)
+    subcloud_bootstrap_file = sc_assets.get_bootstrap_file()
+    bootstrap_values_kw = BootstrapValuesKeywords(ssh_connection)
+    backup_file = bootstrap_values_kw.inject_central_registry_into_bootstrap(subcloud_name, CENTRAL_BOOTSTRAP_FILE, REGISTRY_FIELDS)
+
+    request.addfinalizer(lambda: cleanup_subcloud_bootstrap(ssh_connection, backup_file, subcloud_bootstrap_file))
+
+    deploy_subcloud_phased_with_registry_routes(ssh_connection, subcloud_name)
+    manage_subcloud(ssh_connection, subcloud_name)
+
+    get_logger().log_test_case_step(f"Validate subcloud '{subcloud_name}' health")
+    subcloud_ssh = LabConnectionKeywords().get_subcloud_controller0_ssh(subcloud_name)
+    HealthKeywords(subcloud_ssh).validate_healty_cluster()
+
+
+@mark.p1
+@mark.lab_has_subcloud
+@mark.subcloud_lab_is_ipv6
+@mark.lab_has_standby_controller
+def test_deploy_single_subcloud_n_minus_1_release_with_registry_routes_from_system_controller_1(request: FixtureRequest):
+    """Deploy a single subcloud on N-1 release with external registry route injection, driven from controller-1.
+
+    Preconditions:
+        - System controller is a duplex with an available standby controller
+        - System controller has a working NAT64 route to external registry
+        - At least one subcloud is defined in the lab config
+
+    Setup:
+        - Swact the system controller so controller-1 is active
+        - Sync deployment assets
+        - Find or free an undeployed subcloud
+        - Sync N-1 release configs into default path (if release folder exists)
+        - Backup and inject external registry into subcloud bootstrap values
+
+    Test Steps:
+        1. Create subcloud via dcmanager subcloud deploy create
+        2. Install subcloud via dcmanager subcloud deploy install
+        3. SSH to subcloud and add NAT64 route to external registry
+        4. Verify connectivity to external registry
+        5. Bootstrap subcloud via dcmanager subcloud deploy bootstrap
+        6. Configure subcloud via dcmanager subcloud deploy config
+        7. Manage subcloud
+        8. Validate subcloud health
+
+    Teardown:
+        - Restore original subcloud bootstrap values
+        - Restore N-release configs to default path
+        - Swact the system controller back to controller-0
+    """
+    central_ssh = LabConnectionKeywords().get_active_controller_ssh()
+    request.addfinalizer(
+        lambda: (
+            get_logger().log_teardown_step("Swact the system controller back to controller-0"),
+            SystemHostSwactKeywords(LabConnectionKeywords().get_active_controller_ssh()).ensure_controller_is_active("controller-0"),
+        )
+    )
+    get_logger().log_setup_step("Make controller-1 the active system controller")
+    SystemHostSwactKeywords(central_ssh).ensure_controller_is_active("controller-1")
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+
+    get_logger().log_setup_step("Sync deployment assets")
+    SyncDeploymentAssets(ssh_connection).sync_assets()
+
+    get_logger().log_setup_step("Find or free an undeployed subcloud")
+    subcloud_name = get_undeployed_subcloud_name()
+
+    n_minus_1_release = str(CloudPlatformVersionManager.get_last_major_release())
+    n_release_version = str(CloudPlatformVersionManager.get_sw_version())
+    get_logger().log_info(f"Target release: {n_minus_1_release}")
+
+    get_logger().log_setup_step(f"Sync N-1 ({n_minus_1_release}) configs for '{subcloud_name}'")
+    config_sync_kw = SubcloudDeployConfigSyncKeywords(ssh_connection)
+    configs_swapped = config_sync_kw.sync_subcloud_configs_for_release(subcloud_name, n_minus_1_release, n_release_version)
+
+    if configs_swapped:
+        request.addfinalizer(
+            lambda: (
+                get_logger().log_teardown_step(f"Restore N-release configs for '{subcloud_name}'"),
+                config_sync_kw.restore_n_release_configs(subcloud_name, n_release_version),
+            )
+        )
+
+    get_logger().log_setup_step("Backup and inject external registry into subcloud bootstrap values")
+    deployment_assets_config = ConfigurationManager.get_deployment_assets_config()
+    sc_assets = deployment_assets_config.get_subcloud_deployment_assets(subcloud_name)
+    subcloud_bootstrap_file = sc_assets.get_bootstrap_file()
+    bootstrap_values_kw = BootstrapValuesKeywords(ssh_connection)
+    backup_file = bootstrap_values_kw.inject_central_registry_into_bootstrap(subcloud_name, CENTRAL_BOOTSTRAP_FILE, REGISTRY_FIELDS)
+
+    request.addfinalizer(lambda: cleanup_subcloud_bootstrap(ssh_connection, backup_file, subcloud_bootstrap_file))
+
+    deploy_subcloud_phased_with_registry_routes(ssh_connection, subcloud_name, release_id=n_minus_1_release)
+    manage_subcloud(ssh_connection, subcloud_name)
+
+    get_logger().log_test_case_step(f"Validate subcloud '{subcloud_name}' health")
+    subcloud_ssh = LabConnectionKeywords().get_subcloud_controller0_ssh(subcloud_name)
+    HealthKeywords(subcloud_ssh).validate_healty_cluster()
+
+
+@mark.p1
+@mark.lab_has_subcloud
+@mark.subcloud_lab_is_ipv6
+@mark.lab_has_standby_controller
+def test_deploy_single_subcloud_n_minus_2_release_with_registry_routes_from_system_controller_1(request: FixtureRequest):
+    """Deploy a single subcloud on N-2 release with external registry route injection, driven from controller-1.
+
+    Preconditions:
+        - System controller is a duplex with an available standby controller
+        - System controller has a working NAT64 route to external registry
+        - At least one subcloud is defined in the lab config
+
+    Setup:
+        - Swact the system controller so controller-1 is active
+        - Sync deployment assets
+        - Find or free an undeployed subcloud
+        - Sync N-2 release configs into default path (if release folder exists)
+        - Backup and inject external registry into subcloud bootstrap values
+
+    Test Steps:
+        1. Create subcloud via dcmanager subcloud deploy create
+        2. Install subcloud via dcmanager subcloud deploy install
+        3. SSH to subcloud and add NAT64 route to external registry
+        4. Verify connectivity to external registry
+        5. Bootstrap subcloud via dcmanager subcloud deploy bootstrap
+        6. Configure subcloud via dcmanager subcloud deploy config
+        7. Manage subcloud
+        8. Validate subcloud health
+
+    Teardown:
+        - Restore original subcloud bootstrap values
+        - Restore N-release configs to default path
+        - Swact the system controller back to controller-0
+    """
+    central_ssh = LabConnectionKeywords().get_active_controller_ssh()
+    request.addfinalizer(
+        lambda: (
+            get_logger().log_teardown_step("Swact the system controller back to controller-0"),
+            SystemHostSwactKeywords(LabConnectionKeywords().get_active_controller_ssh()).ensure_controller_is_active("controller-0"),
+        )
+    )
+    get_logger().log_setup_step("Make controller-1 the active system controller")
+    SystemHostSwactKeywords(central_ssh).ensure_controller_is_active("controller-1")
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
 
     get_logger().log_setup_step("Sync deployment assets")
