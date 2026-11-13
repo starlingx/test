@@ -1,14 +1,16 @@
 """WRA (Wind River Analytics) Setup Keywords.
 
-Provides reusable methods for deploying WRA on DC systems.
+Provides reusable methods for deploying WRA on DC and standalone systems from
+the tarball the lab install leaves in the home directory.
 Can be called from test files or other keywords.
 """
 
 import textwrap
+from typing import Optional
 
-from config.system_test.objects.wra_server_config import WraServerConfig
+from framework.exceptions.keyword_exception import KeywordException
 from framework.logging.automation_logger import get_logger
-from framework.resources.resource_finder import get_stx_resource_path
+from framework.validation.validation import validate_equals
 from framework.ssh.ssh_connection import SSHConnection
 from keywords.cloud_platform.command_wrappers import source_openrc
 from keywords.cloud_platform.system.application.system_application_apply_keywords import SystemApplicationApplyKeywords
@@ -25,6 +27,8 @@ from keywords.k8s.pods.kubectl_get_pods_keywords import KubectlGetPodsKeywords
 WRA_APP_NAME = "wr-analytics"
 WRA_NAMESPACE = "monitor"
 WRA_TARBALL_DIR = "/home/sysadmin"
+# The lab install leaves the WRA tarball here.
+WRA_DEFAULT_TARBALL_PATH = f"{WRA_TARBALL_DIR}/wr-analytics.tgz"
 METRICBEAT_OVERRIDES_FILENAME = "sys-eng-overrides.yaml"
 SECURITY_OVERRIDES_FILENAME = "elastic-services-security-overrides.yaml"
 UPLOAD_APPLY_TIMEOUT = 3600
@@ -107,26 +111,27 @@ METRICBEAT_OVERRIDES_CONTENT = textwrap.dedent("""\
 
 
 class SetupWraKeywords:
-    """Keywords for deploying WRA on DC systems.
+    """Keywords for deploying WRA on DC and standalone systems.
 
     This class provides reusable methods for WRA deployment that can be
-    called from test files or other keywords.
+    called from test files or other keywords. A standalone system needs only
+    sc_ssh, which then points at the system itself.
 
     Args:
-        sc_ssh: SSH connection to the system controller.
-        subcloud_ssh: SSH connection to the subcloud.
-        system_controller_ip: IP address of the system controller.
-        ssh_user: SSH username for the system controller.
-        ssh_password: SSH password for the system controller.
+        sc_ssh: SSH connection to the system controller (or the standalone system).
+        subcloud_ssh: SSH connection to the subcloud. Only needed for a DC deployment.
+        system_controller_ip: IP address of the system controller. Only needed for a DC deployment.
+        ssh_user: SSH username for the system controller. Only needed for a DC deployment.
+        ssh_password: SSH password for the system controller. Only needed for a DC deployment.
     """
 
     def __init__(
         self,
         sc_ssh: SSHConnection,
-        subcloud_ssh: SSHConnection,
-        system_controller_ip: str,
-        ssh_user: str,
-        ssh_password: str,
+        subcloud_ssh: Optional[SSHConnection] = None,
+        system_controller_ip: Optional[str] = None,
+        ssh_user: Optional[str] = None,
+        ssh_password: Optional[str] = None,
     ):
         self.sc_ssh = sc_ssh
         self.subcloud_ssh = subcloud_ssh
@@ -140,30 +145,43 @@ class SetupWraKeywords:
     def deploy_wra_dc(self) -> None:
         """Deploy WRA on a DC system (system controller + subcloud).
 
-        Downloads the WRA tarball from the build server, deploys on the system
-        controller with metricbeat overrides, then deploys on the subcloud with
-        both metricbeat and security overrides.
+        Deploys on the system controller with metricbeat overrides, then
+        deploys on the subcloud with both metricbeat and security overrides.
+        Both use the tarball the lab install leaves in the home directory.
 
         Raises:
+            KeywordException: If the instance was built without the subcloud connection,
+                system controller IP or credentials a DC deployment needs.
             AssertionError: If WRA deployment fails on either system.
         """
-        wra_config = self._load_wra_server_config()
+        if None in (self.subcloud_ssh, self.system_controller_ip, self.ssh_user, self.ssh_password):
+            raise KeywordException("deploy_wra_dc needs subcloud_ssh, system_controller_ip, ssh_user and ssh_password")
 
-        self._deploy_on_system_controller(wra_config)
-        self._deploy_on_subcloud(wra_config)
+        self._deploy_on_system_controller()
+        self._deploy_on_subcloud()
 
         get_logger().log_info(
             "WRA DC deployment completed successfully on both system controller and subcloud"
         )
 
-    def _deploy_on_system_controller(self, wra_config: WraServerConfig) -> None:
-        """Deploy WRA on the system controller.
+    def deploy_wra_standalone(self) -> None:
+        """Deploy WRA on a standalone system with the system test overrides.
 
-        Args:
-            wra_config: WRA server configuration object.
+        A standalone system runs the whole WRA stack itself, so it gets the same
+        labels, metricbeat overrides and checks as the system controller of a
+        DC system. It uses the tarball the lab install leaves in the home
+        directory.
+
+        Raises:
+            AssertionError: If WRA deployment fails.
         """
-        get_logger().log_info("Download WRA tarball to system controller")
-        sc_tarball_path = self._download_wra_tarball(self.sc_ssh, wra_config)
+        self._deploy_on_system_controller()
+
+        get_logger().log_info("WRA standalone deployment completed successfully")
+
+    def _deploy_on_system_controller(self) -> None:
+        """Deploy WRA on the system controller, or on a standalone system."""
+        self._validate_tarball_present(self.sc_ssh)
 
         get_logger().log_info("Remove existing WRA if present on system controller")
         if SystemApplicationListKeywords(self.sc_ssh).is_app_present(WRA_APP_NAME):
@@ -185,11 +203,11 @@ class SetupWraKeywords:
         get_logger().log_info("Upload WRA on system controller")
         upload_input = SystemApplicationUploadInput()
         upload_input.set_app_name(WRA_APP_NAME)
-        upload_input.set_tar_file_path(sc_tarball_path)
+        upload_input.set_tar_file_path(WRA_DEFAULT_TARBALL_PATH)
         SystemApplicationUploadKeywords(self.sc_ssh).system_application_upload(upload_input)
 
         get_logger().log_info("Create and apply metricbeat overrides on system controller")
-        sc_overrides_path = self._create_metricbeat_overrides(self.sc_ssh)
+        sc_overrides_path = self.create_metricbeat_overrides(self.sc_ssh)
         SystemHelmOverrideKeywords(self.sc_ssh).update_helm_override(
             sc_overrides_path, WRA_APP_NAME, "metricbeat", WRA_NAMESPACE
         )
@@ -207,14 +225,9 @@ class SetupWraKeywords:
             WRA_APP_NAME, "applied", timeout=60
         )
 
-    def _deploy_on_subcloud(self, wra_config: WraServerConfig) -> None:
-        """Deploy WRA on the subcloud.
-
-        Args:
-            wra_config: WRA server configuration object.
-        """
-        get_logger().log_info("Download WRA tarball to subcloud")
-        subcloud_tarball_path = self._download_wra_tarball(self.subcloud_ssh, wra_config)
+    def _deploy_on_subcloud(self) -> None:
+        """Deploy WRA on the subcloud."""
+        self._validate_tarball_present(self.subcloud_ssh)
 
         get_logger().log_info("Remove existing WRA if present on subcloud")
         if SystemApplicationListKeywords(self.subcloud_ssh).is_app_present(WRA_APP_NAME):
@@ -232,11 +245,11 @@ class SetupWraKeywords:
         get_logger().log_info("Upload WRA on subcloud")
         upload_input = SystemApplicationUploadInput()
         upload_input.set_app_name(WRA_APP_NAME)
-        upload_input.set_tar_file_path(subcloud_tarball_path)
+        upload_input.set_tar_file_path(WRA_DEFAULT_TARBALL_PATH)
         SystemApplicationUploadKeywords(self.subcloud_ssh).system_application_upload(upload_input)
 
         get_logger().log_info("Create and apply metricbeat overrides on subcloud")
-        subcloud_overrides_path = self._create_metricbeat_overrides(self.subcloud_ssh)
+        subcloud_overrides_path = self.create_metricbeat_overrides(self.subcloud_ssh)
         SystemHelmOverrideKeywords(self.subcloud_ssh).update_helm_override(
             subcloud_overrides_path, WRA_APP_NAME, "metricbeat", WRA_NAMESPACE
         )
@@ -275,56 +288,21 @@ class SetupWraKeywords:
             WRA_APP_NAME, "applied", timeout=60
         )
 
-    def _load_wra_server_config(self) -> WraServerConfig:
-        """Load the WRA server configuration from the config file.
-
-        Returns:
-            WraServerConfig: WRA server configuration object.
-        """
-        config_path = get_stx_resource_path("config/system_test/files/default_wra_server.json5")
-        get_logger().log_info(f"Loading WRA server config from: {config_path}")
-        return WraServerConfig(config_path)
-
-    def _download_wra_tarball(self, ssh_connection: SSHConnection, wra_config: WraServerConfig) -> str:
-        """Download the WRA tarball from the build server to the lab.
+    @staticmethod
+    def _validate_tarball_present(ssh_connection: SSHConnection) -> None:
+        """Check that the WRA tarball the lab install leaves in the home directory exists.
 
         Args:
             ssh_connection: SSH connection to the target host.
-            wra_config: WRA server configuration object.
-
-        Returns:
-            str: Path to the downloaded tarball on the lab.
         """
-        server = wra_config.get_server()
-        user = wra_config.get_user()
-        password = wra_config.get_password()
-        base_path = wra_config.get_base_path()
-        tarball_pattern = wra_config.get_tarball_pattern()
-        destination = wra_config.get_destination_path()
-
-        remote_path = f"{base_path}/{tarball_pattern}"
-        get_logger().log_info(f"Downloading WRA tarball from {server}:{remote_path}")
-
-        FileKeywords(ssh_connection).rsync_from_remote_server(
-            remote_server=server,
-            remote_user=user,
-            remote_password=password,
-            remote_path=remote_path,
-            local_dest_path=f"{destination}/",
+        validate_equals(
+            FileKeywords(ssh_connection).file_exists(WRA_DEFAULT_TARBALL_PATH),
+            True,
+            f"WRA tarball {WRA_DEFAULT_TARBALL_PATH} exists on the host",
         )
 
-        find_cmd = f"ls -t {destination}/wr-analytics-[0-9]*.tgz 2>/dev/null | head -1"
-        output = ssh_connection.send(find_cmd)
-
-        if isinstance(output, list):
-            tarball_path = output[0].strip() if output else ""
-        else:
-            tarball_path = output.strip()
-
-        get_logger().log_info(f"WRA tarball downloaded to: {tarball_path}")
-        return tarball_path
-
-    def _create_metricbeat_overrides(self, ssh_connection: SSHConnection) -> str:
+    @staticmethod
+    def create_metricbeat_overrides(ssh_connection: SSHConnection) -> str:
         """Create the sys-eng-overrides.yaml file on the lab.
 
         Args:
