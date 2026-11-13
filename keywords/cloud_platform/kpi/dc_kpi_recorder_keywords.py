@@ -119,3 +119,45 @@ class DcKpiRecorderKeywords(BaseKeyword):
 
         get_logger().log_info(f"Recording {len(kpi_measures)} DC KPI measurements (category={kpi_category}, group={kpi_group}, sc_version={system_controller_version}, subcloud_version={subcloud_version})")
         KpiRecorderKeywords().record_kpi_measures(kpi_measures)
+
+    def record_wall_clock_duration(
+        self,
+        duration_seconds: float,
+        kpi_category: str,
+        kpi_group: str,
+        name_prefix: str,
+        phase: str = "total",
+        node_role: str = DC_KPI_DEFAULT_NODE_ROLE,
+        subcloud_version: Optional[str] = None,
+        system_controller_version: Optional[str] = None,
+        extra_details: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Record a single wall-clock duration as one KPI measurement.
+
+        For operations whose duration is measured by the test's own clock rather
+        than mined from platform log markers (e.g. a subcloud backup). It delegates
+        to record_phase_durations so the taxonomy, tags and persistence are
+        identical to the mined KPIs; the only difference is that the single
+        ``{phase: duration}`` entry comes from the wall clock.
+
+        Args:
+            duration_seconds (float): Measured duration in seconds.
+            kpi_category (str): KPI catalog category, e.g. "Backup_Restore".
+            kpi_group (str): KPI catalog group, e.g. "dcmanager_central_backup".
+            name_prefix (str): KPI name prefix, e.g. "dcmanager-central-backup".
+            phase (str): Phase name for the single measurement. Defaults to "total".
+            node_role (str): Node role for the KPI. Defaults to "subcloud".
+            subcloud_version (Optional[str]): The subcloud's software version.
+            system_controller_version (Optional[str]): The system controller's version.
+            extra_details (Optional[Dict[str, Any]]): Variant/context tags.
+        """
+        self.record_phase_durations(
+            {phase: float(duration_seconds)},
+            kpi_category=kpi_category,
+            kpi_group=kpi_group,
+            name_prefix=name_prefix,
+            node_role=node_role,
+            subcloud_version=subcloud_version,
+            system_controller_version=system_controller_version,
+            extra_details=extra_details,
+        )
