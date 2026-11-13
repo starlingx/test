@@ -13,6 +13,7 @@ from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
 from keywords.base_keyword import BaseKeyword
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_show_keywords import DcManagerSubcloudShowKeywords
+from keywords.cloud_platform.nocloud.network_config_generator_keywords import NetworkConfigGeneratorKeywords
 from keywords.cloud_platform.system.oam.system_oam_show_keywords import SystemOamShowKeywords
 from keywords.files.file_keywords import FileKeywords
 from keywords.linux.wget.wget_keywords import WgetKeywords
@@ -32,14 +33,11 @@ AUTOMATION_MARKER_NAME = "AUTOMATION_GENERATED.README"
 # being 'subcloud<N>' (e.g. 'subcloud1' -> '/home/sysadmin/subcloud-1').
 SUBCLOUD_HOME_CONFIG_BASE = "/home/sysadmin"
 # Seed network-config filename at the nocloud tree root. run-cloud-init-from-seed.sh
-# extracts "/network-config" from the ISO ("isoinfo -x /network-config") and applies
-# it with ifup, so it must describe the subcloud's real OAM interface/VLAN/address.
-# The nocloud tarball ships a PLACEHOLDER here (physical enp2s1, 10.10.10.2/24 IPv4)
-# which fails ifup on real (e.g. IPv6 VLAN) subclouds, so it is replaced with the
-# subcloud's own factory_install/network-config.
+# extracts "/network-config" from the ISO and applies it with ifup to bring up the
+# OAM interface. The tarball ships a placeholder, so it is replaced with a config
+# generated from the subcloud's bootstrap/install values (NetworkConfigGeneratorKeywords).
 SEED_NETWORK_CONFIG_NAME = "network-config"
-# Per-subcloud factory_install subdirectory on the SC holding the real
-# network-config and deployment-config.yml staged at factory-install time.
+# Per-subcloud factory_install subdirectory on the SC holding deployment-config.yml.
 SUBCLOUD_FACTORY_INSTALL_SUBDIR = "factory_install"
 # Seed config/ files that the onsite-restore scripts consume (10-platform-reconfig,
 # 90-send-onsite-restore-request). The nocloud tarball ships placeholders for these;
@@ -232,25 +230,21 @@ class SeedIsoBuilderKeywords(BaseKeyword):
             raise FileNotFoundError(f"Subcloud home config directory not found at {home_config_dir} for subcloud '{subcloud_name}'; " f"expected the subcloud's deployment config staged under {SUBCLOUD_HOME_CONFIG_BASE}/subcloud-<N>.")
         return home_config_dir
 
-    def _get_subcloud_factory_password(self, subcloud_name: str) -> str:
-        """Return the subcloud's factory sysadmin password from lab config.
+    def _get_subcloud_admin_password(self, subcloud_name: str) -> str:
+        """Return the subcloud's sysadmin (admin) password from lab config.
 
-        The seed runs while the subcloud is at factory-restore baseline, so the
-        sysadmin password injected into the seed bootstrap-values is the subcloud's
-        factory password. Uses the subcloud's factory_credentials, falling back to
-        admin_credentials when factory_credentials are not configured (mirroring
-        LabConnectionKeywords.get_subcloud_factory_ssh).
+        The sysadmin_password injected into the seed bootstrap-values is the
+        subcloud's admin password, so the restored subcloud uses the standard
+        sysadmin credentials.
 
         Args:
             subcloud_name (str): The dcmanager/lab subcloud name.
 
         Returns:
-            str: The subcloud factory sysadmin password.
+            str: The subcloud sysadmin (admin) password.
         """
         subcloud_config = ConfigurationManager.get_lab_config().get_subcloud(subcloud_name)
-        factory_credentials = subcloud_config.get_factory_credentials()
-        credentials = factory_credentials if factory_credentials else subcloud_config.get_admin_credentials()
-        return credentials.get_password()
+        return subcloud_config.get_admin_credentials().get_password()
 
     def _stage_subcloud_config(self, nocloud_dir: str, subcloud_name: str) -> None:
         """Stage the subcloud config files into the seed config dir.
@@ -269,7 +263,7 @@ class SeedIsoBuilderKeywords(BaseKeyword):
           relative to config/.
         - config/install-values.yaml: required by 10-platform-reconfig.
         - config/deployment-config.yml: copied with the config dir into enroll-config
-          at runtime and consumed by 95-trigger-onsite-local-restore.
+          at runtime by the seed scripts.
 
         Args:
             nocloud_dir (str): Path to the extracted nocloud tree.
@@ -298,10 +292,10 @@ class SeedIsoBuilderKeywords(BaseKeyword):
         self.file_keywords.append_to_file(seed_bootstrap, f"\nsystemcontroller_oam_address: {sc_oam_ip}")
 
         # Inject sysadmin_password (not in the per-subcloud bootstrap-values but
-        # required by 10-platform-reconfig and 90-send-onsite-restore-request). The
-        # subcloud is at factory-restore baseline when the seed runs, so this is the
-        # subcloud's factory sysadmin password, taken from lab config.
-        sysadmin_password = self._get_subcloud_factory_password(subcloud_name)
+        # required by 10-platform-reconfig and 90-send-onsite-restore-request). This
+        # is the subcloud's admin sysadmin password so the restored subcloud uses the
+        # standard sysadmin credentials.
+        sysadmin_password = self._get_subcloud_admin_password(subcloud_name)
         get_logger().log_info(f"Injecting sysadmin_password into {seed_bootstrap}")
         self.file_keywords.remove_line_matching(seed_bootstrap, "sysadmin_password")
         self.file_keywords.append_to_file(seed_bootstrap, f"\nsysadmin_password: {sysadmin_password}")
@@ -369,31 +363,29 @@ class SeedIsoBuilderKeywords(BaseKeyword):
         self.file_keywords.copy_file(source_path, dest_path, sudo=True)
 
     def _stage_network_config(self, nocloud_dir: str, subcloud_name: str) -> None:
-        """Stage the subcloud's real network-config at the seed tree root.
+        """Generate the seed network-config at the seed tree root.
 
         run-cloud-init-from-seed.sh extracts "/network-config" from the seed ISO and
         applies it with ifup to bring the subcloud's OAM interface up so it can reach
         the System Controller. The nocloud tarball ships a PLACEHOLDER network-config
-        (type physical, name enp2s1, static 10.10.10.2/24 IPv4) which fails ifup on a
-        real subcloud whose OAM is on a different interface/VLAN and/or is IPv6
-        (onsite restore without reinstall).
+        that fails ifup on a real subcloud.
 
-        The subcloud's own correct network-config is already staged on the SC at
-        /home/sysadmin/subcloud-<N>/factory_install/network-config (the VLAN/interface
-        /IPv6 address the platform used at factory install, matching the known-good
-        hand-built onsite-restore seed), so it is copied verbatim to the seed root.
+        The network-config is generated from the subcloud's bootstrap-values and
+        install-values (NetworkConfigGeneratorKeywords), so it uses the DC-managed
+        OAM floating address. The factory_install/network-config is NOT reused: it
+        carries the factory OAM address, which leaves the subcloud on the wrong
+        address so the System Controller cannot reach it after restore.
 
         Args:
             nocloud_dir (str): Path to the extracted nocloud tree.
             subcloud_name (str): Name of the target subcloud.
         """
         home_config_dir = self._get_subcloud_home_config_dir(subcloud_name)
-        source_network_config = f"{home_config_dir}/{SUBCLOUD_FACTORY_INSTALL_SUBDIR}/{SEED_NETWORK_CONFIG_NAME}"
-        if not self.file_keywords.validate_file_exists_with_sudo(source_network_config):
-            raise FileNotFoundError(f"Subcloud network-config not found at {source_network_config}; required to build the onsite-restore seed.")
+        bootstrap_values = self._find_subcloud_bootstrap_values(home_config_dir)
+        install_values = self._find_subcloud_install_values(home_config_dir)
         seed_network_config = f"{nocloud_dir}/{SEED_NETWORK_CONFIG_NAME}"
-        get_logger().log_info(f"Staging seed network-config {source_network_config} -> {seed_network_config}")
-        self.file_keywords.copy_file(source_network_config, seed_network_config, sudo=True)
+        get_logger().log_info(f"Generating seed network-config for {subcloud_name} -> {seed_network_config}")
+        NetworkConfigGeneratorKeywords(self.ssh_connection).write_network_config(bootstrap_values, install_values, seed_network_config)
 
     def _find_subcloud_bootstrap_values(self, home_config_dir: str) -> str:
         """Return the absolute path of the subcloud bootstrap-values file.
