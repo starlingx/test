@@ -14,12 +14,15 @@ from pytest import FixtureRequest, mark
 from framework.logging.automation_logger import get_logger
 from framework.validation.validation import validate_equals, validate_not_equals, validate_str_contains
 from keywords.bmc.ipmitool.chassis.power.ipmitool_chassis_power_keywords import IPMIToolChassisPowerKeywords
+from keywords.cloud_platform.fault_management.alarms.alarm_list_keywords import AlarmListKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.cloud_platform.system.host.system_host_list_keywords import SystemHostListKeywords
 from keywords.cloud_platform.system.host.system_host_lock_keywords import SystemHostLockKeywords
 from keywords.cloud_platform.system.host.system_host_reboot_keywords import SystemHostRebootKeywords
 from keywords.cloud_platform.system.host.system_host_swact_keywords import SystemHostSwactKeywords
 from keywords.cloud_platform.system.openbao.openbao_keywords import OpenBaoKeywords
+from keywords.linux.dpkg.dpkg_status import DpkgStatusKeywords
+from keywords.linux.user.linux_user_keywords import LinuxUserKeywords
 
 
 @mark.p0
@@ -343,3 +346,63 @@ def test_host_openbao_ungraceful_power_loss_auto_unseal(request: FixtureRequest)
     validate_equals(standby_openbao.is_host_service_active(), True, "Host OpenBao must be active after the ungraceful power-cycle")
     validate_str_contains(standby_openbao.host_bao_status_with_ca(), "false", "Host OpenBao must auto-unseal after the ungraceful power loss")
     validate_str_contains(standby_openbao.host_bao_kv_get("pwrloss", standby_openbao.host_bao_admin_login()), "pre", "Known secret must survive the ungraceful power loss")
+
+
+@mark.p0
+def test_host_openbao_posix_user_group_created():
+    """Install creates the openbao POSIX user and group before puppet chown.
+
+    Regression for the install defect where a missing openbao user/group left
+    the node with no services: confirms the openbao user and group exist, the
+    openbao-host package is installed, no "Could not find user openbao" appears
+    in the bootstrap puppet log, and the host service is healthy.
+
+    Test Steps:
+        - Confirm the openbao POSIX user and group exist
+        - Confirm the openbao-host package is installed
+        - Confirm the bootstrap puppet log has no missing-user error
+        - Confirm the host OpenBao service is active
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    openbao = OpenBaoKeywords(ssh_connection)
+
+    get_logger().log_test_case_step("Confirming the openbao POSIX user and group exist")
+    validate_equals(LinuxUserKeywords(ssh_connection).user_exists("openbao"), True, "openbao POSIX user must exist")
+    validate_equals(openbao.host_group_exists("openbao"), True, "openbao POSIX group must exist")
+
+    get_logger().log_test_case_step("Confirming the openbao-host package is installed")
+    package_status = DpkgStatusKeywords(ssh_connection).get_dpkg_status_application("openbao-host")
+    validate_equals(package_status.get_status_object().get_status(), "install ok installed", "openbao-host package must be installed")
+
+    get_logger().log_test_case_step("Confirming the bootstrap puppet log has no missing-user error")
+    validate_equals(openbao.host_bootstrap_puppet_log_contains("Could not find user openbao"), False, "Bootstrap puppet log must not report a missing openbao user")
+
+    get_logger().log_test_case_step("Confirming the host OpenBao service is active")
+    validate_equals(openbao.is_host_service_active(), True, "Host OpenBao service must be active after install")
+
+
+@mark.p0
+def test_host_openbao_bootstrap_init_unsealed():
+    """Host OpenBao was initialized and unsealed at day-0 bootstrap.
+
+    Verifies the persistent outcome of the bootstrap ordering: the controller
+    config-complete flag is present, the host OpenBao service is active and
+    unsealed, and no stuck config alarm remains.
+
+    Test Steps:
+        - Confirm the controller config-complete flag is present
+        - Confirm the host OpenBao service is active and reports Sealed false
+        - Confirm no stuck 250.001 config alarm remains
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    openbao = OpenBaoKeywords(ssh_connection)
+
+    get_logger().log_test_case_step("Confirming the controller config-complete flag is present")
+    validate_equals(openbao.host_config_complete_flag_present(), True, "Controller config-complete flag must be present after bootstrap")
+
+    get_logger().log_test_case_step("Confirming the host OpenBao service is active and unsealed")
+    validate_equals(openbao.is_host_service_active(), True, "Host OpenBao service must be active after bootstrap")
+    validate_str_contains(openbao.host_bao_status_with_ca(), "false", "Host OpenBao must be unsealed (Sealed false) after bootstrap")
+
+    get_logger().log_test_case_step("Confirming no stuck config alarm remains")
+    validate_equals(AlarmListKeywords(ssh_connection).is_alarm_present("250.001"), False, "No stuck 250.001 config-out-of-date alarm may remain after bootstrap")
