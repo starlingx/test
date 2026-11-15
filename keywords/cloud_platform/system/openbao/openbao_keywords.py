@@ -709,6 +709,57 @@ class OpenBaoKeywords(BaseKeyword):
         """
         return self._host_bao("policy list", token)
 
+    def host_bao_kv_put(self, path: str, kv_pairs: dict, token: str) -> str:
+        """Write a KV v2 secret to the host OpenBao (mount ``secret``).
+
+        Args:
+            path (str): Secret path under the ``secret`` mount.
+            kv_pairs (dict): Key/value pairs to store.
+            token (str): BAO_TOKEN to authenticate the call.
+
+        Returns:
+            str: The ``bao kv put`` command output.
+        """
+        pairs = " ".join(f"{key}={value}" for key, value in kv_pairs.items())
+        return self._host_bao(f"kv put -mount=secret {path} {pairs}", token)
+
+    def host_bao_kv_get(self, path: str, token: str) -> str:
+        """Read a KV v2 secret from the host OpenBao (mount ``secret``).
+
+        Args:
+            path (str): Secret path under the ``secret`` mount.
+            token (str): BAO_TOKEN to authenticate the call.
+
+        Returns:
+            str: The ``bao kv get`` command output.
+        """
+        return self._host_bao(f"kv get -mount=secret {path}", token)
+
+    def host_raft_list_peers(self, token: str) -> str:
+        """List the host OpenBao raft peers.
+
+        Args:
+            token (str): BAO_TOKEN to authenticate the call.
+
+        Returns:
+            str: The ``bao operator raft list-peers`` output.
+        """
+        return self._host_bao("operator raft list-peers", token)
+
+    def host_puppet_runtime_reapply(self) -> str:
+        """Trigger a puppet runtime re-apply of the host OpenBao class.
+
+        Re-runs the ``platform::openbao::runtime`` class so the service re-reads
+        its configuration without a restart or re-seal (no sysinv path exists).
+
+        Returns:
+            str: The ``puppet apply`` command output.
+        """
+        manifest = "include ::platform::openbao::runtime"
+        modulepath = "/usr/share/puppet/modules:/usr/share/openstack-puppet/modules"
+        cmd = f"bash -c \"echo '{manifest}' | puppet apply --modulepath={modulepath} 2>&1\""
+        return "".join(self.ssh_connection.send_as_sudo_non_interactive(cmd))
+
     def get_host_file_owner_mode(self, path: str) -> str:
         """Get ``owner:group mode`` for a host file via sudo stat.
 
