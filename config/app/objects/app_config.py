@@ -93,6 +93,10 @@ class AppConfig:
         if "rook_ceph_app_tarball" in app_dict:
             self.rook_ceph_app_tarball = app_dict["rook_ceph_app_tarball"]
 
+        self.openbao_app_tarball_n1 = "fake_path"
+        if "openbao_app_tarball_n1" in app_dict:
+            self.openbao_app_tarball_n1 = app_dict["openbao_app_tarball_n1"]
+
         self.oidc_test_app_tarball = "auditd"
         if "oidc_test_app_tarball" in app_dict:
             self.oidc_test_app_tarball = app_dict["oidc_test_app_tarball"]
@@ -318,6 +322,16 @@ class AppConfig:
 
         """
         return self.rook_ceph_app_tarball
+
+    def get_openbao_app_tarball_n1(self) -> str:
+        """
+        Getter for the previous-version OpenBao app tarball used to exercise application-update.
+
+        Returns:
+            str: the OpenBao N-1 app tarball path, or "fake_path" when not configured
+
+        """
+        return self.openbao_app_tarball_n1
 
     def get_ptp_notification_app_name(self) -> str:
         """

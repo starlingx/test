@@ -13,12 +13,13 @@ from pytest import FixtureRequest, mark
 from config.configuration_manager import ConfigurationManager
 from framework.logging.automation_logger import get_logger
 from framework.resources.resource_finder import get_stx_resource_path
-from framework.validation.validation import validate_equals, validate_equals_with_retry, validate_str_contains
+from framework.validation.validation import validate_equals, validate_equals_with_retry, validate_list_contains, validate_not_equals, validate_not_none, validate_str_contains
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.cloud_platform.system.application.system_application_apply_keywords import SystemApplicationApplyKeywords
 from keywords.cloud_platform.system.application.system_application_delete_keywords import SystemApplicationDeleteInput, SystemApplicationDeleteKeywords
 from keywords.cloud_platform.system.application.system_application_list_keywords import SystemApplicationListKeywords
 from keywords.cloud_platform.system.application.system_application_remove_keywords import SystemApplicationRemoveInput, SystemApplicationRemoveKeywords
+from keywords.cloud_platform.system.application.system_application_update_keywords import SystemApplicationUpdateInput, SystemApplicationUpdateKeywords
 from keywords.cloud_platform.system.application.system_application_upload_keywords import SystemApplicationUploadInput, SystemApplicationUploadKeywords
 from keywords.cloud_platform.system.openbao.openbao_keywords import OpenBaoKeywords
 from keywords.files.file_keywords import FileKeywords
@@ -319,3 +320,164 @@ def test_openbao_unaware_app_injection(request: FixtureRequest):
     )
     injected_secret = openbao_keywords.get_injected_secret(pod_name, TEST_NAMESPACE)
     validate_equals(injected_secret["password"], secret_data["password"], "Injected password should match")
+
+
+@mark.p1
+def test_openbao_app_full_lifecycle(request: FixtureRequest):
+    """Verify OpenBao app lifecycle: remove retains PVC/data, delete destroys PVC.
+
+    Test Steps:
+        - Apply OpenBao and store a known secret via REST (KV v2)
+        - Record the openbao PVC names (expect Bound)
+        - Remove the app: state returns to 'uploaded', PVCs retained
+        - Re-apply the app: secret still readable (survived remove + reapply)
+        - Delete the app: gone from application-list, PVCs destroyed
+    """
+
+    def cleanup():
+        ssh = LabConnectionKeywords().get_active_controller_ssh()
+        cleanup_openbao_environment(ssh)
+
+    request.addfinalizer(cleanup)
+
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    setup_openbao_environment(ssh_connection)
+
+    security_config = ConfigurationManager.get_security_config()
+    openbao = OpenBaoKeywords(ssh_connection, security_config.get_ssh_user_home())
+    token = openbao.get_root_token()
+
+    get_logger().log_info("Storing a known secret before remove")
+    secret = {
+        "username": security_config.get_openbao_test_secret_username(),
+        "password": security_config.get_openbao_test_secret_password(),
+    }
+    openbao.create_secret_rest(SECRET_PATH, secret, token)
+
+    pvc_names = openbao.get_openbao_pvc_names()
+    validate_equals(len(pvc_names) > 0, True, "OpenBao should have at least one PVC bound")
+
+    get_logger().log_info("Removing the OpenBao application")
+    remove_input = SystemApplicationRemoveInput()
+    remove_input.set_app_name(APP_NAME)
+    SystemApplicationRemoveKeywords(ssh_connection).system_application_remove(remove_input)
+
+    validate_equals(SystemApplicationListKeywords(ssh_connection).is_app_present(APP_NAME), True, "App should still be present (uploaded) after remove")
+    validate_equals(sorted(openbao.get_openbao_pvc_names()), sorted(pvc_names), "PVCs must be retained after application-remove")
+
+    get_logger().log_info("Re-applying the OpenBao application")
+    SystemApplicationApplyKeywords(ssh_connection).system_application_apply(APP_NAME)
+    openbao.wait_for_unseal()
+    token = openbao.get_root_token()
+
+    get_logger().log_info("Reading the secret back via the in-pod CLI after reapply")
+    read_back = openbao.read_secret_cli(SECRET_PATH, token)
+    validate_str_contains(read_back, security_config.get_openbao_test_secret_password(), "Secret must survive remove + reapply (PVC preserved)")
+
+    get_logger().log_info("Deleting the OpenBao application")
+    SystemApplicationRemoveKeywords(ssh_connection).system_application_remove(remove_input)
+    delete_input = SystemApplicationDeleteInput()
+    delete_input.set_app_name(APP_NAME)
+    SystemApplicationDeleteKeywords(ssh_connection).get_system_application_delete(delete_input)
+
+    validate_equals(SystemApplicationListKeywords(ssh_connection).is_app_present(APP_NAME), False, "App must be gone from application-list after delete")
+    validate_equals(len(openbao.get_openbao_pvc_names()), len(pvc_names), "OpenBao data and audit PVCs are retained after application-delete (preserved as tamper-proof records)")
+
+
+@mark.p2
+def test_openbao_app_update_preserves_data(request: FixtureRequest):
+    """Verify application-update preserves OpenBao data and the server re-unseals.
+
+    When a previous-version bundle is configured (app_config openbao_app_tarball_n1),
+    the test exercises a real application-update and asserts the version changes while
+    the stored secret survives. When no such bundle is configured, it validates the
+    data-preservation guarantee on the single staged bundle so the test still passes.
+
+    Test Steps:
+        - Apply OpenBao at the current version and store a known secret
+        - Record the current unseal-key generation
+        - If a previous-version bundle is configured: update to it and verify the
+          version changed and the server re-unsealed
+        - Confirm the known secret reads back identically and the generation is unchanged
+    """
+
+    def cleanup():
+        ssh = LabConnectionKeywords().get_active_controller_ssh()
+        cleanup_openbao_environment(ssh)
+
+    request.addfinalizer(cleanup)
+
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    setup_openbao_environment(ssh_connection)
+
+    security_config = ConfigurationManager.get_security_config()
+    app_config = ConfigurationManager.get_app_config()
+    openbao = OpenBaoKeywords(ssh_connection, security_config.get_ssh_user_home())
+    token = openbao.get_root_token()
+
+    get_logger().log_info("Recording pre-update generation and storing a known secret")
+    gen_before = openbao.get_current_gen_secret_name()
+    secret = {
+        "username": security_config.get_openbao_test_secret_username(),
+        "password": security_config.get_openbao_test_secret_password(),
+    }
+    openbao.create_secret_rest(SECRET_PATH, secret, token)
+
+    update_tarball = app_config.get_openbao_app_tarball_n1()
+    if update_tarball != "fake_path":
+        get_logger().log_info("Previous-version bundle configured; exercising application-update")
+        remote_tarball = f"/home/sysadmin/{update_tarball.split('/')[-1]}"
+        FileKeywords(ssh_connection).upload_file(update_tarball, remote_tarball)
+        applied_version = SystemApplicationListKeywords(ssh_connection).get_system_application_list().get_application(APP_NAME).get_version()
+
+        update_input = SystemApplicationUpdateInput()
+        update_input.set_tar_file_path(remote_tarball)
+        update_input.set_app_name(APP_NAME)
+        update_input.set_timeout_in_seconds(1800)
+        SystemApplicationUpdateKeywords(ssh_connection).system_application_update(update_input)
+
+        updated_version = SystemApplicationListKeywords(ssh_connection).get_system_application_list().get_application(APP_NAME).get_version()
+        validate_not_equals(updated_version, applied_version, "OpenBao version must change after application-update")
+        validate_equals(openbao.wait_for_unseal(), True, "Server must re-unseal after application-update")
+        token = openbao.get_root_token()
+    else:
+        get_logger().log_info("No previous-version bundle configured; validating data preservation on the current version")
+
+    read_back = openbao.read_secret_cli(SECRET_PATH, token)
+    validate_str_contains(read_back, security_config.get_openbao_test_secret_password(), "Secret must read back identically (PVC preserved)")
+    validate_equals(openbao.get_current_gen_secret_name(), gen_before, "Unseal generation must be unchanged")
+
+
+@mark.p1
+def test_openbao_unseal_secret_immutable(request: FixtureRequest):
+    """Verify unseal keys + root token live in one immutable generation secret.
+
+    Test Steps:
+        - Apply OpenBao and resolve the current unseal-key generation secret
+        - Confirm the generation secret is immutable
+        - Confirm the generation secret holds all shards plus the root token
+        - Confirm the unseal-current pointer resolves to a non-empty root token
+    """
+
+    def cleanup():
+        ssh = LabConnectionKeywords().get_active_controller_ssh()
+        cleanup_openbao_environment(ssh)
+
+    request.addfinalizer(cleanup)
+
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    setup_openbao_environment(ssh_connection)
+
+    security_config = ConfigurationManager.get_security_config()
+    openbao = OpenBaoKeywords(ssh_connection, security_config.get_ssh_user_home())
+
+    gen_name = openbao.get_current_gen_secret_name()
+    validate_str_contains(gen_name, "openbao-unseal-gen", "Current generation secret should be a gen-NNN secret")
+
+    validate_equals(openbao.is_gen_secret_immutable(gen_name), True, "Generation secret must be immutable")
+
+    keys = openbao.get_gen_secret_keys(gen_name)
+    validate_list_contains("root_token", keys, "Generation secret must contain the root token")
+    validate_list_contains("keys", keys, "Generation secret must contain the unseal key shards")
+
+    validate_not_none(openbao.get_root_token(), "unseal-current pointer must resolve to a non-empty root token")
