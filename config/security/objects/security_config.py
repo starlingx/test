@@ -75,6 +75,9 @@ class SecurityConfig:
         vault_config = oidc_keycloak_config.get("vault_test", {})
         self.vault_test_secret_password = vault_config.get("secret_password", "")
         self.vault_test_secret_username = vault_config.get("secret_username", "pvtest")
+        openbao_config = oidc_keycloak_config.get("openbao_test", {})
+        self.openbao_test_secret_password = openbao_config.get("secret_password", "")
+        self.openbao_test_secret_username = openbao_config.get("secret_username", "pvtest")
         kube_rootca_config = oidc_keycloak_config.get("kube_rootca_update", {})
         self.kube_rootca_cert_validity_years = kube_rootca_config.get("cert_validity_years", 5)
         self.kube_rootca_cert_subject = kube_rootca_config.get("cert_subject", "C=CA ST=ON L=Ottawa O=WindRiver OU=StarlingX CN=kubernetes")
@@ -936,6 +939,22 @@ class SecurityConfig:
             str: Username used for vault secret injection test.
         """
         return self.vault_test_secret_username
+
+    def get_openbao_test_secret_password(self) -> str:
+        """Getter for OpenBao test secret password.
+
+        Returns:
+            str: Password used for the OpenBao secret tests.
+        """
+        return self.openbao_test_secret_password
+
+    def get_openbao_test_secret_username(self) -> str:
+        """Getter for OpenBao test secret username.
+
+        Returns:
+            str: Username used for the OpenBao secret tests.
+        """
+        return self.openbao_test_secret_username
 
     def get_kube_rootca_cert_validity_years(self) -> int:
         """Get kube rootca certificate validity in years.
