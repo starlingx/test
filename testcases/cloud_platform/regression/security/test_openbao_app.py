@@ -21,11 +21,15 @@ from keywords.cloud_platform.system.application.system_application_list_keywords
 from keywords.cloud_platform.system.application.system_application_remove_keywords import SystemApplicationRemoveInput, SystemApplicationRemoveKeywords
 from keywords.cloud_platform.system.application.system_application_update_keywords import SystemApplicationUpdateInput, SystemApplicationUpdateKeywords
 from keywords.cloud_platform.system.application.system_application_upload_keywords import SystemApplicationUploadInput, SystemApplicationUploadKeywords
+from keywords.cloud_platform.system.helm.system_helm_chart_attribute_modify_keywords import SystemHelmChartAttributeModifyKeywords
+from keywords.cloud_platform.system.helm.system_helm_override_keywords import SystemHelmOverrideKeywords
 from keywords.cloud_platform.system.openbao.openbao_keywords import OpenBaoKeywords
 from keywords.files.file_keywords import FileKeywords
 from keywords.k8s.certificate.kubectl_get_certificate_keywords import KubectlGetCertStatusKeywords
 from keywords.k8s.files.kubectl_file_apply_keywords import KubectlFileApplyKeywords
+from keywords.k8s.namespace.kubectl_create_namespace_keywords import KubectlCreateNamespacesKeywords
 from keywords.k8s.namespace.kubectl_delete_namespace_keywords import KubectlDeleteNamespaceKeywords
+from keywords.k8s.namespace.kubectl_label_namespace_keywords import KubectlLabelNamespaceKeywords
 from keywords.k8s.pods.kubectl_get_pods_keywords import KubectlGetPodsKeywords
 from keywords.linux.ls.ls_keywords import LsKeywords
 
@@ -481,3 +485,302 @@ def test_openbao_unseal_secret_immutable(request: FixtureRequest):
     validate_list_contains("keys", keys, "Generation secret must contain the unseal key shards")
 
     validate_not_none(openbao.get_root_token(), "unseal-current pointer must resolve to a non-empty root token")
+
+
+@mark.p2
+def test_openbao_helm_override_reaches_pods(request: FixtureRequest):
+    """Verify a helm override is accepted, stored, and reaches the workload template.
+
+    Test Steps:
+        - Apply OpenBao
+        - Set a server.extraLabels override via helm-override-update
+        - Confirm helm-override-show reflects the override
+        - Re-apply and confirm the StatefulSet pod template carries the label
+    """
+
+    def cleanup():
+        ssh = LabConnectionKeywords().get_active_controller_ssh()
+        cleanup_openbao_environment(ssh)
+
+    request.addfinalizer(cleanup)
+
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    setup_openbao_environment(ssh_connection)
+
+    helm = SystemHelmOverrideKeywords(ssh_connection)
+    get_logger().log_info("Setting server.extraLabels.pv=test override")
+    helm.update_helm_override_via_set("server.extraLabels.pv=test", APP_NAME, APP_NAME, NAMESPACE)
+    helm.verify_helm_user_override("pv", APP_NAME, APP_NAME, NAMESPACE)
+
+    get_logger().log_info("Re-applying so the override reaches the workload template")
+    SystemApplicationApplyKeywords(ssh_connection).system_application_apply(APP_NAME)
+
+    openbao = OpenBaoKeywords(ssh_connection, ConfigurationManager.get_security_config().get_ssh_user_home())
+    validate_str_contains(openbao.get_statefulset_template_label("pv"), "test", "Override label pv=test must propagate to the StatefulSet pod template")
+
+
+@mark.p2
+def test_openbao_psa_enforce_admits_privileged(request: FixtureRequest):
+    """Verify the privileged-labeled openbao namespace is admitted under PSA enforcement.
+
+    Test Steps:
+        - Apply OpenBao and confirm its namespace enforces the privileged PodSecurity level
+        - Server-dry-run a privileged pod in a throwaway restricted namespace and expect it DENIED
+        - Server-dry-run the same privileged pod in the openbao namespace and expect it ADMITTED
+    """
+
+    restricted_ns = "pv-psa-restricted"
+
+    def cleanup():
+        ssh = LabConnectionKeywords().get_active_controller_ssh()
+        KubectlDeleteNamespaceKeywords(ssh).cleanup_namespace(restricted_ns)
+        cleanup_openbao_environment(ssh)
+
+    request.addfinalizer(cleanup)
+
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    setup_openbao_environment(ssh_connection)
+
+    openbao = OpenBaoKeywords(ssh_connection, ConfigurationManager.get_security_config().get_ssh_user_home())
+
+    get_logger().log_info("Confirming the openbao namespace enforces the privileged PodSecurity level")
+    validate_equals(openbao.get_namespace_psa_enforce(NAMESPACE), "privileged", "openbao namespace must enforce the privileged PodSecurity level")
+
+    get_logger().log_info("Creating a throwaway restricted namespace for the negative check")
+    KubectlCreateNamespacesKeywords(ssh_connection).create_namespace_if_absent(restricted_ns)
+    KubectlLabelNamespaceKeywords(ssh_connection).label_namespace(restricted_ns, "pod-security.kubernetes.io/enforce", "restricted")
+
+    get_logger().log_info("A privileged pod must be DENIED in the restricted namespace")
+    validate_str_contains(openbao.dry_run_privileged_pod(restricted_ns), "violates PodSecurity", "Privileged pod must be denied in a restricted namespace")
+
+    get_logger().log_info("A privileged pod must be ADMITTED in the openbao namespace")
+    validate_str_contains(openbao.dry_run_privileged_pod(NAMESPACE), "psa-probe", "Privileged pod must be admitted (dry-run) in the privileged openbao namespace")
+
+
+@mark.p2
+def test_openbao_cpu_core_switch_to_application(request: FixtureRequest):
+    """Verify OpenBao pods switch from platform to application cores via helm override.
+
+    OpenBao defaults to platform cores. The server and injector pods are controlled
+    by the openbao chart; the manager pod is a separate openbao-manager chart. This
+    test overrides labels.isApplication=true on both charts, reapplies, restarts the
+    pods, and verifies each pod carries app.starlingx.io/component=application and is
+    pinned to an application core. Teardown reverts both overrides so the pods return
+    to platform cores.
+
+    Test Steps:
+        - Apply OpenBao (default platform cores) and confirm the platform component label
+        - Helm-override labels.isApplication=true on the openbao and openbao-manager charts
+        - Reapply and restart the server and manager pods to pick up the changed label
+        - Verify every pod carries component=application and its PSR is an application core
+        - Teardown: reset both overrides and reapply so pods return to platform cores
+    """
+
+    component_label_key = "app.starlingx.io/component"
+    manager_chart = "openbao-manager"
+
+    def cleanup():
+        ssh = LabConnectionKeywords().get_active_controller_ssh()
+        get_logger().log_info("Reverting the app-component overrides back to platform cores")
+        helm = SystemHelmOverrideKeywords(ssh)
+        helm.helm_override_update_with_list_of_values(
+            app_name=APP_NAME,
+            chart_name=APP_NAME,
+            namespace=NAMESPACE,
+            reuse_values=True,
+            set_override=["server.labels.isApplication=false", "injector.labels.isApplication=false"],
+        )
+        helm.helm_override_update_with_list_of_values(
+            app_name=APP_NAME,
+            chart_name=manager_chart,
+            namespace=NAMESPACE,
+            reuse_values=True,
+            set_override=["manager.labels.isApplication=false"],
+        )
+        SystemApplicationApplyKeywords(ssh).system_application_apply(APP_NAME)
+        cleanup_openbao_environment(ssh)
+
+    request.addfinalizer(cleanup)
+
+    lab_connection_keywords = LabConnectionKeywords()
+    ssh_connection = lab_connection_keywords.get_active_controller_ssh()
+    setup_openbao_environment(ssh_connection)
+
+    get_logger().log_info("Confirming OpenBao pods default to the platform component")
+    for pod in KubectlGetPodsKeywords(ssh_connection).get_pods(namespace=NAMESPACE).get_pods():
+        labels = KubectlGetPodsKeywords(ssh_connection).get_pod_labels(pod.get_name(), namespace=NAMESPACE)
+        validate_equals(labels.get(component_label_key), "platform", f"Pod {pod.get_name()} must default to the platform component")
+
+    get_logger().log_info("Applying helm overrides to switch OpenBao to application cores")
+    helm = SystemHelmOverrideKeywords(ssh_connection)
+    helm.helm_override_update_with_list_of_values(
+        app_name=APP_NAME,
+        chart_name=APP_NAME,
+        namespace=NAMESPACE,
+        reuse_values=True,
+        set_override=["server.labels.isApplication=true", "injector.labels.isApplication=true"],
+    )
+    helm.helm_override_update_with_list_of_values(
+        app_name=APP_NAME,
+        chart_name=manager_chart,
+        namespace=NAMESPACE,
+        reuse_values=True,
+        set_override=["manager.labels.isApplication=true"],
+    )
+    SystemApplicationApplyKeywords(ssh_connection).system_application_apply(APP_NAME)
+    KubectlGetPodsKeywords(ssh_connection).wait_for_pods_to_reach_status("Running", namespace=NAMESPACE, timeout=600)
+
+    openbao = OpenBaoKeywords(ssh_connection, ConfigurationManager.get_security_config().get_ssh_user_home())
+
+    get_logger().log_info("Restarting all server replicas and the manager pod to pick up the changed label")
+    for server_pod in openbao.get_server_pod_names():
+        openbao.kubectl_delete.delete_resource("pod", server_pod, NAMESPACE)
+    openbao.kubectl_delete.delete_resource("pod", "stx-openbao-manager-3-0", NAMESPACE)
+    KubectlGetPodsKeywords(ssh_connection).wait_for_pods_to_reach_status("Running", namespace=NAMESPACE, timeout=600)
+    validate_equals(openbao.wait_for_unseal(), True, "OpenBao should be unsealed after the core-label switch")
+
+    get_logger().log_info("Verifying every OpenBao pod carries the application component label")
+
+    for pod in KubectlGetPodsKeywords(ssh_connection).get_pods(namespace=NAMESPACE).get_pods():
+        pod_name = pod.get_name()
+
+        validate_equals_with_retry(lambda name=pod_name: KubectlGetPodsKeywords(ssh_connection).get_pod_labels(name, namespace=NAMESPACE).get(component_label_key), "application", f"Pod {pod_name} must carry the application component label after the switch", timeout=120, polling_sleep_time=10)
+
+
+@mark.p2
+def test_openbao_disable_manager_chart(request: FixtureRequest):
+    """Verify disabling the openbao-manager chart removes the manager but keeps the server unsealed.
+
+    The openbao-manager drives only the INITIAL unseal. Disabling its chart on an
+    already-running, unsealed OpenBao removes the manager pod while the server stays
+    unsealed. Re-enabling the chart brings the manager pod back.
+
+    Test Steps:
+        - Apply OpenBao and confirm the server is unsealed with a manager pod present
+        - Disable the openbao-manager chart and reapply
+        - Confirm the manager pod is gone and the server stays unsealed
+        - Re-enable the openbao-manager chart and reapply
+        - Confirm the manager pod returns and the server is unsealed
+    """
+
+    manager_chart = "openbao-manager"
+
+    def cleanup():
+        ssh = LabConnectionKeywords().get_active_controller_ssh()
+        get_logger().log_info("Re-enabling the openbao-manager chart")
+        SystemHelmChartAttributeModifyKeywords(ssh).helm_chart_attribute_modify_enabled("true", APP_NAME, manager_chart, NAMESPACE)
+        SystemApplicationApplyKeywords(ssh).system_application_apply(APP_NAME)
+        cleanup_openbao_environment(ssh)
+
+    request.addfinalizer(cleanup)
+
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    setup_openbao_environment(ssh_connection)
+
+    openbao = OpenBaoKeywords(ssh_connection, ConfigurationManager.get_security_config().get_ssh_user_home())
+    validate_equals(openbao.is_manager_pod_present(), True, "Manager pod should be present before disabling the chart")
+    validate_equals(openbao.wait_for_unseal(), True, "OpenBao should be unsealed before disabling the manager chart")
+
+    get_logger().log_info("Disabling the openbao-manager chart and reapplying")
+    SystemHelmChartAttributeModifyKeywords(ssh_connection).helm_chart_attribute_modify_enabled("false", APP_NAME, manager_chart, NAMESPACE)
+    SystemApplicationApplyKeywords(ssh_connection).system_application_apply(APP_NAME)
+
+    get_logger().log_info("Confirming the manager pod is gone and the server stays unsealed")
+    validate_equals_with_retry(openbao.is_manager_pod_present, False, "Manager pod must be removed after disabling the openbao-manager chart", timeout=180, polling_sleep_time=10)
+    validate_equals(openbao.wait_for_unseal(), True, "Server must stay unsealed after the manager chart is disabled")
+
+    get_logger().log_info("Re-enabling the openbao-manager chart and reapplying")
+    SystemHelmChartAttributeModifyKeywords(ssh_connection).helm_chart_attribute_modify_enabled("true", APP_NAME, manager_chart, NAMESPACE)
+    SystemApplicationApplyKeywords(ssh_connection).system_application_apply(APP_NAME)
+
+    get_logger().log_info("Confirming the manager pod returns and the server is unsealed")
+    validate_equals_with_retry(openbao.is_manager_pod_present, True, "Manager pod must return after re-enabling the openbao-manager chart", timeout=180, polling_sleep_time=10)
+    validate_equals(openbao.wait_for_unseal(), True, "Server must be unsealed after re-enabling the manager chart")
+
+
+@mark.p2
+def test_openbao_psa_compliance(request: FixtureRequest):
+    """Verify the openbao namespace tolerates stricter PSA warn/audit without blocking pods.
+
+    The openbao namespace enforces the privileged PodSecurity level, so applying
+    stricter warn/audit levels records violations as warnings/audit annotations but
+    does not block admission. This complements the enforce check by covering the
+    warn and audit PSA modes.
+
+    Test Steps:
+        - Apply OpenBao and record the current PSA fit (enforce/warn/audit)
+        - Confirm the namespace enforces the privileged level
+        - Set warn=restricted and audit=restricted on the openbao namespace
+        - Dry-run a privileged pod and confirm it is still ADMITTED under enforce=privileged
+        - Teardown: remove the added warn/audit labels
+    """
+
+    def cleanup():
+        ssh = LabConnectionKeywords().get_active_controller_ssh()
+        label_keywords = KubectlLabelNamespaceKeywords(ssh)
+        label_keywords.remove_label(NAMESPACE, "pod-security.kubernetes.io/warn")
+        label_keywords.remove_label(NAMESPACE, "pod-security.kubernetes.io/audit")
+        cleanup_openbao_environment(ssh)
+
+    request.addfinalizer(cleanup)
+
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    setup_openbao_environment(ssh_connection)
+
+    openbao = OpenBaoKeywords(ssh_connection, ConfigurationManager.get_security_config().get_ssh_user_home())
+
+    get_logger().log_info("Recording the current PSA fit on the openbao namespace")
+    get_logger().log_info(f"enforce={openbao.get_namespace_psa_level(NAMESPACE, 'enforce')} warn={openbao.get_namespace_psa_level(NAMESPACE, 'warn')} audit={openbao.get_namespace_psa_level(NAMESPACE, 'audit')}")
+    validate_equals(openbao.get_namespace_psa_level(NAMESPACE, "enforce"), "privileged", "openbao namespace must enforce the privileged PodSecurity level")
+
+    get_logger().log_info("Applying stricter warn and audit PSA levels to the openbao namespace")
+    label_keywords = KubectlLabelNamespaceKeywords(ssh_connection)
+    label_keywords.label_namespace(NAMESPACE, "pod-security.kubernetes.io/warn", "restricted")
+    label_keywords.label_namespace(NAMESPACE, "pod-security.kubernetes.io/audit", "restricted")
+
+    validate_equals(openbao.get_namespace_psa_level(NAMESPACE, "warn"), "restricted", "warn level should be set to restricted")
+    validate_equals(openbao.get_namespace_psa_level(NAMESPACE, "audit"), "restricted", "audit level should be set to restricted")
+
+    get_logger().log_info("A privileged pod must still be ADMITTED under enforce=privileged despite stricter warn/audit")
+    validate_str_contains(openbao.dry_run_privileged_pod(NAMESPACE), "psa-probe", "Privileged pod must remain admitted in the openbao namespace under enforce=privileged")
+
+
+@mark.p1
+def test_openbao_shamir_key_config(request: FixtureRequest):
+    """Verify Shamir config: 5 shards + root token in one gen secret, threshold 3 (TC-61).
+
+    Confirms PR.2558.005/006/009 - the current generation secret holds all five
+    unseal key shards plus the root token in a single immutable secret, and the
+    Shamir seal reports Total Shares = 5 with Threshold = 3.
+
+    Test Steps:
+        - Apply OpenBao and resolve the current generation secret
+        - Confirm the generation secret is immutable and holds shards + root token
+        - Read the seal-status and confirm total_shares=5 / threshold=3
+    """
+
+    def cleanup():
+        ssh = LabConnectionKeywords().get_active_controller_ssh()
+        cleanup_openbao_environment(ssh)
+
+    request.addfinalizer(cleanup)
+
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    setup_openbao_environment(ssh_connection)
+
+    security_config = ConfigurationManager.get_security_config()
+    openbao = OpenBaoKeywords(ssh_connection, security_config.get_ssh_user_home())
+
+    get_logger().log_test_case_step("Resolve the current OpenBao generation secret")
+    gen_name = openbao.get_current_gen_secret_name()
+    gen_keys = openbao.get_gen_secret_keys(gen_name)
+
+    validate_equals(openbao.is_gen_secret_immutable(gen_name), True, f"Generation secret {gen_name} must be immutable")
+    validate_list_contains("keys", gen_keys, "Generation secret must contain the unseal key shards")
+    validate_list_contains("root_token", gen_keys, "Generation secret must contain the root token in the same secret")
+
+    get_logger().log_test_case_step("Read the Shamir seal-status for shares and threshold")
+    seal_status = openbao.get_seal_status(openbao.get_root_token())
+
+    validate_equals(seal_status.get("n"), 5, "Shamir Total Shares (status 'n') must be 5 (KEY_SECRET_SHARES)")
+    validate_equals(seal_status.get("t"), 3, "Shamir Threshold (status 't') must be 3 (KEY_REQUIRED_THRESHOLD)")

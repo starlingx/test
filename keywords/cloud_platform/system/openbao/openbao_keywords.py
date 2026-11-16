@@ -10,6 +10,7 @@ from framework.ssh.ssh_connection import SSHConnection
 from keywords.base_keyword import BaseKeyword
 from keywords.files.file_keywords import FileKeywords
 from keywords.k8s.delete_resource.kubectl_delete_resource_keywords import KubectlDeleteResourceKeywords
+from keywords.k8s.get_resource.kubectl_get_resource_keywords import KubectlGetResourceKeywords
 from keywords.k8s.k8s_base_keyword import K8sBaseKeyword
 from keywords.k8s.namespace.kubectl_create_namespace_keywords import KubectlCreateNamespacesKeywords
 from keywords.k8s.pods.kubectl_exec_in_pods_keywords import KubectlExecInPodsKeywords
@@ -54,6 +55,7 @@ class OpenBaoKeywords(BaseKeyword):
         self.kubectl_create_namespace = KubectlCreateNamespacesKeywords(ssh_connection)
         self.kubectl_create_secret = KubectlCreateSecretsKeywords(ssh_connection)
         self.kubectl_pvc = KubectlGetPvcKeywords(ssh_connection)
+        self.kubectl_resource = KubectlGetResourceKeywords(ssh_connection)
 
     def get_current_gen_secret_name(self) -> str:
         """Resolve the current unseal-key generation secret name.
@@ -118,6 +120,16 @@ class OpenBaoKeywords(BaseKeyword):
         pods_output = self.kubectl_pods.get_pods(self.NAMESPACE)
         server_pods = [p.get_name() for p in pods_output.get_pods_with_status("Running") if self.is_server_pod(p.get_name())]
         return server_pods[0] if server_pods else ""
+
+    def get_server_pod_names(self) -> list[str]:
+        """Get the names of all running OpenBao server pods.
+
+        Returns:
+            list[str]: Names of all Running stx-openbao server pods (excludes the
+                agent-injector and manager pods).
+        """
+        pods_output = self.kubectl_pods.get_pods(self.NAMESPACE)
+        return [p.get_name() for p in pods_output.get_pods_with_status("Running") if self.is_server_pod(p.get_name())]
 
     def wait_for_unseal(self, timeout: int = 300) -> bool:
         """Wait for all OpenBao server pods to be unsealed (Running and Ready).
@@ -342,6 +354,22 @@ class OpenBaoKeywords(BaseKeyword):
         self.run_bao(f"login -no-store -method=token token={token}", token)
         return self.run_bao(f"kv get secret/{path}", token)
 
+    def get_seal_status(self, token: str) -> dict:
+        """Get the OpenBao seal-status as a parsed dict.
+
+        Reads ``bao status -format=json`` which reports the Shamir
+        configuration (``total_shares`` / ``threshold``) and seal state.
+
+        Args:
+            token (str): OpenBao token to authenticate with.
+
+        Returns:
+            dict: The decoded status JSON (keys include ``total_shares``,
+                ``threshold``, ``sealed``, ``initialized``).
+        """
+        raw = self.run_bao("status -format=json", token)
+        return json.loads(raw)
+
     def extract_ca_cert(self) -> None:
         """Extract the OpenBao CA certificate to the controller filesystem.
 
@@ -431,3 +459,86 @@ class OpenBaoKeywords(BaseKeyword):
         """
         raw = self.kubectl_secrets.get_secret_with_custom_output(gen_secret_name, self.NAMESPACE, "jsonpath", "'{.data.data}'", base64=True)
         return list(json.loads(raw.strip().strip("'")).keys())
+
+    def get_statefulset_template_label(self, label_key: str) -> str:
+        """Get a pod-template label value from the stx-openbao StatefulSet.
+
+        Args:
+            label_key (str): The pod-template label key (e.g. "pv").
+
+        Returns:
+            str: The label value from ``.spec.template.metadata.labels``, or empty if unset.
+        """
+        return self.kubectl_resource.get_resource_field("statefulset", "stx-openbao", f"{{.spec.template.metadata.labels.{label_key}}}", self.NAMESPACE)
+
+    def get_namespace_psa_enforce(self, namespace: str) -> str:
+        """Get the PodSecurity 'enforce' level label of a namespace.
+
+        Args:
+            namespace (str): Namespace to query.
+
+        Returns:
+            str: The pod-security.kubernetes.io/enforce label value (e.g. "privileged"), or empty if unset.
+        """
+        return self.kubectl_resource.get_resource_field("namespace", namespace, "{.metadata.labels.pod-security\\.kubernetes\\.io/enforce}")
+
+    def get_namespace_psa_level(self, namespace: str, level: str) -> str:
+        """Get a PodSecurity level label (enforce/warn/audit) of a namespace.
+
+        Args:
+            namespace (str): Namespace to query.
+            level (str): PodSecurity mode - one of "enforce", "warn", "audit".
+
+        Returns:
+            str: The pod-security.kubernetes.io/<level> label value, or empty if unset.
+        """
+        return self.kubectl_resource.get_resource_field("namespace", namespace, f"{{.metadata.labels.pod-security\\.kubernetes\\.io/{level}}}")
+
+    def dry_run_privileged_pod(self, namespace: str) -> str:
+        """Server-side dry-run a privileged pod in a namespace to probe PodSecurity admission.
+
+        No real pod is created. An 'enforce=privileged' namespace admits the request; an
+        'enforce=restricted' namespace rejects it with a 'violates PodSecurity' message. The
+        call does not assert on the return code so the caller can validate either outcome.
+
+        Args:
+            namespace (str): Namespace to probe.
+
+        Returns:
+            str: The API server response (admission confirmation or violation message).
+        """
+        overrides = '{"spec":{"containers":[{"name":"psa-probe","image":"registry.k8s.io/pause:3.9","securityContext":{"privileged":true}}]}}'
+        cmd = f"kubectl run psa-probe --image=registry.k8s.io/pause:3.9 -n {namespace} --restart=Never --dry-run=server --overrides='{overrides}'"
+        output = self.ssh_connection.send(self.k8s.k8s_config.export(cmd))
+        return "\n".join(output) if isinstance(output, list) else str(output)
+
+    def is_manager_pod_present(self) -> bool:
+        """Check whether an OpenBao manager pod exists in the namespace.
+
+        Returns:
+            bool: True if a pod matching the manager label is present.
+        """
+        pods = self.kubectl_pods.get_pods(self.NAMESPACE).get_pods()
+        return any("manager" in pod.get_name() for pod in pods)
+
+    def wait_for_server_sealed(self, timeout: int = 300) -> bool:
+        """Wait for an OpenBao server pod to be present but sealed (Running, not Ready).
+
+        A sealed server pod runs but fails its readiness probe, so it stays 0/1 Ready.
+
+        Args:
+            timeout (int): Maximum seconds to wait for the sealed state.
+
+        Returns:
+            bool: True if a server pod is present and not Ready (sealed), False if timeout.
+        """
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            server_pods = [p for p in self.kubectl_pods.get_pods(self.NAMESPACE).get_pods() if self.is_server_pod(p.get_name())]
+            if server_pods and not any(p.is_ready() for p in server_pods):
+                get_logger().log_info("OpenBao server pod is present but sealed (not Ready)")
+                return True
+            get_logger().log_info("OpenBao server not yet in the sealed state, waiting 15s...")
+            time.sleep(15)
+        get_logger().log_info("OpenBao sealed-state wait timed out")
+        return False
