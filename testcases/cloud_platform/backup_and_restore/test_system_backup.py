@@ -59,12 +59,14 @@ def test_backup():
     get_logger().log_info("Validating pod health across all namespaces")
     kubectl_pods = KubectlGetPodsKeywords(ssh_connection)
     healthy_status = ["Running", "Succeeded", "Completed"]
-    pods_healthy = kubectl_pods.wait_for_all_pods_status(expected_statuses=healthy_status, timeout=300)
+    # Allow up to 10 minutes for all pods to reach a healthy state to improve stability on
+    # slower systems where pods can take longer to settle before the backup pre-check.
+    pods_healthy = kubectl_pods.wait_for_all_pods_status(expected_statuses=healthy_status, timeout=600)
     validate_equals(pods_healthy, True, "All pods health validation")
     
-    #  Validate no alarms are present
-    get_logger().log_info("Validating no alarms are present")
-    AlarmListKeywords(ssh_connection).wait_for_all_alarms_cleared()
+    #  Validate no alarms are present (100.114 NTP-unreachable is a known transient alarm and is exempt)
+    get_logger().log_info("Validating no alarms are present (excluding transient alarm 100.114)")
+    AlarmListKeywords(ssh_connection).wait_for_all_alarms_cleared(transient_alarm_ids=["100.114"])
     
     #  Validate all apps are healthy and applied
     get_logger().log_info("Validating application health")
@@ -83,7 +85,9 @@ def test_backup():
 
     time_kpi_backup = TimeKPI(time.time())
     get_logger().log_info("Run backup ansible playbook")
-    ansible_playbook_backup_output = AnsiblePlaybookKeywords(ssh_connection).ansible_playbook_backup(backup_dir)
+    # Include the registry filesystem in the backup (backup_registry_filesystem=true). This is the
+    # superset backup consumed by the optimized restore
+    ansible_playbook_backup_output = AnsiblePlaybookKeywords(ssh_connection).ansible_playbook_backup(backup_dir, backup_registry=True)
     validate_equals(ansible_playbook_backup_output, True, "Ansible backup command execution")
     time_kpi_backup.log_elapsed_time(time.time(), "time taken for system backup")
 

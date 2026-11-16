@@ -105,7 +105,7 @@ class AnsiblePlaybookKeywords(BaseKeyword):
         backup_output = AnsiblePlaybookBackUpRestoreOutput(cmd_out)
         return backup_output.validate_ansible_playbook_backup_restore_result()
 
-    def ansible_playbook_restore(self, backup_dir: str, restore_mode: str = None, restore_registry: bool = False) -> bool:
+    def ansible_playbook_restore(self, backup_dir: str, restore_mode: str = None, restore_registry: bool = False, timeout: int = 2100) -> bool:
         """
         Executes the ansible-playbook restore command
 
@@ -113,6 +113,10 @@ class AnsiblePlaybookKeywords(BaseKeyword):
             backup_dir (str): Directory where backup file is stored
             restore_mode (str): Restore mode (default: None)
             restore_registry (bool): Whether to restore the registry filesystem
+            timeout (int): Seconds to wait for the restore playbook to finish, used for both the
+                command and reconnect timeout. Defaults to 2100 (35 min), which suits the fast
+                single-controller (simplex) restore. Multi-host restores reinstall nodes and bring
+                up networking and Ceph, so those callers should pass a larger value (e.g. 3600).
 
         Returns:
             bool: True if restore succeeded
@@ -128,7 +132,7 @@ class AnsiblePlaybookKeywords(BaseKeyword):
 
         command = f"ansible-playbook {restore_playbook_path} " f'-e "ansible_become_pass={admin_password}" ' f'-e "admin_password={admin_password}" ' f'-e "initial_backup_dir={backup_dir}" ' f'-e "backup_filename={backup_filename}" ' f"{restore_mode_arg}" f"{restore_registry_arg}"
 
-        cmd_out = self.ssh_connection.send(command, command_timeout=2100, reconnect_timeout=2100)
+        cmd_out = self.ssh_connection.send(command, command_timeout=timeout, reconnect_timeout=timeout)
         self.validate_success_return_code(self.ssh_connection)
         get_logger().log_info("get ansible playbook restore output")
         restore_output = AnsiblePlaybookBackUpRestoreOutput(cmd_out)
