@@ -17,7 +17,7 @@ class KubectlLogsKeywords(K8sBaseKeyword):
         """
         super().__init__(ssh_connection, kubeconfig_path)
 
-    def get_logs(self, pod_name: str, namespace: str = None, tail: int = None) -> str:
+    def get_logs(self, pod_name: str, namespace: str = None, tail: int = None, since_time: str = None) -> str:
         """
         Gets the logs from a pod.
 
@@ -25,6 +25,7 @@ class KubectlLogsKeywords(K8sBaseKeyword):
             pod_name (str): The name of the pod.
             namespace (str, optional): The namespace of the pod.
             tail (int, optional): Number of lines to show from the end of the logs.
+            since_time (str, optional): Only return logs after this RFC3339 time, e.g. "2026-11-14T00:05:53Z".
 
         Returns:
             str: The logs from the pod.
@@ -36,6 +37,9 @@ class KubectlLogsKeywords(K8sBaseKeyword):
 
         if tail:
             cmd += f" --tail={tail}"
+
+        if since_time:
+            cmd += f" --since-time={since_time}"
 
         logs_output = self.ssh_connection.send(self.k8s_config.export(cmd))
         self.validate_success_return_code(self.ssh_connection)
