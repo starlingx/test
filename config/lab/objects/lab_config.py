@@ -100,6 +100,9 @@ class LabConfig:
         if "factory_credentials" in lab_dict and lab_dict["factory_credentials"]:
             self.factory_credentials = Credentials(lab_dict["factory_credentials"])
 
+        # Optional FQDN that resolves to the OAM floating IP, for services exposed by host name.
+        self.oam_fqdn: Optional[str] = lab_dict.get("oam_fqdn")
+
         self.lab_config_file = config
 
         # OVS configuration (optional section for OVS L2 Forwarding tests)
@@ -122,6 +125,15 @@ class LabConfig:
 
         """
         return self.floating_ip
+
+    def get_oam_fqdn(self) -> Optional[str]:
+        """
+        Getter for the OAM FQDN, the host name that resolves to the OAM floating IP.
+
+        Returns:
+            Optional[str]: The OAM FQDN, or None if not set in the lab config.
+        """
+        return self.oam_fqdn
 
     def set_floating_ip(self, floating_ip: str) -> None:
         """

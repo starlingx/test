@@ -11,16 +11,21 @@ class KubectlDeleteNamespaceKeywords(K8sBaseKeyword):
     def __init__(self, ssh_connection: SSHConnection, kubeconfig_path: str = None):
         super().__init__(ssh_connection, kubeconfig_path)
 
-    def delete_namespace(self, namespace: str) -> str:
+    def delete_namespace(self, namespace: str, wait: bool = True) -> str:
         """Delete the namespace.
 
         Args:
             namespace (str): The namespace to delete.
+            wait (bool): Wait until the namespace is gone. When False, kubectl
+                returns once the deletion is requested; callers can then poll
+                with KubectlGetNamespacesKeywords.wait_for_namespace_deleted.
+                Defaults to True.
 
         Returns:
             str: The output of the delete command.
         """
-        output = self.ssh_connection.send(self.k8s_config.export(f"kubectl delete namespace {namespace}"))
+        wait_arg = "" if wait else " --wait=false"
+        output = self.ssh_connection.send(self.k8s_config.export(f"kubectl delete namespace {namespace}{wait_arg}"))
         self.validate_success_return_code(self.ssh_connection)
 
         return output

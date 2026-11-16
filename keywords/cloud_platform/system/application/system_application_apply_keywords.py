@@ -65,6 +65,22 @@ class SystemApplicationApplyKeywords(BaseKeyword):
 
         return system_application_output
 
+    def system_application_apply_with_error(self, app_name: str) -> str:
+        """Request an application apply, allowing errors for negative testing.
+
+        Runs 'system application-apply' and returns the raw output without
+        validating the return code or waiting for the apply to finish. Used for
+        negative tests that expect the request to be rejected.
+
+        Args:
+            app_name (str): Application name.
+
+        Returns:
+            str: Raw CLI output (may contain the rejection message).
+        """
+        output = self.ssh_connection.send(source_openrc(self.get_command(app_name)))
+        return "\n".join(output) if isinstance(output, list) else output
+
     def system_application_apply_with_retry(self, app_name: str, timeout: int = 1800, retry_interval: int = 30) -> None:
         """
         Apply an application, retrying if the command is rejected.

@@ -1,4 +1,4 @@
-"""Bounded Deployment rollout synchronization."""
+"""Bounded Deployment and StatefulSet rollout synchronization."""
 
 from shlex import quote
 
@@ -8,7 +8,7 @@ ROLLOUT_COMMAND_GRACE = 20
 
 
 class KubectlRolloutStatusKeywords(K8sBaseKeyword):
-    """Wait for controller-reported Deployment rollout completion."""
+    """Wait for controller-reported Deployment and StatefulSet rollout completion."""
 
     def wait_for_deployment_rollout(self, namespace: str, deployment: str, timeout: int = 300) -> None:
         """Wait for kubectl rollout status with an explicit command bound.
@@ -21,5 +21,19 @@ class KubectlRolloutStatusKeywords(K8sBaseKeyword):
         if type(timeout) is not int or timeout <= 0:
             raise ValueError("Rollout timeout must be a positive integer")
         command = f"kubectl rollout status deployment/{quote(deployment)} -n {quote(namespace)} --timeout={timeout}s"
+        self.ssh_connection.send(self.k8s_config.export(command), command_timeout=timeout + ROLLOUT_COMMAND_GRACE)
+        self.validate_success_return_code(self.ssh_connection)
+
+    def wait_for_statefulset_rollout(self, namespace: str, statefulset: str, timeout: int = 300) -> None:
+        """Wait for kubectl rollout status of a StatefulSet with an explicit command bound.
+
+        Args:
+            namespace (str): StatefulSet namespace.
+            statefulset (str): Exact StatefulSet name.
+            timeout (int): Positive maximum rollout wait in seconds.
+        """
+        if type(timeout) is not int or timeout <= 0:
+            raise ValueError("Rollout timeout must be a positive integer")
+        command = f"kubectl rollout status statefulset/{quote(statefulset)} -n {quote(namespace)} --timeout={timeout}s"
         self.ssh_connection.send(self.k8s_config.export(command), command_timeout=timeout + ROLLOUT_COMMAND_GRACE)
         self.validate_success_return_code(self.ssh_connection)

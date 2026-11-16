@@ -6,6 +6,7 @@ import yaml
 from jinja2 import Template
 
 from config.configuration_manager import ConfigurationManager
+from framework.exceptions.keyword_exception import KeywordException
 from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
 from keywords.base_keyword import BaseKeyword
@@ -29,7 +30,7 @@ class YamlKeywords(BaseKeyword):
         """
         self.ssh_connection = ssh_connection
 
-    def generate_yaml_file_from_template(self, template_file: str, replacement_dictionary: dict, target_file_name: str, target_remote_location: str, copy_to_remote: bool = True, preserve_order: bool = False) -> str:
+    def generate_yaml_file_from_template(self, template_file: str, replacement_dictionary: dict, target_file_name: str, target_remote_location: str, copy_to_remote: bool = True, preserve_order: bool = False, save_to_log_folder: bool = True) -> str:
         """
         This function will generate a YAML file from the specified template.
 
@@ -49,9 +50,16 @@ class YamlKeywords(BaseKeyword):
             preserve_order (bool): When True, writes the rendered Jinja2 output directly without
                 re-serializing through yaml.dump, preserving the original key order from the template.
                 Defaults to False for backward compatibility.
+            save_to_log_folder (bool): When False, the local rendered file is deleted from the test
+                log folder after the upload, even if the upload fails. Use it when the replacement
+                values are sensitive; the caller is then responsible for deleting the uploaded
+                remote copy. Requires `copy_to_remote`. Defaults to True.
 
         Returns:
             str: Path to the generated YAML file, either local or remote depending on `copy_to_remote`.
+
+        Raises:
+            KeywordException: If `save_to_log_folder` and `copy_to_remote` are both False.
         """
         # Load the Template YAML file.
         with open(template_file, "r") as template_file:
@@ -66,6 +74,9 @@ class YamlKeywords(BaseKeyword):
             yaml_data_list = list(yaml.safe_load_all(rendered_yaml_string))
             rendered_yaml = "---\n".join([yaml.dump(data, default_flow_style=False) for data in yaml_data_list])
 
+        if not save_to_log_folder and not copy_to_remote:
+            raise KeywordException("save_to_log_folder=False requires copy_to_remote=True, otherwise the rendered file is lost")
+
         # Create the new file in the log folder.
         log_folder = ConfigurationManager.get_logger_config().get_test_case_resources_log_location()
         rendered_yaml_file_location = os.path.join(log_folder, target_file_name)
@@ -75,7 +86,11 @@ class YamlKeywords(BaseKeyword):
         # Upload the file to the remote location
         if copy_to_remote:
             target_remote_file = f"{target_remote_location}/{target_file_name}"
-            FileKeywords(self.ssh_connection).upload_file(rendered_yaml_file_location, target_remote_file)
+            try:
+                FileKeywords(self.ssh_connection).upload_file(rendered_yaml_file_location, target_remote_file)
+            finally:
+                if not save_to_log_folder:
+                    os.remove(rendered_yaml_file_location)
             return target_remote_file
         return rendered_yaml_file_location
 
