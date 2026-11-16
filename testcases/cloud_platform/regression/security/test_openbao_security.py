@@ -11,13 +11,14 @@ from pytest import FixtureRequest, mark
 
 from config.configuration_manager import ConfigurationManager
 from framework.logging.automation_logger import get_logger
-from framework.validation.validation import validate_equals, validate_not_equals, validate_str_contains
+from framework.validation.validation import validate_equals, validate_equals_with_retry, validate_list_contains, validate_not_equals, validate_str_contains
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.cloud_platform.system.application.system_application_apply_keywords import SystemApplicationApplyKeywords
 from keywords.cloud_platform.system.application.system_application_delete_keywords import SystemApplicationDeleteInput, SystemApplicationDeleteKeywords
 from keywords.cloud_platform.system.application.system_application_list_keywords import SystemApplicationListKeywords
 from keywords.cloud_platform.system.application.system_application_remove_keywords import SystemApplicationRemoveInput, SystemApplicationRemoveKeywords
 from keywords.cloud_platform.system.application.system_application_upload_keywords import SystemApplicationUploadInput, SystemApplicationUploadKeywords
+from keywords.cloud_platform.system.helm.system_helm_override_keywords import SystemHelmOverrideKeywords
 from keywords.cloud_platform.system.openbao.openbao_keywords import OpenBaoKeywords
 from keywords.k8s.namespace.kubectl_delete_namespace_keywords import KubectlDeleteNamespaceKeywords
 from keywords.k8s.pods.kubectl_delete_pods_keywords import KubectlDeletePodsKeywords
@@ -296,3 +297,178 @@ def test_openbao_server_pod_auto_unseals_on_restart(request: FixtureRequest):
 
     get_logger().log_test_case_step("Confirming the previously stored secret is served again")
     validate_equals(openbao.rest_status_code("basic-secret/restartcheck", root_token), "200", "Previously stored secret must be served again after the auto-unseal")
+
+
+@mark.p2
+def test_openbao_unseal_material_is_immutable(request: FixtureRequest):
+    """Test that the unseal-key generation secret is immutable and tamper-proof.
+
+    The current unseal generation secret is marked immutable, carries the
+    expected unseal-key material, and rejects an attempt to patch its contents,
+    protecting the unseal material from tampering.
+
+    Test Steps:
+        - set up the OpenBao application (applied, unsealed, configured)
+        - resolve the current unseal generation secret
+        - confirm the generation secret is immutable
+        - confirm the generation secret carries unseal-key material
+        - attempt to patch the immutable secret and confirm rejection
+        - Teardown: clean up the OpenBao environment
+
+    Args:
+        request (FixtureRequest): Pytest request fixture for teardown management.
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    security_config = ConfigurationManager.get_security_config()
+    openbao = OpenBaoKeywords(ssh_connection, security_config.get_ssh_user_home())
+
+    request.addfinalizer(lambda: cleanup_openbao_environment(ssh_connection))
+    setup_openbao_environment(ssh_connection)
+
+    get_logger().log_test_case_step("Resolving the current unseal generation secret")
+    gen_secret = openbao.get_current_gen_secret_name()
+    validate_not_equals(gen_secret, "", "Must resolve a current unseal generation secret")
+
+    get_logger().log_test_case_step("Confirming the generation secret is immutable")
+    validate_equals(openbao.is_gen_secret_immutable(gen_secret), True, "Unseal generation secret must be immutable")
+
+    get_logger().log_test_case_step("Confirming the generation secret carries unseal-key material")
+    validate_list_contains("keys", openbao.get_gen_secret_keys(gen_secret), "Unseal generation secret must carry the unseal keys payload")
+
+    get_logger().log_test_case_step("Attempting to patch the immutable secret and confirming rejection")
+    validate_equals(openbao.patch_gen_secret_rejected(gen_secret), True, "Patching the immutable unseal secret must be rejected")
+
+
+@mark.p2
+def test_openbao_unexpected_helm_override_tolerated(request: FixtureRequest):
+    """Test that an unexpected helm override does not corrupt the application.
+
+    StarlingX stores an unknown chart value as an inert user override. Applying
+    one and re-applying must leave OpenBao settled at applied and still serving,
+    not stuck or corrupt, and clearing the override and re-applying keeps it
+    applied.
+
+    Test Steps:
+        - set up the OpenBao application (applied, unsealed, configured)
+        - apply an unexpected helm override and re-apply, waiting for it to settle
+        - confirm the application settles to applied and OpenBao still serves
+        - clear the override and re-apply, confirming it stays applied
+        - Teardown: delete the override, re-apply and clean up the OpenBao environment
+
+    Args:
+        request (FixtureRequest): Pytest request fixture for teardown management.
+    """
+    unexpected_override = "server.notARealValue.bogus=12345"
+
+    def cleanup():
+        ssh = LabConnectionKeywords().get_active_controller_ssh()
+        SystemHelmOverrideKeywords(ssh).delete_system_helm_override(APP_NAME, APP_NAME, NAMESPACE)
+        SystemApplicationApplyKeywords(ssh).system_application_apply(APP_NAME)
+        cleanup_openbao_environment(ssh)
+
+    request.addfinalizer(cleanup)
+
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    security_config = ConfigurationManager.get_security_config()
+    openbao = OpenBaoKeywords(ssh_connection, security_config.get_ssh_user_home())
+    setup_openbao_environment(ssh_connection)
+
+    get_logger().log_test_case_step("Applying an unexpected helm override and re-applying until it settles")
+    helm = SystemHelmOverrideKeywords(ssh_connection)
+    helm.update_helm_override_via_set(unexpected_override, APP_NAME, APP_NAME, NAMESPACE)
+    SystemApplicationApplyKeywords(ssh_connection).system_application_apply(APP_NAME)
+
+    get_logger().log_test_case_step("Confirming the application settled to applied and OpenBao still serves")
+    validate_equals(SystemApplicationListKeywords(ssh_connection).get_system_application_list().get_application(APP_NAME).get_status(), "applied", "Application must settle to applied with the unexpected override, not a corrupt state")
+    validate_equals(openbao.rest_health_trusts_ca(), True, "OpenBao must still serve its health endpoint with the unexpected override applied")
+
+    get_logger().log_test_case_step("Clearing the override and re-applying, confirming it stays applied")
+    helm.delete_system_helm_override(APP_NAME, APP_NAME, NAMESPACE)
+    SystemApplicationApplyKeywords(ssh_connection).system_application_apply(APP_NAME)
+    validate_equals(SystemApplicationListKeywords(ssh_connection).get_system_application_list().get_application(APP_NAME).get_status(), "applied", "Application must stay applied after clearing the unexpected override")
+
+
+@mark.p2
+def test_openbao_unseal_pointer_recovers_after_corruption(request: FixtureRequest):
+    """Test that a deleted unseal pointer is recoverable from backup.
+
+    The mutable ``openbao-unseal-current`` pointer is only needed at unseal
+    time, so an already-unsealed server keeps serving secrets after the pointer
+    is deleted; the pointer is then recovered by restoring it from a backup.
+
+    Test Steps:
+        - set up the OpenBao application (applied, unsealed, configured)
+        - seed a secret, then back up and delete the unseal-current pointer secret
+        - confirm the already-unsealed server keeps serving secrets without the pointer
+        - restore the pointer from backup and confirm it is present again
+        - Teardown: restore the pointer if it is still missing and clean up the OpenBao environment
+
+    Args:
+        request (FixtureRequest): Pytest request fixture for teardown management.
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    security_config = ConfigurationManager.get_security_config()
+    openbao = OpenBaoKeywords(ssh_connection, security_config.get_ssh_user_home())
+    pointer = "openbao-unseal-current"
+    backup = {"path": None}
+
+    def cleanup():
+        get_logger().log_teardown_step("Restoring the unseal pointer if missing and cleaning up the OpenBao environment")
+        try:
+            if backup["path"] and not openbao.is_secret_present(pointer):
+                openbao.restore_secret_yaml(backup["path"])
+        finally:
+            cleanup_openbao_environment(ssh_connection)
+
+    request.addfinalizer(cleanup)
+    setup_openbao_environment(ssh_connection)
+
+    get_logger().log_test_case_step("Seeding a secret, backing up and deleting the unseal-current pointer")
+    root_token = openbao.get_root_token()
+    openbao.create_secret_rest("basic-secret/pointercheck", {"k": "v"}, root_token)
+    backup["path"] = openbao.backup_secret_yaml(pointer)
+    openbao.kubectl_delete.delete_resource("secret", pointer, NAMESPACE)
+
+    get_logger().log_test_case_step("Confirming the already-unsealed server keeps serving secrets without the pointer")
+    validate_equals(openbao.rest_status_code("basic-secret/pointercheck", root_token), "200", "Server must keep serving secrets while already unsealed, even with the pointer deleted")
+
+    get_logger().log_test_case_step("Restoring the pointer from backup and confirming it is present again")
+    openbao.restore_secret_yaml(backup["path"])
+    validate_equals_with_retry(lambda: openbao.is_secret_present(pointer), True, "The unseal-current pointer must be present again after restore from backup", timeout=120, polling_sleep_time=10)
+
+
+@mark.p2
+def test_openbao_host_api_not_reachable_from_pod(request: FixtureRequest):
+    """Test that the host OpenBao API is isolated from in-cluster pods.
+
+    The host OpenBao service listens on the management network. From inside the
+    OpenBao server pod, the in-cluster app service is reachable (probe control),
+    while the host management-network API is blocked by network policy. The host
+    service itself is confirmed active and unsealed from the platform side.
+
+    Test Steps:
+        - set up the OpenBao application (applied, unsealed, configured)
+        - confirm the host OpenBao service is active and unsealed from the platform
+        - confirm the probe pod can reach the in-cluster OpenBao app service
+        - confirm the same pod cannot reach the host management-network API
+        - Teardown: clean up the OpenBao environment
+
+    Args:
+        request (FixtureRequest): Pytest request fixture for teardown management.
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    security_config = ConfigurationManager.get_security_config()
+    openbao = OpenBaoKeywords(ssh_connection, security_config.get_ssh_user_home())
+
+    request.addfinalizer(lambda: cleanup_openbao_environment(ssh_connection))
+    setup_openbao_environment(ssh_connection)
+
+    get_logger().log_test_case_step("Confirming the host OpenBao service is active and unsealed from the platform")
+    validate_equals(openbao.is_host_service_active(), True, "Host OpenBao service must be active on the platform side")
+    validate_str_contains(openbao.host_bao_status_with_ca(), "false", "Host OpenBao must be unsealed on the platform side")
+
+    get_logger().log_test_case_step("Confirming the probe pod can reach the in-cluster OpenBao app service")
+    validate_equals(openbao.is_app_service_reachable_from_server_pod(), True, "Probe pod must reach the in-cluster OpenBao app service")
+
+    get_logger().log_test_case_step("Confirming the probe pod cannot reach the host management-network API")
+    validate_equals(openbao.host_api_reachable_from_pod(), False, "In-cluster pods must not be able to reach the host management-network API")
