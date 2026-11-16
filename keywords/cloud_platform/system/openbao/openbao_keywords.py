@@ -540,6 +540,103 @@ class OpenBaoKeywords(BaseKeyword):
         pods = self.kubectl_pods.get_pods(self.NAMESPACE).get_pods()
         return any("manager" in pod.get_name() for pod in pods)
 
+    def get_manager_pod_name(self) -> str:
+        """Get the name of the running OpenBao manager pod.
+
+        Returns:
+            str: The manager pod name, or an empty string if none is running.
+        """
+        pods_output = self.kubectl_pods.get_pods(self.NAMESPACE)
+        manager_pods = [p.get_name() for p in pods_output.get_pods_with_status("Running") if "manager" in p.get_name()]
+        return manager_pods[0] if manager_pods else ""
+
+    def get_pod_uid(self, pod_name: str) -> str:
+        """Get the UID of a pod in the OpenBao namespace.
+
+        OpenBao server and manager pods belong to StatefulSets, so a recreated
+        pod keeps its name; the UID is what identifies a new pod instance.
+
+        Args:
+            pod_name (str): Name of the pod.
+
+        Returns:
+            str: The pod UID.
+        """
+        return self.kubectl_resource.get_resource_field("pod", pod_name, "{.metadata.uid}", self.NAMESPACE).strip()
+
+    def has_pod_restarted(self, pod_name: str, old_uid: str) -> bool:
+        """Check whether a pod has been recreated as a new, Running and Ready instance.
+
+        Safe to poll while the pod is terminating or not yet created: a missing
+        pod returns False instead of raising.
+
+        Args:
+            pod_name (str): Name of the pod (unchanged across StatefulSet restarts).
+            old_uid (str): UID of the pod instance before it was deleted.
+
+        Returns:
+            bool: True if the pod has a new UID, is Running and its containers are Ready.
+        """
+        jsonpath = "{.metadata.uid} {.status.phase} {.status.containerStatuses[*].ready}"
+        cmd = f"kubectl get pod {pod_name} -n {self.NAMESPACE} --ignore-not-found -o jsonpath='{jsonpath}'"
+        fields = "".join(self.ssh_connection.send(self.k8s.k8s_config.export(cmd))).split()
+        if len(fields) < 3:
+            return False
+        uid, phase, ready_flags = fields[0], fields[1], fields[2:]
+        return uid != old_uid and phase == "Running" and all(flag == "true" for flag in ready_flags)
+
+    def _get_manager_log(self, tail: int) -> str:
+        """Get the trailing log lines of the running OpenBao manager pod.
+
+        Args:
+            tail (int): Number of trailing log lines to return.
+
+        Returns:
+            str: The manager pod log text.
+
+        Raises:
+            KeywordException: If no running manager pod is found.
+        """
+        manager_pod = self.get_manager_pod_name()
+        if not manager_pod:
+            raise KeywordException("No running OpenBao manager pod found to read logs from")
+        output = self.ssh_connection.send(self.k8s.k8s_config.export(f"kubectl logs -n {self.NAMESPACE} {manager_pod} --tail={tail}"))
+        self.validate_success_return_code(self.ssh_connection)
+        return "".join(output)
+
+    def manager_log_contains(self, needle: str, tail: int = 200) -> bool:
+        """Check whether the running OpenBao manager pod log contains a substring.
+
+        Returns False (rather than raising) when no manager pod is running yet,
+        so it can be polled while the manager is being recreated.
+
+        Args:
+            needle (str): Substring to look for in the manager pod log.
+            tail (int): Number of trailing log lines to inspect.
+
+        Returns:
+            bool: True if the substring is in the manager log.
+        """
+        if not self.get_manager_pod_name():
+            return False
+        return needle in self._get_manager_log(tail)
+
+    def manager_log_has_major_errors(self, since_tail: int = 200) -> bool:
+        """Check whether the OpenBao manager pod log has FATAL/panic lines.
+
+        Transient ``ERROR`` lines (e.g. "Error processing server" while a server
+        pod is restarting) are expected during recovery and are not treated as
+        major; only FATAL or panic entries indicate a real failure.
+
+        Args:
+            since_tail (int): Number of trailing log lines to inspect.
+
+        Returns:
+            bool: True if the manager log has any FATAL or panic entries.
+        """
+        log_text = self._get_manager_log(since_tail)
+        return re.search(r"FATAL|panic", log_text, re.IGNORECASE) is not None
+
     def wait_for_server_sealed(self, timeout: int = 300) -> bool:
         """Wait for an OpenBao server pod to be present but sealed (Running, not Ready).
 
