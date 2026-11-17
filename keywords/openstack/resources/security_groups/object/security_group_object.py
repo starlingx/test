@@ -1,6 +1,6 @@
 """Security group object representing a Neutron security group."""
 
-from typing import List
+from typing import List, Optional
 
 
 class SecurityGroupObject:
@@ -76,10 +76,37 @@ class SecurityGroupObject:
             bool: True if an unrestricted allow-all ingress rule exists.
         """
         for rule in self.rules:
-            if (rule.get("direction") == "ingress" and
-                    rule.get("protocol") is None and
-                    rule.get("remote_group_id") is None and
-                    rule.get("remote_ip_prefix") in (None, "0.0.0.0/0")):
+            if rule.get("direction") == "ingress" and rule.get("protocol") is None and rule.get("remote_group_id") is None and rule.get("remote_ip_prefix") in (None, "0.0.0.0/0"):
+                return True
+        return False
+
+    def has_ingress_rule(self, protocol: Optional[str], port_range_min: Optional[int], port_range_max: Optional[int], ether_type: str) -> bool:
+        """Check if this security group has an ingress rule open to any source.
+
+        A rule matches when its protocol, port range and ether type are equal to
+        the given values and it accepts traffic from any source: no
+        ``remote_group_id`` and a ``remote_ip_prefix`` of None, ``0.0.0.0/0`` or
+        ``::/0``. Rules restricted to a remote group or to a narrower CIDR do not
+        match. The stock ``default`` security group ships with ingress rules that
+        have ``protocol=None`` and no ports but are limited to members of the same
+        group (``remote_group_id`` set); counting those would hide a missing open
+        rule (see has_allow_all_ingress_rule).
+
+        Args:
+            protocol (Optional[str]): Protocol (e.g. 'tcp', 'udp', 'icmp'), or None for all.
+            port_range_min (Optional[int]): Low port, or None for protocols without ports.
+            port_range_max (Optional[int]): High port, or None for protocols without ports.
+            ether_type (str): 'IPv4' or 'IPv6'.
+
+        Returns:
+            bool: True if a matching open ingress rule exists.
+        """
+        for rule in self.rules:
+            if rule.get("direction") != "ingress" or rule.get("ethertype") != ether_type:
+                continue
+            if rule.get("protocol") != protocol or rule.get("port_range_min") != port_range_min or rule.get("port_range_max") != port_range_max:
+                continue
+            if rule.get("remote_group_id") is None and rule.get("remote_ip_prefix") in (None, "0.0.0.0/0", "::/0"):
                 return True
         return False
 

@@ -4,7 +4,6 @@ from typing import Optional
 
 from framework.logging.automation_logger import get_logger
 from keywords.base_keyword import BaseKeyword
-
 from keywords.openstack.connection.ace_openstack_connection import ACEOpenStackConnection
 from keywords.openstack.resources.security_groups.object.security_group_object import SecurityGroupObject
 from keywords.openstack.resources.security_groups.object.security_group_output import SecurityGroupOutput
@@ -105,3 +104,46 @@ class SecurityGroupKeywords(BaseKeyword):
         get_logger().log_info(f"Deleting security group rule: {rule_id}")
         network = self.openstack_connection.get_network()
         network.delete_security_group_rule(rule_id)
+
+    def ensure_ingress_rule(self, security_group_id: str, protocol: Optional[str], port_range_min: Optional[int] = None, port_range_max: Optional[int] = None, ether_type: str = "IPv4") -> Optional[str]:
+        """Add an ingress rule open to any source to a security group if it does not already exist.
+
+        Checks for a matching rule before creating so callers do not need
+        try/except to handle duplicate-rule (409 Conflict) errors. Only a rule
+        open to any source counts as a match (see
+        SecurityGroupObject.has_ingress_rule), so the stock ``default`` group's
+        same-group rules or a rule limited to a CIDR do not hide a missing rule.
+
+        Args:
+            security_group_id (str): Security group UUID.
+            protocol (Optional[str]): Protocol (e.g. 'tcp', 'udp', 'icmp'), or None for all.
+            port_range_min (Optional[int]): Low port, or None for protocols without ports.
+            port_range_max (Optional[int]): High port, or None for protocols without ports.
+            ether_type (str): 'IPv4' or 'IPv6'. Defaults to 'IPv4'.
+
+        Returns:
+            Optional[str]: Created rule ID, or None if the rule already existed.
+        """
+        network = self.openstack_connection.get_network()
+        # get_security_group raises NotFound for an unknown id, so a typo cannot
+        # silently skip the existence check.
+        sg = network.get_security_group(security_group_id)
+        sg_obj = SecurityGroupObject()
+        sg_obj.set_id(sg.id)
+        sg_obj.set_name(sg.name)
+        sg_obj.set_rules(sg.security_group_rules or [])
+        rule_description = f"protocol={protocol} ports={port_range_min}-{port_range_max} {ether_type}"
+        if sg_obj.has_ingress_rule(protocol, port_range_min, port_range_max, ether_type):
+            get_logger().log_info(f"Ingress rule already exists on security group '{security_group_id}': {rule_description}")
+            return None
+
+        get_logger().log_info(f"Creating ingress rule on security group '{security_group_id}': {rule_description}")
+        rule = network.create_security_group_rule(
+            security_group_id=security_group_id,
+            direction="ingress",
+            protocol=protocol,
+            port_range_min=port_range_min,
+            port_range_max=port_range_max,
+            ethertype=ether_type,
+        )
+        return rule.id
