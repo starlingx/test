@@ -74,6 +74,12 @@ class USMConfig:
         # Combined Platform & Kubernetes upgrade flag
         self.combined_upgrade = usm_dict.get("combined_upgrade", False)
 
+        # Instance action for VIM orchestration strategy ('stop-start' or 'migrate').
+        # When None (not set), the flag is omitted from the CLI and the platform applies
+        # its own default ('stop-start'). Set to 'migrate' in USM configs for DC labs
+        # that have worker nodes with live VMs.
+        self.instance_action = usm_dict.get("instance_action", None)
+
         # Metapackage deployment configuration: "None", "All", or list of metapackages
         self.metapackages = usm_dict.get("metapackages", "None")
 
@@ -842,6 +848,28 @@ class USMConfig:
             value (bool): True to enable combined P&K upgrade.
         """
         self.combined_upgrade = value
+
+    def get_instance_action(self) -> str:
+        """Get the instance action for VIM orchestration strategy.
+
+        Controls how running VMs are handled on a worker host before it is
+        locked for upgrade.  When None (not set in the config file), the
+        ``--instance-action`` flag is omitted from the CLI and the platform
+        applies its own default ('stop-start').
+
+        Returns:
+            str: 'migrate', 'stop-start', or None if not configured.
+        """
+        return self.instance_action
+
+    def set_instance_action(self, value: str) -> None:
+        """Set the instance action for VIM orchestration strategy.
+
+        Args:
+            value (str): 'migrate', 'stop-start', or None to let the platform
+                apply its default.
+        """
+        self.instance_action = value
 
     def get_metapackages(self) -> str | list[str]:
         """Get the metapackage deployment configuration.
