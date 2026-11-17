@@ -24,15 +24,10 @@ BACKUP_IN_PROGRESS_STATES = ["validating", "pre-backup", "backing-up"]
 # Restore operation in-progress states (dcmanager subcloud-backup restore)
 RESTORE_IN_PROGRESS_STATES = ["pre-restore", "pre-install", "installing", "restoring"]
 
-# Onsite restore without reinstall states. The subcloud STARTS at
-# "factory-restore-complete" (the seed is mounted while in this state), transitions
-# through "pre-restore"/"onsite-restoring", and ends at "complete". The completion
-# watch (watch_single_subcloud) runs only after the started watch has confirmed the
-# subcloud left "factory-restore-complete"; the start state is still included in the
-# in-progress set so the completion watch tolerates a brief stale read of it right
-# after the started phase rather than treating it as an unexpected state.
-ONSITE_RESTORE_START_STATE = "factory-restore-complete"
-ONSITE_RESTORE_IN_PROGRESS_STATES = ["factory-restore-complete", "pre-restore", "onsite-restoring"]
+# Onsite restore without reinstall states (no assumption about the start state).
+# Values match dcmanager consts (DEPLOY_STATE_PRE_RESTORE / _RESTORING /
+# _ONSITE_RESTORING / _RESTORE_FAILED / _RESTORE_PREP_FAILED).
+ONSITE_RESTORE_IN_PROGRESS_STATES = ["pre-restore", "restoring", "onsite-restoring"]
 ONSITE_RESTORE_FAILED_STATES = ["restore-failed", "restore-prep-failed"]
 ONSITE_RESTORE_COMPLETE_STATE = "complete"
 
