@@ -20,11 +20,52 @@ NFD_NAMESPACE = "node-feature-discovery"
 
 FEATURE_NODE_LABEL_PREFIX = "feature.node"
 
+# Feature labels that are not a stable property of the node and therefore must
+# not be required to come back after a reboot. On StarlingX the ceph-common
+# rbdmap service loads the kernel 'nbd' module during boot, which registers 16
+# empty nbd block devices reporting rotational=0. NFD's storage source turns
+# that into feature.node.kubernetes.io/storage-nonrotationaldisk even though the
+# real disks are rotational and no nbd device is in use. Because the nbd module
+# loads late and non-deterministically at boot (and the backing rbdmap service
+# does not run RBD maps here -- ceph-csi uses krbd), this label appears and
+# disappears on a timing that does not reflect any real hardware feature.
+VOLATILE_FEATURE_NODE_LABELS = {
+    "feature.node.kubernetes.io/storage-nonrotationaldisk",
+}
+
 
 def get_feature_node_labels(ssh_connection, host_name: str) -> list:
     """Gets the list of feature.node label keys for a specific node."""
     labels_output = KubectlNodesKeywords(ssh_connection).get_node_labels(host_name)
     return labels_output.get_keys_by_prefix(FEATURE_NODE_LABEL_PREFIX)
+
+
+def feature_node_labels_restored(ssh_connection, host_name: str, expected_label_keys: set) -> bool:
+    """Checks that the node again carries every stable feature.node label it had.
+
+    The restored set is compared by key rather than by count. Different nodes can
+    expose a different number of feature labels (hardware/BIOS driven), and on a
+    duplex system a forced reboot swacts the active controller, so an exact-count
+    comparison against a single captured number is unreliable. Requiring the
+    original keys to be a subset of the current ones verifies the intent -- that
+    the labels the node previously advertised were re-published -- without
+    depending on the absolute count or on which controller is currently active.
+
+    Labels listed in VOLATILE_FEATURE_NODE_LABELS are ignored on both sides: they
+    do not reflect a stable node feature (see that set's documentation) and would
+    make the check flaky.
+
+    Args:
+        ssh_connection (SSHConnection): SSH connection to the active controller.
+        host_name (str): the node whose labels are inspected.
+        expected_label_keys (set): the feature.node label keys captured originally.
+
+    Returns:
+        bool: True when every originally present stable label key is present again.
+    """
+    expected_stable = set(expected_label_keys) - VOLATILE_FEATURE_NODE_LABELS
+    current = set(get_feature_node_labels(ssh_connection, host_name)) - VOLATILE_FEATURE_NODE_LABELS
+    return expected_stable.issubset(current)
 
 
 def install_nfd(ssh_connection: SSHConnection) -> None:
@@ -35,6 +76,12 @@ def install_nfd(ssh_connection: SSHConnection) -> None:
     """
     app_config = ConfigurationManager.get_app_config()
     nfd_name = app_config.get_node_feature_discovery_app_name()
+    # When this runs right after another test rebooted a controller (swact), the
+    # sysinv application API briefly rejects operations with "Kubernetes
+    # endpoints are not accessible for application operations". Wait for the API
+    # to come back before upload/apply so the install does not fail on a
+    # transient post-reboot condition.
+    KubectlGetPodsKeywords(ssh_connection).wait_for_kubernetes_api_available(timeout=600)
     apply_keywords = SystemApplicationApplyKeywords(ssh_connection)
     if apply_keywords.is_already_applied(nfd_name):
         get_logger().log_info(f"{nfd_name} is already applied.")
@@ -86,6 +133,7 @@ def test_nfd_labels_persist_after_reboot(request):
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     feature_labels = get_feature_node_labels(ssh_connection, host_name)
     label_count_before = len(feature_labels)
+    expected_label_keys = set(feature_labels)
     get_logger().log_info(f"Feature node label count: {label_count_before}")
 
     pre_uptime = SystemHostListKeywords(ssh_connection).get_uptime(host_name)  # before the finalizer
@@ -94,15 +142,21 @@ def test_nfd_labels_persist_after_reboot(request):
         get_logger().log_teardown_step(f"Removing {nfd_name} app")
         cleanup_ssh = LabConnectionKeywords().get_active_controller_ssh()  # fresh and independent connection
         SystemHostRebootKeywords(cleanup_ssh).wait_for_force_reboot(host_name, pre_uptime)  # wait for host to be back online before cleanup
-        install_nfd(cleanup_ssh)  # ensure NFD is applied to restore labels
+        # Wait until the rebooted host is fully 'available' again. Being back online
+        # is not enough: right after a controller reboot/swact the Kubernetes
+        # endpoints are briefly unavailable and 'system application-remove' is
+        # rejected ("Kubernetes endpoints are not accessible for application
+        # operations"). Waiting for availability lets the cluster recover first.
+        SystemHostListKeywords(LabConnectionKeywords().get_active_controller_ssh()).wait_for_host_availability(host_name, ["available"])
+        install_nfd(LabConnectionKeywords().get_active_controller_ssh())  # ensure NFD is applied to restore labels
         validate_equals_with_retry(
-            lambda: len(get_feature_node_labels(LabConnectionKeywords().get_active_controller_ssh(), host_name)),
-            label_count_before,
+            lambda: feature_node_labels_restored(LabConnectionKeywords().get_active_controller_ssh(), host_name, expected_label_keys),
+            True,
             "Labels should be restored before removing NFD",
             timeout=360,
             polling_sleep_time=60,
         )
-        SystemApplicationRemoveKeywords(cleanup_ssh).system_application_remove_and_delete_app(nfd_name)
+        SystemApplicationRemoveKeywords(LabConnectionKeywords().get_active_controller_ssh()).system_application_remove_and_delete_app(nfd_name)
 
     request.addfinalizer(cleanup_nfd_reboot_test)  # after label_count_before and pre_uptime are defined
 
@@ -123,11 +177,19 @@ def test_nfd_labels_persist_after_reboot(request):
     if not SystemHostRebootKeywords(wait_ssh).wait_for_force_reboot(host_name, pre_uptime):
         raise Exception(f"Timeout waiting for {host_name} to come back online after reboot.")
 
+    get_logger().log_test_case_step(f"Waiting for {host_name} to reach availability 'available' after reboot")
+    SystemHostListKeywords(LabConnectionKeywords().get_active_controller_ssh()).wait_for_host_availability(host_name, ["available"])
+
+    # After the reboot the NFD worker pod restarts and runs its startup feature
+    # discovery, re-publishing the stable feature labels. Volatile labels such as
+    # storage-nonrotationaldisk are ignored by feature_node_labels_restored (see
+    # VOLATILE_FEATURE_NODE_LABELS), so this no longer has to wait for the late,
+    # non-deterministic nbd module load.
     get_logger().log_test_case_step("Validating feature.node labels are restored after reboot")
     validate_equals_with_retry(
-        lambda: len(get_feature_node_labels(LabConnectionKeywords().get_active_controller_ssh(), host_name)),
-        label_count_before,
-        "Feature node label count should match original count after reboot",
+        lambda: feature_node_labels_restored(LabConnectionKeywords().get_active_controller_ssh(), host_name, expected_label_keys),
+        True,
+        "Feature node labels should be restored after reboot",
         timeout=360,
         polling_sleep_time=60,
     )
@@ -166,6 +228,7 @@ def test_nfd_labels_restored_after_deletion(request):
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     feature_labels = get_feature_node_labels(ssh_connection, host_name)
     label_count_before = len(feature_labels)
+    expected_label_keys = set(feature_labels)
     get_logger().log_info(f"Feature node label count: {label_count_before}")
 
     def cleanup_nfd_deletion_test():
@@ -173,8 +236,8 @@ def test_nfd_labels_restored_after_deletion(request):
         cleanup_ssh = LabConnectionKeywords().get_active_controller_ssh()  # fresh and independent connection
         install_nfd(cleanup_ssh)  # ensure NFD is applied to restore labels
         validate_equals_with_retry(
-            lambda: len(get_feature_node_labels(LabConnectionKeywords().get_active_controller_ssh(), host_name)),
-            label_count_before,
+            lambda: feature_node_labels_restored(LabConnectionKeywords().get_active_controller_ssh(), host_name, expected_label_keys),
+            True,
             "Labels should be restored before removing NFD",
             timeout=360,
             polling_sleep_time=60,
@@ -208,9 +271,9 @@ def test_nfd_labels_restored_after_deletion(request):
 
     get_logger().log_test_case_step("Waiting for NFD to restore labels after worker restart")
     validate_equals_with_retry(
-        lambda: len(get_feature_node_labels(LabConnectionKeywords().get_active_controller_ssh(), host_name)),
-        label_count_before,
-        "Feature node label count should match original count after NFD re-labeling",
+        lambda: feature_node_labels_restored(LabConnectionKeywords().get_active_controller_ssh(), host_name, expected_label_keys),
+        True,
+        "Feature node labels should be restored after NFD re-labeling",
         timeout=360,
         polling_sleep_time=60,
     )
