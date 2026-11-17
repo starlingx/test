@@ -26,3 +26,9 @@ images:
   # DockerHub images
   - docker.io/busybox:1.36.1
   - docker.io/nginx:1.27.5-alpine
+
+  # Quay images
+  # calicoctl must match the installed Calico release; the tests sync the tag
+  # of the running calico-node image, so add the matching tag here when the
+  # installed Calico release changes.
+  - quay.io/calico/ctl:v3.31.5
