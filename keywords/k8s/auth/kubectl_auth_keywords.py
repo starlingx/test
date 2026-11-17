@@ -1,5 +1,8 @@
 """Keywords for the two kubectl reads that establish who a token is and what it may do."""
 
+import shlex
+from typing import Optional
+
 from framework.exceptions.keyword_exception import KeywordException
 from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
@@ -70,7 +73,7 @@ class KubectlAuthKeywords(K8sBaseKeyword):
         get_logger().log_info(f"the apiserver resolved the username as '{result.get_username()}'")
         return result
 
-    def can_i(self, verb: str, resource: str, namespace: str = None) -> KubectlCanIOutput:
+    def can_i(self, verb: str, resource: str, namespace: str = None, as_user: Optional[str] = None) -> KubectlCanIOutput:
         """Ask the apiserver whether this session may perform an operation.
 
         Args:
@@ -78,6 +81,8 @@ class KubectlAuthKeywords(K8sBaseKeyword):
             resource (str): the resource, for example "secrets".
             namespace (str, optional): the namespace to scope the question to. When None the
                 question is asked without a namespace.
+            as_user (Optional[str]): the user to ask on behalf of ('--as'), for example
+                "system:serviceaccount:default:reader". When None the session's own user is used.
 
         Returns:
             KubectlCanIOutput: the answer.
@@ -88,15 +93,16 @@ class KubectlAuthKeywords(K8sBaseKeyword):
 
         """
         namespace_argument = f" -n {namespace}" if namespace else ""
+        as_user_argument = f" --as={shlex.quote(as_user)}" if as_user else ""
         # The trailing 'true' keeps the non-zero exit that a "no" answer carries from aborting the
         # command, so the answer itself can be read. The return code is captured separately and
         # used only in the failure message.
-        command = f"kubectl auth can-i {verb} {resource}{namespace_argument} 2>&1; true"
+        command = f"kubectl auth can-i {verb} {resource}{namespace_argument}{as_user_argument} 2>&1; true"
         output = self.ssh_connection.send(self.k8s_config.export(command))
         text = "\n".join(output) if isinstance(output, list) else str(output)
 
         result = KubectlCanIOutput(text)
         if not result.is_answered():
-            raise KeywordException(f"'kubectl auth can-i {verb} {resource}{namespace_argument}' did not return an answer, so authorization was " f"never evaluated. Output: {text[:200]}")
-        get_logger().log_info(f"can-i {verb} {resource}{namespace_argument}: {'yes' if result.is_allowed() else 'no'}")
+            raise KeywordException(f"'kubectl auth can-i {verb} {resource}{namespace_argument}{as_user_argument}' did not return an answer, so authorization was " f"never evaluated. Output: {text[:200]}")
+        get_logger().log_info(f"can-i {verb} {resource}{namespace_argument}{as_user_argument}: {'yes' if result.is_allowed() else 'no'}")
         return result

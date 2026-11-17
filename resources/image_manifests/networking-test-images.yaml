@@ -26,6 +26,8 @@ images:
   # DockerHub images
   - docker.io/busybox:1.36.1
   - docker.io/nginx:1.27.5-alpine
+  # networkstatic/iperf3 publishes only 'latest' and 'multiarch'; 'multiarch' is the fixed one.
+  - docker.io/networkstatic/iperf3:multiarch
 
   # Quay images
   # calicoctl must match the installed Calico release; the tests sync the tag

@@ -1,5 +1,8 @@
 """Keywords for calicoctl commands run from a one-shot pod."""
 
+import json
+import time
+
 from framework.logging.automation_logger import get_logger
 from framework.resources.resource_finder import get_stx_resource_path
 from framework.validation.validation import validate_equals
@@ -133,3 +136,38 @@ class KubectlCalicoctlKeywords(K8sBaseKeyword):
             CalicoctlWorkloadEndpointsOutput: The parsed workload endpoints.
         """
         return CalicoctlWorkloadEndpointsOutput(self.run_calicoctl(calicoctl_image, ["get", "workloadendpoints"]))
+
+    def patch_ippool(self, calicoctl_image: str, pool_name: str, patch: dict) -> None:
+        """Patch an IP pool with calicoctl.
+
+        Example:
+            patch_ippool(image, "default-ipv4-ippool", {"spec": {"natOutgoing": False}})
+
+        Args:
+            calicoctl_image (str): The calicoctl image in the local registry.
+            pool_name (str): The IP pool name.
+            patch (dict): The patch body.
+        """
+        self.run_calicoctl(calicoctl_image, ["patch", "ippool", pool_name, "-p", json.dumps(patch)])
+
+    def validate_ippool_nat_outgoing_unchanged(self, calicoctl_image: str, pool_name: str, expected_nat_outgoing: bool, observation_seconds: int, polling_interval: int) -> None:
+        """Validate an IP pool keeps its natOutgoing value for a whole observation window.
+
+        Used to show that nothing reverts a change: there is no event to wait on when a
+        change is kept, so the value is read repeatedly over a fixed window and the check
+        fails on the first read that differs.
+
+        Args:
+            calicoctl_image (str): The calicoctl image in the local registry.
+            pool_name (str): The IP pool name.
+            expected_nat_outgoing (bool): The natOutgoing value the pool must keep.
+            observation_seconds (int): How long to observe the value.
+            polling_interval (int): Seconds between two reads.
+        """
+        end_time = time.time() + observation_seconds
+        while True:
+            nat_outgoing = self.get_ippools(calicoctl_image).get_ippool_by_name(pool_name).get_nat_outgoing()
+            validate_equals(nat_outgoing, expected_nat_outgoing, f"IP pool {pool_name} keeps natOutgoing={expected_nat_outgoing}")
+            if time.time() >= end_time:
+                return
+            time.sleep(polling_interval)
