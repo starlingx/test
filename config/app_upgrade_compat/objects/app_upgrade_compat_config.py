@@ -88,3 +88,14 @@ class AppUpgradeCompatConfig:
                 f"configured applications: {sorted(self.applications)}"
             )
         return self.applications[app_key]
+
+    def get_ipsec_traffic_image(self) -> str:
+        """Return the explicitly selected immutable Python traffic image.
+
+        Returns:
+            str: Python-capable image reference supplied by the tester.
+        """
+        image = self.applications.get("ipsec-policy-operator", {}).get("traffic_image")
+        if not isinstance(image, str) or not image.strip():
+            raise ValueError("Configure applications.ipsec-policy-operator.traffic_image in the application upgrade compatibility config")
+        return image
