@@ -44,3 +44,14 @@ class DmesgKeywords(BaseKeyword):
         if isinstance(dmesg_output, list):
             dmesg_output = "".join(dmesg_output)
         validate_str_contains(dmesg_output, expected_message, f"dmesg should contain '{expected_message}'")
+
+    def verify_full_dmesg_contains(self, expected_message: str) -> None:
+        """Verify the full dmesg output contains the expected message.
+
+        Args:
+            expected_message (str): Message to search for in dmesg output.
+        """
+        dmesg_output = self.ssh_connection.send_as_sudo(f'dmesg | grep "{expected_message}"')
+        if isinstance(dmesg_output, list):
+            dmesg_output = "".join(dmesg_output)
+        validate_str_contains(dmesg_output, expected_message, f"dmesg should contain '{expected_message}'")

@@ -955,7 +955,7 @@ def test_kernel_module_hello_world_controller_reboot(request):
     verify_module_loaded(target_host_ssh)
 
     get_logger().log_test_case_step(f"Verifying Hello, world! message still in dmesg on {active_controller} after reboot")
-    verify_dmesg_message(target_host_ssh, "Hello, world!")
+    DmesgKeywords(target_host_ssh).verify_full_dmesg_contains("Hello, world!")
 
     get_logger().log_test_case_step("Verifying KMM module resource still exists after reboot")
     verify_kmm_module_exists(ssh_connection, module_name)
@@ -1864,7 +1864,7 @@ def test_kernel_module_hello_world_compute_reboot(request):
     verify_module_loaded(compute_node_ssh)
 
     get_logger().log_test_case_step(f"Verifying Hello, world! message still in dmesg on {compute_node} after reboot")
-    verify_dmesg_message(compute_node_ssh, "Hello, world!")
+    DmesgKeywords(compute_node_ssh).verify_full_dmesg_contains("Hello, world!")
 
     get_logger().log_test_case_step("Verifying KMM module resource still exists after reboot")
     verify_kmm_module_exists(ssh_connection, module_name)
