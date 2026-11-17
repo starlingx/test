@@ -27,6 +27,7 @@ class KubectlPodObject:
         self.readiness_gates = None
         self.labels = {}
         self.images = []
+        self.init_images = []
         self.container_images = {}
         self.owner_name = None
         self.owner_kind = None
@@ -444,6 +445,23 @@ class KubectlPodObject:
             list[str]: List of container image strings.
         """
         return self.images
+
+    def set_init_images(self, init_images: list[str]) -> None:
+        """Setter for init container images.
+
+        Args:
+            init_images (list[str]): List of init container image strings.
+        """
+        self.init_images = init_images
+
+    def get_init_images(self) -> list[str]:
+        """Getter for init container images.
+
+        Returns:
+            list[str]: List of init container image strings. Empty when the pod has no
+                init containers or the source output did not carry them (table-format parsing).
+        """
+        return self.init_images
 
     def set_container_images(self, container_images: dict) -> None:
         """Setter for the per-container image map (container name -> image).

@@ -1,0 +1,8 @@
+apiVersion: operator.tigera.io/v1
+kind: GatewayAPI
+metadata:
+  name: default
+spec:
+  crdManagement: PreferExisting
+  gatewayClasses:
+  - name: tigera-gateway-class
