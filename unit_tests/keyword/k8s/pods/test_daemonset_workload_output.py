@@ -105,3 +105,14 @@ def test_missing_pod_revision_keeps_waiting(workload, pod):
     """Ready and owned pods still require rollout identity."""
     pod["metadata"].pop("labels")
     assert workload.get_ready_pods([pod]) == {}
+
+
+def test_matching_nodes_allows_pending_labels_without_changing_strict_api(workload):
+    """Empty matching evidence is pending only for callers choosing that API."""
+    workload.daemonset["spec"]["template"]["spec"]["nodeSelector"] = {"pending": "enabled"}
+    assert workload.get_matching_nodes() == ()
+    with pytest.raises(ValueError, match="No eligible"):
+        workload.get_eligible_nodes()
+    workload.daemonset["spec"]["template"]["spec"]["affinity"] = {"unsupported": True}
+    with pytest.raises(ValueError, match="unsupported affinity"):
+        workload.get_matching_nodes()

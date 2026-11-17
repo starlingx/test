@@ -33,6 +33,17 @@ class DaemonSetWorkloadOutput:
         Returns:
             tuple[str, ...]: Nonempty unique eligible node names.
         """
+        nodes = self.get_matching_nodes()
+        if not nodes:
+            raise ValueError("No eligible DaemonSet nodes in rendered scheduling and inventory")
+        return nodes
+
+    def get_matching_nodes(self) -> tuple[str, ...]:
+        """Evaluate scheduling, permitting an empty set during label propagation.
+
+        Returns:
+            tuple[str, ...]: Matching nodes; malformed scheduling still raises.
+        """
         spec = self.daemonset["spec"]["template"]["spec"]
         if spec.get("affinity") or spec.get("nodeName") or spec.get("schedulerName", "default-scheduler") != "default-scheduler":
             raise ValueError("DaemonSet scheduling uses unsupported affinity, nodeName or scheduler")
@@ -59,8 +70,6 @@ class DaemonSetWorkloadOutput:
                 has_untolerated_taint |= not taint_is_tolerated
             if not has_untolerated_taint:
                 eligible_node_names.append(name)
-        if not eligible_node_names:
-            raise ValueError("No eligible DaemonSet nodes in rendered scheduling and inventory")
         return tuple(sorted(eligible_node_names))
 
     def get_ready_pods(self, pods: list[dict]) -> dict[str, dict]:
