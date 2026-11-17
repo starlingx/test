@@ -302,23 +302,38 @@ class LabConnectionKeywords(BaseKeyword):
 
         return connection
 
-    def get_subcloud_factory_ssh(self, subcloud_name: str) -> SSHConnection:
+    def get_subcloud_factory_ssh(self, subcloud_name: str, require_connected: bool = False) -> SSHConnection:
         """Gets an SSH connection to the subcloud using its factory IP and factory credentials.
 
         Uses factory_credentials from the subcloud config. Falls back to admin_credentials if not set.
-        Uses factory_ip from the subcloud config. Falls back to floating_ip if not set.
+
+        SSHConnectionManager.create_ssh_connection() does not raise when the connect fails; it
+        returns an unconnected session. By default that session is returned as-is, which lets a
+        caller that is waiting for the subcloud to come up poll it (for example with
+        SSHConnection.is_reachable()). A caller that needs a working session right away should
+        pass require_connected=True, so an unreachable subcloud fails here with a clear error
+        instead of later with an unrelated one.
 
         Args:
             subcloud_name (str): The name of the 'subcloud' node.
+            require_connected (bool): When True, raise if the session did not connect at the factory IP. Defaults to False.
 
         Returns:
             SSHConnection: the SSH connection to the subcloud at its factory IP.
+
+        Raises:
+            ValueError: If the subcloud is not defined in the config, or has no factory IP.
+            KeywordException: If require_connected is True and the subcloud is not reachable over SSH at its factory IP.
         """
         lab_config = self._get_lab_config()
         subcloud_config: LabConfig = lab_config.get_subcloud(subcloud_name)
 
         if not subcloud_config:
             raise ValueError(f"There is no 'subcloud' node named {subcloud_name} defined in your config file.")
+
+        factory_ip = subcloud_config.get_factory_ip()
+        if not factory_ip:
+            raise ValueError(f"No factory_ip is configured for subcloud '{subcloud_name}'; it is required to reach a factory-installed subcloud.")
 
         factory_creds = subcloud_config.get_factory_credentials()
         if factory_creds:
@@ -333,12 +348,15 @@ class LabConnectionKeywords(BaseKeyword):
             jump_host_config = lab_config.get_jump_host_configuration()
 
         connection = SSHConnectionManager.create_ssh_connection(
-            subcloud_config.get_factory_ip(),
+            factory_ip,
             username,
             password,
             ssh_port=lab_config.get_ssh_port(),
             jump_host=jump_host_config,
         )
+
+        if require_connected and not connection.is_connected:
+            raise KeywordException(f"Subcloud '{subcloud_name}' is not reachable over SSH at factory IP {factory_ip}. Check that it is powered on and factory-installed, and that factory_ip and factory_credentials in the lab config are correct.")
 
         return connection
 

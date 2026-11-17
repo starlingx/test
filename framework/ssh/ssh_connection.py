@@ -9,6 +9,7 @@ from paramiko.client import SSHClient
 from paramiko.sftp_client import SFTPClient
 
 from config.host.objects.host_configuration import HostConfiguration
+from framework.exceptions.keyword_exception import KeywordException
 from framework.logging.automation_logger import get_logger
 from framework.ssh.prompt_response import PromptResponse
 from framework.threading.thread_manager import ThreadManager
@@ -564,7 +565,7 @@ class SSHConnection:
         - Non-interactive (``send`` / ``send_as_sudo_non_interactive``): taken
           from ``recv_exit_status()``.
         - Interactive (``send_as_sudo`` / ``send_expect_prompts``): read back
-          from the shell with ``echo $?`` once the expected prompts matched. 
+          from the shell with ``echo $?`` once the expected prompts matched.
           Returns ``None`` only if that value could not be read
           back (e.g. the probe timed out), and ``-1`` if the prompt read itself
           failed (timeout / closed channel).
@@ -619,32 +620,40 @@ class SSHConnection:
         Get an SFTP client for file operations.
 
         Retries the connection for up to `reconnect_timeout` seconds if disconnected.
+        If no SFTP client can be obtained in that time, an exception is raised
+        instead of returning None, so callers get a clear connection error rather
+        than a later AttributeError on a None client.
 
         Args:
             reconnect_timeout (int): The number of seconds to retry connecting.
 
         Returns:
             SFTPClient: A Paramiko SFTP client for performing file operations.
+
+        Raises:
+            KeywordException: If an SFTP client could not be obtained within `reconnect_timeout` seconds.
         """
         timeout = time.time() + reconnect_timeout
         refresh_timeout = 5
 
-        sftp_client: SFTPClient = None
+        last_error: Optional[Exception] = None
         while time.time() < timeout:
             try:
-                if not self.is_connected:
-                    self.connect()
+                # connect() reports failure through its return value rather than raising, so
+                # check it here instead of calling open_sftp() on an unconnected client.
+                if not self.is_connected and not self.connect():
+                    raise KeywordException(f"Could not establish an SSH connection to {self.host}:{self.ssh_port} as {self.user}.")
                 sftp_client = self.client.open_sftp()
                 if sftp_client:
                     return sftp_client
-                else:
-                    raise "SFTP Client was None"  # should be caught in the except block which tries to reconnect
+                raise KeywordException("The SSH client returned no SFTP client.")  # caught below, which reconnects and retries
             except Exception as e:
+                last_error = e
                 get_logger().log_info(f"Failed to get sftp client. Reconnecting and trying again in {refresh_timeout} seconds. " f"Exception: {str(e)}")
                 time.sleep(refresh_timeout)
                 self.is_connected = False
 
-        return sftp_client
+        raise KeywordException(f"Unable to get an SFTP client for {self.host}:{self.ssh_port} within {reconnect_timeout} seconds. Last error: {last_error}")
 
     def setup_ssh_pass(self, host_name: str, host_user_name: str, host_password: str) -> None:
         """
