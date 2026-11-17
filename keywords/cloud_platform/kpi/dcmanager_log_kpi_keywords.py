@@ -7,10 +7,11 @@ the caller passes ``since_line`` from a pre-operation snapshot
 (``snapshot_log_line_count``) or from an after-the-fact anchor
 (``anchor_since_last_session``). Logs are root-only, so reads use sudo.
 
-The dcmanager, state and fm-manager logs are registered by default; other logs
-can be added per instance (constructor ``extra_logs`` or ``register_log``) so the
-same miner serves operations whose markers live in different logs. The
-fm-manager log is read on the subcloud when a subcloud connection is given.
+The dcmanager, state, fm-manager and auto-restore logs are registered by
+default; other logs can be added per instance (constructor ``extra_logs`` or
+``register_log``) so the same miner serves operations whose markers live in
+different logs. The fm-manager and auto-restore logs are read on the subcloud
+when a subcloud connection is given.
 """
 
 import re
@@ -25,8 +26,10 @@ from keywords.cloud_platform.kpi.kpi_log_phase import KpiLogPhase
 # System controller log paths (root-only).
 DCMANAGER_LOG = "/var/log/dcmanager/dcmanager.log"
 STATE_LOG = "/var/log/dcmanager/state.log"
-# Subcloud log (root-only) holding the alarm set/clear timeline.
+# Subcloud logs (root-only): the alarm set/clear timeline, and the factory
+# restore timeline written by the subcloud auto-restore script.
 FM_MANAGER_LOG = "/var/log/fm-manager.log"
+AUTO_RESTORE_LOG = "/var/log/auto-restore.log"
 
 # Per-subcloud ansible playbook output dcmanager writes on the system controller.
 # The path depends on the subcloud, so register it as "ansible" via extra_logs.
@@ -37,12 +40,13 @@ DEFAULT_LOG_PATHS = {
     "dcmanager": DCMANAGER_LOG,
     "state": STATE_LOG,
     "fmmanager": FM_MANAGER_LOG,
+    "autorestore": AUTO_RESTORE_LOG,
 }
 
 # Logs that live on the subcloud, read over the subcloud connection.
-_SUBCLOUD_HOST_LOGS = ("fmmanager",)
+_SUBCLOUD_HOST_LOGS = ("fmmanager", "autorestore")
 # Logs holding only one subcloud's lines, so the subcloud-name filter is skipped.
-_UNSCOPED_LOGS = ("ansible", "fmmanager")
+_UNSCOPED_LOGS = ("ansible", "fmmanager", "autorestore")
 # Ansible playbook logs: logrotate can rename them mid-operation while ansible
 # keeps writing to the open (now ".1") file, so they are read as "<path>.1" then
 # "<path>". Their TASK headers carry no timestamp; the time is on the next line.
@@ -119,6 +123,25 @@ ONSITE_RESTORE_PHASES: List[KpiLogPhase] = [
     _ansible_phase("host_unlock", _TASK_HOST_UNLOCK, _TASK_RESTORE_COMPLETE),
     _ansible_phase("restore_complete", _TASK_RESTORE_COMPLETE, _TASKS_RECAP),
     KpiLogPhase("alarm_clear", "ansible", _TASKS_RECAP, "fmmanager", r"Deleted alarm\(s\):", start_pick="first", stop_pick="last", regex=True),
+]
+
+# Fixed substring the subcloud auto-restore script writes at the start of each run.
+# A factory restore runs the script twice across a reboot, so the current
+# operation begins at the FACTORY_RESTORE_SCRIPT_RUNS-th marker from the end.
+FACTORY_RESTORE_SESSION_MARKER = "Starting auto-restore script"
+FACTORY_RESTORE_SCRIPT_RUNS = 2
+
+# Factory restore phase model. Fixed substrings taken from a real factory restore
+# auto-restore.log on the subcloud. Run 1 does the restore playbook and host
+# unlock; run 2, after the post-unlock boot, runs system restore-complete. The
+# computed 'total' is the end-to-end span. restore_init is dominated by a fixed
+# IPMI wait rather than real work.
+FACTORY_RESTORE_PHASES: List[KpiLogPhase] = [
+    KpiLogPhase("restore_init", "autorestore", "Starting auto-restore script", "autorestore", "Starting automatic restore process", start_pick="first", stop_pick="first"),
+    KpiLogPhase("restore_playbook", "autorestore", "Starting automatic restore process", "autorestore", "Restore playbook completed successfully", start_pick="first", stop_pick="first"),
+    KpiLogPhase("controller_unlock", "autorestore", "Attempting host unlock", "autorestore", "host unlock completed successfully", start_pick="first", stop_pick="first"),
+    KpiLogPhase("post_unlock_reboot", "autorestore", "host unlock completed successfully", "autorestore", "Detected post-unlock boot", start_pick="first", stop_pick="first"),
+    KpiLogPhase("restore_complete", "autorestore", "Detected post-unlock boot", "autorestore", "System restore-complete executed successfully", start_pick="first", stop_pick="first"),
 ]
 
 
@@ -200,34 +223,39 @@ class DcManagerLogKpiKeywords(BaseKeyword):
         get_logger().log_info(f"Snapshot {logical_log} line count: {count}")
         return count
 
-    def anchor_since_last_session(self, logical_log: str, session_marker: str) -> Dict[str, int]:
-        """Return a ``since_line`` anchored at the last occurrence of a session marker.
+    def anchor_since_last_session(self, logical_log: str, session_marker: str, runs_per_operation: int = 1) -> Dict[str, int]:
+        """Return a ``since_line`` anchored at the current operation's session start.
 
         Used when a pre-operation line snapshot is not reliable: the log may be
-        rotated during the operation, and it may carry earlier operations' lines.
-        The current operation begins at the last ``session_marker``; without one,
-        the whole log is mined.
+        rotated during the operation or unreadable beforehand, and it may carry
+        earlier operations' lines. The current operation begins at the
+        ``runs_per_operation``-th ``session_marker`` from the end; with fewer
+        markers than that, the whole log is mined.
 
         Args:
             logical_log (str): Logical log name whose session to anchor (e.g. 'ansible').
             session_marker (str): Fixed substring that begins each operation run
                 (e.g. ONSITE_RESTORE_SESSION_MARKER).
+            runs_per_operation (int): Number of ``session_marker`` occurrences one
+                operation writes (a factory restore writes 2). Defaults to 1.
 
         Returns:
             Dict[str, int]: ``{logical_log: anchor_line}`` to pass as ``since_line``;
                 ``anchor_line`` is one less than the marker's line so the marker
-                itself is included in the mined slice. Empty dict if no marker.
+                itself is included in the mined slice. Empty dict if there are
+                fewer markers than ``runs_per_operation``.
         """
+        runs = max(1, runs_per_operation)
         marker_escaped = session_marker.replace("'", "'\\''")
-        pipeline = f"{self._log_source(logical_log)} | grep -aFn '{marker_escaped}' | tail -1 || true"
+        pipeline = f"{self._log_source(logical_log)} | grep -aFn '{marker_escaped}' | tail -{runs} || true"
         output = self.ssh_connection.send_as_sudo_non_interactive(f'sh -c "{pipeline}"')
         text = "\n".join(output) if isinstance(output, list) else str(output)
-        match = re.search(r"^(\d+):", text, re.MULTILINE)
-        if not match:
-            get_logger().log_info(f"No '{session_marker}' marker in {logical_log}; mining whole log")
+        line_numbers = [int(m.group(1)) for m in re.finditer(r"^(\d+):", text, re.MULTILINE)]
+        if len(line_numbers) < runs:
+            get_logger().log_info(f"Found {len(line_numbers)} '{session_marker}' marker(s) in {logical_log} (need {runs}); mining whole log")
             return {}
-        anchor = int(match.group(1)) - 1
-        get_logger().log_info(f"Anchoring {logical_log} at line {anchor} (last session start marker on line {anchor + 1})")
+        anchor = line_numbers[0] - 1
+        get_logger().log_info(f"Anchoring {logical_log} at line {anchor} (session start marker on line {anchor + 1})")
         return {logical_log: anchor}
 
     def mine_phase_durations(

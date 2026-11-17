@@ -28,12 +28,16 @@ from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_backup_keywords import DcManagerSubcloudBackupKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_manager_keywords import DcManagerSubcloudManagerKeywords
+from keywords.cloud_platform.dcmanager.dcmanager_subcloud_show_keywords import DcManagerSubcloudShowKeywords
 from keywords.cloud_platform.dcmanager.objects.dcmanger_subcloud_list_availability_enum import DcManagerSubcloudListAvailabilityEnum
 from keywords.cloud_platform.dcmanager.subcloud_factory_ready_keywords import SubcloudFactoryReadyKeywords
 from keywords.cloud_platform.dcmanager.subcloud_picker_keywords import SubcloudPickerKeywords
 from keywords.cloud_platform.health.health_keywords import HealthKeywords
+from keywords.cloud_platform.kpi.dc_kpi_recorder_keywords import DcKpiRecorderKeywords
+from keywords.cloud_platform.kpi.dcmanager_log_kpi_keywords import FACTORY_RESTORE_PHASES, FACTORY_RESTORE_SCRIPT_RUNS, FACTORY_RESTORE_SESSION_MARKER, DcManagerLogKpiKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.cloud_platform.system.host.system_host_swact_keywords import SystemHostSwactKeywords
+from keywords.cloud_platform.version_info.cloud_platform_version_manager import CloudPlatformVersionManager
 from keywords.files.file_keywords import FileKeywords
 from pytest import mark
 
@@ -66,6 +70,40 @@ def manage_and_validate_health(system_controller_ssh: SSHConnection, subcloud_na
 @mark.p2
 @mark.lab_has_subcloud
 @mark.subcloud_lab_is_simplex
+def record_factory_restore_kpis(system_controller_ssh: SSHConnection, subcloud_name: str) -> None:
+    """Mine per-phase factory-restore durations from the subcloud and record them.
+
+    The factory restore timeline is written to the subcloud's own
+    /var/log/auto-restore.log. After a factory restore the subcloud is at factory
+    baseline, so the log is read over the factory SSH connection (factory IP and
+    factory credentials). The script runs twice across a reboot and the log can
+    carry earlier restores, so mining is anchored at this restore's first run.
+    Phases whose markers are not found are skipped, and nothing is recorded when
+    the run has no KPI session or database.
+
+    Args:
+        system_controller_ssh (SSHConnection): SSH to the system controller (for the
+            subcloud software version KPI tag).
+        subcloud_name (str): Subcloud that was factory-restored.
+    """
+    system_controller_version = CloudPlatformVersionManager.get_sw_version().get_name()
+    subcloud_version = DcManagerSubcloudShowKeywords(system_controller_ssh).get_dcmanager_subcloud_show(subcloud_name).get_dcmanager_subcloud_show_object().get_software_version()
+
+    subcloud_ssh = LabConnectionKeywords().get_subcloud_factory_ssh(subcloud_name)
+    log_kpi = DcManagerLogKpiKeywords(subcloud_ssh)
+    since_line = log_kpi.anchor_since_last_session("autorestore", FACTORY_RESTORE_SESSION_MARKER, runs_per_operation=FACTORY_RESTORE_SCRIPT_RUNS)
+    durations = log_kpi.mine_phase_durations(subcloud_name, FACTORY_RESTORE_PHASES, since_line=since_line, subcloud_ssh=subcloud_ssh)
+    DcKpiRecorderKeywords().record_phase_durations(
+        durations,
+        kpi_category="Backup_Restore",
+        kpi_group="dcmanager_factory_restore",
+        name_prefix="dcmanager-factory-restore",
+        subcloud_version=subcloud_version,
+        system_controller_version=system_controller_version,
+        extra_details={"variant": "factory"},
+    )
+
+
 def test_backup_restore_central_single_simplex_subcloud_n_release(request):
     """Restore a simplex subcloud from its central backup running N release.
 
@@ -513,6 +551,7 @@ def test_backup_factory_restore_local_single_simplex_subcloud_n_release(request)
         3. Validate the subcloud is factory-ready (factory-install marker present, cluster healthy).
            A factory-restored subcloud is not managed here: it is at factory baseline and must be
            re-enrolled before it can be managed.
+        4. Record per-phase factory restore KPIs from the subcloud auto-restore log
 
     End state: the subcloud is left unmanaged at factory baseline, reachable only on its
     factory IP with the factory credentials. A following test in the plan must re-enroll it
@@ -526,6 +565,7 @@ def test_backup_factory_restore_local_single_simplex_subcloud_n_release(request)
     )
     DcManagerSubcloudBackupKeywords(system_controller_ssh).factory_restore_backup(result.get_name())
     SubcloudFactoryReadyKeywords().validate_subcloud_factory_ready(result.get_name())
+    record_factory_restore_kpis(system_controller_ssh, result.get_name())
 
 
 # --- Central Restore - Duplex ---
