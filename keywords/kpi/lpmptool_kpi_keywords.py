@@ -6,14 +6,16 @@ reads log files locally and performs pattern matching using a YAML model file,
 which is more efficient than parsing logs over SSH from Python.
 """
 
+import re
 import time
-from typing import List
+from typing import List, Optional
 
 from framework.logging.automation_logger import get_logger
 from framework.resources.resource_finder import get_stx_resource_path
 from framework.ssh.ssh_connection import SSHConnection
 from keywords.base_keyword import BaseKeyword
 from keywords.files.file_keywords import FileKeywords
+from keywords.kpi.kpi_result import KpiResult
 
 # Resource paths (relative to starlingx repo root)
 LPMPTOOL_DEB_RESOURCE = "resources/cloud_platform/kpi/tools/lpmp_1.0-1.stx.0_amd64.deb"
@@ -22,6 +24,14 @@ UNLOCK_MODEL_RESOURCE = "resources/cloud_platform/kpi/unlock_model.yaml"
 # Remote paths on the controller
 REMOTE_DEB_PATH = "/home/sysadmin/lpmp_1.0-1.stx.0_amd64.deb"
 REMOTE_MODEL_PATH = "/home/sysadmin/unlock_model.yaml"
+
+# lpmptool result row: "<delta>  <host>  <label>  <file>.log  <data>"
+ROW_RE = re.compile(r"^(?P<delta>[0-9?]{2}:[0-9?]{2}:[0-9?]{2}\.[0-9?]{3})\s+(?P<host>\S+)\s+(?P<label>.+?)\s+(?P<log>\S+\.log\S*)\s+(?P<data>.*)$")
+# Pair blocks end with ": <n>s", optionally followed by the matched stop pattern in brackets.
+DURATION_RE = re.compile(r":\s*([0-9]+(?:\.[0-9]+)?)s(?:\s+\[.*\])?\s*$")
+DELTA_RE = re.compile(r"^(\d+):(\d{2}):(\d{2}(?:\.\d+)?)$")
+# Blocks that are part of the model but not reported as unlock KPI phases.
+EXCLUDED_LABELS = ["LOCK HOST"]
 
 
 class LpmptoolKpiKeywords(BaseKeyword):
@@ -191,6 +201,59 @@ class LpmptoolKpiKeywords(BaseKeyword):
             if line and line.strip():
                 get_logger().log_info(line.rstrip())
         get_logger().log_info(f"lpmptool output: {len(results)} lines")
+
+    def parse_results(self, raw_output: List[str], hostname: str) -> List[KpiResult]:
+        """Parse lpmptool output into KpiResult objects.
+
+        Each result row has the form "<delta>  <host>  <label>  <file>.log  <data>".
+        Pair blocks report their duration at the end of the data column
+        ("Start -> Stop: ...: 45.1s"). Pattern-only blocks (e.g. Kubelet startup)
+        have no duration, so the Delta column is used. Rows for blocks that were
+        not found, and excluded labels such as LOCK HOST, are skipped.
+
+        Args:
+            raw_output (List[str]): Raw output lines from lpmptool.
+            hostname (str): Hostname of the unlocked host.
+
+        Returns:
+            List[KpiResult]: Parsed KPI phases with label and duration.
+        """
+        kpi_results = []
+        for line in raw_output:
+            if not line or not line.strip():
+                continue
+            row = ROW_RE.match(line.strip())
+            if not row:
+                continue
+            label = row.group("label").strip()
+            if label in EXCLUDED_LABELS:
+                continue
+            duration_seconds = self._get_row_duration(row.group("delta"), row.group("data"))
+            if duration_seconds is None:
+                continue
+            kpi_results.append(KpiResult(label, duration_seconds, hostname))
+
+        get_logger().log_info(f"Parsed {len(kpi_results)} KPI phases from lpmptool output")
+        return kpi_results
+
+    def _get_row_duration(self, delta: str, data: str) -> Optional[float]:
+        """Get the duration in seconds for one lpmptool row.
+
+        Args:
+            delta (str): Delta(HH:MM:SS.mmm) column.
+            data (str): Data column.
+
+        Returns:
+            Optional[float]: Duration in seconds, or None if the block was not found.
+        """
+        duration_match = DURATION_RE.search(data)
+        if duration_match:
+            return float(duration_match.group(1))
+        if "Start -> Stop" not in data:
+            clock = DELTA_RE.match(delta)
+            if clock:
+                return int(clock.group(1)) * 3600 + int(clock.group(2)) * 60 + float(clock.group(3))
+        return None
 
     def setup_and_calculate_kpi(self, start_time: str, loops: int = 1, model_resource: str = UNLOCK_MODEL_RESOURCE, retry_until_complete: bool = True, timeout: int = 300, poll_interval: int = 15) -> List[str]:
         """Full workflow: install lpmptool, upload model, and calculate KPI.

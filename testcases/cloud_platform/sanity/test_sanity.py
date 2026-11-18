@@ -65,29 +65,25 @@ from web_pages.horizon.admin.platform.horizon_host_inventory_page import Horizon
 from web_pages.horizon.login.horizon_login_page import HorizonLoginPage
 
 
-def save_unlock_kpi_to_database(results: list, hostname: str) -> None:
-    """Save unlock KPI data to database using LogPatternKpiKeywords.
+def save_unlock_kpi_to_database(kpi_results: list) -> None:
+    """Save parsed unlock KPI phases to the database.
 
-    Parses LogPatternKpiKeywords output and records to database with
-    the current software version of the system.
+    Records the phases with the current software version of the system.
 
     Args:
-        results (list): KPI timing results (List[str]) from calculate_kpi.
-        hostname (str): Hostname of the unlocked controller.
+        kpi_results (list): Parsed KPI phases (List[KpiResult]).
     """
-    if not results:
+    if not kpi_results:
         return
 
     # Get the current software version from CloudPlatformVersionManager
     software_version = CloudPlatformVersionManager.get_sw_version().get_name()
     get_logger().log_info(f"Software version for unlock KPI: {software_version}")
 
-    kpi_keywords = LogPatternKpiKeywords(ssh_connection=None)
-    kpi_results = kpi_keywords.parse_results(results, hostname)
-    kpi_keywords.save_to_database(kpi_results, software_version=software_version)
+    LogPatternKpiKeywords(ssh_connection=None).save_to_database(kpi_results, software_version=software_version)
 
 
-def record_unlock_kpi_measures(results: list, hostname: str) -> None:
+def record_unlock_kpi_measures(kpi_results: list, hostname: str) -> None:
     """Record unlock KPI measurements via KpiRecorderKeywords.
 
     Builds KpiMeasure objects from the parsed unlock timings and delegates all
@@ -95,16 +91,12 @@ def record_unlock_kpi_measures(results: list, hostname: str) -> None:
     upgrade_event functionality is preserved separately.
 
     Args:
-        results (list): KPI timing results (List[str]) from calculate_kpi.
+        kpi_results (list): Parsed KPI phases (List[KpiResult]).
         hostname (str): Hostname of the unlocked host.
     """
-    if not results:
-        return
-
     software_version = CloudPlatformVersionManager.get_sw_version().get_name()
     lab_name = ConfigurationManager.get_lab_config().get_lab_name()
 
-    kpi_results = LogPatternKpiKeywords(ssh_connection=None).parse_results(results, hostname)
     if not kpi_results:
         get_logger().log_info("No unlock KPI phases were parsed, nothing to record")
         return
@@ -338,8 +330,9 @@ def test_lock_unlock_simplex():
 
         # Save KPI data to database if record_kpi is enabled in USM config
         if ConfigurationManager.get_usm_config().get_record_kpi():
-            save_unlock_kpi_to_database(results, active_controller.get_host_name())
-            record_unlock_kpi_measures(results, active_controller.get_host_name())
+            kpi_results = kpi_keywords.parse_results(results, active_controller.get_host_name())
+            save_unlock_kpi_to_database(kpi_results)
+            record_unlock_kpi_measures(kpi_results, active_controller.get_host_name())
     else:
         get_logger().log_info("No timing patterns found in logs")
 
@@ -381,8 +374,9 @@ def test_lock_unlock_standby_controller():
 
         # Save KPI data to database if record_kpi is enabled in USM config
         if ConfigurationManager.get_usm_config().get_record_kpi():
-            save_unlock_kpi_to_database(results, standby_controller.get_host_name())
-            record_unlock_kpi_measures(results, standby_controller.get_host_name())
+            kpi_results = kpi_keywords.parse_results(results, standby_controller.get_host_name())
+            save_unlock_kpi_to_database(kpi_results)
+            record_unlock_kpi_measures(kpi_results, standby_controller.get_host_name())
     else:
         get_logger().log_info("No timing patterns found in logs")
 
@@ -426,8 +420,9 @@ def test_lock_unlock_compute():
 
         # Save KPI data to database if record_kpi is enabled in USM config
         if ConfigurationManager.get_usm_config().get_record_kpi():
-            save_unlock_kpi_to_database(results, computes[0].get_host_name())
-            record_unlock_kpi_measures(results, computes[0].get_host_name())
+            kpi_results = kpi_keywords.parse_results(results, computes[0].get_host_name())
+            save_unlock_kpi_to_database(kpi_results)
+            record_unlock_kpi_measures(kpi_results, computes[0].get_host_name())
     else:
         get_logger().log_info("No timing patterns found in logs")
 
