@@ -760,6 +760,39 @@ class OpenBaoKeywords(BaseKeyword):
         cmd = f"bash -c \"echo '{manifest}' | puppet apply --modulepath={modulepath} 2>&1\""
         return "".join(self.ssh_connection.send_as_sudo_non_interactive(cmd))
 
+    def host_group_exists(self, group_name: str) -> bool:
+        """Check whether a POSIX group exists on the host via getent.
+
+        Args:
+            group_name (str): The group name to look up (e.g. "openbao").
+
+        Returns:
+            bool: True if ``getent group`` returns a matching entry.
+        """
+        output = "".join(self.ssh_connection.send(f"getent group {group_name}"))
+        return output.strip().startswith(f"{group_name}:")
+
+    def host_config_complete_flag_present(self) -> bool:
+        """Check the controller config-complete flag exists after bootstrap.
+
+        Returns:
+            bool: True if ``/var/run/.controller_config_complete`` is present.
+        """
+        output = "".join(self.ssh_connection.send_as_sudo_non_interactive("ls /var/run/.controller_config_complete 2>/dev/null"))
+        return "/var/run/.controller_config_complete" in output
+
+    def host_bootstrap_puppet_log_contains(self, pattern: str) -> bool:
+        """Check the bootstrap puppet log for a pattern (case-insensitive grep).
+
+        Args:
+            pattern (str): The text to search for in the bootstrap puppet log.
+
+        Returns:
+            bool: True if the pattern is found in any bootstrap puppet.log.
+        """
+        output = "".join(self.ssh_connection.send_as_sudo_non_interactive(f"grep -ri '{pattern}' /var/log/puppet/*bootstrap*/puppet.log 2>/dev/null"))
+        return pattern.lower() in output.lower()
+
     def get_host_file_owner_mode(self, path: str) -> str:
         """Get ``owner:group mode`` for a host file via sudo stat.
 
