@@ -2,12 +2,8 @@ from typing import Dict, List
 
 from framework.exceptions.keyword_exception import KeywordException
 from framework.logging.automation_logger import get_logger
-from keywords.cloud_platform.dcmanager.dcmanager_table_parser import (
-    DcManagerTableParser,
-)
-from keywords.cloud_platform.dcmanager.objects.dcmanager_patch_strategy_config_object import (
-    DcmanagerPatchStrategyConfigObject,
-)
+from keywords.cloud_platform.dcmanager.dcmanager_table_parser import DcManagerTableParser
+from keywords.cloud_platform.dcmanager.objects.dcmanager_patch_strategy_config_object import DcmanagerPatchStrategyConfigObject
 
 
 class DcmanagerPatchStrategyConfigOutput:
@@ -50,6 +46,18 @@ class DcmanagerPatchStrategyConfigOutput:
             List[DcmanagerPatchStrategyConfigObject]: A list of parsed DcmanagerPatchStrategyConfigObject instances.
         """
         return self.dcmanager_patch_strategy_config
+
+    def is_cloud_configured(self, cloud: str) -> bool:
+        """
+        Checks whether a strategy config entry exists for the given cloud.
+
+        Args:
+            cloud (str): Subcloud name (the 'cloud' column).
+
+        Returns:
+            bool: True if an entry exists for the cloud, False otherwise.
+        """
+        return any(config.get_cloud() == cloud for config in self.dcmanager_patch_strategy_config)
 
     @staticmethod
     def is_valid_output(value: Dict[str, str]) -> bool:

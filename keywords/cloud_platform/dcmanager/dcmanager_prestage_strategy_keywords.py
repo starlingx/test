@@ -70,7 +70,7 @@ class DcmanagerPrestageStrategyKeywords(BaseKeyword):
         # wait for apply to complete
         return self.wait_for_state(["complete", "failed"], timeout=7200)
 
-    def get_dcmanager_prestage_strategy_create(self, release: str = None, sw_deploy: bool = True, subcloud_name: str = None, subcloud_group: str = None, force: bool = False) -> DcmanagerPrestageStrategyShowOutput:
+    def get_dcmanager_prestage_strategy_create(self, release: str = None, sw_deploy: bool = True, subcloud_name: str = None, subcloud_group: str = None, force: bool = False, subcloud_apply_type: str = None, max_parallel_subclouds: int = None) -> DcmanagerPrestageStrategyShowOutput:
         """Gets the prestage-strategy create.
 
         Args:
@@ -80,6 +80,8 @@ class DcmanagerPrestageStrategyKeywords(BaseKeyword):
             subcloud_name (str): The subcloud name.
             subcloud_group (str): The subcloud group name.
             force (bool): If True, include the --force argument in the command.
+            subcloud_apply_type (str): Value for --subcloud-apply-type (e.g. 'parallel' or 'serial').
+            max_parallel_subclouds (int): Value for --max-parallel-subclouds.
 
         Returns:
             DcmanagerPrestageStrategyShowOutput: The output of the prestage strategy.
@@ -88,12 +90,14 @@ class DcmanagerPrestageStrategyKeywords(BaseKeyword):
         sw_deploy_arg = "--for-sw-deploy" if sw_deploy else "--for-install"
         release_id = f"--release {release}" if release else ""
         force_arg = "--force" if force else ""
+        apply_type_arg = f"--subcloud-apply-type {subcloud_apply_type}" if subcloud_apply_type else ""
+        max_parallel_arg = f"--max-parallel-subclouds {int(max_parallel_subclouds)}" if max_parallel_subclouds is not None else ""
 
         if subcloud_group:
-            command = self._wrap_command(f"dcmanager prestage-strategy create {release_id} {sw_deploy_arg} {force_arg} --sysadmin-password {sysadmin_password} --group {subcloud_group}")
+            command = self._wrap_command(f"dcmanager prestage-strategy create {release_id} {sw_deploy_arg} {force_arg} {apply_type_arg} {max_parallel_arg} --sysadmin-password {sysadmin_password} --group {subcloud_group}")
         else:
             subcloud_name_arg = subcloud_name if subcloud_name else ""
-            command = self._wrap_command(f"dcmanager prestage-strategy create {release_id} {sw_deploy_arg} {force_arg} --sysadmin-password {sysadmin_password} {subcloud_name_arg}")
+            command = self._wrap_command(f"dcmanager prestage-strategy create {release_id} {sw_deploy_arg} {force_arg} {apply_type_arg} {max_parallel_arg} --sysadmin-password {sysadmin_password} {subcloud_name_arg}")
 
         output = self.ssh_connection.send(command)
         self.validate_success_return_code(self.ssh_connection)
@@ -149,7 +153,7 @@ class DcmanagerPrestageStrategyKeywords(BaseKeyword):
             time.sleep(interval)
         raise TimeoutError(f"Timed out waiting for prestage-strategy to reach state '{state}' after {timeout} seconds.")
 
-    def dc_manager_prestage_strategy_create_apply_delete(self, release: str = None, sw_deploy: bool = True, subcloud_name: str = None, subcloud_group: str = None, force: bool = False):
+    def dc_manager_prestage_strategy_create_apply_delete(self, release: str = None, sw_deploy: bool = True, subcloud_name: str = None, subcloud_group: str = None, force: bool = False, subcloud_apply_type: str = None, max_parallel_subclouds: int = None):
         """Creates, applies, and deletes a prestage strategy.
 
         Args:
@@ -158,10 +162,12 @@ class DcmanagerPrestageStrategyKeywords(BaseKeyword):
             subcloud_name (str): The subcloud name.
             subcloud_group (str): The subcloud group name.
             force (bool): If True, the strategy will be created with the --force argument.
+            subcloud_apply_type (str): Value for --subcloud-apply-type.
+            max_parallel_subclouds (int): Value for --max-parallel-subclouds.
         """
         get_logger().log_info("Starting the prestage strategy creation, application, and deletion process.")
         get_logger().log_test_case_step("Create the prestage strategy")
-        prestage_strategy_out = self.get_dcmanager_prestage_strategy_create(release=release, sw_deploy=sw_deploy, subcloud_name=subcloud_name, subcloud_group=subcloud_group, force=force)
+        prestage_strategy_out = self.get_dcmanager_prestage_strategy_create(release=release, sw_deploy=sw_deploy, subcloud_name=subcloud_name, subcloud_group=subcloud_group, force=force, subcloud_apply_type=subcloud_apply_type, max_parallel_subclouds=max_parallel_subclouds)
         get_logger().log_info(f"Created prestage strategy state: {prestage_strategy_out.get_dcmanager_prestage_strategy().get_state()}")
         get_logger().log_test_case_step("Apply the strategy")
         dcman_obj = self.get_dcmanager_prestage_strategy_apply()
