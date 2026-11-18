@@ -9,11 +9,16 @@ the controller directly, independent of the containerized application:
     - the host server endpoint serves TLS with a CA-issued, verifiable cert
 """
 
-from pytest import mark
+from pytest import FixtureRequest, mark
 
 from framework.logging.automation_logger import get_logger
 from framework.validation.validation import validate_equals, validate_not_equals, validate_str_contains
+from keywords.bmc.ipmitool.chassis.power.ipmitool_chassis_power_keywords import IPMIToolChassisPowerKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
+from keywords.cloud_platform.system.host.system_host_list_keywords import SystemHostListKeywords
+from keywords.cloud_platform.system.host.system_host_lock_keywords import SystemHostLockKeywords
+from keywords.cloud_platform.system.host.system_host_reboot_keywords import SystemHostRebootKeywords
+from keywords.cloud_platform.system.host.system_host_swact_keywords import SystemHostSwactKeywords
 from keywords.cloud_platform.system.openbao.openbao_keywords import OpenBaoKeywords
 
 
@@ -175,3 +180,166 @@ def test_host_openbao_tls_verify():
 
     get_logger().log_test_case_step("Verifying the server certificate is CA-issued (not self-signed)")
     validate_equals(openbao.is_host_server_cert_ca_issued(), True, "Server certificate must be CA-issued (issuer differs from subject)")
+
+
+@mark.p0
+@mark.lab_has_standby_controller
+def test_host_openbao_reboot_auto_unseal(request: FixtureRequest):
+    """Host OpenBao auto-unseals from the LuksFS static seal after a graceful reboot.
+
+    Locks, reboots and unlocks the standby controller (the active keeps
+    serving), then confirms the standby host service returns active and
+    unsealed with the known secret intact, with no manual unseal step.
+
+    Test Steps:
+        - Store a known secret via the host bao CLI
+        - Lock, reboot and unlock the standby controller
+        - Confirm the standby host service is active and reports Sealed false
+        - Read the known secret back on the standby
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    openbao = OpenBaoKeywords(ssh_connection)
+    standby_controller = SystemHostListKeywords(ssh_connection).get_standby_controller().get_host_name()
+
+    get_logger().log_test_case_step("Storing a known secret on the host OpenBao")
+    openbao.host_bao_kv_put("reboot-test", {"k": "pre"}, openbao.host_bao_admin_login())
+
+    get_logger().log_test_case_step(f"Locking, rebooting and unlocking the standby {standby_controller}")
+    SystemHostLockKeywords(ssh_connection).lock_host(standby_controller)
+    SystemHostRebootKeywords(ssh_connection).host_reboot(standby_controller)
+    SystemHostLockKeywords(ssh_connection).unlock_host(standby_controller)
+
+    standby_ssh = LabConnectionKeywords().get_ssh_for_hostname(standby_controller)
+    standby_openbao = OpenBaoKeywords(standby_ssh)
+    validate_equals(standby_openbao.is_host_service_active(), True, "Host OpenBao must be active after reboot")
+    validate_str_contains(standby_openbao.host_bao_status_with_ca(), "false", "Host OpenBao must auto-unseal (Sealed false) after reboot")
+    validate_str_contains(standby_openbao.host_bao_kv_get("reboot-test", standby_openbao.host_bao_admin_login()), "pre", "Known secret must survive the reboot")
+
+
+@mark.p1
+@mark.lab_has_standby_controller
+def test_host_openbao_swact_failover(request: FixtureRequest):
+    """Host OpenBao fails over to the new active controller on swact and stays unsealed.
+
+    Steady-state swact failover (happy path): after swacting the active
+    controller the host OpenBao service is active and unsealed on the new
+    active controller and the known secret is readable.
+
+    Test Steps:
+        - Store a known secret on the current active controller
+        - Swact the active controller
+        - Confirm host OpenBao active and unsealed on the new active controller
+        - Read the known secret back on the new active controller
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    openbao = OpenBaoKeywords(ssh_connection)
+
+    get_logger().log_test_case_step("Storing a known secret before swact")
+    openbao.host_bao_kv_put("swact-test", {"k": "pre"}, openbao.host_bao_admin_login())
+
+    get_logger().log_test_case_step("Swacting the active controller")
+    SystemHostSwactKeywords(ssh_connection).host_swact()
+
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    openbao = OpenBaoKeywords(ssh_connection)
+    validate_equals(openbao.is_host_service_active(), True, "Host OpenBao must be active on the new active controller")
+    validate_str_contains(openbao.host_bao_status_with_ca(), "false", "Host OpenBao must stay unsealed after swact")
+    validate_str_contains(openbao.host_bao_kv_get("swact-test", openbao.host_bao_admin_login()), "pre", "Known secret must survive the swact failover")
+
+
+@mark.p2
+def test_host_openbao_puppet_reapply_no_data_loss(request: FixtureRequest):
+    """Host OpenBao survives a puppet runtime re-apply with no data loss.
+
+    Captures the HCL and a known secret, triggers a puppet runtime re-apply,
+    and confirms the service re-reads its config without re-seal and the secret
+    is intact.
+
+    Test Steps:
+        - Confirm the baseline HCL is present and store a known secret
+        - Trigger a puppet runtime re-apply of the openbao class
+        - Confirm the service stays active and unsealed and the secret is intact
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    openbao = OpenBaoKeywords(ssh_connection)
+
+    get_logger().log_test_case_step("Recording the HCL and storing a known secret")
+    validate_str_contains(openbao.get_host_hcl_content(), "storage", "Baseline HCL must be present before re-apply")
+    openbao.host_bao_kv_put("puppet-test", {"k": "pre"}, openbao.host_bao_admin_login())
+
+    get_logger().log_test_case_step("Triggering a puppet runtime re-apply")
+    openbao.host_puppet_runtime_reapply()
+
+    validate_equals(openbao.is_host_service_active(), True, "Host OpenBao must stay active after puppet re-apply")
+    validate_str_contains(openbao.host_bao_status_with_ca(), "false", "Host OpenBao must stay unsealed after puppet re-apply")
+    validate_str_contains(openbao.host_bao_kv_get("puppet-test", openbao.host_bao_admin_login()), "pre", "Known secret must survive the puppet re-apply")
+
+
+@mark.p2
+@mark.lab_has_standby_controller
+def test_host_openbao_self_ha_no_self_lock(request: FixtureRequest):
+    """Host OpenBao self-HA keeps both controllers as raft peers across swact.
+
+    Validates the self-HA behaviour: both controllers remain raft peers (no
+    two-node self-lock), failover on swact keeps the service unsealed, and the
+    known secret survives.
+
+    Test Steps:
+        - Confirm both controllers appear as raft peers
+        - Store a known secret, then swact the active controller
+        - Confirm the new active is unsealed, the secret is intact, and both
+          controllers remain raft peers
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    openbao = OpenBaoKeywords(ssh_connection)
+
+    get_logger().log_test_case_step("Confirming both controllers are raft peers")
+    token = openbao.host_bao_admin_login()
+    validate_str_contains(openbao.host_raft_list_peers(token), "controller-", "Both controllers must appear as raft peers (no two-node self-lock)")
+    openbao.host_bao_kv_put("ha-host", {"k": "hapre"}, token)
+
+    get_logger().log_test_case_step("Swacting the active controller")
+    SystemHostSwactKeywords(ssh_connection).host_swact()
+
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    openbao = OpenBaoKeywords(ssh_connection)
+    new_token = openbao.host_bao_admin_login()
+    validate_str_contains(openbao.host_bao_status_with_ca(), "false", "Host OpenBao must stay unsealed on the new active after swact")
+    validate_str_contains(openbao.host_bao_kv_get("ha-host", new_token), "hapre", "Known secret must survive the self-HA failover")
+    validate_str_contains(openbao.host_raft_list_peers(new_token), "controller-", "Both controllers must remain raft peers after failover")
+
+
+@mark.p2
+@mark.lab_has_standby_controller
+def test_host_openbao_ungraceful_power_loss_auto_unseal(request: FixtureRequest):
+    """Host OpenBao auto-unseals after an ungraceful BMC power-cycle.
+
+    Complements the graceful-reboot test: a hard BMC power-cycle (not
+    ``system host-reboot``) leaves the LuksFS dirty, yet the host service
+    recovers the static seal and auto-unseals with the secret intact. The
+    standby controller is power-cycled so the active keeps serving.
+
+    Test Steps:
+        - Store a known secret on the host OpenBao
+        - Hard BMC power-cycle the standby controller and wait for it to return
+        - Confirm the standby host OpenBao is active and unsealed
+        - Read the known secret back
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    openbao = OpenBaoKeywords(ssh_connection)
+    host_list = SystemHostListKeywords(ssh_connection)
+    standby_controller = host_list.get_standby_controller().get_host_name()
+
+    get_logger().log_test_case_step(f"Storing a known secret before power-cycling {standby_controller}")
+    openbao.host_bao_kv_put("pwrloss", {"k": "pre"}, openbao.host_bao_admin_login())
+
+    get_logger().log_test_case_step(f"Hard BMC power-cycle of {standby_controller}")
+    prev_uptime = host_list.get_uptime(standby_controller)
+    IPMIToolChassisPowerKeywords(ssh_connection, standby_controller).power_cycle()
+    SystemHostRebootKeywords(ssh_connection).wait_for_reboot(standby_controller, prev_uptime)
+
+    standby_ssh = LabConnectionKeywords().get_ssh_for_hostname(standby_controller)
+    standby_openbao = OpenBaoKeywords(standby_ssh)
+    validate_equals(standby_openbao.is_host_service_active(), True, "Host OpenBao must be active after the ungraceful power-cycle")
+    validate_str_contains(standby_openbao.host_bao_status_with_ca(), "false", "Host OpenBao must auto-unseal after the ungraceful power loss")
+    validate_str_contains(standby_openbao.host_bao_kv_get("pwrloss", standby_openbao.host_bao_admin_login()), "pre", "Known secret must survive the ungraceful power loss")
