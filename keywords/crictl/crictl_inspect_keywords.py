@@ -13,13 +13,13 @@ class CrictlInspectKeywords(BaseKeyword):
         """Get the PID of a container using crictl inspect.
 
         Args:
-            container_id: The containerd container UUID.
+            container_id (str): The containerd container UUID.
 
         Returns:
             int: The PID of the container process.
         """
         cmd = f"crictl inspect -o go-template --template '{{{{.info.pid}}}}' {container_id}"
-        output = self.ssh_connection.send_as_sudo(cmd)
+        output = self.ssh_connection.send_as_sudo_non_interactive(cmd)
         pid_str = output[0].strip() if isinstance(output, list) else str(output).strip()
         validate_is_digit(pid_str, f"Expected numeric PID, got: {pid_str}")
         return int(pid_str)

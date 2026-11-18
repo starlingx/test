@@ -43,6 +43,13 @@ class OpenBaoKeywords(BaseKeyword):
     HOST_HCL_PATH = "/etc/openbao/stx_openbao_configs.hcl"
     HOST_CERT_PATH = "/etc/openbao/certs/openbao-cert.crt"
     HOST_CA_ANCHORS_DIR = "/etc/pki/ca-trust/source/anchors"
+    APP_NAME = "openbao"
+    CHART_PATH = "/usr/local/share/applications/helm/openbao-[0-9]*"
+    TEST_NAMESPACE = "pvtest"
+    POLICY_NAME = "basic-secret-policy"
+    ROLE_NAME = "basic-secret-role"
+    SERVICE_ACCOUNT = "basic-secret"
+    POLICY_HCL = 'path "secret/data/basic-secret/*" { capabilities = ["read"] }'
     HOST_BAO_ADDR = "https://[::1]:8200"
     HOST_ADMIN_PW_FILE = "/var/luks/stx/luks_fs/controller/.openbao/users/admin/pw"
     HOST_LUKS_KEY_PATH = "/var/luks/stx/luks_fs/controller/.openbao/auto-unseal/stx-initial.key"
@@ -774,3 +781,170 @@ class OpenBaoKeywords(BaseKeyword):
         issuer = next((line[len("issuer=") :].strip() for line in lines if line.startswith("issuer=")), "")
         subject = next((line[len("subject=") :].strip() for line in lines if line.startswith("subject=")), "")
         return bool(issuer) and issuer != subject
+
+    def rest_status_code(self, path: str, token: str = None, use_ca: bool = True) -> str:
+        """Return the HTTP status code of a REST GET against a secret path.
+
+        Args:
+            path (str): Secret path under ``v1/secret/data/``.
+            token (str): Optional X-Vault-Token header value.
+            use_ca (bool): Trust the OpenBao CA (True) or omit it (False).
+
+        Returns:
+            str: The numeric HTTP status code as a string (e.g., "200").
+        """
+        cacert = f"--cacert {self.ca_cert_path}" if use_ca else ""
+        header = f"--header 'X-Vault-Token: {token}'" if token is not None else ""
+        cmd = f"curl -s -o /dev/null -w '%{{http_code}}' {cacert} {header} {self.OB_API}/v1/secret/data/{path}"
+        output = self.ssh_connection.send(self.k8s.k8s_config.export(cmd))
+        return "".join(output).strip()
+
+    def rest_health_trusts_ca(self) -> bool:
+        """Check the server health endpoint is reachable over TLS trusting the CA.
+
+        Returns:
+            bool: True if the health endpoint returns an initialized/unsealed body.
+        """
+        cmd = f"curl -s --cacert {self.ca_cert_path} {self.OB_API}/v1/sys/health"
+        output = "".join(self.ssh_connection.send(self.k8s.k8s_config.export(cmd)))
+        return '"initialized":true' in output and '"sealed":false' in output
+
+    def rest_health_no_ca_rejected(self) -> bool:
+        """Check the server health endpoint is rejected without a trusted CA.
+
+        The app server certificate is issued by the OpenBao CA, which the
+        system trust store does not contain, so a request without ``--cacert``
+        must fail the TLS handshake.
+
+        Returns:
+            bool: True if curl reports a TLS/certificate verification failure.
+        """
+        cmd = f"curl -s --show-error {self.OB_API}/v1/sys/health 2>&1"
+        output = "".join(self.ssh_connection.send(self.k8s.k8s_config.export(cmd)))
+        return "certificate" in output.lower() or "SSL" in output or "unable to get local issuer" in output
+
+    def app_server_cert_verifies(self) -> bool:
+        """Verify the app server certificate against the OpenBao CA via openssl.
+
+        Returns:
+            bool: True if openssl reports the server cert verifies against the CA.
+        """
+        server_pem = f"{self.ssh_user_home}/openbao_server.pem"
+        extract = f"kubectl get secret -n {self.NAMESPACE} openbao-server-tls -o jsonpath='{{.data.tls\\.crt}}' | base64 -d > {server_pem}"
+        self.ssh_connection.send(self.k8s.k8s_config.export(extract))
+        verify = f"openssl verify -CAfile {self.ca_cert_path} {server_pem} 2>&1"
+        output = "".join(self.ssh_connection.send(verify))
+        return f"{server_pem}: OK" in output
+
+    def k8s_role_login_token(self, role_name: str, service_account: str, namespace: str) -> str:
+        """Log in via the kubernetes auth method and return the scoped client token.
+
+        Mints a service-account JWT and exchanges it at the kubernetes auth
+        login endpoint for a policy-scoped client token.
+
+        Args:
+            role_name (str): Kubernetes auth role to authenticate as.
+            service_account (str): Service account whose JWT is minted.
+            namespace (str): Namespace of the service account.
+
+        Returns:
+            str: The scoped client token (empty string on failure).
+        """
+        jwt_cmd = f"kubectl create token {service_account} -n {namespace}"
+        jwt = "".join(self.ssh_connection.send(self.k8s.k8s_config.export(jwt_cmd))).strip()
+        login = f"curl -s --cacert {self.ca_cert_path} --request POST " f'--data \'{{"role":"{role_name}","jwt":"{jwt}"}}\' ' f"{self.OB_API}/v1/auth/kubernetes/login"
+        output = "".join(self.ssh_connection.send(self.k8s.k8s_config.export(login)))
+        try:
+            return json.loads(output).get("auth", {}).get("client_token", "")
+        except (ValueError, AttributeError):
+            return ""
+
+    def rest_write_status_code(self, path: str, token: str) -> str:
+        """Return the HTTP status code of a REST write to a secret path.
+
+        Args:
+            path (str): Secret path under ``v1/secret/data/``.
+            token (str): X-Vault-Token header value.
+
+        Returns:
+            str: The numeric HTTP status code as a string.
+        """
+        cmd = f"curl -s -o /dev/null -w '%{{http_code}}' --cacert {self.ca_cert_path} " f"--header 'X-Vault-Token: {token}' --request POST " f'-d \'{{"data":{{"k":"x"}}}}\' {self.OB_API}/v1/secret/data/{path}'
+        output = self.ssh_connection.send(self.k8s.k8s_config.export(cmd))
+        return "".join(output).strip()
+
+    def enable_audit_device(self, name: str, file_path: str, token: str) -> None:
+        """Enable a file audit device (idempotent: tolerates already-enabled).
+
+        Args:
+            name (str): Audit device name (mount path).
+            file_path (str): File path the device writes to (or "stdout").
+            token (str): OpenBao root token.
+        """
+        data = f'{{"type":"file","options":{{"file_path":"{file_path}"}}}}'
+        cmd = f"curl -s --cacert {self.ca_cert_path} --header 'X-Vault-Token: {token}' " f"--request POST --data '{data}' {self.OB_API}/v1/sys/audit/{name}"
+        self.ssh_connection.send(self.k8s.k8s_config.export(cmd))
+
+    def disable_audit_device(self, name: str, token: str) -> None:
+        """Disable an audit device (idempotent: tolerates absent).
+
+        Args:
+            name (str): Audit device name (mount path).
+            token (str): OpenBao root token.
+        """
+        cmd = f"curl -s --cacert {self.ca_cert_path} --header 'X-Vault-Token: {token}' " f"--request DELETE {self.OB_API}/v1/sys/audit/{name}"
+        self.ssh_connection.send(self.k8s.k8s_config.export(cmd))
+
+    def list_audit_devices(self, token: str) -> str:
+        """List the enabled audit devices.
+
+        Args:
+            token (str): OpenBao root token.
+
+        Returns:
+            str: The raw JSON listing of audit devices.
+        """
+        cmd = f"curl -s --cacert {self.ca_cert_path} --header 'X-Vault-Token: {token}' {self.OB_API}/v1/sys/audit"
+        return "".join(self.ssh_connection.send(self.k8s.k8s_config.export(cmd)))
+
+    def read_pod_audit_log(self, audit_file: str, grep_token: str) -> str:
+        """Read the in-pod audit log and return the last line matching a token.
+
+        Args:
+            audit_file (str): Audit log path inside the server pod.
+            grep_token (str): Substring to match (e.g., a secret path).
+
+        Returns:
+            str: The matching audit log line (empty if none).
+        """
+        pod = self.get_server_pod_name()
+        cmd = f"sh -c 'grep \"{grep_token}\" {audit_file} | tail -1'"
+        output = self.kubectl_exec.run_pod_exec_cmd(pod, cmd, options=f"-n {self.NAMESPACE}")
+        return "".join(output) if isinstance(output, list) else str(output)
+
+    def patch_gen_secret_rejected(self, gen_secret_name: str) -> bool:
+        """Attempt to patch the immutable generation secret and confirm rejection.
+
+        Args:
+            gen_secret_name (str): Name of the unseal generation secret.
+
+        Returns:
+            bool: True if the patch is rejected because the secret is immutable.
+        """
+        cmd = f'kubectl patch secret -n {self.NAMESPACE} {gen_secret_name} -p \'{{"data":{{"x":"eA=="}}}}\' 2>&1'
+        output = "".join(self.ssh_connection.send(self.k8s.k8s_config.export(cmd)))
+        return "immutable" in output.lower()
+
+    def ensure_rbac_test_subject(self, namespace: str, service_account: str) -> None:
+        """Idempotently ensure the RBAC test namespace and service account exist.
+
+        Creates the namespace and the bound service account, tolerating the
+        already-exists state so the method is safe to call repeatedly.
+
+        Args:
+            namespace (str): Namespace to hold the service account.
+            service_account (str): Service account bound to the OpenBao role.
+        """
+        self.kubectl_create_namespace.create_namespace_if_absent(namespace)
+        cmd = f"kubectl create serviceaccount {service_account} -n {namespace} --dry-run=client -o yaml | kubectl apply -f -"
+        self.ssh_connection.send(self.k8s.k8s_config.export(cmd))
