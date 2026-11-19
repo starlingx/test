@@ -138,14 +138,18 @@ class SwManagerSwDeployStrategyKeywords(BaseKeyword):
     def check_sw_deploy_strategy_exists(self) -> bool:
         """Checks if a sw-deploy-strategy exists without deleting it.
 
+        Runs 'sw-manager sw-deploy-strategy show' once and checks for 'No strategy
+        available' in its output. The output is not parsed, so a missing strategy is
+        reported at once instead of after the show retries time out. A failed
+        command fails the return code validation rather than being reported as no
+        strategy.
+
         Returns:
             bool: True if a strategy exists, False if no strategy exists.
         """
-        try:
-            self.get_sw_deploy_strategy_show()
-            return True
-        except Exception:
-            return False
+        output = self.ssh_connection.send(source_openrc("sw-manager sw-deploy-strategy show"))
+        self.validate_success_return_code(self.ssh_connection)
+        return "No strategy available" not in "\n".join(output)
 
     def get_sw_deploy_strategy_delete(self) -> bool:
         """Starts sw-deploy-strategy deletion.

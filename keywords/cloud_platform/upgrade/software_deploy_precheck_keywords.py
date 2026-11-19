@@ -1,6 +1,5 @@
 """Software deploy precheck keywords."""
 
-from config.configuration_manager import ConfigurationManager
 from framework.exceptions.keyword_exception import KeywordException
 from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
@@ -9,6 +8,8 @@ from keywords.base_keyword import BaseKeyword
 from keywords.cloud_platform.command_wrappers import source_openrc
 from keywords.cloud_platform.upgrade.objects.precheck_item import PrecheckItem
 from keywords.cloud_platform.upgrade.objects.software_deploy_precheck_output import SoftwareDeployPrecheckOutput
+
+from config.configuration_manager import ConfigurationManager
 
 
 class SoftwareDeployPrecheckKeywords(BaseKeyword):
@@ -75,6 +76,29 @@ class SoftwareDeployPrecheckKeywords(BaseKeyword):
         if not output.get_items() or output.get_failed_items() or output.has_unhealthy_metapackages():
             raise KeywordException(f"Platform release precheck failed for {release_id}: {output.get_raw_output()}")
         return output
+
+    def is_release_precheck_passing(self, release_id: str) -> bool:
+        """Run the precheck for an exact platform release and report whether it passes, without raising.
+
+        Uses the same pass rule as precheck_release(): a zero return code, at
+        least one health check, no failed health check and no unhealthy
+        metapackage. Unlike precheck_release(), a failing precheck returns
+        False instead of raising, so callers can retry it while the system
+        settles (for example after a configuration change briefly marks a
+        host config out-of-date).
+
+        Args:
+            release_id (str): Exact uploaded platform release.
+
+        Returns:
+            bool: True if the precheck passes, False otherwise.
+        """
+        output = self._run_deploy_precheck(release_id)
+        return_code = self.ssh_connection.get_return_code()
+        is_passing = return_code == 0 and bool(output.get_items()) and not output.get_failed_items() and not output.has_unhealthy_metapackages()
+        if not is_passing:
+            get_logger().log_info(f"Precheck for {release_id} is not passing yet (rc={return_code}, failed checks={output.get_failed_items()}):\n" + "\n".join(output.get_raw_output()))
+        return is_passing
 
     def deploy_precheck(self, release_id: str | None = None, sudo: bool = False) -> SoftwareDeployPrecheckOutput:
         """
