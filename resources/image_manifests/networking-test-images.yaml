@@ -1,0 +1,27 @@
+# ==============================================================================
+# Networking Regression Test Images Manifest (Public/Opensource)
+# ==============================================================================
+#
+# Docker images used by the networking regression tests under
+# testcases/cloud_platform/regression/networking/. Images are listed with
+# full registry paths so they can be pulled directly from public registries
+# and synced to the local registry.
+#
+# Usage in tests:
+#   DockerSyncImagesKeywords(ssh_connection).sync_image_from_manifest(
+#       image_name="busybox",
+#       image_tag="1.36.1",
+#       manifest="networking-tests",  # Logical name from docker config
+#   )
+#
+# The logical name "networking-tests" is mapped to this file in the docker JSON5
+# config (e.g. config/docker/files/default.json5).
+#
+# Image Format:
+#   Full registry path with tag: registry.io/namespace/image:tag
+#
+# ==============================================================================
+
+images:
+  # DockerHub images
+  - docker.io/busybox:1.36.1

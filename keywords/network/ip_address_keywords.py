@@ -172,3 +172,17 @@ class IPAddressKeywords(BaseKeyword):
         except socket.error as msg:
             get_logger().log_error(f"nslookup failed with error '{msg}'")
             return False
+
+    def get_url_host(self) -> str:
+        """
+        Get the address in the form used as the host part of a URL.
+
+        IPv6 addresses are wrapped in brackets (RFC 3986) so a port can follow them;
+        IPv4 addresses are returned unchanged.
+
+        Returns:
+            str: '[<address>]' for IPv6, '<address>' for IPv4.
+        """
+        if self.check_ip_version(self.ip) == "IPv6":
+            return f"[{self.ip}]"
+        return self.ip
