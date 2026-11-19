@@ -74,3 +74,14 @@ class HostAddressOutput:
             if addr.get_ifname() == ifname:
                 return addr.get_address()
         return None
+
+    def get_addresses_by_ifname(self, ifname: str) -> list[str]:
+        """Get all IP addresses (IPv4 and IPv6) of an interface.
+
+        Args:
+            ifname (str): Interface name to search for.
+
+        Returns:
+            list[str]: Addresses assigned to the interface (empty if none).
+        """
+        return [addr.get_address() for addr in self.host_address_objects if addr.get_ifname() == ifname]

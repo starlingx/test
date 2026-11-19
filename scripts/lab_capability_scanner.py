@@ -902,15 +902,15 @@ def get_controller_ip(host_show_output: object, controller_name: str) -> Optiona
         # First try OAM interfaces specifically
         for interface in platform_interfaces:
             if "oam" in interface.get_name():
-                controller_ip = host_addresses_output.get_address_by_ifname(interface.get_name())
-                if controller_ip and _matches_ip_version(controller_ip, is_ipv6_lab):
-                    return controller_ip
+                for controller_ip in host_addresses_output.get_addresses_by_ifname(interface.get_name()):
+                    if controller_ip and _matches_ip_version(controller_ip, is_ipv6_lab):
+                        return controller_ip
 
         # Fallback to any platform interface with matching IP version
         for interface in platform_interfaces:
-            controller_ip = host_addresses_output.get_address_by_ifname(interface.get_name())
-            if controller_ip and _matches_ip_version(controller_ip, is_ipv6_lab):
-                return controller_ip
+            for controller_ip in host_addresses_output.get_addresses_by_ifname(interface.get_name()):
+                if controller_ip and _matches_ip_version(controller_ip, is_ipv6_lab):
+                    return controller_ip
 
         raise RuntimeError(f"No matching IP address found for controller {controller_name}")
     else:
@@ -918,9 +918,9 @@ def get_controller_ip(host_show_output: object, controller_name: str) -> Optiona
         platform_interfaces = host_interface_list_output.get_interfaces_by_class("platform")
         for interface in platform_interfaces:
             if interface.get_name().startswith("mgmt"):
-                mgmt_ip = host_addresses_output.get_address_by_ifname(interface.get_name())
-                if mgmt_ip and _matches_ip_version(mgmt_ip, is_ipv6_lab):
-                    return mgmt_ip
+                for mgmt_ip in host_addresses_output.get_addresses_by_ifname(interface.get_name()):
+                    if mgmt_ip and _matches_ip_version(mgmt_ip, is_ipv6_lab):
+                        return mgmt_ip
 
         return None
 
