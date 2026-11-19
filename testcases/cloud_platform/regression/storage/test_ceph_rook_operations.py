@@ -2,6 +2,7 @@ from pytest import FixtureRequest, mark
 
 from config.configuration_manager import ConfigurationManager
 from framework.logging.automation_logger import get_logger
+from framework.ssh.ssh_connection import SSHConnection
 from framework.validation.validation import validate_equals, validate_equals_with_retry, validate_greater_than_or_equal, validate_str_contains
 from keywords.ceph.ceph_crush_rule_keywords import CephCrushRuleKeywords
 from keywords.ceph.ceph_osd_keywords import CephOsdKeywords
@@ -318,6 +319,50 @@ def test_lock_unlock_multiple_hosts(request: FixtureRequest):
         get_logger().log_info(f"{pod_name} write-cycle count after Lock/Unlock nodes: {write_counts[storage_type]}")
 
 
+def ensure_pool_failure_domain(request: FixtureRequest, ssh_connection: SSHConnection, pool: str, failure_domain: str) -> None:
+    """
+    Make sure a Ceph pool uses a CRUSH rule with the given failure domain.
+
+    If the rule the pool uses already has that failure domain nothing changes. Otherwise a replicated
+    rule with that failure domain is created (unless it already exists) and the pool is switched to it,
+    and a teardown restores the original rule and removes the rule created here.
+
+    Args:
+        request (FixtureRequest): pytest request fixture used to register the teardown.
+        ssh_connection (SSHConnection): SSH connection to the active controller.
+        pool (str): The pool to check, e.g. 'kube-rbd'.
+        failure_domain (str): The failure domain the pool has to use, e.g. 'osd' or 'host'.
+    """
+    ceph_crush_rule_keywords = CephCrushRuleKeywords(ssh_connection)
+    ceph_status_keywords = CephStatusKeywords(ssh_connection)
+
+    original_rule = ceph_crush_rule_keywords.get_pool_crush_rule_name(pool)
+    original_rule_output = ceph_crush_rule_keywords.get_crush_rule(original_rule)
+    original_failure_domain = original_rule_output.get_failure_domain()
+    get_logger().log_info(f"Pool '{pool}' uses CRUSH rule '{original_rule}' with failure domain '{original_failure_domain}'.")
+
+    if original_failure_domain != failure_domain:
+        new_rule = f"{original_rule}_{failure_domain}"
+        new_rule_created = not ceph_crush_rule_keywords.rule_exists(new_rule)
+
+        def teardown_restore_crush_rule() -> None:
+            get_logger().log_teardown_step(f"Restore pool '{pool}' to CRUSH rule '{original_rule}'.")
+            ceph_crush_rule_keywords.set_pool_crush_rule(pool, original_rule)
+            if new_rule_created:
+                ceph_crush_rule_keywords.delete_rule(new_rule)
+            ceph_status_keywords.wait_for_ceph_health_status(expect_health_status=True)
+
+        request.addfinalizer(teardown_restore_crush_rule)
+
+        if new_rule_created:
+            ceph_crush_rule_keywords.create_replicated_rule(new_rule, original_rule_output.get_root(), failure_domain, original_rule_output.get_device_class())
+        ceph_crush_rule_keywords.set_pool_crush_rule(pool, new_rule)
+        ceph_status_keywords.wait_for_ceph_health_status(expect_health_status=True)
+
+    current_rule = ceph_crush_rule_keywords.get_pool_crush_rule_name(pool)
+    validate_equals(ceph_crush_rule_keywords.get_crush_rule(current_rule).get_failure_domain(), failure_domain, f"Pool '{pool}' should use a CRUSH rule with failure domain '{failure_domain}' (rule '{current_rule}').")
+
+
 @mark.p2
 @mark.lab_has_rook_ceph
 @mark.lab_has_min_2_osd
@@ -367,7 +412,6 @@ def test_ceph_rook_failure_domain_osd(request: FixtureRequest) -> None:
 
     system_storage_backend_keywords = SystemStorageBackendKeywords(ssh_connection)
     ceph_status_keywords = CephStatusKeywords(ssh_connection)
-    ceph_crush_rule_keywords = CephCrushRuleKeywords(ssh_connection)
     ceph_osd_keywords = CephOsdKeywords(ssh_connection)
     ceph_rbd_image_keywords = CephRbdImageKeywords(ssh_connection)
     continuous_write_keywords = KubectlContinuousWriteKeywords(ssh_connection)
@@ -396,31 +440,7 @@ def test_ceph_rook_failure_domain_osd(request: FixtureRequest) -> None:
     image_name = rbd_volume.get_image_name()
 
     get_logger().log_test_case_step(f"Make sure the failure domain of pool '{pool}' is 'osd', switching its CRUSH rule if it is not.")
-    original_rule = ceph_crush_rule_keywords.get_pool_crush_rule_name(pool)
-    original_rule_output = ceph_crush_rule_keywords.get_crush_rule(original_rule)
-    original_failure_domain = original_rule_output.get_failure_domain()
-    get_logger().log_info(f"Pool '{pool}' uses CRUSH rule '{original_rule}' with failure domain '{original_failure_domain}'.")
-
-    if original_failure_domain != "osd":
-        osd_rule = f"{original_rule}_osd"
-        osd_rule_created = not ceph_crush_rule_keywords.rule_exists(osd_rule)
-
-        def teardown_restore_crush_rule() -> None:
-            get_logger().log_teardown_step(f"Restore pool '{pool}' to CRUSH rule '{original_rule}'.")
-            ceph_crush_rule_keywords.set_pool_crush_rule(pool, original_rule)
-            if osd_rule_created:
-                ceph_crush_rule_keywords.delete_rule(osd_rule)
-            ceph_status_keywords.wait_for_ceph_health_status(expect_health_status=True)
-
-        request.addfinalizer(teardown_restore_crush_rule)
-
-        if osd_rule_created:
-            ceph_crush_rule_keywords.create_replicated_rule(osd_rule, original_rule_output.get_root(), "osd", original_rule_output.get_device_class())
-        ceph_crush_rule_keywords.set_pool_crush_rule(pool, osd_rule)
-        ceph_status_keywords.wait_for_ceph_health_status(expect_health_status=True)
-
-    current_rule = ceph_crush_rule_keywords.get_pool_crush_rule_name(pool)
-    validate_equals(ceph_crush_rule_keywords.get_crush_rule(current_rule).get_failure_domain(), "osd", f"Pool '{pool}' should use a CRUSH rule with failure domain 'osd' (rule '{current_rule}').")
+    ensure_pool_failure_domain(request, ssh_connection, pool, "osd")
 
     get_logger().log_test_case_step("Confirm the pod's data spans >= 2 OSDs.")
     data_object = ceph_rbd_image_keywords.get_existing_data_object(pool, image_name)
@@ -1201,3 +1221,126 @@ def test_reinstall_standby_host():
 
     get_logger().log_test_case_step("Checking storage backend health after reinstall.")
     ceph_status_keywords.wait_for_ceph_health_status(expect_health_status=True)
+
+
+@mark.p2
+@mark.lab_has_rook_ceph
+@mark.lab_has_min_2_osd
+@mark.lab_has_standby_controller
+def test_ceph_rook_failure_domain_host(request: FixtureRequest) -> None:
+    """
+    Validate ceph-rook resilience to a whole host failure (failure domain = host).
+
+    Confirms, via 'ceph osd map' on a real stored data object, that a workload's
+    RBD-backed data is placed on OSDs of more than one host, then locks one of
+    those hosts (never the active controller) and verifies the workload keeps
+    writing and the cluster stays available, recovering once the host is unlocked.
+
+    Test Steps:
+        - Make sure ceph-rook is storage backend and the cluster is HEALTH_OK
+        - Start a continuous-write pod on the RBD (kube-rbd) storage class, pinned to the
+          active controller so it keeps running while another host is locked
+        - Record its write-cycle count
+        - Resolve the pod's RBD pool/image
+        - Check the failure domain of the pool's CRUSH rule; if it is not
+          'host', create a 'host' rule and switch the pool to it
+        - Confirm, via 'ceph osd map' on one of its stored data objects, that
+          the acting OSD set spans >= 2 distinct hosts
+        - Lock one of those hosts that is not the active controller and wait
+          until all of its OSDs are down
+        - Verify ceph health degrades to WARN (not ERR/unreachable)
+        - Verify the writer pod is still Running and its write-cycle count
+          advances while the host is down
+        - Unlock the host and wait until all of its OSDs are up
+        - Verify ceph health returns to OK
+        - Verify all pods are healthy and there are no alarms
+
+    Teardown:
+        - Ensure the host is unlocked and its OSDs are up even if an assertion
+          failed mid-test
+        - Restore the pool's original CRUSH rule and remove the 'host' rule if
+          this test created it
+        - Delete the continuous-write pod and its PVC
+
+    Args:
+        request (FixtureRequest): pytest request fixture for test setup and teardown
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+
+    system_storage_backend_keywords = SystemStorageBackendKeywords(ssh_connection)
+    system_host_list_keywords = SystemHostListKeywords(ssh_connection)
+    system_host_lock_keywords = SystemHostLockKeywords(ssh_connection)
+    ceph_status_keywords = CephStatusKeywords(ssh_connection)
+    ceph_osd_keywords = CephOsdKeywords(ssh_connection)
+    ceph_rbd_image_keywords = CephRbdImageKeywords(ssh_connection)
+    continuous_write_keywords = KubectlContinuousWriteKeywords(ssh_connection)
+    kubectl_get_pods_keywords = KubectlGetPodsKeywords(ssh_connection)
+    health_keywords = HealthKeywords(ssh_connection)
+
+    get_logger().log_test_case_step("Check whether rook-ceph is configured as storage backend.")
+    if not system_storage_backend_keywords.get_system_storage_backend_list().is_backend_configured("ceph-rook"):
+        get_logger().log_test_case_step("Add rook-ceph as storage backend.")
+        system_storage_backend_keywords.system_storage_backend_add(backend="ceph-rook", confirmed=True)
+
+    get_logger().log_test_case_step("Checking rook-ceph health before failure injection.")
+    ceph_status_keywords.wait_for_ceph_health_status(expect_health_status=True)
+
+    active_controller_host_name = system_host_list_keywords.get_active_controller().get_host_name()
+
+    get_logger().log_test_case_step(f"Start rbd continuous-write pod on {active_controller_host_name}.")
+    pod_name, pvc_name = continuous_write_keywords.start_continuous_write_pod("rbd", node_name=active_controller_host_name)
+    request.addfinalizer(lambda: continuous_write_keywords.cleanup_continuous_write_pod(pod_name, pvc_name))
+
+    write_count = continuous_write_keywords.wait_for_write_progress(pod_name, previous_count=0)
+    get_logger().log_info(f"{pod_name} write-cycle count before host failure: {write_count}")
+
+    get_logger().log_test_case_step("Resolve the pod's RBD pool/image.")
+    pv_name = KubectlGetPvcKeywords(ssh_connection).get_pvc(pvc_name).get_pvc_by_name(pvc_name).get_volume()
+    rbd_volume = KubectlGetPvKeywords(ssh_connection).get_rbd_volume(pv_name)
+    pool = rbd_volume.get_pool()
+    image_name = rbd_volume.get_image_name()
+
+    get_logger().log_test_case_step(f"Make sure the failure domain of pool '{pool}' is 'host', switching its CRUSH rule if it is not.")
+    ensure_pool_failure_domain(request, ssh_connection, pool, "host")
+
+    get_logger().log_test_case_step("Confirm the pod's data spans >= 2 hosts.")
+    data_object = ceph_rbd_image_keywords.get_existing_data_object(pool, image_name)
+    acting_osd_ids = ceph_osd_keywords.get_acting_osd_ids(pool, data_object)
+    acting_hosts = ceph_osd_keywords.get_distinct_hosts_for_osd_ids(acting_osd_ids)
+    get_logger().log_info(f"Object '{data_object}' in pool '{pool}' is placed on OSDs {acting_osd_ids}, on hosts {acting_hosts}.")
+    validate_greater_than_or_equal(len(acting_hosts), 2, f"Object should be replicated across >= 2 distinct hosts, got {acting_hosts}")
+
+    target_host = next(host for host in acting_hosts if host != active_controller_host_name)
+
+    def teardown_restore_host() -> None:
+        get_logger().log_teardown_step(f"Restore {target_host} if it was left locked.")
+        system_host_lock_keywords.ensure_host_unlocked(target_host)
+        ceph_osd_keywords.wait_for_osds_up_for_host(target_host)
+        ceph_status_keywords.wait_for_ceph_health_status(expect_health_status=True)
+
+    request.addfinalizer(teardown_restore_host)
+
+    get_logger().log_test_case_step(f"Lock {target_host}, taking its OSDs out of service.")
+    system_host_lock_keywords.lock_host(target_host)
+    ceph_osd_keywords.wait_for_osds_down_for_host(target_host)
+
+    get_logger().log_test_case_step(f"Check ceph health degrades to WARN (not ERR) with {target_host} locked.")
+    ceph_status_keywords.wait_for_ceph_health_status(expect_health_status=False)
+    ceph_health = ceph_status_keywords.ceph_status().get_ceph_cluster_output().get_ceph_cluster_object().get_health()
+    validate_str_contains(ceph_health, "HEALTH_WARN", f"Ceph health with {target_host} locked should be HEALTH_WARN, not HEALTH_ERR.")
+
+    get_logger().log_test_case_step("Verify the writer pod is still Running and kept writing with the host down.")
+    kubectl_get_pods_keywords.wait_for_pod_status(pod_name, "Running")
+    write_count = continuous_write_keywords.wait_for_write_progress(pod_name, previous_count=write_count)
+    get_logger().log_info(f"{pod_name} write-cycle count with {target_host} locked: {write_count}")
+
+    get_logger().log_test_case_step(f"Unlock {target_host}.")
+    system_host_lock_keywords.unlock_host(target_host)
+    ceph_osd_keywords.wait_for_osds_up_for_host(target_host)
+
+    get_logger().log_test_case_step("Check ceph health returns to OK after restoring the host.")
+    ceph_status_keywords.wait_for_ceph_health_status(expect_health_status=True)
+
+    get_logger().log_test_case_step("Check overall system health: pods healthy and no alarms.")
+    health_keywords.validate_pods_health()
+    health_keywords.validate_no_alarms()

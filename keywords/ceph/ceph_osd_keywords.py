@@ -114,6 +114,18 @@ class CephOsdKeywords(BaseKeyword):
         self.ssh_connection.send(f"ceph osd in osd.{osd_id}")
         self.validate_success_return_code(self.ssh_connection)
 
+    def get_distinct_hosts_for_osd_ids(self, osd_ids: list[int]) -> list[str]:
+        """Get the distinct hosts the given OSDs run on, from 'ceph osd tree'.
+
+        Args:
+            osd_ids (list[int]): The OSD ids to resolve (e.g. [1, 3] for 'osd.1' and 'osd.3').
+
+        Returns:
+            list[str]: Each host once, in the order its first OSD appears in osd_ids.
+        """
+        osd_tree = self.get_ceph_osd_tree()
+        return list(dict.fromkeys(osd_tree.get_osd_by_id(osd_id).get_host() for osd_id in osd_ids))
+
     def get_osd_deployment_name(self, osd_id: int) -> str:
         """Get the rook-ceph Kubernetes Deployment name backing an OSD daemon.
 
