@@ -32,3 +32,14 @@ class KubectlPatchInstallationKeywords(K8sBaseKeyword):
         cmd = f"kubectl patch installation default --type merge -p {shlex.quote(patch_json)}"
         self.ssh_connection.send(self.k8s_config.export(cmd))
         self.validate_success_return_code(self.ssh_connection)
+
+    def replace_ip_pools(self, ip_pools_json: str) -> None:
+        """Replace the IP pools of the default Installation CR.
+
+        A merge patch replaces a list as a whole, so passing the JSON from
+        InstallationOutput.get_ip_pools_json() restores the original pools exactly.
+
+        Args:
+            ip_pools_json (str): The spec.calicoNetwork.ipPools list as a JSON string.
+        """
+        self.patch_installation_merge({"spec": {"calicoNetwork": {"ipPools": json.loads(ip_pools_json)}}})

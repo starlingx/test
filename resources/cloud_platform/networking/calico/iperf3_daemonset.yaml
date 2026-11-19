@@ -1,0 +1,22 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: iperf3-ds
+  namespace: default
+spec:
+  selector:
+    matchLabels:
+      app: iperf3
+  template:
+    metadata:
+      labels:
+        app: iperf3
+    spec:
+      imagePullSecrets:
+      - name: registry-local-secret
+      containers:
+      - name: iperf3
+        image: "{{ iperf3_image }}"
+        command: ["iperf3", "-s"]
+        ports:
+        - containerPort: 5201

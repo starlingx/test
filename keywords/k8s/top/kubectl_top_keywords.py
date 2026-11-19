@@ -1,3 +1,4 @@
+import time
 from typing import Optional
 
 from framework.logging.automation_logger import get_logger
@@ -5,6 +6,7 @@ from framework.ssh.ssh_connection import SSHConnection
 from framework.validation.validation import validate_equals_with_retry
 from keywords.k8s.k8s_base_keyword import K8sBaseKeyword
 from keywords.k8s.top.objects.kubectl_top_output import KubectlTopOutput
+from keywords.k8s.top.objects.kubectl_top_pods_samples_output import KubectlTopPodsSamplesOutput
 
 
 class KubectlTopKeywords(K8sBaseKeyword):
@@ -60,7 +62,7 @@ class KubectlTopKeywords(K8sBaseKeyword):
             AssertionError: if the kubectl command fails. Callers that need to tolerate the
                 post-activate transient use wait_for_top_pods_served instead.
         """
-        output = self.ssh_connection.send(self._build_top_pods_command(namespace))
+        output = self.ssh_connection.send(self.k8s_config.export(self._build_top_pods_command(namespace)))
         self.validate_success_return_code(self.ssh_connection)
         return KubectlTopOutput(output, resource="pods")
 
@@ -156,6 +158,29 @@ class KubectlTopKeywords(K8sBaseKeyword):
             polling_sleep_time=self.SERVED_POLL_INTERVAL if polling_sleep_time is None else polling_sleep_time,
         )
         return self.get_top_pods(namespace=namespace)
+
+    def sample_top_pods(self, namespaces: list[str], sample_count: int, sample_interval_seconds: int) -> KubectlTopPodsSamplesOutput:
+        """
+        Take spaced 'kubectl top pods' readings of several namespaces for a KPI measurement.
+
+        Each sample reads every namespace once. The pause between samples is the measurement
+        cadence of the KPI (readings spread over time), not a wait for a state.
+
+        Args:
+            namespaces (list[str]): the namespaces to read in each sample.
+            sample_count (int): the number of samples to take.
+            sample_interval_seconds (int): seconds between two samples.
+
+        Returns:
+            KubectlTopPodsSamplesOutput: the per-pod CPU and memory series.
+        """
+        samples = []
+        for sample_number in range(1, sample_count + 1):
+            get_logger().log_info(f"Taking 'kubectl top pods' sample {sample_number}/{sample_count} of {namespaces}")
+            samples.append([self.wait_for_top_pods_served(namespace=namespace) for namespace in namespaces])
+            if sample_number < sample_count:
+                time.sleep(sample_interval_seconds)
+        return KubectlTopPodsSamplesOutput(samples)
 
     def _build_top_pods_command(self, namespace: Optional[str]) -> str:
         """

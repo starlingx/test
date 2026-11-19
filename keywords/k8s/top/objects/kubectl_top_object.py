@@ -98,6 +98,43 @@ class KubectlTopObject:
         """
         return self._is_positive(self.memory)
 
+    def get_cpu_millicores(self) -> int:
+        """
+        Get the CPU cell as an integer number of millicores.
+
+        Returns:
+            int: CPU usage in millicores, e.g. "445m" -> 445 and "2" (cores) -> 2000.
+
+        Raises:
+            ValueError: if the cell is not a numeric reading (for example "<unknown>").
+        """
+        match = self._LEADING_NUMBER.match((self.cpu or "").strip())
+        if not match:
+            raise ValueError(f"CPU cell {self.cpu!r} of {self.name!r} is not a numeric reading")
+        value = float(match.group(1))
+        return int(value) if self.cpu.strip().endswith("m") else int(value * 1000)
+
+    def get_memory_mebibytes(self) -> int:
+        """
+        Get the memory cell as an integer number of mebibytes.
+
+        Returns:
+            int: memory usage in Mi, e.g. "8996Mi" -> 8996, "2Gi" -> 2048 and "512Ki" -> 0.
+
+        Raises:
+            ValueError: if the cell is not a numeric reading or has an unsupported unit.
+        """
+        cell = (self.memory or "").strip()
+        match = self._LEADING_NUMBER.match(cell)
+        if not match:
+            raise ValueError(f"Memory cell {self.memory!r} of {self.name!r} is not a numeric reading")
+        value = float(match.group(1))
+        unit = cell[len(match.group(1)) :]
+        factors = {"Ki": 1 / 1024, "Mi": 1, "Gi": 1024, "Ti": 1024 * 1024}
+        if unit not in factors:
+            raise ValueError(f"Memory cell {self.memory!r} of {self.name!r} has unsupported unit {unit!r}")
+        return int(value * factors[unit])
+
     @classmethod
     def _is_positive(cls, cell: str) -> bool:
         """
