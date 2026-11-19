@@ -186,13 +186,19 @@ class PlatformUpgradePreparationKeywords(BaseKeyword):
             if self.config.get_license_server():
                 raise ValueError("license_from_path is required with a configured license server")
             return
-        self._absolute_path(source)
         self._absolute_path(self.config.get_license_to_path())
         if self.config.get_license_server():
+            self._absolute_path(source)
             if not all((self.config.get_license_username(), self.config.get_license_password())):
                 raise ValueError("License server requires configured username and password")
-        elif not Path(source).is_file():
-            raise ValueError("Configured runner-local license file is missing")
+        else:
+            if not isinstance(source, str) or any(char in source for char in "\n\r"):
+                raise ValueError("Runner-local license path must be a single-line string")
+            local_path = Path(source)
+            if not local_path.is_absolute():
+                raise ValueError("Runner-local license path must be absolute on the runner")
+            if not local_path.is_file():
+                raise ValueError("Configured runner-local license file is missing")
 
     def _install_license(self) -> None:
         """Install a configured license, otherwise leave the existing license for precheck."""
@@ -205,7 +211,7 @@ class PlatformUpgradePreparationKeywords(BaseKeyword):
         else:
             directory = self.config.get_license_to_path()
             self._make_directory(directory)
-            destination = str(PurePosixPath(directory) / PurePosixPath(source).name)
+            destination = str(PurePosixPath(directory) / Path(source).name)
             self.files.upload_file(source, destination)
         self.license.system_license_install(quote(destination))
 

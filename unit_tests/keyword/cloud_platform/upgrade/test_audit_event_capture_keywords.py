@@ -1,7 +1,5 @@
-"""Fresh-event correlation, cleanup and real shell-command failure contracts."""
+"""Fresh-event correlation, cleanup and remote command response contracts."""
 
-import subprocess
-from pathlib import Path
 from shlex import split
 from types import SimpleNamespace
 from unittest.mock import MagicMock, NonCallableMagicMock, patch
@@ -324,29 +322,28 @@ def test_bad_inventory(capture: AuditEventCaptureKeywords, hosts: tuple[str, ...
         (0, event("key", "/tmp/fresh") + "<no matches>", False),
     ],
 )
-def test_search_output_and_status_contract(tmp_path: Path, status: int, output: str, accepted: bool):
-    """Execute the search command and pass its output/status to the real parser.
+def test_search_output_and_status_contract(status: int, output: str, accepted: bool):
+    """Check the remote search command and pass its response to the real parser.
 
     Args:
-        tmp_path (Path): Temporary command directory.
         status (int): Ausearch exit status.
         output (str): Ausearch output.
         accepted (bool): Whether the output parser should accept the result.
     """
-    tool = tmp_path / "ausearch"
-    tool.write_text(f"#!/bin/sh\nprintf '%s\\n' '{output}' >&2\nexit {status}\n")
-    tool.chmod(0o700)
     kw = AuditdKeywords.__new__(AuditdKeywords)
     kw.ssh_connection = NonCallableMagicMock()
+    kw.ssh_connection.get_return_code.return_value = status
 
-    def run_script(hostname, hosts, command, ignore_error=False):
+    def run_search(hostname: str, hosts: tuple[str, ...], command: str, ignore_error: bool = False) -> str:
+        """Return the simulated kubectl exec response for the expected search."""
+        assert hostname == "controller-0"
+        assert hosts == ("controller-0",)
         assert ignore_error
-        result = subprocess.run(split(command), env={"PATH": f"{tmp_path}:/usr/bin:/bin"}, capture_output=True, text=True, check=False)
-        kw.ssh_connection.get_return_code.return_value = result.returncode
-        trailer = f"command terminated with exit code {result.returncode}\n" if result.returncode else ""
-        return result.stdout + result.stderr + trailer
+        assert split(command) == ["env", "LC_ALL=C", "ausearch", "--input-logs", "--interpret", "-k", "key", "-sc", "rmdir"]
+        trailer = f"command terminated with exit code {status}\n" if status else ""
+        return f"{output}\n{trailer}"
 
-    kw.pod_command = run_script
+    kw.pod_command = run_search
     # search_syscall_events reports ignored configuration diagnostics; the framework
     # logger is configured by a real run, not by this isolated unit test.
     with patch("keywords.cloud_platform.applications.auditd_keywords.get_logger"):

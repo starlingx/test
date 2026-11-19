@@ -3,10 +3,10 @@
 import argparse
 import importlib.util
 import json
-import selectors
 import socket
 import subprocess
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest.mock import NonCallableMock, patch
 
@@ -27,27 +27,29 @@ SCRIPT = Path(__file__).resolve().parents[4] / "keywords/cloud_platform/applicat
 @pytest.mark.parametrize("protocol", ["tcp", "udp"])
 def test_real_echo_and_wrong_identity(protocol):
     """Real sockets establish bounded traffic and reject a wrong peer identity."""
-    with socket.socket() as reservation:
+    kind = socket.SOCK_STREAM if protocol == "tcp" else socket.SOCK_DGRAM
+    with socket.socket(socket.AF_INET, kind) as reservation:
         reservation.bind(("127.0.0.1", 0))
         port = reservation.getsockname()[1]
     common = ["--family", "4", "--protocol", protocol, "--port", str(port)]
-    process = subprocess.Popen([sys.executable, str(SCRIPT), "server", *common, "--identity", "expected", "--lifetime", "20"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    try:
-        command = [sys.executable, str(SCRIPT), "client", *common, "--identity", "expected", "--address", "127.0.0.1", "--nonce", "fresh", "--count", "2", "--timeout", "1"]
-        with selectors.DefaultSelector() as selector:
-            selector.register(process.stdout, selectors.EVENT_READ)
-            assert selector.select(timeout=5), "Server did not report readiness"
-            assert process.stdout.readline().strip() == b"TRAFFIC SERVER READY"
-        response = subprocess.run(command, capture_output=True, text=True, timeout=4)
-        assert response.returncode == 0, response.stderr
-        assert json.loads(response.stdout)["count"] == 2
-        command[command.index("expected")] = "wrong-peer"
-        response = subprocess.run(command, capture_output=True, text=True, timeout=4)
-        assert response.returncode != 0
-        assert "Wrong peer" in response.stderr
-    finally:
-        process.terminate()
-        process.communicate(timeout=5)
+    server_command = [sys.executable, str(SCRIPT), "server", *common, "--identity", "expected", "--lifetime", "20"]
+    with ThreadPoolExecutor(max_workers=1) as reader, subprocess.Popen(server_command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT) as process:
+        try:
+            # Windows selectors accept sockets only, so read the pipe on a
+            # background thread and put the deadline on the result.
+            readiness = reader.submit(process.stdout.readline)
+            assert readiness.result(timeout=5).strip() == b"TRAFFIC SERVER READY"
+            command = [sys.executable, str(SCRIPT), "client", *common, "--identity", "expected", "--address", "127.0.0.1", "--nonce", "fresh", "--count", "2", "--timeout", "1"]
+            response = subprocess.run(command, capture_output=True, text=True, timeout=4)
+            assert response.returncode == 0, response.stderr
+            assert json.loads(response.stdout)["count"] == 2
+            command[command.index("expected")] = "wrong-peer"
+            response = subprocess.run(command, capture_output=True, text=True, timeout=4)
+            assert response.returncode != 0
+            assert "Wrong peer" in response.stderr
+        finally:
+            # Terminating the child also releases a pending readiness read.
+            process.kill()
 
 
 @pytest.fixture
@@ -55,7 +57,7 @@ def fixture():
     """Provide a fixture without performing any controller operations."""
     connection = NonCallableMock()
     connection.get_return_code.return_value = 0
-    with patch("keywords.base_keyword.get_logger"):
+    with patch("keywords.base_keyword.get_logger"), patch("framework.validation.validation.get_logger"):
         yield IPsecPolicyTrafficKeywords(connection, "/config"), connection
 
 
