@@ -34,6 +34,11 @@ class AnsiblePlaybookBackUpRestoreOutput:
 
         """
         successful_backup_restore = False
+
+        if not self.cmd_output:
+            get_logger().log_info("Ansible backup/restore produced no output (command may have timed out) - treating as failure.")
+            return successful_backup_restore
+
         output = "".join(self.cmd_output)
 
         if output and len(output) > 0:
