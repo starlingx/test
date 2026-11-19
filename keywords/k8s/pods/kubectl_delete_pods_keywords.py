@@ -70,6 +70,23 @@ class KubectlDeletePodsKeywords(K8sBaseKeyword):
             get_logger().log_error(f"Pod {pod_name} failed to delete")
         return rc
 
+    def delete_all_pods(self, namespace: str = "default") -> str:
+        """Delete all pods in a namespace in a single call.
+
+        Mirrors: kubectl delete pods --all -n <namespace>
+
+        Args:
+            namespace (str): the namespace whose pods are deleted. Defaults to "default".
+
+        Returns:
+            str: the command output
+        """
+        cmd = f"kubectl delete pods --all -n {namespace}"
+        output = self.ssh_connection.send(self.k8s_config.export(cmd))
+        self.validate_success_return_code(self.ssh_connection)
+
+        return output
+
     def delete_from_yaml(self, yaml_file: str, namespace: str = None, ignore_not_found: bool = True) -> None:
         """Deletes resources defined in a YAML file.
 

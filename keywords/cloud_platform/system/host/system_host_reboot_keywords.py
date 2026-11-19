@@ -142,11 +142,20 @@ class SystemHostRebootKeywords(BaseKeyword):
         the reboot with a short timeout and swallows the expected disconnect so
         callers can proceed to detect the host going offline.
 
+        The reboot is sent through ``send_as_sudo_non_interactive`` rather than
+        the interactive ``send_as_sudo``. The interactive path drives an
+        ``invoke_shell`` prompt loop that waits for the ``@`` prompt to return;
+        since ``reboot -f`` kills the host, that prompt never comes back and the
+        worker thread stays alive after the command timeout (the ThreadPool does
+        not kill timed-out threads). That orphaned thread later resumes on a
+        reconnect and re-sends ``reboot -f``. The non-interactive path uses
+        ``exec_command``, which ends cleanly when the channel closes.
+
         Initialize this class with an SSH connection to the TARGET host.
         """
         get_logger().log_info("Force rebooting host (fire-and-forget)")
         try:
-            self.ssh_connection.send_as_sudo("reboot -f", command_timeout=10, reconnect_timeout=1)
+            self.ssh_connection.send_as_sudo_non_interactive("reboot -f", command_timeout=10, reconnect_timeout=1)
         except Exception as e:
             # The connection dropping as the host reboots is expected.
             get_logger().log_info(f"Reboot command connection closed as expected: {e}")
