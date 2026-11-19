@@ -1,7 +1,7 @@
 """Configured preparation with state-dependent release/capacity and failure evidence."""
 
 from io import BytesIO
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from types import SimpleNamespace
 from unittest.mock import MagicMock, NonCallableMagicMock, patch
 
@@ -185,6 +185,24 @@ def test_configured_local_license_is_uploaded_and_installed(preparation, tmp_pat
     helper.prepare("26.10")
     helper.files.upload_file.assert_called_once_with(str(license_path), "/home/sysadmin/upgrade.lic")
     helper.license.system_license_install.assert_called_once_with("/home/sysadmin/upgrade.lic")
+
+
+def test_windows_runner_license_keeps_posix_destination(preparation):
+    """Use native drive and filename semantics without changing the remote path."""
+    helper, _, _ = preparation
+    source = PureWindowsPath(r"C:\test files\upgrade.lic")
+    helper.config.license_from_path = str(source)
+    helper.config.license_to_path = "/home/sysadmin"
+    local_path = SimpleNamespace(name=source.name, is_absolute=source.is_absolute, is_file=lambda: True)
+    with patch(f"{MODULE}.Path", return_value=local_path):
+        helper.prepare("26.10")
+    helper.files.upload_file.assert_called_once_with(str(source), "/home/sysadmin/upgrade.lic")
+    helper.license.system_license_install.assert_called_once_with("/home/sysadmin/upgrade.lic")
+
+    # The same path cannot be used on the POSIX license server.
+    helper.config.license_server = "artifact-server"
+    with pytest.raises(ValueError, match="absolute paths"):
+        helper.prepare("26.10")
 
 
 @pytest.mark.parametrize("failure", [None, "transfer", "connect"])
