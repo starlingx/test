@@ -45,3 +45,24 @@ class KubectlGetResourceKeywords(K8sBaseKeyword):
 
         output_text = "\n".join(output) if isinstance(output, list) else output
         return output_text.strip()
+
+    def is_namespace_empty(self, namespace: str) -> bool:
+        """Check whether a namespace has no common resources via 'kubectl get all'.
+
+        Runs 'kubectl get all -n <namespace>' and returns True when kubectl
+        reports that no resources are present. Note that 'kubectl get all'
+        only lists common built-in resource types (pods, deployments,
+        services, etc.) and not arbitrary custom resources.
+
+        Args:
+            namespace (str): Namespace to check.
+
+        Returns:
+            bool: True if no resources are found in the namespace, False otherwise.
+        """
+        cmd = f"kubectl get all -n {namespace}"
+        output = self.ssh_connection.send(self.k8s_config.export(cmd))
+        self.validate_success_return_code(self.ssh_connection)
+
+        output_text = "\n".join(output) if isinstance(output, list) else output
+        return "No resources found" in output_text

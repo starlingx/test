@@ -23,6 +23,7 @@ from framework.ssh.prompt_response import PromptResponse
 from framework.ssh.ssh_connection import SSHConnection
 from keywords.bmc.ipmitool.is_ipmitool_keywords import IsIPMIToolKeywords
 from keywords.bmc.ipmitool.sensor.ipmitool_sensor_keywords import IPMIToolSensorKeywords
+from keywords.cloud_platform.applications.power_manager.power_manager_keywords import PowerManagerKeywords
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_list_keywords import DcManagerSubcloudListKeywords
 from keywords.cloud_platform.dcmanager.objects.dcmanger_subcloud_list_availability_enum import DcManagerSubcloudListAvailabilityEnum
 from keywords.cloud_platform.dcmanager.objects.dcmanger_subcloud_list_management_enum import DcManagerSubcloudListManagementEnum
@@ -65,6 +66,15 @@ def find_capabilities(lab_config: LabConfig) -> list[str]:
     if query_if_lab_is_virtual(ssh_connection):
         get_logger().log_info(f"'{lab_config.get_lab_name()}' is a Virtual Lab")
         lab_config.add_lab_capability("lab_is_virtual")
+
+    power_manager_keywords = PowerManagerKeywords(ssh_connection)
+    if power_manager_keywords.has_pstate_support():
+        get_logger().log_info(f"'{lab_config.get_lab_name()}' supports P-state (intel_pstate active) management")
+        lab_config.add_lab_capability("lab_has_pstate_support")
+
+    if power_manager_keywords.has_cstate_support():
+        get_logger().log_info(f"'{lab_config.get_lab_name()}' supports C-state (intel_idle) management")
+        lab_config.add_lab_capability("lab_has_cstate_support")
 
     lab_config.set_horizon_url(get_horizon_url())
 

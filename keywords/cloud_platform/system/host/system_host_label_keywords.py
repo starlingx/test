@@ -1,12 +1,13 @@
 from typing import List
 
 from framework.logging.automation_logger import get_logger
+from framework.ssh.ssh_connection import SSHConnection
 from keywords.base_keyword import BaseKeyword
 from keywords.cloud_platform.command_wrappers import source_openrc
 from keywords.cloud_platform.system.host.objects.system_host_label_assign_output import SystemHostLabelAssignOutput
 from keywords.cloud_platform.system.host.objects.system_host_label_list_output import SystemHostLabelListOutput
-from keywords.cloud_platform.system.host.system_host_lock_keywords import SystemHostLockKeywords
 from keywords.cloud_platform.system.host.system_host_list_keywords import SystemHostListKeywords
+from keywords.cloud_platform.system.host.system_host_lock_keywords import SystemHostLockKeywords
 
 
 class SystemHostLabelKeywords(BaseKeyword):
@@ -14,47 +15,46 @@ class SystemHostLabelKeywords(BaseKeyword):
     Keywords for System Host Label List
     """
 
-    def __init__(self, ssh_connection):
-        """
-        Constructor
+    def __init__(self, ssh_connection: SSHConnection):
+        """Constructor.
+
         Args:
-            ssh_connection:
+            ssh_connection (SSHConnection): The SSH connection to the target host.
         """
         self.ssh_connection = ssh_connection
 
     def get_system_host_label_list(self, host_name: str) -> SystemHostLabelListOutput:
-        """
-        Gets the system host label list
+        """Get the system host label list.
+
         Args:
-            host_name (): the host name to run the command for
+            host_name (str): the host name to run the command for.
 
-        Returns: SystemHostLabelListOutput
-
+        Returns:
+            SystemHostLabelListOutput: Parsed output of the label list command.
         """
-        output = self.ssh_connection.send(source_openrc(f'system host-label-list {host_name}'))
+        output = self.ssh_connection.send(source_openrc(f"system host-label-list {host_name}"))
         self.validate_success_return_code(self.ssh_connection)
         system_host_label_list_output = SystemHostLabelListOutput(output)
 
         return system_host_label_list_output
 
     def system_host_label_assign(self, host_name: str, labels: str, overwrite: bool = False) -> SystemHostLabelAssignOutput:
-        """
-        This function will run the 'system host-label-assign <host_name> <labels>' command
+        """Run the 'system host-label-assign <host_name> <labels>' command.
 
         Args:
-            host_name: The name of the host on which we want to assign labels.
-            labels: The space-separated list of label_key=label_value
-            overwrite: If True, adds --overwrite flag to overwrite existing label values.
-                      This is required when a label already exists with a different value.
-                      Without this flag, the command fails with "Label already exists" error.
-                      Example: Changing kube-topology-mgr-policy from 'best-effort' to 'restricted'
-                      requires overwrite=True.
+            host_name (str): The name of the host on which we want to assign labels.
+            labels (str): The space-separated list of label_key=label_value.
+            overwrite (bool): If True, adds --overwrite flag to overwrite existing label values.
+                This is required when a label already exists with a different value.
+                Without this flag, the command fails with "Label already exists" error.
+                Example: Changing kube-topology-mgr-policy from 'best-effort' to 'restricted'
+                requires overwrite=True.
 
-        Returns: SystemHostLabelAssignOutput
-
+        Returns:
+            SystemHostLabelAssignOutput: Parsed output of the label assign command.
         """
-        overwrite_flag = '--overwrite ' if overwrite else ''
-        output = self.ssh_connection.send(source_openrc(f'system host-label-assign {overwrite_flag}{host_name} {labels}'))
+        overwrite_flag = "--overwrite " if overwrite else ""
+        output = self.ssh_connection.send(source_openrc(f"system host-label-assign {overwrite_flag}{host_name} {labels}"))
         self.validate_success_return_code(self.ssh_connection)
         system_host_label_assign_output = SystemHostLabelAssignOutput(output)
 
@@ -73,56 +73,53 @@ class SystemHostLabelKeywords(BaseKeyword):
         Returns:
             SystemHostLabelAssignOutput: Parsed output of the label assign command.
         """
-        output = self.ssh_connection.send(source_openrc(f'system host-label-assign --overwrite {host_name} {labels}'))
+        output = self.ssh_connection.send(source_openrc(f"system host-label-assign --overwrite {host_name} {labels}"))
         self.validate_success_return_code(self.ssh_connection)
         system_host_label_assign_output = SystemHostLabelAssignOutput(output)
 
         return system_host_label_assign_output
 
     def system_host_label_remove(self, host_name: str, labels: str) -> List[str]:
-        """
-        This function will run the 'system host-label-remove <host_name> <labels>' command
+        """Run the 'system host-label-remove <host_name> <labels>' command.
+
         Args:
-            host_name: The name of the host on which we want to remove labels.
-            labels: The space-separated list of label_key
+            host_name (str): The name of the host on which we want to remove labels.
+            labels (str): The space-separated list of label_key.
 
         Returns:
-            A list of Strings for each label removed. e.g.
-            ["Deleted host label kube-cpu-mgr-policy for host controller-0",
-             "Deleted host label kube-topology-mgr-policy for host controller-0"]
-
+            List[str]: A list of strings for each label removed, e.g.
+                ["Deleted host label kube-cpu-mgr-policy for host controller-0",
+                 "Deleted host label kube-topology-mgr-policy for host controller-0"]
         """
-        output = self.ssh_connection.send(source_openrc(f'system host-label-remove {host_name} {labels}'))
+        output = self.ssh_connection.send(source_openrc(f"system host-label-remove {host_name} {labels}"))
         self.validate_success_return_code(self.ssh_connection)
 
         return output
 
     def lock_host_assign_labels_and_unlock(self, host_name: str, labels: List[str], overwrite: bool = True) -> None:
-        """
-        Locks the host, assigns the given labels, and unlocks the host.
-        Args:
-            host_name: The name of the host.
-            labels: List of label_key=label_value strings
-            overwrite: If True, overwrites existing labels. Defaults to True.
+        """Lock the host, assign the given labels, and unlock the host.
 
+        Args:
+            host_name (str): The name of the host.
+            labels (List[str]): List of label_key=label_value strings.
+            overwrite (bool): If True, overwrites existing labels. Defaults to True.
         """
         lock_keywords = SystemHostLockKeywords(self.ssh_connection)
         lock_keywords.lock_host(host_name)
-        labels_str = ' '.join(labels)
+        labels_str = " ".join(labels)
         self.system_host_label_assign(host_name, labels_str, overwrite=overwrite)
         lock_keywords.unlock_host(host_name)
 
     def lock_host_remove_labels_and_unlock(self, host_name: str, labels: List[str]) -> None:
-        """
-        Locks the host, removes the given labels, and unlocks the host.
-        Args:
-            host_name: The name of the host.
-            labels: List of label_key strings
+        """Lock the host, remove the given labels, and unlock the host.
 
+        Args:
+            host_name (str): The name of the host.
+            labels (List[str]): List of label_key strings.
         """
         lock_keywords = SystemHostLockKeywords(self.ssh_connection)
         lock_keywords.lock_host(host_name)
-        labels_str = ' '.join(labels)
+        labels_str = " ".join(labels)
         self.system_host_label_remove(host_name, labels_str)
         lock_keywords.unlock_host(host_name)
 
@@ -137,9 +134,29 @@ class SystemHostLabelKeywords(BaseKeyword):
             labels (List[str]): Label strings (e.g. ['key1=value1', 'key2=value2']).
             overwrite (bool): Use --overwrite flag. Defaults to True.
         """
-
         hosts = SystemHostListKeywords(self.ssh_connection).get_system_host_list().get_host_names()
-        labels_str = ' '.join(labels)
+        labels_str = " ".join(labels)
         for host in hosts:
             get_logger().log_info(f"Assigning labels on {host}: {labels}")
             self.system_host_label_assign(host, labels_str, overwrite=overwrite)
+
+    def remove_labels_from_all_hosts(self, label_keys: List[str]) -> None:
+        """Remove labels from all hosts in the system, skipping those not present.
+
+        Iterates over all hosts and removes each given label key only when it is
+        present on that host, making the operation idempotent (safe to call during
+        cleanup even if some or all hosts never had the label).
+
+        Args:
+            label_keys (List[str]): Label keys to remove (e.g. ['key1', 'key2']).
+        """
+        hosts = SystemHostListKeywords(self.ssh_connection).get_system_host_list().get_host_names()
+        for host in hosts:
+            # Run 'system host-label-list' once per host and ask the output which keys are present.
+            label_list = self.get_system_host_label_list(host)
+            keys_present = [key for key in label_keys if label_list.is_label_present(key)]
+            if keys_present:
+                get_logger().log_info(f"Removing labels on {host}: {keys_present}")
+                self.system_host_label_remove(host, " ".join(keys_present))
+            else:
+                get_logger().log_info(f"No matching labels to remove on {host}: {label_keys}")
