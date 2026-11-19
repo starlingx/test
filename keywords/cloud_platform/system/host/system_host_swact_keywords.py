@@ -184,6 +184,8 @@ class SystemHostSwactKeywords(BaseKeyword):
         self.host_swact()
         self.wait_for_swact(active, standby)
         self.wait_for_services_settled()
+        if host_list.is_active_controller(host):
+            raise KeywordException(f"{host} is still active after swact and service migration")
         return True
 
     def wait_for_services_settled(self, timeout: int = 300, poll_interval: int = 10) -> None:
@@ -207,6 +209,9 @@ class SystemHostSwactKeywords(BaseKeyword):
 
         def services_settled() -> bool:
             groups = SystemServiceGroupKeywords(self.ssh_connection).get_system_servicegroup_list().system_servicegroup_list
+            for group in groups:
+                if group.get_state() in ("go-active-failed", "go-standby-failed"):
+                    raise KeywordException(f"Service migration failed on {group.get_hostname()}: {group.get_state()}")
             transitional = [g for g in groups if g.get_state() in ("go-active", "go-standby")]
             if transitional:
                 names = ", ".join(f"{g.service_group_name}@{g.get_hostname()}={g.get_state()}" for g in transitional)

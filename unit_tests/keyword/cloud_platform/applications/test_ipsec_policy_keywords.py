@@ -443,3 +443,40 @@ def test_rollout_keyword_quotes_identifiers_and_respects_timeout(connection):
     connection.get_return_code.return_value = 1
     with pytest.raises(AssertionError):
         keyword.wait_for_deployment_rollout("namespace", "manager", timeout=12)
+
+
+@pytest.mark.parametrize("change", ["none", "missing-policy", "policy-spec", "policy-uid", "chart-overrides", "chart-attributes", "node-label"])
+def test_original_configuration_snapshot_survives_release_change(connection, change):
+    """Retain original policy/settings evidence while allowing app version changes."""
+    module = "keywords.cloud_platform.applications.ipsec_policy_state_keywords"
+    policy = {"metadata": {"name": "original", "uid": "uid"}, "spec": {"policies": [{"name": "service"}]}}
+    state = IPsecPolicyStateKeywords(connection, "/config")
+    baseline = IPsecPolicyListOutput(json.dumps({"items": [policy]}))
+    nodes = {"items": [{"metadata": {"name": "node-a", "labels": {"ipsec-policy-agent-operator": "enabled"}}}]}
+    connection.send.return_value = json.dumps(nodes)
+    with patch(module + ".SystemApplicationListKeywords") as applications, patch(module + ".SystemHelmOverrideKeywords") as helm, patch.object(state.policy_keywords, "get_policies", return_value=baseline) as policies:
+        applications.return_value.get_application_state.return_value = ("26.03-1", "applied")
+        helm.return_value.get_system_helm_override_show.return_value.get_helm_override_show.return_value.get_attributes.return_value = {"enabled": True}
+        helm.return_value.get_user_override_values.return_value = {"config": "original"}
+        state.capture_baseline(exclusive=True)
+        applications.return_value.get_application_state.return_value = ("27.03-2", "applied")
+        if change == "missing-policy":
+            policies.return_value = IPsecPolicyListOutput('{"items": []}')
+        elif change in ("policy-spec", "policy-uid"):
+            if change == "policy-spec":
+                policy["spec"] = {}
+            else:
+                policy["metadata"]["uid"] = "replacement"
+            policies.return_value = IPsecPolicyListOutput(json.dumps({"items": [policy]}))
+        elif change == "chart-overrides":
+            helm.return_value.get_user_override_values.return_value = {}
+        elif change == "chart-attributes":
+            helm.return_value.get_system_helm_override_show.return_value.get_helm_override_show.return_value.get_attributes.return_value = {"enabled": False}
+        elif change == "node-label":
+            nodes["items"][0]["metadata"]["labels"] = {}
+            connection.send.return_value = json.dumps(nodes)
+        if change == "none":
+            state.verify_configuration()
+        else:
+            with pytest.raises(KeywordException):
+                state.verify_configuration()

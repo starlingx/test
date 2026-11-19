@@ -10,6 +10,11 @@
   // when the target release changes.
   "to_version": "26.10",
   "applications": {
+    // IPsec compatibility requires an applied baseline on an exclusive DX or
+    // Standard lab. Supply a reachable Python-capable image pinned by digest:
+    // "ipsec-policy-operator": {
+    //   "traffic_image": "registry/python@sha256:<64 hex digits>",
+    // },
     "auditd": {
       "app_name": "auditd",
     },

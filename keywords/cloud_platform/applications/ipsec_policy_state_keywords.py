@@ -222,6 +222,18 @@ class IPsecPolicyStateKeywords(K8sBaseKeyword):
             addfinalizer (Callable): Pytest request.addfinalizer or equivalent registry.
             exclusive (bool): Lab is disposable and exclusively assigned to this run.
         """
+        self.capture_baseline(exclusive)
+        addfinalizer(self.restore_state)
+
+    def capture_baseline(self, exclusive: bool = False) -> None:
+        """Capture read-only state without registering mutation recovery.
+
+        A compatibility observer can retain this snapshot across releases.
+        Consumers that mutate resources must use capture_state instead.
+
+        Args:
+            exclusive (bool): Lab is disposable and exclusively assigned.
+        """
         if self.captured:
             raise KeywordException("Policy state was already captured")
         self.application = SystemApplicationListKeywords(self.ssh_connection).get_application_state(APPLICATION_NAME)
@@ -238,7 +250,6 @@ class IPsecPolicyStateKeywords(K8sBaseKeyword):
         nodes = KubernetesResourceListOutput(KubectlGetResourceKeywords(self.ssh_connection, self.k8s_config.get_kubeconfig_path()).get_resource_field("nodes", "", "{@}"))
         self.labels = nodes.get_labels("ipsec-policy-agent-operator")
         self.exclusive = exclusive
-        addfinalizer(self.restore_state)
         self.captured = True
 
     def prepare_candidate(self, version: str, images: dict[str, dict[str, str]], provenance: dict[str, str], chart_overrides: dict[str, dict] | None = None) -> IPsecPolicyImagesOutput:
@@ -413,6 +424,17 @@ class IPsecPolicyStateKeywords(K8sBaseKeyword):
         """Check that pre-existing app, policies, chart values and labels survived."""
         if SystemApplicationListKeywords(self.ssh_connection).get_application_state(APPLICATION_NAME) != self.application:
             raise KeywordException("Application baseline was not restored")
+        self.verify_configuration()
+        self.policy_keywords.wait_for_agents_ready()
+
+    def verify_configuration(self) -> None:
+        """Verify captured policies, user chart settings and node labels.
+
+        Application version is checked separately so this snapshot can span
+        platform releases. Generated system overrides may change with releases.
+        """
+        if not self.captured:
+            raise KeywordException("Capture the baseline before verifying configuration")
         policies = {item.get_name(): item for item in self.policy_keywords.get_policies().get_policies()}
         for baseline in self.policies:
             current = policies.get(baseline.get_name())
@@ -427,7 +449,6 @@ class IPsecPolicyStateKeywords(K8sBaseKeyword):
         labels = nodes.get_labels("ipsec-policy-agent-operator")
         if labels != self.labels:
             raise KeywordException("Policy-agent node labels changed")
-        self.policy_keywords.wait_for_agents_ready()
 
     def restore_state(self) -> None:
         """Attempt all independent recovery stages and report every failure."""

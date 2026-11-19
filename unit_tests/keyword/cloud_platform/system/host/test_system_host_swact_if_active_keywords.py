@@ -85,7 +85,7 @@ class TestSwactIfActive(unittest.TestCase):
     def test_swact_is_performed_and_waited_for_on_the_active_host(self):
         """Locking the active controller swacts first and waits for the swact to settle."""
         keywords, host_list, patcher = self._build_keywords()
-        host_list.is_active_controller = MagicMock(return_value=True)
+        host_list.is_active_controller = MagicMock(side_effect=[True, False])
 
         with patcher:
             performed = keywords.swact_if_active("controller-0")
@@ -97,7 +97,7 @@ class TestSwactIfActive(unittest.TestCase):
     def test_swact_waits_after_issuing_not_before(self):
         """swact, then wait_for_swact, then wait_for_services_settled - lock cannot race the switch."""
         keywords, host_list, patcher = self._build_keywords()
-        host_list.is_active_controller = MagicMock(return_value=True)
+        host_list.is_active_controller = MagicMock(side_effect=[True, False])
         order = []
         self.host_swact_mock.side_effect = lambda *a, **k: order.append("swact")
         self.wait_for_swact_mock.side_effect = lambda *a, **k: order.append("wait")
@@ -107,6 +107,14 @@ class TestSwactIfActive(unittest.TestCase):
             keywords.swact_if_active("controller-0")
 
         self.assertEqual(order, ["swact", "wait", "settle"])
+
+    def test_swact_fails_if_controller_remains_active(self):
+        """A settled service list does not prove that the host can be locked."""
+        keywords, host_list, patcher = self._build_keywords()
+        host_list.is_active_controller = MagicMock(return_value=True)
+
+        with patcher, self.assertRaisesRegex(KeywordException, "still active after swact"):
+            keywords.swact_if_active("controller-0")
 
     def test_swact_is_skipped_when_no_standby_exists(self):
         """On a single-controller system the swact is skipped rather than failing."""
@@ -203,6 +211,17 @@ class TestSwactIfActive(unittest.TestCase):
                 patch("framework.validation.validation.get_logger"):
             keywords.wait_for_services_settled(timeout=30, poll_interval=0)
         self.assertEqual(sg.get_system_servicegroup_list.call_count, 2)
+
+    def test_wait_for_services_settled_rejects_failed_migration(self):
+        """A failed transition must not be accepted as a settled service group."""
+        keywords = self._build_swact_only()
+        sg = NonCallableMagicMock()
+        sg.get_system_servicegroup_list.return_value = self._servicegroup_output(
+            [self._svc_group("controller-services", "controller-0", "go-active-failed")]
+        )
+        with patch(f"{MODULE}.SystemServiceGroupKeywords", return_value=sg), patch("framework.validation.validation.get_logger"):
+            with self.assertRaisesRegex(KeywordException, "go-active-failed"):
+                keywords.wait_for_services_settled()
 
     def test_wait_for_services_settled_raises_when_never_settles(self):
         """If a group stays go-active forever, it fails rather than hanging."""

@@ -1,3 +1,5 @@
+import json
+
 import pytest
 
 from config.app_upgrade_compat.objects.app_upgrade_compat_config import AppUpgradeCompatConfig
@@ -72,3 +74,13 @@ def test_unconfigured_application_raises():
         default_config.get_app_name("not-a-configured-application")
     with pytest.raises(ValueError):
         default_config.get_namespace("not-a-configured-application")
+
+
+@pytest.mark.parametrize("applications", [{}, {"ipsec-policy-operator": {}}, {"ipsec-policy-operator": {"traffic_image": ""}}])
+def test_missing_ipsec_image_identifies_config_setting(tmp_path, applications):
+    """Missing and empty image values identify the setting to configure."""
+    path = tmp_path / "app-upgrade-compat.json5"
+    path.write_text(json.dumps({"applications": applications}))
+    config = AppUpgradeCompatConfig(str(path))
+    with pytest.raises(ValueError, match=r"applications\.ipsec-policy-operator\.traffic_image"):
+        config.get_ipsec_traffic_image()
