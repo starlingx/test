@@ -1,0 +1,11 @@
+apiVersion: operator.tigera.io/v1
+kind: GatewayAPI
+metadata:
+  name: default
+spec:
+  crdManagement: PreferExisting
+  gatewayClasses:
+  - name: tigera-gateway-class
+    envoyProxyRef:
+      name: tigera-gateway-ipv6
+      namespace: tigera-gateway

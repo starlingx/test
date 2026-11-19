@@ -153,6 +153,8 @@ class KubectlGetPodsOutput:
         images = [c.get("image", "") for c in containers if c.get("image")]
         pod.set_images(images)
         pod.set_container_images({c.get("name"): c.get("image", "") for c in containers if c.get("name")})
+        init_containers = spec.get("initContainers", [])
+        pod.set_init_images([c.get("image", "") for c in init_containers if c.get("image")])
 
         # Ready count from containerStatuses
         container_statuses = status_data.get("containerStatuses", [])
@@ -305,4 +307,15 @@ class KubectlGetPodsOutput:
         images = []
         for pod in self.kubectl_pod:
             images.extend(pod.get_images())
+        return images
+
+    def get_all_init_container_images(self) -> list[str]:
+        """Get all init container images across all pods.
+
+        Returns:
+            list[str]: List of init container image strings from all pods.
+        """
+        images = []
+        for pod in self.kubectl_pod:
+            images.extend(pod.get_init_images())
         return images

@@ -1,5 +1,8 @@
 """CurlKeywords keywords."""
 
+import shlex
+from typing import Optional
+
 from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
 from keywords.base_keyword import BaseKeyword
@@ -40,7 +43,7 @@ class CurlKeywords(BaseKeyword):
         self.validate_success_return_code(self.ssh_connection)
         return destination
 
-    def get_http_status_code(self, url: str, insecure: bool = True, cacert: str = None, user: str = None) -> str:
+    def get_http_status_code(self, url: str, insecure: bool = True, cacert: str = None, user: str = None, host_header: Optional[str] = None) -> str:
         """Get HTTP response status code from a URL.
 
         Args:
@@ -48,6 +51,8 @@ class CurlKeywords(BaseKeyword):
             insecure (bool): Skip TLS verification (-k flag). Defaults to True.
             cacert (str): Path to CA cert file for verification. Overrides insecure.
             user (str): Username:password for basic auth.
+            host_header (Optional[str]): Value for the HTTP Host header, for host-based routing checks
+                (e.g. Gateway/Ingress routes that share one address). Optional.
 
         Returns:
             str: HTTP status code (e.g., "200", "401", "503").
@@ -59,6 +64,8 @@ class CurlKeywords(BaseKeyword):
             flags += " -k"
         if user:
             flags += f" -u {user}"
+        if host_header:
+            flags += f" -H {shlex.quote(f'Host: {host_header}')}"
         cmd = f"curl {flags} {url}"
         output = self.ssh_connection.send(cmd)
         raw = "".join(output) if isinstance(output, list) else output

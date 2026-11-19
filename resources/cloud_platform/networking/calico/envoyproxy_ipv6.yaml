@@ -1,0 +1,16 @@
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: EnvoyProxy
+metadata:
+  name: tigera-gateway-ipv6
+  namespace: tigera-gateway
+spec:
+  ipFamily: IPv6
+  provider:
+    type: Kubernetes
+    kubernetes:
+      envoyDeployment:
+        container:
+          image: "{{ envoy_proxy_image }}"
+        pod:
+          imagePullSecrets:
+          - name: registry-local-secret
