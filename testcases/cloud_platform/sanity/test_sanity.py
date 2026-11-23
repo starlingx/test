@@ -328,11 +328,9 @@ def test_lock_unlock_simplex():
         kpi_keywords.parse_and_display_results(results)
         get_logger().log_info("KPI calculation completed successfully")
 
-        # Save KPI data to database if record_kpi is enabled in USM config
-        if ConfigurationManager.get_usm_config().get_record_kpi():
-            kpi_results = kpi_keywords.parse_results(results, active_controller.get_host_name())
-            save_unlock_kpi_to_database(kpi_results)
-            record_unlock_kpi_measures(kpi_results, active_controller.get_host_name())
+        kpi_results = kpi_keywords.parse_results(results, active_controller.get_host_name())
+        save_unlock_kpi_to_database(kpi_results)
+        record_unlock_kpi_measures(kpi_results, active_controller.get_host_name())
     else:
         get_logger().log_info("No timing patterns found in logs")
 
@@ -372,11 +370,9 @@ def test_lock_unlock_standby_controller():
         kpi_keywords.parse_and_display_results(results)
         get_logger().log_info("KPI calculation completed successfully")
 
-        # Save KPI data to database if record_kpi is enabled in USM config
-        if ConfigurationManager.get_usm_config().get_record_kpi():
-            kpi_results = kpi_keywords.parse_results(results, standby_controller.get_host_name())
-            save_unlock_kpi_to_database(kpi_results)
-            record_unlock_kpi_measures(kpi_results, standby_controller.get_host_name())
+        kpi_results = kpi_keywords.parse_results(results, standby_controller.get_host_name())
+        save_unlock_kpi_to_database(kpi_results)
+        record_unlock_kpi_measures(kpi_results, standby_controller.get_host_name())
     else:
         get_logger().log_info("No timing patterns found in logs")
 
@@ -418,11 +414,9 @@ def test_lock_unlock_compute():
         kpi_keywords.parse_and_display_results(results)
         get_logger().log_info("KPI calculation completed successfully")
 
-        # Save KPI data to database if record_kpi is enabled in USM config
-        if ConfigurationManager.get_usm_config().get_record_kpi():
-            kpi_results = kpi_keywords.parse_results(results, computes[0].get_host_name())
-            save_unlock_kpi_to_database(kpi_results)
-            record_unlock_kpi_measures(kpi_results, computes[0].get_host_name())
+        kpi_results = kpi_keywords.parse_results(results, computes[0].get_host_name())
+        save_unlock_kpi_to_database(kpi_results)
+        record_unlock_kpi_measures(kpi_results, computes[0].get_host_name())
     else:
         get_logger().log_info("No timing patterns found in logs")
 
