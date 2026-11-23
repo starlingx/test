@@ -140,11 +140,16 @@ class IPKeywords(BaseKeyword):
 
     def set_ip_addr(self, ip: str, interface: str):
         """
-        Sets an ip address by adding it to a network interface.
+        Sets an ip address on a network interface.
+
+        Uses 'ip addr replace' rather than 'ip addr add' so the call is idempotent: it adds
+        the address when absent and is a no-op when the interface already holds it. A plain
+        'ip addr add' exits with code 2 ("File exists") when the address is already present,
+        which happens on a re-run where a previous run left the address configured.
 
         Args:
-            ip (str): ip address with CIDR notation to add (e.g. '10.11.1.253/24').
-            interface (str): network interface to add the ip address to (e.g. 'enp81s0f2').
+            ip (str): ip address with CIDR notation to set (e.g. '10.11.1.253/24').
+            interface (str): network interface to set the ip address on (e.g. 'enp81s0f2').
         """
-        self.ssh_connection.send_as_sudo(f"ip addr add {ip} dev {interface}")
+        self.ssh_connection.send_as_sudo(f"ip addr replace {ip} dev {interface}")
         self.validate_success_return_code(self.ssh_connection)
