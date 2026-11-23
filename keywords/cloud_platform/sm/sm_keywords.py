@@ -23,6 +23,18 @@ class SMKeywords(BaseKeyword):
         self.ssh_connection.send_as_sudo(f"sm-restart service {service_name}")
         self.validate_success_return_code(self.ssh_connection)
 
+    def sm_restart_safe(self, service_name: str) -> None:
+        """Run the sm-restart-safe service command.
+
+        The restart variant the platform procedures use for a planned restart of
+        a managed service.
+
+        Args:
+            service_name (str): The service name, e.g. 'vim'.
+        """
+        self.ssh_connection.send_as_sudo(f"sm-restart-safe service {service_name}")
+        self.validate_success_return_code(self.ssh_connection)
+
     def sm_query(self, service_name: str) -> str:
         """
         Runs the sm-dump service command and return the service status
