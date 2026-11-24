@@ -472,3 +472,88 @@ def test_openbao_host_api_not_reachable_from_pod(request: FixtureRequest):
 
     get_logger().log_test_case_step("Confirming the probe pod cannot reach the host management-network API")
     validate_equals(openbao.host_api_reachable_from_pod(), False, "In-cluster pods must not be able to reach the host management-network API")
+
+
+@mark.p2
+def test_openbao_server_pod_recovery_manager_reunseals(request: FixtureRequest):
+    """Test that the manager re-unseals a deleted server pod with no major errors.
+
+    Deleting an OpenBao server pod causes the manager to detect the replacement
+    and unseal it; the recreated server returns to a ready, unsealed state and
+    the manager log records no FATAL/panic during the recovery.
+
+    Test Steps:
+        - set up the OpenBao application (applied, unsealed, configured)
+        - delete the running server pod
+        - confirm the server pod is recreated as a new instance (new UID) and is ready
+        - confirm the manager re-unseals the replacement server
+        - confirm the manager log records no FATAL or panic during recovery
+        - Teardown: clean up the OpenBao environment
+
+    Args:
+        request (FixtureRequest): Pytest request fixture for teardown management.
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    security_config = ConfigurationManager.get_security_config()
+    openbao = OpenBaoKeywords(ssh_connection, security_config.get_ssh_user_home())
+
+    request.addfinalizer(lambda: cleanup_openbao_environment(ssh_connection))
+    setup_openbao_environment(ssh_connection)
+
+    get_logger().log_test_case_step("Deleting the running server pod")
+    server_pod = openbao.get_server_pod_name()
+    old_server_uid = openbao.get_pod_uid(server_pod)
+    KubectlDeletePodsKeywords(ssh_connection).delete_pod(server_pod, namespace=NAMESPACE)
+
+    get_logger().log_test_case_step("Confirming the server pod is recreated as a new instance and is ready")
+    validate_equals_with_retry(lambda: openbao.has_pod_restarted(server_pod, old_server_uid), True, "Server pod must be recreated with a new UID and become ready", timeout=300, polling_sleep_time=10)
+
+    get_logger().log_test_case_step("Confirming the manager re-unseals the replacement server")
+    validate_equals(openbao.wait_for_unseal(), True, "Manager must re-unseal the recreated server pod with no manual step")
+
+    get_logger().log_test_case_step("Confirming the manager log records no FATAL or panic during recovery")
+    validate_equals(openbao.manager_log_has_major_errors(), False, "Manager log must not contain FATAL or panic during server pod recovery")
+
+
+@mark.p2
+def test_openbao_manager_pod_recovery_resumes_watch(request: FixtureRequest):
+    """Test that a deleted manager pod restarts and resumes seal-watching.
+
+    Deleting the OpenBao manager pod causes it to be recreated; the new manager
+    resumes its perpetual seal-watch with no FATAL/panic, and the running server
+    stays unsealed across the manager restart.
+
+    Test Steps:
+        - set up the OpenBao application (applied, unsealed, configured)
+        - delete the manager pod
+        - confirm the manager pod is recreated as a new instance (new UID) and is ready
+        - confirm the new manager restarts its run loop and resumes watching
+        - confirm the server stayed unsealed and the manager logged no errors
+        - Teardown: clean up the OpenBao environment
+
+    Args:
+        request (FixtureRequest): Pytest request fixture for teardown management.
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    security_config = ConfigurationManager.get_security_config()
+    openbao = OpenBaoKeywords(ssh_connection, security_config.get_ssh_user_home())
+
+    request.addfinalizer(lambda: cleanup_openbao_environment(ssh_connection))
+    setup_openbao_environment(ssh_connection)
+
+    get_logger().log_test_case_step("Deleting the manager pod")
+    manager_pod = openbao.get_manager_pod_name()
+    validate_not_equals(manager_pod, "", "A running OpenBao manager pod must exist before deletion")
+    old_manager_uid = openbao.get_pod_uid(manager_pod)
+    KubectlDeletePodsKeywords(ssh_connection).delete_pod(manager_pod, namespace=NAMESPACE)
+
+    get_logger().log_test_case_step("Confirming the manager pod is recreated as a new instance and is ready")
+    validate_equals_with_retry(lambda: openbao.has_pod_restarted(manager_pod, old_manager_uid), True, "Manager pod must be recreated with a new UID and become ready", timeout=300, polling_sleep_time=10)
+    validate_not_equals(openbao.get_pod_uid(manager_pod), old_manager_uid, "Recovered manager must be a different pod instance from the deleted one")
+
+    get_logger().log_test_case_step("Confirming the new manager restarts its run loop and resumes watching")
+    validate_equals_with_retry(lambda: openbao.manager_log_contains("Run loop starting"), True, "New manager must restart its run loop and resume watching OpenBao after recovery", timeout=180, polling_sleep_time=10)
+
+    get_logger().log_test_case_step("Confirming the server stayed unsealed and the manager logged no errors")
+    validate_equals(openbao.rest_health_trusts_ca(), True, "Server must stay unsealed across the manager pod restart")
+    validate_equals(openbao.manager_log_has_major_errors(), False, "Recovered manager log must not contain FATAL or panic")
