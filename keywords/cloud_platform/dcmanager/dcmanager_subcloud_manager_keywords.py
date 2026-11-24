@@ -3,11 +3,11 @@ import time
 from framework.logging.automation_logger import get_logger
 from framework.ssh.ssh_connection import SSHConnection
 from keywords.base_keyword import BaseKeyword
-from keywords.bmc.ipmitool.chassis.power.ipmitool_chassis_power_keywords import IPMIToolChassisPowerKeywords
 from keywords.cloud_platform.command_wrappers import source_openrc
 from keywords.cloud_platform.dcmanager.dcmanager_subcloud_list_keywords import DcManagerSubcloudListKeywords
 from keywords.cloud_platform.dcmanager.objects.dcmanager_subcloud_list_object_filter import DcManagerSubcloudListObjectFilter
 from keywords.cloud_platform.dcmanager.objects.dcmanager_subcloud_manage_output import DcManagerSubcloudManageOutput
+from keywords.server.power_keywords import PowerKeywords
 
 
 class DcManagerSubcloudManagerKeywords(BaseKeyword):
@@ -117,7 +117,7 @@ class DcManagerSubcloudManagerKeywords(BaseKeyword):
         """
         # get SSH connection to subcloud
         # power off all the controllers in the subcloud
-        IPMIToolChassisPowerKeywords(self.ssh_connection, None).power_off_subcloud(subcloud_name)
+        PowerKeywords(self.ssh_connection).power_off_subcloud(subcloud_name)
         # This section is responsible for verifying whether the state has changed within a defined timeout.
         target_state = "offline"
         end_time = time.time() + timeout
