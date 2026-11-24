@@ -2,6 +2,7 @@
 
 import base64
 import json
+import re
 import time
 
 from framework.exceptions.keyword_exception import KeywordException
@@ -1032,3 +1033,113 @@ class OpenBaoKeywords(BaseKeyword):
         self.kubectl_create_namespace.create_namespace_if_absent(namespace)
         cmd = f"kubectl create serviceaccount {service_account} -n {namespace} --dry-run=client -o yaml | kubectl apply -f -"
         self.ssh_connection.send(self.k8s.k8s_config.export(cmd))
+
+    def backup_secret_yaml(self, secret_name: str) -> str:
+        """Back up a namespace secret to a YAML file on the controller.
+
+        Exports the secret manifest with status and resource-version metadata
+        stripped so it can be re-applied cleanly, and returns the backup path.
+
+        Args:
+            secret_name (str): Name of the secret in the OpenBao namespace.
+
+        Returns:
+            str: Path to the backup YAML file on the active controller.
+
+        Raises:
+            KeywordException: If the secret could not be exported or the backup file is empty.
+        """
+        backup_path = f"/tmp/openbao-{secret_name}-backup.yaml"
+        cmd = f"kubectl get secret {secret_name} -n {self.NAMESPACE} -o yaml > {backup_path}.raw && grep -vE '^  (resourceVersion|uid|creationTimestamp):' {backup_path}.raw > {backup_path} && rm -f {backup_path}.raw"
+        self.ssh_connection.send(self.k8s.k8s_config.export(cmd))
+        self.validate_success_return_code(self.ssh_connection)
+        size = "".join(self.ssh_connection.send(f"stat -c %s {backup_path} 2>/dev/null || echo 0")).strip()
+        if not size.isdigit() or int(size) == 0:
+            raise KeywordException(f"Backup of secret {secret_name} at {backup_path} is missing or empty")
+        return backup_path
+
+    def restore_secret_yaml(self, backup_path: str) -> None:
+        """Restore a secret from a backup YAML file.
+
+        Args:
+            backup_path (str): Path to a secret manifest written by ``backup_secret_yaml``.
+        """
+        cmd = f"kubectl apply -f {backup_path} -n {self.NAMESPACE}"
+        self.ssh_connection.send(self.k8s.k8s_config.export(cmd))
+        self.validate_success_return_code(self.ssh_connection)
+
+    def is_secret_present(self, secret_name: str) -> bool:
+        """Check whether a secret exists in the OpenBao namespace.
+
+        Args:
+            secret_name (str): Name of the secret to look up.
+
+        Returns:
+            bool: True if the secret is present.
+        """
+        return secret_name in self.kubectl_secrets.get_secret_names(self.NAMESPACE)
+
+    def get_host_mgmt_listener_address(self) -> str:
+        """Get the host OpenBao listener address on the management network.
+
+        Reads the host HCL and returns the listener address that is neither the
+        IPv4 nor the IPv6 loopback, which is the management-network listener.
+
+        Returns:
+            str: The listener address without the port (e.g. "fdff:...::3").
+
+        Raises:
+            KeywordException: If no management-network listener is configured.
+        """
+        for address in re.findall(r'address\s*=\s*"([^"]+)"', self.get_host_hcl_content()):
+            host = address.rsplit(":", 1)[0].strip("[]")
+            if host not in ("127.0.0.1", "::1"):
+                return host
+        raise KeywordException("No management-network listener found in the host OpenBao HCL")
+
+    def _server_pod_probe_rc(self, url: str) -> int:
+        """Probe a URL from inside the OpenBao server pod and return wget's exit code.
+
+        Uses the BusyBox ``wget`` already in the server image, so no external image
+        is pulled. Raises if the probe itself could not be executed in the pod.
+
+        Args:
+            url (str): URL to fetch from inside the server pod.
+
+        Returns:
+            int: The wget exit code (0 when the URL was reachable and returned 2xx).
+
+        Raises:
+            KeywordException: If the probe did not run (no server pod or exec failure).
+        """
+        server_pod = self.get_server_pod_name()
+        if not server_pod:
+            raise KeywordException("No running OpenBao server pod to run the network probe from")
+        cmd = f"sh -c 'wget -T 5 -q -O /dev/null --no-check-certificate \"{url}\" >/dev/null 2>&1; echo PROBE_RC=$?'"
+        output = self.kubectl_exec.run_pod_exec_cmd(server_pod, cmd, options=f"-n {self.NAMESPACE}", ignore_error=True)
+        text = "".join(output) if isinstance(output, list) else str(output)
+        match = re.search(r"PROBE_RC=(\d+)", text)
+        if not match:
+            raise KeywordException(f"Network probe from {server_pod} did not run: {text.strip()}")
+        return int(match.group(1))
+
+    def is_app_service_reachable_from_server_pod(self) -> bool:
+        """Check the OpenBao app service is reachable from the server pod (probe control).
+
+        Returns:
+            bool: True if the in-cluster app health endpoint is reachable.
+        """
+        return self._server_pod_probe_rc(f"{self.OB_API}/v1/sys/health") == 0
+
+    def host_api_reachable_from_pod(self) -> bool:
+        """Check whether the host OpenBao API is reachable from an in-cluster pod.
+
+        Probes the host listener on the management network from inside the
+        OpenBao server pod. The expected secure result is False, because a
+        Calico GlobalNetworkPolicy blocks pod egress to the host 8200/8201 ports.
+
+        Returns:
+            bool: True if an in-cluster pod can reach the host API, False if not.
+        """
+        host = self.get_host_mgmt_listener_address()
+        return self._server_pod_probe_rc(f"https://[{host}]:8200/v1/sys/health?standbyok=true") == 0
