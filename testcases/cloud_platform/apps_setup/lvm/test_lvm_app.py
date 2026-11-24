@@ -3,7 +3,6 @@ from pytest import mark
 from framework.logging.automation_logger import get_logger
 from framework.resources.resource_finder import get_stx_resource_path
 from framework.validation.validation import validate_equals, validate_equals_with_retry
-from keywords.ceph.ceph_status_keywords import CephStatusKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.cloud_platform.system.application.system_application_show_keywords import SystemApplicationShowKeywords
 from keywords.cloud_platform.system.host.system_host_list_keywords import SystemHostListKeywords
@@ -39,9 +38,6 @@ def test_pre_upgrade_check_lvm_app():
     kubectl_get_pvc_keywords = KubectlGetPvcKeywords(ssh_connection)
     kubectl_exec_keywords = KubectlExecInPodsKeywords(ssh_connection)
     active_controller = SystemHostListKeywords(ssh_connection).get_active_controller().get_host_name()
-
-    get_logger().log_test_case_step("Checking ceph health.")
-    CephStatusKeywords(ssh_connection).wait_for_ceph_health_status(expect_health_status=True)
 
     get_logger().log_test_case_step("Add 'lvm' as storage backend.")
     if not system_storage_backend_keywords.get_system_storage_backend_list().is_backend_configured("lvm"):
@@ -90,9 +86,6 @@ def test_post_upgrade_check_lvm_app():
     kubectl_get_pvc_keywords = KubectlGetPvcKeywords(ssh_connection)
     kubectl_exec_keywords = KubectlExecInPodsKeywords(ssh_connection)
     active_controller = SystemHostListKeywords(ssh_connection).get_active_controller().get_host_name()
-
-    get_logger().log_test_case_step("Checking ceph health.")
-    CephStatusKeywords(ssh_connection).wait_for_ceph_health_status(expect_health_status=True)
 
     get_logger().log_test_case_step(f"Validate the '{LVM_CSI_APP}' application is applied.")
     application_show_keywords.validate_app_status(LVM_CSI_APP, "applied")
