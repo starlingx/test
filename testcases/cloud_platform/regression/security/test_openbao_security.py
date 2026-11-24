@@ -11,7 +11,7 @@ from pytest import FixtureRequest, mark
 
 from config.configuration_manager import ConfigurationManager
 from framework.logging.automation_logger import get_logger
-from framework.validation.validation import validate_equals, validate_not_equals
+from framework.validation.validation import validate_equals, validate_not_equals, validate_str_contains
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.cloud_platform.system.application.system_application_apply_keywords import SystemApplicationApplyKeywords
 from keywords.cloud_platform.system.application.system_application_delete_keywords import SystemApplicationDeleteInput, SystemApplicationDeleteKeywords
@@ -20,6 +20,7 @@ from keywords.cloud_platform.system.application.system_application_remove_keywor
 from keywords.cloud_platform.system.application.system_application_upload_keywords import SystemApplicationUploadInput, SystemApplicationUploadKeywords
 from keywords.cloud_platform.system.openbao.openbao_keywords import OpenBaoKeywords
 from keywords.k8s.namespace.kubectl_delete_namespace_keywords import KubectlDeleteNamespaceKeywords
+from keywords.k8s.pods.kubectl_delete_pods_keywords import KubectlDeletePodsKeywords
 from keywords.k8s.pods.kubectl_get_pods_keywords import KubectlGetPodsKeywords
 from keywords.linux.ls.ls_keywords import LsKeywords
 
@@ -167,3 +168,131 @@ def test_openbao_rbac_read_only_policy(request: FixtureRequest):
 
     get_logger().log_test_case_step("Writing an out-of-policy path and confirming the write is denied")
     validate_equals(openbao.rest_write_status_code("out-of-policy/secret", role_token), "403", "Read-only role must be denied writes to an out-of-policy path")
+
+
+@mark.p2
+def test_openbao_audit_device_logs_access(request: FixtureRequest):
+    """Test that an enabled audit device records secret access requests.
+
+    A file audit device is enabled, a secret is read over the REST API, and the
+    in-pod audit log contains an entry for that secret path. The audit device is
+    disabled again in cleanup so no persistent device is left behind.
+
+    Test Steps:
+        - set up the OpenBao application (applied, unsealed, configured)
+        - enable a file audit device and seed a secret
+        - read the secret over REST to generate an audit event
+        - confirm the audit log records the secret path
+        - Teardown: disable the audit device and clean up the OpenBao environment
+
+    Args:
+        request (FixtureRequest): Pytest request fixture for teardown management.
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    security_config = ConfigurationManager.get_security_config()
+    openbao = OpenBaoKeywords(ssh_connection, security_config.get_ssh_user_home())
+    audit_name = "file-audit"
+    audit_file = "/openbao/audit/audit.log"
+
+    def cleanup():
+        get_logger().log_teardown_step("Disabling the audit device and cleaning up the OpenBao environment")
+        try:
+            openbao.disable_audit_device(audit_name, openbao.get_root_token())
+        finally:
+            cleanup_openbao_environment(ssh_connection)
+
+    request.addfinalizer(cleanup)
+    setup_openbao_environment(ssh_connection)
+
+    get_logger().log_test_case_step("Enabling a file audit device and seeding a secret")
+    root_token = openbao.get_root_token()
+    openbao.enable_audit_device(audit_name, audit_file, root_token)
+    validate_str_contains(openbao.list_audit_devices(root_token), audit_name, "Enabled audit device must be listed")
+    openbao.create_secret_rest("basic-secret/audited", {"k": "v"}, root_token)
+
+    get_logger().log_test_case_step("Reading the secret over REST to generate an audit event")
+    validate_equals(openbao.rest_status_code("basic-secret/audited", root_token), "200", "Secret read must succeed to generate an audit event")
+
+    get_logger().log_test_case_step("Confirming the audit log records the secret path")
+    validate_str_contains(openbao.read_pod_audit_log(audit_file, "basic-secret/audited"), "basic-secret/audited", "Audit log must contain an entry for the accessed secret path")
+
+
+@mark.p1
+def test_openbao_auth_enforcement_rejects_bad_token(request: FixtureRequest):
+    """Test that the OpenBao API rejects access without a valid token.
+
+    A request with no token and a request with an invalid token are both denied,
+    while a request with the valid root token succeeds, confirming the server
+    enforces authentication on secret paths.
+
+    Test Steps:
+        - set up the OpenBao application (applied, unsealed, configured)
+        - seed a secret with the root token
+        - request the secret with no token and confirm rejection with HTTP 403
+        - request the secret with an invalid token and confirm rejection with HTTP 403
+        - request the secret with the valid token and confirm success
+        - Teardown: clean up the OpenBao environment
+
+    Args:
+        request (FixtureRequest): Pytest request fixture for teardown management.
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    security_config = ConfigurationManager.get_security_config()
+    openbao = OpenBaoKeywords(ssh_connection, security_config.get_ssh_user_home())
+
+    request.addfinalizer(lambda: cleanup_openbao_environment(ssh_connection))
+    setup_openbao_environment(ssh_connection)
+
+    get_logger().log_test_case_step("Seeding a secret with the root token")
+    root_token = openbao.get_root_token()
+    openbao.create_secret_rest("basic-secret/authcheck", {"k": "v"}, root_token)
+
+    get_logger().log_test_case_step("Requesting the secret with no token and confirming rejection with HTTP 403")
+    validate_equals(openbao.rest_status_code("basic-secret/authcheck", None), "403", "Request with no token must be rejected with permission denied")
+
+    get_logger().log_test_case_step("Requesting the secret with an invalid token and confirming rejection with HTTP 403")
+    validate_equals(openbao.rest_status_code("basic-secret/authcheck", "invalid-token-value"), "403", "Request with an invalid token must be rejected with permission denied")
+
+    get_logger().log_test_case_step("Requesting the secret with the valid token and confirming success")
+    validate_equals(openbao.rest_status_code("basic-secret/authcheck", root_token), "200", "Request with the valid root token must be granted access")
+
+
+@mark.p2
+def test_openbao_server_pod_auto_unseals_on_restart(request: FixtureRequest):
+    """Test that a restarted OpenBao server pod auto-unseals without intervention.
+
+    The running server pod is deleted; the replacement pod reads its unseal
+    material from the cluster secret and returns to a ready, unsealed state with
+    no manual unseal, and a previously stored secret is served again.
+
+    Test Steps:
+        - set up the OpenBao application (applied, unsealed, configured)
+        - seed a secret with the root token
+        - delete the running server pod to force a restart
+        - confirm the server auto-unseals back to a ready state
+        - confirm the previously stored secret is served again
+        - Teardown: clean up the OpenBao environment
+
+    Args:
+        request (FixtureRequest): Pytest request fixture for teardown management.
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    security_config = ConfigurationManager.get_security_config()
+    openbao = OpenBaoKeywords(ssh_connection, security_config.get_ssh_user_home())
+
+    request.addfinalizer(lambda: cleanup_openbao_environment(ssh_connection))
+    setup_openbao_environment(ssh_connection)
+
+    get_logger().log_test_case_step("Seeding a secret with the root token")
+    root_token = openbao.get_root_token()
+    openbao.create_secret_rest("basic-secret/restartcheck", {"k": "v"}, root_token)
+
+    get_logger().log_test_case_step("Deleting the running server pod to force a restart")
+    server_pod = openbao.get_server_pod_name()
+    KubectlDeletePodsKeywords(ssh_connection).delete_pod(server_pod, namespace=NAMESPACE)
+
+    get_logger().log_test_case_step("Confirming the server auto-unseals back to a ready state")
+    validate_equals(openbao.wait_for_unseal(), True, "Server pod must auto-unseal and become ready after restart with no manual intervention")
+
+    get_logger().log_test_case_step("Confirming the previously stored secret is served again")
+    validate_equals(openbao.rest_status_code("basic-secret/restartcheck", root_token), "200", "Previously stored secret must be served again after the auto-unseal")
