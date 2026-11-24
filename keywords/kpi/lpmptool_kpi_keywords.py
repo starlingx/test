@@ -30,6 +30,8 @@ ROW_RE = re.compile(r"^(?P<delta>[0-9?]{2}:[0-9?]{2}:[0-9?]{2}\.[0-9?]{3})\s+(?P
 # Pair blocks end with ": <n>s", optionally followed by the matched stop pattern in brackets.
 DURATION_RE = re.compile(r":\s*([0-9]+(?:\.[0-9]+)?)s(?:\s+\[.*\])?\s*$")
 DELTA_RE = re.compile(r"^(\d+):(\d{2}):(\d{2}(?:\.\d+)?)$")
+# Pass summary line with the total for the pass, e.g. "✅ Pass 20  00:10:06.939  found 14 patterns".
+PASS_RE = re.compile(r"Pass\s+\d+\s+(\d+):(\d{2}):(\d{2}(?:\.\d+)?)\s+found\s+\d+\s+patterns")
 # Blocks that are part of the model but not reported as unlock KPI phases.
 EXCLUDED_LABELS = ["LOCK HOST"]
 
@@ -95,18 +97,22 @@ class LpmptoolKpiKeywords(BaseKeyword):
         get_logger().log_info(f"Uploaded model to {remote_path}")
         return remote_path
 
-    def calculate_kpi(self, start_time: str, model_path: str = REMOTE_MODEL_PATH, loops: int = 1) -> List[str]:
+    def calculate_kpi(self, start_time: str, model_path: str = REMOTE_MODEL_PATH, loops: int = 1, hostname: Optional[str] = None) -> List[str]:
         """Run lpmptool once to calculate KPI timings.
 
         Args:
             start_time (str): Start time in ISO format (e.g., "2026-05-20T10:00:20").
             model_path (str): Remote path to the model YAML file on the controller.
             loops (int): Number of loops to run (default: 1).
+            hostname (Optional[str]): Value for the {hostname} variable in the model
+                patterns. If None, lpmptool uses its own default.
 
         Returns:
             List[str]: Raw output lines from lpmptool.
         """
         cmd = f"lpmptool -s {start_time} -m {model_path} -n {loops}"
+        if hostname:
+            cmd += f" --hostname {hostname}"
         get_logger().log_info(f"Running lpmptool: {cmd}")
 
         output = self.ssh_connection.send_as_sudo(cmd)
@@ -148,7 +154,7 @@ class LpmptoolKpiKeywords(BaseKeyword):
                 return True
         return False
 
-    def calculate_kpi_until_complete(self, start_time: str, model_path: str = REMOTE_MODEL_PATH, loops: int = 1, timeout: int = 300, poll_interval: int = 15) -> List[str]:
+    def calculate_kpi_until_complete(self, start_time: str, model_path: str = REMOTE_MODEL_PATH, loops: int = 1, timeout: int = 300, poll_interval: int = 15, hostname: Optional[str] = None) -> List[str]:
         """Run lpmptool repeatedly until every REQUIRED block is found or timeout.
 
         Rather than pre-waiting for a specific log line, this treats lpmptool as
@@ -166,6 +172,8 @@ class LpmptoolKpiKeywords(BaseKeyword):
             loops (int): Number of loops per lpmptool run (default: 1).
             timeout (int): Maximum total time in seconds to keep retrying. Defaults to 300.
             poll_interval (int): Seconds to wait between retries. Defaults to 15.
+            hostname (Optional[str]): Value for the {hostname} variable in the model
+                patterns. If None, lpmptool uses its own default.
 
         Returns:
             List[str]: Raw output lines from the successful lpmptool run.
@@ -180,7 +188,7 @@ class LpmptoolKpiKeywords(BaseKeyword):
         while time.time() < end_time:
             attempt += 1
             get_logger().log_info(f"lpmptool attempt {attempt} (retrying until all required blocks are found, timeout={timeout}s)")
-            last_output = self.calculate_kpi(start_time, model_path, loops)
+            last_output = self.calculate_kpi(start_time, model_path, loops, hostname=hostname)
 
             if last_output and not self.has_missing_blocks(last_output):
                 get_logger().log_info(f"lpmptool found all required blocks on attempt {attempt}")
@@ -202,18 +210,25 @@ class LpmptoolKpiKeywords(BaseKeyword):
                 get_logger().log_info(line.rstrip())
         get_logger().log_info(f"lpmptool output: {len(results)} lines")
 
-    def parse_results(self, raw_output: List[str], hostname: str) -> List[KpiResult]:
+    def parse_results(self, raw_output: List[str], hostname: str, pass_total_label: Optional[str] = None) -> List[KpiResult]:
         """Parse lpmptool output into KpiResult objects.
 
         Each result row has the form "<delta>  <host>  <label>  <file>.log  <data>".
         Pair blocks report their duration at the end of the data column
-        ("Start -> Stop: ...: 45.1s"). Pattern-only blocks (e.g. Kubelet startup)
-        have no duration, so the Delta column is used. Rows for blocks that were
-        not found, and excluded labels such as LOCK HOST, are skipped.
+        ("Start -> Stop: ...: 45.1s"). Pattern-only blocks have no duration,
+        so the Delta column is used. Rows for blocks that were not found, and
+        labels in EXCLUDED_LABELS, are skipped.
+
+        lpmptool ends each pass with a summary line
+        ("Pass <n>  HH:MM:SS.mmm  found <n> patterns"), measured from the first
+        block start to the last block stop. If pass_total_label is given, that
+        total is added as a KpiResult with this label. Otherwise it is ignored.
 
         Args:
             raw_output (List[str]): Raw output lines from lpmptool.
-            hostname (str): Hostname of the unlocked host.
+            hostname (str): Hostname to attach to each result.
+            pass_total_label (Optional[str]): Label for the pass total. If None,
+                the pass total is not returned.
 
         Returns:
             List[KpiResult]: Parsed KPI phases with label and duration.
@@ -221,6 +236,12 @@ class LpmptoolKpiKeywords(BaseKeyword):
         kpi_results = []
         for line in raw_output:
             if not line or not line.strip():
+                continue
+            pass_match = PASS_RE.search(line)
+            if pass_match:
+                if pass_total_label:
+                    total_seconds = int(pass_match.group(1)) * 3600 + int(pass_match.group(2)) * 60 + float(pass_match.group(3))
+                    kpi_results.append(KpiResult(pass_total_label, total_seconds, hostname))
                 continue
             row = ROW_RE.match(line.strip())
             if not row:
@@ -255,7 +276,7 @@ class LpmptoolKpiKeywords(BaseKeyword):
                 return int(clock.group(1)) * 3600 + int(clock.group(2)) * 60 + float(clock.group(3))
         return None
 
-    def setup_and_calculate_kpi(self, start_time: str, loops: int = 1, model_resource: str = UNLOCK_MODEL_RESOURCE, retry_until_complete: bool = True, timeout: int = 300, poll_interval: int = 15) -> List[str]:
+    def setup_and_calculate_kpi(self, start_time: str, loops: int = 1, model_resource: str = UNLOCK_MODEL_RESOURCE, retry_until_complete: bool = True, timeout: int = 300, poll_interval: int = 15, hostname: Optional[str] = None) -> List[str]:
         """Full workflow: install lpmptool, upload model, and calculate KPI.
 
         By default, lpmptool is re-run until it reports every block found or the
@@ -271,6 +292,8 @@ class LpmptoolKpiKeywords(BaseKeyword):
                 are found or the timeout is hit. If False, run once. Defaults to True.
             timeout (int): Max seconds to keep retrying lpmptool. Defaults to 300.
             poll_interval (int): Seconds between retries. Defaults to 15.
+            hostname (Optional[str]): Value for the {hostname} variable in the model
+                patterns. If None, lpmptool uses its own default.
 
         Returns:
             List[str]: Raw output lines from lpmptool.
@@ -286,6 +309,6 @@ class LpmptoolKpiKeywords(BaseKeyword):
             # lpmptool reports missing REQUIRED blocks as Error and missing OPTIONAL
             # blocks as Warn, so the retry loop keys off Error lines only - no need
             # to inspect the model for optional labels.
-            return self.calculate_kpi_until_complete(start_time, remote_model, loops, timeout=timeout, poll_interval=poll_interval)
+            return self.calculate_kpi_until_complete(start_time, remote_model, loops, timeout=timeout, poll_interval=poll_interval, hostname=hostname)
 
-        return self.calculate_kpi(start_time, remote_model, loops)
+        return self.calculate_kpi(start_time, remote_model, loops, hostname=hostname)

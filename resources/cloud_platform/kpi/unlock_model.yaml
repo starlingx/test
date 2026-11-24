@@ -109,7 +109,7 @@ blocks:
   - label: "PLATFORM READY PHASE"
     file: ["daemon.log*", "mtcAgent.log*"]
     start: 'Reached target .*Multi-User System'
-    stop: 'Info : controller-0 unlocked-enabled-available'
+    stop: 'Info : {hostname} unlocked-enabled-available'
 
   - label: "CSI Ready"
     file: ["daemon.log*"]
