@@ -4,6 +4,7 @@ from urllib.parse import urlparse
 
 import paramiko
 import requests
+import urllib3
 from urllib3.exceptions import InsecureRequestWarning
 
 from config.configuration_manager import ConfigurationManager
@@ -18,17 +19,17 @@ class SSHTunnelRestClient:
     (direct-tcpip channels) rather than the sshtunnel library, which is
     incompatible with this jump host configuration.
 
-    One forwarder is created per unique remote port and reused for all
-    subsequent requests to that port.
+    One forwarder is created per unique remote host and port and reused for all
+    subsequent requests to that host and port.
     """
 
     # Class-level state shared across all instances
     _jump_client: paramiko.SSHClient = None
-    _forwarders: dict = {}  # remote_port -> (forwarder, local_port)
+    _forwarders: dict = {}  # (remote_host, remote_port) -> (forwarder, local_port)
     _lock = threading.Lock()
 
     def __init__(self):
-        requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
+        urllib3.disable_warnings(InsecureRequestWarning)
 
     @classmethod
     def _get_jump_transport(cls) -> paramiko.Transport:
@@ -86,21 +87,23 @@ class SSHTunnelRestClient:
         Returns:
             int: The local port to connect to.
         """
+        # Key on host as well as port, otherwise a second lab (e.g. a subcloud) reuses the first lab's forwarder.
+        forwarder_key = (remote_host, remote_port)
         with cls._lock:
-            existing = cls._forwarders.get(remote_port)
+            existing = cls._forwarders.get(forwarder_key)
             if existing:
                 forwarder, local_port = existing
                 if forwarder.is_alive():
                     return local_port
                 forwarder.stop()
-                del cls._forwarders[remote_port]
+                del cls._forwarders[forwarder_key]
 
         # Get transport outside the lock to avoid deadlock with _get_jump_transport
         transport = cls._get_jump_transport()
 
         with cls._lock:
             # Double-check after acquiring lock
-            existing = cls._forwarders.get(remote_port)
+            existing = cls._forwarders.get(forwarder_key)
             if existing:
                 forwarder, local_port = existing
                 if forwarder.is_alive():
@@ -109,7 +112,7 @@ class SSHTunnelRestClient:
             local_port = _find_free_port()
             forwarder = _ParamikoForwardServer(local_port, remote_host, remote_port, transport)
             forwarder.start()
-            cls._forwarders[remote_port] = (forwarder, local_port)
+            cls._forwarders[forwarder_key] = (forwarder, local_port)
             return local_port
 
     def _rewrite_url(self, url: str) -> str:
