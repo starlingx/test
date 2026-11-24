@@ -60,7 +60,7 @@ def find_capabilities(lab_config: LabConfig) -> list[str]:
     Returns:
         list[str]: A list of capabilities found in the lab.
     """
-    lab_config.lab_capabilities = []
+    lab_config.reset_lab_capabilities()
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
 
     if query_if_lab_is_virtual(ssh_connection):
@@ -167,6 +167,8 @@ def find_subclouds_capabilities(lab_config: LabConfig) -> list[str]:
             ConfigurationManager.set_lab_config(subcloud)
             ssh_connection_to_subcloud = LabConnectionKeywords().get_active_controller_ssh()  # This is the active controller of the subcloud
 
+            # discard capabilities inherited from the host config copy or a previous scan so only freshly detected ones remain
+            subcloud.reset_lab_capabilities()
             nodes = scan_hosts(subcloud, ssh_connection_to_subcloud)
             subcloud.set_nodes(nodes)
 
@@ -552,6 +554,7 @@ def retrieve_subclouds(lab_config: LabConfig, ssh_connection: SSHConnection) -> 
     subclouds: [LabConfig] = []
 
     lab_config_directory = os.path.split(lab_config.get_lab_config_file())[0]  # get the config directory
+    lab_config_directory = os.path.abspath(lab_config_directory)
 
     dcmanager_subcloud_list_keywords = DcManagerSubcloudListKeywords(ssh_connection)
     dcmanager_subclouds = dcmanager_subcloud_list_keywords.get_dcmanager_subcloud_list()
