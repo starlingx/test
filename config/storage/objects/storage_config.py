@@ -23,6 +23,9 @@ class StorageConfig:
         storage_network_config = storage_dict.get("storage_network", {})
         self.storage_network_ip_address = storage_network_config.get("ip_address", "")
         self.storage_network_interface_name = storage_network_config.get("interface_name", "")
+        # Per-node storage network overrides, keyed by host name. Used by the STD labs,
+        # where every node needs its own address and the NIC differs per personality.
+        self.storage_network_nodes = storage_network_config.get("nodes", {})
 
         # Storage array configuration (lab specific, must not be committed to the repo)
         storage_array_config = storage_dict.get("storage_array", {})
@@ -53,6 +56,36 @@ class StorageConfig:
             str: The network interface name (e.g. 'enp81s...').
         """
         return self.storage_network_interface_name
+
+    def get_storage_network_node_ip_address(self, host_name: str) -> str:
+        """Getter for the storage network IP address of a specific node.
+
+        Each node of an STD lab needs its own address on the storage subnet. Falls back to
+        the shared 'ip_address' when the node has no entry, which is the simplex case.
+
+        Args:
+            host_name (str): The name of the host (e.g. 'controller-0').
+
+        Returns:
+            str: The storage network IP address with CIDR notation for this host (e.g. '10.11.4.251/24').
+        """
+        node_config = self.storage_network_nodes.get(host_name, {})
+        return node_config.get("ip_address") or self.storage_network_ip_address
+
+    def get_storage_network_node_interface_name(self, host_name: str) -> str:
+        """Getter for the storage network interface name of a specific node.
+
+        Controllers and computes usually cable the storage network on different NICs. Falls
+        back to the shared 'interface_name' when the node has no entry.
+
+        Args:
+            host_name (str): The name of the host (e.g. 'controller-0').
+
+        Returns:
+            str: The network interface name carrying the storage network on this host (e.g. 'enp177s0f1').
+        """
+        node_config = self.storage_network_nodes.get(host_name, {})
+        return node_config.get("interface_name") or self.storage_network_interface_name
 
     def get_storage_array_id(self) -> str:
         """Getter for the storage array global ID.

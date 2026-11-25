@@ -5260,3 +5260,306 @@ def test_dell_storage_nfs_fill_up_pvc_100_sx(request: FixtureRequest):
     pvc_keywords.wait_for_pvcs_to_reach_status("Bound", pvc_names=pvc_name, namespace=namespace)
     app_status = SystemApplicationShowKeywords(ssh_connection).get_system_application_show(dell_storage_app_name).get_system_application_object().get_status()
     validate_equals(app_status, SystemApplicationStatusEnum.APPLIED.value, "dell-storage is still applied")
+
+
+def common_verify_dell_app_status_iscsi_std(ssh_connection: SSHConnection, namespace: str, dell_storage_app_name: str, chart_name: str, expansion: bool = True) -> None:
+    """
+    Make sure the dell-storage application is uploaded and applied on an STD lab. Function for ISCSI protocol.
+
+    Same flow as common_verify_dell_app_status_iscsi_sx, with two differences that an STD lab
+    requires. The storage network is brought up on every node instead of only on the active
+    controller, because the csi-powerstore pods and the test pods can be scheduled anywhere
+    and each node needs its own address on the storage subnet to reach the PowerStore array.
+    The apply is also given a longer timeout, since rolling the csi-powerstore node plugins
+    out across every controller and compute takes well over the 300s default.
+
+    Test Steps:
+        - Verify status of dell-storage application
+        - If it's not uploaded, Remove dell-storage application.
+        - When it gets Uploaded, Set dell-storage app helm override attributes is true
+        - Set up the storage network on every node of the STD lab
+        - Update user-overrides for CSI-Powerstore chart
+        - Create powerstoreOverrides.yaml file to use as user-overrides (ISCSI)
+        - Apply dell-storage.
+
+    Args:
+        ssh_connection (SSHConnection): SSH connection to the active controller.
+        namespace (str): the namespace the dell-storage application runs in.
+        dell_storage_app_name (str): the name of the dell-storage application.
+        chart_name (str): the name of the chart the user-overrides are set on.
+        expansion (bool): True to use the overrides that enable volume expansion.
+    """
+    overrides_files_expansion_files = ["dell-storage-powerstoreOverridesNoExpansion.yaml", "dell-storage-powerstoreOverrides.yaml"]
+
+    app_list_keywords = SystemApplicationListKeywords(ssh_connection)
+
+    # The status is re-read here instead of trusting the value captured at the start of the
+    # test. A previous aborted/failed run can leave the app in apply-failed or uploaded with
+    # the csi-powerstore driver gone, so the caller's status may be stale by the time this
+    # runs. Normalising from the live status makes the helper idempotent: whatever state the
+    # lab was left in, it ends with dell-storage freshly applied.
+    get_logger().log_test_case_step(f"Verify the status of {dell_storage_app_name} application.")
+    dell_storage_app_status = app_list_keywords.get_system_application_list().get_application(dell_storage_app_name).get_status()
+    get_logger().log_info(f"{dell_storage_app_name} application is: {dell_storage_app_status}")
+
+    # Any state other than uploaded (applied, apply-failed, remove-failed, ...) is removed
+    # back to uploaded so the apply always starts from a clean, known state. An apply-failed
+    # app cannot be re-applied directly, and an already-applied app must be torn down so the
+    # overrides and the storage network are re-established for this run.
+    if dell_storage_app_status != SystemApplicationStatusEnum.UPLOADED.value:
+        delete_dell_storage_test_pod_resources(ssh_connection, "/home/sysadmin/dell-storage-test-pod.yaml")
+        get_logger().log_test_case_step(f"Remove {dell_storage_app_name} application.")
+        dell_storage_remove_input = SystemApplicationRemoveInput()
+        dell_storage_remove_input.set_app_name(dell_storage_app_name)
+        dell_storage_remove_input.set_force_removal(True)
+        # Removing dell-storage on an STD lab has to unmount the PVCs and terminate the
+        # csi-powerstore pods on every node, which runs past the default removal timeout.
+        dell_storage_remove_input.set_timeout_in_seconds(1800)
+        SystemApplicationRemoveKeywords(ssh_connection).system_application_remove(dell_storage_remove_input)
+        app_list_keywords.validate_app_status_in_list(dell_storage_app_name, [SystemApplicationStatusEnum.UPLOADED.value], timeout=1800, polling_sleep_time=20)
+        get_logger().log_info(f"{dell_storage_app_name} application is: {SystemApplicationStatusEnum.UPLOADED.value}")
+
+    get_logger().log_test_case_step(f"Set {dell_storage_app_name} helm override attributes is true")
+    SystemHelmChartAttributeModifyKeywords(ssh_connection).helm_chart_attribute_modify_enabled("true", dell_storage_app_name, chart_name, namespace)
+
+    get_logger().log_test_case_step("Set up the storage network on every node of the STD lab")
+    setup_storage_network_on_std_nodes(ssh_connection)
+
+    get_logger().log_test_case_step("Update user-overrides for CSI-Powerstore chart")
+    storage_config = ConfigurationManager.get_storage_config()
+    if expansion:
+        yaml_file = overrides_files_expansion_files[1]
+    else:
+        yaml_file = overrides_files_expansion_files[0]
+    username = storage_config.get_credentials().get_user_name()
+    password = storage_config.get_credentials().get_password()
+    array_id = storage_config.get_storage_array_id()
+    endpoint = storage_config.get_storage_array_endpoint()
+    template_file = get_stx_resource_path(f"resources/cloud_platform/storage/dell_storage/{yaml_file}")
+    replacement_dictionary = {"username": username, "password": password, "array_id": array_id, "endpoint": endpoint}
+    remote_yaml = YamlKeywords(ssh_connection).generate_yaml_file_from_template(template_file, replacement_dictionary, yaml_file, "/home/sysadmin")
+    get_logger().log_test_case_step("Create powerstoreOverrides.yaml file to use as user-overrides (ISCSI)")
+    SystemHelmOverrideKeywords(ssh_connection).update_helm_override(remote_yaml, dell_storage_app_name, chart_name, namespace)
+
+    get_logger().log_test_case_step(f"Apply {dell_storage_app_name}.")
+    SystemApplicationApplyKeywords(ssh_connection).system_application_apply(dell_storage_app_name, timeout=1800, polling_sleep_time=20)
+
+    get_logger().log_test_case_step(f"Verify {dell_storage_app_name} reached the applied state.")
+    app_list_keywords.validate_app_status_in_list(dell_storage_app_name, ["applied"], timeout=1800, polling_sleep_time=20)
+
+
+def setup_storage_network_on_std_nodes(ssh_connection: SSHConnection) -> None:
+    """
+    Bring up the dell-storage storage network on every node of an STD lab.
+
+    A simplex lab only has the one controller, so the other dell-storage tests configure the
+    storage network through the active controller alone. On an STD lab the csi-powerstore pods
+    and the test pod can be scheduled on any node, so every node has to reach the PowerStore
+    array. The address and the interface come from storage_network.nodes in the storage config,
+    because each node needs its own address on the storage subnet and controllers and computes
+    cable that network on different NICs.
+
+    The address is applied with 'ip addr replace' rather than 'ip addr add' because it is not
+    persistent across a reboot: it must be re-applied once the nodes come back from a power
+    cycle, and re-applying it on a node that still holds it must not fail the test.
+
+    Args:
+        ssh_connection (SSHConnection): SSH connection to the active controller, used to read the host list.
+    """
+    storage_config = ConfigurationManager.get_storage_config()
+
+    hosts = SystemHostListKeywords(ssh_connection).get_system_host_list().get_hosts()
+    for host in hosts:
+        host_name = host.get_host_name()
+        storage_ip = storage_config.get_storage_network_node_ip_address(host_name)
+        interface = storage_config.get_storage_network_node_interface_name(host_name)
+
+        validate_not_equals(storage_ip, "", f"a storage network ip_address is configured for {host_name}")
+        validate_not_equals(interface, "", f"a storage network interface_name is configured for {host_name}")
+
+        get_logger().log_info(f"Configuring storage network {storage_ip} on {host_name} interface {interface}")
+        host_ssh = LabConnectionKeywords().get_ssh_for_hostname(host_name)
+        host_ssh.send_as_sudo(f"ip addr replace {storage_ip} dev {interface}")
+        validate_equals(host_ssh.get_return_code(), 0, f"storage network address {storage_ip} was configured on {host_name}")
+        IPKeywords(host_ssh).set_ip_port_state(interface, "up")
+
+
+@mark.p2
+@mark.lab_dell_storage
+@mark.lab_has_standby_controller
+def test_std_power_off_nodes_with_pvc_pod_dell_storage_iscsi(request: FixtureRequest):
+    """
+    Test Dell Storage resiliency after powering off/powering on all nodes in a STD lab with dell-storage applied.
+
+    The lab should have dell-storage app installed with the dell storageClass and the ceph backend also installed.
+
+
+    Test Steps:
+        - Check dell-storage app status.
+        - Make sure that dell-storage is applied (ISCSI)
+        - Create a test Pod and a PVC for Dell-Storage and make sure that it's writing continuously in the PVC
+        - Power Off All the Nodes through BMC
+        - Wait for some time (2 Minutes)
+        - Power On All the Nodes through BMC
+        - Make sure that the Nodes are up and running.
+        - Make sure that Dell-Storage is applied.
+        - Make sure that the test Pod is up and still can run continuously in the PVC.
+
+
+    Args:
+        request (FixtureRequest): pytest request fixture for test setup and teardown
+    """
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    namespace = "dell-storage"
+    dell_storage_app_name = "dell-storage"
+    chart_name = "csi-powerstore"
+    pod_name = "powerstoretest-0"
+    test_pod_yaml = "dell-storage-test-pod.yaml"
+    remote_test_pod_yaml = f"/home/sysadmin/{test_pod_yaml}"
+
+    # IPMI commands are executed on the machine running the automation rather than over a
+    # lab SSH session. This test powers off every node, so no in-lab session survives to
+    # issue the power-on afterwards.
+    power_chassis = PowerKeywords(None)
+
+    def verify_dell_storage_pods_are_running(verify_ssh_connection: SSHConnection, timeout: int = 600) -> None:
+        """Verify every pod in the dell-storage namespace is Running.
+
+        The pod list is re-read on each poll instead of being resolved once up front. After a
+        power cycle the csi-powerstore deployment can replace its pod with a new one under a
+        different name, so a name captured before the wait may never reach Running and the
+        wait would time out even though the driver recovered correctly.
+
+        Args:
+            verify_ssh_connection (SSHConnection): SSH connection to the active controller.
+            timeout (int): Maximum time in seconds to wait for the pods to reach Running.
+        """
+        pods_running = KubectlGetPodsKeywords(verify_ssh_connection).wait_for_pods_to_reach_status("Running", namespace=namespace, timeout=timeout)
+        validate_equals(pods_running, True, f"Verify all pods in the {namespace} namespace are running")
+
+    get_logger().log_test_case_step(f"Check {dell_storage_app_name} app status.")
+    system_applications = SystemApplicationListKeywords(ssh_connection).get_system_application_list()
+    dell_storage_app_status = system_applications.get_application(dell_storage_app_name).get_status()
+    get_logger().log_info(f"{dell_storage_app_name} application is: {dell_storage_app_status}")
+
+    # The host list is read before anything is powered off: once the nodes are down the
+    # 'system host-list' query is no longer available to build the power-on list from.
+    all_host_names = [host.get_host_name() for host in SystemHostListKeywords(ssh_connection).get_system_host_list().get_hosts()]
+    get_logger().log_info(f"Nodes that will be powered off and back on: {all_host_names}")
+
+    def delete_test_pod_resources() -> None:
+        """Remove the dell-storage test pod resources once the lab is reachable again."""
+        get_logger().log_teardown_step("Clean up the dell-storage test pod resources.")
+        recovered_ssh = LabConnectionKeywords().get_active_controller_ssh()
+        KubectlFileDeleteKeywords(recovered_ssh).delete_resources(remote_test_pod_yaml, ignore_not_found=True)
+
+    request.addfinalizer(common_dell_storage_teardown)
+    request.addfinalizer(delete_test_pod_resources)
+
+    get_logger().log_test_case_step(f"Make sure that {dell_storage_app_name} is applied (ISCSI)")
+    common_verify_dell_app_status_iscsi_std(ssh_connection, namespace, dell_storage_app_name, chart_name)
+
+    get_logger().log_test_case_step("Create a test Pod and a PVC for Dell-Storage")
+    local_path = get_stx_resource_path(f"resources/cloud_platform/storage/dell_storage/{test_pod_yaml}")
+    FileKeywords(ssh_connection).upload_file(local_path, remote_test_pod_yaml, overwrite=True)
+    # Delete any leftover test pod resources (pvol0 PVC, powerstoretest ServiceAccount and
+    # StatefulSet) before creating them. A previous run interrupted between creating these
+    # and its teardown leaves them behind, and 'kubectl create' then fails with AlreadyExists.
+    KubectlFileDeleteKeywords(ssh_connection).delete_resources(remote_test_pod_yaml, ignore_not_found=True)
+    KubectlCreatePodsKeywords(ssh_connection).create_from_yaml(remote_test_pod_yaml)
+
+    # The namespace-wide check below passes even when the test pod does not exist, so wait for the
+    # PVC and the test pod explicitly before exec'ing into it.
+    pvc_name = "pvol0"
+    KubectlGetPvcKeywords(ssh_connection).wait_for_pvcs_to_reach_status("Bound", pvc_names=pvc_name, namespace=namespace)
+    validate_equals(KubectlGetPodsKeywords(ssh_connection).wait_for_pod_status(pod_name, "Running", namespace), True, f"{pod_name} pod is Running")
+
+    get_logger().log_test_case_step(f"Check if test {pod_name} pod is running")
+    verify_dell_storage_pods_are_running(ssh_connection)
+
+    get_logger().log_test_case_step(f"Creating test.txt file inside of {pod_name} pod")
+    kubectl_exec_in_pods = KubectlExecInPodsKeywords(ssh_connection)
+    options = f"-it -n {namespace}"
+    kubectl_exec_in_pods.run_pod_exec_cmd(pod_name, "bash -c 'touch /data0/test.txt'", options=options)
+    validate_equals(ssh_connection.get_return_code(), 0, f"Write to {pod_name} pod success")
+
+    get_logger().log_info("sync pod")
+    kubectl_exec_in_pods.run_pod_exec_cmd(pod_name, "bash -c 'sync'", options=options)
+    validate_equals(ssh_connection.get_return_code(), 0, f"sync pod {pod_name} success")
+
+    get_logger().log_test_case_step("Make sure that the test pod is writing continuously in the PVC")
+    continuous_write_keywords = KubectlContinuousWriteKeywords(ssh_connection)
+    writer_pod_name, writer_pvc_name = continuous_write_keywords.start_continuous_write_pod("dell-iscsi")
+    request.addfinalizer(lambda: continuous_write_keywords.cleanup_continuous_write_pod(writer_pod_name, writer_pvc_name))
+    writer_count_before = continuous_write_keywords.wait_for_write_progress(writer_pod_name, previous_count=0)
+    writer_count_running = continuous_write_keywords.wait_for_write_progress(writer_pod_name, previous_count=writer_count_before)
+    validate_not_equals(writer_count_before, writer_count_running, "Making sure counts before and after are not equal (pod is writing)")
+    get_logger().log_info(f"{writer_pod_name} write-cycle count advanced from {writer_count_before} to {writer_count_running}")
+
+    def recover_all_nodes() -> None:
+        """Power every node back on and wait for the lab to recover.
+
+        Registered after the test resources so it runs first on teardown: if the test fails
+        between the power-off and the power-on, the lab would otherwise be left down and the
+        remaining finalizers could not reach it.
+        """
+        get_logger().log_teardown_step("Power every node back on through IPMITOOLS")
+        for host_name in all_host_names:
+            power_chassis.power_on_from_localhost(host_name, ignore_error=True)
+
+        recovered_ssh = LabConnectionKeywords().get_active_controller_ssh()
+        host_lock_keywords = SystemHostLockKeywords(recovered_ssh)
+        for host_name in all_host_names:
+            host_lock_keywords.wait_for_host_unlocked(host_name, unlock_wait_timeout=3200)
+
+        get_logger().log_teardown_step("Re-apply the storage network on every node after the power cycle")
+        setup_storage_network_on_std_nodes(recovered_ssh)
+
+    request.addfinalizer(recover_all_nodes)
+
+    get_logger().log_test_case_step("Power Off All the Nodes through BMC")
+    for host_name in all_host_names:
+        get_logger().log_test_case_step(f"Power Off {host_name} through IPMITOOLS")
+        power_off_rc = power_chassis.power_off_from_localhost(host_name, ignore_error=True)
+        validate_equals(power_off_rc, 0, f"{host_name} IPMI power off command was not accepted by the BMC")
+
+    get_logger().log_test_case_step("Wait for some time (2 Minutes)")
+    sleep(120)
+
+    get_logger().log_test_case_step("Power On All the Nodes through BMC")
+    for host_name in all_host_names:
+        get_logger().log_test_case_step(f"Power On {host_name} through IPMITOOLS")
+        power_on_rc = power_chassis.power_on_from_localhost(host_name, ignore_error=True)
+        validate_equals(power_on_rc, 0, f"{host_name} IPMI power on command was not accepted by the BMC")
+
+    get_logger().log_test_case_step("Make sure that the Nodes are up and running.")
+    ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
+    host_lock_keywords = SystemHostLockKeywords(ssh_connection)
+    for host_name in all_host_names:
+        host_back = host_lock_keywords.wait_for_host_unlocked(host_name, unlock_wait_timeout=3200)
+        validate_equals(host_back, True, f"{host_name} did not come back online after Powering Off and then Powering On")
+
+    # The storage-network address is added at runtime and does not survive a reboot, so it
+    # has to be re-applied before the csi-powerstore pods can reach the PowerStore array.
+    get_logger().log_test_case_step("Re-apply the storage network on every node after the power cycle")
+    setup_storage_network_on_std_nodes(ssh_connection)
+
+    get_logger().log_test_case_step(f"Make sure that {dell_storage_app_name} is applied.")
+    SystemApplicationListKeywords(ssh_connection).validate_app_status_in_list(dell_storage_app_name, ["applied"], timeout=1800, polling_sleep_time=20)
+
+    # Recovering from a full power cycle takes much longer than a steady-state check: the
+    # csi-powerstore controller and node plugins all restart and have to re-attach to the
+    # array, so this wait is given far more headroom than the pre-power-off one.
+    get_logger().log_test_case_step("Make sure that the test Pod is up.")
+    verify_dell_storage_pods_are_running(ssh_connection, timeout=1800)
+
+    get_logger().log_test_case_step("Make sure that the file created before powering off is still saved in the test pod.")
+    verify_file_created_on_pod_exists(ssh_connection, namespace, pod_name)
+
+    get_logger().log_test_case_step("Make sure that the test Pod still can run continuously in the PVC.")
+    continuous_write_keywords = KubectlContinuousWriteKeywords(ssh_connection)
+    KubectlGetPodsKeywords(ssh_connection).wait_for_pod_status(writer_pod_name, "Running")
+    writer_count_after = continuous_write_keywords.wait_for_write_progress(writer_pod_name, previous_count=0)
+    writer_count_final = continuous_write_keywords.wait_for_write_progress(writer_pod_name, previous_count=writer_count_after)
+    validate_not_equals(writer_count_after, writer_count_final, "Making sure the continuous-write pod resumed writing to the PVC after the power cycle")
+    get_logger().log_info(f"{writer_pod_name} write-cycle count advanced from {writer_count_after} to {writer_count_final}")
