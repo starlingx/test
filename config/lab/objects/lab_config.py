@@ -47,7 +47,9 @@ class LabConfig:
         if "horizon_url" in lab_dict:
             self.horizon_url = lab_dict["horizon_url"]
         else:
-            self.horizon_url = f"https://[{self.floating_ip}]:8443/"
+            # Only an IPv6 literal is bracketed in a URL; brackets around an IPv4 address make the URL invalid.
+            horizon_host = f"[{self.floating_ip}]" if ":" in self.floating_ip else self.floating_ip
+            self.horizon_url = f"https://{horizon_host}:8443/"
 
         if "horizon_credentials" in lab_dict:
             self.horizon_credentials = Credentials(lab_dict["horizon_credentials"])
