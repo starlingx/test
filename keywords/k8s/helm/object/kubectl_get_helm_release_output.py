@@ -46,7 +46,7 @@ class KubectlGetHelmReleaseOutput:
         Returns: List of KubectlNamespaceObjects
 
         """
-        return self.kubectl_helm_releases
+        return self.kubectl_helm_release
 
     def is_helm_release(self, helm_release: str) -> bool:
         """
