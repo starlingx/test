@@ -10,8 +10,7 @@ from framework.resources.resource_finder import get_stx_resource_path
 from framework.ssh.ssh_connection import SSHConnection
 from framework.validation.validation import validate_equals, validate_equals_with_retry, validate_str_contains
 from keywords.base_keyword import BaseKeyword
-from keywords.cloud_platform.system.registry.system_registry_image_list_keywords import SystemRegistryImageListKeywords
-from keywords.cloud_platform.system.registry.system_registry_image_tags_keywords import SystemRegistryImageTagsKeywords
+from keywords.cloud_platform.system.registry.registry_image_resolver_keywords import RegistryImageResolverKeywords
 from keywords.files.file_keywords import FileKeywords
 from keywords.files.yaml_keywords import YamlKeywords
 from keywords.k8s.files.kubectl_file_apply_keywords import KubectlFileApplyKeywords
@@ -158,8 +157,7 @@ class IstioSidecarKeywords(BaseKeyword):
         self.pods = KubectlGetPodsKeywords(ssh_connection)
         self.create_secret = KubectlCreateSecretsKeywords(ssh_connection)
         self.get_secrets = KubectlGetSecretsKeywords(ssh_connection)
-        self.registry_images = SystemRegistryImageListKeywords(ssh_connection)
-        self.registry_tags = SystemRegistryImageTagsKeywords(ssh_connection)
+        self.image_resolver = RegistryImageResolverKeywords(ssh_connection)
         # One instance serves every phase of a test, so cleanup is tracked per phase.
         self._cleaned_up_phases = set()
 
@@ -357,37 +355,17 @@ class IstioSidecarKeywords(BaseKeyword):
             raise KeywordException(f"[{phase}] scratch namespace {namespace} was not removed; it is most likely stuck Terminating")
 
     def _discover_sleeper_image(self) -> str:
-        """Find a usable probe image in the local registry and return a pullable reference.
+        """Resolve a pullable reference for the probe pod's image.
 
-        The image is discovered rather than pinned so the check survives a registry whose contents
-        differ between labs. A bare repository name is not enough: the registry listing carries no
-        tag and no host prefix, and a bare name resolves to an implicit :latest against a public
-        registry, which fails to pull and looks exactly like the injection failure this check exists
-        to detect.
+        Resolution lives in RegistryImageResolverKeywords. It is deliberately not cached: this runs
+        once per phase, and the registry reachability check inside it is worth repeating, because an
+        upgrade that leaves the local registry down is a regression this check should report as
+        itself rather than as a probe pod that never starts.
 
         Returns:
             str: a fully qualified image reference, host and tag included.
-
-        Raises:
-            KeywordException: when the registry is unreachable, or holds no candidate image, or the
-                chosen image has no tags.
         """
-        if not self.registry_images.is_registry_reachable():
-            raise KeywordException("the local registry is not reachable, so no probe image can be resolved")
-
-        available = self.registry_images.get_registry_image_list().get_image_names()
-        chosen = next((name for candidate in self.SLEEPER_IMAGE_PREFERENCE for name in available if candidate in name), None)
-        if chosen is None:
-            raise KeywordException(f"no probe image matching any of {self.SLEEPER_IMAGE_PREFERENCE} is present in the local registry. Found: {sorted(available)}")
-
-        tags = self.registry_tags.get_image_tags(chosen).get_tag_names()
-        if not tags:
-            raise KeywordException(f"the local registry reports image {chosen} with no tags, so it cannot be pulled")
-
-        registry_url = ConfigurationManager.get_docker_config().get_local_registry().get_registry_url()
-        reference = f"{registry_url}/{chosen}:{tags[0]}"
-        get_logger().log_info(f"probe image resolved to {reference} (tags available: {tags})")
-        return reference
+        return self.image_resolver.resolve_image_reference(self.SLEEPER_IMAGE_PREFERENCE)
 
     def _ensure_pull_secret(self, namespace: str) -> None:
         """Create the registry pull secrets the probe pod needs, and confirm they exist.

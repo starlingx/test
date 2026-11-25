@@ -26,6 +26,7 @@ from unittest.mock import MagicMock, NonCallableMagicMock, patch
 import yaml
 from jinja2 import Template
 
+from keywords.cloud_platform.system.registry.registry_image_resolver_keywords import RegistryImageResolverKeywords
 from keywords.cloud_platform.upgrade.istio_sidecar_keywords import IstioSidecarKeywords
 from keywords.k8s.pods.object.kubectl_get_pods_output import KubectlGetPodsOutput
 
@@ -93,6 +94,9 @@ class FakeCluster:
         self.sidecar_image = sidecar_image
         self.registry_images = ["docker.io/library/busybox"] if registry_images is None else registry_images
         self.registry_tags = ["1.37"] if registry_tags is None else registry_tags
+        # How many times the registry was asked whether it answers, to pin that the check
+        # is repeated in every phase rather than resolved once for the whole run.
+        self.reachability_checks = 0
         self.registry_reachable = True
         self.apply_errors = [] if apply_errors is None else list(apply_errors)
         self.return_code = 0
@@ -424,7 +428,7 @@ class FakeCluster:
         return sorted(self.secrets.get(namespace, set()))
 
     def is_registry_reachable(self, command_timeout: int = 120) -> bool:
-        """Report whether the local registry answers.
+        """Report whether the local registry answers, counting the question.
 
         Args:
             command_timeout (int): ignored.
@@ -432,6 +436,7 @@ class FakeCluster:
         Returns:
             bool: the configured reachability.
         """
+        self.reachability_checks += 1
         return self.registry_reachable
 
     def get_registry_image_list(self, command_timeout: int = 120) -> NonCallableMagicMock:
@@ -474,6 +479,24 @@ class FakeCluster:
         return True
 
 
+def _resolver_backed_by(cluster: object) -> object:
+    """Build a real image resolver whose registry reads come from the cluster model.
+
+    The resolver is exercised for real rather than stubbed out, so the selection rules it owns stay
+    covered from here as well as from its own tests.
+
+    Args:
+        cluster (object): the cluster model answering the registry reads.
+
+    Returns:
+        object: a RegistryImageResolverKeywords wired to that model.
+    """
+    resolver = RegistryImageResolverKeywords.__new__(RegistryImageResolverKeywords)
+    object.__setattr__(resolver, "registry_images", SimpleNamespace(is_registry_reachable=cluster.is_registry_reachable, get_registry_image_list=cluster.get_registry_image_list))
+    object.__setattr__(resolver, "registry_tags", SimpleNamespace(get_image_tags=cluster.get_image_tags))
+    return resolver
+
+
 class IstioSidecarKeywordsTestBase(unittest.TestCase):
     """Shared wiring for the sidecar-check tests."""
 
@@ -482,6 +505,10 @@ class IstioSidecarKeywordsTestBase(unittest.TestCase):
         self.patchers = [
             patch("keywords.base_keyword.get_logger"),
             patch("keywords.cloud_platform.upgrade.istio_sidecar_keywords.get_logger"),
+            patch("keywords.cloud_platform.system.registry.registry_image_resolver_keywords.get_logger"),
+            # The pull-secret path reads the docker config from the istio module; the resolver
+            # reads it from its own. Both are patched, in different places, for different reads.
+            patch("keywords.cloud_platform.upgrade.istio_sidecar_keywords.ConfigurationManager", **{"get_docker_config.return_value.get_local_registry.return_value.get_registry_url.return_value": "registry.local:9001"}),
             patch("framework.validation.validation.get_logger"),
             patch.object(IstioSidecarKeywords, "POD_READY_TIMEOUT", 1),
             patch.object(IstioSidecarKeywords, "POD_READY_POLL_INTERVAL", 1),
@@ -541,8 +568,7 @@ class IstioSidecarKeywordsTestBase(unittest.TestCase):
         object.__setattr__(keywords, "pods", stub(get_pods=cluster.get_pods, get_pods_with_retry=cluster.get_pods_with_retry))
         object.__setattr__(keywords, "create_secret", stub(create_secret_for_registry=cluster.create_secret_for_registry))
         object.__setattr__(keywords, "get_secrets", stub(get_secret_names=cluster.get_secret_names))
-        object.__setattr__(keywords, "registry_images", stub(is_registry_reachable=cluster.is_registry_reachable, get_registry_image_list=cluster.get_registry_image_list))
-        object.__setattr__(keywords, "registry_tags", stub(get_image_tags=cluster.get_image_tags))
+        object.__setattr__(keywords, "image_resolver", _resolver_backed_by(cluster))
         object.__setattr__(keywords, "_cleaned_up_phases", set())
         return keywords
 
@@ -569,7 +595,7 @@ class IstioSidecarKeywordsTestBase(unittest.TestCase):
             str: the sidecar image tag the check reports.
         """
         keywords = self.build(cluster)
-        with patch("keywords.cloud_platform.upgrade.istio_sidecar_keywords.ConfigurationManager") as config:
+        with patch("keywords.cloud_platform.system.registry.registry_image_resolver_keywords.ConfigurationManager") as config:
             config.get_docker_config.return_value.get_local_registry.return_value.get_registry_url.return_value = "registry.local:9001"
             return keywords.validate_sidecar_is_injected(self.request_stub(), phase)
 
@@ -591,9 +617,9 @@ class TestSidecarInjectionPasses(IstioSidecarKeywordsTestBase):
         """An injected pod reports 2/2 even though it has only one regular container.
 
         Measured on a 26.03 AIO-SX running Kubernetes 1.34.8: the restartable init container IS
-        counted in the READY total. An earlier version derived the expected count from the regular
-        containers alone, computed 1/1, and would have failed a healthy pod after a full timeout.
-        Comparing ready against total is correct whichever way the kubelet counts.
+        counted in the READY total. Deriving the expected count from the regular containers alone
+        gives 1/1 and fails a healthy pod after a full timeout. Comparing ready against total is
+        correct whichever way the kubelet counts.
         """
         keywords = self.build(FakeCluster())
         for ready_string, expected in [("2/2", True), ("1/1", True), ("3/3", True), ("1/2", False), ("0/1", False), ("0/0", False)]:
@@ -734,11 +760,11 @@ class TestSidecarInjectionPasses(IstioSidecarKeywordsTestBase):
     def test_the_two_layouts_are_genuinely_different_shapes(self):
         """Guard the model itself: the two positions must produce different pod specs.
 
-        This previously asserted that the rendered-file bookkeeping was empty, which is cleanup
-        and says nothing about layout. Because the check unions both container lists it returns the
-        same tag either way, so asserting only its return value cannot tell a model that honours
-        sidecar_position from one that ignores it - and a model that always injected an init
-        sidecar passed all of these tests.
+        Asserting that the rendered-file bookkeeping is empty would be a cleanup check and says
+        nothing about layout. Because the check unions both container lists it returns the same
+        tag either way, so asserting only its return value cannot tell a model that honours
+        sidecar_position from one that ignores it - a model that always injected an init sidecar
+        would pass all of these tests.
 
         Asserting where the injector actually put the sidecar makes the model's fidelity
         load-bearing, which is what the two layout tests above depend on.
@@ -791,10 +817,10 @@ class TestSidecarInjectionPasses(IstioSidecarKeywordsTestBase):
 
         It is still worth pinning, because the layout comes from the injector configuration carried
         through the upgrade rather than from the proxy version, so nothing guarantees a run stays
-        consistent. An earlier version of this test asserted that the two-releases-back path DOES
-        change shape mid-run and justified it by 25.09 predating native sidecars - both the claim
-        and its reasoning were wrong, and the reasoning was the very version-based model the rest of
-        this change exists to refute.
+        consistent. Asserting that the two-releases-back path DOES change shape mid-run, on the
+        grounds that 25.09 predates native sidecars, would be wrong on both counts: the measured
+        runs show no change, and the reasoning is a version-based model of a layout that comes from
+        the injector configuration.
         """
         baseline_cluster = FakeCluster(sidecar_position="regular", sidecar_image=BASELINE_SIDECAR_IMAGE)
         baseline = self.run_check(baseline_cluster, "pre")
@@ -842,7 +868,7 @@ class TestOrderingIsEnforced(IstioSidecarKeywordsTestBase):
 
         cluster.label_namespace = record_then_label
         object.__setattr__(keywords, "label_namespace", NonCallableMagicMock(label_namespace=MagicMock(side_effect=record_then_label)))
-        with patch("keywords.cloud_platform.upgrade.istio_sidecar_keywords.ConfigurationManager") as config:
+        with patch("keywords.cloud_platform.system.registry.registry_image_resolver_keywords.ConfigurationManager") as config:
             config.get_docker_config.return_value.get_local_registry.return_value.get_registry_url.return_value = "registry.local:9001"
             keywords.validate_sidecar_is_injected(self.request_stub(), "pre")
         self.assertEqual(observed["nads"], {("stxtest-istio-pre", "istio-cni")})
@@ -877,9 +903,9 @@ class TestFailuresAreDetected(IstioSidecarKeywordsTestBase):
         keywords = self.build(cluster)
         # An injector that never adds a sidecar: labelling has no effect.
         object.__setattr__(keywords, "label_namespace", NonCallableMagicMock(label_namespace=MagicMock()))
-        with patch("keywords.cloud_platform.upgrade.istio_sidecar_keywords.ConfigurationManager") as config:
+        with patch("keywords.cloud_platform.system.registry.registry_image_resolver_keywords.ConfigurationManager") as config:
             config.get_docker_config.return_value.get_local_registry.return_value.get_registry_url.return_value = "registry.local:9001"
-            with self.assertRaises(Exception):
+            with self.assertRaisesRegex(Exception, "Validation Failed|Timeout performing validation"):
                 keywords.validate_sidecar_is_injected(self.request_stub(), "pre")
 
     def test_a_missing_multus_annotation_fails(self):
@@ -958,6 +984,23 @@ class TestFailuresAreDetected(IstioSidecarKeywordsTestBase):
         self.assertIn("curl", chosen)
         self.assertNotIn("pause", chosen)
 
+    def test_every_phase_asks_the_registry_again(self):
+        """Image resolution must not be cached across phases.
+
+        The test case holds one instance and calls it for each of the three phases, so the
+        reachability check inside resolution is the only thing re-asking whether the local registry
+        still answers. A registry that went down during the upgrade is a platform regression this
+        check reports as itself; cached, it would instead surface as a probe pod that never starts,
+        which is the confusion resolution exists to prevent.
+        """
+        cluster = FakeCluster()
+        keywords = self.build(cluster)
+        with patch("keywords.cloud_platform.system.registry.registry_image_resolver_keywords.ConfigurationManager") as config:
+            config.get_docker_config.return_value.get_local_registry.return_value.get_registry_url.return_value = "registry.local:9001"
+            keywords.validate_sidecar_is_injected(self.request_stub(), "pre")
+            keywords.validate_sidecar_is_injected(self.request_stub(), "post-upgrade")
+        self.assertEqual(cluster.reachability_checks, 2, f"the registry was asked {cluster.reachability_checks} times across two phases")
+
     def test_an_untagged_image_fails_rather_than_pulling_latest(self):
         """A bare image name would resolve to :latest against a public registry and fail to pull."""
         cluster = FakeCluster(registry_tags=[])
@@ -974,7 +1017,7 @@ class TestFailuresAreDetected(IstioSidecarKeywordsTestBase):
         cluster = FakeCluster()
         keywords = self.build(cluster)
         object.__setattr__(keywords, "get_namespaces", NonCallableMagicMock(wait_for_namespace_deleted=MagicMock(side_effect=[True, False])))
-        with patch("keywords.cloud_platform.upgrade.istio_sidecar_keywords.ConfigurationManager") as config:
+        with patch("keywords.cloud_platform.system.registry.registry_image_resolver_keywords.ConfigurationManager") as config:
             config.get_docker_config.return_value.get_local_registry.return_value.get_registry_url.return_value = "registry.local:9001"
             with self.assertRaises(Exception) as caught:
                 keywords.validate_sidecar_is_injected(self.request_stub(), "pre")
@@ -1011,7 +1054,7 @@ class TestProbePodPullSecret(IstioSidecarKeywordsTestBase):
         """Without imagePullSecrets the probe cannot pull, and that looks like an injection failure."""
         cluster = FakeCluster()
         keywords = self.build(cluster)
-        with patch("keywords.cloud_platform.upgrade.istio_sidecar_keywords.ConfigurationManager") as config:
+        with patch("keywords.cloud_platform.system.registry.registry_image_resolver_keywords.ConfigurationManager") as config:
             config.get_docker_config.return_value.get_local_registry.return_value.get_registry_url.return_value = "registry.local:9001"
             captured = {}
             original = cluster.generate_yaml_file_from_template
@@ -1080,7 +1123,7 @@ class TestPerPhaseCleanupTracking(IstioSidecarKeywordsTestBase):
         cluster = FakeCluster()
         keywords = self.build(cluster)
         request = self.request_stub()
-        with patch("keywords.cloud_platform.upgrade.istio_sidecar_keywords.ConfigurationManager") as config:
+        with patch("keywords.cloud_platform.system.registry.registry_image_resolver_keywords.ConfigurationManager") as config:
             config.get_docker_config.return_value.get_local_registry.return_value.get_registry_url.return_value = "registry.local:9001"
             keywords.validate_sidecar_is_injected(request, "pre")
 
@@ -1095,7 +1138,7 @@ class TestPerPhaseCleanupTracking(IstioSidecarKeywordsTestBase):
         keywords = self.build(cluster)
         object.__setattr__(keywords, "label_namespace", NonCallableMagicMock(label_namespace=MagicMock()))
         request = self.request_stub()
-        with patch("keywords.cloud_platform.upgrade.istio_sidecar_keywords.ConfigurationManager") as config:
+        with patch("keywords.cloud_platform.system.registry.registry_image_resolver_keywords.ConfigurationManager") as config:
             config.get_docker_config.return_value.get_local_registry.return_value.get_registry_url.return_value = "registry.local:9001"
             with self.assertRaises(Exception):
                 keywords.validate_sidecar_is_injected(request, "pre")
@@ -1110,7 +1153,7 @@ class TestPerPhaseCleanupTracking(IstioSidecarKeywordsTestBase):
         cluster = FakeCluster()
         keywords = self.build(cluster)
         first_request = self.request_stub()
-        with patch("keywords.cloud_platform.upgrade.istio_sidecar_keywords.ConfigurationManager") as config:
+        with patch("keywords.cloud_platform.system.registry.registry_image_resolver_keywords.ConfigurationManager") as config:
             config.get_docker_config.return_value.get_local_registry.return_value.get_registry_url.return_value = "registry.local:9001"
             keywords.validate_sidecar_is_injected(first_request, "pre")
             keywords.validate_sidecar_is_injected(self.request_stub(), "post-upgrade")
@@ -1134,7 +1177,7 @@ class TestPerPhaseCleanupTracking(IstioSidecarKeywordsTestBase):
         cluster = FakeCluster()
         keywords = self.build(cluster)
 
-        with patch("keywords.cloud_platform.upgrade.istio_sidecar_keywords.ConfigurationManager") as config:
+        with patch("keywords.cloud_platform.system.registry.registry_image_resolver_keywords.ConfigurationManager") as config:
             config.get_docker_config.return_value.get_local_registry.return_value.get_registry_url.return_value = "registry.local:9001"
             # First phase succeeds and records itself as cleaned up.
             keywords.validate_sidecar_is_injected(self.request_stub(), "pre")

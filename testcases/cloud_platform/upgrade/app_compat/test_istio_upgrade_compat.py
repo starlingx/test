@@ -216,18 +216,19 @@ def test_istio_upgrade_rollback(request):
     get_logger().log_test_case_step("Verify the sidecar injector still works, and that the sidecar image tag changed")
     upgraded_tag = sidecar.validate_sidecar_is_injected(request, "post-upgrade")
     # The baseline tag is recorded and compared again after the rollback, but it is deliberately NOT
-    # asserted to differ here. Two earlier versions of this got it wrong:
+    # asserted to differ here. Two alternatives are rejected, each for the reason given:
     #
-    #   1. validate_not_equals(upgraded_tag, baseline_tag) hard-failed any release that ships the
-    #      same proxy image as its predecessor, and its own failure message had to concede that an
-    #      unchanged tag can be legitimate - an assertion documenting its own false-failure mode.
-    #   2. Making that conditional on the application version changing produced dead code: the
+    #   1. validate_not_equals(upgraded_tag, baseline_tag) hard-fails any release that ships the
+    #      same proxy image as its predecessor, and its own failure message would have to concede
+    #      that an unchanged tag can be legitimate - an assertion documenting its own
+    #      false-failure mode.
+    #   2. Making that conditional on the application version changing produces dead code: the
     #      version is already asserted to contain from_version at baseline and to_version here, and
-    #      those differ by construction, so the equal branch was unreachable and the behaviour was
+    #      those differ by construction, so the equal branch is unreachable and the behaviour is
     #      unchanged.
     #
-    # The honest position is that a changed sidecar image is not a requirement. The platform having
-    # replaced the application IS required, and that is already asserted above by the version check.
+    # A changed sidecar image is not a requirement. The platform having replaced the application
+    # IS required, and that is already asserted above by the version check.
     # Whether the new application happens to carry a new proxy image is a property of the release,
     # not a correctness condition, so it is logged as evidence and left to the reader.
     #

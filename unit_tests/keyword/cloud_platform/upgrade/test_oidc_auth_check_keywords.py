@@ -617,13 +617,12 @@ class OidcAuthCheckKeywordsTest(unittest.TestCase):
     def test_falling_back_to_the_administrator_kubeconfig_fails(self):
         """Reading the API as the administrator certificate must fail instead of passing.
 
-        This is the defect this check was rewritten to make impossible. The framework's default
+        This is the defect the identity assertion exists to catch. The framework's default
         kubeconfig is /etc/kubernetes/admin.conf; it is group-readable by sys_protected and the
         test user is in that group, so a read that does not name the user's own kubeconfig
-        authenticates over X.509 as kubernetes-admin. The earlier revision of this check did
-        exactly that and passed every phase without the OIDC token being involved - it would have
-        passed with dex deleted. Asserting the identity before reading anything is what turns that
-        silent pass into a failure.
+        authenticates over X.509 as kubernetes-admin. A check that read that way would pass every
+        phase without the OIDC token being involved, and would pass with dex deleted. Asserting
+        the identity before reading anything is what turns that silent pass into a failure.
         """
         system = FakeOidcSystem(whoami_identity="kubernetes-admin")
         with self.assertRaises(Exception) as caught:
@@ -633,7 +632,7 @@ class OidcAuthCheckKeywordsTest(unittest.TestCase):
     def test_a_dead_authentication_does_not_satisfy_the_denial(self):
         """An Unauthorized response must not count as a successful denial.
 
-        This is the fail-open an earlier draft of this check contained. A denial assertion that
+        This is a fail-open that a denial check is prone to. A denial assertion that
         only establishes "the operation did not succeed" is also satisfied by 401 Unauthorized,
         which is what a completely broken authentication returns - so the check would report a
         healthy denial on a cluster where nobody can log in at all. Only 403 Forbidden proves the
@@ -814,7 +813,7 @@ class OidcAuthCheckRbacTest(unittest.TestCase):
                 record["deleted"].append(binding_name)
 
         class _Resources:
-            """Answers the cluster-role-binding listing the keyword now reads through."""
+            """Answers the cluster-role-binding listing the keyword reads through."""
 
             def get_resource_field(self, resource_type, resource_name, jsonpath, namespace=None):
                 """Return the canned listing.

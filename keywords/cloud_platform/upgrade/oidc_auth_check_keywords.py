@@ -7,12 +7,11 @@ act on the Kubernetes API **with the resulting token**. Checking that the pods a
 considerably less: in several reported upgrade defects the pods were up and the application
 reported ``applied`` while authentication was broken.
 
-The emphasis on *with the resulting token* is not rhetorical. An earlier revision of this check
-read the pod list through the framework's default kubeconfig, which is
-``/etc/kubernetes/admin.conf``. That file is group-readable by ``sys_protected``, and the test
-user is in that group, so ``kubectl`` authenticated as ``kubernetes-admin`` over X.509 and the
-assertion passed without the OIDC token being involved at all - it would have passed with dex
-deleted. Two things now make that impossible to reintroduce silently:
+The emphasis on *with the resulting token* is not rhetorical. The framework's default kubeconfig
+is ``/etc/kubernetes/admin.conf``. That file is group-readable by ``sys_protected``, and the test
+user is in that group, so a read through the default makes ``kubectl`` authenticate as
+``kubernetes-admin`` over X.509. The assertion then passes without the OIDC token being involved
+at all, and would pass with dex deleted. Two things guard against that:
 
 * every Kubernetes read on the authenticated session passes ``USER_KUBECONFIG`` explicitly, and
 * the identity is asserted with ``kubectl auth whoami`` before anything else is read, so a
@@ -57,8 +56,7 @@ class OidcAuthCheckKeywords(BaseKeyword):
     CLIENT_DEPLOYMENT = "stx-oidc-client"
     # Written by kubeconfig-setup for the authenticated user. Passed explicitly to every read made
     # on that user's session: the framework default is the administrator kubeconfig, which this
-    # user can read, and relying on the default is what made an earlier revision of this check
-    # pass without using the token.
+    # user can read, and relying on the default lets the check pass without using the token.
     USER_KUBECONFIG = "$HOME/.kube/config"
     # The identity the administrator certificate in /etc/kubernetes/admin.conf presents. If the
     # authenticated session ever reports this, the token is not being used and the check must fail.
@@ -83,8 +81,8 @@ class OidcAuthCheckKeywords(BaseKeyword):
     DENIED_RESOURCE = "secrets"
     # Measured on a live system, and the two directions are not alike. The upgrade half recovered on the
     # first attempt - 1.08 s after the reboot into the new release and 9 s after activate - but the
-    # rollback half took 94 s and four attempts. An earlier revision set 120 s from the upgrade
-    # numbers alone, which left 26 s of margin against one observation.
+    # rollback half took 94 s and four attempts. A timeout of 120 s, derived from the upgrade
+    # numbers alone, would leave 26 s of margin against a single observation.
     AUTH_TIMEOUT = 300
     AUTH_POLL_INTERVAL = 15
 
