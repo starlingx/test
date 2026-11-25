@@ -90,6 +90,11 @@ def test_post_upgrade_check_lvm_app():
     get_logger().log_test_case_step(f"Validate the '{LVM_CSI_APP}' application is applied.")
     application_show_keywords.validate_app_status(LVM_CSI_APP, "applied")
 
+    get_logger().log_test_case_step(f"Validate the '{LVM_CSI_APP}' application was updated during the upgrade.")
+    application_show_keywords.validate_app_progress_contains(LVM_CSI_APP, "Application update from version")
+    app_object = application_show_keywords.validate_app_progress_contains(LVM_CSI_APP, "completed")
+    get_logger().log_info(f"'{LVM_CSI_APP}' is now at version {app_object.get_version()}: {app_object.get_progress()}")
+
     get_logger().log_test_case_step(f"Validate the '{LVM_VG}' is provisioned for lvm-csi thin on {active_controller}.")
     lvg = system_host_lvg_keywords.get_system_host_lvg_show(active_controller, LVM_VG).get_system_host_lvg()
     validate_equals(lvg.get_state(), "provisioned", f"'{LVM_VG}' state should be 'provisioned'.")
