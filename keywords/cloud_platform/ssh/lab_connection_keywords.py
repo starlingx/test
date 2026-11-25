@@ -240,14 +240,14 @@ class LabConnectionKeywords(BaseKeyword):
             raise ValueError(f"There is no 'subcloud' node named {subcloud_name} defined in your config file.")
 
         jump_host_config = None
-        if lab_config.is_use_jump_server():
-            jump_host_config = lab_config.get_jump_host_configuration()
+        if subcloud_config.is_use_jump_server():
+            jump_host_config = subcloud_config.get_jump_host_configuration()
 
         connection = SSHConnectionManager.create_ssh_connection(
             subcloud_config.get_floating_ip(),
-            lab_config.get_admin_credentials().get_user_name(),
-            lab_config.get_admin_credentials().get_password(),
-            ssh_port=lab_config.get_ssh_port(),
+            subcloud_config.get_admin_credentials().get_user_name(),
+            subcloud_config.get_admin_credentials().get_password(),
+            ssh_port=subcloud_config.get_ssh_port(),
             jump_host=jump_host_config,
         )
 
