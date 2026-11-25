@@ -7,6 +7,7 @@ from framework.validation.validation import validate_str_contains
 from keywords.base_keyword import BaseKeyword
 from keywords.cloud_platform.command_wrappers import source_openrc
 from keywords.cloud_platform.system.application.system_application_apply_keywords import SystemApplicationApplyKeywords
+from keywords.cloud_platform.system.helm.objects.system_helm_override_list_output import SystemHelmOverrideListOutput
 from keywords.cloud_platform.system.helm.objects.system_helm_override_output import SystemHelmOverrideOutput
 from keywords.cloud_platform.system.helm.objects.system_helm_override_show_output import SystemHelmOverrideShowOutput
 from keywords.files.file_keywords import FileKeywords
@@ -103,21 +104,20 @@ class SystemHelmOverrideKeywords(BaseKeyword):
 
         validate_str_contains(user_override, label, "User Override")
 
-    def get_system_helm_override_list(self, app_name: str) -> SystemHelmOverrideOutput:
+    def get_system_helm_override_list(self, app_name: str) -> SystemHelmOverrideListOutput:
         """
-        Gets the system helm-override show
+        Gets the system helm-override list of an application.
 
         Args:
             app_name (str): the app name
 
         Returns:
-            SystemHelmOverrideOutput: The parsed helm override list object.
+            SystemHelmOverrideListOutput: The charts of the application with their override namespaces.
         """
         command = source_openrc(f"system helm-override-list {app_name} ")
         output = self.ssh_connection.send(command)
         self.validate_success_return_code(self.ssh_connection)
-        system_helm_override_show_output = SystemHelmOverrideOutput(output)
-        return system_helm_override_show_output
+        return SystemHelmOverrideListOutput(output)
 
     def delete_system_helm_override(self, app_name: str, chart_name: str, namespace: str) -> None:
         """
