@@ -392,6 +392,12 @@ class LabConfig:
         """
         return self.lab_capabilities
 
+    def reset_lab_capabilities(self) -> None:
+        """
+        Reset lab capabilities
+        """
+        self.lab_capabilities = []
+
     def add_lab_capability(self, capability: str) -> None:
         """
         Setter for lab capability
