@@ -9,7 +9,6 @@ from framework.validation.validation import validate_equals, validate_equals_wit
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
 from keywords.cloud_platform.system.host.system_host_list_keywords import SystemHostListKeywords
 from keywords.cloud_platform.system.host.system_host_lock_keywords import SystemHostLockKeywords
-from keywords.cloud_platform.system.host.system_host_reboot_keywords import SystemHostRebootKeywords
 from keywords.cloud_platform.system.host.system_host_swact_keywords import SystemHostSwactKeywords
 from keywords.cloud_platform.system.show.system_show_keywords import SystemShowKeywords
 from keywords.k8s.pods.kubectl_get_pods_keywords import KubectlGetPodsKeywords
@@ -494,17 +493,16 @@ def test_reboot_single_worker() -> None:
 @mark.p0
 @mark.lab_is_simplex
 def test_reboot_simplex() -> None:
-    """Test reboot on active controller for simplex systems only.
+    """Test hard reboot on active controller for simplex systems only.
 
     Steps:
     1. Validate system is simplex (All-in-one)
     2. Setup stress pods with mixed benchmark
-    3. Record the host uptime and issue the reboot command to the active controller
-    4. Wait for the host uptime to reset and the host to be available and enabled
-    5. Wait for the host to be unlocked with no config-out-of-date alarms
-    6. Measure pod recovery time
-    7. Extract timing metrics from system logs (host available, host enabled)
-    8. Log all timing measurements
+    3. Issue hard reboot command to active controller
+    4. Wait for host to become enabled after reboot
+    5. Measure pod recovery time
+    6. Extract host enabled timing metric from system logs
+    7. Log all timing measurements
     """
     ssh_connection = LabConnectionKeywords().get_active_controller_ssh()
     system_show_keywords = SystemShowKeywords(ssh_connection)
@@ -524,20 +522,12 @@ def test_reboot_simplex() -> None:
     active_controller = host_list_keywords.get_active_controller()
     active_name = active_controller.get_host_name()
 
-    pre_uptime_of_host = host_list_keywords.get_uptime(active_name)
-    get_logger().log_info(f"Uptime of {active_name} before reboot: {pre_uptime_of_host} seconds")
-
     get_logger().log_test_case_step(f"Hard rebooting active controller {active_name}...")
-    ssh_connection.send_as_sudo("reboot")
-
-    # The host keeps answering host-list while it shuts down, so "unlocked/enabled/available" alone
-    # does not prove the reboot happened. Wait for the uptime to reset as well.
-    get_logger().log_test_case_step("Waiting for the reboot to complete (uptime reset, host available and enabled)...")
-    validate_equals(
-        SystemHostRebootKeywords(ssh_connection).wait_for_force_reboot(active_name, pre_uptime_of_host, reboot_timeout=1800),
-        True,
-        f"Host {active_name} should have rebooted and be available and enabled",
-    )
+    # The host goes down at once, so no prompt comes back and the SSH layer would resend the command on
+    # reconnect. send_as_sudo has a second, internal retry that reconnect_timeout does not reach, so use the
+    # non-interactive variant, which has a single retry layer.
+    ssh_connection.send_as_sudo_non_interactive("reboot -f", reconnect_timeout=1)
+    wait_for_ssh_connection_drop(ssh_connection)
 
     get_logger().log_test_case_step("Waiting for host to be unlocked (available and enabled)...")
     validate_equals(
