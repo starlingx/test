@@ -20,23 +20,13 @@ class ServerListOutput:
             server.set_id(raw.get("id", ""))
             server.set_name(raw.get("name", ""))
             server.set_status(raw.get("status", ""))
-            server.set_host(
-                raw.get("OS-EXT-SRV-ATTR:host")
-                or raw.get("host")
-                or raw.get("compute_host", "")
-            )
+            server.set_host(raw.get("OS-EXT-SRV-ATTR:host") or raw.get("host") or raw.get("compute_host", ""))
             raw_power = raw.get("power_state")
             if raw_power is None:
                 raw_power = raw.get("OS-EXT-STS:power_state")
             server.set_power_state(raw_power)
-            server.set_instance_name(
-                raw.get("OS-EXT-SRV-ATTR:instance_name")
-                or raw.get("instance_name", "")
-            )
-            server.set_availability_zone(
-                raw.get("OS-EXT-AZ:availability_zone")
-                or raw.get("availability_zone", "")
-            )
+            server.set_instance_name(raw.get("OS-EXT-SRV-ATTR:instance_name") or raw.get("instance_name", ""))
+            server.set_availability_zone(raw.get("OS-EXT-AZ:availability_zone") or raw.get("availability_zone", ""))
             flavor = raw.get("flavor", {})
             server.set_flavor_id(flavor.get("id", "") if isinstance(flavor, dict) else "")
             image = raw.get("image", {})
@@ -48,6 +38,8 @@ class ServerListOutput:
             server.set_user_id(raw.get("user_id", ""))
             server.set_key_name(raw.get("key_name", ""))
             server.set_metadata(raw.get("metadata", {}))
+            server.set_task_state(raw.get("task_state") or raw.get("OS-EXT-STS:task_state") or "")
+            server.set_fault(raw.get("fault"))
             self._servers.append(server)
 
     def get_servers(self) -> List[ServerObject]:
@@ -57,6 +49,17 @@ class ServerListOutput:
             List[ServerObject]: List of server objects.
         """
         return self._servers
+
+    def get_servers_with_status(self, status: str) -> List[ServerObject]:
+        """Get the servers that have a given status.
+
+        Args:
+            status (str): Nova status to keep (e.g. 'SOFT_DELETED'), compared case-insensitively.
+
+        Returns:
+            List[ServerObject]: Servers whose status matches.
+        """
+        return [server for server in self._servers if str(server.get_status()).upper() == status.upper()]
 
     def get_server_by_name(self, name: str) -> ServerObject:
         """Get a server by name.

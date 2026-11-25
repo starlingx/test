@@ -52,6 +52,8 @@ class ServerObject:
         self.user_id = None
         self.key_name = None
         self.metadata = None
+        self.task_state = None
+        self.fault = None
 
     def set_id(self, server_id: str) -> None:
         """Set the server ID.
@@ -316,6 +318,40 @@ class ServerObject:
             dict: Key-value metadata.
         """
         return self.metadata or {}
+
+    def set_task_state(self, task_state: str) -> None:
+        """Set the Nova task state.
+
+        Args:
+            task_state (str): Task in flight on the server, empty when it is idle.
+        """
+        self.task_state = task_state
+
+    def get_task_state(self) -> str:
+        """Get the Nova task state.
+
+        Returns:
+            str: Task in flight on the server, or an empty string when it is idle.
+        """
+        return self.task_state or ""
+
+    def set_fault(self, fault: dict) -> None:
+        """Set the Nova fault.
+
+        Args:
+            fault (dict): Fault reported for a server in ERROR.
+        """
+        self.fault = fault
+
+    def get_fault_message(self) -> str:
+        """Get the message of the Nova fault.
+
+        Returns:
+            str: Fault message, or an empty string when the server reports no fault.
+        """
+        if isinstance(self.fault, dict):
+            return self.fault.get("message", "")
+        return str(self.fault) if self.fault else ""
 
     def get_first_ip(self, ip_version: int = 4) -> str:
         """Get the first IP address matching the specified version.

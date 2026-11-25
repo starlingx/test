@@ -1,6 +1,7 @@
 """Server CRUD keywords via OpenStack SDK."""
 
 import base64
+import re
 import time
 from typing import List, Optional
 
@@ -228,6 +229,68 @@ class ServerKeywords(BaseKeyword):
         server = compute.find_server(server_name_or_id, ignore_missing=False)
         compute.delete_server(server.id)
         compute.wait_for_delete(server)
+
+    def delete_server_without_wait(self, server_name_or_id: str) -> str:
+        """Request the delete of a server and return without waiting for it to disappear.
+
+        With Nova soft delete enabled (reclaim_instance_interval > 0) the server
+        is not removed: it stays visible as SOFT_DELETED, so delete_server, which
+        waits for it to be gone, would wait until its timeout. Wait for the
+        delete with wait_for_server_status(server_id, "SOFT_DELETED"), or with
+        is_server_gone when soft delete is off.
+
+        Args:
+            server_name_or_id (str): Server name or ID.
+
+        Returns:
+            str: The server ID, to poll after the name is no longer found.
+        """
+        get_logger().log_info(f"Requesting the delete of server '{server_name_or_id}'")
+        compute = self.openstack_connection.get_compute()
+        server = compute.find_server(server_name_or_id, ignore_missing=False)
+        compute.delete_server(server.id)
+        return server.id
+
+    def list_soft_deleted_servers(self) -> ServerListOutput:
+        """List the servers in the current project that are SOFT_DELETED.
+
+        Nova only lists soft-deleted servers when deleted servers are requested,
+        and that listing also holds fully deleted ones, so the result is filtered
+        on the status.
+
+        Returns:
+            ServerListOutput: Parsed collection of the SOFT_DELETED servers.
+        """
+        raw = [s.to_dict() for s in self.openstack_connection.get_compute().servers(deleted_only=True) if str(s.status).upper() == "SOFT_DELETED"]
+        return ServerListOutput(raw)
+
+    def force_delete_server(self, server_name_or_id: str) -> None:
+        """Delete a server right away, bypassing Nova soft delete, and wait for it to be gone.
+
+        Also works on a server that is already SOFT_DELETED. A lookup by name
+        does not return those, so they are listed with an exact name filter
+        and every match is deleted. Does nothing when the server no longer
+        exists.
+
+        Args:
+            server_name_or_id (str): Server name or ID.
+        """
+        compute = self.openstack_connection.get_compute()
+        server = compute.find_server(server_name_or_id, ignore_missing=True)
+        if server is not None:
+            servers = [server]
+        else:
+            # Nova treats the name filter as a regular expression, so it is
+            # anchored and escaped, and the exact name is checked again here.
+            name_filter = f"^{re.escape(server_name_or_id)}$"
+            servers = [s for s in compute.servers(deleted_only=True, name=name_filter) if s.name == server_name_or_id and str(s.status).upper() == "SOFT_DELETED"]
+        if not servers:
+            get_logger().log_info(f"Server '{server_name_or_id}' already gone, skipping force delete")
+            return
+        for server in servers:
+            get_logger().log_info(f"Force-deleting server '{server_name_or_id}' ({server.id}, status {server.status})")
+            compute.delete_server(server.id, force=True)
+            compute.wait_for_delete(server)
 
     def wait_for_server_status(
         self,
