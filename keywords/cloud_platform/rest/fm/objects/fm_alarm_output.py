@@ -70,3 +70,27 @@ class FmAlarmOutput:
             list[AlarmListObject]: Alarms whose management-affecting flag is True.
         """
         return [alarm for alarm in self.alarm_objects if alarm.get_mgmt_affecting()]
+
+    def get_mgmt_affecting_alarm_labels(self, extra_alarm_ids: list[str] = None) -> list[str]:
+        """Get sorted alarm labels for every management-affecting alarm.
+
+        Returns a sorted list of '<alarm_id> (<entity_id>)' strings for every
+        alarm whose management-affecting flag is True, plus any alarm whose ID
+        appears in extra_alarm_ids regardless of the flag. This is the form
+        expected by upgrade-test alarm-settle gates used with
+        validate_equals_with_retry.
+
+        Args:
+            extra_alarm_ids (list[str]): Additional alarm IDs to include even
+                when their management-affecting flag is False. Defaults to None.
+
+        Returns:
+            list[str]: Sorted '<alarm_id> (<entity_id>)' labels; empty list
+            when no matching alarms are present.
+        """
+        extra = extra_alarm_ids or []
+        return sorted(
+            f"{alarm.get_alarm_id()} ({alarm.get_entity_id()})"
+            for alarm in self.alarm_objects
+            if alarm.get_mgmt_affecting() or alarm.get_alarm_id() in extra
+        )
