@@ -7,6 +7,7 @@ from framework.logging.automation_logger import get_logger
 from framework.resources.resource_finder import get_stx_resource_path
 from framework.ssh.ssh_connection import SSHConnection
 from framework.validation.validation import validate_equals, validate_equals_with_retry
+from keywords.cloud_platform.fault_management.alarms.alarm_list_keywords import AlarmListKeywords
 from keywords.cloud_platform.helm.helm_keywords import HelmKeywords
 from keywords.cloud_platform.networking.sriov.get_sriov_config_keywords import GetSriovConfigKeywords
 from keywords.cloud_platform.ssh.lab_connection_keywords import LabConnectionKeywords
@@ -48,6 +49,7 @@ from keywords.linux.ip.ip_keywords import IPKeywords
 from keywords.linux.ip.object.ip_link_show_output import IPLinkShowOutput
 from keywords.linux.process_status.process_status_args_keywords import ProcessStatusArgsKeywords
 from keywords.server.power_keywords import PowerKeywords
+from keywords.server.power_keywords_implementation import BLOCKING_ALARM_IDS
 
 
 @mark.p0
@@ -372,13 +374,99 @@ def test_force_reboot_host_active_controller(request):
     pre_standby_host = SystemHostListKeywords(ssh_connection).get_standby_controller()
 
     power_keywords = PowerKeywords(ssh_connection)
-    assert power_keywords.power_off(pre_active_host.get_host_name()), "host was not powered off"
+    host_name = pre_active_host.get_host_name()
+
+    # Run ipmitool from the RunAgent, not over the lab SSH session, which stalls during the swact.
+    validate_equals_with_retry(
+        function_to_execute=lambda: power_keywords.power_off_from_localhost(host_name, ignore_error=True),
+        expected_value=0,
+        validation_description=f"{host_name} IPMI power off command is accepted by the BMC",
+        timeout=120,
+        polling_sleep_time=10,
+    )
+
+    # mtce can power the host back on within a minute, so poll the chassis power from the RunAgent
+    # often enough to see it off.
+    validate_equals_with_retry(
+        function_to_execute=lambda: power_keywords.is_chassis_power_off_from_localhost(host_name),
+        expected_value=True,
+        validation_description=f"{host_name} chassis power is off",
+        timeout=300,
+        polling_sleep_time=2,
+    )
+
+    # Wait until mtce has noticed the power-off, so power_on() does not see the stale "available" state.
+    # host-list can fail while the floating IP moves during the swact, so a failed call counts as "not yet".
+    def is_host_reported_down() -> bool:
+        """Check whether host-list reports the powered-off host as power-off or offline.
+
+        Returns:
+            bool: True if the host availability is power-off or offline; False otherwise, including when host-list fails.
+        """
+        try:
+            availability = SystemHostListKeywords(ssh_connection).get_system_host_list().get_host(host_name).get_availability()
+        except Exception as exception:
+            get_logger().log_info(f"host-list failed, will retry: {exception}")
+            return False
+        return availability in ("power-off", "offline")
+
+    validate_equals_with_retry(
+        function_to_execute=is_host_reported_down,
+        expected_value=True,
+        validation_description=f"{host_name} is reported as power-off or offline by mtce",
+        timeout=300,
+        polling_sleep_time=5,
+    )
 
     # swact the hosts at the end of the test
     request.addfinalizer(SystemHostSwactKeywords(ssh_connection).host_swact)
 
-    # Power on method checks host status and alarms
-    assert power_keywords.power_on(pre_active_host.get_host_name()), "host did not come back online in time"
+    # Power on from the RunAgent too, because on some labs the controllers cannot reach the BMC network.
+    # The BMC may refuse a session, so retry. A refused command is fine if the chassis is already on
+    # (mtce may have powered the host back on first).
+    validate_equals_with_retry(
+        function_to_execute=lambda: power_keywords.power_on_from_localhost(host_name, ignore_error=True) == 0 or power_keywords.is_chassis_power_on_from_localhost(host_name),
+        expected_value=True,
+        validation_description=f"{host_name} IPMI power on command is accepted by the BMC",
+        timeout=120,
+        polling_sleep_time=10,
+    )
+
+    validate_equals_with_retry(
+        function_to_execute=lambda: power_keywords.is_chassis_power_on_from_localhost(host_name),
+        expected_value=True,
+        validation_description=f"{host_name} chassis power is on",
+        timeout=300,
+        polling_sleep_time=5,
+    )
+
+    def is_host_recovered() -> bool:
+        """Check that the host is unlocked, enabled and available, and no blocking alarm is active.
+
+        Returns:
+            bool: True if the host is healthy and none of BLOCKING_ALARM_IDS is raised; False otherwise,
+            including when host-list or alarm-list fails.
+        """
+        try:
+            if not SystemHostListKeywords(ssh_connection).get_system_host_list().get_host(host_name).is_host_healthy():
+                return False
+            active_alarm_ids = [alarm.get_alarm_id() for alarm in AlarmListKeywords(ssh_connection).alarm_list()]
+        except Exception as exception:
+            get_logger().log_info(f"host-list or alarm-list failed, will retry: {exception}")
+            return False
+        blocking = [alarm_id for alarm_id in active_alarm_ids if alarm_id in BLOCKING_ALARM_IDS]
+        if blocking:
+            get_logger().log_info(f"Blocking alarm(s) still active: {', '.join(blocking)}")
+            return False
+        return True
+
+    validate_equals_with_retry(
+        function_to_execute=is_host_recovered,
+        expected_value=True,
+        validation_description=f"{host_name} is available with no blocking alarms",
+        timeout=1800,
+        polling_sleep_time=10,
+    )
 
     post_active_host = SystemHostListKeywords(ssh_connection).get_active_controller()
     post_standby_host = SystemHostListKeywords(ssh_connection).get_standby_controller()
