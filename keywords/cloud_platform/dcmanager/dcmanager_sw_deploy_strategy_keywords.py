@@ -1,4 +1,5 @@
 import time
+from typing import Optional, Tuple
 
 from config.configuration_manager import ConfigurationManager
 from framework.logging.automation_logger import get_logger
@@ -24,7 +25,7 @@ class DcmanagerSwDeployStrategy(BaseKeyword):
         self.ssh_connection = ssh_connection
         self.usm_config = ConfigurationManager.get_usm_config()
 
-    def dcmanager_sw_deploy_strategy_create(self, subcloud_name: str = None, release: str = None, subcloud_group: str = None, with_delete: bool = False, delete_only: bool = False, rollback: bool = False, snapshot: bool = False, kube_upgrade: str = None, with_prestage: bool = False, sysadmin_password: str = None, cleanup: bool = False) -> str:
+    def dcmanager_sw_deploy_strategy_create(self, subcloud_name: str = None, release: str = None, subcloud_group: str = None, with_delete: bool = False, delete_only: bool = False, rollback: bool = False, snapshot: bool = False, kube_upgrade: str = None, with_prestage: bool = False, sysadmin_password: str = None, cleanup: bool = False, subcloud_apply_type: str = None, max_parallel_subclouds: int = None) -> str:
         """
         Runs dcmanager sw-deploy-strategy create command.
 
@@ -43,6 +44,8 @@ class DcmanagerSwDeployStrategy(BaseKeyword):
                 sw-deploy that ended in a non-clean state (e.g. an aborted or failed
                 deploy), deleting the leftover kube-upgrade and system-deploy entities.
                 Not specific to auto-rollback.
+            subcloud_apply_type (str): Value for --subcloud-apply-type (e.g. 'parallel' or 'serial').
+            max_parallel_subclouds (int): Value for --max-parallel-subclouds.
 
         Returns:
             str: The joined stdout/stderr output of the create command.
@@ -59,6 +62,8 @@ class DcmanagerSwDeployStrategy(BaseKeyword):
             with_prestage=with_prestage,
             sysadmin_password=sysadmin_password,
             cleanup=cleanup,
+            subcloud_apply_type=subcloud_apply_type,
+            max_parallel_subclouds=max_parallel_subclouds,
         )
 
         output = self.ssh_connection.send(command)
@@ -67,7 +72,7 @@ class DcmanagerSwDeployStrategy(BaseKeyword):
         self.wait_sw_deployment(subcloud=target, expected_status="initial", is_group=is_group)
         return "".join(output)
 
-    def dcmanager_sw_deploy_strategy_create_with_error(self, subcloud_name: str = None, release: str = None, subcloud_group: str = None, with_delete: bool = False, delete_only: bool = False, rollback: bool = False, snapshot: bool = False, kube_upgrade: str = None, with_prestage: bool = False, sysadmin_password: str = None) -> str:
+    def dcmanager_sw_deploy_strategy_create_with_error(self, subcloud_name: str = None, release: str = None, subcloud_group: str = None, with_delete: bool = False, delete_only: bool = False, rollback: bool = False, snapshot: bool = False, kube_upgrade: str = None, with_prestage: bool = False, sysadmin_password: str = None, subcloud_apply_type: str = None, max_parallel_subclouds: int = None) -> str:
         """
         Runs dcmanager sw-deploy-strategy create expecting the command to be rejected.
 
@@ -76,7 +81,19 @@ class DcmanagerSwDeployStrategy(BaseKeyword):
         invalid release). Asserts a command-rejection return code instead of
         success and does not wait for the 'initial' state.
 
-        Args: Same as dcmanager_sw_deploy_strategy_create.
+        Args:
+            subcloud_name (str): The subcloud name.
+            release (str): The software version to be deployed.
+            subcloud_group (str): The subcloud group name.
+            with_delete (bool): If true, adds parameter --with-delete
+            delete_only (bool): If true, adds parameter --delete-only
+            rollback (bool): If true, adds parameter --rollback
+            snapshot (bool): If true, adds parameter --snapshot
+            kube_upgrade (str): Target K8s version for combined P&K upgrade (e.g., 'v1.29.2').
+            with_prestage (bool): If true, adds parameter --with-prestage.
+            sysadmin_password (str): Sysadmin password for prestage.
+            subcloud_apply_type (str): Value for --subcloud-apply-type (e.g. 'parallel' or 'serial').
+            max_parallel_subclouds (int): Value for --max-parallel-subclouds.
 
         Returns:
             str: The joined stdout/stderr output of the rejected create command,
@@ -93,6 +110,8 @@ class DcmanagerSwDeployStrategy(BaseKeyword):
             kube_upgrade=kube_upgrade,
             with_prestage=with_prestage,
             sysadmin_password=sysadmin_password,
+            subcloud_apply_type=subcloud_apply_type,
+            max_parallel_subclouds=max_parallel_subclouds,
         )
 
         output = self.ssh_connection.send(command)
@@ -100,11 +119,26 @@ class DcmanagerSwDeployStrategy(BaseKeyword):
         get_logger().log_info(f"sw-deploy-strategy create rejected as expected: {rejected}")
         return "".join(output)
 
-    def _build_sw_deploy_strategy_create_command(self, subcloud_name: str = None, release: str = None, subcloud_group: str = None, with_delete: bool = False, delete_only: bool = False, rollback: bool = False, snapshot: bool = False, kube_upgrade: str = None, with_prestage: bool = False, sysadmin_password: str = None, cleanup: bool = False):
+    def _build_sw_deploy_strategy_create_command(self, subcloud_name: str = None, release: str = None, subcloud_group: str = None, with_delete: bool = False, delete_only: bool = False, rollback: bool = False, snapshot: bool = False, kube_upgrade: str = None, with_prestage: bool = False, sysadmin_password: str = None, cleanup: bool = False, subcloud_apply_type: str = None, max_parallel_subclouds: int = None) -> Tuple[str, Optional[str], bool]:
         """Build the dcmanager sw-deploy-strategy create command string and scope.
 
+        Args:
+            subcloud_name (str): The subcloud name.
+            release (str): The software version to be deployed.
+            subcloud_group (str): The subcloud group name.
+            with_delete (bool): If true, adds parameter --with-delete
+            delete_only (bool): If true, adds parameter --delete-only
+            rollback (bool): If true, adds parameter --rollback
+            snapshot (bool): If true, adds parameter --snapshot
+            kube_upgrade (str): Target K8s version for combined P&K upgrade (e.g., 'v1.29.2').
+            with_prestage (bool): If true, adds parameter --with-prestage.
+            sysadmin_password (str): Sysadmin password for prestage.
+            cleanup (bool): If true, adds parameter --cleanup.
+            subcloud_apply_type (str): Value for --subcloud-apply-type (e.g. 'parallel' or 'serial').
+            max_parallel_subclouds (int): Value for --max-parallel-subclouds.
+
         Returns:
-            tuple: (command, target, is_group) where command is the full
+            Tuple[str, Optional[str], bool]: (command, target, is_group) where command is the full
                 source_openrc-wrapped CLI string, target is the subcloud/group
                 name (or None for a system-wide strategy), and is_group indicates
                 whether the target is a group.
@@ -118,6 +152,8 @@ class DcmanagerSwDeployStrategy(BaseKeyword):
         prestage_arg = "--with-prestage" if with_prestage else ""
         sysadmin_password_arg = f"--sysadmin-password {sysadmin_password}" if sysadmin_password else ""
         cleanup_arg = "--cleanup" if cleanup else ""
+        apply_type_arg = f"--subcloud-apply-type {subcloud_apply_type}" if subcloud_apply_type else ""
+        max_parallel_arg = f"--max-parallel-subclouds {int(max_parallel_subclouds)}" if max_parallel_subclouds is not None else ""
 
         # Resolve the strategy scope. dcmanager sw-deploy-strategy create takes an
         # OPTIONAL positional cloud_name: a single subcloud name targets that
@@ -139,11 +175,11 @@ class DcmanagerSwDeployStrategy(BaseKeyword):
             target = None
             is_group = True
 
-        command = source_openrc(f"dcmanager sw-deploy-strategy create {scope_arg} {rollback} {snapshot} {release_id} {delete} {clean_up_delete} {kube_upgrade_arg} {prestage_arg} {sysadmin_password_arg} {cleanup_arg}")
+        command = source_openrc(f"dcmanager sw-deploy-strategy create {scope_arg} {rollback} {snapshot} {release_id} {delete} {clean_up_delete} {kube_upgrade_arg} {prestage_arg} {sysadmin_password_arg} {cleanup_arg} {apply_type_arg} {max_parallel_arg}")
 
         return command, target, is_group
 
-    def dcmanager_sw_deploy_strategy_apply(self, target: str, is_group: bool = False, wait_completion: bool = True):
+    def dcmanager_sw_deploy_strategy_apply(self, target: str, is_group: bool = False, wait_completion: bool = True) -> None:
         """
         Runs dcmanager sw-deploy-strategy apply command.
 
@@ -282,6 +318,7 @@ class DcmanagerSwDeployStrategy(BaseKeyword):
         """
         Waits for check_sw_deployment method to return True.
         """
+        last_logged_states = {}
 
         def check_sw_deployment() -> str:
             """
@@ -296,6 +333,13 @@ class DcmanagerSwDeployStrategy(BaseKeyword):
                 steps = strategy_steps.get_dcmanager_strategy_step_list()
                 if not steps:
                     return "unknown"
+                # Log the step states only when they change, so a failed step is reported
+                # together with the state of the other subclouds without a line per poll.
+                step_states = {step.get_cloud(): step.get_state() for step in steps}
+                if step_states != last_logged_states:
+                    get_logger().log_info(f"Strategy step states: {step_states}")
+                    last_logged_states.clear()
+                    last_logged_states.update(step_states)
                 # Check if all subclouds have the expected state
                 for step in steps:
                     if step.get_state() != expected_status:
@@ -308,7 +352,7 @@ class DcmanagerSwDeployStrategy(BaseKeyword):
 
         validate_equals_with_retry(function_to_execute=check_sw_deployment, expected_value=expected_status, validation_description=f"Waiting for sw_deployment_status {expected_status}.", timeout=timeout, polling_sleep_time=check_interval, failure_values=["failed"])
 
-    def dc_manager_sw_deploy_strategy_create_apply_delete(self, subcloud_name: str = None, release: str = None, subcloud_group: str = None, with_delete: bool = False, delete_only: bool = False, rollback: bool = False, snapshot: bool = False, kube_upgrade: str = None):
+    def dc_manager_sw_deploy_strategy_create_apply_delete(self, subcloud_name: str = None, release: str = None, subcloud_group: str = None, with_delete: bool = False, delete_only: bool = False, rollback: bool = False, snapshot: bool = False, kube_upgrade: str = None, subcloud_apply_type: str = None, max_parallel_subclouds: int = None):
         """
         Runs dcmanager sw-deploy-strategy create / apply / delete commands.
 
@@ -321,11 +365,13 @@ class DcmanagerSwDeployStrategy(BaseKeyword):
             rollback (bool): If true, adds parameter --rollback
             snapshot (bool): If true, adds parameter --snapshot
             kube_upgrade (str): Target K8s version for combined P&K upgrade (e.g., 'v1.29.2').
+            subcloud_apply_type (str): Value for --subcloud-apply-type.
+            max_parallel_subclouds (int): Value for --max-parallel-subclouds.
         """
         target = subcloud_group if subcloud_group else subcloud_name
         is_group = bool(subcloud_group)
         get_logger().log_test_case_step(f"Create the sw-deploy strategy for {target} with {release}")
-        self.dcmanager_sw_deploy_strategy_create(subcloud_name=subcloud_name, release=release, subcloud_group=subcloud_group, with_delete=with_delete, delete_only=delete_only, rollback=rollback, snapshot=snapshot, kube_upgrade=kube_upgrade)
+        self.dcmanager_sw_deploy_strategy_create(subcloud_name=subcloud_name, release=release, subcloud_group=subcloud_group, with_delete=with_delete, delete_only=delete_only, rollback=rollback, snapshot=snapshot, kube_upgrade=kube_upgrade, subcloud_apply_type=subcloud_apply_type, max_parallel_subclouds=max_parallel_subclouds)
         get_logger().log_test_case_step("Apply the sw-deploy strategy")
         self.dcmanager_sw_deploy_strategy_apply(target, is_group=is_group)
         time.sleep(120)
