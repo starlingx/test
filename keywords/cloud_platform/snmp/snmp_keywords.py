@@ -2,6 +2,7 @@ import subprocess
 import time
 
 from config.configuration_manager import ConfigurationManager
+from framework.exceptions.keyword_exception import KeywordException
 from framework.logging.automation_logger import get_logger
 from framework.resources.resource_finder import get_stx_resource_path
 from framework.ssh.ssh_connection import SSHConnection
@@ -223,24 +224,27 @@ class SNMPKeywords(BaseKeyword):
             snmp_app = app_list.get_application(app_name)
             if snmp_app.get_status() not in ["applied", "applying"]:
                 self.system_app_apply.system_application_apply(app_name)
+                self.wait_for_pods_ready()
 
-    def wait_for_pods_ready(self, timeout: int = 300) -> bool:
-        """Wait for SNMP pods to be ready using existing kubectl keywords.
+    def wait_for_pods_ready(self, timeout: int = 300) -> None:
+        """Wait for the SNMP pods to be ready.
 
         Args:
             timeout (int): Maximum time to wait in seconds.
 
-        Returns:
-            bool: True if pods are ready, False if timeout.
+        Raises:
+            KeywordException: If the SNMP pods are not ready within the timeout.
         """
         timeout_time = time.time() + timeout
+        snmp_pods = []
         while time.time() < timeout_time:
             pods = self.kubectl_pods.get_pods(namespace="kube-system")
             snmp_pods = [pod for pod in pods.get_pods() if "snmp" in pod.get_name()]
             if snmp_pods and all(self.is_pod_ready(pod) for pod in snmp_pods):
-                return True
+                return
             time.sleep(5)
-        return False
+        seen_pods = [f"{pod.get_name()} ({pod.get_status()}, {pod.get_ready()})" for pod in snmp_pods]
+        raise KeywordException(f"SNMP pods not ready after {timeout}s in namespace 'kube-system'. SNMP pods seen: {seen_pods}")
 
     def is_pod_ready(self, pod: object) -> bool:
         """Check if a Kubernetes pod is ready.
@@ -276,6 +280,7 @@ class SNMPKeywords(BaseKeyword):
 
         # Reapply SNMP application
         self.system_app_apply.system_application_apply(self.config.get_snmp_app_name())
+        self.wait_for_pods_ready()
         return True
 
     def apply_port_helm_overrides(self) -> bool:
@@ -393,11 +398,18 @@ class SNMPKeywords(BaseKeyword):
         """Get name of running SNMP pod.
 
         Returns:
-            str: Name of running SNMP pod, empty string if none found.
+            str: Name of running SNMP pod.
+
+        Raises:
+            KeywordException: If no running SNMP pod exists.
         """
-        pods = self.kubectl_pods.get_pods(namespace="kube-system")
-        snmp_pods = [pod for pod in pods.get_pods() if "snmp" in pod.get_name() and pod.get_status() == "Running"]
-        return snmp_pods[0].get_name() if snmp_pods else ""
+        pods = self.kubectl_pods.get_pods(namespace="kube-system").get_pods()
+        snmp_pods = [pod for pod in pods if "snmp" in pod.get_name()]
+        running_snmp_pods = [pod for pod in snmp_pods if pod.get_status() == "Running"]
+        if not running_snmp_pods:
+            seen_pods = [f"{pod.get_name()} ({pod.get_status()})" for pod in snmp_pods]
+            raise KeywordException(f"No running SNMP pod found in namespace 'kube-system'. SNMP pods seen: {seen_pods}")
+        return running_snmp_pods[0].get_name()
 
     def get_snmp_config_object(self, pod_name: str) -> SNMPOutput:
         """Get SNMP configuration from pod.

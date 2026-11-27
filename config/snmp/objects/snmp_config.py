@@ -86,6 +86,22 @@ class SNMPConfig:
         """
         return self.active_alarm_oid
 
+    def get_snmp_v2c_community(self) -> str:
+        """Getter for the SNMP v2c community.
+
+        Returns:
+            str: SNMP v2c community string.
+        """
+        return self.snmp_v2c_community
+
+    def get_snmp_v3_username(self) -> str:
+        """Getter for the SNMP v3 username.
+
+        Returns:
+            str: SNMP v3 username.
+        """
+        return self.snmp_v3_username
+
     def get_trap_server_address(self) -> str:
         """Getter for trap server address.
 
