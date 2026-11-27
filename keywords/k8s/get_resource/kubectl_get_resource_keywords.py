@@ -1,5 +1,6 @@
 """Keywords for generic kubectl get operations on any resource type."""
 
+import shlex
 from typing import Optional
 
 from framework.ssh.ssh_connection import SSHConnection
@@ -66,3 +67,32 @@ class KubectlGetResourceKeywords(K8sBaseKeyword):
 
         output_text = "\n".join(output) if isinstance(output, list) else output
         return "No resources found" in output_text
+
+    def is_resource_present(self, resource_type: str, resource_name: str, namespace: Optional[str] = None) -> bool:
+        """Check whether a Kubernetes resource exists.
+
+        Uses --ignore-not-found so a missing resource returns no output, while
+        any other kubectl failure still fails the command. Prefer this over
+        KubectlCustomKeywords.is_custom_resource_present when the answer decides
+        what is created or deleted, since that keyword reports any kubectl error
+        as an absent resource.
+
+        Args:
+            resource_type (str): Resource type (e.g., 'statefulset', 'ingress').
+            resource_name (str): Resource name.
+            namespace (Optional[str]): Namespace. If None, uses default namespace.
+
+        Returns:
+            bool: True if the resource exists.
+        """
+        cmd = f"kubectl get {shlex.quote(resource_type)} {shlex.quote(resource_name)} --ignore-not-found -o name"
+        if namespace:
+            cmd += f" -n {shlex.quote(namespace)}"
+
+        output = self.ssh_connection.send(self.k8s_config.export(cmd))
+        self.validate_success_return_code(self.ssh_connection)
+
+        lines = output if isinstance(output, list) else output.splitlines()
+        # -o name prints <kind>[.<group>]/<name> (for example statefulset.apps/keycloak),
+        # so compare the part after the slash exactly.
+        return any(line.strip().split("/", 1)[-1] == resource_name for line in lines if "/" in line)
